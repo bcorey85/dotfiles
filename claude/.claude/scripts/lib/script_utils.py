@@ -238,11 +238,15 @@ def current_branch(cwd, timeout=None):
 def repo_name(cwd):
     """The repository name that `ledger repo` prints (a linked worktree reports its main checkout). When `ledger` is
     missing or fails, the name of cwd."""
-    try:
-        finished = subprocess.run(["ledger", "repo"], cwd=cwd, capture_output=True, text=True,
-                                  timeout=REPO_NAME_TIMEOUT_SECONDS)
-    except (OSError, subprocess.SubprocessError):
+    ledger = ledger_bin()
+    if ledger is None:
         finished = None
+    else:
+        try:
+            finished = subprocess.run([ledger, "repo"], cwd=cwd, capture_output=True, text=True,
+                                      timeout=REPO_NAME_TIMEOUT_SECONDS)
+        except (OSError, subprocess.SubprocessError):
+            finished = None
 
     name = finished.stdout.strip() if finished is not None and finished.returncode == 0 else ""
     return name or pathlib.Path(cwd).resolve().name
@@ -295,7 +299,7 @@ class LedgerUnreadError(Exception):
 
 
 class LedgerNotInstalledError(LedgerUnreadError):
-    """No `ledger` program is on PATH."""
+    """No `ledger` program is on PATH or in the cargo bin folder."""
 
 
 class LedgerBusyError(LedgerUnreadError):
@@ -310,12 +314,42 @@ def ledger_failure_reason(done):
     return stderr_lines[-1] if stderr_lines else f"exited {done.returncode}"
 
 
+def ledger_bin():
+    """The path of the `ledger` program: the first on PATH, else the one `cargo install` puts in
+    ${CARGO_HOME:-~/.cargo}/bin. None when neither exists. A hook or a Bash tool call can run without the login
+    shell's PATH, so the cargo folder is checked by its path. Same lookup as ledger_bin in lib/_ledger.sh."""
+    on_path = shutil.which("ledger")
+    if on_path:
+        return on_path
+
+    cargo_home = os.environ.get("CARGO_HOME")
+    if not cargo_home:
+        home = os.environ.get("HOME")
+        if not home:
+            return None
+        cargo_home = os.path.join(home, ".cargo")
+    cargo_ledger = os.path.join(cargo_home, "bin", "ledger")
+    if os.path.isfile(cargo_ledger) and os.access(cargo_ledger, os.X_OK):
+        return cargo_ledger
+    return None
+
+
+def missing_ledger_warning():
+    """The line a report shows the user when telemetry is on and no ledger is found: the run's rows were dropped.
+    None otherwise."""
+    if not telemetry_switch_on() or ledger_bin():
+        return None
+    return ("No ledger found on PATH or in the cargo bin folder ($CARGO_HOME/bin, default ~/.cargo/bin): this run's "
+            "review rows were dropped. Install the ledger or put its folder on PATH.")
+
+
 def read_ledger(args):
     """Run `ledger <args>` and return its CompletedProcess for any exit but 75. Exit 75 and a call that does not
     finish in time are tried again, with pauses totalling LEDGER_WAIT_SECONDS (each try may also run up to
     LEDGER_CALL_TIMEOUT_SECONDS); then LedgerBusyError is raised. Raises
-    LedgerNotInstalledError when there is no `ledger` on PATH."""
-    if shutil.which("ledger") is None:
+    LedgerNotInstalledError when ledger_bin finds no ledger."""
+    ledger = ledger_bin()
+    if ledger is None:
         raise LedgerNotInstalledError("ledger not installed")
 
     backoff = float(os.environ.get(LEDGER_BACKOFF_ENV, LEDGER_BACKOFF_SECONDS))
@@ -324,7 +358,7 @@ def read_ledger(args):
     waited = round(backoff * attempts * (attempts - 1) / 2)
     command = " ".join(["ledger", *args])
     try:
-        done = run_retrying(["ledger", *args], (LEDGER_BUSY_EXIT,), attempts, backoff, timeout)
+        done = run_retrying([ledger, *args], (LEDGER_BUSY_EXIT,), attempts, backoff, timeout)
     except subprocess.TimeoutExpired:
         raise LedgerBusyError(f"{command}: no answer within {timeout:g} s per try ({waited} s of pauses)") from None
     if done.returncode != LEDGER_BUSY_EXIT:
@@ -360,11 +394,12 @@ def query_ledger_rows_once(sql, max_seconds, timeout_seconds):
     fail open fast. The subprocess gets its own timeout_seconds. Returns the rows as parse_tsv_rows gives them.
     Raises LedgerBusyError on exit 75 or a timeout, LedgerNotInstalledError when there is no ledger, and
     LedgerUnreadError on any other failure."""
-    if shutil.which("ledger") is None:
+    ledger = ledger_bin()
+    if ledger is None:
         raise LedgerNotInstalledError("ledger not installed")
 
     try:
-        done = subprocess.run(["ledger", "query", "--max-time", str(max_seconds), sql], capture_output=True,
+        done = subprocess.run([ledger, "query", "--max-time", str(max_seconds), sql], capture_output=True,
                               text=True, timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         raise LedgerBusyError(f"ledger query: no answer within {timeout_seconds:g} s") from None
@@ -390,11 +425,12 @@ def ledger_keys(kind, names, cwd=None, timeout_seconds=LEDGER_CALL_TIMEOUT_SECON
     if any("\n" in name for name in names):
         raise ValueError("a name holds a newline")
 
-    if shutil.which("ledger") is None:
+    ledger = ledger_bin()
+    if ledger is None:
         raise LedgerNotInstalledError("ledger not installed")
 
     try:
-        done = subprocess.run(["ledger", "key", kind], input="".join(name + "\n" for name in names),
+        done = subprocess.run([ledger, "key", kind], input="".join(name + "\n" for name in names),
                               capture_output=True, text=True, cwd=cwd, timeout=timeout_seconds)
     except (OSError, subprocess.SubprocessError) as error:
         raise LedgerUnreadError(f"ledger key {kind}: {error}") from None

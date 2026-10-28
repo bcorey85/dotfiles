@@ -37,6 +37,6 @@ def script_in(scripts_root, name):
 
 
 def local_stream_file(stem):
-    """The name of the file a writer appends to when no ledger is on PATH: `stem` with the .jsonl extension. Tests
-    build the name from its stem, so no line holds a whole file name."""
+    """The name of the pre-ledger jsonl file that a writer must never write, with or without a ledger: `stem` with the
+    .jsonl extension. Tests build the name from its stem, so no line holds a whole file name."""
     return f"{stem}.jsonl"

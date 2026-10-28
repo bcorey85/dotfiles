@@ -52,7 +52,7 @@
 # Every value is sent as a JSON string to `ledger write spec_run`, which types it and
 # adds the date, repo and session. date, schema_version, repo and out are accepted and
 # never stored. slug goes to `ledger-write`, which drops it for the ledger; with no
-# `ledger` on PATH it drops the row and prints one stderr line.
+# ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) it drops the row and prints one stderr line.
 # A row `ledger write` refuses exits 2.
 set -euo pipefail
 

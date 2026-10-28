@@ -1,9 +1,9 @@
 ---
 type: "Change"
 title: "LED-13: merge master; ledger guard pre-commit; ledger-write drops jsonl fallback; the review loop's agent-usage row writer removed"
-description: "Merge master into the guard-migration branch. The pre-commit hook runs the ledger guard before the change-ledger gate. ledger-write no longer appends to a local file when ledger is missing: it prints one stderr line, drops the row and exits 0. The review-loop script no longer writes an agent-usage row. coder_gate rows carry timed_out and setup_faults again."
+description: "Merge master into the guard-migration branch. The pre-commit hook runs the ledger guard before the change-ledger gate. ledger-write no longer appends to a local file when no ledger is found: it prints one stderr line, drops the row and exits 0. The review-loop script no longer writes an agent-usage row. coder_gate rows carry timed_out and setup_faults again."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T14:08:58-05:00"}
-seq: 93
+seq: 125
 kind: "fix"
 components: ["script/code-step", "script/coder-gate", "script/deferred-push-check", "script/ledger-write", "script/review-loop-gate", "script/review-loop-script", "skill/audit", "skill/review"]
 evidence: ["judgment"]
@@ -19,10 +19,13 @@ unmeasured: ""
 - `.githooks/pre-commit` runs `.githooks/ledger-guard` first and refuses the commit when it exits non-zero, then runs
   the change-ledger gate. `.githooks/ledger-guard` is a byte-identical copy of the agent-ledger hook. With no `ledger`
   on PATH the commit is refused and the message names `cargo install --path ~/dev/agent-ledger`.
-- `telemetry/ledger-write` drops the legacy jsonl fallback. With no `ledger` on PATH it prints one stderr line, drops
-  the row and exits 0; no file is written. The stem-built file names and the repo-from-git fallback are gone.
+- `telemetry/ledger-write` drops the legacy jsonl fallback. It finds the ledger with master's `ledger_bin`
+  (`lib/_ledger.sh`: PATH, then `${CARGO_HOME:-~/.cargo}/bin`). With no ledger found it prints
+  `ledger-write: no ledger found; <type> row dropped`, drops the row and exits 0; no file is written. The stem-built
+  file names, the file overrides and the repo-from-git fallback are gone.
 - The comments of the writers that named the fallback file say the row is dropped. `/audit` review lane no longer
   mentions a local escapes file.
+- `script_utils.missing_ledger_warning()` says the run's review rows were dropped, not that they went to jsonl files.
 - The review loop's agent-usage row writer is removed from `review_loop_script.py`. `log_agent_usage.py` and its test
   stay as they are here and leave with the LED-13 retire patch, applied with `git am`.
 - `script_utils.ledger_write(row_type, fields, label)` pipes a row to `telemetry/ledger-write`; a failed write prints
@@ -38,7 +41,13 @@ unmeasured: ""
 - `coder_gate.py` writes `timed_out` and `setup_faults` (counts of commands that timed out and that could not run) on
   its `coder_gate` row. The result is `setup-fault` when no command failed and one could not run, else `timeout` when
   one timed out.
-- `log-review-check` runs `ledger worker --once` before its queries and asserts it exits 0.
+- `log-review-check` runs `ledger worker --once` before its queries and asserts it exits 0. `review-scope-check` runs
+  it before each `review_scope` query; without it both ledger cases fail with "cache busy".
+- `script_utils` readers `repo_name`, `query_ledger_rows_once` and `ledger_keys` find the ledger with `ledger_bin()`,
+  as `read_ledger` does. The tests that run them pin `HOME` and `CARGO_HOME` to temp folders, so no test reaches a
+  real ledger.
+- The third merge (master 3cb80cc8) keeps master's cargo-bin lookup and keeps no fallback: master's jsonl fallback
+  tests for file overrides, unset HOME, failed appends, number typing and result spacing are not taken.
 
 ## Evidence
 
@@ -46,8 +55,10 @@ unmeasured: ""
   agent-usage row; the coder gate row carried no `timed_out` or `setup_faults`; `log-review-check` failed 3 cases with "cache busy"
   (exit 75).
 - `tests/scripts/test_pre_commit_hook.py`, `test_ledger_write.py`, `test_coder_gate.py`,
-  `test_code_step.py`, `test_review_loop_script.py`, `test_review_loop_gate.py`, `test_deferred_push_check.py` and
-  `skills/review/log-review-check` cover each path.
+  `test_code_step.py`, `test_review_loop_script.py`, `test_review_loop_gate.py`, `test_deferred_push_check.py`,
+  `test_script_utils.py` and `skills/review/log-review-check` cover each path.
+  `test_ledger_write.py::test_a_ledger_in_the_cargo_bin_folder_gets_the_row_when_path_has_none` covers the cargo-bin
+  lookup.
 
 ## Result
 

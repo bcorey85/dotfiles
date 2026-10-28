@@ -8,7 +8,7 @@ Analyze both sides of the flywheel:
 - **Plans** — one row per finalized (or abandoned) plan (via `~/.claude/scripts/telemetry/log-spec-run`, fed by `/eng-spec`): `verdict`, `phases`, `criteria`, `decisions`, `research_q`, `gaps`, `falsified`.
 - **Per-finding rows** — the same catches at finding granularity (via `~/.claude/skills/review/log-review-finding`, fed by `/review`, `/refactor`, `/verify-branch`, `/branch-recap`): `kind=run` rows carry `gate`, `scope`, `diff_loc`, `n_findings` including the silent runs; `kind=finding` rows carry `gate`, `disposition` (+ optional `blocker`), `class`, `path_key`, `line`, `actioned`. `path_key` is a keyed hash of the file path, never the path, so the join key is `path_key:line`. This is the only source with a per-gate denominator and a per-finding join key.
 
-The escapes and scans live in the ledger. On a machine with no `ledger` on PATH, the writers drop their rows.
+The escapes and scans live in the ledger. On a machine with no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`), the writers drop their rows.
 
 ## Instructions
 

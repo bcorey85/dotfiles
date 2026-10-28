@@ -10,6 +10,8 @@ Never add a `Claude-Session:` line, a session link, or any other attribution lin
 
 When the user must run git or shell commands, give one `!` line that chains them all with `&&`, never a series of lines to run one by one.
 
+Only the main session hands the user a command. A subagent never writes a command for the user to run: it names the step it could not do, and why, in its report to its caller, and the caller runs it or hands it on.
+
 Never wrap text for the user to paste (a comment, message or reply) in a Markdown blockquote (`>`): the terminal renders it with a `▎` bar on every line, which the copy picks up. Give it as plain text.
 
 ## Quality Checks

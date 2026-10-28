@@ -741,6 +741,9 @@ def announce_boundary(repo_dir, state, boundary):
     say(repo_dir, done_line)
     if boundary["commit_text"]:
         say(repo_dir, boundary["commit_text"])
+    ledger_warning = script_utils.missing_ledger_warning()
+    if ledger_warning:
+        say(repo_dir, ledger_warning)
 
     if block == "A":
         next_start = f"{INSTALLED_COMMAND} {RESUME_VERB}"

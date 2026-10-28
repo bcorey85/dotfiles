@@ -48,7 +48,7 @@
 #
 # Every value is sent as a JSON string; `ledger write` types it, stores an
 # unknown scan or stage as `other`, and adds date, repo and session. With no
-# `ledger` on PATH `ledger-write` drops the row and
+# ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) `ledger-write` drops the row and
 # prints one stderr line. A row `ledger write` refuses exits 2.
 set -euo pipefail
 

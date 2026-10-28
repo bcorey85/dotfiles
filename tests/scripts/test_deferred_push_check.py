@@ -305,7 +305,8 @@ class DeferredPushCheckTest(unittest.TestCase):
         self.plant_findings(self.finding(head=head))
         payload = json.dumps({"tool_input": {"command": "git push"}, "cwd": str(self.repo)})
         bare_path = fake_ledger.path_without_ledger(os.environ["PATH"])
-        finished = run_hook(payload, {"PATH": bare_path})
+        bare_env = {"PATH": bare_path, "HOME": str(self.scratch), "CARGO_HOME": str(self.scratch / "cargo")}
+        finished = run_hook(payload, bare_env)
         self.assertEqual((finished.returncode, finished.stdout), (0, ""))
 
     def test_busy_ledger_is_asked_once_without_a_cache_refresh(self):

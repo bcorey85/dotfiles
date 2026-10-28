@@ -29,42 +29,60 @@ from code_step_core import (
     dispatch_standing,
     expected_agent,
     is_dispatch_open,
-    load_state,
     log_event,
     newest_dispatch_standing,
     own_path,
     read_events,
+    read_state_file,
     say_file_in,
+    session_repo_dirs,
     state_dir,
     timed_command,
 )
 
-HookCall = collections.namedtuple("HookCall", "event cwd state run_id session_id tool_input")
+HookCall = collections.namedtuple("HookCall", "event repo state run_id session_id tool_input")
 
 
-def read_hook_call(require_run=True):
-    # The setup every hook shares. Reads the event on stdin and returns it with the repo's state, the run id, the
-    # session and the tool call's input. Returns None when the event is not an object, the repo holds no state, the
-    # state is pinned to another session, or (require_run) the state has no run.
+def hook_repo_dirs(event):
+    # (repo, state folder) for the event's cwd and for each repo the event's session pinned, each state folder once.
+    # The cwd is the session's, so a /code run in a worktree or another checkout is found only through the session's
+    # list.
+    seen_directories = set()
+    for repo in [event.get("cwd") or ".", *session_repo_dirs(event.get("session_id"))]:
+        directory = state_dir(repo)
+        if directory is None or directory in seen_directories:
+            continue
+        seen_directories.add(directory)
+        yield repo, directory
+
+
+def hook_repo_states(event):
+    # (repo, state) for each repo hook_repo_dirs reaches that holds state.
+    for repo, directory in hook_repo_dirs(event):
+        state = read_state_file(directory)
+        if state:
+            yield repo, state
+
+
+def read_hook_calls():
+    # The setup every hook shares. Reads the event on stdin and returns one call per repo the event reaches, each with
+    # the repo's state, the run id, the session and the tool call's input. A repo is left out when it holds no state,
+    # its state has no run, or its state is pinned to another session.
     event = json.load(sys.stdin)
     if not isinstance(event, dict):
-        return None
-
-    cwd = event.get("cwd") or "."
-    state = load_state(cwd)
-    if not state:
-        return None
-
-    run_id = state.get("runId")
-    if require_run and not run_id:
-        return None
+        return []
 
     session_id = event.get("session_id")
-    if session_id and state.get("sessionId") and session_id != state["sessionId"]:
-        return None
-
     tool_input = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
-    return HookCall(event, cwd, state, run_id, session_id, tool_input)
+    calls = []
+    for repo, state in hook_repo_states(event):
+        run_id = state.get("runId")
+        if not run_id:
+            continue
+        if session_id and state.get("sessionId") and session_id != state["sessionId"]:
+            continue
+        calls.append(HookCall(event, repo, state, run_id, session_id, tool_input))
+    return calls
 
 
 def tool_response_agent_id(tool_response):
@@ -85,11 +103,11 @@ def is_pinned_fork_event(event, state):
 
 def deny_early_fork_handback(cwd, state):
     # The fork's hand-back while a coder or review-loop is still out leaves that agent's report with nobody to read
-    # it. Deny it once per dispatch and name the command that waits.
+    # it. Deny it once per dispatch and name the command that waits. True when it denied.
     standing = newest_dispatch_standing(cwd, state)
     already_denied = any(block.get("kind") == "handback-deny" for block in standing["blocks"])
     if already_denied or not is_dispatch_open(cwd, state):
-        return
+        return False
 
     log_event(cwd, state["runId"], "fork-block", state.get("sessionId"), dispatch=standing["dispatch"]["id"],
               kind="handback-deny")
@@ -97,27 +115,40 @@ def deny_early_fork_handback(cwd, state):
               f"{RESUME_VERB}` with Bash timeout {BASH_TIMEOUT_MS}: it waits for the hand-back and "
               "prints the next action.")
     script_utils.pre_tool_use_deny(reason)
+    return True
+
+
+def log_handback_attempt(call):
+    if call.state.get("stage") == "done":
+        return
+
+    log_event(call.repo, call.run_id, "handback-attempt", call.session_id, agent_id=call.event.get("agent_id"),
+              agent_type=call.event.get("agent_type"), message=str(call.tool_input.get("message", "")))
+
+
+def deny_handback_attempt(call):
+    # Denies the pinned fork's early hand-back. True when it denied.
+    event, state = call.event, call.state
+    if state.get("stage") not in HOOK_STAGES or event.get("agent_type") != FORK_AGENT_TYPE:
+        return False
+    if not is_pinned_fork_event(event, state):
+        return False
+
+    return deny_early_fork_handback(call.repo, state)
 
 
 def command_hook():
     # PreToolUse on SubagentHandback: every attempt is logged, then the pinned fork's early hand-back is denied once
     # per dispatch. Claude Code runs the hooks of one matcher side by side, so this one sees an attempt that the other
-    # gates deny. Only a hand-back that went through (PostToolUse) ends a wait.
+    # gates deny. Only a hand-back that went through (PostToolUse) ends a wait. One denial answers the call.
     try:
-        call = read_hook_call(require_run=False)
-        if call is None or not call.run_id:
-            return
+        calls = read_hook_calls()
+        for call in calls:
+            log_handback_attempt(call)
 
-        event, state = call.event, call.state
-        if state.get("stage") != "done":
-            log_event(call.cwd, call.run_id, "handback-attempt", call.session_id, agent_id=event.get("agent_id"),
-                      agent_type=event.get("agent_type"), message=str(call.tool_input.get("message", "")))
-        if state.get("stage") not in HOOK_STAGES or event.get("agent_type") != FORK_AGENT_TYPE:
-            return
-        if not is_pinned_fork_event(event, state):
-            return
-
-        deny_early_fork_handback(call.cwd, state)
+        for call in calls:
+            if deny_handback_attempt(call):
+                return
     except Exception as error:
         print(f"code-step hook: {error}", file=sys.stderr)
 
@@ -129,26 +160,28 @@ def log_launch(call):
 
     # A launch with no agent id is logged too: the dispatch counts as launched, and the wait stops on it.
     agent_id = tool_response_agent_id(call.event.get("tool_response"))
-    log_event(call.cwd, call.run_id, "launch", call.session_id, agent_id=agent_id, dispatch=marker[1])
+    log_event(call.repo, call.run_id, "launch", call.session_id, agent_id=agent_id, dispatch=marker[1])
+
+
+def log_tool_call(call):
+    tool_name = call.event.get("tool_name")
+    if tool_name == "Agent":
+        log_launch(call)
+    elif tool_name == "SendMessage":
+        log_event(call.repo, call.run_id, "resume", call.session_id, agent_id=call.tool_input.get("to"))
+    elif tool_name == "SubagentHandback":
+        message = str(call.tool_input.get("message", ""))
+        log_event(call.repo, call.run_id, "handback", call.session_id, agent_id=call.event.get("agent_id"),
+                  agent_type=call.event.get("agent_type"), message=message)
 
 
 def command_log_hook():
     # PostToolUse on Agent, SubagentHandback and SendMessage: one event per call that went through. A hand-back that
     # the PreToolUse gates denied never reaches PostToolUse, so it is never logged.
     try:
-        call = read_hook_call()
-        if call is None or call.state.get("stage") == "done":
-            return
-
-        tool_name = call.event.get("tool_name")
-        if tool_name == "Agent":
-            log_launch(call)
-        elif tool_name == "SendMessage":
-            log_event(call.cwd, call.run_id, "resume", call.session_id, agent_id=call.tool_input.get("to"))
-        elif tool_name == "SubagentHandback":
-            message = str(call.tool_input.get("message", ""))
-            log_event(call.cwd, call.run_id, "handback", call.session_id, agent_id=call.event.get("agent_id"),
-                      agent_type=call.event.get("agent_type"), message=message)
+        for call in read_hook_calls():
+            if call.state.get("stage") != "done":
+                log_tool_call(call)
     except Exception as error:
         print(f"code-step log-hook: {error}", file=sys.stderr)
 
@@ -188,61 +221,78 @@ def command_dispatch_hook():
     # carries its marker after its launch is denied. A review-loop launch is never denied for a repeat, because the
     # shared hand-back store records a review-loop dispatch even when this hook denies the call.
     try:
-        call = read_hook_call()
-        if call is None or call.event.get("tool_name") != "Agent" or call.state.get("stage") not in HOOK_STAGES:
-            return
-
-        standing = dispatch_standing(read_events(call.cwd, call.run_id))
-        dispatch = standing["dispatch"]
-        if dispatch is None or dispatch.get("stage") != call.state["stage"]:
-            return
-        if time.time() - dispatch["ts"] > SAY_MAX_AGE_SECONDS:
-            return
-        if call.tool_input.get("subagent_type") != dispatch.get("agent_type"):
-            return
-
-        if standing["launched"] is not None:
-            kind, reason = "relaunch", relaunch_denial(call, standing)
-        else:
-            kind, reason = "prompt-deny", prompt_denial(call, standing)
-        if reason is None:
-            return
-
-        log_event(call.cwd, call.run_id, "fork-block", call.session_id, dispatch=dispatch["id"], kind=kind)
-        script_utils.pre_tool_use_deny(reason)
+        for call in read_hook_calls():
+            if dispatch_denial(call):
+                return
     except Exception as error:
         print(f"code-step dispatch-hook: {error}", file=sys.stderr)
+
+
+def dispatch_denial(call):
+    # Denies the Agent call when it breaks the pending dispatch of the call's run. True when it denied. A call that
+    # carries the marker of another run belongs to that run.
+    if call.event.get("tool_name") != "Agent" or call.state.get("stage") not in HOOK_STAGES:
+        return False
+    marker = dispatch_marker(call.tool_input.get("prompt"))
+    if marker is not None and marker[0] != call.run_id:
+        return False
+
+    standing = dispatch_standing(read_events(call.repo, call.run_id))
+    dispatch = standing["dispatch"]
+    if dispatch is None or dispatch.get("stage") != call.state["stage"]:
+        return False
+    if time.time() - dispatch["ts"] > SAY_MAX_AGE_SECONDS:
+        return False
+    if call.tool_input.get("subagent_type") != dispatch.get("agent_type"):
+        return False
+
+    if standing["launched"] is not None:
+        kind, reason = "relaunch", relaunch_denial(call, standing)
+    else:
+        kind, reason = "prompt-deny", prompt_denial(call, standing)
+    if reason is None:
+        return False
+
+    log_event(call.repo, call.run_id, "fork-block", call.session_id, dispatch=dispatch["id"], kind=kind)
+    script_utils.pre_tool_use_deny(reason)
+    return True
 
 
 def command_stop_hook():
     # SubagentStop: the fork ends its turn while a dispatch is open (it answered the Agent call's immediate return
     # instead of waiting). Block that stop and name the waiting command, at most FORK_STOP_BLOCK_LIMIT times per
-    # dispatch.
+    # dispatch. One block answers the stop.
     try:
-        event = json.load(sys.stdin)
-        cwd = event.get("cwd") or "."
-        state = load_state(cwd)
-        if state is None or state["stage"] not in HOOK_STAGES or not state.get("runId"):
-            return
-        if not is_pinned_fork_event(event, state):
-            return
-
-        standing = newest_dispatch_standing(cwd, state)
-        if standing["dispatch"] is None:
-            return
-
-        stop_blocks = sum(1 for block in standing["blocks"] if block.get("kind") == "stop-block")
-        if stop_blocks >= FORK_STOP_BLOCK_LIMIT or not is_dispatch_open(cwd, state):
-            return
-
-        log_event(cwd, state["runId"], "fork-block", state.get("sessionId"), dispatch=standing["dispatch"]["id"],
-                  kind="stop-block")
-        reason = (f"The dispatched {expected_agent(state)} has not handed back. Do not stop. Run "
-                  f"`{own_path(INSTALLED_COMMAND)} {RESUME_VERB}` with Bash timeout {BASH_TIMEOUT_MS}: "
-                  "it waits for the hand-back and prints the next action.")
-        print(json.dumps({"decision": "block", "reason": reason}))
+        for call in read_hook_calls():
+            if fork_stop_block(call):
+                return
     except Exception as error:
         print(f"code-step stop-hook: {error}", file=sys.stderr)
+
+
+def fork_stop_block(call):
+    # Blocks the pinned fork's stop while the repo's dispatch is open. True when it blocked.
+    repo, state = call.repo, call.state
+    if state.get("stage") not in HOOK_STAGES:
+        return False
+    if not is_pinned_fork_event(call.event, state):
+        return False
+
+    standing = newest_dispatch_standing(repo, state)
+    if standing["dispatch"] is None:
+        return False
+
+    stop_blocks = sum(1 for block in standing["blocks"] if block.get("kind") == "stop-block")
+    if stop_blocks >= FORK_STOP_BLOCK_LIMIT or not is_dispatch_open(repo, state):
+        return False
+
+    log_event(repo, call.run_id, "fork-block", state.get("sessionId"), dispatch=standing["dispatch"]["id"],
+              kind="stop-block")
+    reason = (f"The dispatched {expected_agent(state)} has not handed back. Do not stop. Run "
+              f"`{own_path(INSTALLED_COMMAND)} {RESUME_VERB}` with Bash timeout {BASH_TIMEOUT_MS}: "
+              "it waits for the hand-back and prints the next action.")
+    print(json.dumps({"decision": "block", "reason": reason}))
+    return True
 
 
 def command_plan_hook():
@@ -252,24 +302,25 @@ def command_plan_hook():
         event = json.load(sys.stdin)
         if not isinstance(event, dict):
             return
-        cwd = event.get("cwd") or "."
         tool_input = event.get("tool_input") or {}
         edited_path = tool_input.get("file_path") if isinstance(tool_input, dict) else None
-        if not isinstance(cwd, str) or not isinstance(edited_path, str) or not edited_path:
-            return
-        state = load_state(cwd)
-        if state is None or not state.get("plan"):
-            return
-        plan_path = pathlib.Path(cwd) / state["plan"]
-        if pathlib.Path(edited_path).resolve() != plan_path.resolve():
+        if not isinstance(event.get("cwd") or ".", str) or not isinstance(edited_path, str) or not edited_path:
             return
 
-        plan_lines = plan_path.read_text().splitlines()
-        plan = plan_format.parse_plan_with_closing_phases(plan_lines)
-        failure = plan_write_failure(plan, plan_lines, state["plan"], pathlib.Path(cwd))
-        if failure:
-            print(failure, file=sys.stderr)
-            sys.exit(2)
+        for repo, state in hook_repo_states(event):
+            if not state.get("plan"):
+                continue
+            plan_path = pathlib.Path(repo) / state["plan"]
+            if pathlib.Path(edited_path).resolve() != plan_path.resolve():
+                continue
+
+            plan_lines = plan_path.read_text().splitlines()
+            plan = plan_format.parse_plan_with_closing_phases(plan_lines)
+            failure = plan_write_failure(plan, plan_lines, state["plan"], pathlib.Path(repo))
+            if failure:
+                print(failure, file=sys.stderr)
+                sys.exit(2)
+            return
     except ValueError:
         return
     except (OSError, StateFileError) as error:
@@ -287,24 +338,32 @@ def plan_write_failure(plan, plan_lines, plan_name, repo_dir):
 
 
 def command_say_hook():
-    # Stop hook: print the saved user-facing text as the hook's systemMessage, keep a copy in say.log, empty say.md.
-    # A child session of the scripted review loop sets CLAUDE_FORMAT_HOOK_OFF: its Stop must not take the main
-    # session's text.
+    # Stop hook: print the saved user-facing text of the cwd's and the session's repos as one systemMessage, keep a copy
+    # in each say.log, empty each say.md. A child session of the scripted review loop sets CLAUDE_FORMAT_HOOK_OFF: its
+    # Stop must not take the main session's text.
     if os.environ.get("CLAUDE_FORMAT_HOOK_OFF"):
         return
     try:
         event = json.loads(sys.stdin.read() or "{}")
-        directory = state_dir(pathlib.Path(event.get("cwd") or os.getcwd()))
-        if directory is None or not say_file_in(directory).exists():
-            return
-        say_path = say_file_in(directory)
-        is_stale = time.time() - say_path.stat().st_mtime > SAY_MAX_AGE_SECONDS
-        text = say_path.read_text().strip()
-        say_path.write_text("")
-        if not text or is_stale:
-            return
-        with open(directory / "say.log", "a") as log_file:
-            log_file.write(f"--- {datetime.datetime.now().isoformat()}\n{text}\n")
-        print(json.dumps({"systemMessage": text}))
+        event.setdefault("cwd", os.getcwd())
+        texts = [text for _, directory in hook_repo_dirs(event) if (text := take_say_text(directory))]
+        if texts:
+            print(json.dumps({"systemMessage": "\n\n".join(texts)}))
     except Exception as error:
         print(f"code-step say-hook: {error}", file=sys.stderr)
+
+
+def take_say_text(directory):
+    # The fresh text in the folder's say.md, logged to say.log, or None. Empties say.md either way.
+    say_path = say_file_in(directory)
+    if not say_path.exists():
+        return None
+    is_stale = time.time() - say_path.stat().st_mtime > SAY_MAX_AGE_SECONDS
+    text = say_path.read_text().strip()
+    say_path.write_text("")
+    if not text or is_stale:
+        return None
+
+    with open(directory / "say.log", "a") as log_file:
+        log_file.write(f"--- {datetime.datetime.now().isoformat()}\n{text}\n")
+    return text

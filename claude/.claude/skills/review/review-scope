@@ -18,8 +18,8 @@
 # With caller=, pipes {skill, caller} to `ledger write review_scope`, which adds the
 # time, repo and session. The write runs only while the metrics switch is on and `jq` is on PATH. It
 # never fails the caller and never touches stdout; `ledger write` may still print to stderr.
-# With no `ledger` on PATH `ledger-write` drops the row and prints one stderr line; the scope
-# prints as usual.
+# With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) `ledger-write` drops the row and
+# prints one stderr line; the scope prints as usual.
 #
 # Exit 3 (reason on stderr, stdout stops after BRANCH) when no merge base is found, no base= was given,
 # and HEAD has commits that no other branch or remote ref has: the scope would silently drop them.

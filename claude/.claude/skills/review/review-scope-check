@@ -97,7 +97,10 @@ mkdir -p "$fakehome/.claude"
 
 if command -v ledger >/dev/null 2>&1; then
   ledger_root="$work/ledger-root"
-  review_scope_rows() { AGENT_LEDGER_ROOT="$ledger_root" ledger query "select skill, caller from review_scope" | tail -n +2; }
+  review_scope_rows() { # the worker runs first so the cache is not behind; its errors go to stderr
+    AGENT_LEDGER_ROOT="$ledger_root" ledger worker --once >/dev/null || return
+    AGENT_LEDGER_ROOT="$ledger_root" ledger query "select skill, caller from review_scope" | tail -n +2
+  }
 
   # switch absent: no row
   AGENT_LEDGER_ROOT="$ledger_root" HOME="$fakehome" "$scope" root="$work/wt" caller=review >/dev/null

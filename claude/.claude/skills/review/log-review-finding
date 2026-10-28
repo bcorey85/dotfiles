@@ -110,9 +110,9 @@
 # the caller passes finding_id= or run_id=. A later row for the same finding_id
 # supersedes the earlier one, so an ask outcome passes the id its ask row printed.
 # An ask outcome (actioned=ask with ask_outcome=) with no finding_id writes nothing,
-# prints one stderr line and exits 0. With no `ledger` on PATH `ledger-write` drops the
-# row (kind=finding or run), prints one stderr line and everything else runs as before.
-# A row `ledger write` refuses exits 2.
+# prints one stderr line and exits 0. With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`)
+# `ledger-write` drops the row (kind=finding or run), prints one stderr line and everything
+# else runs as before. A row `ledger write` refuses exits 2.
 #
 # A row logged on a dirty tree carries snapshot=<sha>: a commit on HEAD of that tree, untracked
 # files included, kept under refs/review-snapshots/<id>. A later row for the same id sends the

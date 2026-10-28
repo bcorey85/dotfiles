@@ -280,7 +280,7 @@ findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome. Log each ask row with the same file and line as its file_line; the caller reads the id from that row, so leave finding_id out
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
-full_check: passed | failed (exit N) | not run (CI) | not run (timeout)  # the Step 6 result
+full_check: passed | failed (exit N) | setup fault (exit N) | not run (CI) | not run (timeout)  # the Step 6 result
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>

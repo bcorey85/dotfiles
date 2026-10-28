@@ -68,7 +68,8 @@ unmeasured: ""
   test-command rule, since no session listed either; a listed test command replaces only its own runner's derived
   tests; Django `-k`/`--tag` option handling and moving `runs_tests` were left as they are.
 - Master's `full_check.py` now carries the setup-fault reading and the failing-test lines, so the scripted loop and
-  the agent loop both print `setup fault (exit N)` and stop with `status: setup-fault`.
+  the agent loop both print `setup fault (exit N)` and stop with `status: setup-fault`. The agent's packet
+  `full_check` line lists that result.
 
 ## Watch
 

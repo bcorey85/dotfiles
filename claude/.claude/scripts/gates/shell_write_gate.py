@@ -5,6 +5,9 @@
   2. Redirection (>, >>) and tee onto a git-tracked file.
   3. Agent type `coder` (any coder variant, subagent or main session): a redirect or tee that creates a new file
      outside a temp dir, or whose target still holds a `$` after `$TMPDIR` and `$HOME` are expanded.
+  4. An interpreter (python, pypy, node, tsx, ts-node, bun, deno, ruby, perl; also behind npx or pnpm exec) run whose
+     inline code (`-c`, `-e`, `-p`, `--print`, `--eval`, `deno eval`) or untracked, not git-ignored script file opens
+     a file for writing and names a git-tracked file, as a string literal or as an argument.
 Only a `>` outside quotes is a redirect (a `>` inside a double-quoted `$(...)` is code and is read as one), and the
 body of a heredoc is not read as commands unless it feeds a shell interpreter (`bash <<EOF`); the `$(...)` and
 backtick spans of an unquoted heredoc body are. A command that names a program running code the parser does not read
@@ -13,8 +16,8 @@ tee targets, quotes ignored: those targets are checked only against git-tracked 
 A relative target resolves against the session cwd (`cwd` in the hook input); `cd` is not followed. The one
 exception is rule 3: once a `cd`, `pushd` or `popd` has run in command position before a relative target, rule 3 is
 skipped for that target, because the gate cannot know the directory. Rule 2 still checks it against the session cwd.
-Escape for rules 1-2 in the main session: a trailing `#skip-shell-write-gate` comment. A subagent (agent_id in the
-hook input) or a coder cannot use it. Fails closed on internal error.
+Escape for rules 1, 2 and 4 in the main session: a trailing `#skip-shell-write-gate` comment. A subagent (agent_id in
+the hook input) or a coder cannot use it. Fails closed on internal error.
 """
 import json
 import os
@@ -45,6 +48,26 @@ PERL_I = re.compile(r"(^|" + SPC + r")-[a-zA-Z]*i")
 PERL_PN = re.compile(r"(^|" + SPC + r")-[a-zA-Z]*[pn]")
 AWK_INPLACE = re.compile(r"(^|" + SPC + r")-i" + SPC + "*inplace")
 PRECHECK = re.compile(r"(-[a-zA-Z]*i|inplace|>|tee)")
+INTERPRETER = re.compile(r"python[\d.]*|pypy[\d.]*|node|nodejs|ruby|perl|tsx|ts-node|bun|deno")
+# The shell_command.INTERPRETER_FAMILIES entry that holds the flags of a program the gate reads.
+PROGRAM_FAMILIES = (
+    (re.compile(r"python[\d.]*|pypy[\d.]*"), "python"),
+    (re.compile(r"node|nodejs|tsx|ts-node|bun|deno"), "node"),
+    (re.compile(r"ruby"), "ruby"),
+    (re.compile(r"perl"), "perl"),
+)
+# Deno takes its config file after these flags.
+DENO_VALUE_FLAGS = ("-c", "--config")
+# Package runner flags that take the next word as their value.
+PACKAGE_RUNNER_VALUE_FLAGS = ("-p", "--package")
+FILE_WRITE = re.compile(r"""open\s*\([^)]*['"][rbt]*[wax+][rbt+]*['"]|\.write_(text|bytes)\s*\("""
+                        r"""|\b(writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream)\s*\("""
+                        r"""|\bDeno\.write(Text)?File(Sync)?\s*\(|\bBun\.write\s*\("""
+                        r"""|\b(File|IO)\.write\b|\bshutil\.(copy\w*|move)\s*\(|\bos\.(replace|rename)\s*\("""
+                        r"""|\bfileinput\.input\s*\([^)]*inplace\s*=\s*True"""
+                        r"""|\bopen\s*\(?\s*(my\s+)?[$\w]+\s*,\s*['"]\+?>""")
+STRING_LITERAL = re.compile(r"""(['"])([^'"\n]{1,512})\1""")
+MAX_SCRIPT_BYTES = 1_000_000
 DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
 DIRECTORY_COMMAND_TEXT = re.compile(r"(^|[\s;&|(){`])(cd|pushd|popd)(\s|$|[;&|)])")
 ESCAPE_HINT = (" If this deny is wrong (for example a command wrapper this gate does not recognize), re-run the "
@@ -194,14 +217,21 @@ def code_texts(code):
     return texts
 
 
-def is_git_tracked(path):
+def git_path_check(path, *git_command):
     try:
-        finished = subprocess.run(["git", "-C", shell_dirname(path), "ls-files", "--error-unmatch", "--",
-                                   shell_basename(path)],
+        finished = subprocess.run(["git", "-C", shell_dirname(path), *git_command, "--", shell_basename(path)],
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         return False
     return finished.returncode == 0
+
+
+def is_git_tracked(path):
+    return git_path_check(path, "ls-files", "--error-unmatch")
+
+
+def is_git_ignored(path):
+    return git_path_check(path, "check-ignore", "-q")
 
 
 def run(raw):
@@ -233,6 +263,14 @@ def run(raw):
     cannot_skip = subagent or coder
     if "#skip-shell-write-gate" in command and not cannot_skip:
         return
+
+    written_paths = {resolve_target(raw_target, cwd) for raw_target, _after in targets} - {None}
+    for segment in segments:
+        target = interpreter_written_target(segment, cwd, written_paths, command)
+        if target:
+            raise DenyError(deny_text("a script that writes " + target + " bypasses the Write/Edit hook pipeline.",
+                                      cannot_skip))
+
     if not PRECHECK.search(command):
         return
 
@@ -254,15 +292,127 @@ def run(raw):
 def in_place_target(segment, editor):
     """The file an in-place editor step names: its last word once redirections are dropped, or the whole segment
     when that word is an option or the editor itself."""
-    try:
-        commands = [words for words, _redirections in shell_command.parse_simple_commands(segment) if words]
-    except ValueError:
-        commands = [words_of(segment)]
-    words = commands[-1] if commands else []
+    words = shell_command.segment_words(segment)
     target = words[-1] if words else ""
     if not target or target.startswith("-") or target == editor:
         return segment
     return target
+
+
+def peel_package_runner(words):
+    """The words after an `npx` or `pnpm exec` call and its flags, so the program it runs is the command word."""
+    if not words:
+        return words
+
+    name = os.path.basename(words[0])
+    if name == "npx":
+        rest = words[1:]
+    elif name == "pnpm" and words[1:2] == ["exec"]:
+        rest = words[2:]
+    else:
+        return words
+
+    while rest and rest[0].startswith("-"):
+        takes_value = rest[0] in PACKAGE_RUNNER_VALUE_FLAGS
+        rest = rest[2:] if takes_value else rest[1:]
+    return rest
+
+
+def program_family(program):
+    for pattern, family in PROGRAM_FAMILIES:
+        if pattern.fullmatch(program):
+            return shell_command.INTERPRETER_FAMILIES[family]
+    return None
+
+
+def interpreter_code(segment, cwd, written_paths, command):
+    """(code, arguments) an interpreter step runs: the `-c`/`-e` code, or the text of an untracked script file. A
+    script the same command writes first (`cat > x.py <<EOF ... && python3 x.py`) does not exist yet, so its code is
+    the whole command, heredoc bodies included. None for any other step, a module run, or a git-tracked or
+    git-ignored script: tracked code is reviewed, and an ignored file is a build output or dependency rather than an
+    ad hoc edit."""
+    words = shell_command.command_after_wrappers(shell_command.segment_words(segment), peel_containers=False)
+    words = peel_package_runner(words)
+    if not words or not INTERPRETER.fullmatch(os.path.basename(words[0])):
+        return None
+
+    program = os.path.basename(words[0])
+    family = program_family(program)
+    arguments = words[1:]
+    if program == "deno" and arguments[:1] == ["eval"]:
+        code_arguments = arguments[1:]
+        while code_arguments and code_arguments[0].startswith("-"):
+            code_arguments = code_arguments[1:]
+        return (code_arguments[0], code_arguments[1:]) if code_arguments else None
+    if program in ("deno", "bun") and arguments[:1] == ["run"]:
+        arguments = arguments[1:]
+
+    value_options = set(family["value_options"])
+    if program == "deno":
+        value_options.update(DENO_VALUE_FLAGS)
+    inline_code = re.compile(r"-[a-zA-Z]*[" + family["inline_code_letters"] + "]")
+    index = 0
+    while index < len(arguments):
+        word = arguments[index]
+        index += 1
+        if inline_code.fullmatch(word) or word in family["inline_code_flags"]:
+            return (arguments[index], arguments[index + 1:]) if index < len(arguments) else None
+        if word in family["no_stdin_code_flags"]:
+            return None
+        if word in value_options:
+            index += 1
+            continue
+        if word.startswith("-"):
+            continue
+        script = resolve_target(word, cwd)
+        if script in written_paths:
+            return command, arguments[index:]
+        if script is None or not os.path.isfile(script) or is_git_tracked(script) or is_git_ignored(script):
+            return None
+        try:
+            if os.path.getsize(script) > MAX_SCRIPT_BYTES:
+                return None
+            with open(script, encoding="utf-8", errors="replace") as script_file:
+                return script_file.read(), arguments[index:]
+        except OSError:
+            return None
+    return None
+
+
+def write_statements(code):
+    """The text of each statement that holds a file write: the `;`-separated part of the write's line, so a tracked
+    file the code only reads elsewhere does not count."""
+    statements = []
+    for match in FILE_WRITE.finditer(code):
+        line_start = code.rfind("\n", 0, match.start()) + 1
+        line_end = code.find("\n", match.end())
+        line_end = len(code) if line_end == -1 else line_end
+        statement_start = code.rfind(";", line_start, match.start()) + 1 or line_start
+        statement_end = code.find(";", match.end(), line_end)
+        statement_end = line_end if statement_end == -1 else statement_end
+        statements.append(code[statement_start:statement_end])
+    return statements
+
+
+def interpreter_written_target(segment, cwd, written_paths, command):
+    """The git-tracked file an interpreter step opens for writing, else None: code with a file write whose statement
+    names a tracked file as a string literal, or a tracked file passed as an argument. A path the code builds at run
+    time, or holds in a variable set elsewhere, is not seen."""
+    found = interpreter_code(segment, cwd, written_paths, command)
+    if found is None:
+        return None
+
+    code, arguments = found
+    statements = write_statements(code)
+    if not statements:
+        return None
+
+    literals = [match.group(2) for statement in statements for match in STRING_LITERAL.finditer(statement)]
+    for candidate in literals + arguments:
+        path = resolve_target(candidate, cwd)
+        if path and os.path.isfile(path) and is_git_tracked(path):
+            return path
+    return None
 
 
 def check_written_target(raw_target, cwd, cannot_skip, coder, after_directory_change):

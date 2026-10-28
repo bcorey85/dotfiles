@@ -1961,10 +1961,16 @@ class CodeStepTest(unittest.TestCase):
 
     def test_coder_recommending_eng_spec_stops_instead_of_reviewing(self):
         self.begin_coder()
-        self.hook("coder", "This is architectural, I recommend /eng-spec.")
+        self.hook("coder", "This is architectural.\nRECOMMEND: eng-spec")
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("AGENT: review-loop", out)
+
+    def test_a_coder_report_that_only_mentions_eng_spec_goes_on_to_review(self):
+        out = self.coder_round("The task is not architectural, so no /eng-spec is needed.\n" + self.CODER_REPORT)
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
 
     def test_deleted_file_counts_as_changed(self):
         self.start_phase_one()
@@ -3145,7 +3151,7 @@ class CodeStepTest(unittest.TestCase):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nOpen question: which name should it use?")
 
     def test_asks_coder_already_done_line_with_an_eng_spec_recommendation_stops(self):
-        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nThe rest needs /eng-spec.")
+        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: eng-spec")
 
     def test_asks_coder_already_done_line_with_a_plan_impact_report_stops(self):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\n" + self.IMPACT_REPORT)

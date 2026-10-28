@@ -136,6 +136,7 @@ from code_step_review import (
     command_review_again,
     emit_plan_impact_modal,
     emit_review_dispatch,
+    is_capped_review,
     prior_issues,
 )
 from code_step_start import RESUME_ALIASES, command_start, emit_closing_skill, phase_label
@@ -311,7 +312,8 @@ def review_coder_report(repo_dir, state, handback):
     changed_now = file_hashes(repo_dir)
     changed_files = coder_changed_files(repo_dir, state, changed_now)
     outcome = unreviewable_outcome(repo_dir, state, report, changed_files, changed_now)
-    if outcome == "converged":
+    is_capped = is_capped_review(state)
+    if outcome == "converged" and not is_capped:
         return finish_without_review(
             repo_dir, state, changed_files, coder_stage,
             "The asks coder changed nothing, and named where each confirmed ask is already in the code. No review "
@@ -320,9 +322,9 @@ def review_coder_report(repo_dir, state, handback):
         return stop_on_coder_report(repo_dir, state, report, handback.get("agent_id"))
 
     asks_baseline = state.get("asksBaseline")
-    if is_ask_fix and asks_baseline is not None:
+    if is_ask_fix and asks_baseline is not None and not is_capped:
         # The review after an asks-coder covers only what the asks-coder changed. A state from before asksBaseline
-        # existed keeps the whole-phase scope.
+        # existed keeps the whole-phase scope, and so does a capped review: its carried findings may sit in any file.
         changed_files = asks_coder_changed_files(changed_now, asks_baseline)
         if all(name.lower().endswith(DOCS_SUFFIXES) for name in changed_files):
             return finish_without_review(repo_dir, state, changed_files, coder_stage,

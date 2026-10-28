@@ -225,6 +225,27 @@ class TestAuditRowTest(LoggerRepoCase):
         (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
         self.assertEqual((finding_row["path_key"], finding_row["line"]), ("src/app.test.ts", "12"))
 
+    def test_an_unquoted_spaced_result_is_refused_and_no_row_is_sent(self):
+        done = self.log([*RUN_ARGS, "result=NEEDS", "CHANGES"], expected_exit=1)
+
+        self.assertIn("'CHANGES' is not key=value", done.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
+    def test_a_result_outside_the_verdicts_is_refused_and_no_row_is_sent(self):
+        done = self.log([*RUN_ARGS, "result=plan-impact"], expected_exit=1)
+
+        self.assertIn("result=plan-impact is not PASS", done.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
+    def test_each_verdict_token_is_sent_as_given(self):
+        for verdict in ("PASS", "PASS_WITH_WARNINGS", "NEEDS_CHANGES", "NOT_DISPATCHED"):
+            with self.subTest(verdict=verdict):
+                self.log([*RUN_ARGS, f"result={verdict}"])
+
+        run_rows = fake_ledger.recorded_rows(self.ledger_env, "review_run")
+        self.assertEqual([run_row["result"] for run_row in run_rows],
+                         ["PASS", "PASS_WITH_WARNINGS", "NEEDS_CHANGES", "NOT_DISPATCHED"])
+
     def test_help_prints_usage_and_writes_nothing(self):
         for flag in ("--help", "-h"):
             with self.subTest(flag=flag):

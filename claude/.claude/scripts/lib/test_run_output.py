@@ -21,8 +21,8 @@ GO_PACKAGE_OK = re.compile(r"^ok[ \t]+\S+\t(?:[\d.]+s|\(cached\)).*$", re.MULTIL
 MAX_RUNNER_SUMMARIES = 5
 # The mark node --test's spec reporter prints in front of a summary line.
 INFO_MARK = "\N{INFORMATION SOURCE}"
-# The one-line summaries: pytest (with or without the `=` bars), vitest, jest, mocha, cargo, bun, playwright and
-# node --test.
+# The one-line summaries: pytest (with or without the `=` bars), vitest, jest, mocha, cargo, bun, playwright,
+# node --test and the dotfiles suite runner.
 SUMMARY_LINES = (
     re.compile(r"^=+ .*\b\d+ (?:passed|failed|errors?)\b.* in [\d.:]+s.*=+$", re.MULTILINE),
     re.compile(r"^\d+ (?:passed|failed|errors?)\b.* in [\d.:]+s\b.*$", re.MULTILINE),
@@ -33,6 +33,8 @@ SUMMARY_LINES = (
     re.compile(r"^[ \t]*[1-9]\d* pass$", re.MULTILINE),
     re.compile(r"^[ \t]*[1-9]\d* (?:passed|failed)\b.*\([\d.]+m?s\)$", re.MULTILINE),
     re.compile(rf"^(?:#|{INFO_MARK}) pass [1-9]\d*$", re.MULTILINE),
+    # The dotfiles suite runner's total: `N tests in M files, wall-clock ..., K failed`.
+    re.compile(r"^[1-9]\d* tests in \d+ files, .*\b\d+ failed$", re.MULTILINE),
     # The failure counts, kept only above zero: mocha, bun, node --test, playwright and go.
     re.compile(r"^[ \t]*[1-9]\d* failing\b.*$", re.MULTILINE),
     re.compile(r"^[ \t]*[1-9]\d* fail$", re.MULTILINE),
@@ -89,9 +91,9 @@ def passed_test_count(output):
 
 def runner_summaries(output, limit=MAX_RUNNER_SUMMARIES):
     """The runner's own summary lines in the output, in the order printed, without repeats, at most
-    `limit` (None for all): pytest, unittest and Django, vitest, jest, mocha, cargo, bun, playwright, node --test and
-    go. A chained command prints one per runner. Go's package lines count as one summary. Empty when the output
-    holds none."""
+    `limit` (None for all): pytest, unittest and Django, vitest, jest, mocha, cargo, bun, playwright, node --test,
+    go and the dotfiles suite runner. A chained command prints one per runner. Go's package lines count as one
+    summary. Empty when the output holds none."""
     found = []
     for pattern in SUMMARY_LINES:
         found += [(match.start(), match.group(0).strip(" =\t")) for match in pattern.finditer(output)]

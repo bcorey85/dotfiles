@@ -9,8 +9,10 @@
                                         bad packet once per agent so the loop can repair it, denies a hand-back (any
                                         status but plan-impact, in a repo whose CLAUDE.md does not say
                                         `Full suite: CI`) whose own transcript shows no full check after its
-                                        last code change (once per code change), and denies any call from an agent
-                                        whose report is already stored. Any other argument does nothing.
+                                        last code change (once per code change), denies a hand-back (any status but
+                                        plan-impact) whose files_touched names the dispatch prompt's plan file, and
+                                        denies any call from an agent whose report is already stored. Any other
+                                        argument does nothing.
 
 Importers use parse, validate, load, render, record, latest, hand_back_gap, false_clean_reason,
 ended_on_unreviewed_fix, fixed_paths, unreviewed_streak and unreviewed_fix_section. The store also holds
@@ -791,6 +793,21 @@ def unchecked_code_reason(event, session_id, agent_id, message):
     return review_loop_gate.GATE_REASON
 
 
+def plan_edit_reason(event, packet):
+    """review_loop_gate.PLAN_EDIT_REASON when the packet, of any status but plan-impact, has a files_touched that
+    names the plan file of the loop's dispatch prompt, else None. A transcript that cannot be read never blocks."""
+    if packet is None or packet["status"] == "plan-impact":
+        return None
+
+    try:
+        import review_loop_gate  # imports this module at its top, so it loads here, not at ours
+        transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(event))
+    except Exception as error:
+        print(f"handback hook: plan-file gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
+        return None
+    return review_loop_gate.plan_edit_reason(transcript, packet)
+
+
 def handle_dispatch(event, session_id, tool_input):
     """Record a review-loop dispatch, or a coder or reviewer step inside one."""
     subagent_type = str(tool_input.get("subagent_type") or "")
@@ -806,8 +823,8 @@ def handle_dispatch(event, session_id, tool_input):
 def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back. Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
-    unreviewed reason for a clean packet with no reviewer run, or review_loop_gate.GATE_REASON when no full check ran
-    after the last code change."""
+    unreviewed reason for a clean packet with no reviewer run, review_loop_gate.GATE_REASON when no full check ran
+    after the last code change, or review_loop_gate.PLAN_EDIT_REASON when the packet names the plan file."""
     session_id = event.get("session_id")
     if not session_id:
         return None
@@ -825,7 +842,7 @@ def handle_hook(event, kind):
         packet = load(message)
         status, problems = packet["status"], []
     except PacketError as error:
-        status, problems = "invalid", error.problems
+        packet, status, problems = None, "invalid", error.problems
     if problems and not was_recorded(session_id, agent_id, "rejected"):
         record(session_id, "rejected", agent_id=agent_id, problems=problems)
         return ("The review-loop packet does not parse: " + "; ".join(problems) +
@@ -837,9 +854,9 @@ def handle_hook(event, kind):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
-    unchecked_reason = unchecked_code_reason(event, session_id, agent_id, message)
-    if unchecked_reason:
-        return unchecked_reason
+    gate_reason = unchecked_code_reason(event, session_id, agent_id, message) or plan_edit_reason(event, packet)
+    if gate_reason:
+        return gate_reason
 
     unreviewed_fix = (status in CLEAN_STATUSES and "reviewer" in steps
                       and steps[-1:] == ["coder"])

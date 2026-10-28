@@ -1131,6 +1131,14 @@ class LedgerRowsTest(ReviewLoopGateTest):
         reason = json.loads(self.stop_with_packet(records))["reason"]
         self.assertIn("never edits the plan", reason)
 
+    def test_a_plan_file_in_files_touched_after_a_delivered_hand_back_passes(self):
+        handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
+                        "input": {"message": "status: converged"}}
+        delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
+                     result("toolu_hb", "delivered")]
+
+        self.assertEqual(self.stop_with_packet([*self.loop(FINDING_ROW, METRICS_ROW), *delivered]), "")
+
     def test_a_plan_path_that_ends_in_the_touched_path_is_blocked(self):
         records = self.loop(FINDING_ROW, METRICS_ROW, plan="/repo/docs/spec.md")
         self.assertIn("never edits the plan", json.loads(self.stop_with_packet(records, "docs/spec.md"))["reason"])

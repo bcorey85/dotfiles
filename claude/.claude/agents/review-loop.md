@@ -296,7 +296,7 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 ## What NOT to do
 
 - **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, say so in the packet and stop.
-- **Never put the plan file in `files_touched`, and never let a coder edit it.** The plan changes only through a plan-edit dispatch from the caller. A finding that needs a plan change returns as `status: plan-impact`. The stop hook blocks a packet that names the plan file.
+- **Never put the plan file in `files_touched`, and never let a coder edit it.** The plan changes only through a plan-edit dispatch from the caller. A finding that needs a plan change returns as `status: plan-impact`. The hand-back hook denies a packet that names the plan file.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
 - **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**

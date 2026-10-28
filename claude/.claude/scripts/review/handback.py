@@ -632,6 +632,17 @@ def session_file(session_id):
     return store_dir() / (safe + ".jsonl")
 
 
+ANY_AGENT = object()
+
+
+def session_rows(session_id, kind=None, agent_id=ANY_AGENT):
+    """The rows of the session's file in append order, only those of `kind` and of `agent_id` when given. Raises
+    ValueError for an empty session id. `agent_id=None` selects the rows that name no agent."""
+    return [row for row in script_utils.read_jsonl(session_file(session_id))
+            if (kind is None or row.get("kind") == kind)
+            and (agent_id is ANY_AGENT or row.get("agent_id") == agent_id)]
+
+
 def prune_stale():
     cutoff = time.time() - STALE_STORE_SECONDS
     directory = store_dir()
@@ -667,7 +678,7 @@ def latest(session_id):
     if not session_id:
         return standing
     try:
-        stored_rows = script_utils.read_jsonl(session_file(session_id))
+        stored_rows = session_rows(session_id)
     except ValueError:
         return standing
     for row in stored_rows:
@@ -689,11 +700,10 @@ def stop_rows_after(session_id, agent_id, since):
     if not session_id:
         return []
     try:
-        stored_rows = script_utils.read_jsonl(session_file(session_id))
+        stop_rows = session_rows(session_id, "stop", agent_id)
     except ValueError:
         return []
-    return [row for row in stored_rows
-            if row.get("kind") == "stop" and row.get("agent_id") == agent_id and row.get("ts", 0) >= since]
+    return [row for row in stop_rows if row.get("ts", 0) >= since]
 
 
 def settled_stop_row(session_id, agent_id, since):
@@ -752,15 +762,13 @@ def false_clean_reason(session_id):
 def loop_steps(session_id, agent_id):
     """The review-loop agent `agent_id`'s coder and reviewer dispatches, in order. Coders resumed with SendMessage are
     not counted: the hook sees only the recipient's id, not its type."""
-    stored_rows = script_utils.read_jsonl(session_file(session_id))
-    return [row["step"] for row in stored_rows if row.get("kind") == "step" and row.get("agent_id") == agent_id]
+    return [row["step"] for row in session_rows(session_id, "step", agent_id)]
 
 
 def unreviewed_streak(session_id):
     """How many of the session's latest hand-backs in a row were clean with no reviewer run. 0 when the latest one had
     a reviewer."""
-    stored_rows = script_utils.read_jsonl(session_file(session_id))
-    hand_backs = [row for row in stored_rows if row.get("kind") == "handback"]
+    hand_backs = session_rows(session_id, "handback")
 
     streak = 0
     for row in reversed(hand_backs):
@@ -772,8 +780,7 @@ def unreviewed_streak(session_id):
 
 def ended_on_unreviewed_fix(session_id, agent_id):
     """True when the latest stored hand-back of `agent_id` was clean and its last step was a coder after a reviewer."""
-    stored_rows = script_utils.read_jsonl(session_file(session_id))
-    hand_backs = [row for row in stored_rows if row.get("kind") == "handback" and row.get("agent_id") == agent_id]
+    hand_backs = session_rows(session_id, "handback", agent_id)
     return bool(hand_backs) and bool(hand_backs[-1].get("unreviewed_fix"))
 
 
@@ -781,7 +788,7 @@ def claim_no_review(session_id, agent_id):
     """True when `agent_id` is exempt from the reviewer rule: it was exempted before, or the session holds more
     no-review dispatches than exemptions, and this claims one. A dispatch row has no agent id, so a normal loop that
     skips review while an unclaimed no-review loop runs in parallel can take that exemption."""
-    stored_rows = script_utils.read_jsonl(session_file(session_id))
+    stored_rows = session_rows(session_id)
     exempted = [row for row in stored_rows if row.get("kind") == "no-review-exempt"]
     if any(row.get("agent_id") == agent_id for row in exempted):
         return True
@@ -794,16 +801,10 @@ def claim_no_review(session_id, agent_id):
 
 def was_recorded(session_id, agent_id, kind):
     """True when the session's file holds a row of this kind from this agent."""
-    stored_rows = script_utils.read_jsonl(session_file(session_id))
-    return any(row.get("kind") == kind and row.get("agent_id") == agent_id for row in stored_rows)
+    return bool(session_rows(session_id, kind, agent_id))
 
 
 # ---------- hook ----------
-
-def deny_line(reason):
-    return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                              "permissionDecisionReason": reason}})
-
 
 ALREADY_DELIVERED_REASON = ("Your report was already delivered; a second hand-back cannot reach the caller. Use "
                             "SendMessage for anything further, then stop.")
@@ -830,9 +831,7 @@ def open_work_reason(event):
 
 def last_unchecked_step(session_id, agent_id):
     """The last code step the hook saw when it denied agent_id for an unchecked change, or None."""
-    stored_rows = script_utils.read_jsonl(session_file(session_id))
-    steps = [row.get("last_code_step", 0) for row in stored_rows
-             if row.get("kind") == UNCHECKED_KIND and row.get("agent_id") == agent_id]
+    steps = [row.get("last_code_step", 0) for row in session_rows(session_id, UNCHECKED_KIND, agent_id)]
     return max(steps, default=None)
 
 
@@ -959,7 +958,7 @@ def command_hook(argv):
             return 0
         reason = handle_hook(json.load(sys.stdin), argv[0])
         if reason:
-            print(deny_line(reason))
+            script_utils.pre_tool_use_deny(reason)
     except Exception as error:
         print(f"handback hook: {error}", file=sys.stderr)
     return 0

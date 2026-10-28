@@ -67,6 +67,7 @@ DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule w
                   "place of `--by user`. A session ruling never changes the acceptance criteria.")
 MARK_CLEAN = "~/.claude/scripts/review/review-gate-mark clean"
 MARK_DIRTY = "~/.claude/scripts/review/review-gate-mark dirty"
+KEEP_DIRTY = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
 NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
 LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
@@ -75,7 +76,6 @@ PLAN_IMPACT = "plan-impact"
 NEW_FINDING_ID = "new-finding-id"
 # Exit code of `wait-for-loop`: non-zero so no caller reads it as a finished run, and not 2, the code of a real stop.
 WAIT_EXIT_CODE = 3
-VERBS = ("packet", "escape", "asks-done", "decide")
 
 
 class UsageError(Exception):
@@ -122,15 +122,15 @@ def read_state():
 
 
 def load_fix_state():
-    path = state_file()
-    if not path.exists():
-        raise UsageError(f"no packet was processed in {path.parent} (the state is kept per repo, and this call ran in "
-                         f"{pathlib.Path.cwd()}). If `packet` ran in another repo, run this call there; if it ran "
-                         "in none, run `packet` first.")
     state = read_state()
-    if state is None:
+    if state is not None:
+        return state
+    path = state_file()
+    if path.exists():
         raise UsageError(f"{path} is not readable JSON")
-    return state
+    raise UsageError(f"no packet was processed in {path.parent} (the state is kept per repo, and this call ran in "
+                     f"{pathlib.Path.cwd()}). If `packet` ran in another repo, run this call there; if it ran "
+                     "in none, run `packet` first.")
 
 
 def save_fix_state(state):
@@ -210,61 +210,61 @@ def stop_for_parse_failure(error, raw_message):
     print_action("stop-parse-failure",
                  "The review-loop packet did not parse. Nothing was routed, logged or posted.",
                  *[f"- {problem}" for problem in error.problems],
-                 f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command.",
+                 KEEP_DIRTY,
                  "Then show the user the raw packet and the problems above. Do not guess the missing fields.",
                  "Do not re-dispatch to repair the packet unless the user asks.")
     print("RAW PACKET (first 1500 chars):")
     print(raw_message[:1500])
 
 
+def update_skill_file(name, skill, update):
+    """Run `update(saved entry of this caller or None)` on <name> in the review-fix dir. It returns (the entry to save,
+    the result). The file is written only when the entry changed. Returns the result."""
+    path = review_fix_dir() / name
+    try:
+        saved = json.loads(path.read_text())
+    except (OSError, ValueError):
+        saved = {}
+    entry, result = update(saved.get(skill))
+    if saved.get(skill) != entry:
+        saved[skill] = entry
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(saved))
+    return result
+
+
 def count_hand_back_miss(skill, last_hand_back_id):
     """Misses of this caller since the session's last hand-back. /review and /fix each keep their own count; a new
     hand-back starts it again."""
-    path = review_fix_dir() / "misses.json"
-    try:
-        misses = json.loads(path.read_text())
-    except (OSError, ValueError):
-        misses = {}
-    entry = misses.get(skill) or {}
-    count = (entry.get("count", 0) if entry.get("since") == last_hand_back_id else 0) + 1
-    misses[skill] = {"since": last_hand_back_id, "count": count}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(misses))
-    return count
+    def count_miss(entry):
+        entry = entry or {}
+        count = (entry.get("count", 0) if entry.get("since") == last_hand_back_id else 0) + 1
+        return {"since": last_hand_back_id, "count": count}, count
+
+    return update_skill_file("misses.json", skill, count_miss)
 
 
 def stop_for_missing_hand_back(skill, last_hand_back_id):
     """The loop ended without calling SubagentHandback. The saved stage of any earlier run is left alone."""
     misses = count_hand_back_miss(skill, last_hand_back_id)
-    keep_dirty = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
     if misses < 2:
         print_action("stop-no-handback",
                      "The review-loop ended without calling SubagentHandback, so no packet is stored. Nothing was "
                      "routed, logged or posted, and the earlier run's state is untouched.",
                      "Re-dispatch review-loop once with the same arguments, then run `packet` again.",
-                     keep_dirty)
+                     KEEP_DIRTY)
         return
     print_action("stop-no-handback",
                  f"The review-loop ended {misses} times in a row without calling SubagentHandback. Nothing was routed, "
                  "logged or posted, and the earlier run's state is untouched.",
                  "Stop. Do not re-dispatch again. Show the user the loop's final text as it returned.",
-                 keep_dirty)
+                 KEEP_DIRTY)
 
 
 def waited_on_stop(skill, stop_ts):
     """True when this caller already got `wait-for-loop` for the stop row at `stop_ts`; otherwise records it. A new
     stop row has a new ts, so it waits again."""
-    path = review_fix_dir() / "waits.json"
-    try:
-        waits = json.loads(path.read_text())
-    except (OSError, ValueError):
-        waits = {}
-    if waits.get(skill) == stop_ts:
-        return True
-    waits[skill] = stop_ts
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(waits))
-    return False
+    return update_skill_file("waits.json", skill, lambda waited_ts: (stop_ts, waited_ts == stop_ts))
 
 
 def wait_for_loop(skill, stop_ts):
@@ -290,22 +290,16 @@ def wait_for_loop(skill, stop_ts):
 def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
     """The loop handed back clean with no reviewer run. The first time, the caller re-dispatches it at the same round
     count; the second time in a row, it stops."""
-    keep_dirty = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
     if unreviewed_in_a_row < 2:
-        print_action("stop-no-reviewer",
-                     "The review-loop handed back clean but dispatched no reviewer. Nothing was routed, logged or "
-                     "posted.",
-                     f"Re-dispatch review-loop once with the same arguments plus the line below, in place of any "
-                     f"`iter=` line, then run `packet --skill {skill}` again. Do not mark the gate clean.",
-                     f"iter={packet['iter']}",
-                     keep_dirty)
-        return 2
-
-    print_action("stop-no-reviewer",
-                 f"The review-loop handed back clean with no reviewer run {unreviewed_in_a_row} times in a row. "
+        lines = ("The review-loop handed back clean but dispatched no reviewer. Nothing was routed, logged or posted.",
+                 f"Re-dispatch review-loop once with the same arguments plus the line below, in place of any "
+                 f"`iter=` line, then run `packet --skill {skill}` again. Do not mark the gate clean.",
+                 f"iter={packet['iter']}")
+    else:
+        lines = (f"The review-loop handed back clean with no reviewer run {unreviewed_in_a_row} times in a row. "
                  "Nothing was routed, logged or posted.",
-                 "Stop. Do not re-dispatch again. Tell the user no reviewer ran, so the gate stays dirty.",
-                 keep_dirty)
+                 "Stop. Do not re-dispatch again. Tell the user no reviewer ran, so the gate stays dirty.")
+    print_action("stop-no-reviewer", *lines, KEEP_DIRTY)
     return 2
 
 
@@ -963,12 +957,12 @@ def command_decide(argv):
 
 def main():
     arguments = sys.argv[1:]
-    if not arguments or arguments[0] not in VERBS:
+    handlers = {"packet": command_packet, "escape": command_escape, "asks-done": command_asks_done,
+                "decide": command_decide}
+    if not arguments or arguments[0] not in handlers:
         print(__doc__)
         return 2
     command = arguments[0]
-    handlers = {"packet": command_packet, "escape": command_escape, "asks-done": command_asks_done,
-                "decide": command_decide}
     try:
         return handlers[command](arguments[1:]) or 0
     except PacketError as error:

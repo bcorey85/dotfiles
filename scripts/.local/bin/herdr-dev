@@ -12,7 +12,10 @@
 #   start_prompt    free text; with claude_session, the forked session starts
 #                   working on it at once. Any text up to 128 KiB is safe: it
 #                   reaches the pane through a temp file, not the typed command
-#                   line, and follows `--`.
+#                   line, and follows `--`. The file is removed only once claude
+#                   exits cleanly, so a failed start keeps the brief.
+#
+# Prints the claude pane's id, then the command typed into it, one per line.
 #
 # Layout:
 #   Tab 1 "code"     claude (40%) | nvim (60%). herdr auto-detects the claude
@@ -25,7 +28,9 @@
 #                      2. ~/.config/mprocs/projects/<basename>.yaml
 #
 # send-text writes literal text without submitting; send-keys enter is the
-# separate submit. Hence the run() helper.
+# separate submit. Hence the run() helper. A fresh pane's shell can take bytes
+# before its prompt is drawn, so start_in_fresh_pane() waits for the prompt and
+# clears the input line before it types.
 #
 # Under tuios the layout calls need a client on the workspace. tuios splits the
 # focused pane 50/50 whatever the --ratio, and opens a new tab untiled, so the
@@ -52,6 +57,14 @@ fi
 run() {
     herdr-api pane send-text "$1" "$2" >/dev/null
     herdr-api pane send-keys "$1" enter >/dev/null
+}
+
+# Run a command in a pane whose shell just started. The wait is best effort: a
+# prompt that never matches still gets the command after the timeout.
+start_in_fresh_pane() {
+    herdr-api pane wait-output "$1" --regex '\S' --timeout 10000 >/dev/null 2>&1 || true
+    herdr-api pane send-keys "$1" ctrl+u >/dev/null
+    run "$1" "$2"
 }
 
 # Split $1 and echo the new pane's id.
@@ -97,14 +110,13 @@ if [ -n "$claude_session" ]; then
     claude_cmd="claude --resume $claude_session --fork-session"
     if [ -n "$start_prompt" ]; then
         # The pane shell would expand quotes, $ and backticks typed into it, so
-        # the text travels in a file. The substitution deletes the file as soon
-        # as it has been read; the text is never re-parsed.
+        # the text travels in a file; the text is never re-parsed.
         prompt_file=$(mktemp)
         printf '%s' "$start_prompt" >"$prompt_file"
-        claude_cmd="$claude_cmd -- \"\$(cat '$prompt_file'; rm -f '$prompt_file')\""
+        claude_cmd="$claude_cmd -- \"\$(cat '$prompt_file')\" && rm -f '$prompt_file'"
     fi
 fi
-run "$agent" "$claude_cmd"
+start_in_fresh_pane "$agent" "$claude_cmd"
 
 editor=$(split "$agent" 0.4)
 herdr-api pane rename "$editor" editor >/dev/null
@@ -143,3 +155,5 @@ fi
 # focus-this-id form — so aim right from the claude pane.
 herdr-api tab focus "$code_tab" >/dev/null
 herdr-api pane focus --direction right --pane "$agent" >/dev/null
+
+printf '%s\n' "$agent" "$claude_cmd"

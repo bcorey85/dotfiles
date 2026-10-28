@@ -48,6 +48,20 @@ class AcReferenceFailuresTest(unittest.TestCase):
     def test_wording_on_the_next_line_counts(self):
         self.assertEqual(self.failures("spec_next_line.md"), [])
 
+    def test_a_backticked_snake_case_test_name_holding_ac_n_is_not_a_reference(self):
+        self.assertEqual(self.failures("spec_snake_case_test_names.md"), [])
+
+    def test_an_ac_n_joined_to_a_word_by_an_underscore_is_not_a_reference(self):
+        for text in ("test_ac1_x", "foo_AC2", "AC7_suffix", "ac7"):
+            with self.subTest(text=text):
+                self.assertEqual(plan_format.ac_reference_failures(f"Delete {text} now.\n", None), [])
+
+    def test_a_bare_reference_beside_punctuation_or_ticket_still_matches(self):
+        for text, expected in (("AC7", 1), ("(AC7)", 1), ("AC7.", 1), ("ticket AC7", 0), ("Ticket AC7", 0)):
+            with self.subTest(text=text):
+                failures = plan_format.ac_reference_failures(f"See {text} here.\n", None)
+                self.assertEqual(len(failures), expected)
+
     def test_duplicate_criteria_id_raises(self):
         repeated = fixture("criteria.md") + "\n" + fixture("criteria.md").splitlines()[2] + "\n"
         with self.assertRaises(plan_format.PlanFormatError):

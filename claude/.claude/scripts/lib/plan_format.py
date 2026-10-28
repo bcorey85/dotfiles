@@ -736,9 +736,10 @@ def manual_format_failure(plan_lines, plan_name, resume_line=""):
 # Acceptance-criteria cross-references. spec.md is written before acceptance-criteria.md, so a bare `AC<n>` in the spec
 # can only be the ticket's numbering, while the criteria file numbers its own. A bare `AC<n>` must therefore name
 # criterion n of the criteria file (the spec line shares at least two content words with it); a reference to the
-# ticket's number is written "ticket AC<n>".
+# ticket's number is written "ticket AC<n>". `AC` is upper case and stands alone: `ac3-evidence.md` and
+# `test_ac1_x` are names, not references.
 CRITERION_LINE = re.compile(r"^\s*[-*]\s+\**(AC\d+)\**\s*[:.—–-]*\s*(.*)$")
-AC_REFERENCE = re.compile(r"(?<![A-Za-z0-9])(?P<ticket>ticket\s+)?AC(?P<number>\d+)(?![A-Za-z0-9])", re.IGNORECASE)
+AC_REFERENCE = re.compile(r"(?<![A-Za-z0-9_])(?P<ticket>(?i:ticket)\s+)?AC(?P<number>\d+)(?![A-Za-z0-9_])")
 CONTENT_WORD = re.compile(r"[a-z]{4,}")
 AC_STOP_WORDS = frozenset({"that", "this", "with", "from", "when", "then", "than", "into", "must", "shall", "will",
                            "have", "does", "each", "every", "criterion", "criteria", "ticket", "spec", "plan"})

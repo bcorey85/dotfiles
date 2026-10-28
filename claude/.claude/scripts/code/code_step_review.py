@@ -794,7 +794,9 @@ def asks_coder_prompt(accepted_asks):
         "Run the typecheck, and lint and tests for only the files you changed, once, after all edits. "
         "If an ask turns out architectural, report back and recommend /eng-spec.",
         "For each ask whose change the code already makes, so that it needs no edit, add one line to your report: "
-        "`ALREADY-DONE: <ask number> — <file:line>`. Add that line for no other ask.",
+        "`ALREADY-DONE: <ask number> — <file:line>`. For an ask that only asks you to run checks, when they pass "
+        "with no edit, the line is `ALREADY-DONE: <ask number> — `<command>` -> exit 0`. Add that line for no "
+        "other ask.",
     ]
     return "\n".join(lines)
 

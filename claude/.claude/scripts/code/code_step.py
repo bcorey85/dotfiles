@@ -507,41 +507,9 @@ def resume_closing_skill(repo_dir, state):
     emit_closing_skill(repo_dir, state["plan"], state["phase"], state["title"], skill, section)
 
 
-def resume_start(repo_dir, state):
-    command_start([])
-
-
-def resume_done(repo_dir, state):
-    command_start(carried_start_words(state))
-
-
-def resume_after_coder(repo_dir, state):
-    command_after_coder(repo_dir, state, [])
-
-
-def resume_after_review(repo_dir, state):
-    command_after_review(repo_dir, state, [])
-
-
-def resume_after_plan_edit(repo_dir, state):
-    command_after_plan_edit(repo_dir, state, [])
-
-
-def ask_about_impact(repo_dir, state):
-    emit_plan_impact_modal(state["impact"], repo_dir, state.get("carriedFindings", []))
-
-
-def ask_about_asks(repo_dir, state):
-    ask_the_user(repo_dir, state, state["asks"])
-
-
 def ask_about_review_cap(repo_dir, state):
     ask_user(repo_dir, "The review-loop never handed back. If the user resumes it with SendMessage, run "
              "resume. If it died, invoke Skill code with `review-again`.")
-
-
-def resume_review_again(repo_dir, state):
-    command_review_again(repo_dir, state, [])
 
 
 def ask_about_critical_blocker(repo_dir, state):
@@ -569,11 +537,18 @@ def ask_about_coder_cap(repo_dir, state):
 
 # The step a route name runs. A route no entry names prints the saved state.
 RESUME_HANDLERS = {
-    "start": resume_start, "done": resume_done, "after-coder": resume_after_coder,
-    "after-review": resume_after_review, "after-plan-edit": resume_after_plan_edit, "ask-impact": ask_about_impact,
-    "ask-asks": ask_about_asks, "ask-coder": ask_about_stopped_coder, "ask-review-cap": ask_about_review_cap,
-    "ask-coder-cap": ask_about_coder_cap, "review-again": resume_review_again,
-    "ask-stale-phase": ask_about_stale_phase, "ask-critical-blocker": ask_about_critical_blocker,
+    "start": lambda repo_dir, state: command_start([]),
+    "done": lambda repo_dir, state: command_start(carried_start_words(state)),
+    "after-coder": lambda repo_dir, state: command_after_coder(repo_dir, state, []),
+    "after-review": lambda repo_dir, state: command_after_review(repo_dir, state, []),
+    "after-plan-edit": lambda repo_dir, state: command_after_plan_edit(repo_dir, state, []),
+    "review-again": lambda repo_dir, state: command_review_again(repo_dir, state, []),
+    "ask-impact": lambda repo_dir, state: emit_plan_impact_modal(state["impact"], repo_dir,
+                                                                 state.get("carriedFindings", [])),
+    "ask-asks": lambda repo_dir, state: ask_the_user(repo_dir, state, state["asks"]),
+    "ask-coder": ask_about_stopped_coder, "ask-review-cap": ask_about_review_cap,
+    "ask-coder-cap": ask_about_coder_cap, "ask-stale-phase": ask_about_stale_phase,
+    "ask-critical-blocker": ask_about_critical_blocker,
 }
 
 

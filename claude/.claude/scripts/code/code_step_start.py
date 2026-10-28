@@ -45,11 +45,11 @@ from code_step_core import (
     session_pin,
     stale_phase_reason,
     start_run,
+    state_dir,
     uncommitted_files,
 )
 from code_step_gates import derive_gate_commands
 from code_step_report import ENG_SPEC_BRIEF
-from code_step_restart import drop_open_run, reopens_stopped_run
 from code_step_start_args import (
     START_MODIFIERS,
     RepoFlagError,
@@ -237,6 +237,23 @@ def plain_task_words(parsed):
 
     plan_words, _, phase_id, has_phase_flag = split_plan_words(words, parsed)
     return [] if plan_words or phase_id or has_phase_flag else words
+
+
+def reopens_stopped_run(previous):
+    # A run that stopped on the coder's report, in the session that now runs `start` again: the session has seen the
+    # report and starts over on its own word.
+    pinned = session_pin()
+    return (previous.get("stage") == "stopped" and not previous.get("stopReason")
+            and bool(previous.get("resumableCoderId")) and pinned is not None and previous.get("sessionId") == pinned)
+
+
+def drop_open_run(repo_dir, previous):
+    # The open run leaves no state behind: a later stop of this start leaves nothing open for the next `start` to
+    # refuse. The caller keeps `previous` in memory for the baseline of a restarted phase.
+    if not is_run_open(previous):
+        return
+
+    (state_dir(repo_dir) / "state.json").unlink(missing_ok=True)
 
 
 def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):

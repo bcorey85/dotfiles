@@ -20,8 +20,10 @@ unmeasured: ""
   and the FAIL, ERROR and FAILED lines. When the log holds none of them, it returns the log's last lines as before.
   The review loop's blocker carries those lines.
 - A failed check whose last lines show a missing path (git's `ambiguous argument ... unknown revision or path`, a
-  shell `cd` or script on a missing path) returns `not run (check-command error: <line>)`. It is no failure, so no
-  repair coder and no blocker.
+  shell `cd` or script on a missing path) returns `not run (check-command error: <line>)` when that path did not
+  exist at the diff base either (`--base`, HEAD by default; from the repo root or any folder below it). It is no
+  failure, so no repair coder and no blocker, and the hand-back shows the line. A path the diff removed or moved
+  stays a failure and goes to repair.
 - The check finder's prompt says a workflow's or job's `defaults.run.working-directory` holds for every step without
   its own, and to write each such step as `(cd <dir> && <step>)`.
 - The review-loop agent's Step 6 and packet line name the new result.

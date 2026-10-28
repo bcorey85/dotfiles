@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""A coder dispatch obligates /review before a commit in the repo the coder changed.
+"""A coder dispatch obligates /review before a commit.
 
   PostToolUse(Agent): a coder dispatch is recorded with the id of the agent it ran.
-  PreToolUse(Bash):   `git commit` in a dirty repo is denied, with the reason telling the session to run /review and
-                      commit after it converges; `review-gate-mark clean|dirty` records that state for every repo.
+  PreToolUse(Bash):   `git commit` in a dirty session is denied, with the reason telling the session to run /review
+                      and commit after it converges; `review-gate-mark clean|dirty` records that state.
                       `clean` is denied unless this session's latest stored review-loop hand-back (handback.py) is
                       converged or deferred.
 
-At commit time each recorded coder is scoped by its own transcript: the repos that hold the files its Edit, Write,
-MultiEdit and NotebookEdit calls named. A repo is dirty when a coder edited it, or when a coder cannot be scoped (no
-transcript, no edit on record, a file outside a repo) or a `dirty` mark stands, which dirties every repo. A coder's
-Bash writes are not read, so a coder that also edits a file elsewhere leaves a repo it changed only through Bash
-clean. A commit whose repo the gate cannot tell is judged against every repo.
+A coder dispatch or a `dirty` mark makes the session dirty, whatever repo the coder changed: every commit in any repo
+is judged.
 
 A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
 under the repo's top-level docs/ folder: the paths already staged (`git diff --cached`, run in the hook input's
@@ -38,9 +35,9 @@ substitution), then `commit` appears in it, or when a simple command runs git (a
 `env git` or a path counts), with any global options, and then `commit`. A global option the hook does not know may
 take a value, so `commit` anywhere after it counts. A command shlex cannot read counts when `git`, then only
 option-like words with an optional value each, then `commit` appears in it.
-The repo stays dirty; a later commit there that ships code is denied again.
+The session stays dirty; a later commit that ships code is denied again.
 
-A dirty repo still commits in four more cases, each checked against something a subagent cannot write:
+A dirty session still commits in four more cases, each checked against something a subagent cannot write:
   - the user's latest prompt in the main transcript starts with `[no-review]` (the user ordered this turn's commits
     without review; a task notification, a peer session's message, a compaction summary, a `!` shell echo and a tool
     result are not the user's prompt and are skipped)
@@ -48,28 +45,23 @@ A dirty repo still commits in four more cases, each checked against something a 
   - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), so work
     that converged in /code's review-loop, or in /review, commits after a later coder dispatch that edited nothing
   - the session's latest review-loop hand-back is current, converged or deferred, came after the coder work that
-    made the repo dirty, and answers a review-loop dispatch of that repo (its `repo:` line, else the session cwd),
-    however the run that launched the loop closed.
-A command that changes no folder or repo commits in the one repo `git -C <dir>` names (every -C joined), relative
-to the hook input's cwd, else the cwd. A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or
-a git dir or work-tree option or variable, quotes and escapes resolved) is judged against every candidate repo
-(candidate_repo_dirs): the cwd plus each folder a word of the command names. Each candidate must be clean or earn
-one of the credits above. The gate never follows the chain's shape. A target no word names (a `$` or a backtick
-outside a single-quoted string, a comment or a quoted-heredoc message, `eval`, `source`, `.`, `popd`, `cd -`, a bare
-`pushd`, a git dir or work-tree option or variable) adds an unknown candidate.
-An unknown repo is judged against every repo and gets no merge, reviewed-tree or hand-back credit.
+    made the session dirty, and answers a review-loop dispatch of that repo (its `repo:` line, else the session
+    cwd), however the run that launched the loop closed.
+The last three credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
+`git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
+dir or work-tree option or variable, quotes and escapes resolved) or holds a `$` or backtick outside a single-quoted
+string, a comment or a double-quoted quoted-heredoc message earns no credit. So does a command with a step that is
+not a plain `git` command but has a word holding `commit` (`env -C <dir> git commit`, `time git commit`).
 
 State: ~/.claude/state/review-gate/<session>, one line per record: `clean` (a clean mark; earlier lines no longer
 count), or a JSON event {"kind": "dispatch"|"dirty", "ts", "agent"}. A plain `dirty` line, from
 before events carried a time, counts from the file's last change. Hook JSON in, one permissionDecision line out,
 exit 0. On an internal error PreToolUse asks the user; PostToolUse stays silent.
 """
-import contextlib
 import json
 import os
 import posixpath
 import re
-import shlex
 import sys
 import time
 
@@ -82,14 +74,13 @@ from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_f
 from shell_command import (
     command_after_wrappers,
     parse_simple_commands,
+    quoted_positions,
     redirection_writes_file,
     split_command_steps,
     split_simple_commands,
 )
 
 CODERS = ("coder", "coder-deep", "backend-coder", "backend-coder-deep", "frontend-coder", "frontend-coder-deep")
-# The tools that write a file, and the input key that names it.
-EDITING_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"}
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
 # A command that changes folder or repo anywhere in its text (cd, pushd, popd, or a git dir or work-tree option or
 # variable; eval, source and `.` are read from the command words). The gate never parses where the chain leads.
@@ -100,7 +91,6 @@ UNKNOWN_TARGET = re.compile(r"(?<![\w./-])(?:eval|source|popd)(?![\w./-])"
                             r"|(?<![\w./-])(?:cd|pushd)[ \t]+-(?![\w./-])|(?<![\w./-])pushd[ \t]*(?:$|[;&|)\n])"
                             r"|--git-dir|--work-tree|GIT_DIR|GIT_WORK_TREE",
                             re.MULTILINE)
-BARE_CD = re.compile(r"(?<![\w./-])cd[ \t]*(?:$|[;&|)\n])", re.MULTILINE)
 # The command words (first word of a simple command, quotes and escapes resolved) that change folder or repo.
 FOLDER_COMMAND_WORDS = ("cd", "pushd", "popd", "eval", "source", ".")
 # The word forms of the text alternatives in UNKNOWN_TARGET, for a command word written in a disguise.
@@ -108,7 +98,6 @@ UNKNOWN_COMMAND_WORDS = ("popd", "eval", "source", ".")
 # A double-quoted string or an escaped character stays; a single-quoted string and a comment are dropped. The comment
 # alternative comes last, so a `#` inside quotes is consumed by them.
 QUOTED_SPAN = re.compile(r"\"(?:\\.|[^\"\\])*\"|\\.|'[^']*'|(?:^|(?<=[\s;&|()]))#[^\n]*", re.DOTALL | re.MULTILINE)
-WORD_BREAK = re.compile(r"""[\s;&|()<>{}=`'"]+""")
 # `(?!-)`: `git commit-tree` and `git commit-graph` write objects and move no branch.
 COMMIT = re.compile(r"\bgit[ \t\r\f\v]+commit\b(?!-)")
 LINE_CONTINUATION = re.compile(r"\\\r?\n")
@@ -126,7 +115,9 @@ EXPANDING_CHARS = set("*?[]{}$`~\\\n")
 READ_ONLY_GIT = ("status", "diff", "log", "show", "rev-parse")
 READ_ONLY_PROGRAMS = ("echo", "printf", "true", "pwd", "ls")
 # A message word `$(cat <<'X'` + body + `X` + `)` runs nothing: the body is quoted and ends at the first line X.
-HEREDOC_MESSAGE = re.compile(r"\$\(cat <<'(?P<tag>[A-Za-z_]\w*)'\n(?:(?!(?P=tag)\n).*\n)*(?P=tag)\n\)")
+HEREDOC_WORD = re.compile(r"\$\(cat <<'(?P<tag>[A-Za-z_]\w*)'\n(?:(?!(?P=tag)\n).*\n)*(?P=tag)\n\)")
+# In the command text the message is a double-quoted string; unquoted, the output is split into words.
+HEREDOC_MESSAGE = re.compile(r'"' + HEREDOC_WORD.pattern + r'"')
 GIT_GLOBAL_OPTIONS_WITH_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix",
                                  "--config-env", "--attr-source")
 GIT_GLOBAL_FLAGS = ("-p", "--paginate", "-P", "--no-pager", "--bare", "--no-replace-objects", "--literal-pathspecs",
@@ -218,7 +209,7 @@ def runs_substitution(word):
     """True when a word holds `$` or a backtick, other than a whole quoted-heredoc message."""
     if "$" not in word and "`" not in word:
         return False
-    return HEREDOC_MESSAGE.fullmatch(word) is None
+    return HEREDOC_WORD.fullmatch(word) is None
 
 
 def is_known_git_global_option(option):
@@ -402,73 +393,29 @@ def subagent_transcript(transcript_path, agent_id):
     return os.path.join(os.path.splitext(transcript_path)[0], "subagents", f"agent-{agent_id}.jsonl")
 
 
-def edited_files(agent_transcript):
-    """The files an agent's Edit, Write, MultiEdit and NotebookEdit calls named in its transcript, or None when the
-    transcript cannot be read."""
-    edited = set()
-    try:
-        with open(agent_transcript, encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                try:
-                    record = json.loads(line)
-                except ValueError:
-                    continue
-                content = (record.get("message") or {}).get("content") if isinstance(record, dict) else None
-                if not isinstance(content, list):
-                    continue
-                for block in content:
-                    if not isinstance(block, dict) or block.get("type") != "tool_use":
-                        continue
-                    path_key = EDITING_TOOLS.get(block.get("name"))
-                    path = (block.get("input") or {}).get(path_key) if path_key else None
-                    if isinstance(path, str) and path:
-                        edited.add(path)
-    except OSError:
-        return None
-    return edited
-
-
-def file_repo(file_path, repo_tops):
-    """The top of the git work tree that holds file_path, or None. repo_tops caches the answer per folder."""
-    # A Write can make a new folder, so the nearest folder that exists is the one git is asked about.
-    folder = os.path.dirname(file_path)
-    while folder and not os.path.isdir(folder):
-        parent = os.path.dirname(folder)
-        folder = "" if parent == folder else parent
-    if folder not in repo_tops:
-        top = script_utils.repo_root(folder, timeout=GIT_TIMEOUT_SECONDS) if folder else None
-        repo_tops[folder] = str(top) if top else None
-    return repo_tops[folder]
-
-
-def coder_repos(transcript_path, agent_id, repo_tops):
-    """(the repo tops a coder agent edited files in, the last change to its transcript), or (None, 0) when the
-    gate cannot scope it: no transcript, no edit on record (it wrote through Bash only), or a file outside a repo
-    git can name."""
+def worked_until(transcript_path, agent_id):
+    """The last change to a coder agent's transcript, or 0 when it has none."""
     agent_transcript = subagent_transcript(transcript_path, agent_id)
-    edited = edited_files(agent_transcript) if agent_transcript else None
-    if not edited:
-        return None, 0
-    repos = {file_repo(path, repo_tops) for path in edited}
-    if None in repos:
-        return None, 0
-    return repos, os.path.getmtime(agent_transcript)
+    try:
+        return os.path.getmtime(agent_transcript) if agent_transcript else 0
+    except OSError:
+        return 0
 
 
-def dirty_since(events, repo_top, transcript_path):
-    """When the repo at repo_top became dirty: the latest dirty mark, or coder dispatch whose agent edited it or
-    cannot be scoped. A coder counts from its dispatch or its transcript's last change, whichever is later, since a
-    background coder edits after its dispatch is recorded. With repo_top None, every repo counts. None when the repo
-    is clean."""
-    repo_tops = {}
+def dirty_since(events, transcript_path):
+    """When the session became dirty: the latest dirty mark or coder dispatch. A coder counts from its dispatch or
+    its transcript's last change, whichever is later, since a background coder edits after its dispatch is
+    recorded. A coder with no agent id on record counts as dirty now, since its last edit cannot be read."""
     dirty_times = []
     for event in events:
         if event.get("kind") != "dispatch":
             dirty_times.append(event["ts"])
             continue
-        repos, worked_until = coder_repos(transcript_path, event.get("agent"), repo_tops)
-        if repos is None or repo_top is None or repo_top in repos:
-            dirty_times.append(max(event["ts"], worked_until))
+        agent_id = event.get("agent")
+        if not agent_id:
+            dirty_times.append(time.time())
+            continue
+        dirty_times.append(max(event["ts"], worked_until(transcript_path, agent_id)))
     return max(dirty_times, default=None)
 
 
@@ -541,15 +488,9 @@ def resolved_command_words(command):
 def names_unknown_target(command, command_words):
     """True when the command changes folder or repo to a place no word of it names: `$` or a backtick outside the
     spans that run nothing (a quoted-heredoc message, a single-quoted string, a comment), `eval`, `source`, `.`,
-    `popd`, `cd -`, a bare `pushd`, or a git dir or work-tree option or variable. A heredoc left after the message
-    heredocs are dropped may hold a quote that is no string, so its text is tested with the single-quoted spans kept."""
-    heredoc_removed = HEREDOC_MESSAGE.sub("", command)
-    if "<<" in heredoc_removed:
-        runs_nothing_removed = heredoc_removed
-    else:
-        runs_nothing_removed = QUOTED_SPAN.sub(lambda span: span.group() if span.group()[0] in "\"\\" else "",
-                                               heredoc_removed)
-    if "$" in runs_nothing_removed or "`" in runs_nothing_removed or UNKNOWN_TARGET.search(command):
+    `popd`, `cd -`, a bare `pushd`, or a git dir or work-tree option or variable. See has_substitution_text for the
+    heredoc text left after the message heredocs are dropped."""
+    if has_substitution_text(command) or UNKNOWN_TARGET.search(command):
         return True
     for words in command_words:
         if words[0] in UNKNOWN_COMMAND_WORDS or (words[0] == "pushd" and len(words) == 1):
@@ -559,61 +500,79 @@ def names_unknown_target(command, command_words):
     return False
 
 
-def candidate_repo_dirs(command, cwd):
-    """The directories a commit in the command may run in; None stands for one the gate cannot name. A command that
-    changes folder or repo (a cd, pushd, popd, eval, source, ., or a git dir or work-tree option or variable, quotes
-    and escapes resolved) is judged against every candidate. Any other command commits in the one directory
-    commit_repo_dir reads. Otherwise
-    every candidate counts, whatever the shape of the chain: the cwd, each word of the command (quoted words split
-    on spaces) that names a directory read from the cwd or from another candidate, and HOME for a bare `cd`. A `$`,
-    a backtick, `eval`, `source`, `popd`, `cd -`, a bare `pushd`, a git dir or work-tree option or variable adds
-    None. The trigger and the unknown target are read from the text and from the command words with their quotes
-    and escapes resolved, so `c\\d` and `'c'd` count as `cd`."""
+def readable_command(command):
+    """The command text with each double-quoted quoted-heredoc message emptied, then line continuations removed (a
+    backslash-newline in a quoted heredoc body is literal)."""
+    return LINE_CONTINUATION.sub("", empty_heredoc_messages(command))
+
+
+def empty_heredoc_messages(command):
+    """The command with each quoted-heredoc message that is a whole word emptied. A match whose opening quote closes
+    an earlier string (`-p""$(cat ...)""`) or whose end joins the next word is no whole word and stays."""
+    emptied = command
+    search_from = 0
+    while True:
+        message = HEREDOC_MESSAGE.search(emptied, search_from)
+        if message is None:
+            return emptied
+        before = emptied[message.start() - 1] if message.start() else " "
+        after = emptied[message.end()] if message.end() < len(emptied) else " "
+        starts_word = before.isspace() and message.start() - 1 not in quoted_positions(emptied)
+        ends_word = after.isspace() or after in ";&|()<>"
+        if not (starts_word and ends_word):
+            search_from = message.start() + 1
+            continue
+        emptied = emptied[:message.start()] + '""' + emptied[message.end():]
+        search_from = message.start() + 2
+
+
+def has_substitution_text(command):
+    """True when the command holds `$` or a backtick outside the spans that run nothing (a quoted-heredoc message, a
+    single-quoted string, a comment). A heredoc left after the message heredocs are dropped may hold a quote that is
+    no string, so its text is tested with the single-quoted spans kept."""
+    heredoc_removed = readable_command(command)
+    if "<<" in heredoc_removed:
+        runs_nothing_removed = heredoc_removed
+    else:
+        runs_nothing_removed = QUOTED_SPAN.sub(lambda span: span.group() if span.group()[0] in "\"\\" else "",
+                                               heredoc_removed)
+    return "$" in runs_nothing_removed or "`" in runs_nothing_removed
+
+
+def credit_repo_dirs(command, cwd):
+    """The directories whose merge, reviewed tree or hand-back can credit a commit in the command; None stands for
+    one the gate cannot name, which earns no credit. A command that changes folder or repo (a cd, pushd, popd, eval,
+    source, ., or a git dir or work-tree option or variable, quotes and escapes resolved, `c\\d` and `'c'd` counting
+    as `cd`) or holds a `$` or backtick outside the spans that run nothing earns no credit. Any other command commits
+    in the directories commit_repo_dirs reads."""
     command_words = resolved_command_words(command)
-    if not CHANGES_FOLDER.search(command) and not any(words[0] in FOLDER_COMMAND_WORDS for words in command_words):
-        return [commit_repo_dir(command, cwd)]
-
-    candidates = [os.path.normpath(cwd)] if cwd else [None]
-    if names_unknown_target(command, command_words) or not cwd:
-        candidates.append(None)
-    if BARE_CD.search(command) or ["cd"] in command_words:
-        candidates.append(os.path.expanduser("~"))
-
-    words = set(WORD_BREAK.split(command))
-    with contextlib.suppress(ValueError):
-        words.update(shlex.split(command))
-    words.discard("")
-    found_new = True
-    while found_new:
-        found_new = False
-        for base in [candidate for candidate in candidates if candidate]:
-            for word in words:
-                path = os.path.normpath(os.path.join(base, os.path.expanduser(word)))
-                if path not in candidates and os.path.isdir(path):
-                    candidates.append(path)
-                    found_new = True
-
-    # A folder outside every work tree holds no repo to commit in.
-    return [candidate for candidate in candidates
-            if candidate is None or script_utils.repo_root(candidate, timeout=GIT_TIMEOUT_SECONDS)]
+    changes_folder = CHANGES_FOLDER.search(command) or any(words[0] in FOLDER_COMMAND_WORDS for words in command_words)
+    if changes_folder or names_unknown_target(command, command_words):
+        return [None]
+    return commit_repo_dirs(command, cwd)
 
 
-def commit_repo_dir(command, cwd):
-    """The directory a `git commit` in the command runs in: the cwd, moved by each `git -C <dir>` before the
-    subcommand. None when the command cannot be read, holds no commit, or uses an option that moves the repo
-    (--git-dir, --work-tree) the gate does not follow."""
+def commit_repo_dirs(command, cwd):
+    """The directory of every `git commit` in the command: the cwd, moved by each `git -C <dir>` before the
+    subcommand. [None] when the command cannot be read, holds no commit, or any commit uses an option that moves the
+    repo (--git-dir, --work-tree) the gate does not follow."""
     if not cwd:
-        return None
-    for _, step in split_command_steps(LINE_CONTINUATION.sub("", command)):
+        return [None]
+    committed_dirs = []
+    for _, step in split_command_steps(readable_command(command)):
         try:
             simple_commands = split_simple_commands(step)
         except ValueError:
-            return None
+            return [None]
         for words in simple_commands:
             committed_in = commit_dir(words, cwd)
-            if committed_in is not None:
-                return committed_in or None
-    return None
+            if committed_in == "":
+                return [None]
+            if committed_in is None and any("commit" in word for word in words):
+                return [None]
+            if committed_in is not None and committed_in not in committed_dirs:
+                committed_dirs.append(committed_in)
+    return committed_dirs or [None]
 
 
 def commit_dir(words, directory):
@@ -625,6 +584,8 @@ def commit_dir(words, directory):
     while index < len(words) and words[index].startswith("-"):
         option = words[index]
         if option == "-C" and index + 1 < len(words):
+            if not words[index + 1]:
+                return ""
             directory = os.path.join(directory, words[index + 1])
             index += 2
         elif is_known_git_global_option(option) and not option.startswith(("--git-dir", "--work-tree")):
@@ -661,23 +622,22 @@ def review_handed_back_since(session, dirty_at, repo_top):
     return isinstance(handed_back_at, (int, float)) and handed_back_at > dirty_at
 
 
-def holds_unreviewed_work(repo_dir, events, session, transcript_path):
-    """True when a commit in repo_dir would ship coder work that no merge, reviewed tree or converged hand-back
-    covers. A repo_dir of None, or one outside a work tree, is judged against every repo."""
-    repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS) if repo_dir else None
-    repo_top = str(repo_top) if repo_top else None
-    dirty_at = dirty_since(events, repo_top, transcript_path)
-    if dirty_at is None:
+def earns_credit(repo_dir, dirty_at, session):
+    """True when a commit in repo_dir concludes a merge, commits the tree a converged review covered, or follows a
+    converged hand-back of that repo stored after dirty_at. A repo_dir of None, or one outside a work tree, earns
+    none."""
+    if repo_dir is None:
         return False
+    if concludes_merge(repo_dir) or reviewed_tree.is_reviewed(session, repo_dir):
+        return True
 
-    if repo_dir and (concludes_merge(repo_dir) or reviewed_tree.is_reviewed(session, repo_dir)):
-        return False
-    return not review_handed_back_since(session, dirty_at, repo_top)
+    repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
+    return review_handed_back_since(session, dirty_at, str(repo_top) if repo_top else None)
 
 
 def check_commit(command, root, state_file, session):
-    """Deny a commit when any directory it may run in holds unreviewed coder work, unless the user ordered it
-    without review or it ships only notes."""
+    """Deny a commit while the session holds unreviewed coder work in any repo, unless the user ordered it without
+    review, every directory it commits in earns credit, or it ships only notes."""
     events = gate_events(state_file)
     if not events:
         return
@@ -685,10 +645,8 @@ def check_commit(command, root, state_file, session):
         return
 
     cwd = jq_field(root, "cwd")
-    transcript_path = jq_field(root, "transcript_path")
-    dirty_dirs = [repo_dir for repo_dir in candidate_repo_dirs(command, cwd)
-                  if holds_unreviewed_work(repo_dir, events, session, transcript_path)]
-    if not dirty_dirs:
+    dirty_at = dirty_since(events, jq_field(root, "transcript_path"))
+    if all(earns_credit(repo_dir, dirty_at, session) for repo_dir in credit_repo_dirs(command, cwd)):
         return
     if ships_only_notes(command, cwd):
         return

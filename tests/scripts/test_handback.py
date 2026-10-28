@@ -339,6 +339,17 @@ class RenderTest(HandbackTestBase):
 
 
 class StoreTest(HandbackTestBase):
+    def test_a_dispatch_row_names_the_repo_its_prompt_or_cwd_holds(self):
+        with tempfile.TemporaryDirectory() as folder:
+            named, cwd_repo, outside = (os.path.join(folder, name) for name in ("named", "cwd", "outside"))
+            for repo in (named, cwd_repo):
+                subprocess.run(["git", "init", "-q", repo], check=True)
+            os.mkdir(outside)
+            self.assertEqual(handback.reviewed_repo("mode: review-first\nrepo: ../named\n", cwd_repo),
+                             os.path.realpath(named))
+            self.assertEqual(handback.reviewed_repo("mode: review-first\n", cwd_repo), os.path.realpath(cwd_repo))
+            self.assertIsNone(handback.reviewed_repo("mode: review-first\n", outside))
+
     def test_latest_reports_dispatch_handback_and_pending(self):
         self.assertEqual(handback.latest(SESSION),
                          {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False})

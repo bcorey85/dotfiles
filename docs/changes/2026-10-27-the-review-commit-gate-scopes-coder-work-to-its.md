@@ -25,9 +25,13 @@ unmeasured: ""
   - a coder that edited a file outside any repo;
   - a standing `dirty` mark;
   - a commit whose repo the gate cannot tell.
-- The session's latest review-loop hand-back lets the commit through when it is converged or deferred and came after
-  the coder work. That holds however the run that launched the loop closed, a manual tick included.
-- A merge commit gets merge credit after leading `cd <dir> &&` steps. Any other `cd`, `pushd` or `popd` gets no credit.
+- The session's latest review-loop hand-back lets the commit through when it is converged or deferred, came after
+  the coder work, and answers a review-loop dispatch of the commit's repo. That holds however the run that launched
+  the loop closed, a manual tick included. A review-loop dispatch row now records the repo it reviews.
+- A command with a `cd`, `pushd` or `popd` anywhere is judged against every candidate repo: the session cwd plus each
+  folder a word of the command names. Each candidate must be clean or carry merge, reviewed-tree or hand-back
+  credit. The gate does not follow the chain's shape. A target no word names (`$`, a backtick, `eval`, `popd`,
+  `cd -`) is judged against every repo.
 - A `[no-review]` order holds through records that are not the user's prompt: a peer session's message, a
   compaction summary, a `!` shell echo, a task notification and a tool result. A later human prompt still ends it.
 - `git commit-tree` and `git commit-graph` no longer count as a commit.
@@ -44,10 +48,13 @@ unmeasured: ""
   - `test_coder_work_in_one_repo_leaves_a_commit_in_another_repo_allowed`
   - `test_a_coder_with_no_edit_on_record_dirties_every_repo`
   - `test_a_converged_hand_back_after_the_coder_lets_the_commit_through_without_a_mark`
-  - `test_a_merge_commit_after_a_literal_cd_passes_and_other_cd_forms_get_no_merge_credit`
+  - `test_a_merge_commit_passes_after_any_cd_when_every_candidate_is_clean_or_merging`
+  - `test_a_cd_in_any_shape_is_judged_against_the_cwd_and_every_cd_target`
+  - `test_a_hand_back_of_another_repo_gives_this_repo_no_credit`
   - `test_a_no_review_order_survives_peer_messages_summaries_and_shell_echoes`
   - `test_a_human_prompt_after_the_order_still_ends_it`
   - `test_commit_tree_is_not_a_commit`
+- `tests/scripts/test_handback.py::StoreTest::test_a_dispatch_row_names_the_repo_its_prompt_or_cwd_holds`
 
 ## Result
 

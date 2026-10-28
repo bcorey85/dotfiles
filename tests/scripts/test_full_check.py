@@ -12,6 +12,11 @@ import unittest
 import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("FULL_CHECK_SCRIPT") or toolkit_paths.REVIEW_DIR / "full_check.py")
+sys.path.insert(0, str(SCRIPT.parent))
+import full_check  # noqa: E402
+
+# A command that prints a test runner's own summary line.
+PASSING_SUITE = "echo '3 passed in 0.1s'"
 
 
 class FullCheckTest(unittest.TestCase):
@@ -29,12 +34,36 @@ class FullCheckTest(unittest.TestCase):
             argv += ["--timeout", str(timeout)]
         return subprocess.run([*argv, "--", command], capture_output=True, text=True, timeout=60)
 
-    def test_a_passing_check_prints_passed(self):
-        completed = self.check("echo ok")
+    def test_a_passing_check_prints_passed_and_the_runner_summary(self):
+        completed = self.check(PASSING_SUITE)
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
-        self.assertEqual(self.log.read_text(), "ok\n")
+        self.assertEqual(completed.stdout.splitlines(), ["full check: passed", "summary: 3 passed in 0.1s"])
+        self.assertEqual(self.log.read_text(), "3 passed in 0.1s\n")
+
+    def test_an_exit_zero_with_no_runner_summary_is_unverified_not_passed(self):
+        completed = self.check("echo 496 tests registered")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.splitlines(),
+                         ["full check: unverified (exit 0, no runner summary)", "summary: not found"])
+        self.assertTrue(full_check.is_unverified("unverified (exit 0, no runner summary)"))
+        self.assertFalse(full_check.is_unverified("passed"))
+
+    def test_a_chained_command_prints_each_summary_joined_with_a_bar(self):
+        completed = self.check("echo '3 passed in 0.1s'; echo '  8 passing (2ms)'")
+
+        self.assertEqual(completed.stdout.splitlines()[1], "summary: 3 passed in 0.1s | 8 passing (2ms)")
+
+    def test_a_log_name_with_an_unfilled_placeholder_is_a_usage_error(self):
+        for name in ("review-gate-....log", "review-gate-<branch>.log", "review-gate->x.log"):
+            with self.subTest(name=name):
+                self.log = self.repo / name
+
+                completed = self.check(PASSING_SUITE)
+
+                self.assertEqual(completed.returncode, 2)
+                self.assertFalse(self.log.exists())
 
     def test_a_failing_check_prints_its_exit_code_and_the_log_tail(self):
         completed = self.check("echo the rounding test failed; exit 3")
@@ -82,16 +111,128 @@ class FullCheckTest(unittest.TestCase):
         self.assertFalse(marker.exists())
 
     def test_the_check_runs_when_claude_md_has_no_full_suite_line(self):
-        completed = self.check("echo ok", claude_md="Quality check: `make test`\n")
+        completed = self.check(PASSING_SUITE, claude_md="Quality check: `make test`\n")
 
         self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
 
     def test_a_misspelled_full_suite_line_still_runs_the_check(self):
         for line in ("Full suite: ci", "Full-suite: CI", "Full suite CI", "Full suite: CI runs it"):
             with self.subTest(line=line):
-                completed = self.check("echo ok", claude_md=line + "\n")
+                completed = self.check(PASSING_SUITE, claude_md=line + "\n")
 
                 self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
+
+    def test_a_package_manager_version_mismatch_is_a_setup_fault(self):
+        completed = self.check("echo 'ERR_PNPM_BAD_PM_VERSION  This project is configured to use v9'; exit 1")
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: setup fault (exit 1)")
+
+
+class FullCheckSideEffectsTest(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name) / "repo"
+        self.repo.mkdir()
+        self.log = pathlib.Path(scratch.name) / "review-gate.log"
+        for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@example.com"),
+                     ("config", "user.name", "T")):
+            subprocess.run(["git", *args], cwd=self.repo, check=True)
+        (self.repo / "generated.ts").write_text("generated v1\n")
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "files"], cwd=self.repo, check=True)
+
+    def check(self, command, timeout=60):
+        argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log), "--timeout", str(timeout)]
+        return subprocess.run([*argv, "--", command], capture_output=True, text=True, timeout=60)
+
+    def test_a_tracked_file_the_check_rewrote_and_a_file_it_created_are_named_and_left_in_place(self):
+        command = f"echo generated v2 > generated.ts; mkdir dist; echo built > dist/out.js; {PASSING_SUITE}"
+
+        completed = self.check(command)
+
+        self.assertEqual(completed.stdout.splitlines(), [
+            "full check: passed", "summary: 3 passed in 0.1s",
+            "changed by the check: generated.ts", "created by the check: dist/out.js"])
+        self.assertEqual("generated v2\n", (self.repo / "generated.ts").read_text())
+        self.assertTrue((self.repo / "dist" / "out.js").is_file())
+
+    def test_a_file_that_held_edits_before_the_check_and_was_rewritten_is_named_on_its_own_line(self):
+        (self.repo / "generated.ts").write_text("edited by the coder\n")
+
+        completed = self.check(f"echo rewritten > generated.ts; {PASSING_SUITE}")
+
+        self.assertEqual(completed.stdout.splitlines(), [
+            "full check: passed", "summary: 3 passed in 0.1s", "rewrote edited files: generated.ts"])
+
+    def test_exit_zero_with_a_summary_that_reports_failures_is_a_failure(self):
+        completed = self.check("echo '=== 3 failed, 1 passed in 0.1s ==='; true")
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 0, summary reports failures)")
+        self.assertTrue(full_check.is_failure("failed (exit 0, summary reports failures)"))
+
+    def test_a_failing_summary_after_the_fifth_is_still_a_failure(self):
+        command = ("for n in 1 2 3 4 5 6; do echo \"test result: ok. $n passed; 0 failed\"; done; "
+                   "echo '=== 2 failed, 1 passed in 0.1s ==='")
+
+        completed = self.check(command)
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 0, summary reports failures)")
+
+    def test_exit_zero_with_a_unittest_failed_line_is_a_failure(self):
+        completed = self.check("printf 'Ran 3 tests in 0.1s\\n\\nFAILED (failures=1)\\n'")
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 0, summary reports failures)")
+
+    def test_exit_zero_with_a_failure_count_in_a_runners_summary_is_a_failure(self):
+        cases = {
+            "mocha": "printf '  3 passing (9ms)\\n  2 failing\\n'",
+            "bun": "printf ' 3 pass\\n 2 fail\\n'",
+            "node test": "printf '# tests 5\\n# pass 3\\n# fail 2\\n'",
+            "playwright": "printf '  2 failed\\n  3 passed (5.2s)\\n'",
+            "go": "printf 'ok  \\texample.com/a\\t0.1s\\nFAIL\\texample.com/b\\t0.2s\\n'",
+        }
+        for runner, command in cases.items():
+            with self.subTest(runner):
+                completed = self.check(command)
+
+                self.assertEqual(completed.returncode, 1, completed.stdout)
+                self.assertEqual(completed.stdout.splitlines()[0],
+                                 "full check: failed (exit 0, summary reports failures)")
+
+    def test_exit_zero_summaries_with_no_failures_stay_passed(self):
+        cases = {
+            "all passed": "echo '=== 4 passed in 0.1s ==='",
+            "cargo zero failed": "echo 'test result: ok. 5 passed; 0 failed; 0 ignored'",
+            "mocha": "printf '  3 passing (9ms)\\n'",
+            "bun": "printf ' 3 pass\\n 0 fail\\n'",
+            "node test": "printf '# tests 3\\n# pass 3\\n# fail 0\\n'",
+            "playwright": "printf '  3 passed (5.2s)\\n'",
+            "go": "printf 'ok  \\texample.com/a\\t0.1s\\n'",
+        }
+        for name, command in cases.items():
+            with self.subTest(name):
+                completed = self.check(command)
+
+                self.assertEqual(completed.returncode, 0, completed.stdout)
+                self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
+
+    def test_a_check_that_times_out_still_names_what_it_rewrote_and_leaves_it(self):
+        completed = self.check("echo generated v2 > generated.ts; sleep 30", timeout=1)
+
+        self.assertEqual(completed.stdout.splitlines(),
+                         ["full check: not run (timeout)", "changed by the check: generated.ts"])
+        self.assertEqual("generated v2\n", (self.repo / "generated.ts").read_text())
+
+    def test_a_repo_that_leaves_its_log_inside_the_work_tree_does_not_report_the_log_as_created(self):
+        self.log = self.repo / "review-gate.log"
+
+        completed = self.check(PASSING_SUITE)
+
+        self.assertEqual(completed.stdout.splitlines(), ["full check: passed", "summary: 3 passed in 0.1s"])
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ import re
 
 import script_utils
 
+DONE_PREFIX = "- Done: "
 PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"
 PHASE_HEADING = re.compile(rf"^(#{{2,4}})\s+Phase\s+({PHASE_ID})(?![A-Za-z0-9])")
 MANUAL_HEADING = re.compile(r"^(#{1,6})\s+manual verification\b(.*)$", re.I)
@@ -479,7 +480,7 @@ def write_item_evidence(lines, items, evidence):
     lines). `items` come from open_success_items(lines); `evidence` has one text per item, in the same order."""
     written = list(lines)
     for item, text in reversed(list(zip(items, evidence, strict=True))):
-        written.insert(item["end"], f"  - Done: {text}")
+        written.insert(item["end"], f"  {DONE_PREFIX}{text}")
         written[item["index"]] = written[item["index"]].replace("[ ]", "[x]", 1)
     return written
 
@@ -577,6 +578,15 @@ def phase_text(plan_lines, number):
     if section is None:
         return None
     return "\n".join(plan_lines[section["start"]:section["end"]])
+
+
+def phase_wording(text):
+    """A phase section's text without what a run writes into it: checked boxes read as open and the `Done:` evidence
+    lines are dropped. Two sections with the same wording say the same thing to a coder."""
+    done_marker = DONE_PREFIX.rstrip()
+    lines = [re.sub(r"^(\s*[-*] )\[[xX]\]", r"\1[ ]", line) for line in text.split("\n")
+             if not line.strip().startswith(done_marker)]
+    return "\n".join(line.rstrip() for line in lines).strip()
 
 
 def ordered_pending(entries):

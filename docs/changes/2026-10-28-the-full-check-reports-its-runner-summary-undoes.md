@@ -49,7 +49,15 @@ unmeasured: ""
 
 ## Result
 
-Pending the full suite.
+- Full suite after the merge with the integration branch: 3553 tests in 94 files, 0 failed; ruff and the duplicate
+  check clean.
+- The review loop converged. Its open questions were decided: the check leaves the files it rewrote or created in
+  place rather than reverting them, since an edit made in the same work tree during the check must survive; a
+  rewritten file that held coder edits stays in the commit; an exit 0 whose summary counts failures is a failure; the
+  four work-tree snapshot implementations stay separate for now.
+- Merged with the pinned-Python, environment-gap and no-check-found changes. `run()` reads, in order: passed (or
+  unverified, or failed with exit 0), environment gap, setup fault, failed. A pinned-Python check with no runner
+  summary now reads `unverified`.
 
 ## Watch
 

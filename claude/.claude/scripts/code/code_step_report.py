@@ -90,6 +90,16 @@ def every_accepted_ask_already_done(repo_dir, state, report):
     return accepted_ask_numbers <= already_done_ask_numbers(repo_dir, report)
 
 
+ENG_SPEC_MARKER = "RECOMMEND: eng-spec"
+ENG_SPEC_BRIEF = f"If the task turns out architectural, end your report with the line `{ENG_SPEC_MARKER}`."
+ENG_SPEC_MARKER_LINE = re.compile(r"^[ \t>*`_-]*RECOMMEND[*`_]*:[ \t]*/?eng-spec[*`_.]*[ \t]*$", re.M | re.I)
+
+
+def recommends_eng_spec(report):
+    # Only the marker line the coder brief names escalates; a mention of /eng-spec in free text does not.
+    return bool(ENG_SPEC_MARKER_LINE.search(report))
+
+
 def why_by_file(report):
     grouped = {}
     for match in re.finditer(r"^WHY:\s*`?(\S+?)`?(?::|\s+)(\d+-\d+)\s*[—-]+\s*(.+)$", report, re.M):

@@ -151,6 +151,14 @@ def wait_for(check, timeout_seconds, interval_seconds):
         time.sleep(min(interval_seconds, remaining))
 
 
+USAGE_WORDS = ("--help", "-h")
+
+
+def usage_requested(args):
+    """True when one of the command-line words is exactly `--help` or `-h`."""
+    return any(word in USAGE_WORDS for word in args)
+
+
 def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None):
     """Run a command (a list, or a string for the shell) in cwd and return (exit code, stdout, stderr), both as text.
     `env`, when given, is the command's whole environment. When the command does not finish in `timeout` seconds, kill
@@ -510,6 +518,15 @@ def pre_tool_use_deny(reason):
                                              "permissionDecisionReason": reason}}))
 
 
+def agent_transcript_path(hook):
+    """The calling subagent's transcript: the path the hook event names, else the one under the session transcript."""
+    named = hook.get("agent_transcript_path")
+    if named:
+        return named
+    session_transcript = hook["transcript_path"]
+    return os.path.join(session_transcript[:-len(".jsonl")], "subagents", f"agent-{hook['agent_id']}.jsonl")
+
+
 def telemetry_switch_on():
     """The toolkit metrics switch from telemetry/telemetry_enabled.py. A missing helper counts as off."""
     try:
@@ -618,7 +635,7 @@ def paths_named(*texts):
     return paths
 
 
-def _nearest_existing_folder(path):
+def nearest_existing_folder(path):
     """The path itself when it is a folder, else the nearest parent that exists, so a file not yet written still
     has a folder to look from. Symlinks are resolved first, so a link points the search at its target."""
     folder = os.path.realpath(path)
@@ -638,7 +655,7 @@ def inside_git_work_tree(path, timeout_seconds=2):
     not. A symlink is followed to its target. The inside of a .git folder and a bare repo are not a work tree.
     Asks `git rev-parse --is-inside-work-tree` from the nearest existing folder. When git cannot run, does not
     answer in time or exits with an error, looks for a .git entry in that folder or a parent instead."""
-    folder = _nearest_existing_folder(path)
+    folder = nearest_existing_folder(path)
     answer = git_output(folder, "rev-parse", "--is-inside-work-tree", timeout=timeout_seconds)
     if answer is None:
         return _has_git_entry_above(folder)

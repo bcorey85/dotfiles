@@ -10,16 +10,21 @@ after it, `setup fault (exit N)` with the same when the environment could not ru
 that cannot start, no package manifest, no test found, a package-manager or engine version mismatch), `not run
 (timeout)` when the command runs past the limit, or `not run (CI)` when the repo's CLAUDE.md holds the line
 `Full suite: CI` (the command does not run then). A `passed` or `unverified` result is followed by `summary: <the
-runner summary lines joined with " | ">` or `summary: not found`.
+runner summary lines joined with " | ">` or `summary: not found`. `run` with no command returns `not run (no check
+found; ...)`.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
 (`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
-A command past the limit is killed with its whole process group, so no test process outlives the check.
+A command past the limit is killed with its whole process group, so no test process outlives the check. A repo with
+a `.python-version` file runs the command with the pyenv shims first on PATH. A failed check whose log says
+`No module named X`, for an X that the repo declares as a dependency (requirements*.txt, pyproject.toml, setup.cfg
+or Pipfile, by normalized name), prints `not run (environment gap: No module named 'X')`.
 Exit 0, or 1 when the check failed or hit a setup fault; 2 for a usage error, such as a --log path that still holds
 a template placeholder.
 """
 
 import argparse
+import configparser
 import os
 import pathlib
 import re
@@ -27,6 +32,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import tomllib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "lib"))
 from check_output import is_setup_fault, tail_with_failing_tests
@@ -51,6 +57,9 @@ NOT_RUN_TIMEOUT = "not run (timeout)"
 # The check could not run here: no program, a runner that cannot start, no package manifest, no test found, or a
 # package-manager or engine version mismatch.
 SETUP_FAULT = "setup fault"
+NOT_RUN_NO_CHECK = "not run (no check found; the coder's scoped tests stand)"
+MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)'?")
+REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 # Under the Bash tool's 600 s ceiling, so a loop's shell call ends before the tool moves it to the background.
 DEFAULT_TIMEOUT_SECONDS = 540
 TAIL_LINES = 40
@@ -64,6 +73,114 @@ def full_suite_runs_in_ci(repo):
 
     lines = claude_md.read_text(errors="replace").splitlines()
     return any(LIST_MARKER.sub("", line).strip() == FULL_SUITE_IN_CI for line in lines)
+
+
+def pinned_interpreter_env(repo, env):
+    """`env` with the pyenv shims first on PATH when the repo pins a Python with `.python-version`."""
+    check_env = dict(os.environ if env is None else env)
+    if not (pathlib.Path(repo) / ".python-version").is_file():
+        return check_env
+
+    pyenv_root = pathlib.Path(check_env.get("PYENV_ROOT") or pathlib.Path.home() / ".pyenv")
+    shims = pyenv_root / "shims"
+    if not shims.is_dir():
+        return check_env
+
+    check_env["PATH"] = os.pathsep.join([str(shims), check_env.get("PATH", "")])
+    return check_env
+
+
+def distribution_name(requirement):
+    """The normalized distribution name a requirement string starts with, or None."""
+    found = REQUIREMENT_NAME.match(requirement.strip())
+    if not found:
+        return None
+    return normalized_name(found.group(0))
+
+
+def normalized_name(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def requirements_txt_names(repo_path):
+    names = set()
+    for requirements in repo_path.glob("requirements*.txt"):
+        for line in requirements.read_text(errors="replace").splitlines():
+            if line.strip().startswith(("#", "-")):
+                continue
+            names.add(distribution_name(line))
+    return names
+
+
+def read_toml(path):
+    if not path.is_file():
+        return {}
+
+    try:
+        return tomllib.loads(path.read_text(errors="replace"))
+    except tomllib.TOMLDecodeError:
+        return {}
+
+
+def pyproject_names(repo_path):
+    pyproject = read_toml(repo_path / "pyproject.toml")
+    project = pyproject.get("project", {})
+    requirements = list(project.get("dependencies", []))
+    for extra in project.get("optional-dependencies", {}).values():
+        requirements += extra
+    for group in pyproject.get("dependency-groups", {}).values():
+        requirements += [entry for entry in group if isinstance(entry, str)]
+
+    poetry = pyproject.get("tool", {}).get("poetry", {})
+    poetry_tables = [poetry.get("dependencies", {}), poetry.get("dev-dependencies", {})]
+    poetry_tables += [group.get("dependencies", {}) for group in poetry.get("group", {}).values()]
+    for table in poetry_tables:
+        requirements += list(table)
+    return {distribution_name(requirement) for requirement in requirements}
+
+
+def setup_cfg_names(repo_path):
+    setup_cfg = repo_path / "setup.cfg"
+    if not setup_cfg.is_file():
+        return set()
+
+    parser = configparser.ConfigParser()
+    try:
+        parser.read_string(setup_cfg.read_text(errors="replace"))
+    except configparser.Error:
+        return set()
+
+    requirements = parser.get("options", "install_requires", fallback="").splitlines()
+    if parser.has_section("options.extras_require"):
+        for _, extra in parser.items("options.extras_require"):
+            requirements += extra.splitlines()
+    return {distribution_name(requirement) for requirement in requirements}
+
+
+def pipfile_names(repo_path):
+    pipfile = read_toml(repo_path / "Pipfile")
+    packages = [*pipfile.get("packages", {}), *pipfile.get("dev-packages", {})]
+    return {normalized_name(package) for package in packages}
+
+
+def declared_distributions(repo):
+    """The normalized distribution names the repo's dependency files declare."""
+    repo_path = pathlib.Path(repo)
+    names = requirements_txt_names(repo_path) | pyproject_names(repo_path)
+    names |= setup_cfg_names(repo_path) | pipfile_names(repo_path)
+    names.discard(None)
+    return names
+
+
+def environment_gap(repo, log_text):
+    """The `No module named 'X'` line of a failed check whose X the repo declares as a dependency, or None."""
+    declared = declared_distributions(repo)
+    for found in MISSING_MODULE.finditer(log_text):
+        module = found.group(1)
+        top_level = module.split(".")[0]
+        if normalized_name(top_level) in declared:
+            return f"No module named '{module}'"
+    return None
 
 
 def run_check_command(repo, check_command, log, timeout, env, on_start):
@@ -90,7 +207,10 @@ def run(repo, check_command, log, timeout, env=None, on_start=None):
     details = {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
     if full_suite_runs_in_ci(repo):
         return NOT_RUN_CI, "", details
+    if check_command is None:
+        return NOT_RUN_NO_CHECK, "", details
 
+    env = pinned_interpreter_env(repo, env)
     before = take(repo)
     exit_code = run_check_command(repo, check_command, log, timeout, env, on_start)
 
@@ -110,6 +230,9 @@ def run(repo, check_command, log, timeout, env=None, on_start=None):
         return (PASSED if all_summaries else UNVERIFIED), tail, details
 
     tail = tail_with_failing_tests(output, tail)
+    gap = environment_gap(repo, output)
+    if gap:
+        return f"not run (environment gap: {gap})", tail, details
     # A missing module is a code failure here: the change may use a dependency it did not declare.
     if is_setup_fault(exit_code, output, repo, include_missing_modules=False):
         return f"{SETUP_FAULT} (exit {exit_code})", tail, details

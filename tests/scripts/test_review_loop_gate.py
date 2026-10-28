@@ -112,6 +112,30 @@ class ReviewLoopGateTest(unittest.TestCase):
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "agentId: a7bf12f9c51bc4875")]
         self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
 
+    def test_a_delivered_hand_back_ends_the_full_check_block_but_a_stop_without_one_keeps_it(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
+                        "input": {"message": "status: converged"}}
+        delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
+                     result("toolu_hb", "delivered")]
+        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertEqual(self.stop([*records, *delivered]), "")
+
+    def test_a_denied_hand_back_does_not_end_the_full_check_block(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
+                        "input": {"message": "status: converged"}}
+        denied = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
+                  {"type": "user", "message": {"role": "user", "content": [
+                      {"type": "tool_result", "tool_use_id": "toolu_hb", "content": "denied", "is_error": True}]}}]
+        self.assertIn("No full check ran", json.loads(self.stop([*records, *denied]))["reason"])
+
+    def test_a_plan_impact_report_owes_no_full_check(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        out = self.stop(records, last_assistant_message="status: plan-impact\niter: 1\nplan_impact: a, b\n")
+        self.assertNotIn("No full check ran", out)
+
     def test_full_check_after_reviewed_coder_passes(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
@@ -152,6 +176,22 @@ class ReviewLoopGateTest(unittest.TestCase):
         repo = self.repo_with_claude_md("# Repo\n\n- Full suite: CI\n")
 
         self.assertEqual(self.stop(records, cwd=repo), "")
+
+    def test_a_loop_reviewing_a_repo_whose_full_suite_runs_in_ci_owes_no_full_check_from_another_cwd(self):
+        reviewed = self.repo_with_claude_md("# Repo\n\n- Full suite: CI\n")
+        other = self.repo_with_claude_md("# Other repo\n")
+        records = [user(f"review loop\nrepo: {reviewed}"), dispatch("toolu_coder", "coder"),
+                   result("toolu_coder", "done")]
+
+        self.assertEqual(self.stop(records, cwd=other), "")
+
+    def test_a_loop_reviewing_a_repo_without_the_ci_line_owes_a_full_check_though_the_cwd_has_it(self):
+        reviewed = self.repo_with_claude_md("# Repo\n")
+        other = self.repo_with_claude_md("- Full suite: CI\n")
+        records = [user(f"review loop\nrepo: {reviewed}"), dispatch("toolu_coder", "coder"),
+                   result("toolu_coder", "done")]
+
+        self.assertIn("No full check ran", json.loads(self.stop(records, cwd=other))["reason"])
 
     def test_a_repo_without_the_exact_full_suite_line_still_owes_a_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
@@ -1015,6 +1055,21 @@ class LedgerRowsTest(ReviewLoopGateTest):
         nit_row = FINDING_ROW.replace("disposition=fix", "disposition=nit")
         self.assertEqual(self.stop(self.loop(FINDING_ROW, nit_row, METRICS_ROW, plan="other.md"),
                                    last_assistant_message=packet), "")
+
+    def test_a_delivered_stop_with_missing_nit_rows_tells_the_loop_to_stop_not_return_the_packet(self):
+        packet = (PACKET % "b.py").replace("nit: []", 'nit: ["b.py:4 rename x - applied"]')
+        doubled = FINDING_ROW.replace("line=3", "line=5")
+        handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
+                        "input": {"message": "status: converged"}}
+        delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
+                     result("toolu_hb", "delivered")]
+        records = [*self.loop(FINDING_ROW, doubled, METRICS_ROW, plan="other.md"), *delivered]
+
+        reason = json.loads(self.stop(records, last_assistant_message=packet))["reason"]
+
+        self.assertIn("1 nit(s) but only 0 `disposition=nit` row(s)", reason)
+        self.assertIn("already delivered", reason)
+        self.assertNotIn("return the packet", reason)
 
     def test_a_metrics_line_whose_counts_differ_from_the_packet_is_blocked(self):
         undercount = METRICS_ROW.replace("fixed=1", "fixed=0 skipped_fp=0")

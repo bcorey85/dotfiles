@@ -135,6 +135,14 @@ class LinesAddedTest(unittest.TestCase):
         self.assertEqual([], script_utils.lines_added(["a", "b"], ["a"]))
 
 
+class UsageRequestedTest(unittest.TestCase):
+    def test_only_an_exact_help_word_asks_for_usage(self):
+        cases = [(["--help"], True), (["decide", "-h"], True), (["--helpful"], False), (["help"], False), ([], False)]
+        for words, expected in cases:
+            with self.subTest(words=words):
+                self.assertEqual(expected, script_utils.usage_requested(words))
+
+
 class WaitForTest(unittest.TestCase):
     def test_returns_the_value_the_check_finds_at_once(self):
         self.assertEqual("row", script_utils.wait_for(lambda: "row", 5, 0.01))
@@ -933,6 +941,14 @@ class WriteTextAtomicallyTest(unittest.TestCase):
 
         self.assertEqual("old", target.read_text())
         self.assertEqual(["state.json"], sorted(path.name for path in self.folder.iterdir()))
+
+
+class AgentTranscriptPathTest(unittest.TestCase):
+    def test_the_path_the_event_names_wins_over_the_one_built_from_the_session_transcript(self):
+        named = {"agent_transcript_path": "/t/named.jsonl", "transcript_path": "/t/s.jsonl", "agent_id": "a1"}
+        built = {"transcript_path": "/t/s.jsonl", "agent_id": "a1"}
+        self.assertEqual("/t/named.jsonl", script_utils.agent_transcript_path(named))
+        self.assertEqual("/t/s/subagents/agent-a1.jsonl", script_utils.agent_transcript_path(built))
 
 
 class PopOptionTest(unittest.TestCase):

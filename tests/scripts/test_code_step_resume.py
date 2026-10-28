@@ -13,6 +13,7 @@ import time
 
 import test_code_step as base
 
+SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
 BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
 
 
@@ -97,15 +98,12 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("ACTION: dispatch", out)
         self.assertEqual("2", self.state()["phase"])
 
-    def test_start_with_a_phase_and_no_plan_before_task_text_is_refused_with_the_start_and_the_task_commands(self):
-        self.finish_phase_one()
-        before = self.state_bytes()
-
+    def test_start_with_a_phase_and_no_plan_and_no_saved_plan_before_task_text_is_refused_with_the_two_commands(self):
         out = self.step("start", "--phase", "2", "—", "brief")
 
         self.assert_refused_with_choices(out, "start --phase 2", "start --task '— brief'")
         self.assertIn("was not passed to the coder", out)
-        self.assertEqual(before, self.state_bytes())
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
 
     def test_start_with_a_replaced_verb_followed_by_words_is_refused_with_resume_and_the_task_command(self):
         self.finish_phase_one()
@@ -704,6 +702,363 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("ACTION: stop", out)
         self.assertIn("No coder report was saved", out)
         self.assertNotIn("AGENT: review-loop", out)
+
+    # ---------- a report whose launch row never reached the log ----------
+
+    def test_a_resume_takes_the_finished_report_of_a_coder_whose_launch_was_never_logged(self):
+        self.begin_coder()
+        self.age_dispatches(120)
+        self.set_state(dispatchAt=time.time() - 120)
+        self.hook("coder", self.CODER_REPORT, agent_id="a1", launched=False)
+        self.wait_env(5, "0.2")
+
+        out = self.step("resume")
+
+        self.assertNotIn("no Agent call for it was launched", out)
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual(2, len(self.events_named("dispatch")))
+
+    def test_a_resume_still_prints_the_dispatch_again_when_only_another_agents_report_is_logged(self):
+        self.begin_coder()
+        self.age_dispatches(120)
+        self.set_state(dispatchAt=time.time() - 120)
+        self.hook("review-loop", self.LOOP_OK, agent_id="a1", launched=False)
+        self.wait_env(5, "0.2")
+
+        out = self.step("resume")
+
+        self.assertIn("no Agent call for it was launched", out)
+
+    def test_a_resume_ignores_the_report_of_an_earlier_coder_round_when_the_new_dispatch_has_no_launch(self):
+        self.begin_coder()
+        self.hook("coder", self.CODER_REPORT, agent_id="a1", launched=False)
+        self.age_dispatches(240)
+        self.set_state(dispatchAt=time.time() - 120)
+        self.wait_env(5, "0.2")
+
+        out = self.step("resume")
+
+        self.assertIn("no Agent call for it was launched", out)
+        self.assertNotIn("AGENT: review-loop", out)
+
+    def test_a_resume_inside_the_launch_grace_does_not_take_an_unlaunched_report(self):
+        self.begin_coder()
+        self.hook("coder", self.CODER_REPORT, agent_id="a1", launched=False)
+        self.wait_env(1, "0.2")
+
+        out = self.step("resume")
+
+        self.assertNotIn("AGENT: review-loop", out)
+        self.assertEqual(1, len(self.events_named("dispatch")))
+        self.assertIn("ACTION: wait", out)
+
+    # ---------- --help and refused answers ----------
+
+    def test_help_after_a_verb_prints_its_usage_and_changes_nothing(self):
+        self.stop_the_coder_at_the_wait_cap(launched_as="a1")
+        before = self.state_bytes()
+        question_before = (self.repo / ".git/code-step/question.md").read_bytes()
+
+        verbs = ("resume", "decide", "abort", "status", "review-again", "verify", "tick", "asks-done", "skill-done",
+                 "hook", "stop-hook")
+        # A resume alias prints the usage of resume itself.
+        usage_verbs = {verb: verb for verb in verbs} | {"after-coder": "resume"}
+        for verb, usage_verb in usage_verbs.items():
+            for flag in ("--help", "-h"):
+                finished = base.run(self.repo, self.env, verb, flag)
+                self.assertEqual(0, finished.returncode, (verb, flag))
+                self.assertIn(f"usage: code_step.py {usage_verb}", finished.stdout)
+                self.assertNotIn("ACTION:", finished.stdout)
+                self.assertEqual(before, self.state_bytes(), (verb, flag))
+        self.assertEqual(question_before, (self.repo / ".git/code-step/question.md").read_bytes())
+
+    def test_help_after_resume_with_a_stopped_coder_waiting_does_not_send_it_an_answer(self):
+        self.stop_the_coder_at_the_wait_cap(launched_as="a1")
+        self.set_state(stage="stopped", resumableCoderId="a1", resumableCoderAt=time.time())
+        before = self.state_bytes()
+
+        finished = base.run(self.repo, self.env, "resume", "--help")
+
+        self.assertEqual(0, finished.returncode)
+        self.assertIn('usage: code_step.py resume ["<the user\'s answer', finished.stdout)
+        self.assertNotIn("The user answered", finished.stdout)
+        self.assertEqual(before, self.state_bytes())
+
+    def test_a_resume_answer_that_starts_with_a_dash_is_refused_and_changes_nothing(self):
+        self.stop_the_coder_at_the_wait_cap(launched_as="a1")
+        self.set_state(stage="stopped", resumableCoderId="a1", resumableCoderAt=time.time())
+        before = self.state_bytes()
+
+        finished = base.run(self.repo, self.env, "resume", "--hepl")
+
+        self.assertEqual(2, finished.returncode)
+        self.assertIn("an answer must not start with '-'", finished.stderr)
+        self.assertEqual("", finished.stdout)
+        self.assertEqual(before, self.state_bytes())
+
+    def test_a_resume_answer_with_a_dashed_later_word_is_accepted_and_a_dashed_first_word_is_refused(self):
+        self.stop_the_coder_at_the_wait_cap(launched_as="a1")
+        self.set_state(stage="stopped", resumableCoderId="a1", resumableCoderAt=time.time())
+
+        refused = base.run(self.repo, self.env, "resume", "-v")
+        accepted = base.run(self.repo, self.env, "resume", "use", "the", "-v", "flag")
+
+        self.assertEqual(2, refused.returncode)
+        self.assertIn("an answer must not start with '-'", refused.stderr)
+        self.assertEqual(0, accepted.returncode, accepted.stderr)
+        self.assertIn("The user answered: use the -v flag.", self.said())
+
+    # ---------- a stale phase ----------
+
+    def renumber_phase_one(self):
+        renumbered = self.plan_text().replace("## Phase 1: Walking skeleton", "## Phase 9: Other")
+        (self.repo / self.plan).write_text(renumbered)
+
+    def plan_with_phase_one_test_file_changed(self):
+        changed = self.plan_text().replace("**File**: `backend/src/orders.test.ts`",
+                                           "**File**: `backend/src/other.test.ts`")
+        self.assertNotEqual(changed, self.plan_text())
+        return changed
+
+    def test_a_resume_of_a_run_whose_phase_text_changed_offers_to_drop_it_and_start_the_next_open_phase(self):
+        self.begin_coder()
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        question_text = (self.repo / ".git/code-step/question.md").read_text()
+        self.assertIn("text of Phase 1", question_text)
+        self.assertIn("changed since the run started", question_text)
+        self.assertIn(self.own_command(f"start --restart {self.plan}"), question_text)
+        self.assertEqual("coder", self.state()["stage"])
+
+    def test_a_stale_resume_offers_the_restart_with_the_modifier(self):
+        self.begin_coder(start_options=("+deep",))
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+
+        self.step("resume")
+
+        question_text = (self.repo / ".git/code-step/question.md").read_text()
+        self.assertIn(self.own_command(f"start --restart {self.plan} +deep"), question_text)
+
+    def test_after_coder_over_a_changed_phase_goes_on_to_the_review_without_a_stale_question(self):
+        self.begin_coder()
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+        self.hook("coder", self.CODER_REPORT)
+
+        out = self.step("after-coder")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("stale", out)
+
+    def test_a_resume_during_the_plan_coder_does_not_call_an_edited_phase_stale(self):
+        self.adopt_plan_change_with_the_plan_coder_out()
+        self.assertEqual("plan-coder", self.state()["stage"])
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+
+        out = self.step("resume")
+
+        self.assertNotIn("ACTION: ask-user", out)
+        self.assertNotIn("stale", out)
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
+
+    def test_a_resume_during_the_impact_coder_does_not_call_an_edited_phase_stale(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.assertEqual("impact-coder", self.state()["stage"])
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+
+        out = self.step("resume")
+
+        self.assertNotIn("stale", out)
+        self.assertNotIn("stale", self.said())
+        question_path = self.repo / ".git/code-step/question.md"
+        self.assertTrue(not question_path.exists() or "stale" not in question_path.read_text())
+        self.assertEqual("impact-coder", self.state()["stage"])
+
+    def test_a_resume_at_a_plan_format_stop_does_not_call_an_edited_phase_stale(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.break_manual_section()
+        self.step("after-review")
+        self.assertEqual("plan-format", self.state()["stopReason"])
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+
+        self.step("resume")
+
+        self.assertIn("verify", self.said())
+        self.assertNotIn("stale", self.said())
+
+    def test_a_resume_answer_over_a_stale_phase_says_the_phase_is_stale_not_that_no_coder_waits(self):
+        self.stop_the_coder_at_the_wait_cap(launched_as="a1")
+        self.set_state(stage="stopped", resumableCoderId="a1", resumableCoderAt=time.time())
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+
+        out = self.step("resume", "use the -v flag")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("stale", (self.repo / ".git/code-step/question.md").read_text())
+        self.assertNotIn("no stopped coder waits", out)
+
+    def test_a_resume_of_a_run_whose_plan_file_is_gone_asks_about_the_stale_phase(self):
+        self.begin_coder()
+        (self.repo / self.plan).unlink()
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("cannot be read", (self.repo / ".git/code-step/question.md").read_text())
+
+    def test_a_resume_of_a_run_whose_phase_left_the_plan_says_so(self):
+        self.begin_coder()
+        self.renumber_phase_one()
+
+        self.step("resume")
+
+        question_text = (self.repo / ".git/code-step/question.md").read_text()
+        self.assertIn("Phase 1 is no longer in", question_text)
+
+    def test_a_phase_ticked_by_the_runs_own_gates_is_not_stale(self):
+        self.begin_coder()
+        ticked = self.plan_text().replace(
+            "- [ ] **Test-verified**: orders pass - `npx vitest run`",
+            "- [x] **Test-verified**: orders pass - `npx vitest run`\n  - Done: ran it", 1)
+        self.assertNotEqual(self.plan_text(), ticked)
+        (self.repo / self.plan).write_text(ticked)
+        self.hook("coder", self.CODER_REPORT)
+
+        out = self.step("resume")
+
+        self.assertNotIn("stale", out)
+        self.assertIn("AGENT: review-loop", out)
+
+    def test_start_over_an_open_stale_run_names_the_stale_phase_in_the_refusal(self):
+        self.begin_coder()
+        self.renumber_phase_one()
+
+        out = self.step("start")
+
+        self.assertIn("The run is stale: Phase 1 is no longer in", out)
+
+    # ---------- a stop with a way out ----------
+
+    def test_start_restart_with_text_over_a_stopped_plan_run_dispatches_the_coder_with_the_text_as_notes(self):
+        self.coder_round()
+        self.hook("review-loop", BLOCKER_PACKET)
+        self.step("after-review")
+        self.assertEqual("stopped", self.state()["stage"])
+
+        out = self.step("start", "--restart", "the", "tool", "is", "installed", "now")
+
+        self.assertNotIn("has open phases", out)
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("the tool is installed now", out)
+        self.assertEqual(self.plan, self.state()["plan"])
+
+    def test_start_restart_with_text_and_no_saved_plan_stays_task_text(self):
+        out = self.step("start", "--restart", "fix", "the", "typo")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIsNone(self.state().get("plan"))
+        self.assertIn("fix the typo", out)
+        self.assertNotIn("Run notes from the user", out)
+
+    def test_review_again_is_accepted_after_a_critical_blocker_stop(self):
+        self.coder_round()
+        self.hook("review-loop", BLOCKER_PACKET)
+        stop = self.step("after-review")
+        self.assertEqual("critical-blocker", self.state()["stopReason"])
+        self.assertIn(self.own_command("review-again"), (self.repo / ".git/code-step/question.md").read_text())
+        self.assertIn("ACTION: stop", stop)
+
+        self.step("resume")
+        self.assertIn(self.own_command("review-again"), (self.repo / ".git/code-step/question.md").read_text())
+
+        again = self.step("review-again")
+
+        self.assertIn("AGENT: review-loop", again)
+        self.assertEqual("review", self.state()["stage"])
+
+    # ---------- a review that handed back clean over an unreviewed change ----------
+
+    def forget_the_hand_back_store(self):
+        # With the stored hand-backs gone, a clean review packet matches no recorded review of the change.
+        shutil.rmtree(self.tmp / "handback-store")
+
+    def test_a_resume_after_a_false_clean_stop_dispatches_the_review_again(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.forget_the_hand_back_store()
+        self.step("after-review")
+        self.assertEqual("false-clean", self.state()["stopReason"])
+
+        out = self.step("resume")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
+        self.assertNotIn("stopReason", self.state())
+
+    def test_review_again_is_accepted_after_a_setup_fault_stop(self):
+        self.coder_round()
+        self.hook("review-loop", SETUP_FAULT_PACKET)
+        self.step("after-review")
+        self.assertEqual("setup-fault", self.state()["stopReason"])
+        question_path = self.repo / ".git/code-step/question.md"
+        self.assertIn(self.own_command("review-again"), question_path.read_text())
+
+        self.step("resume")
+        self.assertIn("the review's full check could not run here", self.said())
+        self.assertIn(self.own_command("review-again"), question_path.read_text())
+
+        again = self.step("review-again")
+
+        self.assertIn("AGENT: review-loop", again)
+        self.assertEqual("review", self.state()["stage"])
+
+    # ---------- a restart that keeps the phase ----------
+
+    def test_a_resume_at_a_verification_stop_does_not_call_a_changed_verification_command_stale(self):
+        self.coder_round(source="console.log(1)\n")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("resume")
+        self.assertEqual("verification", self.state()["stopReason"])
+        (self.repo / self.plan).write_text(self.plan_text().replace("`npx vitest run`", "`npx vitest run --silent`"))
+
+        self.step("resume")
+
+        self.assertIn("verify", self.said())
+        self.assertNotIn("stale", self.said())
+
+    def test_verify_takes_the_users_fixed_verification_lines_as_the_phase_text(self):
+        self.coder_round(source="console.log(1)\n")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("resume")
+        self.assertEqual("verification", self.state()["stopReason"])
+        (self.repo / self.plan).write_text(self.plan_text().replace("`npx vitest run`", "`npx vitest run --silent`"))
+
+        self.step("verify")
+
+        self.assertIn("`npx vitest run --silent`", self.state()["phaseText"])
+
+    def test_start_restart_with_text_over_a_stopped_single_phase_run_restarts_that_phase(self):
+        self.step("start", self.plan, "--phase", "2")
+        self.pass_coder_gate()
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
+        self.hook("coder", "BEHAVIOR: totals exist\nREVIEW: recommended")
+        self.step("after-coder")
+        self.hook("review-loop", BLOCKER_PACKET)
+        self.step("after-review")
+        self.assertEqual("stopped", self.state()["stage"])
+        self.assertEqual("2", self.state()["onlyPhase"])
+
+        out = self.step("start", "--restart", "the", "tool", "is", "installed", "now")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("Phase 2", out)
+        self.assertEqual("2", self.state()["phase"])
+        self.assertEqual("2", self.state()["onlyPhase"])
+
 
 # The tests inherited from the fixture class run in test_code_step.py: leave them out here.
 for inherited_test in [name for name in dir(base.CodeStepTest) if name.startswith("test_")]:

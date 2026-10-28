@@ -10,6 +10,8 @@ import test_code_step as base
 
 SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
 BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
+CACHE_ASK = ('{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?", '
+             '"change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}')
 CAP_PACKET = "status: cap-reached\niter: 2\nfindings_remaining:\n  - finding: x\n    file_line: a.ts:1"
 
 
@@ -64,6 +66,22 @@ class HandBackTest(base.CodeStepTest):
         self.assertEqual(1, out.count("toolkit or environment fault, not a code failure"))
         self.assert_stop_question("the review's full check could not run here", "no package.json")
 
+    def test_a_critical_blocker_stop_lists_the_reviewers_questions_apart_from_the_blockers_and_names_review_again(self):
+        self.coder_round()
+        packet = BLOCKER_PACKET + f"\nfixed: []\nask: [{CACHE_ASK}]"
+        self.hook("review-loop", packet)
+
+        out = self.step("after-review")
+
+        question_text = self.question()
+        self.assertIn("Open questions:", question_text, out)
+        open_items, _, open_questions = question_text.partition("Open questions:")
+        self.assertIn("keep the cache?", open_questions)
+        self.assertNotIn("keep the cache?", open_items)
+        self.assertIn("Open questions:", out)
+        self.assertIn("keep the cache?", out)
+        self.assertIn(f"`{self.own_command('review-again')}`", question_text)
+
     def test_a_review_cap_stop_writes_question_md_with_each_open_finding(self):
         self.coder_round()
         self.hook("review-loop", CAP_PACKET)
@@ -73,6 +91,20 @@ class HandBackTest(base.CodeStepTest):
         self.assertIn("ACTION: stop", out)
         question_text = self.assert_stop_question("the review cap was reached with findings still open")
         self.assertIn("a.ts:1", question_text)
+
+    def test_a_review_cap_stop_lists_the_reviewers_questions_apart_from_the_findings(self):
+        self.coder_round()
+        self.set_state(capCarried=True)
+        self.hook("review-loop", CAP_PACKET + f"\nfixed: []\nask: [{CACHE_ASK}]")
+
+        out = self.step("after-review")
+
+        question_text = self.question()
+        self.assertIn("Open questions:", question_text, out)
+        open_items, _, open_questions = question_text.partition("Open questions:")
+        self.assertIn("keep the cache?", open_questions)
+        self.assertNotIn("keep the cache?", open_items)
+        self.assertIn("keep the cache?", out)
 
     def test_the_review_wait_cap_stop_writes_question_md_with_the_resume_command(self):
         out = self.stop_the_review_at_the_wait_cap()
@@ -145,3 +177,24 @@ class HandBackTest(base.CodeStepTest):
 
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("- add one more later step?", self.said())
+
+    def test_a_second_review_dispatch_replaces_the_first_implemented_block_in_say_md(self):
+        # No stop hook ran after the earlier dispatch, so say.md still holds its block.
+        report = "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\nREVIEW: recommended"
+        self.begin_coder()
+        say_path = self.repo / ".git/code-step/say.md"
+        say_path.write_text(
+            "Note: gate skipped\n\nImplemented: the first try\nFlagged: none.\n"
+            "  backend/src/orders.ts:3-5 - order matters\n"
+            "Auto-dispatching review to check the implementation before committing.\n\n"
+        )
+        self.hook("coder", report)
+
+        self.step("after-coder")
+
+        said = say_path.read_text()
+        self.assertNotIn("the first try", said)
+        self.assertIn("Note: gate skipped", said)
+        self.assertEqual(1, said.count("Implemented: "), said)
+        self.assertEqual(1, said.count("Flagged: "), said)
+        self.assertEqual(1, said.count("backend/src/orders.ts:3-5 - order matters"), said)

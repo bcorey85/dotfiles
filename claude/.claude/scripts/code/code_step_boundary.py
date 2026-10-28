@@ -34,6 +34,7 @@ from code_step_core import (
     script_command,
     session_pin,
 )
+from code_step_usage import VERB_USAGES
 from script_utils import git_output, run_command
 from test_run_output import matches_no_test
 
@@ -41,16 +42,17 @@ VERIFY_TIMEOUT_SECONDS = 600
 # A filtered test run that exits 0 but reports no passed test did not run the phase's test: it fails the box.
 NO_TEST_MATCHED_EXIT_CODE = 1
 NO_TEST_MATCHED_NOTE = "\nthe test filter matched no test: the run exits 0 but reports no passed test\n"
-# An rg or grep line is a ban (exit 1, no match, holds it) unless its text, outside the command, says it checks
-# presence (exit 0 passes). Ban wording on the same line wins. A git grep line is always a ban.
-SEARCH_COMMAND = re.compile(r"^(?:rg|grep|egrep)\s")
+# An rg, grep or git grep line is a ban (exit 1, no match, holds it) unless its text, outside the command, says it
+# checks presence (exit 0 passes). Ban wording on the same line wins. A search wrapped in another command, such as
+# `test -n "$(git grep ...)"`, is judged by its own exit code.
+SEARCH_COMMAND = re.compile(r"^(?:rg|grep|egrep|git grep)\s")
 BAN_WORDING = re.compile(r"\bprohibition\b|\bno\s+(?:match(?:es)?|output|hits?)\b|\bprints?\s+nothing\b"
                          r"|\bexit(?:s|ing)?\s+(?:code\s+)?1\b|\babsent\b|\bmust\s+not\b|\bnone\b|\bnothing\b"
                          r"|\bgone\b|\bremoved\b|\bzero\b|\bno\s+longer\b",
                          re.IGNORECASE)
 PRESENCE_WORDING = re.compile(r"\bpresence\b|\bpresent\b|\bexists?\b|\bcontains?\b|\bdefines?\b|\bdefined\b"
                               r"|\bfinds?\b|\bfound\b|\ba\s+hit\b|\bmatches\b", re.IGNORECASE)
-SEARCH_BAN_NOTE = ("\nan rg or grep line is a ban unless its text says it checks presence "
+SEARCH_BAN_NOTE = ("\nan rg, grep or git grep line is a ban unless its text says it checks presence "
                    "(present, exists, contains, finds)\n")
 # A ban written `! rg ...` is the same ban as `rg ...`: no match holds it.
 # A leading `cd <dir> &&` does not change what the command searches: it stays in the command and is ignored here.
@@ -320,9 +322,6 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
 
 
 def is_search_ban(command, line):
-    if "git grep" in command:
-        return True
-
     if not SEARCH_COMMAND.match(without_leading_cd_and_env(command)):
         return False
 
@@ -374,7 +373,7 @@ def run_verification_commands(repo_dir, phase_section):
         code, output = run_command(command, repo_dir, timeout=timeout)
         if is_search_ban(command, line):
             result = check_prohibition(repo_dir, command, code, output)
-            if result[1] != 0 and "git grep" not in command and not PRESENCE_WORDING.search(line.replace(command, "")):
+            if result[1] != 0 and not PRESENCE_WORDING.search(line.replace(command, "")):
                 result = (result[0], result[1], result[2] + SEARCH_BAN_NOTE)
             results.append(result)
             continue
@@ -899,7 +898,7 @@ def with_simplify_lines(items, evidence, simplify_done_texts):
     if not simplify_done_texts:
         return evidence
 
-    simplify_lines = [f"\n  - Done: {text}" for text in simplify_done_texts]
+    simplify_lines = [f"\n  {plan_format.DONE_PREFIX}{text}" for text in simplify_done_texts]
 
     gate_position = concentration_gate_position(items)
     combined = list(evidence)
@@ -975,7 +974,7 @@ def tick_entry_stop(state, plan, number):
 def tick_plan_stop(repo_dir, state, args):
     # The stop text when `tick` has no plan run to act on, or None.
     if len(args) != 1:
-        return "usage: code_step.py tick <phase id>"
+        return VERB_USAGES["tick"].splitlines()[0]
     if state is None or not state.get("plan"):
         return "tick needs a plan run: there is no saved plan state. Run `start <plan>` first."
 
@@ -1019,4 +1018,14 @@ def command_tick(args):
 
 
 def command_verify(repo_dir, state, args):
+    # The user's fix of the plan's verification lines is the phase text from here on, so a later stop does not call it
+    # stale.
+    if state.get("plan") and state.get("phase") is not None:
+        try:
+            plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+        except OSError:
+            plan_lines = None
+        if plan_lines is not None:
+            state["phaseText"] = plan_format.phase_text(plan_lines, state["phase"])
+
     finish_phase(repo_dir, state)

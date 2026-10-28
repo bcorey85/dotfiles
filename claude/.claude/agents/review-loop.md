@@ -240,8 +240,10 @@ Gate passed and class closed → go to Step 7.
 `${CLAUDE_SKILL_DIR}` does not resolve inside an agent. Use the absolute path:
 
 ```bash
-~/.claude/skills/review/log-review-metrics lane=<lane> iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>
+~/.claude/skills/review/log-review-metrics lane=<lane> iter=<N> fix=<n> ask=<n> nit=<n> blocker=<n> fixed=<n> skipped_fp=<n> test_intent_ran=0 culled=<n> comment_noise=<n> smells=<n> "result=<PASS|PASS WITH WARNINGS|NEEDS CHANGES>"
 ```
+
+`result=` takes only PASS, PASS WITH WARNINGS or NEEDS CHANGES. Quote it as one word when it holds a space. A plan-impact or critical-blocker run logs NEEDS CHANGES. The logger refuses a value outside its verdict set and writes no row.
 
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
 prose. Do not add an enum for it.

@@ -3091,7 +3091,7 @@ class CodeStepTest(unittest.TestCase):
         for command in ("cd backend && npm test", "npm run lint", "npx vitest run", "pytest", "ruff check"):
             self.assertIsNotNone(code_step_boundary.WHOLE_SUITE.match(command), command)
         self.env["CODE_STEP_VERIFY_TIMEOUT"] = "5"
-        self.set_verification("- [ ] **E2E**: `bash -c 'exit 3'`")
+        self.set_verification("- [ ] **E2E**: `python3 -c 'raise SystemExit(3)'`")
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("Automated Verification failed", self.step("after-review"))
@@ -3377,7 +3377,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("The ask was already built", self.said())
 
     def test_asks_coder_that_changed_nothing_stops_when_the_verification_fails(self):
-        self.set_verification('- [ ] **Check**: fails - `bash -c "exit 1"`')
+        self.set_verification('- [ ] **Check**: fails - `test -f no-such.flag`')
         self.apply_first_ask()
         self.hook("coder", self.ALREADY_DONE_REPORT)
         out = self.step("after-coder")
@@ -3849,7 +3849,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual([str(self.repo.resolve())], [str(pathlib.Path(top).resolve()) for top in reviewed])
 
     def test_a_failed_verification_still_marks_the_gate_clean_and_prints_no_mark_command(self):
-        self.set_verification('- [ ] **Check**: fails - `bash -c "exit 1"`')
+        self.set_verification('- [ ] **Check**: fails - `test -f no-such.flag`')
         out = self.finish_phase_one()
         self.assertIn("Automated Verification failed", out)
         self.assert_marked_clean(out)
@@ -4513,7 +4513,7 @@ class CodeStepTest(unittest.TestCase):
         )
 
     def test_a_command_with_leading_variable_assignments_runs_with_them_set(self):
-        self.set_verification("- [ ] **Env**: `VERIFY_SEEN=yes bash -c 'test \"$VERIFY_SEEN\" = yes'`")
+        self.set_verification("- [ ] **Env**: `VERIFY_SEEN=yes printenv VERIFY_SEEN`")
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
 
@@ -4529,9 +4529,35 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("PARITY_PATH=/x/y.py cargo test --test watch_parity", command)
 
     def test_a_quoted_assignment_value_with_spaces_is_kept_in_the_command(self):
-        item = "- [ ] **Env**: `GREETING=\"a b\" bash -c 'echo hi'`"
+        item = "- [ ] **Env**: `GREETING=\"a b\" echo hi`"
 
-        self.assertEqual("GREETING=\"a b\" bash -c 'echo hi'", code_step_boundary.verification_command(item))
+        self.assertEqual("GREETING=\"a b\" echo hi", code_step_boundary.verification_command(item))
+
+    def test_a_command_that_hands_a_shell_its_code_is_not_a_verification_command(self):
+        for item in ("- [ ] **Check**: `sh -c 'npm test | tee out.log'`",
+                     "- [ ] **Check**: `bash -ec 'cd backend && pytest'`",
+                     "- [ ] **Check**: `CI=1 bash -o pipefail -c 'npm test | cat'`",
+                     "- [ ] **Check**: `/bin/bash -lc 'make check'`",
+                     "- [ ] **Check**: `bash -euo pipefail -c 'npm test | cat'`",
+                     "- [ ] **Check**: `timeout 60 bash -c 'npm test'`",
+                     "- [ ] **Check**: `cd backend && sh -c 'pytest -q'`"):
+            with self.subTest(item=item):
+                self.assertIsNone(code_step_boundary.verification_command(item, self.repo))
+                self.assertIn("hands a shell its code",
+                              code_step_boundary.verification_item_problem(item, self.repo))
+
+    def test_a_shell_that_runs_a_script_file_is_still_a_verification_command(self):
+        for command in ("sh scripts/check.sh", "bash -e scripts/check.sh --fast", "bash -o pipefail scripts/check.sh",
+                        "bash -euo pipefail scripts/check.sh", "sh scripts/check.sh -c fast"):
+            with self.subTest(command=command):
+                self.assertEqual(command, code_step_boundary.verification_command(f"- [ ] **Check**: `{command}`"))
+
+    def test_a_plan_whose_check_hands_a_shell_its_code_stops_at_write_time(self):
+        self.set_verification("- [ ] **Check**: `bash -c 'npm test | tee out.log'`")
+
+        out = self.step("start", self.plan)
+
+        self.assertIn("hands a shell its code", out)
 
     def test_an_assignment_followed_by_no_command_or_by_a_program_that_is_not_installed_is_not_a_verification_command(
         self,

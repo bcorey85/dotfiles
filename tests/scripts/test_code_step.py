@@ -4088,6 +4088,92 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("other", commit_line)
         self.assertIn("docs/plans/orders/spec.md", commit_line)
 
+    def test_a_file_the_full_check_created_stays_out_of_the_commit_line_and_is_named_with_a_delete_hint(self):
+        (self.repo / "backend/src/fresh.ts").write_text("export const fresh = 1\n")
+        (self.repo / "dist-out.js").write_text("built by the check\n")
+        state = {"baseline": {}, "plan": None, "checkCreated": ["dist-out.js"]}
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("backend/src/fresh.ts", own_files)
+        self.assertNotIn("dist-out.js", own_files)
+        self.assertNotIn("dist-out.js", commit_line)
+        self.assertIn("Created by the full check, not by the coder, and left out of the commit: dist-out.js", text)
+        self.assertIn("rm -- dist-out.js", text)
+
+    def test_a_tracked_file_the_full_check_changed_stays_out_of_the_commit_line_and_is_named_with_a_restore_hint(self):
+        (self.repo / "backend/src/fresh.ts").write_text("export const fresh = 1\n")
+        (self.repo / "generated.ts").write_text("rewritten by the check\n")
+        state = {"baseline": {}, "plan": None, "checkChanged": ["generated.ts"]}
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("backend/src/fresh.ts", own_files)
+        self.assertNotIn("generated.ts", own_files)
+        self.assertNotIn("generated.ts", commit_line)
+        self.assertIn("Changed by the full check, not by the coder, and left out of the commit: generated.ts", text)
+        self.assertIn("git checkout -- generated.ts", text)
+
+    def test_a_file_the_coder_edited_and_the_check_rewrote_stays_in_the_commit_with_a_warning_and_no_restore_hint(self):
+        (self.repo / "generated.ts").write_text("edited by the coder, then rewritten by the check\n")
+        state = {"baseline": {}, "plan": None, "checkRewroteEdited": ["generated.ts"]}
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("generated.ts", own_files)
+        self.assertIn("generated.ts", commit_line)
+        self.assertIn("Rewritten by the full check after the coder edited them, and kept in the commit: generated.ts",
+                      text)
+        self.assertNotIn("git checkout", text)
+
+    def test_a_file_named_both_changed_and_rewrote_edited_by_the_check_stays_in_the_commit_without_a_restore_hint(self):
+        (self.repo / "generated.ts").write_text("edited by the coder, then rewritten by the check\n")
+        state = {"baseline": {}, "plan": None, "checkChanged": ["generated.ts"],
+                 "checkRewroteEdited": ["generated.ts"]}
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("generated.ts", own_files)
+        self.assertIn("generated.ts", commit_line)
+        self.assertIn("kept in the commit: generated.ts", text)
+        self.assertNotIn("git checkout", text)
+
+    def test_the_files_a_hand_back_packet_says_the_check_touched_are_saved_and_left_out_of_the_commit(self):
+        self.coder_round()
+        (self.repo / "generated.ts").write_text("rewritten by the check\n")
+        (self.repo / "dist").mkdir()
+        (self.repo / "dist/out.js").write_text("built by the check\n")
+        self.hook("review-loop", self.LOOP_OK + '\ncheck_changed: ["generated.ts"]\ncheck_created: ["dist/out.js"]'
+                  '\ncheck_rewrote_edited: ["edited.ts"]')
+        self.step("after-review")
+        state = self.state()
+        self.assertEqual((["generated.ts"], ["dist/out.js"], ["edited.ts"]),
+                         (state["checkChanged"], state["checkCreated"], state["checkRewroteEdited"]))
+
+        text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
+
+        self.assertIn("backend/src/orders.ts", own_files)
+        for left_out in ("generated.ts", "dist/out.js"):
+            self.assertNotIn(left_out, own_files)
+            self.assertNotIn(left_out, commit_line)
+            self.assertIn(left_out, text)
+
+    def test_a_file_the_packet_says_the_coder_touched_is_not_kept_as_changed_or_created_by_the_check(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK + '\nfiles_touched: ["generated.ts", "dist/out.js"]'
+                  '\ncheck_changed: ["generated.ts", "other.ts"]\ncheck_created: ["dist/out.js", "made.txt"]')
+        self.step("after-review")
+        state = self.state()
+        self.assertEqual((["other.ts"], ["made.txt"]), (state["checkChanged"], state["checkCreated"]))
+
+    def test_a_hand_back_packet_without_check_files_leaves_empty_lists_in_the_state(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+        state = self.state()
+        self.assertEqual(([], []), (state["checkChanged"], state["checkCreated"]))
+        self.assertEqual([], state["checkRewroteEdited"])
+
     def test_the_commit_subject_carries_the_ticket_id_of_the_plan_folder_or_branch(self):
         self.assertEqual("LED-15: ", code_step_boundary.ticket_prefix({"plan": "docs/plans/LED-15-recap/spec.md"}))
         self.assertEqual("LED-15: ", code_step_boundary.ticket_prefix({"plan": "docs/plans/orders/spec.md",

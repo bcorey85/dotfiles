@@ -39,6 +39,21 @@ class CheckOutputTest(unittest.TestCase):
             with self.subTest(case=case):
                 self.assertTrue(check_output.is_setup_fault(1, output, self.repo))
 
+    def test_a_package_manager_version_mismatch_is_a_setup_fault_with_or_without_missing_modules(self):
+        outputs = {
+            "pnpm pm": "ERR_PNPM_BAD_PM_VERSION  This project is configured to use v9 of pnpm. Your v8 is installed",
+            "pnpm engine": "ERR_PNPM_UNSUPPORTED_ENGINE  Unsupported environment (bad pnpm and/or Node.js version)",
+            "npm ERR!": "npm ERR! code EBADENGINE\nnpm ERR! engine Unsupported engine",
+            "npm error": "npm error code EBADENGINE\nnpm error engine Unsupported engine",
+            "corepack": "Usage Error: This project is configured to use yarn@4.1.0 because of packageManager",
+            "yarn": "error eslint@9: The engine \"node\" is incompatible with this module. Expected version \">=20\".",
+        }
+        for case, output in outputs.items():
+            for include_missing_modules in (True, False):
+                with self.subTest(case=case, include_missing_modules=include_missing_modules):
+                    self.assertTrue(check_output.is_setup_fault(
+                        1, output, self.repo, include_missing_modules=include_missing_modules))
+
     def test_a_run_that_found_no_test_is_a_setup_fault_unless_a_test_failed(self):
         self.assertTrue(check_output.is_setup_fault(5, "collected 0 items", self.repo))
         self.assertFalse(check_output.is_setup_fault(

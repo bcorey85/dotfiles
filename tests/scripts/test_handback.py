@@ -346,6 +346,28 @@ class RenderTest(HandbackTestBase):
         passed = handback.load(CONVERGED + "full_check: passed\n")
         self.assertNotIn("Full check", handback.render(passed, "review"))
 
+    def test_the_unverified_full_check_and_its_new_fields_parse_and_the_created_files_render(self):
+        packet = handback.load(
+            CONVERGED + "full_check: unverified (exit 0, no runner summary)\n"
+            "full_check_command: make test\nfull_check_summary: not found\n"
+            'check_changed: ["gen.ts"]\ncheck_created: ["dist/out.js"]\n')
+
+        self.assertEqual("unverified (exit 0, no runner summary)", packet["full_check"])
+        self.assertEqual(("make test", "not found"), (packet["full_check_command"], packet["full_check_summary"]))
+        self.assertEqual((["gen.ts"], ["dist/out.js"]), (packet["check_changed"], packet["check_created"]))
+        rendered = handback.render(packet, "review")
+        self.assertIn("Full check: unverified (exit 0, no runner summary)", rendered)
+        self.assertIn("Changed by the full check, not by the coder (restore with `git checkout --` or keep): gen.ts",
+                      rendered)
+        self.assertIn("Created by the full check, not by the coder (delete or keep): dist/out.js", rendered)
+
+    def test_files_the_check_rewrote_after_the_coder_edited_them_parse_and_render_a_review_warning(self):
+        packet = handback.load(CONVERGED + 'check_rewrote_edited: ["edited.ts"]\n')
+
+        self.assertEqual(["edited.ts"], packet["check_rewrote_edited"])
+        rendered = handback.render(packet, "review")
+        self.assertIn("Hold coder edits and a full check rewrite, so review them (do not restore): edited.ts", rendered)
+
     def test_sections_print_before_the_trailer(self):
         packet = handback.load(NUMBERED)
         rendered = handback.render(packet, "fix", [("Aikido replies", ["- a.ts:1: Fixed"])])

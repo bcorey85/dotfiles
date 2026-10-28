@@ -13,6 +13,10 @@ RUNNER_CANNOT_START = re.compile(r"Failed to spawn: |Command not found: "
 NO_PACKAGE_MANIFEST = re.compile(
     r"ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND|Couldn't find a package\.json"
     r"|ENOENT[^\n]*package\.json|package\.json[^\n]*ENOENT", re.I)
+# A package manager that refuses to run here: the project asks for another package-manager or engine version.
+PACKAGE_MANAGER_MISMATCH = re.compile(
+    r"ERR_PNPM_BAD_PM_VERSION|ERR_PNPM_UNSUPPORTED_ENGINE|npm (?:ERR!|error) code EBADENGINE"
+    r"|This project is configured to use|The engine \"node\" is incompatible")
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)")
 TESTS_FAILED = re.compile(r"\b\d+ failed\b")
 # A run that found no test to run: pytest exit 5, vitest and jest exiting non-zero, unittest and Django output.
@@ -47,9 +51,10 @@ def tail_with_failing_tests(output, tail):
 
 def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     """A failure that says the environment cannot run the check, not that a check failed: the program is missing, the
-    runner cannot start it, no package manifest is where it ran, a run found no test to run, or a module outside the
-    repo is missing and no test ran to a failure. A failed test, a missing repo module, a collection error that names
-    no missing module from outside the repo or a name that does not import is a real defect. With
+    runner cannot start it, no package manifest is where it ran, a run found no test to run, a package-manager or
+    engine version mismatch, or a module outside the repo is missing and no test ran to a failure. A failed test, a
+    missing repo module, a collection error that names no missing module from outside the repo or a name that does
+    not import is a real defect. With
     include_missing_modules False, a missing module is always a defect: the change may have added an undeclared
     dependency."""
     if code in COMMAND_NOT_RUN_CODES:
@@ -59,6 +64,9 @@ def is_setup_fault(code, output, repo_root, include_missing_modules=True):
         return False
 
     if RUNNER_CANNOT_START.search(output) or NO_PACKAGE_MANIFEST.search(output):
+        return True
+
+    if PACKAGE_MANAGER_MISMATCH.search(output):
         return True
 
     ran_no_test = code == PYTEST_NO_TESTS_CODE or RAN_NO_TESTS.search(output)

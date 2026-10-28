@@ -175,6 +175,8 @@ REVIEW_OUTCOMES = {
                     f'[{ASK_ONE}]',
     "critical-blocker": 'status: critical-blocker\niter: 1\nblockers:\n- {finding: "b", file_line: "a.ts:1"}',
     "cap-reached": 'status: cap-reached\niter: 3\nfindings_remaining:\n- {finding: "r", file_line: "a.ts:1"}',
+    "cap-reached-ask": f'status: cap-reached\niter: 3\nfindings_remaining:\n- {{finding: "r", file_line: "a.ts:1"}}\n'
+                       f'ask: [{ASK_ONE}]',
     "plan-impact": "status: plan-impact\niter: 1\nplan_impact: |\n  assumed: a\n  changes: b",
     "plan-impact-no-description": "status: plan-impact\niter: 1",
     "no-status": "iter: 1\nfixed: []",
@@ -476,7 +478,7 @@ def user_answers(repo):
             ("skill-done pass", ["skill-done", "pass"], None),
             ("skill-done fail", ["skill-done", "fail"], None),
         ]
-    if is_stopped and reason == "invalid-packet":
+    if is_stopped and reason in ("invalid-packet", "cap-reached"):
         answers += [("review-again", ["review-again"], None)]
     if is_stopped and code_step.awaits_resumed_review(state):
         answers += [("review-again", ["review-again"], None),

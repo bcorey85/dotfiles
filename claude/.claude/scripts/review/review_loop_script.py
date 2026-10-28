@@ -8,6 +8,9 @@ optional `structure-pass: skip`), a blank line, then the handoff block. The scri
 scope, first-round reviewers (code, plus smell and test reviewers on a large diff), disposition routing, one fix coder,
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
+The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
+calls run the changed files' tests, and a check past CHECK_TIMEOUT_SECONDS is killed with its process group. Either
+is no failure: the packet's `full_check` says `not run (CI)` or `not run (timeout)`.
 
 Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
@@ -35,7 +38,6 @@ import os
 import pathlib
 import re
 import signal
-import subprocess
 import sys
 import threading
 import time
@@ -44,6 +46,7 @@ from concurrent.futures import ThreadPoolExecutor
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import code_step_core
+import full_check
 import handback
 import plan_format
 import review_loop_gate
@@ -436,7 +439,11 @@ def coder_prompt(repo, findings, small_items, files, gate_env=()):
 
 def check_command_for(repo, out):
     """The repo's full check: a CLAUDE.md `Quality check: \\`<command>\\`` line, else what a haiku call reads from the
-    repo's docs, task runners and CI config."""
+    repo's docs, task runners and CI config. None when CI runs the repo's full suite: full_check.run then runs
+    nothing."""
+    if full_check.full_suite_runs_in_ci(repo):
+        return None
+
     claude_md = pathlib.Path(repo) / "CLAUDE.md"
     text = claude_md.read_text() if claude_md.is_file() else ""
     match = re.search(r"^\s*[-*]?\s*Quality check:\s*`([^`]+)`", text, re.I | re.M)
@@ -458,12 +465,20 @@ def check_command_for(repo, out):
 
 
 def run_full_check(repo, out, check_command, gate_env=()):
-    log = out / "full-check.log"
+    """(the full_check result, the log's last lines). A SIGTERM kills the check's process group with the claude
+    calls."""
     assignments = script_utils.environment_from_assignments(gate_env)
-    with log.open("w") as handle:
-        completed = subprocess.run(check_command, shell=True, cwd=repo, stdout=handle, stderr=subprocess.STDOUT,
-                                   timeout=CHECK_TIMEOUT_SECONDS, env={**os.environ, **assignments})
-    return completed.returncode, "\n".join(log.read_text().splitlines()[-40:])
+    check_pids = []
+
+    def check_started(pid):
+        check_pids.append(pid)
+        LIVE_CHILDREN.add(pid)
+
+    try:
+        return full_check.run(repo, check_command, out / "full-check.log", CHECK_TIMEOUT_SECONDS,
+                              env={**os.environ, **assignments}, on_start=check_started)
+    finally:
+        LIVE_CHILDREN.difference_update(check_pids)
 
 
 def file_texts(repo):
@@ -701,6 +716,7 @@ class LoopRun:
         self.prior_issues = []
         self.status = "converged"
         self.class_closure = NO_CLOSURE
+        self.full_check = ""
         self.round_two_fix_diff = ""
         self.files = {}
         self.dispatches = []
@@ -708,6 +724,7 @@ class LoopRun:
         self.round_claimed = set()  # ids of the entries this round filed or refiled, so no two reports share one
         self.round_fixes = []  # the fix entries this round's reviewers filed, for fix_round to mark
         self.check_fixed = 0  # findings the full check and the class closure fixed, which file no finding row
+        self.last_pass = ""
 
     def next_round(self):
         self.iter_count += 1
@@ -769,6 +786,7 @@ class LoopRun:
         plan-change ask stops the loop and leaves the reviews after it unread."""
         with ThreadPoolExecutor(max_workers=len(self.dispatches)) as pool:
             reviews = list(pool.map(self.review_one, self.dispatches))
+        self.last_pass = "reviewer"
 
         self.round_claimed, self.round_fixes = set(), []
         round_fix, round_nits = [], []
@@ -799,11 +817,18 @@ class LoopRun:
         """One coder pass on the findings. Returns (report, diffs, changed files)."""
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, findings, list(nits), list(before), self.gate_env)
+<<<<<<< HEAD
         try:
             return coder_call(call_name, prompt, self.repo, self.out)
         except CoderCallError as error:
             self.files_touched.update(error.changed)
             raise
+||||||| ab08ccb9
+        return coder_call(call_name, prompt, self.repo, self.out)
+=======
+        self.last_pass = "coder"
+        return coder_call(call_name, prompt, self.repo, self.out)
+>>>>>>> origin/master
 
     def fix_round(self, round_fix, round_nits):
         """The coder pass on the round's merged fixes, and the plan for the next round. Returns False when the loop
@@ -836,9 +861,10 @@ class LoopRun:
         return not (changed and all(path.endswith(".md") for path in changed))
 
     def full_check_pass(self, check_command):
-        """The full check, with one coder repair when it fails outside a spec file."""
-        code, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if code == 0:
+        """The full check, with one coder repair when it fails outside a spec file. A check that did not run, in CI
+        or past its time limit, is no failure."""
+        self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if not full_check.is_failure(self.full_check):
             return
 
         gate_findings = [f"full check failed (`{check_command}`), last lines:\n{tail}"]
@@ -850,8 +876,8 @@ class LoopRun:
         self.fixed += gate_findings
         self.check_fixed += len(gate_findings)
         self.files_touched.update(gate_changed)
-        code, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if code != 0:
+        self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if full_check.is_failure(self.full_check):
             self.stop("critical-blocker", [f"full check still failing after one repair:\n{tail}"])
 
     def class_closure_pass(self, check_command):
@@ -866,8 +892,8 @@ class LoopRun:
         self.check_fixed += len(closure["open"])
         self.files_touched.update(class_changed)
         self.next_round()
-        code, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if code != 0:
+        self.full_check, tail = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if full_check.is_failure(self.full_check):
             self.stop("critical-blocker", [f"full check failing after the class repair:\n{tail}"])
 
     def outcome(self, ask_ids, ask_rows):
@@ -883,8 +909,10 @@ class LoopRun:
             "ask_ids": ask_ids,
             "ask_rows": ask_rows,
             "class_closure": self.class_closure,
+            "full_check": self.full_check,
             "files_touched": sorted(self.files_touched),
             "nits": self.nits,
+            "unreviewed_fix": self.last_pass == "coder",
         }
 
 
@@ -970,6 +998,8 @@ def packet_message(outcome):
         "files_touched": outcome["files_touched"],
         "nit": [finding_entry(text) for text in outcome["nits"]],
     }
+    if outcome["full_check"]:
+        fields["full_check"] = outcome["full_check"]
     if outcome["plan_change"]:
         fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
     lines = []
@@ -983,7 +1013,9 @@ def crash_outcome(progress, reason):
     return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
             "skipped_fp": [], "blockers": [reason], "plan_change": [], "asks": [],
             "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",
-            "files_touched": sorted(progress["files_touched"]), "nits": []}
+            "full_check": "",
+            "files_touched": sorted(progress["files_touched"]), "nits": [],
+            "unreviewed_fix": False}
 
 
 # ---------- hand-back rows ----------
@@ -992,8 +1024,9 @@ def report_write_failure(what, error):
     print(f"review-loop-script: {what} not written, {type(error).__name__}: {error}", file=sys.stderr)
 
 
-def write_handback_rows(repo, args, message, status, ask_rows):
-    # The driver's skipped re-reviews are its benched routes, so no clean row counts as unreviewed.
+def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
+    # The driver's skipped re-reviews are its benched routes, so a clean row never sets no_reviewer;
+    # a coder pass after the last reviewer round sets unreviewed_fix.
     try:
         code_step_core.log_event(repo, args.run_id, "handback", args.session, agent_id=args.agent_id,
                                  agent_type=handback.REVIEW_LOOP, message=message)
@@ -1001,7 +1034,7 @@ def write_handback_rows(repo, args, message, status, ask_rows):
         report_write_failure("run event", error)
     try:
         handback.record(args.session, "handback", agent_id=args.agent_id, status=status, problems=[], message=message,
-                        no_reviewer=False)
+                        no_reviewer=False, unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
     except Exception as error:
         report_write_failure("hand-back row", error)
     review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)
@@ -1096,7 +1129,7 @@ def main(argv=None):
 
     status = handback.load(message)["status"]
     (out / "packet.txt").write_text(message + "\n")
-    write_handback_rows(repo, args, message, status, outcome["ask_rows"])
+    write_handback_rows(repo, args, message, status, outcome["ask_rows"], outcome["unreviewed_fix"])
     write_usage_row(repo, started)
     print(message)
     return exit_code

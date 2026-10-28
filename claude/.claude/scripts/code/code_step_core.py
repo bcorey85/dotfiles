@@ -203,6 +203,10 @@ def session_pin():
     return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
 
 
+def run_session_id(state):
+    return state.get("sessionId") or session_pin() or ""
+
+
 def head_commit(repo_dir):
     head = git_output(repo_dir, "rev-parse", "HEAD")
     return head.strip() if head else None
@@ -703,7 +707,7 @@ def wait_for_loop_stop(state, module, handback):
         return
 
     interval = float(os.environ.get("CODE_STEP_POLL_SECONDS", HANDBACK_POLL_SECONDS))
-    session_id = state.get("sessionId") or session_pin() or ""
+    session_id = run_session_id(state)
     agent_id = handback.get("agent_id")
     settled = script_utils.wait_for(lambda: module.settled_stop_row(session_id, agent_id, handback["ts"]),
                                     limit, interval)

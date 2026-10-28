@@ -69,7 +69,7 @@ ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or m
 STAGE_GUARDS = {
     "decide": {"stages": ("impact-coder", "impact-review"),
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
-    "review-again": {"stages": ("stopped",), "stopReasons": ("invalid-packet", "cap-reached", "false-clean"),
+    "review-again": {"stages": ("stopped",), "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "review-crashed"),
                      "message": "review-again ran with no unreadable review packet, capped review, unmarked review "
                                 "gate or silent review-loop pending."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
@@ -572,6 +572,23 @@ def review_stop_next_step(state):
     return f"after the user rules on the findings, {restart_instruction(state)} to start the phase over."
 
 
+CRASHED_REVIEW_BLOCKER = re.compile(r"^the review loop (script failed with|packet failed validation)")
+
+
+def stop_on_crashed_review(repo_dir, state, module, packet):
+    # The review loop script reports its own crash as a critical-blocker packet. That is a tool fault, not a finding:
+    # it ran no review to the end, so the same diff goes through review-again.
+    state.update({"stage": "stopped", "stopReason": "review-crashed"})
+    save_state(repo_dir, state)
+    crash_lines = [module.item_text(item, "finding", "file_line") for item in packet["blockers"]]
+    stop_with_question(
+        repo_dir, "the review did not run to the end.", crash_lines,
+        f"this is a tool fault, not a review finding. To run the review again on the same diff, invoke Skill code "
+        f"with `review-again`. If it crashes again, {restart_instruction(state)} to start the phase over.",
+        "The review loop crashed before it finished, so it found nothing. Tell the user it was a tool fault, "
+        "not a critical blocker. Do not mark the phase done.", *["- " + line for line in crash_lines])
+
+
 def stop_on_review_status(repo_dir, state, module, packet):
     # True after the stop or question a packet status that ends the run prints.
     status = packet["status"]
@@ -581,6 +598,11 @@ def stop_on_review_status(repo_dir, state, module, packet):
         state["carriedFindings"] = carried_findings(module, packet)
         save_state(repo_dir, state)
         emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
+        return True
+    if status == "critical-blocker" and any(
+            CRASHED_REVIEW_BLOCKER.match(module.item_text(item, "finding", "file_line")) for item in packet["blockers"]
+        ):
+        stop_on_crashed_review(repo_dir, state, module, packet)
         return True
     if status == "critical-blocker":
         state["stage"] = "stopped"
@@ -793,7 +815,7 @@ def asks_coder_prompt(accepted_asks):
     lines += [
         "",
         "Run the typecheck, and lint and tests for only the files you changed, once, after all edits. "
-        "If an ask turns out architectural, report back and recommend /eng-spec.",
+        "If an ask turns out architectural, report back with the line `RECOMMEND: /eng-spec`.",
         "For each ask whose change the code already makes, so that it needs no edit, add one line to your report: "
         "`ALREADY-DONE: <ask number> — <file:line>`. For an ask that only asks you to run checks, when they pass "
         "with no edit, the line is `ALREADY-DONE: <ask number> — `<command>` -> exit 0`. Add that line for no "

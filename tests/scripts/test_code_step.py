@@ -1961,10 +1961,26 @@ class CodeStepTest(unittest.TestCase):
 
     def test_coder_recommending_eng_spec_stops_instead_of_reviewing(self):
         self.begin_coder()
-        self.hook("coder", "This is architectural, I recommend /eng-spec.")
+        self.hook("coder", "This is architectural.\nRECOMMEND: /eng-spec")
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
+        self.assertIn("The coder recommended /eng-spec.", out)
         self.assertNotIn("AGENT: review-loop", out)
+
+    def test_coder_that_denies_an_eng_spec_recommendation_still_goes_to_review(self):
+        self.start_phase_one()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: done\nI did not recommend /eng-spec: the task stayed small.")
+        out = self.step("after-coder")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("ACTION: stop", out)
+
+    def test_coder_with_no_change_stop_names_the_missing_change_as_its_cause(self):
+        self.start_phase_one()
+        self.hook("coder", "Blocked: the schema is missing.")
+        out = self.step("after-coder")
+        self.assertIn("The coder produced no reviewable change.", out)
+        self.assertNotIn("recommended /eng-spec", out)
 
     def test_deleted_file_counts_as_changed(self):
         self.start_phase_one()
@@ -3064,7 +3080,7 @@ class CodeStepTest(unittest.TestCase):
         self.assert_unchanged_asks_coder_stops("Open question: which name should the rename use?")
 
     def test_asks_coder_that_changed_nothing_and_recommends_eng_spec_stops(self):
-        self.assert_unchanged_asks_coder_stops("This is architectural; run /eng-spec.")
+        self.assert_unchanged_asks_coder_stops("This is architectural.\nRECOMMEND: /eng-spec")
 
     def test_asks_coder_that_changed_nothing_and_could_not_apply_the_ask_stops(self):
         self.assert_unchanged_asks_coder_stops("Could not apply the rename; left as is.")
@@ -3145,7 +3161,7 @@ class CodeStepTest(unittest.TestCase):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nOpen question: which name should it use?")
 
     def test_asks_coder_already_done_line_with_an_eng_spec_recommendation_stops(self):
-        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nThe rest needs /eng-spec.")
+        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: /eng-spec")
 
     def test_asks_coder_already_done_line_with_a_plan_impact_report_stops(self):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\n" + self.IMPACT_REPORT)

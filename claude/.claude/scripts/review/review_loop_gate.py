@@ -10,7 +10,7 @@
       code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
       `status: plan-impact` owes no check, and neither does a loop in a repo whose CLAUDE.md holds the line
       `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. A stop with a
-      delivered SubagentHandback (one no hook denied) skips this check.
+      delivered SubagentHandback (one no hook denied) skips this check and the plan-file check.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
       `review-loop`; the agent_type check below still guards an unscoped entry.
@@ -452,7 +452,8 @@ def final_packet(transcript, final):
 def ledger_reasons(transcript, final, delivered=False):
     """The reasons for a block when the packet owes ledger rows the loop did not write, or when it names the plan file
     as touched. Nothing when the packet does not parse: a stop check never guesses. After a delivered hand-back the
-    ledger reasons tell the loop to stop, since a second hand-back is denied."""
+    ledger reasons tell the loop to stop, since a second hand-back is denied, and the plan file is not checked: the
+    hand-back hook checked it before delivery."""
     packet = final_packet(transcript, final)
     if packet is None:
         return []
@@ -469,12 +470,20 @@ def ledger_reasons(transcript, final, delivered=False):
         reasons.append(METRICS_REASON.format(fixed=len(packet.get("fixed") or []),
                                              skipped_fp=len(packet.get("skipped_fp") or [])))
     if delivered:
-        reasons = [reason.replace(RETURN_TAIL, DELIVERED_TAIL) for reason in reasons]
+        return [reason.replace(RETURN_TAIL, DELIVERED_TAIL) for reason in reasons]
 
+    plan_edit = plan_edit_reason(transcript, packet)
+    if plan_edit:
+        reasons.append(plan_edit)
+    return reasons
+
+
+def plan_edit_reason(transcript, packet):
+    """PLAN_EDIT_REASON when the packet's files_touched names the plan file of the loop's dispatch prompt, else None."""
     plan = PROMPT_PLAN.search(transcript.prompt or "")
     if plan and touches_plan(packet.get("files_touched") or [], plan.group(1)):
-        reasons.append(PLAN_EDIT_REASON.format(plan=plan.group(1)))
-    return reasons
+        return PLAN_EDIT_REASON.format(plan=plan.group(1))
+    return None
 
 
 def nit_rows(transcript):

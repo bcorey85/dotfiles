@@ -795,6 +795,25 @@ class OneCheckedHandBackTest(HandbackTestBase):
                  "tool_input": {"message": CONVERGED}}
         self.assertIn("deny", self.run_cli(["hook", "handback"], json.dumps(event))[1])
 
+    def test_a_hand_back_whose_files_touched_names_the_plan_file_is_denied_with_the_plan_edit_reason(self):
+        steps = [{"type": "user", "message": {"role": "user", "content": "review loop\nplan: docs/plans/orders.md"}},
+                 coder_step("t1"), full_check_run("t2")]
+        plan_edit = CONVERGED.replace("files_touched: [src/orders.ts]",
+                                      "files_touched: [src/orders.ts, docs/plans/orders.md]")
+        cap_reached = ("status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n"
+                       "files_touched: [docs/plans/orders.md]\n")
+
+        for message in (plan_edit, cap_reached):
+            with self.subTest(message=message.splitlines()[0]):
+                out = self.hand_back(steps, message=message)
+
+                reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+                self.assertIn("never edits the plan", reason)
+                self.assertEqual(self.handback_rows(), [])
+
+        self.assertEqual(self.hand_back(steps), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
     def test_a_second_hand_back_from_an_agent_with_a_stored_report_is_denied_and_adds_no_row(self):
         steps = [coder_step("t1"), full_check_run("t2")]
         self.assertEqual(self.hand_back(steps), "")

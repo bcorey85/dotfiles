@@ -494,7 +494,7 @@ def emit_review_dispatch(repo_dir, state):
     for path, notes in state["why"].items():
         summary += [f"  {path}:{note['lines']} - {note['note']}" for note in notes]
     summary.append("Auto-dispatching review to check the implementation before committing.")
-    say(repo_dir, "\n".join(summary))
+    say(repo_dir, "\n".join(summary), replaces_blocks_starting="Implemented: ")
     if runs_review_script():
         return launch_review_script(repo_dir, state, prompt)
     emit_dispatch(repo_dir, state, RESUME_VERB, prompt=prompt, agent="review-loop", model="sonnet")

@@ -29,6 +29,8 @@ Not measured yet. Expected: fewer tests added per phase, with no rise in test-ga
 
 `test-sibling-whole-suite`: review findings of class test-gap and weak-assertion per review run stay flat. The intake does not count tests added per phase yet, so the gain itself has no watch.
 
+Reading, 2026-10-27 intake: the coder output cost guard is closed as not tracked. Work subagent transcripts before Claude Code 2.1.308 carry output on about 5% of requests, so its before window cannot be compared. The findings watch is held: from 2026-10-27 the scripted review loop's finding rows are wrong until its logger is fixed.
+
 ## Back-out
 
 Restore the four files from git.

@@ -17,6 +17,8 @@ unmeasured: ""
 ## Change
 
 - New `RAW_LINE_MARKERS` holds the plan-path and provenance patterns. They search the raw line, string text included.
+- In a test file (`source_paths.is_test_path`) they skip string text like the other markers: a plan path there is
+  fixture data. A comment that names one still blocks.
 - The other markers still search the line with string text removed, so a `## Phase 1` fixture string passes.
 - Lines inside a multi-line data string are still skipped. On a line that opens or closes one, the raw search covers
   only the code part, as before.
@@ -28,8 +30,8 @@ unmeasured: ""
 
 ## Result
 
-- An added code line that names a plan path or a provenance source in a string blocks. A test that builds such a path
-  in a one-line string now needs the path split, as test_comment_bloat_gate.py already does.
+- An added line of shipped code that names a plan path or a provenance source in a string blocks. Test fixtures are
+  unchanged.
 
 ## Watch
 

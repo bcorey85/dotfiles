@@ -57,8 +57,7 @@ def main():
     hook = json.load(sys.stdin)
     reason = deny_reason_for(hook)
     if reason:
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                 "permissionDecisionReason": reason}}))
+        script_utils.pre_tool_use_deny(reason)
 
 
 if __name__ == "__main__":

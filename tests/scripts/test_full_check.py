@@ -70,6 +70,20 @@ class FullCheckTest(unittest.TestCase):
                 self.assertTrue(first_line.startswith("full check: not run (check-command error: "), first_line)
                 self.assertIn("missing", first_line)
 
+    def test_a_step_on_a_path_the_diff_removed_is_a_failure(self):
+        (self.repo / "pkg").mkdir()
+        (self.repo / "pkg" / "schema.json").write_text("{}\n")
+        for argv in (["init", "-q"], ["add", "pkg"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                                                      "-m", "base"], ["rm", "-q", "-r", "pkg"]):
+            subprocess.run(["git", *argv], cwd=self.repo, check=True)
+
+        for command in ("git diff --exit-code pkg/schema.json", "cd pkg && true"):
+            with self.subTest(command=command):
+                completed = self.check(command)
+
+                self.assertEqual(completed.returncode, 1, completed.stdout)
+                self.assertTrue(completed.stdout.startswith("full check: failed"), completed.stdout)
+
     def test_a_check_past_its_limit_is_not_run_and_leaves_no_process_behind(self):
         pid_file = self.repo / "sleeper.pid"
 

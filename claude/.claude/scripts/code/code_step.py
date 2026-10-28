@@ -11,6 +11,7 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py start --repo <path> ...         run in that checkout, not the current directory (a `Repo: <path>` first
                                                 line in the task file does the same)
   code_step.py resume                           do the next step of the saved run, whatever stage or stop it is in
+  code_step.py resume <text>                    the answer to a stopped coder; with no run open, the same as start
   code_step.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"
                                                 only --by user is the user's own word: a session ruling never changes
                                                 a criterion
@@ -534,6 +535,10 @@ def command_resume(args):
     os.chdir(repo_dir)
     state = load_state(repo_dir)
     route = resume_route(repo_dir, state)
+    # With no run open, the arguments are new work: a task file or task text that came with no verb.
+    if args and route in ("start", "done"):
+        return command_start(args)
+
     # Only a coder that waits for the user's answer takes one: `resume <answer>`.
     if args and route != "ask-coder":
         return refuse("resume takes no arguments here: no stopped coder waits for an answer.",

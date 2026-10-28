@@ -935,6 +935,14 @@ class WriteTextAtomicallyTest(unittest.TestCase):
         self.assertEqual(["state.json"], sorted(path.name for path in self.folder.iterdir()))
 
 
+class AgentTranscriptPathTest(unittest.TestCase):
+    def test_the_path_the_event_names_wins_over_the_one_built_from_the_session_transcript(self):
+        named = {"agent_transcript_path": "/t/named.jsonl", "transcript_path": "/t/s.jsonl", "agent_id": "a1"}
+        built = {"transcript_path": "/t/s.jsonl", "agent_id": "a1"}
+        self.assertEqual("/t/named.jsonl", script_utils.agent_transcript_path(named))
+        self.assertEqual("/t/s/subagents/agent-a1.jsonl", script_utils.agent_transcript_path(built))
+
+
 class PopOptionTest(unittest.TestCase):
     def test_flag_and_value_are_removed_wherever_they_sit(self):
         cases = [

@@ -50,24 +50,32 @@ from code_step_gates import derive_gate_commands
 from code_step_report import ENG_SPEC_BRIEF
 from code_step_restart import drop_open_run, reopens_stopped_run
 from code_step_start_args import (
+    START_MODIFIERS,
+    RepoFlagError,
     TaskFileError,
+    absolute_path_args,
     carry_run_notes,
+    is_flag,
     outside_repo_plan_refusal,
     read_task_file,
     run_notes_lines,
     split_plan_words,
+    split_quoted_flags,
+    start_repo_path,
+    starts_task_text,
 )
 from script_utils import run_command
 
-START_USAGE = ('usage: code_step.py start [<plan>] [+fast|+deep] [--phase <id>] [--restart] [<run notes>]\n'
-               '       code_step.py start --task "<task text>"\n'
-               '       code_step.py start --task-file <path>\n'
+START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep] [--phase <id>] [--restart] '
+               '[<run notes>]\n'
+               '       code_step.py start [--repo <path>] --task "<task text>"\n'
+               '       code_step.py start [--repo <path>] --task-file <path>\n'
                '--phase <id> starts the named phase; the text after a plan file or ticket id and its phase is the '
                "run notes: the coder's constraints for that run. Text that comes first, when there is no plan file, "
                'ticket id or directory, is the task text. --task-file reads the task text from a file, as it is. A '
                'flag before the text, or after a plan, must be known. --restart drops an unfinished run and starts '
-               'over.')
-START_MODIFIERS = ("+fast", "+deep")
+               'over. --repo runs everything in that checkout, not the current directory; so does a `Repo: <path>` '
+               'or `Repo root: <path>` first line in the task file.')
 FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: invoke Skill code with "
                   "`start --task \"<text>\"`.")
 # The verbs that older printed commands still name. Each one now does what `resume` does.
@@ -85,29 +93,6 @@ StartArgs = collections.namedtuple("StartArgs", "modifier plan_args task_text ph
                                    "run_notes", defaults=(None,))
 
 
-def looks_like_plan_argument(word):
-    # A word with whitespace is task text that happens to name a file, unless it is itself a file (a real plan whose
-    # path has a space). Words are tested with os.path, not pathlib: before Python 3.14, pathlib raises on a word
-    # longer than a file name may be, which is any long task text.
-    if script_utils.has_whitespace(word) and not os.path.isfile(word):
-        return False
-
-    return (looks_like_plan_path(word) or TICKET_ID.match(word) is not None or os.path.isfile(word)
-            or os.path.isdir(word))
-
-
-def looks_like_plan_path(argument):
-    return "/" in argument or argument.endswith(".md")
-
-
-def is_flag(word):
-    return word.startswith("-") and len(word) > 1
-
-
-def starts_task_text(word):
-    return word not in START_MODIFIERS and not is_flag(word) and not looks_like_plan_argument(word)
-
-
 def phase_flag_value(args, position):
     # The id after `--phase`; a missing id, or a flag in its place, exits 2.
     if position + 1 >= len(args) or args[position + 1].startswith("-"):
@@ -116,8 +101,8 @@ def phase_flag_value(args, position):
 
 
 def reject_unknown_flag(word):
-    # --restart is the one flag besides --phase and --task. --help prints usage and exits 0 before any state is
-    # touched; any other flag exits 2.
+    # --restart is the one flag besides --phase, --task, --task-file and --repo. --help prints usage and exits 0
+    # before any state is touched; any other flag exits 2.
     if word in ("--help", "-h"):
         print(START_USAGE)
         sys.exit(0)
@@ -157,6 +142,9 @@ def parse_start_args(args):
             continue
         if word == "--phase":
             phase_id = phase_flag_value(args, position)
+            position += 2
+            continue
+        if word == "--repo":
             position += 2
             continue
         if starts_task_text(word):
@@ -216,16 +204,16 @@ def task_command(task_words, modifier, *flags):
     # The `start` line that runs the words as task text, with the user's +fast or +deep kept.
     quoted_task_text = shlex.quote(" ".join(task_words))
     modifier_words = [modifier] if modifier else []
-    return script_command(" ".join(["start", *flags, *modifier_words, "--task", quoted_task_text]))
+    return script_command(" ".join(["start", *map(shlex.quote, flags), *modifier_words, "--task", quoted_task_text]))
 
 
-def verb_as_task_refusal(words, parsed):
+def verb_as_task_refusal(words, parsed, repo_flags):
     # `start` was given a verb name in place of task text: (reason, commands, notes), or None.
     if parsed.plan_args or not first_word_is_verb(words):
         return None
 
     resume_command = script_command(RESUME_VERB)
-    task_command_text = task_command(parsed.positional_words, parsed.modifier)
+    task_command_text = task_command(parsed.positional_words, parsed.modifier, *repo_flags)
     first_word = words[0]
     verb_reason = f"`{first_word}` is a verb, not task text."
     is_resume_word = first_word in VERB_WORDS_REPLACED_BY_RESUME
@@ -246,7 +234,7 @@ def plain_task_words(parsed):
     return [] if plan_words or phase_id or has_phase_flag else words
 
 
-def open_run_refusal(previous, args, parsed):
+def open_run_refusal(previous, args, parsed, repo_flags):
     # An unfinished run blocks `start` unless --restart: (reason, commands, notes), or None. --task does not pass. A
     # run that stopped on the coder's report does not block the session that got the report.
     if not is_run_open(previous) or parsed.restart or reopens_stopped_run(previous):
@@ -257,21 +245,27 @@ def open_run_refusal(previous, args, parsed):
     if not args:
         return reason, [resume_command], ()
 
+    started_by = previous.get("sessionId")
+    if started_by and session_pin() and started_by != session_pin():
+        return reason, [script_command("status")], (
+            "The run was started by another session, and `start --restart` would drop it: run that only on the "
+            "user's word. To run in another checkout, pass `--repo <path>`.",)
+
     restart_command = script_command(f"start --restart {shlex.join(args)}")
     plain_text_words = plain_task_words(parsed)
     if plain_text_words:
-        restart_command = task_command(plain_text_words, parsed.modifier, "--restart")
+        restart_command = task_command(plain_text_words, parsed.modifier, *repo_flags, "--restart")
     return reason, [resume_command, restart_command], (
         "`resume` goes on with the open run. `start --restart` drops it and starts over.",)
 
 
-def plan_inside_task_refusal(words, parsed):
+def plan_inside_task_refusal(words, parsed, repo_flags):
     # Task text that starts with a plan or holds `--phase`: (reason, commands, notes), or None.
     plan_words, text_words, phase_id, has_phase_flag = split_plan_words(words, parsed)
     if not (plan_words or parsed.phase_id or has_phase_flag):
         return None
 
-    start_words = ["start", *plan_words] + (["--phase", phase_id] if phase_id else []) + (
+    start_words = ["start", *repo_flags, *plan_words] + (["--phase", phase_id] if phase_id else []) + (
         [parsed.modifier] if parsed.modifier else [])
     commands = [script_command(shlex.join(start_words))]
     # A word that is no plan file (a directory, a ticket id, a source file) may be the first word of the task, so
@@ -280,44 +274,44 @@ def plan_inside_task_refusal(words, parsed):
         not (os.path.isfile(plan_word) and plan_word.endswith(".md")) for plan_word in plan_words)
     task_words = [*plan_words, *text_words] if has_word_that_is_no_plan_file else text_words
     if task_words:
-        commands.append(task_command(task_words, parsed.modifier))
+        commands.append(task_command(task_words, parsed.modifier, *repo_flags))
     return ("the text after the plan or phase is not task text.", commands,
             ("The text after it was not passed to the coder. Tell the user.",))
 
 
-def task_over_open_phases_refusal(repo_dir, previous, branch, parsed):
+def task_over_open_phases_refusal(repo_dir, previous, branch, parsed, repo_flags):
     saved_plan = reusable_plan(previous, branch)
     open_phases = open_phase_numbers(repo_dir, saved_plan)
     if not open_phases:
         return None
 
     resume_command = script_command(RESUME_VERB)
-    task_command_text = task_command(parsed.positional_words, parsed.modifier)
+    task_command_text = task_command(parsed.positional_words, parsed.modifier, *repo_flags)
     return (f"{saved_plan} has open phases ({', '.join(open_phases)}).", [resume_command, task_command_text], (
         "`resume` goes on with the plan. `start --task` is for separate work.",))
 
 
-def start_refusal(repo_dir, previous, branch, args, parsed):
+def start_refusal(repo_dir, previous, branch, args, parsed, repo_flags):
     # Why `start` does not run, as (reason, commands, notes), or None. Checked before anything is written: a verb
     # name as task text, an unfinished run, a plan or --phase inside task text, and task text over a plan with open
     # phases.
     words = script_utils.words_of_arguments(parsed.positional_words) if parsed.positional_words else []
-    refusal = verb_as_task_refusal(words, parsed) if words else None
+    refusal = verb_as_task_refusal(words, parsed, repo_flags) if words else None
     if refusal:
         return refusal
 
-    refusal = open_run_refusal(previous, args, parsed)
+    refusal = open_run_refusal(previous, args, parsed, repo_flags)
     if refusal:
         return refusal
 
-    refusal = outside_repo_plan_refusal(repo_dir, parsed)
+    refusal = outside_repo_plan_refusal(repo_dir, parsed, repo_flags)
     if refusal or not words:
         return refusal
 
-    refusal = plan_inside_task_refusal(words, parsed)
+    refusal = plan_inside_task_refusal(words, parsed, repo_flags)
     if refusal:
         return refusal
-    return task_over_open_phases_refusal(repo_dir, previous, branch, parsed)
+    return task_over_open_phases_refusal(repo_dir, previous, branch, parsed, repo_flags)
 
 
 def open_phase_numbers(repo_dir, plan_rel):
@@ -409,15 +403,22 @@ def prepare_fresh_start(repo_dir, previous, branch, parsed):
 
 
 def command_start(args):
-    repo_dir = repo_root_or_exit()
+    args = split_quoted_flags(args)
+    args = absolute_path_args(args)
+    try:
+        named_repo = start_repo_path(args)
+    except RepoFlagError as error:
+        usage_error(str(error))
+    repo_dir = repo_root_or_exit(named_repo)
     os.chdir(repo_dir)
     args = without_blank_task_text(args)
     args = phase_words_as_flag(args)
-    parsed = carry_run_notes(parse_start_args(args))
     previous = load_state(repo_dir) or {}
     branch = branch_label(repo_dir)
+    parsed = carry_run_notes(parse_start_args(args), reusable_plan(previous, branch))
 
-    refusal = start_refusal(repo_dir, previous, branch, args, parsed)
+    repo_flags = ["--repo", str(repo_dir)] if named_repo else []
+    refusal = start_refusal(repo_dir, previous, branch, args, parsed, repo_flags)
     if refusal:
         reason, commands, notes = refusal
         return refuse(reason, *commands, notes=notes)

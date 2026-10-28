@@ -8,6 +8,8 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 unfinished run first.
   code_step.py start --task "<text>"           planless work: the coder dispatch without gate or packet
   code_step.py start --task-file <path>        the same, with the text read from a file
+  code_step.py start --repo <path> ...         run in that checkout, not the current directory (a `Repo: <path>` first
+                                                line in the task file does the same)
   code_step.py resume                           do the next step of the saved run, whatever stage or stop it is in
   code_step.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"
                                                 only --by user is the user's own word: a session ruling never changes
@@ -157,12 +159,19 @@ NO_CODER_REPORT = ("No coder report was saved. The log-hook (code_step.py log-ho
 
 # ---------- plan check ----------
 
+PLAN_USAGE = "usage: code_step.py plan check [--final]|parse <path>"
+
+
 def command_plan(args):
     # `plan check --final <path>` also fails a spec whose criteria file was never written.
+    if "--help" in args or "-h" in args:
+        print(PLAN_USAGE)
+        sys.exit(0)
+
     final = args[1:2] == ["--final"] and args[0] == "check"
     path_args = args[2:] if final else args[1:]
     if not path_args or args[0] not in ("check", "parse"):
-        sys.exit("usage: code_step.py plan check [--final]|parse <path>")
+        sys.exit(PLAN_USAGE)
     plan_path = path_args[0]
 
     plan_lines = pathlib.Path(plan_path).read_text().splitlines()

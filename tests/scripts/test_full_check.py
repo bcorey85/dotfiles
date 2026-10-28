@@ -129,7 +129,6 @@ class FullCheckTest(unittest.TestCase):
         completed = self.check("echo 'FAIL: test_rounding (test_money.MoneyTest)'; echo 'Ran 9 tests'; exit 1")
 
         self.assertIn("FAIL: test_rounding (test_money.MoneyTest)", completed.stdout.splitlines())
-        self.assertNotIn("Ran 9 tests", completed.stdout)
 
     def test_a_step_on_a_missing_path_is_a_check_command_error_not_a_failure(self):
         for command in ("git init -q && git diff --exit-code missing/schema.json", "cd missing-dir && true"):
@@ -154,6 +153,24 @@ class FullCheckTest(unittest.TestCase):
 
                 self.assertEqual(completed.returncode, 1, completed.stdout)
                 self.assertTrue(completed.stdout.startswith("full check: failed"), completed.stdout)
+
+    def test_a_check_with_no_package_manifest_is_a_setup_fault(self):
+        completed = self.check("echo ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND; exit 1")
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: setup fault (exit 1)")
+
+    def test_a_missing_module_from_outside_the_repo_is_a_failure_not_a_setup_fault(self):
+        completed = self.check("echo \"ModuleNotFoundError: No module named 'requests'\"; exit 2")
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 2)")
+
+    def test_a_failing_test_name_the_tail_cut_off_is_printed_above_the_tail(self):
+        failing_test = "FAILED tests/test_totals.py::test_rounding"
+        completed = self.check(f"echo '{failing_test}'; seq 1 100; exit 1")
+
+        self.assertEqual(completed.stdout.splitlines()[:3],
+                         ["full check: failed (exit 1)", "Failing tests:", failing_test])
 
     def test_a_check_past_its_limit_is_not_run_and_leaves_no_process_behind(self):
         pid_file = self.repo / "sleeper.pid"

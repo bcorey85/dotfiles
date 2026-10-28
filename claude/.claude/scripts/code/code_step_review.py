@@ -495,7 +495,7 @@ def emit_review_dispatch(repo_dir, state):
     for path, notes in state["why"].items():
         summary += [f"  {path}:{note['lines']} - {note['note']}" for note in notes]
     summary.append("Auto-dispatching review to check the implementation before committing.")
-    say(repo_dir, "\n".join(summary))
+    say(repo_dir, "\n".join(summary), replaces_blocks_starting="Implemented: ")
     if runs_review_script():
         return launch_review_script(repo_dir, state, prompt)
     emit_dispatch(repo_dir, state, RESUME_VERB, prompt=prompt, agent="review-loop", model="sonnet")
@@ -513,7 +513,7 @@ def launch_review_script(repo_dir, state, prompt):
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
     session_id = run_session_id(state)
-    module.record(session_id, "dispatch", no_review=False)
+    module.record(session_id, "dispatch", no_review=False, repo=module.reviewed_repo("", repo_dir))
 
     code_step_dir = state_dir(repo_dir)
     script_dir = code_step_dir / "loop-script" / agent_id
@@ -573,6 +573,16 @@ def review_stop_next_step(state):
     return f"after the user rules on the findings, {restart_instruction(state)} to start the phase over."
 
 
+# The statuses that stop on the packet's blockers: (the question, the instruction to the caller).
+BLOCKER_STOP_TEXT = {
+    "critical-blocker": ("the review found a critical blocker.",
+                         "Review found a critical blocker. Present these to the user. Do not mark the phase done."),
+    "setup-fault": ("the review's full check could not run here.",
+                    "The full check could not run here. This is a toolkit or environment fault, not a code failure. "
+                    "Present these to the user. Do not mark the phase done."),
+}
+
+
 def stop_on_review_status(repo_dir, state, module, packet):
     # True after the stop or question a packet status that ends the run prints.
     status = packet["status"]
@@ -593,14 +603,14 @@ def stop_on_review_status(repo_dir, state, module, packet):
             "Tool fault: " + packet["tool_fault"],
             "To run the review again on the same diff, invoke Skill code with `review-again`.")
         return True
-    if status == "critical-blocker":
+    if status in BLOCKER_STOP_TEXT:
+        question, instruction = BLOCKER_STOP_TEXT[status]
         state["stage"] = "stopped"
         save_state(repo_dir, state)
         blocker_lines = ["- " + module.item_text(item, "finding", "file_line") for item in packet["blockers"]]
         stop_with_question(
-            repo_dir, "the review found a critical blocker.", [line[2:] for line in blocker_lines],
-            review_stop_next_step(state),
-            "Review found a critical blocker. Present these to the user. Do not mark the phase done.", *blocker_lines)
+            repo_dir, question, [line[2:] for line in blocker_lines], review_stop_next_step(state), instruction,
+            *blocker_lines)
         return True
     if status == "cap-reached":
         # The first cap of a phase sends the open findings to one more review-loop pass with a fresh round budget.

@@ -127,7 +127,7 @@ class ReviewCommitGateFindingsTest(HookRunTest):
             if marker.exists():
                 marker.unlink()
             self.run_hook("review-commit-gate", json.dumps(payload))
-            self.assertEqual(marker.read_text(), "dirty\n", blank)
+            self.assertEqual(json.loads(marker.read_text())["kind"], "dispatch", blank)
 
 
 class CalibrationGuardFindingsTest(HookRunTest):

@@ -97,15 +97,12 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("ACTION: dispatch", out)
         self.assertEqual("2", self.state()["phase"])
 
-    def test_start_with_a_phase_and_no_plan_before_task_text_is_refused_with_the_start_and_the_task_commands(self):
-        self.finish_phase_one()
-        before = self.state_bytes()
-
+    def test_start_with_a_phase_and_no_plan_and_no_saved_plan_before_task_text_is_refused_with_the_two_commands(self):
         out = self.step("start", "--phase", "2", "—", "brief")
 
         self.assert_refused_with_choices(out, "start --phase 2", "start --task '— brief'")
         self.assertIn("was not passed to the coder", out)
-        self.assertEqual(before, self.state_bytes())
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
 
     def test_start_with_a_replaced_verb_followed_by_words_is_refused_with_resume_and_the_task_command(self):
         self.finish_phase_one()

@@ -120,8 +120,7 @@ CLAUDE_STUB = TMP_ROOT / "claude"
 (CLAUDE_STUB / "scripts").mkdir(parents=True)
 (CLAUDE_STUB / "skills/review").mkdir(parents=True)
 for script_name in ("coder_gate.py", "coder_packet.py", "plan_format.py", "script_utils.py", "resolve-task-dir.sh",
-                    *toolkit_paths.CODE_STEP_MODULES, "shell_command.py", "makefile_text.py", "test_run_output.py",
-                    "numstat.py", "source_paths.py", "branch-base"):
+                    *toolkit_paths.CODE_STEP_MODULES, *toolkit_paths.CODE_STEP_LIB_MODULES, "branch-base"):
     try:
         source_file = toolkit_paths.script_in(SCRIPTS_ROOT, script_name)
     except FileNotFoundError:
@@ -129,6 +128,14 @@ for script_name in ("coder_gate.py", "coder_packet.py", "plan_format.py", "scrip
     staged_file = CLAUDE_STUB / "scripts" / source_file.parent.name / script_name
     staged_file.parent.mkdir(exist_ok=True)
     shutil.copy(source_file, staged_file)
+# A lib import the stub lacks makes every `coder_gate.py set` die, and the walk then skips the gate states silently.
+_gate_repo = TMP_ROOT / "gate-repo"
+_gate_repo.mkdir()
+subprocess.run(["git", "init", "-q"], cwd=_gate_repo, check=True)
+_gate_script = str(CLAUDE_STUB / "scripts/code/coder_gate.py")
+_gate_set = subprocess.run([sys.executable, _gate_script, "set", "pytest tests/a.py"],
+                           cwd=_gate_repo, capture_output=True, text=True)
+assert _gate_set.returncode == 0, f"staged coder_gate.py set fails: {_gate_set.stderr}"
 (CLAUDE_STUB / "scripts" / "telemetry").mkdir(exist_ok=True)
 for stub_name in ("scripts/telemetry/log-scan", "skills/review/log-review-finding"):
     stub_file = CLAUDE_STUB / stub_name

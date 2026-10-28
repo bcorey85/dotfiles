@@ -13,8 +13,8 @@
 # log-review-finding folds it. clean, residue and findings are stored as sent.
 # date, schema_version, repo, session and desc are accepted and never stored; the
 # writer adds the date, repo and session, and keys `branch=` into branch_key.
-# With no `ledger` on PATH `ledger-write` drops the row and prints one stderr line. A row
-# `ledger write` refuses exits 2.
+# With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) `ledger-write` drops the row
+# and prints one stderr line. A row `ledger write` refuses exits 2.
 #
 # An explicit out=<path> writes the row there as one JSONL line instead of to the
 # ledger. The redirect writes only while the metrics switch is on.

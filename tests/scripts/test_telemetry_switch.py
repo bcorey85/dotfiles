@@ -38,7 +38,7 @@ if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
 SCRIPT_FOLDERS = {"telemetry_enabled.sh": "telemetry", "telemetry_enabled.py": "telemetry", "hook_input.py": "lib",
                   "log_skill_use.py": "telemetry", "test_edit_telemetry.py": "telemetry",
                   "log-escape": "telemetry", "log-scan": "telemetry", "log-spec-run": "telemetry",
-                  "coder_gate.py": "code", "script_utils.py": "lib", "_kv.sh": "lib",
+                  "coder_gate.py": "code", "script_utils.py": "lib", "_kv.sh": "lib", "_ledger.sh": "lib",
                   "ledger-write": "telemetry", "shell_command.py": "lib", "makefile_text.py": "lib"}
 SCRIPTS = list(SCRIPT_FOLDERS)
 REVIEW = ["log-review-metrics", "log-perf-finding", "log-review-finding", "review-scope"]
@@ -305,7 +305,7 @@ class SwitchTest(unittest.TestCase):
 
     def install_skill_helpers(self):
         """Puts the switch helper and ledger-write where a skill's bash block finds them under $HOME/.claude."""
-        for name in ("telemetry_enabled.sh", "ledger-write", "_kv.sh"):
+        for name in ("telemetry_enabled.sh", "ledger-write", "_kv.sh", "_ledger.sh"):
             installed = self.home / ".claude" / "scripts" / SCRIPT_FOLDERS[name] / name
             installed.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(self.script_path(name), installed)

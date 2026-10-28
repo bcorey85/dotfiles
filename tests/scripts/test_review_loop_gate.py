@@ -449,7 +449,8 @@ class RunRowTest(unittest.TestCase):
         shutil.copy2(LOGGER, os.path.join(claude_dir, "skills", "review", "log-review-finding"))
         os.symlink(SCRIPTS_ROOT, os.path.join(claude_dir, "scripts"))
         self.script, self.quiet, self.stderr = SCRIPT, True, ""
-        self.env = {**os.environ, "HOME": self.home, **fake_ledger.install(self.tmp.name),
+        self.env = {**os.environ, "HOME": self.home, "CARGO_HOME": os.path.join(self.home, ".cargo"),
+                    **fake_ledger.install(self.tmp.name),
                     "REVIEW_LOOP_GATE_STATE_DIR": os.path.join(self.tmp.name, "state"),
                     "REVIEW_LOOP_GATE_CLAUDE_DIR": claude_dir,
                     "CLAUDE_TOOLKIT_TELEMETRY": "1"}
@@ -551,7 +552,7 @@ class RunRowTest(unittest.TestCase):
         self.quiet = False
         self.stop(records)
         self.assertEqual([], self.rows())
-        self.assertIn("ledger not on PATH; review_run row dropped", self.stderr)
+        self.assertIn("no ledger found; review_run row dropped", self.stderr)
         self.assertFalse(os.path.exists(findings_file))
         self.env["PATH"] = path_with_ledger
         self.stop(records)

@@ -176,6 +176,28 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("auth.ts came back clean", output)
         self.assertNotIn("Do not present this run as clean", output)
 
+    def test_with_no_ledger_the_report_tells_the_user_the_rows_were_dropped(self):
+        home = self.temp_root / "home"
+        home.mkdir()
+        bare_path = fake_ledger.path_without_ledger(os.environ["PATH"])
+
+        code, output = self.packet(CONVERGED, PATH=bare_path, HOME=str(home), CARGO_HOME=str(home / ".cargo"))
+
+        self.assertEqual(code, 0, output)
+        user_text = output.split("BEGIN USER TEXT", 1)[1].split("END USER TEXT", 1)[0]
+        self.assertIn("### Ledger", user_text)
+        self.assertIn(
+            "No ledger found on PATH or in the cargo bin folder ($CARGO_HOME/bin, default ~/.cargo/bin)",
+            user_text,
+        )
+        self.assertIn("review rows were dropped", user_text)
+
+    def test_with_a_ledger_the_report_has_no_ledger_section(self):
+        code, output = self.packet(CONVERGED)
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("### Ledger", output)
+
     def test_converged_with_bare_none_class_closure_says_the_receipt_is_missing(self):
         code, output = self.packet(
             CONVERGED.replace(

@@ -241,6 +241,8 @@ with_ledger_scope=$("$scope" root="$repo" merge_base=HEAD caller=review 2>/dev/n
 before=$(scalar "select (select count(*) from review_finding) + (select count(*) from review_run) + (select count(*) from review_metrics) + (select count(*) from spec_run) + (select count(*) from review_scope)")
 
 PATH="$bare_path" command -v ledger >/dev/null 2>&1 && fail "no ledger: PATH still finds ledger" "$bare_path"
+# The writers also look in the cargo bin folder; the no-ledger HOME below has none.
+unset CARGO_HOME
 
 # Without a ledger each writer drops its row, prints one writer line on stderr and exits 0. The
 # check runs in its own HOME, so the file check below still reads the ledger run's HOME.
@@ -248,7 +250,7 @@ no_ledger_home="$work/no-ledger-home"
 mkdir -p "$no_ledger_home"
 expect_dropped() { # name row-type -> stderr holds the one writer line naming the dropped row
   expect "$1: stderr is one dropped line" \
-    "ledger-write: ledger not on PATH; $2 row dropped" "$(grep '^ledger-write:' "$work/err.txt")"
+    "ledger-write: no ledger found; $2 row dropped" "$(grep '^ledger-write:' "$work/err.txt")"
 }
 
 no_ledger_out=$(HOME="$no_ledger_home" PATH="$bare_path" "$finding" kind=finding lane=code scope=standalone iter=1 \

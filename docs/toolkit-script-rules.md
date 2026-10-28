@@ -2,7 +2,7 @@
 
 These rules apply to every script under `claude/.claude/scripts/` and `claude/.claude/skills/*/scripts/`, and to every draft of one.
 
-`claude/.claude/scripts/` holds one folder per concern: `code/` (code-step and coder gate), `review/` (review loop, hand-back, verify), `telemetry/` (log writers and the telemetry switch), `lib/` (shared modules: `script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`, `_kv.sh`), `tools/` (small commands), `gates/` (hook gates). The three security hooks stay at the top. A script finds its siblings through `sys.path` lines computed from `pathlib.Path(__file__).resolve()`; imports stay bare module names.
+`claude/.claude/scripts/` holds one folder per concern: `code/` (code-step and coder gate), `review/` (review loop, hand-back, verify), `telemetry/` (log writers and the telemetry switch), `lib/` (shared modules: `script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`, `_kv.sh`, `_ledger.sh`), `tools/` (small commands), `gates/` (hook gates). The three security hooks stay at the top. A script finds its siblings through `sys.path` lines computed from `pathlib.Path(__file__).resolve()`; imports stay bare module names.
 
 ## Names
 
@@ -31,7 +31,7 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 ## The ledger is optional
 
 - No skill, agent or script needs `ledger` to finish. A script reads it through `script_utils.read_ledger`; a skill step that runs `ledger` itself checks the exit code. When the ledger is not installed, stays busy or fails, go on without its answer, and print what was not read and the command that reads it. Never treat an unread ledger as an empty answer.
-- Write ledger rows through `telemetry/ledger-write`, which keeps the row in a local file when the ledger is absent.
+- Write ledger rows through `telemetry/ledger-write`, which drops the row with one stderr line when no ledger is found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`).
 
 ## Changes during a run
 
@@ -41,7 +41,7 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 ## Size
 
 - Add code for a defect only when a session hit it, or when it fires on every run. A case that only a reviewer or a designer thought of gets the fallback stop, not new code.
-- Before you write a helper, search `lib/` (`script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`) and the other scripts for one that does the job. Use it, or move it into a shared module and make both callers use it.
+- Before you write a helper, search `lib/` (`script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`, `_ledger.sh`) and the other scripts for one that does the job. Use it, or move it into a shared module and make both callers use it.
 - Do not add a verb, a route or a state field to a script over 1000 lines. First split it by concern, or cut it.
 - When a design gives a size estimate, report the real diff size at hand-over. If the diff is more than twice the estimate, stop and report to the orchestrator before review.
 

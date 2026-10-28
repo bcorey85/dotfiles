@@ -66,10 +66,11 @@ def git_names(cwd, *args):
     return [name for name in (output or "").split("\0") if name]
 
 
-def repo_root_or_exit():
-    root = script_utils.repo_root(os.getcwd())
+def repo_root_or_exit(path=None):
+    # The repo root of `path`, or of the current directory when there is no path.
+    root = script_utils.repo_root(path or os.getcwd())
     if root is None:
-        sys.exit("code-step: not inside a git repo")
+        sys.exit(f"code-step: {path + ' is ' if path else ''}not inside a git repo")
     return root
 
 
@@ -869,13 +870,19 @@ def say_file(repo_dir):
     return say_file_in(directory) if directory is not None else pathlib.Path("say.md")
 
 
-def say(repo_dir, text):
+def say(repo_dir, text, replaces_blocks_starting=None):
     # User-facing text goes to a file the /code subagent hands back verbatim, so the model never has to copy it.
+    # A block that starts with `replaces_blocks_starting` takes the place of the earlier blocks that start with it.
     directory = state_dir(repo_dir)
     if directory is None:
         return
     directory.mkdir(parents=True, exist_ok=True)
-    with open(say_file_in(directory), "a") as say_handle:
+    say_path = say_file_in(directory)
+    if replaces_blocks_starting and say_path.exists():
+        kept_blocks = [block for block in say_path.read_text().split("\n\n")
+                       if block.strip() and not block.startswith(replaces_blocks_starting)]
+        say_path.write_text("".join(block + "\n\n" for block in kept_blocks))
+    with open(say_path, "a") as say_handle:
         say_handle.write(own_path(text).rstrip() + "\n\n")
 
 

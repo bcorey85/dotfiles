@@ -134,3 +134,24 @@ class HandBackTest(base.CodeStepTest):
 
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("- add one more later step?", self.said())
+
+    def test_a_second_review_dispatch_replaces_the_first_implemented_block_in_say_md(self):
+        # No stop hook ran after the earlier dispatch, so say.md still holds its block.
+        report = "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\nREVIEW: recommended"
+        self.begin_coder()
+        say_path = self.repo / ".git/code-step/say.md"
+        say_path.write_text(
+            "Note: gate skipped\n\nImplemented: the first try\nFlagged: none.\n"
+            "  backend/src/orders.ts:3-5 - order matters\n"
+            "Auto-dispatching review to check the implementation before committing.\n\n"
+        )
+        self.hook("coder", report)
+
+        self.step("after-coder")
+
+        said = say_path.read_text()
+        self.assertNotIn("the first try", said)
+        self.assertIn("Note: gate skipped", said)
+        self.assertEqual(1, said.count("Implemented: "), said)
+        self.assertEqual(1, said.count("Flagged: "), said)
+        self.assertEqual(1, said.count("backend/src/orders.ts:3-5 - order matters"), said)

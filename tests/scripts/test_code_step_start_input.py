@@ -6,6 +6,7 @@ The fixtures are those of test_code_step.py; its own tests run there, not here.
 run: python3 -m unittest test_code_step_start_input
 """
 import shlex
+import shutil
 import time
 import unittest
 
@@ -164,6 +165,193 @@ class StartInputTest(base.CodeStepTest):
         out = self.step("start", "--task", "answer the design questions")
 
         self.assertTrue(out.startswith("Refused: "), out)
+
+    def test_a_refusal_over_a_run_of_another_session_does_not_offer_restart(self):
+        self.coder_round()
+        self.env["CLAUDE_CODE_SESSION_ID"] = "sess-2"
+
+        out = self.step("start", "--task", "fix the typo")
+
+        self.assertTrue(out.startswith("Refused: "), out)
+        self.assertNotIn("code_step.py start --restart", out)
+        self.assertIn("ACTION: rerun", out)
+        self.assertIn("another session", out)
+        self.assertIn("--repo", out)
+
+    # ---------- --task wins ----------
+
+    def test_task_flag_always_starts_a_planless_run_however_the_arguments_arrive(self):
+        self.finish_phase_one()
+        saved_state = (self.repo / ".git/code-step/state.json").read_bytes()
+        cases = [
+            ("two arguments", ["--task", "fix the typo"]),
+            ("one quoted argument", ['--task "fix the typo"']),
+            ("one argument with a modifier", ['+deep --task "fix the typo"']),
+            ("one argument with a phase flag in the text", ['--task "fix the typo" --phase 2']),
+            ("after a plan", [self.plan, "--task", "fix the typo"]),
+        ]
+
+        for label, start_args in cases:
+            with self.subTest(label):
+                (self.repo / ".git/code-step/state.json").write_bytes(saved_state)
+
+                out = self.step("start", *start_args)
+
+                self.assertIn("AGENT: coder", out)
+                self.assertIn("Implement: fix the typo", out)
+                self.assertIsNone(self.state()["plan"])
+
+    # ---------- --phase with run notes and no plan ----------
+
+    def test_phase_and_notes_with_no_plan_path_pass_the_notes_to_the_coder_using_the_saved_plan(self):
+        self.finish_phase_one()
+
+        out = self.step("start", "--phase", "2", "only", "touch", "totals")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("Run notes from the user.", out)
+        self.assertIn("only touch totals", out)
+        self.assertEqual("2", self.state()["phase"])
+        self.assertEqual(self.plan, self.state()["plan"])
+
+    def test_restart_with_a_phase_and_notes_and_no_plan_path_restarts_that_phase_with_the_notes(self):
+        self.coder_round()
+
+        out = self.step("start", "--phase", "1", "--restart", "keep", "it", "short")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("keep it short", out)
+        self.assertEqual("1", self.state()["phase"])
+
+    # ---------- --repo ----------
+
+    def other_repo(self):
+        other = self.tmp / "other"
+        shutil.copytree(self.repo, other, symlinks=True)
+        return other
+
+    def test_repo_flag_opens_the_run_in_that_checkout_and_ignores_an_open_run_of_the_cwd_repo(self):
+        other = self.other_repo()
+        self.coder_round()
+
+        out = self.step("start", "--repo", str(other), "--task", "fix the typo")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn(f"This run's checkout is {other}", out)
+        self.assertTrue((other / ".git/code-step/state.json").exists())
+        self.assertEqual("review", self.state()["stage"])
+
+    def test_a_repo_line_at_the_top_of_the_task_file_picks_the_checkout(self):
+        other = self.other_repo()
+        self.coder_round()
+        for label, header in (("Repo", f"Repo: {other}"), ("Repo root", f"Repo root: {other}")):
+            with self.subTest(label):
+                (other / ".git/code-step/state.json").unlink(missing_ok=True)
+                task_file = self.write_outside_file("brief.md", f"{header}\nAdd retries to the orders client.\n")
+
+                out = self.step("start", "--task-file", str(task_file))
+
+                self.assertIn("AGENT: coder", out)
+                self.assertIn(f"This run's checkout is {other}", out)
+                self.assertTrue((other / ".git/code-step/state.json").exists())
+
+    def test_a_relative_task_file_path_still_reads_the_file_when_start_moves_to_another_checkout(self):
+        other = self.other_repo()
+        (self.repo / "brief.md").write_text(f"Repo: {other}\nAdd retries to the orders client.\n")
+
+        out = self.step("start", "--task-file", "brief.md")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn(f"This run's checkout is {other}", out)
+        self.assertIn("Add retries to the orders client.", out)
+
+    def test_a_relative_task_file_path_is_read_from_the_original_directory_with_a_repo_flag(self):
+        other = self.other_repo()
+        (self.repo / "brief.md").write_text("Add retries to the orders client.\n")
+
+        out = self.step("start", "--repo", str(other), "--task-file", "brief.md")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn(f"This run's checkout is {other}", out)
+        self.assertIn("Implement: Add retries to the orders client.", out)
+
+    def test_repo_flag_without_a_path_or_before_another_flag_is_a_usage_error(self):
+        for args in (["--repo"], ["--repo", "--task", "x"]):
+            with self.subTest(args=args):
+                finished = base.run(self.repo, self.env, "start", *args)
+
+                self.assertEqual(2, finished.returncode)
+                self.assertIn("--repo needs a path", finished.stderr)
+
+    def test_refusals_over_an_open_run_keep_the_repo_flag_in_the_commands_they_print(self):
+        other = self.other_repo()
+        self.step("start", "--repo", str(other), "--task", "first job")
+
+        finished = base.run(self.repo, self.env, "start", "--repo", str(other), "fix", "the", "typo")
+        out = finished.stdout
+
+        self.assertTrue(out.startswith("Refused: "), finished.stderr)
+        self.assertIn(f"start --repo {other} --restart", out)
+
+    def assert_printed_start_commands_keep_the_repo_flag(self, out, other):
+        start_commands = [line for line in out.splitlines() if "code_step.py start" in line]
+        self.assertTrue(start_commands, out)
+        for command in start_commands:
+            self.assertIn(f"--repo {other}", command)
+
+    def test_refusals_keep_the_repo_flag_for_a_verb_as_task_text_and_text_after_a_plan(self):
+        other = self.other_repo()
+        cases = {
+            "verb as task text": ["resume", "now"],
+            "text after a plan": [self.plan, "extra"],
+            "phase flag inside task text": ["fix", "the", "typo", "--phase", "2"],
+        }
+        for name, words in cases.items():
+            with self.subTest(case=name):
+                finished = base.run(self.repo, self.env, "start", "--repo", str(other), *words)
+
+                self.assertTrue(finished.stdout.startswith("Refused: "), finished.stdout + finished.stderr)
+                self.assert_printed_start_commands_keep_the_repo_flag(finished.stdout, other)
+
+    def test_a_refusal_of_a_non_plan_file_outside_the_repo_keeps_the_repo_flag(self):
+        other = self.other_repo()
+        brief = self.write_outside_file("brief.md", "Add retries to the orders client.\n")
+
+        finished = base.run(self.repo, self.env, "start", "--repo", str(other), str(brief))
+
+        self.assertTrue(finished.stdout.startswith("Refused: "), finished.stdout + finished.stderr)
+        self.assert_printed_start_commands_keep_the_repo_flag(finished.stdout, other)
+
+    def test_a_refusal_of_task_text_over_a_plan_with_open_phases_keeps_the_repo_flag(self):
+        self.finish_phase_one()
+        other = self.other_repo()
+
+        finished = base.run(self.repo, self.env, "start", "--repo", str(other), "fix", "the", "typo")
+
+        self.assertIn("has open phases", finished.stdout, finished.stderr)
+        self.assert_printed_start_commands_keep_the_repo_flag(finished.stdout, other)
+
+    def test_a_repo_word_inside_task_text_is_not_the_repo_flag(self):
+        finished = base.run(self.repo, self.env, "start", "add", "a", "--repo", "flag", "to", "the", "cli")
+
+        self.assertIn("AGENT: coder", finished.stdout, finished.stderr)
+        self.assertIn("add a --repo flag to the cli", finished.stdout)
+
+    def test_a_task_file_word_inside_task_text_leaves_the_text_as_typed(self):
+        finished = base.run(self.repo, self.env, "start", "document", "the", "--task-file", "option")
+
+        self.assertIn("AGENT: coder", finished.stdout, finished.stderr)
+        self.assertIn("document the --task-file option", finished.stdout)
+
+    def test_repo_flag_outside_a_git_repo_exits_non_zero_and_changes_nothing(self):
+        outside = self.tmp / "scratchpad"
+        outside.mkdir()
+
+        finished = base.run(self.repo, self.env, "start", "--repo", str(outside), "--task", "x")
+
+        self.assertNotEqual(0, finished.returncode)
+        self.assertIn("not inside a git repo", finished.stderr)
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
 
     # ---------- verification line that cannot run ----------
 

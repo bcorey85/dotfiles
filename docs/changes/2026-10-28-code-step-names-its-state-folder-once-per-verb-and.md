@@ -5,7 +5,7 @@ description: "state_dir asked git for the code-step state folder about 14 times 
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T08:22:31-05:00"}
 seq: 179
 kind: "fix"
-components: ["script/code-step", "test/code-step-termination"]
+components: ["script/code-step"]
 evidence: ["judgment"]
 watches: []
 test: "tests/scripts/test_code_step.py::StateDirTest::test_one_verb_asks_git_for_the_state_folder_once"

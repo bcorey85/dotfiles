@@ -42,6 +42,34 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 1)
         self.assertEqual(completed.stdout.splitlines(), ["full check: failed (exit 3)", "the rounding test failed"])
 
+    def test_a_failing_lint_step_shows_its_error_lines_not_the_passing_test_tail(self):
+        stand_in = ("printf 'C901 `command_asks_done` is too complex (12 > 10)\\n  --> app.py:12:5\\n'; "
+                    "for n in $(seq 1 60); do echo \"test_$n OK\"; done; echo '60 tests, 0 failed'; "
+                    "echo 'FAILED: lint'; exit 1")
+
+        completed = self.check(stand_in)
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout.splitlines(), ["full check: failed (exit 1)",
+                                                         "C901 `command_asks_done` is too complex (12 > 10)",
+                                                         "  --> app.py:12:5", "FAILED: lint"])
+
+    def test_a_failing_test_step_shows_its_fail_lines(self):
+        completed = self.check("echo 'FAIL: test_rounding (test_money.MoneyTest)'; echo 'Ran 9 tests'; exit 1")
+
+        self.assertIn("FAIL: test_rounding (test_money.MoneyTest)", completed.stdout.splitlines())
+        self.assertNotIn("Ran 9 tests", completed.stdout)
+
+    def test_a_step_on_a_missing_path_is_a_check_command_error_not_a_failure(self):
+        for command in ("git init -q && git diff --exit-code missing/schema.json", "cd missing-dir && true"):
+            with self.subTest(command=command):
+                completed = self.check(command)
+
+                self.assertEqual(completed.returncode, 0, completed.stdout)
+                first_line = completed.stdout.splitlines()[0]
+                self.assertTrue(first_line.startswith("full check: not run (check-command error: "), first_line)
+                self.assertIn("missing", first_line)
+
     def test_a_check_past_its_limit_is_not_run_and_leaves_no_process_behind(self):
         pid_file = self.repo / "sleeper.pid"
 

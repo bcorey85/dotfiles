@@ -356,6 +356,46 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertFalse(self.stored_packet()[0]["unreviewed_fix"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
 
+    def test_a_full_check_that_fails_lint_names_the_lint_error_in_its_blocker(self):
+        self.commit_files({"run.sh": "printf 'C901 `command_asks_done` is too complex (12 > 10)\\n'\n"
+                                     "printf '  --> app.py:3:1\\n'\n"
+                                     "for n in $(seq 1 60); do echo \"test_$n.py OK\"; done\n"
+                                     "echo '60 tests, 0 failed'\nexit 1\n"})
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, {"result": "Repaired."}],
+        }, quality_check="bash run.sh")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("C901 `command_asks_done` is too complex", packet["blockers"][0])
+        self.assertIn("--> app.py:3:1", packet["blockers"][0])
+        self.assertNotIn("0 failed", packet["blockers"][0])
+
+    def test_a_full_check_step_on_a_missing_path_is_a_check_command_error_not_a_blocker(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}],
+                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    quality_check="git diff --exit-code missing/schema.json")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertTrue(packet["full_check"].startswith("not run (check-command error: "), packet["full_check"])
+        self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
+
+    def test_the_check_finder_runs_each_ci_step_in_the_workflow_default_directory(self):
+        completed = self.run_script({"check-finder": [{"result": '{"command": "true"}'}],
+                                     "code-reviewer": [{"result": CLEAN_REVIEW}],
+                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="Run make ci before you push.\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        finder_prompt = self.fake_calls()[0]["prompt"]
+        self.assertIn("defaults.run.working-directory", finder_prompt)
+        self.assertIn("(cd <dir> && <step>)", finder_prompt)
+
     def test_ask_finding_id_reaches_packet_and_stop_row(self):
         ask_review = "## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n\n## Nit\nNone\n"
 

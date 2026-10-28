@@ -47,6 +47,8 @@ SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "full_check_command"
                "load_bearing_clean", "tool_fault")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
+# The file_line of a finding that names no file. Its row takes no line.
+UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
 STATUS_REQUIRES = {"plan-impact": ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
                    "setup-fault": ("blockers", "empty"), "cap-reached": ("findings_remaining", "empty"),
@@ -332,10 +334,11 @@ def ask_row_fields(context, item):
     scope and iter, and a phase when the run has one (the writer takes phase as a token, so a run with none sends
     none)."""
     path, line = script_utils.split_location(item.get("file_line") or "-")
+    location_fields = [f"file={path}"] if path == UNLOCATED else [f"file={path}", f"line={line}"]
     phase_fields = [f"phase={context['phase']}"] if context.get("phase") else []
     return [f"branch={context['branch']}", f"lane={context['lane']}", f"scope={context['scope']}", *phase_fields,
             f"iter={context['iter']}", f"gate={item.get('gate', 'code-reviewer')}", "disposition=ask",
-            f"class={item.get('class', 'other')}", f"file={path}", f"line={line}", "actioned=ask"]
+            f"class={item.get('class', 'other')}", *location_fields, "actioned=ask"]
 
 
 def log_ask_row(logger, context, item, cwd=None):
@@ -448,12 +451,31 @@ def normalize_ask(item):
         item["class_raw"] = ask_class
 
 
+def fold_bullets_into_asks(entries):
+    """The ask entries with each plain-text bullet that follows a mapping ask added to that ask: a multi-line ask is a
+    lead mapping whose bullets carry its facts, its question and its conditional changes. The bullets add to its
+    question, or to its finding when it has no question."""
+    asks = []
+    for entry in entries:
+        if not (isinstance(entry, str) and asks and isinstance(asks[-1], dict)):
+            asks.append(entry)
+            continue
+
+        lead_ask = asks[-1]
+        key = "question" if "question" in lead_ask else "finding"
+        lead_ask[key] = f"{lead_ask.get(key, '')}\n{entry}".strip()
+    return asks
+
+
 def normalize_items(key, entries):
     """The entries of list field `key`, a text entry made a mapping when the field is in ENTRY_TEXT_KEYS. Any other
     entry stays as it is, for item_problems to refuse."""
     text_key = ENTRY_TEXT_KEYS.get(key)
     if text_key is None:
         return entries
+
+    if key == "ask":
+        entries = fold_bullets_into_asks(entries)
     items = [entry_from_text(item, text_key) if isinstance(item, str) else item for item in entries]
     for item in items:
         if not isinstance(item, dict):

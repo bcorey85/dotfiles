@@ -94,6 +94,16 @@ class ParseTest(HandbackTestBase):
         self.assertEqual(len(packet["ask"]), 2)
         self.assertIn("two questions follow", packet["trailer"])
 
+    def test_bullets_after_a_mapping_ask_stay_inside_that_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
+                "- the plan says -j8\n- the ruling says -j2\n- which one holds?\n"
+                "- if the plan: restore -j8\n- if the ruling: keep -j2\nnit: []\n")
+        packet = handback.load(text)
+        self.assertEqual(len(packet["ask"]), 1)
+        self.assertIn("which one holds?", packet["ask"][0]["question"])
+        self.assertIn("if the ruling: keep -j2", packet["ask"][0]["question"])
+
     def test_empty_list_key_does_not_swallow_the_next_unindented_line(self):
         packet = handback.parse("status: converged\niter: 1\nfixed: []\nask: []\nclass_closure: done\nnit: []\n")
         self.assertEqual(packet["class_closure"], "done")

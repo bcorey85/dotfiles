@@ -39,8 +39,8 @@ STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-rea
 CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "full_check", "files_touched", "nit", "load_bearing_clean",
-               "tool_fault"]
-LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched"]
+               "tool_fault", "blocked_agents"]
+LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "blocked_agents"]
 SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "load_bearing_clean", "tool_fault")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
@@ -568,6 +568,7 @@ def render(packet, skill, sections=()):
         lines.append("- " + "; ".join(item_text(item, "finding", "item") for item in packet["nit"]))
     remaining_heading = "Deferred to branch exit" if packet["status"] == "deferred" else "Findings remaining"
     render_items(lines, remaining_heading, packet["findings_remaining"], remaining_line)
+    render_items(lines, "Blocked agents (not reviewed)", packet["blocked_agents"], lambda entry: f"- {entry}")
     for heading, section_lines in sections:
         lines.append(f"### {heading}")
         lines += section_lines

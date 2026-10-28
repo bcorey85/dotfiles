@@ -7,15 +7,16 @@ redirection, a script) more recently than that run, then it allows. PostToolUse(
 PostToolUseFailure(Bash) does too, except when the run did not finish: an interrupt (`is_interrupt`) or an exit
 status of 129 to 192 (128 + signal number: ended by a signal, such as a pkill or a timeout kill), so the rerun is
 allowed. Exit 128 and 255 are ordinary failures (git and PHP fatal errors) and are recorded. A check is recorded only
-when it
-surely ran: after a failure, a check behind `&&` or `||` may never have started, so it is not recorded; after
-a success, a check behind `||` is not. A command with a formatter that rewrites files (`cargo fmt`, `prettier
---write`, `ruff format`...) is never denied when every check in it runs only after the formatter succeeded (joined
-to it by `&&`, pipes allowed), and resets the cap like an edit. Key: normalized command + effective cwd (POSIX cksum)
-+ the agent
-that ran it: a run is capped only against an earlier run by the same agent, so a subagent's first run of a check is
-always allowed. The agent is the hook input's `agent_id` (set only inside a subagent); the main thread has none.
-Edits are shared by every agent of the session, because they change the tree all of them see. A `cargo test`
+when it surely ran: after a failure, a check behind `&&` or `||` may never have started, so it is not recorded; after
+a success, a check behind `||` is not. A check whose output redirection the shell could not open (a redirect into a
+missing folder, `> gone/x.log`) never started, so it is not recorded. A run record keeps
+the run's start in a line, so an edit made while the check ran allows the rerun; the record's own time is the run's
+end. A command with a formatter that rewrites files (`cargo fmt`, `prettier --write`, `ruff format`...) is never denied
+when every check in it runs only after the formatter succeeded (joined to it by `&&`, pipes allowed), and resets the
+cap like an edit; its checks are recorded with no start line. Key: normalized command + effective cwd (POSIX cksum) +
+the agent that ran it: a run is capped only against an earlier run by the same agent, so a subagent's first run of a
+check is always allowed. The agent is the hook input's `agent_id` (set only inside a subagent); the main thread has
+none. Edits are shared by every agent of the session, because they change the tree all of them see. A `cargo test`
 scoped to a named target (`--lib`, `--doc`, `--test <name>`, `--bin <name>`, a test-name filter) is never capped;
 unscoped it is. A check step with `--help`, `-h`, `--version` or `-V` as a whole word runs nothing: never denied,
 never recorded. A check in the body of a `for` loop (`for i in 1 2 3; do pytest x; done`) is never denied, so a flake
@@ -40,7 +41,14 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import hook_input
 import script_utils
 from hook_input import EMPTY_INPUT, JqError, cksum, exit_code_in_error_text, jq_field, jq_get, truthy
-from shell_command import runs_only_after_success, split_command_steps, step_surely_ran
+from shell_command import (
+    parse_simple_commands,
+    path_word,
+    redirection_writes_file,
+    runs_only_after_success,
+    split_command_steps,
+    step_surely_ran,
+)
 from shell_statements import strip_comments, strip_heredocs
 
 SIGNAL_EXIT_CODES = range(129, 193)
@@ -79,8 +87,8 @@ STDOUT_TO_FILE = re.compile("(^|" + WS + ")[1&]?>>?" + WS + "*(?!/dev/null(" + W
 CUT_MARK = "cut"
 LOG_REDIRECT = " > /tmp/check.log 2>&1"
 DENY_TAIL = (" If it still fails after that batch fix, stop and ask the user. To repeat a check on purpose, run it in "
-             "one `for i in 1 2 3; do <check>; done` loop. If you believe this deny is wrong, stop and tell the user "
-             "what you were about to run.")
+             "one loop over two or more values, `for i in 1 2 3; do <check>; done`. If you believe this deny is "
+             "wrong, stop and tell the user what you were about to run.")
 DENY_TEXT = ("' already ran this session and nothing has been edited since. Re-running unchanged code cannot "
              "produce a different result. Read that run's whole output, fix every failure in one batch, then run "
              "it once more with its output redirected to /tmp/check.log and read the WHOLE log." + DENY_TAIL)
@@ -90,8 +98,14 @@ CUT_DENY_TEXT = ("' already ran this session and nothing has been edited since, 
 CHAIN_DENY_TEXT = (" This call was denied as a whole because of that fragment alone: none of its other steps ran. "
                    "Send the other steps again without it, as their own call.")
 
+UNRESOLVED_PATH = re.compile(r"[$`*?\[]")
+# Written when the cap lets a check start; the run record then carries that start time in a line, so an edit made
+# while it ran still counts as after it. The record's own time stays at the run's end.
+START_SUFFIX = ".start"
+START_PREFIX = "start "
+
 CheckStep = collections.namedtuple(
-    "CheckStep", "index norm command_text run_file cwd in_repeat_loop output_saved output_cut")
+    "CheckStep", "index norm command_text run_file cwd in_repeat_loop output_saved output_cut redirect_files")
 
 
 class DenyError(Exception):
@@ -189,7 +203,8 @@ def tree_fingerprint(cwd):
 
 
 def run_record_lines(run_file):
-    """The lines of a run record: the tree fingerprint, then CUT_MARK when that run's output was cut."""
+    """The lines of a run record: the tree fingerprint, then CUT_MARK when that run's output was cut, then
+    `start <ns>` when the cap marked the run's start."""
     try:
         with open(run_file) as handle:
             return handle.read().splitlines()
@@ -225,6 +240,103 @@ def cuts_output(steps, index):
     """True when the check step's output goes into tail, head or grep."""
     reader = piped_step(steps, index)
     return reader is not None and OUTPUT_FILTER_START.match(reader) is not None
+
+
+def redirect_files(segment, cwd):
+    """The files the check step's output redirections write, as absolute paths. A target the hook cannot resolve (a
+    variable, a glob, a substitution) and a /dev path are left out."""
+    try:
+        commands = parse_simple_commands(segment)
+    except ValueError:
+        return []
+
+    files = []
+    for _words, redirections in commands:
+        for operator, target in redirections:
+            if not redirection_writes_file(operator, target):
+                continue
+            if not target or UNRESOLVED_PATH.search(target) or target.startswith("/dev/"):
+                continue
+
+            expanded_target = path_word(target)
+            path = os.path.normpath(os.path.join(cwd, expanded_target))
+            files.append(path)
+    return files
+
+
+def redirect_failed(check):
+    """True when the shell could not open an output redirection of the check: the folder the file goes into is
+    missing. An output file the command itself deleted later is no failure."""
+    return any(not os.path.isdir(os.path.dirname(path)) for path in check.redirect_files)
+
+
+def mark_run_starts(checks):
+    for check in checks:
+        with contextlib.suppress(OSError):
+            touch(check.run_file + START_SUFFIX)
+
+
+def clear_run_starts(checks):
+    """Drop the start marks, so a later Post does not date a run by a mark an earlier refused call left."""
+    for check in checks:
+        with contextlib.suppress(OSError):
+            os.unlink(check.run_file + START_SUFFIX)
+
+
+def take_run_start(run_file):
+    """The start mark's time in ns, removing the mark; None when there is none."""
+    start_file = run_file + START_SUFFIX
+    try:
+        start_ns = os.stat(start_file).st_mtime_ns
+        os.unlink(start_file)
+    except OSError:
+        return None
+    return start_ns
+
+
+def run_started_ns(run_file):
+    """When the recorded run started: the record's start line, else its own time."""
+    for line in run_record_lines(run_file)[1:]:
+        if line.startswith(START_PREFIX):
+            with contextlib.suppress(ValueError):
+                return int(line[len(START_PREFIX):])
+    return os.stat(run_file).st_mtime_ns
+
+
+def ran_since_last_edit(run_file, edits_file):
+    """True when the recorded run started after the last edit. An edit made while the run went on is newer than its
+    start, so it allows the rerun."""
+    try:
+        started = run_started_ns(run_file)
+    except OSError:
+        return False
+    try:
+        edited = os.stat(edits_file).st_mtime_ns
+    except OSError:
+        return True
+    return started > edited
+
+
+def record_runs(checks, steps, succeeded, state_dir, has_formatter):
+    for check in checks:
+        if not step_surely_ran(steps, check.index, succeeded):
+            continue
+        if redirect_failed(check):
+            continue
+
+        start_ns = take_run_start(check.run_file)
+        record = [tree_fingerprint(check.cwd) or ""]
+        if check.output_cut:
+            record.append(CUT_MARK)
+        if start_ns is not None and not has_formatter:
+            record.append(START_PREFIX + str(start_ns))
+
+        try:
+            with open(check.run_file, "w") as handle:
+                handle.write("\n".join(record))
+            touch_after(check.run_file, state_dir + "/edits")
+        except OSError:
+            raise ExitError(0) from None
 
 
 def changed_since_run(cwd, run_file):
@@ -384,8 +496,7 @@ def run(raw, state):
     command = jq_field(root_json, "tool_input", "command")
     if not command:
         return
-    if event == "PreToolUse" and "#skip-quality-cap" in command:
-        return
+    skipped = event == "PreToolUse" and "#skip-quality-cap" in command
     command = command.replace("#skip-quality-cap", "")
 
     steps = split_command_steps(strip_comments(strip_heredocs(command)))
@@ -437,31 +548,25 @@ def run(raw, state):
         in_repeat_loop = bool(loop_kinds) and loop_kinds[-1] == "repeat"
         output_saved = saves_output(steps, index, segment)
         output_cut = not output_saved and cuts_output(steps, index)
-        checks.append(CheckStep(index, norm, command_text, run_file, cwd, in_repeat_loop, output_saved, output_cut))
+        checks.append(CheckStep(index, norm, command_text, run_file, cwd, in_repeat_loop, output_saved, output_cut,
+                                redirect_files(segment, cwd)))
 
     if event in ("PostToolUse", "PostToolUseFailure"):
         if format_indexes:
             with contextlib.suppress(OSError):
                 touch(state_dir + "/edits")
-        for check in checks:
-            if not step_surely_ran(steps, check.index, succeeded):
-                continue
-            record = tree_fingerprint(check.cwd) or ""
-            if check.output_cut:
-                record += "\n" + CUT_MARK
+        record_runs(checks, steps, succeeded, state_dir, bool(format_indexes))
+        return
 
-            try:
-                with open(check.run_file, "w") as handle:
-                    handle.write(record)
-                touch_after(check.run_file, state_dir + "/edits")
-            except OSError:
-                raise ExitError(0) from None
+    if skipped:
+        clear_run_starts(checks)
         return
 
     if format_indexes:
         every_check_follows_a_formatter = all(follows_a_formatter(steps, format_indexes, check.index)
                                               for check in checks)
         if every_check_follows_a_formatter:
+            clear_run_starts(checks)
             return
 
     is_real_chain = any(op in ("&&", "||", ";", "&") and step.strip() for op, step in steps[1:])
@@ -469,8 +574,8 @@ def run(raw, state):
     for check in checks:
         if check.in_repeat_loop:
             continue
-        ran_since_last_edit = newer(check.run_file, state_dir + "/edits")
-        if (not ran_since_last_edit or changed_since_run(check.cwd, check.run_file)
+        ran_after_last_edit = ran_since_last_edit(check.run_file, state_dir + "/edits")
+        if (not ran_after_last_edit or changed_since_run(check.cwd, check.run_file)
                 or tree_changed_since_run(check.cwd, check.run_file)):
             continue
 
@@ -480,6 +585,8 @@ def run(raw, state):
             continue
         cut_deny_text = CUT_DENY_TEXT.format(redirected=check.command_text + LOG_REDIRECT)
         raise DenyError("[quality-check-cap] '" + check.norm + cut_deny_text + chain_text)
+
+    mark_run_starts(checks)
 
 
 def main():

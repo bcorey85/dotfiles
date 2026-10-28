@@ -2,6 +2,8 @@
 
 A stand-in `claude` on PATH answers each call with a canned reply chosen by the agent of the call. Set
 REVIEW_LOOP_SCRIPT to run against another copy, such as a staged one."""
+import collections
+import importlib.util
 import json
 import os
 import pathlib
@@ -139,11 +141,11 @@ class ReviewLoopScriptTest(unittest.TestCase):
         return ("mode: review-first\ncaller: code\nlane: code\nplan: plan.md\nphase: 2\n"
                 f"{header_extra}\nhandoff:\n  files:\n    - path: app.py\n{footer}")
 
-    def script_command(self, prompt):
-        return [sys.executable, str(SCRIPT), str(self.repo), "--state-dir", str(self.state_dir), "--session", SESSION,
+    def script_command(self, prompt, session=SESSION):
+        return [sys.executable, str(SCRIPT), str(self.repo), "--state-dir", str(self.state_dir), "--session", session,
                 "--run-id", RUN_ID, "--agent-id", AGENT_ID, "--prompt-file", str(prompt)]
 
-    def run_script(self, scenario, header_extra="", quality_check=None, claude_md=None, footer=""):
+    def run_script(self, scenario, header_extra="", quality_check=None, claude_md=None, footer="", session=SESSION):
         if quality_check:
             self.commit_files({"CLAUDE.md": f"Quality check: `{quality_check}`\n"})
         if claude_md:
@@ -151,7 +153,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         (self.fake_dir / "scenario.json").write_text(json.dumps(scenario))
         prompt = self.scratch / "prompt.txt"
         prompt.write_text(self.prompt_file_text(header_extra, footer))
-        return subprocess.run(self.script_command(prompt), capture_output=True, text=True, env=self.env)
+        return subprocess.run(self.script_command(prompt, session), capture_output=True, text=True, env=self.env)
 
     def fake_calls(self):
         path = self.fake_dir / "calls.jsonl"
@@ -311,6 +313,17 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("needs a new column", packet["plan_impact"])
         self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
 
+    def test_a_tagged_plan_change_ask_maps_to_plan_impact(self):
+        ask_review = (f"## Fix\nNone\n\n## Ask\n- `src/a.py:12` [plan-drift] — {PLAN_CHANGE_STATUS}: the fix needs "
+                      "a new column the plan rules out\n\n## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": ask_review}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
+
     def test_full_check_failing_after_one_repair_maps_to_critical_blocker(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
@@ -356,6 +369,310 @@ class ReviewLoopScriptTest(unittest.TestCase):
         metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
         self.assertEqual(len(metrics), 1)
         self.assertEqual((metrics[0]["fix"], metrics[0]["ask"], metrics[0]["fixed"]), ("1", "1", "1"))
+
+    def finding_rows(self):
+        return fake_ledger.recorded_rows(self.env, "review_finding")
+
+    def test_a_finding_row_takes_the_class_its_reviewer_tagged_and_other_when_untagged(self):
+        tagged_review = ("## Fix\n- [bug] `app.py:2` the docstring promises 20 but `limit` is 2\n\n"
+                         "## Ask\n- [perf] `app.py:3` should the limit be cached?\n\n"
+                         "## Nit\n- `app.py:5` [smell] the docs could name the unit\n\n"
+                         "Overall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": tagged_review}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        classes = {row["disposition"]: row["class"] for row in self.finding_rows()}
+        self.assertEqual(classes, {"fix": "bug", "ask": "perf", "nit": "smell"})
+        metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
+        self.assertEqual(metrics[0]["smells"], "1")
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["ask"][0]["class"], "perf")
+        first_review_prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "code-reviewer")
+        for finding_class in handback.CLASSES:
+            self.assertIn(f"[{finding_class}]", first_review_prompt)
+
+    def test_run_and_finding_rows_count_rounds_from_one(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        run_iters = [row["iter"] for row in fake_ledger.recorded_rows(self.env, "review_run")]
+        self.assertEqual(run_iters, ["1", "2"])
+        self.assertEqual([row["iter"] for row in self.finding_rows()], ["1"])
+
+    def test_a_refiled_long_finding_reworded_lightly_is_one_row(self):
+        long_title = "the limit is wrong for `limit` because " + "the caller passes a stale value " * 8
+        first = (f"## Fix\n- `app.py:2` {long_title}\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                 "Overall Assessment: NEEDS CHANGES\n")
+        reworded = first.replace("stale value", "old value", 2)
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": first}, {"result": reworded}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertGreater(len(long_title), 200)
+        self.assertEqual([row["iter"] for row in self.finding_rows()], ["1"])
+
+    def test_a_refile_with_a_new_title_does_not_take_the_spot_of_a_later_same_title_finding(self):
+        original = "the limit is wrong for `limit` in the first caller"
+        reworded = "the limit is wrong for `limit` in the first caller of the module"
+        round_one = (f"## Fix\n- `app.py:2` {original}\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                     "Overall Assessment: NEEDS CHANGES\n")
+        round_two = (f"## Fix\n- `app.py:2` {reworded}\n- `app.py:2` {original}\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                     "Overall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": round_one}, {"result": round_two}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1 and 2.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        findings = self.finding_rows()
+        self.assertEqual(len(findings), 2)
+        self.assertEqual(len({row["finding_id"] for row in findings}), 2)
+
+    def test_a_finding_the_second_round_files_again_is_one_row(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        findings = self.finding_rows()
+        self.assertEqual([(row["iter"], row["actioned"]) for row in findings], [("1", "fixed")])
+        runs = fake_ledger.recorded_rows(self.env, "review_run")
+        self.assertEqual(sum(int(row["n_findings"]) for row in runs), len(findings))
+
+    def test_a_rerun_of_the_review_logs_the_same_finding_under_the_same_id(self):
+        ask_review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n"
+                      "- `app.py:4` should the limit be cached?\n\n## Nit\nNone\n")
+        scenario = {"code-reviewer": [{"result": ask_review}, {"result": ask_review}]}
+
+        for _run in range(2):
+            completed = self.run_script(scenario)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        finding_ids = collections.Counter(row["finding_id"] for row in self.finding_rows())
+        self.assertEqual(sum(finding_ids.values()), 4)
+        self.assertEqual(list(finding_ids.values()), [2, 2])
+
+    def test_a_rerun_in_another_session_logs_other_finding_ids(self):
+        ask_review = "## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n\n## Nit\nNone\n"
+        scenario = {"code-reviewer": [{"result": ask_review}, {"result": ask_review}]}
+        ids_by_session = []
+
+        for session in ("session-1", "session-2"):
+            before = {row["finding_id"] for row in self.finding_rows()}
+            completed = self.run_script(scenario, session=session)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            ids_by_session.append({row["finding_id"] for row in self.finding_rows()} - before)
+
+        self.assertEqual(len(ids_by_session[0]), 1)
+        self.assertEqual(len(ids_by_session[1]), 1)
+        self.assertFalse(ids_by_session[0] & ids_by_session[1])
+
+    def test_the_finding_id_changes_with_the_gate(self):
+        loader = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(module)
+
+        def finding_id(gate):
+            return module.stable_finding_id("s1", "code", ["scope"], gate, "app.py:3#1")
+
+        self.assertEqual(finding_id("code-reviewer"), finding_id("code-reviewer"))
+        self.assertNotEqual(finding_id("code-reviewer"), finding_id("smell-reviewer"))
+
+    def test_two_near_identical_asks_at_one_line_are_two_asks(self):
+        two_asks = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit apply to the first caller?\n"
+                    "- `app.py:3` should the limit apply to the second caller?\n\n## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": two_asks}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(len(packet["ask"]), 2)
+        asks = [row for row in self.finding_rows() if row["disposition"] == "ask"]
+        self.assertEqual(len(asks), 2)
+
+    def test_two_fixes_at_one_line_are_two_rows_with_distinct_ids(self):
+        two_at_one_line = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
+                           "- `app.py:2` the name `limit` shadows the module setting\n\n"
+                           "## Ask\nNone\n\n## Nit\nNone\n\n"
+                           "Overall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": two_at_one_line}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1 and 2.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        findings = self.finding_rows()
+        self.assertEqual(len(findings), 2)
+        self.assertEqual(len({row["finding_id"] for row in findings}), 2)
+        first_run = fake_ledger.recorded_rows(self.env, "review_run")[0]
+        self.assertEqual(first_run["n_findings"], "2")
+
+    def test_two_fixes_identical_apart_from_their_line_are_two_rows_with_distinct_ids(self):
+        same_title = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
+                      "- `app.py:4` the limit is wrong for `limit`\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                      "Overall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": same_title}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1 and 2.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        findings = self.finding_rows()
+        self.assertEqual(len(findings), 2)
+        self.assertEqual(len({row["finding_id"] for row in findings}), 2)
+
+    def test_an_ask_with_the_title_of_an_earlier_fix_is_its_own_row_and_ask(self):
+        same_title_ask = ("## Fix\nNone\n\n## Ask\n- `app.py:2` the limit is wrong for `limit`?\n\n## Nit\nNone\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": same_title_ask}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(len(packet["ask"]), 1)
+        findings = self.finding_rows()
+        self.assertEqual(sorted(row["disposition"] for row in findings), ["ask", "fix"])
+        self.assertEqual(len({row["finding_id"] for row in findings}), 2)
+
+    def test_a_finding_that_drops_out_in_round_two_keeps_its_row_and_the_other_is_not_refiled_as_it(self):
+        fix_and_nit = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\nNone\n\n"
+                       "## Nit\n- `app.py:2` the docs could name the unit\n\nOverall Assessment: NEEDS CHANGES\n")
+        nit_only = ("## Fix\nNone\n\n## Ask\nNone\n\n## Nit\n- `app.py:2` the docs could name the unit\n\n"
+                    "Overall Assessment: PASS\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": fix_and_nit}, {"result": nit_only}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        findings = self.finding_rows()
+        self.assertEqual(sorted((row["disposition"], row["actioned"]) for row in findings),
+                         [("fix", "fixed"), ("nit", "none")])
+        self.assertEqual(len({row["finding_id"] for row in findings}), 2)
+
+    def test_a_reworded_ask_in_round_two_keeps_one_row_and_one_ask_id(self):
+        first_ask = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n"
+                     "## Ask\n- `app.py:3` should the limit be configurable?\n\n## Nit\nNone\n")
+        reworded_ask = ("## Fix\nNone\n\n"
+                        "## Ask\n- `app.py:3` should the limit become configurable per caller?\n\n## Nit\nNone\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": first_ask}, {"result": reworded_ask}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(len(packet["ask"]), 1)
+        self.assertRegex(packet["ask"][0]["finding_id"], FINDING_ID)
+        asks = [row for row in self.finding_rows() if row["disposition"] == "ask"]
+        self.assertEqual(len(asks), 1)
+
+    def test_a_class_tag_after_the_file_line_wins_over_a_tag_before_it(self):
+        smell_prefixed = ("## Fix\n- [smell] `app.py:2` [duplication] the limit is repeated\n\n## Ask\nNone\n\n"
+                          "## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": smell_prefixed}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([row["class"] for row in self.finding_rows()], ["duplication"])
+        metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
+        self.assertEqual(metrics[0]["smells"], "0")
+
+    def test_a_plan_change_ask_that_opens_with_its_file_line_stops_the_loop(self):
+        located_ask = (f"## Fix\nNone\n\n## Ask\n- `app.py:3` [plan-drift] {PLAN_CHANGE_STATUS}: the fix needs a new "
+                       "column the plan rules out\n\n## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": located_ask}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+
+    def test_two_distinct_findings_in_one_file_from_one_reviewer_are_two_rows(self):
+        other_fix_review = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                            "Overall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": other_fix_review}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        findings = self.finding_rows()
+        self.assertEqual([(row["iter"], row["line"]) for row in findings], [("1", "2"), ("2", "5")])
+        self.assertEqual(len({row["finding_id"] for row in findings}), 2)
+
+    def test_a_finding_whose_line_moved_is_one_row(self):
+        moved_review = ("## Fix\n- `app.py:3` the limit is wrong for `limit`\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                        "Overall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": moved_review}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([row["iter"] for row in self.finding_rows()], ["1"])
+        metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
+        self.assertEqual((metrics[0]["fix"], metrics[0]["fixed"]), ("1", "1"))
+
+    def test_a_skip_in_round_one_and_a_fix_in_round_two_are_each_logged_with_their_outcome(self):
+        two_fix_review = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
+                          "- `notes.py:1` the keys of `value` are out of order\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                          "Overall Assessment: NEEDS CHANGES\n")
+        new_fix_review = ("## Fix\n- `app.py:4` the fourth limit repeats the third\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                          "Overall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": two_fix_review}, {"result": new_fix_review}],
+            "coder": [{"result": "Fixed 1.\nSKIPPED 2: the order is deliberate", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        actioned = {(row["iter"], row["path_key"]): row["actioned"] for row in self.finding_rows()}
+        self.assertEqual(actioned, {("1", "app.py"): "fixed", ("1", "notes.py"): "skipped_fp",
+                                    ("2", "app.py"): "fixed"})
 
     def test_round_two_scope_ignores_files_a_format_hook_would_reflow(self):
         completed = self.run_script({
@@ -435,6 +752,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((packet["status"], packet["iter"]), ("converged", 3))
         self.assertIn(open_member, [entry["finding"] for entry in packet["fixed"]])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
+        metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
+        self.assertEqual(metrics[0]["fixed"], "2")
 
     def test_a_class_closure_reply_with_braces_in_its_prose_still_reads_the_closing_object(self):
         closure = f"Closed. Every `{{CUBE}}.flag` site re-read.\n\n```json\n{CLOSED}\n```"
@@ -463,6 +782,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
         self.assertIn("needs a new column", packet["plan_impact"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("code-reviewer"), 1)
+        self.assertEqual([row["actioned"] for row in self.finding_rows()], ["none"])
 
     def test_an_ask_with_an_empty_change_is_a_critical_blocker_that_keeps_the_ask_rows(self):
         ask_review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable? — change:\n\n"

@@ -151,6 +151,14 @@ def wait_for(check, timeout_seconds, interval_seconds):
         time.sleep(min(interval_seconds, remaining))
 
 
+USAGE_WORDS = ("--help", "-h")
+
+
+def usage_requested(args):
+    """True when one of the command-line words is exactly `--help` or `-h`."""
+    return any(word in USAGE_WORDS for word in args)
+
+
 def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None):
     """Run a command (a list, or a string for the shell) in cwd and return (exit code, stdout, stderr), both as text.
     `env`, when given, is the command's whole environment. When the command does not finish in `timeout` seconds, kill

@@ -240,6 +240,86 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         reason = json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("Failing tests:\nFAIL: test_x (app.tests.T)", reason)
 
+    def test_a_django_settings_error_under_pytest_is_a_setup_fault(self):
+        commands = {
+            "improperly configured": """echo "django.core.exceptions.ImproperlyConfigured: bad"; echo pytest; exit 1""",
+            "settings not configured": """echo "INSTALLED_APPS, settings are not configured."; echo pytest; exit 2""",
+            "apps not loaded": """echo "AppRegistryNotReady: Apps aren't loaded yet."; echo pytest; exit 2""",
+        }
+        for case, command in commands.items():
+            with self.subTest(case=case):
+                (self.repo / ".git/coder-gate.json").unlink(missing_ok=True)
+                self.gate_set(command)
+
+                hook = self.gate_hook()
+
+                coder = self.stored_gate()["coders"]["a1"]
+                self.assertEqual("setup-fault", coder["result"])
+                self.assertEqual(0, coder["denies"])
+                self.assertEqual([command], coder["setup_faults"])
+                self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+
+    def test_a_django_settings_error_denies_when_the_coder_changed_a_settings_module_or_app_config(self):
+        command = """echo "django.core.exceptions.ImproperlyConfigured: bad"; echo pytest; exit 1"""
+        changed_paths = ("app/settings.py", "app/settings/base.py", "app/apps.py", "app/test_settings.py")
+        for changed_path in changed_paths:
+            with self.subTest(changed_path=changed_path):
+                (self.repo / ".git/coder-gate.json").unlink(missing_ok=True)
+                (self.repo / changed_path).parent.mkdir(parents=True, exist_ok=True)
+                (self.repo / changed_path).write_text("DEBUG = True\n")
+                self.gate_set(command)
+
+                hook = self.gate_hook()
+
+                self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+                self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+                (self.repo / changed_path).unlink()
+
+    def test_a_django_settings_error_stays_a_setup_fault_when_the_coder_changed_other_files(self):
+        command = """echo "django.core.exceptions.ImproperlyConfigured: bad"; echo pytest; exit 1"""
+        (self.repo / "app").mkdir()
+        (self.repo / "app/models.py").write_text("x = 1\n")
+        self.gate_set(command)
+
+        self.gate_hook()
+
+        self.assertEqual("setup-fault", self.stored_gate()["coders"]["a1"]["result"])
+
+    def test_a_settings_error_beside_a_failed_test_a_syntax_error_or_under_manage_py_test_still_denies(self):
+        commands = {
+            "failed test": """echo "ImproperlyConfigured: x"; echo pytest; echo "1 failed, 2 passed"; exit 1""",
+            "syntax error": """echo pytest; echo "SyntaxError: bad"; echo "settings are not configured"; exit 2""",
+            "manage.py test": """echo "ImproperlyConfigured: bad"; echo manage.py test; exit 1""",
+        }
+        for case, command in commands.items():
+            with self.subTest(case=case):
+                (self.repo / ".git/coder-gate.json").unlink(missing_ok=True)
+                self.gate_set(command)
+
+                hook = self.gate_hook()
+
+                self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+                self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+
+    def test_a_manage_py_test_run_that_exits_0_after_running_no_test_is_a_setup_fault_not_a_pass(self):
+        command = """echo manage.py test; echo "Ran 0 tests in 0.000s"; exit 0"""
+        self.gate_set(command)
+
+        hook = self.gate_hook()
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("setup-fault", coder["result"])
+        self.assertEqual([command], coder["setup_faults"])
+        self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+
+    def test_a_manage_py_test_run_that_ran_tests_passes(self):
+        command = """echo manage.py test; echo "Ran 10 tests in 0.1s"; exit 0"""
+        self.gate_set(command)
+
+        self.gate_hook()
+
+        self.assertEqual("pass", self.stored_gate()["coders"]["a1"]["result"])
+
     def test_a_real_failure_beside_a_setup_fault_denies_with_only_the_real_failure(self):
         self.gate_set("exit 127", "echo assertion-broke; exit 3")
 

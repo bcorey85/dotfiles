@@ -38,7 +38,7 @@ substitution), then `commit` appears in it, or when a simple command runs git (a
 `env git` or a path counts), with any global options, and then `commit`. A global option the hook does not know may
 take a value, so `commit` anywhere after it counts. A command shlex cannot read counts when `git`, then only
 option-like words with an optional value each, then `commit` appears in it.
-The session stays dirty; a later commit that ships code is denied again.
+The repo stays dirty; a later commit there that ships code is denied again.
 
 A dirty repo still commits in four more cases, each checked against something a subagent cannot write:
   - the user's latest prompt in the main transcript starts with `[no-review]` (the user ordered this turn's commits
@@ -50,11 +50,13 @@ A dirty repo still commits in four more cases, each checked against something a 
   - the session's latest review-loop hand-back is current, converged or deferred, came after the coder work that
     made the repo dirty, and answers a review-loop dispatch of that repo (its `repo:` line, else the session cwd),
     however the run that launched the loop closed.
-With no `cd`, `pushd` or `popd` in its text, the commit runs in the one repo `git -C <dir>` names (every -C joined),
-relative to the hook input's cwd, else the cwd; `--git-dir` or `--work-tree` leaves it unknown. A command that
-changes folder anywhere is judged against every candidate repo (candidate_repo_dirs): the cwd plus each folder a
-word of the command names. Each candidate must be clean or earn one of the credits above. The gate never follows
-the chain's shape. A target no word names (a `$`, a backtick, `eval`, `popd`, `cd -`) adds an unknown candidate.
+A command that changes no folder or repo commits in the one repo `git -C <dir>` names (every -C joined), relative
+to the hook input's cwd, else the cwd. A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or
+a git dir or work-tree option or variable, quotes and escapes resolved) is judged against every candidate repo
+(candidate_repo_dirs): the cwd plus each folder a word of the command names. Each candidate must be clean or earn
+one of the credits above. The gate never follows the chain's shape. A target no word names (a `$` or a backtick
+outside a single-quoted string, a comment or a quoted-heredoc message, `eval`, `source`, `.`, `popd`, `cd -`, a bare
+`pushd`, a git dir or work-tree option or variable) adds an unknown candidate.
 An unknown repo is judged against every repo and gets no merge, reviewed-tree or hand-back credit.
 
 State: ~/.claude/state/review-gate/<session>, one line per record: `clean` (a clean mark; earlier lines no longer
@@ -77,20 +79,35 @@ import hook_input
 import reviewed_tree
 import script_utils
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
-from shell_command import parse_simple_commands, redirection_writes_file, split_command_steps, split_simple_commands
+from shell_command import (
+    command_after_wrappers,
+    parse_simple_commands,
+    redirection_writes_file,
+    split_command_steps,
+    split_simple_commands,
+)
 
 CODERS = ("coder", "coder-deep", "backend-coder", "backend-coder-deep", "frontend-coder", "frontend-coder-deep")
 # The tools that write a file, and the input key that names it.
 EDITING_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"}
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
-# A command that changes folder anywhere in its text. The gate never parses where the chain leads.
-CHANGES_FOLDER = re.compile(r"(?<![\w./-])(?:cd|pushd|popd)(?![\w./-])")
-# A folder change whose target no word of the command names.
-UNKNOWN_TARGET = re.compile(r"[$`]|(?<![\w./-])(?:eval|source|popd)(?![\w./-])"
+# A command that changes folder or repo anywhere in its text (cd, pushd, popd, or a git dir or work-tree option or
+# variable; eval, source and `.` are read from the command words). The gate never parses where the chain leads.
+CHANGES_FOLDER = re.compile(r"(?<![\w./-])(?:cd|pushd|popd)(?![\w./-])|--git-dir|--work-tree|GIT_DIR|GIT_WORK_TREE")
+# A folder change whose target no word of the command names. `$` and a backtick are tested apart, on the text
+# without the spans that run nothing.
+UNKNOWN_TARGET = re.compile(r"(?<![\w./-])(?:eval|source|popd)(?![\w./-])"
                             r"|(?<![\w./-])(?:cd|pushd)[ \t]+-(?![\w./-])|(?<![\w./-])pushd[ \t]*(?:$|[;&|)\n])"
                             r"|--git-dir|--work-tree|GIT_DIR|GIT_WORK_TREE",
                             re.MULTILINE)
 BARE_CD = re.compile(r"(?<![\w./-])cd[ \t]*(?:$|[;&|)\n])", re.MULTILINE)
+# The command words (first word of a simple command, quotes and escapes resolved) that change folder or repo.
+FOLDER_COMMAND_WORDS = ("cd", "pushd", "popd", "eval", "source", ".")
+# The word forms of the text alternatives in UNKNOWN_TARGET, for a command word written in a disguise.
+UNKNOWN_COMMAND_WORDS = ("popd", "eval", "source", ".")
+# A double-quoted string or an escaped character stays; a single-quoted string and a comment are dropped. The comment
+# alternative comes last, so a `#` inside quotes is consumed by them.
+QUOTED_SPAN = re.compile(r"\"(?:\\.|[^\"\\])*\"|\\.|'[^']*'|(?:^|(?<=[\s;&|()]))#[^\n]*", re.DOTALL | re.MULTILINE)
 WORD_BREAK = re.compile(r"""[\s;&|()<>{}=`'"]+""")
 # `(?!-)`: `git commit-tree` and `git commit-graph` write objects and move no branch.
 COMMIT = re.compile(r"\bgit[ \t\r\f\v]+commit\b(?!-)")
@@ -510,20 +527,56 @@ def user_ordered_no_review(root):
     return latest_prompt is not None and latest_prompt.lstrip().startswith(NO_REVIEW_MARKER)
 
 
+def resolved_command_words(command):
+    """The words of each simple command, quotes and escapes resolved and wrapper words (`builtin`, `command`, `{`)
+    dropped; empty when shlex cannot read the command."""
+    try:
+        simple_commands = split_simple_commands(LINE_CONTINUATION.sub("", command))
+    except ValueError:
+        return []
+    unwrapped = (command_after_wrappers(words) for words in simple_commands)
+    return [words for words in unwrapped if words]
+
+
+def names_unknown_target(command, command_words):
+    """True when the command changes folder or repo to a place no word of it names: `$` or a backtick outside the
+    spans that run nothing (a quoted-heredoc message, a single-quoted string, a comment), `eval`, `source`, `.`,
+    `popd`, `cd -`, a bare `pushd`, or a git dir or work-tree option or variable. A heredoc left after the message
+    heredocs are dropped may hold a quote that is no string, so its text is tested with the single-quoted spans kept."""
+    heredoc_removed = HEREDOC_MESSAGE.sub("", command)
+    if "<<" in heredoc_removed:
+        runs_nothing_removed = heredoc_removed
+    else:
+        runs_nothing_removed = QUOTED_SPAN.sub(lambda span: span.group() if span.group()[0] in "\"\\" else "",
+                                               heredoc_removed)
+    if "$" in runs_nothing_removed or "`" in runs_nothing_removed or UNKNOWN_TARGET.search(command):
+        return True
+    for words in command_words:
+        if words[0] in UNKNOWN_COMMAND_WORDS or (words[0] == "pushd" and len(words) == 1):
+            return True
+        if words[0] in ("cd", "pushd") and words[1:2] == ["-"]:
+            return True
+    return False
+
+
 def candidate_repo_dirs(command, cwd):
-    """The directories a commit in the command may run in; None stands for one the gate cannot name. A command with
-    no `cd`, `pushd` or `popd` anywhere in its text commits in the one directory commit_repo_dir reads. Otherwise
+    """The directories a commit in the command may run in; None stands for one the gate cannot name. A command that
+    changes folder or repo (a cd, pushd, popd, eval, source, ., or a git dir or work-tree option or variable, quotes
+    and escapes resolved) is judged against every candidate. Any other command commits in the one directory
+    commit_repo_dir reads. Otherwise
     every candidate counts, whatever the shape of the chain: the cwd, each word of the command (quoted words split
     on spaces) that names a directory read from the cwd or from another candidate, and HOME for a bare `cd`. A `$`,
     a backtick, `eval`, `source`, `popd`, `cd -`, a bare `pushd`, a git dir or work-tree option or variable adds
-    None."""
-    if not CHANGES_FOLDER.search(command):
+    None. The trigger and the unknown target are read from the text and from the command words with their quotes
+    and escapes resolved, so `c\\d` and `'c'd` count as `cd`."""
+    command_words = resolved_command_words(command)
+    if not CHANGES_FOLDER.search(command) and not any(words[0] in FOLDER_COMMAND_WORDS for words in command_words):
         return [commit_repo_dir(command, cwd)]
 
     candidates = [os.path.normpath(cwd)] if cwd else [None]
-    if UNKNOWN_TARGET.search(command) or not cwd:
+    if names_unknown_target(command, command_words) or not cwd:
         candidates.append(None)
-    if BARE_CD.search(command):
+    if BARE_CD.search(command) or ["cd"] in command_words:
         candidates.append(os.path.expanduser("~"))
 
     words = set(WORD_BREAK.split(command))

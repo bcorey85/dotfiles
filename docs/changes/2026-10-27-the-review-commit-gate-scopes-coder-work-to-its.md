@@ -27,11 +27,14 @@ unmeasured: ""
   - a commit whose repo the gate cannot tell.
 - The session's latest review-loop hand-back lets the commit through when it is converged or deferred, came after
   the coder work, and answers a review-loop dispatch of the commit's repo. That holds however the run that launched
-  the loop closed, a manual tick included. A review-loop dispatch row now records the repo it reviews.
-- A command with a `cd`, `pushd` or `popd` anywhere is judged against every candidate repo: the session cwd plus each
+  the loop closed, a manual tick included. A review-loop dispatch row now records the repo it reviews, by the loop's
+  own rule: the prompt's `repo:` line, else the first absolute path the prompt names, else the session cwd.
+- A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git dir or work-tree option or
+  variable, quotes and escapes resolved) is judged against every candidate repo: the session cwd plus each
   folder a word of the command names. Each candidate must be clean or carry merge, reviewed-tree or hand-back
-  credit. The gate does not follow the chain's shape. A target no word names (`$`, a backtick, `eval`, `popd`,
-  `cd -`) is judged against every repo.
+  credit. The gate does not follow the chain's shape. A target no word names (`$` or a backtick outside a quoted
+  heredoc message or single quotes, `eval`, `source`, `.`, `popd`, `cd -`, a bare `pushd`, a git dir or work-tree
+  option or variable) is judged against every repo. A disguised `cd` such as `c\d` or `'c'd` counts as `cd`.
 - A `[no-review]` order holds through records that are not the user's prompt: a peer session's message, a
   compaction summary, a `!` shell echo, a task notification and a tool result. A later human prompt still ends it.
 - `git commit-tree` and `git commit-graph` no longer count as a commit.
@@ -54,6 +57,9 @@ unmeasured: ""
   - `test_a_no_review_order_survives_peer_messages_summaries_and_shell_echoes`
   - `test_a_human_prompt_after_the_order_still_ends_it`
   - `test_commit_tree_is_not_a_commit`
+  - `test_a_disguised_folder_change_or_repo_switch_is_judged_against_the_coders_repo`
+  - `test_a_folder_change_to_a_target_no_word_names_is_judged_against_every_repo`
+  - `test_a_bare_cd_is_judged_against_the_home_repo`
 - `tests/scripts/test_handback.py::StoreTest::test_a_dispatch_row_names_the_repo_its_prompt_or_cwd_holds`
 
 ## Result

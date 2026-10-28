@@ -65,6 +65,7 @@ CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap"
 REVIEW_LOOP = "review-loop"
 NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
 REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
+ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])/[^\s`'\"<>|;:,()]+")
 GIT_TIMEOUT_SECONDS = 10
 DEFAULT_GATE = "code-reviewer"
 FENCE_OPEN = "```"
@@ -717,10 +718,17 @@ def deny_line(reason):
 
 
 def reviewed_repo(prompt, cwd):
-    """The top level of the repo a review-loop dispatch reviews: the prompt's `repo:` line, read from cwd, else cwd.
-    None when neither lies in a work tree."""
+    """The top level of the repo a review-loop dispatch reviews, by the rule the loop itself follows: the prompt's
+    `repo:` line, read from cwd, else the first absolute path the prompt names, else cwd. None when that lies in no
+    work tree."""
     named = REPO_LINE.search(prompt)
-    directory = os.path.join(cwd or "", os.path.expanduser(named.group(1))) if named else cwd
+    first_path = ABSOLUTE_PATH.search(prompt)
+    if named:
+        directory = os.path.join(cwd or "", os.path.expanduser(named.group(1)))
+    elif first_path:
+        directory = script_utils.nearest_existing_folder(first_path.group(0))
+    else:
+        directory = cwd
     if not directory:
         return None
     top = script_utils.repo_root(directory, timeout=GIT_TIMEOUT_SECONDS)

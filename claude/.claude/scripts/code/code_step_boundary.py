@@ -15,6 +15,7 @@ import time
 import plan_format
 import reviewed_tree
 import script_utils
+import shell_command
 from code_step_concentration import (
     concentration_gate_position,
     manual_gate_item_end,
@@ -87,14 +88,18 @@ COMMAND_START = re.compile(r"^(?:" + script_utils.ENV_PREFIX.pattern + r")?"
 # input. `tail` is one only when it follows a file (see TAIL_FOLLOWS).
 NOT_A_CHECK_PROGRAMS = ("claude", "yes", "watch", "top", "htop", "less", "more", "vi", "vim", "nano", "sleep")
 TAIL_FOLLOWS = re.compile(r"^(?:-[A-Za-z0-9]*[fF][A-Za-z0-9]*|--follow(?:=\w+)?)$")
+# A shell run on a code string (`sh -c '...'`, `bash -ec '...'`) is not a check command: see hands_a_shell_its_code.
+SHELL_CODE_PROBLEM = ("it hands a shell its code with `-c`, which the plan format forbids (the shell hook also blocks "
+                      "it when run by hand); write the command plainly, or put the pipeline in an executable repo "
+                      "script and run `path/to/script args`")
 VERIFICATION_ITEM_SHAPE = (
     "Each Automated Verification item is one line in one of three shapes. (1) One backticked command that starts with "
     "a program on PATH (with at least one argument) or an executable file in the repo, for example the line "
     "'- [ ] **Name**: what it checks - `npm test`'. A check that needs a variable assignment, `&&`, a pipe or a "
     "subshell goes in an executable repo script, run as `path/to/script args`; the script's comments name no ticket "
-    "or plan path. (2) N/A, for example '- [ ] N/A - docs only'. (3) A tag that "
-    "says CI or a person runs it, for example '- [ ] **CI-verified**: the pipeline runs it' or '- [ ] Human-only: "
-    "look at the page'. This script never runs the third shape.")
+    "or plan path. Never wrap a command in `sh -c` or `bash -c`. (2) N/A, for example '- [ ] N/A - docs only'. "
+    "(3) A tag that says CI or a person runs it, for example '- [ ] **CI-verified**: the pipeline runs it' or "
+    "'- [ ] Human-only: look at the page'. This script never runs the third shape.")
 
 
 # ---------- acceptance criteria guard ----------
@@ -245,7 +250,7 @@ def starts_like_a_program_here(span, repo_dir):
     return shutil.which(program) is not None
 
 
-def verification_command(line, repo_dir=None):
+def first_command_span(line, repo_dir):
     # The first backticked span that starts with a known program, after any leading NAME=value assignments, which the
     # shell passes to the command; when none does, the first span that starts with a program of this machine. The
     # line may continue after it ("`npm run build` exits 0.").
@@ -261,12 +266,36 @@ def verification_command(line, repo_dir=None):
     return None
 
 
+def hands_a_shell_its_code(span):
+    # True when the span runs a shell on a code string, as `sh -c '...'`, `bash -euo pipefail -c '...'` or
+    # `timeout 60 bash -c '...'`.
+    command = without_leading_cd_and_env(span)
+    words = shell_command.segment_words(command)
+    code = shell_command.shell_code_argument(words)
+
+    return code is not None
+
+
+def verification_command(line, repo_dir=None):
+    # The command an Automated Verification item runs, or None when it names none. A command that hands a shell its
+    # code is none: the runner already runs each command in a shell, and the shell hook blocks the wrapper wherever
+    # the command is run by hand.
+    span = first_command_span(line, repo_dir)
+    if span is None or hands_a_shell_its_code(span):
+        return None
+    return span
+
+
 def verification_item_problem(line, repo_dir):
     # Why an Automated Verification item cannot run, or None when it runs, says there is nothing to run or is left to
     # CI or a person. The write-time check of a plan and the stop after a phase use this one reading.
     if plan_format.runs_no_command(line):
         return None
-    if verification_command(line, repo_dir):
+
+    span = first_command_span(line, repo_dir)
+    if span is not None and hands_a_shell_its_code(span):
+        return SHELL_CODE_PROBLEM
+    if span is not None:
         return None
 
     spans = script_utils.backticked_spans(line)

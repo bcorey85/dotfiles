@@ -161,7 +161,7 @@ import code_step_core
 
 PLAN_DIR = "docs/plans/ORD-1-orders"
 PLAN_A = f"{PLAN_DIR}/spec.md"
-VERIFY_LINE = '- [ ] **Check**: flag - `bash -c "test -f verify.flag"`'
+VERIFY_LINE = '- [ ] **Check**: flag - `test -f verify.flag`'
 PLAN_A_TEXT = f"""# Orders Plan
 
 ## Overview

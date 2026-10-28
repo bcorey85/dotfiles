@@ -55,7 +55,7 @@ from code_step_core import (
     wait_for_handback,
     wait_for_loop_stop,
 )
-from code_step_report import change_line, coder_message_without_gate_stamp
+from code_step_report import ENG_SPEC_MARKER, change_line, coder_message_without_gate_stamp
 from script_utils import git_output, run_command
 from source_paths import is_counted_source
 
@@ -793,7 +793,7 @@ def asks_coder_prompt(accepted_asks):
     lines += [
         "",
         "Run the typecheck, and lint and tests for only the files you changed, once, after all edits. "
-        "If an ask turns out architectural, report back and recommend /eng-spec.",
+        f"If an ask turns out architectural, end your report with the line `{ENG_SPEC_MARKER}`.",
         "For each ask whose change the code already makes, so that it needs no edit, add one line to your report: "
         "`ALREADY-DONE: <ask number> — <file:line>`. For an ask that only asks you to run checks, when they pass "
         "with no edit, the line is `ALREADY-DONE: <ask number> — `<command>` -> exit 0`. Add that line for no "

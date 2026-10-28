@@ -245,7 +245,7 @@ CODER_OUTCOMES = {
     "green-verify-fails": (["src"], False, "pass", CODER_REPORT),
     "red-gate-cap": (["src"], True, "cap", CODER_REPORT),
     "no-change": ([], False, "pass", CODER_REPORT),
-    "recommends-eng-spec": (["src"], True, "pass", CODER_REPORT + "\nRecommend /eng-spec."),
+    "recommends-eng-spec": (["src"], True, "pass", CODER_REPORT + "\nRECOMMEND: eng-spec"),
     "plan-impact": (["src"], True, "pass", CODER_REPORT + "\n" + PLAN_IMPACT_BLOCK),
     "open-question": (["src"], True, "pass", CODER_REPORT + "\nOpen question: who owns the rounding rule?"),
     "missing-report": (["src"], True, "pass", None),

@@ -25,7 +25,7 @@ okf_version: "0.2"
 
 # 2026-10-28
 
-* [Review loop parsing, stop causes and crash handling](2026-10-28-review-loop-parsing-stop-causes-and-crash-handling.md) - The review loop script reads its disposition and check-finder replies from the last JSON object that holds the wanted key, not the first brace. A coder stop names its cause: no reviewable change, or a recommendation of /eng-spec. The termination walk also covers the review loop run as a detached script.
+* [Review loop reads the last JSON object and a coder stop names its cause](2026-10-28-review-loop-reads-the-last-json-object-and-a-coder-stop-names-its-cause.md) - The review loop script reads its disposition, check-finder and closure replies from the last JSON object that holds the wanted key, so braces in prose or a nested object no longer break the read. A coder stop names its cause: no reviewable change, or a recommendation of /eng-spec. The termination walk also covers the review loop run as a detached script.
 
 # 2026-10-27
 

@@ -333,6 +333,26 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertTrue((self.repo / "full-check-ran.flag").is_file())
         self.assertEqual(self.fake_calls()[0]["key"], "check-finder")
 
+    def test_check_finder_command_holding_braces_still_runs(self):
+        found = json.dumps({"command": 'test -z "${SKIP}" && touch full-check-ran.flag'})
+        completed = self.run_script({"check-finder": [{"result": found}],
+                                     "code-reviewer": [{"result": CLEAN_REVIEW}],
+                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="Run make ci before you push.\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
+
+    def test_check_finder_reply_with_a_later_object_still_reads_the_command(self):
+        found = '{"command": "touch full-check-ran.flag"}\nCI config: {"ci": "github"}'
+        completed = self.run_script({"check-finder": [{"result": found}],
+                                     "code-reviewer": [{"result": CLEAN_REVIEW}],
+                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="Run make ci before you push.\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
+
     def test_a_repo_with_no_check_found_is_reviewed_and_its_packet_says_no_full_check_ran(self):
         no_check = '{"command": null, "reason": "no CI config or task runner"}'
 
@@ -830,16 +850,22 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("one exit, all re-read", packet["class_closure"])
 
     def test_a_disposition_reply_with_braces_in_its_prose_still_reads_the_findings_object(self):
-        disposition = 'Kept the {fix} placeholder as written.\n\n{"fix": [], "ask": [], "nit": []}'
+        finding = "`app.py:2` the limit is 5, should be 20"
+        disposition = ('Kept the {fix} placeholder as written.\n\n'
+                       + json.dumps({"fix": [finding], "ask": [], "nit": []}))
 
         completed = self.run_script({
-            "code-reviewer": [{"result": "Nothing to report here."}],
+            "code-reviewer": [{"result": "The limit looks wrong."}, {"result": CLEAN_REVIEW}],
             "disposition": [{"result": disposition}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
+        self.assertIn(finding, [entry["finding"] for entry in packet["fixed"]])
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 1)
 
     def test_a_coder_report_of_plan_impact_stops_with_the_report_and_no_second_review(self):
         report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"

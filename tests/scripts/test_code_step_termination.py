@@ -390,6 +390,13 @@ def dead_process_id():
     return finished.pid
 
 
+STAND_IN_LAUNCHES = collections.Counter()
+
+
+def finish_script_loop(repo):
+    STAND_IN_LAUNCHES["[script finished or gone]"] += 1
+
+
 class StandInLoopProcess:
     def __init__(self, pid):
         self.pid = pid
@@ -402,6 +409,7 @@ def launch_stand_in_review_loop(real_popen, command, **options):
         return real_popen(command, **options)
 
     mode = os.environ["FAKE_LOOP_MODE"]
+    STAND_IN_LAUNCHES[mode] += 1
     if mode == "silent":
         return StandInLoopProcess(dead_process_id())
 
@@ -668,7 +676,7 @@ def children_of(node):
             children.append((f"[coder: {name}]", setup, ["resume"]))
     elif waiting_on == "review-loop" and node.presets.get("CODE_STEP_REVIEW_LOOP") == "script":
         # The script has handed back or is gone by the time the next verb runs; no agent report is saved.
-        children.append(("[script finished or gone]", lambda repo: None, ["resume"]))
+        children.append(("[script finished or gone]", finish_script_loop, ["resume"]))
     elif waiting_on == "review-loop" or (node.action == "dispatch" and node.agent == "review-loop"):
         is_answered = state.get("planImpact", "none") != "none"
         for name, message in REVIEW_OUTCOMES.items():
@@ -1058,11 +1066,15 @@ class TerminationTest(unittest.TestCase):
     def test_every_path_with_the_review_loop_as_a_script_ends_in_a_stop_or_a_hand_back(self):
         explorer = Explorer(build_template("template-script-loop"), SCRIPT_NODE_BUDGET)
         entries = script_entry_verbs()
+        STAND_IN_LAUNCHES.clear()
         explorer.run(entries)
         report = summarize(explorer, entries)
         print("\n" + report)
         self.assertEqual([], explorer.failures, report)
         self.assertGreater(explorer.node_count, len(entries))
+        for mode in SCRIPT_LOOP_MODES:
+            self.assertGreater(STAND_IN_LAUNCHES[mode], 0, f"the walk never launched the stand-in in mode {mode}")
+        self.assertGreater(STAND_IN_LAUNCHES["[script finished or gone]"], 0)
 
     def test_a_walk_stopped_at_its_budget_leaves_no_node_copy_on_disk(self):
         small_budget = 20

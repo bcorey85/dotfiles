@@ -133,8 +133,8 @@ PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A re
                     "that edit, and return the finding that needs a plan change as `status: plan-impact`.")
 GATE_REASON = ("No full check ran after the last code change in this phase. A scoped run, including the "
                "handoff's tests-run, does not count. Run the Step 6 execution gate now: the project's full "
-               "quality-check command once, through ~/.claude/scripts/review/full_check.py. Route the "
-               "result as Step 6 says, then return the packet.")
+               "quality-check command once, through Step 6's full_check.py call. Route the result as Step 6 "
+               "says, then return the packet.")
 HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. Build it per "
                   "~/.claude/skills/_shared/handoff-block.md and dispatch again.")
 

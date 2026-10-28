@@ -122,7 +122,7 @@ from code_step_report import (
     every_accepted_ask_already_done,
     first_plan_impact,
     gate_results,
-    recommends_eng_spec_line,
+    recommends_eng_spec,
     resolve_report_paths,
     tests_run_text,
     why_by_file,
@@ -230,17 +230,16 @@ def coder_changed_files(repo_dir, state, changed_now):
 
 def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     # "converged" when the asks coder changed nothing and named, for each confirmed ask, the file:line that already
-    # does it or the check that passed; "recommended-eng-spec" for a report with a `RECOMMEND: /eng-spec` line;
-    # "no-change" for a report with no reviewable change; else None. Any other report with no change (a failed
-    # edit, a blocked hook, a question) stops as "no-change".
+    # does it or the check that passed; "recommended-eng-spec" for a report whose marker line recommends /eng-spec;
+    # "no-change" for a report with no reviewable change (a failed edit, a blocked hook, a question); else None.
     is_ask_fix = state["stage"] == "asks-coder"
     asks_coder_changed_nothing = is_ask_fix and changed_now == state.get("asksBaseline")
-    recommends_eng_spec = recommends_eng_spec_line(report)
-    report_raises_blocker = recommends_eng_spec or bool(first_plan_impact([report])) or bool(coder_flags(report))
+    escalates = recommends_eng_spec(report)
+    report_raises_blocker = escalates or bool(first_plan_impact([report])) or bool(coder_flags(report))
     if asks_coder_changed_nothing and not report_raises_blocker and every_accepted_ask_already_done(
             repo_dir, state, report):
         return "converged"
-    if recommends_eng_spec:
+    if escalates:
         return "recommended-eng-spec"
     if not changed_files or asks_coder_changed_nothing:
         return "no-change"
@@ -250,7 +249,7 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
 CODER_REPORT_STOP_LINES = 6
 
 
-def stop_on_coder_report(repo_dir, state, report, agent_id, cause):
+def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
     # The run stops on the coder's report: the user answers it, and the coder resumed with SendMessage goes on.
     state["stage"] = "stopped"
     state.pop("stopReason", None)
@@ -263,11 +262,12 @@ def stop_on_coder_report(repo_dir, state, report, agent_id, cause):
                 else "")
     resume_text = (" If the user answers the coder's blocker, resume that coder with SendMessage, then run "
                   f"{timed_command(RESUME_VERB)}.")
+    cause_text = ("recommended /eng-spec" if outcome == "recommended-eng-spec"
+                  else "produced no reviewable change")
     report_lines = [line for line in report.splitlines() if line.strip()][:CODER_REPORT_STOP_LINES]
     next_step = (f"if the user answers the coder's blocker, resume that coder with SendMessage, then run "
                  f"`{script_command(RESUME_VERB)}`. To dispatch a new coder for the phase, "
                  f"{restart_instruction(state)}.")
-    cause_text = ("recommended /eng-spec" if cause == "recommended-eng-spec" else "produced no reviewable change")
     stop_with_question(
         repo_dir, f"the coder {cause_text}.", report_lines, next_step,
         f"The coder {cause_text}. Do not dispatch a "

@@ -328,7 +328,7 @@ class RenderTest(HandbackTestBase):
         self.assertIn("receipt is missing", handback.render(packet, "review"))
 
     def test_a_full_check_that_did_not_run_says_so_and_a_passed_one_prints_nothing(self):
-        for full_check in ("not run (CI)", "not run (timeout)"):
+        for full_check in ("not run (CI)", "not run (timeout)", "not run (environment gap: No module named 'ruff')"):
             with self.subTest(full_check=full_check):
                 packet = handback.load(CONVERGED + f"full_check: {full_check}\n")
 

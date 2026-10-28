@@ -611,19 +611,23 @@ def latest(session_id):
     return standing
 
 
+def stop_rows_after(session_id, agent_id, since):
+    """The stop rows of agent_id written at or after `since`, blocked or not, in append order."""
+    if not session_id:
+        return []
+    try:
+        stored_rows = script_utils.read_jsonl(session_file(session_id))
+    except ValueError:
+        return []
+    return [row for row in stored_rows
+            if row.get("kind") == "stop" and row.get("agent_id") == agent_id and row.get("ts", 0) >= since]
+
+
 def settled_stop_row(session_id, agent_id, since):
     """The newest stop row of agent_id written at or after `since` that the gate did not block, or None. The hand-back
     row lands before the stop row of the same loop, so a reader of the hand-back looks here for the stop that
     follows it."""
-    if not session_id:
-        return None
-    try:
-        stored_rows = script_utils.read_jsonl(session_file(session_id))
-    except ValueError:
-        return None
-    settled = [row for row in stored_rows
-               if row.get("kind") == "stop" and row.get("agent_id") == agent_id and not row.get("blocked")
-               and row.get("ts", 0) >= since]
+    settled = [row for row in stop_rows_after(session_id, agent_id, since) if not row.get("blocked")]
     return settled[-1] if settled else None
 
 

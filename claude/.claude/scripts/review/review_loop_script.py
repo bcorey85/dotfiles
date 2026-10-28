@@ -191,7 +191,8 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
             handle.write(json.dumps(record) + "\n")
 
     if return_code != 0 or not replied:
-        raise RuntimeError(f"the {role} call failed (exit {return_code}); reply {raw}, stderr {errors}")
+        said = f" saying \"{script_utils.one_line(text)}\"" if text.strip() else ""
+        raise RuntimeError(f"the {role} call failed (exit {return_code}){said}; reply {raw}, stderr {errors}")
     return text
 
 
@@ -501,11 +502,35 @@ def added_source_lines(diffs):
     return total
 
 
+class CoderCallError(RuntimeError):
+    """A coder call that failed after it may have edited the tree. `changed` lists the paths whose text differs."""
+
+    def __init__(self, message, changed):
+        super().__init__(message)
+        self.changed = changed
+
+
+def changed_paths(before, after):
+    """The sorted paths whose text differs between two file_texts snapshots; a missing path reads as empty text."""
+    return sorted(path for path in set(before) | set(after) if before.get(path, "") != after.get(path, ""))
+
+
 def coder_call(role, prompt, repo, out):
     """The fix coder. Returns (report, diffs, changed): the diffs of what it changed feed the round-two brief, and
-    the global FIX_DIFFS feeds the class-closure check; changed lists the paths whose text differs."""
+    the global FIX_DIFFS feeds the class-closure check; changed lists the paths whose text differs. A failed call
+    raises CoderCallError naming the files it changed before it died."""
     before = file_texts(repo)
-    report = claude_call(role, prompt, repo, out, agent="coder")
+    try:
+        report = claude_call(role, prompt, repo, out, agent="coder")
+    except RuntimeError as error:
+        after = file_texts(repo)
+        changed = changed_paths(before, after)
+        if not changed:
+            raise
+        message = (f"{error}; it changed {', '.join(changed)} before it died, so the tree holds a partial fix "
+                   "that may fail its checks")
+        raise CoderCallError(message, changed) from error
+
     after = file_texts(repo)
     start = len(FIX_DIFFS)
     paths = sorted(set(before) | set(after))
@@ -516,7 +541,7 @@ def coder_call(role, prompt, repo, out):
                                                lineterm=""))
         if difference:
             FIX_DIFFS.append("\n".join(difference))
-    changed = [path for path in paths if before.get(path, "") != after.get(path, "")]
+    changed = changed_paths(before, after)
     return report, FIX_DIFFS[start:], changed
 
 
@@ -793,7 +818,11 @@ class LoopRun:
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, findings, list(nits), list(before), self.gate_env)
         self.last_pass = "coder"
-        return coder_call(call_name, prompt, self.repo, self.out)
+        try:
+            return coder_call(call_name, prompt, self.repo, self.out)
+        except CoderCallError as error:
+            self.files_touched.update(error.changed)
+            raise
 
     def fix_round(self, round_fix, round_nits):
         """The coder pass on the round's merged fixes, and the plan for the next round. Returns False when the loop

@@ -509,12 +509,30 @@ def take_handback(repo_dir, state, agent_type, missing_text):
         return emit("stop", resumed_agent_pending_stop(agent_type) if is_resumed else missing_text)
 
     pin_session(repo_dir, state)
+    refresh_phase_text(repo_dir, state)
     state.pop("reviewScriptPid", None)
     if awaits_resumed_coder(state):
         put_resumed_coder_back(repo_dir, state)
     elif awaits_resumed_review(state):
         put_resumed_review_back(repo_dir, state)
     return handback
+
+
+def refresh_phase_text(repo_dir, state):
+    # The run's own agent handed back: the phase text it left in the plan is the run's from here on, so the agent's
+    # own plan edits never make the run stale. A plan that cannot be read, or that lost the phase, keeps the saved text
+    # for the stale check to report. The caller saves the state.
+    if state.get("phaseText") is None or not state.get("plan") or state.get("phase") is None:
+        return
+
+    try:
+        plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+    except OSError:
+        return
+
+    current_text = plan_format.phase_text(plan_lines, state["phase"])
+    if current_text is not None:
+        state["phaseText"] = current_text
 
 
 def is_dispatch_open(cwd, state):

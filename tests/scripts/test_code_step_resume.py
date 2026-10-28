@@ -974,6 +974,53 @@ class ResumeTest(base.CodeStepTest):
         self.assertNotIn("stale", out)
         self.assertIn("AGENT: review-loop", out)
 
+    def test_a_resume_after_the_coder_edited_its_own_phase_text_goes_on_to_the_review(self):
+        self.begin_coder()
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+        self.hook("coder", self.CODER_REPORT)
+
+        out = self.step("resume")
+
+        self.assertNotIn("stale", out)
+        self.assertIn("AGENT: review-loop", out)
+
+    def test_a_resume_at_the_asks_after_the_review_loop_edited_the_phase_text_is_not_stale(self):
+        self.coder_round()
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+        self.hook("review-loop", self.ASK)
+        self.step("after-review")
+        self.assertEqual("asks", self.state()["stage"])
+
+        self.step("resume")
+
+        self.assertNotIn("stale", self.said())
+
+    def test_a_plan_edit_after_the_review_loop_handed_back_is_still_stale(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("after-review")
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("changed since the run started", (self.repo / ".git/code-step/question.md").read_text())
+
+    def test_a_resume_after_an_adopted_plan_edit_and_a_review_loop_edit_is_not_stale(self):
+        self.adopt_plan_change_with_the_plan_coder_out()
+        (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
+        self.hook("coder", "Rewrote the step.")
+        self.step("after-plan-edit")
+        self.assertEqual("review", self.state()["stage"])
+        reworded = self.plan_text().replace("backend/src/other.test.ts", "backend/src/orders.spec.ts")
+        (self.repo / self.plan).write_text(reworded)
+        self.hook("review-loop", self.ASK)
+
+        self.step("resume")
+
+        self.assertNotIn("stale", self.said())
+        self.assertEqual("asks", self.state()["stage"])
+
     def test_start_over_an_open_stale_run_names_the_stale_phase_in_the_refusal(self):
         self.begin_coder()
         self.renumber_phase_one()

@@ -447,9 +447,17 @@ def resume_route(repo_dir, state, is_continuation=False):
     if state is None:
         return "start"
 
-    if not is_continuation and stale_phase_reason(repo_dir, state):
+    route = saved_run_route(repo_dir, state)
+    # The run's own coder or review-loop is back: taking its hand-back reads the plan again, so the plan edits it made
+    # do not make the run stale.
+    is_own_handback = route in ("after-coder", "after-review") and awaited_handback(repo_dir, state) is not None
+    if not is_continuation and not is_own_handback and stale_phase_reason(repo_dir, state):
         return "ask-stale-phase"
+    return route
 
+
+def saved_run_route(repo_dir, state):
+    # The step that comes next for the saved run by its stage and stop reason alone, before the stale check.
     stage = state["stage"]
     if stage in HOOK_STAGES and dispatch_since(state) is None:
         return "ask-unknown"

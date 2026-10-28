@@ -100,6 +100,32 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
         self.assertEqual((row["branch_key"], row["result"]), ("some-branch", "PASS_WITH_WARNINGS"))
         self.assertNotIn("branch", row)
 
+    def assert_refused(self, *args, reason):
+        metrics_run = self.run_metrics("iter=7", *args)
+
+        self.assertEqual(metrics_run.returncode, 1, metrics_run.stderr)
+        self.assertIn(reason, metrics_run.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
+    def test_an_unquoted_spaced_result_is_refused_and_no_row_is_sent(self):
+        self.assert_refused("result=NEEDS", "CHANGES", reason="'CHANGES' is not key=value")
+
+    def test_a_result_outside_the_verdicts_is_refused_and_no_row_is_sent(self):
+        self.assert_refused("result=NEEDS", reason="result='NEEDS' is not PASS")
+
+    def test_a_row_with_no_result_is_refused(self):
+        self.assert_refused("fix=1", reason="result='' is not PASS")
+
+    def test_each_verdict_token_is_sent_as_given(self):
+        verdicts = ["PASS", "PASS_WITH_WARNINGS", "NEEDS_CHANGES", "NOT_DISPATCHED", "clean", "findings", "residue"]
+        for verdict in verdicts:
+            with self.subTest(verdict=verdict):
+                metrics_run = self.run_metrics("iter=7", f"result={verdict}")
+                self.assertEqual(metrics_run.returncode, 0, metrics_run.stderr)
+
+        metrics_rows = fake_ledger.recorded_rows(self.ledger_env, "review_metrics")
+        self.assertEqual([metrics_row["result"] for metrics_row in metrics_rows], verdicts)
+
     def test_leading_tilde_slash_expands_to_home(self):
         home_log_path = self.home / "x"
         self.logged_metrics_row_at("~/x", home_log_path)

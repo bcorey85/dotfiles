@@ -101,20 +101,29 @@ def is_pinned_fork_event(event, state):
     return event.get("agent_type") == FORK_AGENT_TYPE and bool(session_id) and session_id == pinned_session
 
 
-def deny_early_fork_handback(cwd, state):
-    # The fork's hand-back while a coder or review-loop is still out leaves that agent's report with nobody to read
-    # it. Deny it once per dispatch and name the command that waits. True when it denied.
-    standing = newest_dispatch_standing(cwd, state)
-    already_denied = any(block.get("kind") == "handback-deny" for block in standing["blocks"])
-    if already_denied or not is_dispatch_open(cwd, state):
+def resume_instruction():
+    # The sentence that sends the fork to the command that waits for the open dispatch's hand-back.
+    return (f"Run `{own_path(INSTALLED_COMMAND)} {RESUME_VERB}` with Bash timeout {BASH_TIMEOUT_MS}: it waits for the "
+            "hand-back and prints the next action.")
+
+
+def open_fork_block(call, kind, limit, requires_dispatch=False):
+    # True when the pinned fork may be blocked once more, after it logs that block as `kind`; False when it may not:
+    # the stage takes no hook, the event is not the pinned fork's, `limit` blocks of this kind were made, or no
+    # dispatch is open. requires_dispatch also returns False when the run has no dispatch.
+    repo, state = call.repo, call.state
+    if state.get("stage") not in HOOK_STAGES or not is_pinned_fork_event(call.event, state):
         return False
 
-    log_event(cwd, state["runId"], "fork-block", state.get("sessionId"), dispatch=standing["dispatch"]["id"],
-              kind="handback-deny")
-    reason = (f"A dispatched agent has not handed back yet. Do not hand back. Run `{own_path(INSTALLED_COMMAND)} "
-              f"{RESUME_VERB}` with Bash timeout {BASH_TIMEOUT_MS}: it waits for the hand-back and "
-              "prints the next action.")
-    script_utils.pre_tool_use_deny(reason)
+    standing = newest_dispatch_standing(repo, state)
+    if requires_dispatch and standing["dispatch"] is None:
+        return False
+
+    blocks_of_kind = sum(1 for block in standing["blocks"] if block.get("kind") == kind)
+    if blocks_of_kind >= limit or not is_dispatch_open(repo, state):
+        return False
+
+    log_event(repo, call.run_id, "fork-block", state.get("sessionId"), dispatch=standing["dispatch"]["id"], kind=kind)
     return True
 
 
@@ -127,14 +136,14 @@ def log_handback_attempt(call):
 
 
 def deny_handback_attempt(call):
-    # Denies the pinned fork's early hand-back. True when it denied.
-    event, state = call.event, call.state
-    if state.get("stage") not in HOOK_STAGES or event.get("agent_type") != FORK_AGENT_TYPE:
-        return False
-    if not is_pinned_fork_event(event, state):
+    # The pinned fork's hand-back while a coder or review-loop is still out leaves that agent's report with nobody to
+    # read it. Deny it once per dispatch and name the command that waits. True when it denied.
+    if not open_fork_block(call, "handback-deny", 1):
         return False
 
-    return deny_early_fork_handback(call.repo, state)
+    reason = f"A dispatched agent has not handed back yet. Do not hand back. {resume_instruction()}"
+    script_utils.pre_tool_use_deny(reason)
+    return True
 
 
 def command_hook():
@@ -272,25 +281,10 @@ def command_stop_hook():
 
 def fork_stop_block(call):
     # Blocks the pinned fork's stop while the repo's dispatch is open. True when it blocked.
-    repo, state = call.repo, call.state
-    if state.get("stage") not in HOOK_STAGES:
-        return False
-    if not is_pinned_fork_event(call.event, state):
+    if not open_fork_block(call, "stop-block", FORK_STOP_BLOCK_LIMIT, requires_dispatch=True):
         return False
 
-    standing = newest_dispatch_standing(repo, state)
-    if standing["dispatch"] is None:
-        return False
-
-    stop_blocks = sum(1 for block in standing["blocks"] if block.get("kind") == "stop-block")
-    if stop_blocks >= FORK_STOP_BLOCK_LIMIT or not is_dispatch_open(repo, state):
-        return False
-
-    log_event(repo, call.run_id, "fork-block", state.get("sessionId"), dispatch=standing["dispatch"]["id"],
-              kind="stop-block")
-    reason = (f"The dispatched {expected_agent(state)} has not handed back. Do not stop. Run "
-              f"`{own_path(INSTALLED_COMMAND)} {RESUME_VERB}` with Bash timeout {BASH_TIMEOUT_MS}: "
-              "it waits for the hand-back and prints the next action.")
+    reason = f"The dispatched {expected_agent(call.state)} has not handed back. Do not stop. {resume_instruction()}"
     print(json.dumps({"decision": "block", "reason": reason}))
     return True
 

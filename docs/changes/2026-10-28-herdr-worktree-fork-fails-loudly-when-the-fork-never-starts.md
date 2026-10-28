@@ -3,7 +3,7 @@ type: "Change"
 title: "herdr-worktree --fork fails loudly when the fork never starts"
 description: "herdr-dev waits for the new pane's shell prompt and clears the input line before it types the claude command, and keeps the brief file until claude exits cleanly. herdr-worktree --fork then waits for herdr to report a claude agent in that pane; if none shows within the timeout it exits 1 and names the pane and the command to run there."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T12:00:00-05:00"}
-seq: 173
+seq: 177
 kind: "fix"
 components: ["script/herdr-worktree", "script/herdr-dev"]
 evidence: ["judgment"]

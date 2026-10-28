@@ -55,17 +55,49 @@ class GitDisciplineGateTest(unittest.TestCase):
         self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
 
     def test_stash_denied_but_list_and_show_pass(self):
-        for command in ("git stash", "git stash pop", "git  stash push -m x", "cd x && git stash", "GIT STASH"):
-            self.assert_denied(command, "[git-discipline-gate] git stash is blocked: it breaks parallel-agent "
-                                        "work and resets staged files.")
-        for command in ("git stash list", "git stash show -p", "git stash  list"):
+        for command in ("git stash", "git stash pop", "git  stash push -m x", "cd x && git stash", "GIT STASH",
+                        "git stash push -u -m tag-1", "git stash apply --index 0123abc", "git stash drop 'stash@{0}'",
+                        "git -C ../other stash push -m tag", "git -c core.pager=cat stash pop",
+                        "git --no-pager stash apply", "env GIT_DIR=x git stash", "timeout 5 git stash",
+                        "echo $(git stash)", "echo \"$(git stash pop)\"", "echo `git stash`",
+                        "bash -c 'git stash push'", "eval \"git stash\"", "git \\\n  stash push"):
+            with self.subTest(command=command):
+                self.assert_denied(command, "[git-discipline-gate] git stash is blocked in every form")
+        for command in ("git stash list", "git stash show -p", "git stash  list", "git -C x stash list"):
             self.assert_allowed(command)
 
     def test_stash_message_is_exact(self):
         reason = self.assert_denied("git stash", "[git-discipline-gate]")
-        self.assertEqual(reason, "[git-discipline-gate] git stash is blocked: it breaks parallel-agent work and "
-                                 "resets staged files. If stashing is genuinely needed, ask the user — they "
-                                 "can run it themselves.")
+        self.assertEqual(reason, "[git-discipline-gate] git stash is blocked in every form, a tagged `git stash "
+                                 "push -m <tag>` included: every worktree shares one stash stack, and a stash "
+                                 "resets staged files. Set work aside with a temporary WIP commit on your branch. "
+                                 "If stashing is genuinely needed, ask the user — they can run it themselves.")
+
+    def test_git_words_inside_text_pass(self):
+        for command in ("python3 queue.py new <<'EOF'\nThe agent ran git stash push and git pull --autostash.\nEOF",
+                        "python3 queue.py new <<EOF\nthen git stash pop and git commit --amend\nEOF",
+                        "echo 'git stash pop'", "rg -n \"git stash\" docs", "echo x # git stash",
+                        "printf '%s' 'git pull --autostash'"):
+            with self.subTest(command=command):
+                self.assert_allowed(command)
+
+    def test_autostash_on_pull_rebase_and_merge_denied(self):
+        for command in ("git pull --rebase --autostash", "git rebase --autostash origin/master",
+                        "git merge --autostash topic", "git -C repo pull --autostash",
+                        "git pull --no-autostash --autostash", "git -c rebase.autoStash=true pull --rebase",
+                        "git -c merge.autostash=yes merge topic", "git config rebase.autoStash true",
+                        "git config --global merge.autoStash on", "bash -c 'git pull --autostash'"):
+            with self.subTest(command=command):
+                reason = self.assert_denied(command, "[git-discipline-gate] git autostash is blocked")
+        self.assertEqual(reason, "[git-discipline-gate] git autostash is blocked: it runs a git stash, which every "
+                                 "worktree shares and which resets staged files. Commit or set your work aside with a "
+                                 "temporary WIP commit first, or pass --no-autostash.")
+        for command in ("git pull --rebase", "git pull --rebase --no-autostash",
+                        "git rebase --autostash --no-autostash",
+                        "git -c rebase.autoStash=false pull --rebase", "git config --get rebase.autoStash",
+                        "git config rebase.autoStash false"):
+            with self.subTest(command=command):
+                self.assert_allowed(command)
 
     def test_amend_denied(self):
         for command in ("git commit --amend", "git commit -m x --amend --no-edit", "git commit --amend -m x"):

@@ -80,6 +80,7 @@ for path, text in edits.items():
 
 usage = {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 3, "cache_read_input_tokens": 2}
 print(json.dumps({"result": reply.get("result", ""), "session_id": "fake-session", "usage": usage}))
+sys.exit(reply.get("exit", 0))
 '''
 
 APP_BEFORE = "limit = 1\nlimit = 2\nlimit = 3\nlimit = 4\nlimit = 5\n"
@@ -279,6 +280,21 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn("review2-code-reviewer call failed", packet["blockers"][0])
         self.assertFalse(row["no_reviewer"])
+
+    def test_coder_that_dies_after_editing_reports_its_files_and_its_reply(self):
+        limit_hit = "You've hit your usage limit"
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": limit_hit, "edits": {"app.py": APP_FIXED}, "exit": 1}],
+        })
+
+        self.assertNotEqual(completed.returncode, 0)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual(packet["files_touched"], ["app.py"])
+        self.assertIn(limit_hit, packet["blockers"][0])
+        self.assertIn("changed app.py before it died", packet["blockers"][0])
 
     def test_check_finder_names_the_full_check_when_claude_md_has_no_line(self):
         completed = self.run_script({"check-finder": [{"result": 'Found it in the Makefile. {"command": "true"}'}],

@@ -18,9 +18,8 @@ unmeasured: ""
 
 - `_kv.sh`: new `kv_refuse_bare_words` exits 1 on any arg with no `=`. `kv_fold` itself still warns and skips, for
   the other writers.
-- `log-review-metrics`: refuses a bare word, and refuses a ledger row whose `result=` is not `PASS`,
-  `PASS_WITH_WARNINGS`, `NEEDS_CHANGES`, `NOT_DISPATCHED`, `clean`, `findings` or `residue`, after the existing
-  spelling fold. A ledger row with no `result=` is refused too.
+- `log-review-metrics`: the same refusal landed on master in a parallel change (exit 2, with telemetry off too). The
+  merge keeps master's writer and tests, and this change adds nothing to that file.
 - `log-review-finding`: refuses a bare word, and a `kind=run` `result=` that folds to none of the four verdicts.
   It no longer passes an unknown value on to be stored as `other`.
 - `refactor_flow.py log`: the run row goes through `log-review-finding --check` before any row is written, so a result

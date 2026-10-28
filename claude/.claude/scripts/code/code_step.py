@@ -5,12 +5,14 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py start [<plan>] [+fast|+deep] [--phase <id>] [--restart] [<run notes>]
                                                 next phase of the plan (or the named one): checks, gate, packet, the
                                                 exact coder dispatch. `start --help` prints usage. --restart drops an
-                                                unfinished run first.
+                                                unfinished run first; `--restart <text>` over a saved plan with open
+                                                phases makes the text run notes (use --task for planless work).
   code_step.py start --task "<text>"           planless work: the coder dispatch without gate or packet
   code_step.py start --task-file <path>        the same, with the text read from a file
   code_step.py start --repo <path> ...         run in that checkout, not the current directory (a `Repo: <path>` first
                                                 line in the task file does the same)
   code_step.py resume                           do the next step of the saved run, whatever stage or stop it is in
+  code_step.py <verb> --help                    print that verb's usage and change nothing (code_step_usage)
   code_step.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"
                                                 only --by user is the user's own word: a session ruling never changes
                                                 a criterion
@@ -24,8 +26,9 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 at pass, give one --evidence per open Success Criteria item and the
                                                 script writes it into the plan
   code_step.py verify                           re-run the phase gates after a failed Automated Verification was fixed
-  code_step.py review-again                     dispatch the review loop again on the same diff, after its packet did
-                                                not parse
+  code_step.py review-again                     dispatch the review loop again on the same diff, after a stop that
+                                                names it (unreadable packet, cap, false-clean, tool fault,
+                                                critical blocker, setup fault)
   code_step.py tick <phase id>                  mark a phase done that the user finished outside /code
   code_step.py abort                            end the open run on purpose: settle its criteria copy, clear its gate
                                                 and texts, archive state.json as aborted-<UTC time>.json; the working
@@ -52,7 +55,9 @@ hooks write only that log; the verbs read it and write state.json.
 The code is split in files that import one way: code_step_core (state, event log, hand-back matcher, output),
 code_step_boundary (criteria guard, verification runner, phase boundary), code_step_hooks, code_step_gates (gate
 commands), code_step_start (the start verb), code_step_report (reading a coder report), code_step_review
-(plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), and this file."""
+(plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_usage (usage text and the
+`resume` argument parser) and this file."""
+import functools
 import json
 import os
 import pathlib
@@ -102,6 +107,7 @@ from code_step_core import (
     sent_message_since,
     session_open_run_repos,
     session_pin,
+    stale_phase_reason,
     state_dir,
     stop_review_script,
     stop_with_question,
@@ -130,8 +136,10 @@ from code_step_report import (
     why_by_file,
 )
 from code_step_review import (
+    BLOCKER_STOP_TEXT,
     STAGE_GUARDS,
     ask_the_user,
+    blocker_stop_next_step,
     command_after_plan_edit,
     command_after_review,
     command_asks_done,
@@ -143,6 +151,7 @@ from code_step_review import (
     prior_issues,
 )
 from code_step_start import RESUME_ALIASES, command_start, emit_closing_skill, phase_label
+from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
 from script_utils import run_command
 
 WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")
@@ -159,19 +168,12 @@ NO_CODER_REPORT = ("No coder report was saved. The log-hook (code_step.py log-ho
 
 # ---------- plan check ----------
 
-PLAN_USAGE = "usage: code_step.py plan check [--final]|parse <path>"
-
-
 def command_plan(args):
     # `plan check --final <path>` also fails a spec whose criteria file was never written.
-    if "--help" in args or "-h" in args:
-        print(PLAN_USAGE)
-        sys.exit(0)
-
     final = args[1:2] == ["--final"] and args[0] == "check"
     path_args = args[2:] if final else args[1:]
     if not path_args or args[0] not in ("check", "parse"):
-        sys.exit(PLAN_USAGE)
+        sys.exit(VERB_USAGES["plan"])
     plan_path = path_args[0]
 
     plan_lines = pathlib.Path(plan_path).read_text().splitlines()
@@ -239,9 +241,8 @@ def coder_changed_files(repo_dir, state, changed_now):
 
 def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     # "converged" when the asks coder changed nothing and named, for each confirmed ask, the file:line that already
-    # does it or the check that passed; "stop" for a report with no reviewable change or one whose marker line
-    # recommends /eng-spec; else None. Any other report with no change (a failed edit, a blocked hook, a question)
-    # stops.
+    # does it or the check that passed; "recommended-eng-spec" for a report whose marker line recommends /eng-spec;
+    # "no-change" for a report with no reviewable change (a failed edit, a blocked hook, a question); else None.
     is_ask_fix = state["stage"] == "asks-coder"
     asks_coder_changed_nothing = is_ask_fix and changed_now == state.get("asksBaseline")
     escalates = recommends_eng_spec(report)
@@ -249,15 +250,17 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     if asks_coder_changed_nothing and not report_raises_blocker and every_accepted_ask_already_done(
             repo_dir, state, report):
         return "converged"
-    if not changed_files or asks_coder_changed_nothing or escalates:
-        return "stop"
+    if escalates:
+        return "recommended-eng-spec"
+    if not changed_files or asks_coder_changed_nothing:
+        return "no-change"
     return None
 
 
 CODER_REPORT_STOP_LINES = 6
 
 
-def stop_on_coder_report(repo_dir, state, report, agent_id):
+def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
     # The run stops on the coder's report: the user answers it, and the coder resumed with SendMessage goes on.
     state["stage"] = "stopped"
     state.pop("stopReason", None)
@@ -270,13 +273,15 @@ def stop_on_coder_report(repo_dir, state, report, agent_id):
                 else "")
     resume_text = (" If the user answers the coder's blocker, resume that coder with SendMessage, then run "
                   f"{timed_command(RESUME_VERB)}.")
+    cause_text = ("recommended /eng-spec" if outcome == "recommended-eng-spec"
+                  else "produced no reviewable change")
     report_lines = [line for line in report.splitlines() if line.strip()][:CODER_REPORT_STOP_LINES]
     next_step = (f"if the user answers the coder's blocker, resume that coder with SendMessage, then run "
                  f"`{script_command(RESUME_VERB)}`. To dispatch a new coder for the phase, "
                  f"{restart_instruction(state)}.")
     stop_with_question(
-        repo_dir, "the coder produced no reviewable change, or recommended /eng-spec.", report_lines, next_step,
-        "The coder produced no reviewable change, or recommended /eng-spec. Do not dispatch a "
+        repo_dir, f"the coder {cause_text}.", report_lines, next_step,
+        f"The coder {cause_text}. Do not dispatch a "
         "review. Do not mark the phase done." + tick_text + resume_text
         + " Relay the coder's report to the user:", report)
 
@@ -330,8 +335,8 @@ def review_coder_report(repo_dir, state, handback):
             "The asks coder changed nothing, and named where each confirmed ask is already in the code or the passing "
             "check that confirms it. No review "
             "runs. The coder reported:\n" + report)
-    if outcome == "stop":
-        return stop_on_coder_report(repo_dir, state, report, handback.get("agent_id"))
+    if outcome in ("no-change", "recommended-eng-spec"):
+        return stop_on_coder_report(repo_dir, state, report, handback.get("agent_id"), outcome)
 
     asks_baseline = state.get("asksBaseline")
     if is_ask_fix and asks_baseline is not None and not is_open:
@@ -417,16 +422,23 @@ def stopped_route(repo_dir, state):
             return "after-review"
         return "after-review" if review_answer_sent(repo_dir, state) else "ask-review-cap"
 
-    if state.get("stopReason") == "review-blocker":
-        return "ask-review-blocker"
+    if state.get("stopReason") == "coder-cap":
+        return "ask-coder-cap"
+    if state.get("stopReason") in BLOCKER_STOP_TEXT:
+        return "ask-critical-blocker"
+    # A review gate refused as false-clean is reviewed again, not stopped on again.
+    return "review-again" if state.get("stopReason") == "false-clean" else "ask-unknown"
 
-    return "ask-coder-cap" if state.get("stopReason") == "coder-cap" else "ask-unknown"
 
-
-def resume_route(repo_dir, state):
+def resume_route(repo_dir, state, is_continuation=False):
     # The step that comes next for the saved run, by its stage and stop reason. Pure: it reads and changes nothing.
+    # A continuation (`after-coder`, `after-review`, `after-plan-edit`) carries on a live run, so it never asks about
+    # a plan edited under it: only a return to the run (`resume`) does.
     if state is None:
         return "start"
+
+    if not is_continuation and stale_phase_reason(repo_dir, state):
+        return "ask-stale-phase"
 
     stage = state["stage"]
     if stage in HOOK_STAGES and dispatch_since(state) is None:
@@ -518,12 +530,25 @@ def ask_about_review_cap(repo_dir, state):
              "resume. If it died, invoke Skill code with `review-again`.")
 
 
-def ask_about_review_blocker(repo_dir, state):
-    restart_instruction_text = restart_instruction(state)
-    review_again_command = script_command("review-again")
-    ask_user(repo_dir, "The review stopped on a blocker, and the coder's finished diff is kept. Once the user has "
-             f"cleared the blocker, run `{review_again_command}` to review the "
-             f"same diff again. To dispatch the phase coder again instead, {restart_instruction_text}.")
+def resume_review_again(repo_dir, state):
+    command_review_again(repo_dir, state, [])
+
+
+def ask_about_critical_blocker(repo_dir, state):
+    status_command = script_command("status")
+    opening_sentence = BLOCKER_STOP_TEXT[state["stopReason"]][0]
+    ask_user(repo_dir, f"The run stopped: {opening_sentence} Present it to the user. Run "
+             f"`{status_command}` to read the saved state. Then, {blocker_stop_next_step(state)}")
+
+
+def ask_about_stale_phase(repo_dir, state):
+    # The plan moved under the saved run: going on would run the old phase. Dropping the run starts the plan's next open
+    # phase.
+    modifier_words = [state["modifier"]] if state.get("modifier") else []
+    restart_command = script_command(" ".join(["start --restart", state["plan"], *modifier_words]))
+    ask_user(repo_dir, f"The saved run is stale: {stale_phase_reason(repo_dir, state)}. Ask the user whether to drop "
+             f"the stale run and start the plan's next open phase. If so, run `{restart_command}`. The working tree "
+             "stays as it is.")
 
 
 def ask_about_coder_cap(repo_dir, state):
@@ -537,15 +562,21 @@ RESUME_HANDLERS = {
     "start": resume_start, "done": resume_done, "after-coder": resume_after_coder,
     "after-review": resume_after_review, "after-plan-edit": resume_after_plan_edit, "ask-impact": ask_about_impact,
     "ask-asks": ask_about_asks, "ask-coder": ask_about_stopped_coder, "ask-review-cap": ask_about_review_cap,
-    "ask-coder-cap": ask_about_coder_cap, "ask-review-blocker": ask_about_review_blocker,
+    "ask-coder-cap": ask_about_coder_cap, "review-again": resume_review_again,
+    "ask-stale-phase": ask_about_stale_phase, "ask-critical-blocker": ask_about_critical_blocker,
 }
 
 
-def command_resume(args):
+def command_resume(args, is_continuation=False):
     repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     state = load_state(repo_dir)
-    route = resume_route(repo_dir, state)
+    route = resume_route(repo_dir, state, is_continuation)
+    # A stale phase outranks the route, so an answer sent while a stopped coder waits would otherwise be refused as
+    # "no stopped coder waits": say the phase is stale instead.
+    if args and route == "ask-stale-phase":
+        return ask_about_stale_phase(repo_dir, state)
+
     # Only a coder that waits for the user's answer takes one: `resume <answer>`.
     if args and route != "ask-coder":
         return refuse("resume takes no arguments here: no stopped coder waits for an answer.",
@@ -679,10 +710,15 @@ def run_verb(verb, handler, args):
 def main():
     verb = sys.argv[1] if len(sys.argv) > 1 else ""
     args = sys.argv[2:]
+    # `start` prints its own usage. Every other verb prints its here, before any state is read.
+    usage_verb = RESUME_VERB if verb in RESUME_ALIASES else verb
+    if print_usage_if_asked(usage_verb, args, is_hook=verb in HOOK_VERBS):
+        return
+    check_verb_arguments(usage_verb, args)
     verbs = {"start": command_start, RESUME_VERB: command_resume, "decide": command_decide,
              "asks-done": command_asks_done, "skill-done": command_skill_done_with_question, "verify": command_verify,
              "tick": command_tick, "review-again": command_review_again, "abort": command_abort}
-    verbs.update(dict.fromkeys(RESUME_ALIASES, command_resume))
+    verbs.update(dict.fromkeys(RESUME_ALIASES, functools.partial(command_resume, is_continuation=True)))
     if verb in HOOK_VERBS:
         return HOOK_VERBS[verb]()
     if verb == "plan":

@@ -2017,6 +2017,8 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("AGENT: review-loop", out)
         self.assertEqual("stopped", self.state()["stage"])
+        self.assertIn("The coder produced no reviewable change.", out)
+        self.assertNotIn("recommended /eng-spec", out)
 
     def test_coder_recommending_eng_spec_stops_instead_of_reviewing(self):
         self.begin_coder()
@@ -2024,6 +2026,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("AGENT: review-loop", out)
+        self.assertIn("The coder recommended /eng-spec.", out)
 
     def test_a_coder_report_that_only_mentions_eng_spec_goes_on_to_review(self):
         out = self.coder_round("The task is not architectural, so no /eng-spec is needed.\n" + self.CODER_REPORT)
@@ -3190,6 +3193,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("marked done", out)
         self.assertEqual("stopped", self.state()["stage"])
         self.assertIn("- [ ] Phase 1:", self.plan_text())
+        return out
 
     def test_asks_coder_that_changed_nothing_and_has_an_open_question_stops(self):
         self.assert_unchanged_asks_coder_stops("Open question: which name should the rename use?")
@@ -3276,7 +3280,8 @@ class CodeStepTest(unittest.TestCase):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nOpen question: which name should it use?")
 
     def test_asks_coder_already_done_line_with_an_eng_spec_recommendation_stops(self):
-        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: eng-spec")
+        out = self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: eng-spec")
+        self.assertIn("The coder recommended /eng-spec.", out)
 
     def test_asks_coder_already_done_line_with_a_plan_impact_report_stops(self):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\n" + self.IMPACT_REPORT)

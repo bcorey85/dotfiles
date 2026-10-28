@@ -38,6 +38,8 @@ HANDBACK_POLL_SECONDS = 2
 STOP_ROW_WAIT_SECONDS = 15
 HANDBACK_TOTAL_WAIT_MULTIPLE = 3
 LAUNCH_EXPECTED_SECONDS = 60
+PLAN_EDIT_STAGES = ("plan-coder", "impact-coder", "impact-review")
+PLAN_EDIT_STOP_REASONS = ("verification", "plan-format")
 BASH_TIMEOUT_MS = 600000
 CODER = "coder"
 REVIEW_LOOP = "review-loop"
@@ -454,7 +456,30 @@ def newest_handback(repo_dir, state):
     since = dispatch_since(state)
     if since is None or not state.get("runId"):
         return None
-    return handback_event(read_events(repo_dir, state["runId"]), awaited_agent_id(repo_dir, state), since)
+
+    events = read_events(repo_dir, state["runId"])
+    agent_id = awaited_agent_id(repo_dir, state)
+    if agent_id is None:
+        return finished_report_without_launch(events, state, since)
+    return handback_event(events, agent_id, since)
+
+
+def finished_report_without_launch(events, state, since):
+    # The Agent call went out but no agent id reached the log (no launch row, or one without an agent id): the agent's
+    # hand-back, of the type the dispatch asked for and after the dispatch, shows that it ran and finished. Without it
+    # a resume would print the dispatch again and launch a second agent.
+    # Inside the launch grace the Agent call may still come, and a report then is another agent's.
+    if time.time() - since < launch_grace_seconds():
+        return None
+
+    awaited_type = expected_agent(state)
+    reports = [event for event in events if event.get("event") == "handback" and event.get("agent_type") == awaited_type
+               and is_after(event, since)]
+    return max(reports, key=lambda event: event["ts"]) if reports else None
+
+
+def launch_grace_seconds():
+    return float(os.environ.get("CODE_STEP_LAUNCH_SECONDS", LAUNCH_EXPECTED_SECONDS))
 
 
 def awaited_handback(repo_dir, state, wait_for_stop=False):
@@ -604,8 +629,7 @@ def unlaunched_dispatch(repo_dir, state, agent_type):
     if dispatch.get("stage") != state["stage"] or dispatch.get("agent_type") != agent_type:
         return None
 
-    grace_seconds = float(os.environ.get("CODE_STEP_LAUNCH_SECONDS", LAUNCH_EXPECTED_SECONDS))
-    if time.time() - dispatch["ts"] < grace_seconds:
+    if time.time() - dispatch["ts"] < launch_grace_seconds():
         return None
     return dispatch
 
@@ -859,6 +883,32 @@ def restart_instruction(state, restart_command="start --restart"):
     return "ask the user for the task text, then run `" + " ".join(planless_words) + "`"
 
 
+def stale_phase_reason(repo_dir, state):
+    # Why the saved run's phase no longer matches the plan file, or None when it still does (or the run keeps no phase
+    # text to compare: a finished run, a planless run, a closing phase). A phase the run's own gates ticked is not
+    # stale.
+    saved_text = state.get("phaseText")
+    if state["stage"] == "done" or not state.get("plan") or state.get("phase") is None or saved_text is None:
+        return None
+
+    # These stages are the ones where the plan is edited on purpose: a plan-edit coder, a ruling on a plan change, a
+    # fix of the plan's verification lines. The run reads the plan again when it leaves them.
+    if state["stage"] in PLAN_EDIT_STAGES or state.get("stopReason") in PLAN_EDIT_STOP_REASONS:
+        return None
+
+    try:
+        plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+    except OSError:
+        return f"{state['plan']} cannot be read"
+
+    current_text = plan_format.phase_text(plan_lines, state["phase"])
+    if current_text is None:
+        return f"Phase {state['phase']} is no longer in {state['plan']}"
+    if plan_format.phase_wording(current_text) != plan_format.phase_wording(saved_text):
+        return f"the text of Phase {state['phase']} in {state['plan']} changed since the run started"
+    return None
+
+
 def stop_a_silent_coder(repo_dir, state, stopped_at):
     # The coder wait ran to the cap. A coder whose launch has an agent id can be resumed with SendMessage: the state
     # then reads like the stop on a coder's report. A coder that was resumed once keeps its id. Only the phase coder
@@ -957,14 +1007,21 @@ def ask_user(repo_dir, instruction, *question_lines):
     emit("ask-user", f"The question for the user is in {question_file(repo_dir)}. Hand back.")
 
 
-def stop_with_question(repo_dir, why, items, next_step, *stop_lines):
+def stop_with_question(repo_dir, why, items, next_step, *stop_lines, questions=()):
     # A stop on an agent's report or silence: question.md names why the run stopped, each open item on one line and
-    # the command that goes on, so the hand-back never rests on free text alone.
+    # the command that goes on, so the hand-back never rests on free text alone. The reviewer's questions for the user
+    # come under their own heading, apart from the findings.
     item_lines = [f"- {script_utils.one_line(item, 300)}" for item in items] or ["- (none reported)"]
+    question_lines = []
+    spaced_question_lines = []
+    if questions:
+        question_lines = ["Open questions:", *(f"- {script_utils.one_line(question, 300)}" for question in questions)]
+        spaced_question_lines = [*question_lines, ""]
+
     write_question(repo_dir, ["## The run stopped", "", "Main session: tell the user why the run stopped and what "
                               "waits on them.", "", "Why: " + why, "", "Open items:", *item_lines, "",
-                              "Next: " + next_step])
-    emit("stop", *stop_lines)
+                              *spaced_question_lines, "Next: " + next_step])
+    emit("stop", *stop_lines, *question_lines)
 
 
 def emit(action, *lines, prompt=None, agent=None, model=None, prompt_file=None):

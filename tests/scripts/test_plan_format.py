@@ -743,6 +743,13 @@ class ClosingPhaseHelpersTest(unittest.TestCase):
         self.assertEqual("## Phase 1: Build\n\nbuild text\n", plan_format.phase_text(lines, "1"))
         self.assertIsNone(plan_format.phase_text(lines, "4"))
 
+    def test_phase_wording_ignores_checked_boxes_and_done_evidence_but_not_new_words(self):
+        written = "## Phase 1: Build\n- [ ] builds\n"
+        ticked = "## Phase 1: Build\n- [x] builds\n  - Done: ran it\n"
+        changed = "## Phase 1: Build\n- [ ] builds twice\n"
+        self.assertEqual(plan_format.phase_wording(written), plan_format.phase_wording(ticked))
+        self.assertNotEqual(plan_format.phase_wording(written), plan_format.phase_wording(changed))
+
     def test_open_phases_come_in_plan_order_with_the_closing_phases_last(self):
         text = CLOSING_PLAN.replace("- [x] Phase 3", "- [ ] Phase 3")
         pending = plan_format.ordered_pending(self.entries(text))

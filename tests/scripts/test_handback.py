@@ -822,6 +822,26 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertEqual(self.hand_back([full_check_run("t1"), coder_step("t2")], cwd=str(repo)), "")
         self.assertEqual(len(self.handback_rows()), 1)
 
+    def make_repos(self, reviewed_claude_md, cwd_claude_md):
+        reviewed, other = self.tmp / "reviewed-repo", self.tmp / "other-repo"
+        for repo, claude_md in ((reviewed, reviewed_claude_md), (other, cwd_claude_md)):
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            (repo / "CLAUDE.md").write_text(claude_md, encoding="utf-8")
+        prompt = {"type": "user", "message": {"role": "user", "content": f"review loop\nrepo: {reviewed}"}}
+        return prompt, str(other)
+
+    def test_a_hand_back_for_a_reviewed_repo_whose_full_suite_runs_in_ci_passes_from_another_cwd(self):
+        prompt, other = self.make_repos("- Full suite: CI\n", "# Other repo\n")
+
+        self.assertEqual(self.hand_back([prompt, full_check_run("t1"), coder_step("t2")], cwd=other), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_hand_back_for_a_reviewed_repo_without_the_ci_line_is_denied_though_the_cwd_has_it(self):
+        prompt, other = self.make_repos("# Repo\n", "- Full suite: CI\n")
+
+        out = self.hand_back([prompt, full_check_run("t1"), coder_step("t2")], cwd=other)
+        self.assertIn("Step 6 execution gate", json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"])
+
     def test_a_clean_hand_back_after_a_full_check_passes(self):
         self.assertEqual(self.hand_back([coder_step("t1"), full_check_run("t2")]), "")
         self.assertEqual(len(self.handback_rows()), 1)

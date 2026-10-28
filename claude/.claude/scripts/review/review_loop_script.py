@@ -357,6 +357,21 @@ def parse_review(text):
             "assessment": assessment.group(1).strip() if assessment else ""}
 
 
+def last_json_object(reply, keys):
+    """The last JSON object in a reply that holds any of `keys`, or None. Decodes from each "{" back to front, because
+    prose before the object can hold braces of its own ("{CUBE}")."""
+    decoder = json.JSONDecoder()
+    brace_positions = [match.start() for match in re.finditer(r"\{", reply)]
+    for position in reversed(brace_positions):
+        try:
+            parsed, _ = decoder.raw_decode(reply, position)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and any(key in parsed for key in keys):
+            return parsed
+    return None
+
+
 def disposition_call(text, repo, out):
     prompt = (
         "Below is a code reviewer's output. Copy each finding into one of three lists without changing its words: "
@@ -365,12 +380,8 @@ def disposition_call(text, repo, out):
         '{"fix": [..], "ask": [..], "nit": [..]}.\n\n' + text
     )
     reply = claude_call("disposition", prompt, repo, out, model="sonnet")
-    match = re.search(r"\{.*\}", reply, re.S)
-    try:
-        parsed = json.loads(match.group(0)) if match else None
-    except json.JSONDecodeError:
-        parsed = None
-    if not isinstance(parsed, dict):
+    parsed = last_json_object(reply, ("fix", "ask", "nit"))
+    if parsed is None:
         raise ValueError(f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}')
     return {"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []), "assessment": ""}
 
@@ -457,11 +468,8 @@ def check_command_for(repo, out):
 
     reply = claude_call("check-finder", CHECK_FINDER.format(repo=repo), repo, out, model="haiku",
                         tools="Read,Glob,Grep")
-    for found in reversed(list(re.finditer(r"\{.*?\}", reply, re.S))):
-        try:
-            parsed = json.loads(found.group(0))
-        except json.JSONDecodeError:
-            continue
+    parsed = last_json_object(reply, ("command", "reason"))
+    if parsed is not None:
         command = parsed.get("command")
         if isinstance(command, str) and command.strip():
             return command.strip()
@@ -563,17 +571,8 @@ def closure_check(repo, out, fixed):
         '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed.'
     )
     reply = claude_call("class-closure", prompt, repo, out, model="sonnet", tools="Read,Grep")
-    # Decode from each "{" back to front: prose before the object can hold braces of its own ("{CUBE}").
-    decoder = json.JSONDecoder()
-    brace_positions = [match.start() for match in re.finditer(r"\{", reply)]
-    for position in reversed(brace_positions):
-        try:
-            parsed, _ = decoder.raw_decode(reply, position)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(parsed, dict) or "open" not in parsed:
-            continue
-
+    parsed = last_json_object(reply, ("open",))
+    if parsed is not None:
         parsed_open = parsed.get("open")
         open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
                          if isinstance(parsed_open, list) else [])

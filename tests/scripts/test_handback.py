@@ -145,6 +145,34 @@ class ParseTest(HandbackTestBase):
         self.assertIn("first part", packet["fixed"][0]["finding"])
         self.assertNotIn('"', packet["fixed"][0]["finding"])
 
+    def test_one_multi_line_ask_with_numbered_lines_inside_it_is_one_ask(self):
+        text = ('status: converged\niter: 1\nfixed: []\nask:\n'
+                '- {finding: "f", file_line: "a.ts:1", question: "which one?", change: "do it"}\n'
+                '1. the first option reads the cache\n'
+                '2. the second option reads the table\n')
+        packet = handback.load(text)
+        self.assertEqual(len(packet["ask"]), 1)
+        self.assertIn("which one?", packet["ask"][0]["question"])
+        self.assertIn("the second option reads the table", packet["ask"][0]["question"])
+        self.assertEqual(packet["ask"][0]["change"], "do it")
+
+    def test_bullet_lines_inside_a_numbered_ask_stay_in_that_ask(self):
+        numbered_first = ('status: converged\niter: 1\nfixed: []\nask:\n'
+                          '1. which cache? change: pick one\n'
+                          '- the first option reads the cache\n'
+                          '2. which table? change: pick one\n')
+        packet = handback.load(numbered_first)
+        self.assertEqual(len(packet["ask"]), 2)
+        self.assertIn("the first option reads the cache", packet["ask"][0]["question"])
+
+    def test_numbered_lines_after_a_blocker_mapping_stay_in_its_finding_text(self):
+        packet = handback.load(
+            'status: critical-blocker\niter: 1\nblockers:\n'
+            '- {finding: "bad", file_line: "a.ts:1"}\n'
+            '1. first detail\n2. second detail\n'
+        )
+        self.assertIn("second detail", packet["blockers"][0]["finding"])
+
     def test_plain_text_fixed_entry_becomes_a_mapping_with_its_path(self):
         packet = handback.load(
             "status: converged\niter: 1\nfixed:\n  - removed the dead branch | src/a.ts:4 | blocker: no\n"

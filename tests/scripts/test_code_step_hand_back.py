@@ -55,6 +55,7 @@ class HandBackTest(base.CodeStepTest):
         self.assertIn("ACTION: stop", out)
         question_text = self.assert_stop_question("the review found a critical blocker", "b - backend/src/orders.ts:1")
         self.assertIn("start --restart", question_text)
+        self.assertIn("review-again", question_text)
 
     def test_a_setup_fault_stop_writes_question_md_with_each_blocker_and_says_it_is_not_a_code_failure(self):
         self.coder_round()
@@ -64,10 +65,13 @@ class HandBackTest(base.CodeStepTest):
 
         self.assertIn("ACTION: stop", out)
         self.assertEqual(1, out.count("toolkit or environment fault, not a code failure"))
-        self.assert_stop_question("the review's full check could not run here", "no package.json")
+        question_text = self.assert_stop_question("the review's full check could not run here", "no package.json")
+        self.assertIn("review-again", question_text)
+        self.assertEqual("setup-fault", self.state()["stopReason"])
 
     def test_a_critical_blocker_stop_lists_the_reviewers_questions_apart_from_the_blockers_and_names_review_again(self):
         self.coder_round()
+        self.set_state(blockerCarried=True)
         packet = BLOCKER_PACKET + f"\nfixed: []\nask: [{CACHE_ASK}]"
         self.hook("review-loop", packet)
 

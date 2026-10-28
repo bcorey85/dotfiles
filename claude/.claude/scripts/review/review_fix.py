@@ -124,7 +124,9 @@ def read_state():
 def load_fix_state():
     path = state_file()
     if not path.exists():
-        raise UsageError("no packet was processed yet. Run `packet` first.")
+        raise UsageError(f"no packet was processed in {path.parent} (the state is kept per repo, and this call ran in "
+                         f"{pathlib.Path.cwd()}). If `packet` ran in another repo, run this call there; if it ran "
+                         "in none, run `packet` first.")
     state = read_state()
     if state is None:
         raise UsageError(f"{path} is not readable JSON")

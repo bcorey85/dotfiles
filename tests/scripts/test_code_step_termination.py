@@ -236,6 +236,8 @@ REVIEW_OUTCOMES = {
     "deferred-ask": f'status: deferred\niter: 1\nfindings_remaining:\n- {{finding: "d", file_line: "a.ts:2"}}\nask: '
                     f'[{ASK_ONE}]',
     "critical-blocker": 'status: critical-blocker\niter: 1\nblockers:\n- {finding: "b", file_line: "a.ts:1"}',
+    "critical-blocker-ask": f'status: critical-blocker\niter: 1\nblockers:\n- {{finding: "b", file_line: "a.ts:1"}}\n'
+                            f'ask: [{ASK_ONE}]',
     "cap-reached": 'status: cap-reached\niter: 3\nfindings_remaining:\n- {finding: "r", file_line: "a.ts:1"}',
     "cap-reached-ask": f'status: cap-reached\niter: 3\nfindings_remaining:\n- {{finding: "r", file_line: "a.ts:1"}}\n'
                        f'ask: [{ASK_ONE}]',
@@ -602,7 +604,7 @@ def user_answers(state):
             ("skill-done pass", ["skill-done", "pass"], None),
             ("skill-done fail", ["skill-done", "fail"], None),
         ]
-    if is_stopped and reason in ("invalid-packet", "cap-reached"):
+    if is_stopped and reason in ("invalid-packet", "cap-reached", "critical-blocker", "setup-fault"):
         answers += [("review-again", ["review-again"], None)]
     if is_stopped and code_step.awaits_resumed_review(state):
         answers += [("review-again", ["review-again"], None),

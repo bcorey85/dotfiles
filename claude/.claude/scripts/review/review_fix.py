@@ -664,17 +664,22 @@ def command_packet(argv):
         present_packet_asks(packet, state)
     else:
         print_action("render-and-finish", gate_mark_line())
+    sections = packet_sections(packet, replies, unreviewed_fix)
+    print_user_block(handback.render(packet, options.skill, sections))
+    print_logged(notes)
+    if options.skill == "review" and not is_outstanding(packet):
+        print(f"Nothing is outstanding: say \"{NOTHING_OUTSTANDING}\"")
+    print("MODEL STILL DOES: " + model_duties(packet, options))
+
+
+def packet_sections(packet, replies, unreviewed_fix):
     sections = [("Aikido replies", replies)] if replies else []
     if unreviewed_fix:
         sections.append(handback.unreviewed_fix_section(packet))
     ledger_warning = script_utils.missing_ledger_warning()
     if ledger_warning:
         sections.append(("Ledger", [ledger_warning]))
-    print_user_block(handback.render(packet, options.skill, sections))
-    print_logged(notes)
-    if options.skill == "review" and not is_outstanding(packet):
-        print(f"Nothing is outstanding: say \"{NOTHING_OUTSTANDING}\"")
-    print("MODEL STILL DOES: " + model_duties(packet, options))
+    return sections
 
 
 def model_duties(packet, options):

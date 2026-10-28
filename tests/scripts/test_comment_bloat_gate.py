@@ -179,6 +179,31 @@ class CommentBloatGateTest(unittest.TestCase):
         path = self.source("test_plan.py", "x = 1\n" + commented + "\n")
         self.assert_blocked(self.edit(path, commented))
 
+    def test_a_plan_path_or_provenance_in_a_shipped_string_blocks_but_a_phase_fixture_string_passes(self):
+        plan_path = "docs/" + "plans/auth.md"
+        samples = (("a.py", f'raise ValueError("token expired, see {plan_path}")'),
+                   ("a.ts", f'throw new Error("token expired, see {plan_path}");'),
+                   ("a.py", 'log.info("retry ' + 'per the spec")'),
+                   ("a.go", 'return errors.New("written by the ' + 'agent")'))
+        for name, sample in samples:
+            with self.subTest(sample=sample):
+                path = self.source(name, "x = 1\n" + sample + "\n")
+                self.assert_blocked(self.edit(path, sample))
+        fixture = f'plan = "## {PHASE_WORD} 1: Build"'
+        path = self.source("test_plan.py", "x = 1\n" + fixture + "\n")
+        self.assert_allowed(self.edit(path, fixture))
+
+    def test_a_plan_path_in_a_test_file_string_passes_but_one_in_its_comment_blocks(self):
+        plan_path = "docs/" + "plans/auth.md"
+        fixture = f'PLAN_PATH = "{plan_path}"'
+        for name in ("tests/fixtures.py", "test_plan.py", "plan.test.ts"):
+            with self.subTest(name=name):
+                path = self.source(name, "x = 1\n" + fixture + "\n")
+                self.assert_allowed(self.edit(path, fixture))
+        commented = f"x = 2  # see {plan_path}"
+        path = self.source("tests/fixtures.py", "x = 1\n" + commented + "\n")
+        self.assert_blocked(self.edit(path, commented))
+
     def test_plan_fixture_in_a_triple_quoted_string_passes(self):
         content = f'PLAN = """\n## {PHASE_WORD} 1: Build\n## {PHASE_WORD} 2: Refactor\n"""\n'
         path = self.source("test_plan.py", content)

@@ -1462,8 +1462,14 @@ class CodeStepTest(unittest.TestCase):
         self.wait_env(10)
         self.hook("review-loop", self.LOOP_OK)
         self.late_stop_row(0.5, [], blocked=True)
-        self.late_hook(1.5, "review-loop", self.LOOP_OK_SECOND_ROUND)
-        self.late_stop_row(2, [])
+
+        def hand_back_and_stop():
+            self.hook("review-loop", self.LOOP_OK_SECOND_ROUND)
+            self.logged_stop_row([])
+
+        timer = threading.Timer(1.5, hand_back_and_stop)
+        self.addCleanup(timer.cancel)
+        timer.start()
 
         out = self.step("resume")
 

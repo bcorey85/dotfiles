@@ -6,7 +6,7 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
 
 1. **Refactor pass** (risk: low) — `/refactor +deep` over the **whole branch diff** (backend + frontend, one sweep): DRY duplication, dead scaffolding, names — no behavior change. **Root-cause gate:** a cast/`?? default` papering a fixable wide type or loose structure fails; fix the source.
 
-   **Concentration gate.** Group `git diff --numstat <base>...HEAD` by module; run `/refactor simplify <one module>` when EITHER: 1. **Concentrated**: largest module **≥100 added lines**. 2. **Distributed**: branch **≥300 added lines** (excluding lockfiles, generated files, and test-only files) with no module at 100 — dispatch the largest anyway. Else skip, report both counts. Never a second module, never the branch diff (`complexity-reviewer` refuses diff bounds). Cross-module deletability reasons go in the report, not a re-dispatch. Simplify findings are opt-in; accepting one makes this phase `risk: high` — the no-behavior-change contract covers the DRY sweep only.
+   **Concentration gate.** `code-step` computes the added lines per module of `git diff --numstat <base>...HEAD` (excluding lockfiles, generated and build output (dist/, .min.js, snapshots), and test-only files); run `/refactor simplify <one module>` when EITHER: 1. **Concentrated**: largest module **≥100 added lines**. 2. **Distributed**: branch **≥300 added lines** with no module at 100 — dispatch the largest anyway. Else skip, report both counts. Never a second module, never the branch diff (`complexity-reviewer` refuses diff bounds). Cross-module deletability reasons go in the report, not a re-dispatch. Simplify findings are opt-in; accepting one makes this phase `risk: high` — the no-behavior-change contract covers the DRY sweep only.
 
    Success Criteria: quality checks green, no new cast/fallback dodging a root
    cause, concentration gate evaluated (module dispatched with the trigger
@@ -31,7 +31,7 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
 
 4. **Recap** (risk: low) — `/branch-recap`: `/stage` triage, deferred queue, recap receipt — from the branch's own process, never the codebase (`/orient` on demand). No gates. Success Criteria: recap produced, residue handed over.
 
-At `skill-done pass`, the session gives one `--evidence` per open Success Criteria item and the script writes it into the plan.
+At `skill-done pass`, the session gives one `--evidence` per open Success Criteria item and the script writes it into the plan. For the Refactor pass, `code-step` prints both counts and whether the gate triggers; on a trigger, `skill-done pass` needs `--simplify "<module>; <trigger>"`, where `<module>` is the module `code-step` named (any other is refused). The script writes it under the gate item as `simplify <module> (<trigger>)`; a `--simplify` with no open gate item is refused.
 
 Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.
 

@@ -22,6 +22,7 @@ Thin wrapper over the `review-loop` agent. A script parses the returned packet, 
    - any `+fast` / `+deep` modifier and `iter=N`
    - if `$ARGUMENTS` names a file path and no handoff block was given, scope the review to that file only
    - `base: <ref>` when `$ARGUMENTS` holds `base=<ref>`: the loop then reviews every change since that ref, commits included
+   - `repo: <absolute path>` when the work lives outside your cwd's repo (a sibling worktree)
 
 2. **Run the script on the returned packet.** The script reads the packet a hook saved, for this session, when the loop handed back. Do not paste it. Running it again repeats no side effect:
 
@@ -42,6 +43,7 @@ Thin wrapper over the `review-loop` agent. A script parses the returned packet, 
    - `ask-user-plan-impact` → call `AskUserQuestion` as printed, then run the `decide` command it names. On `ACTION: redispatch`, re-dispatch `review-loop` with the same arguments plus the lines it printed (both counters kept), then run step 2 again. On `ACTION: discuss`, talk it through with the user, then run the `decide` command that it printed for the outcome.
    - `stop` → present what it printed, wait for direction. When it lists asks, run its printed asks-done line after the user answers. Do NOT re-dispatch, do NOT `/fix`, do NOT mark.
    - `stop-no-handback` → the loop ended without handing back. Do what the lines say: the first time, re-dispatch `review-loop` once with the same arguments and run step 2 again; the second time, stop and show the user the loop's final text. Never mark clean.
+   - `stop-no-reviewer` → the first time, re-dispatch `review-loop` once with the same arguments, the printed `iter=` line in place of any `iter=` line, and run step 2 again; the second time, stop and tell the user no reviewer ran. Never mark clean.
    - `wait-for-loop` → the loop is waiting on an agent or shell it started in the background. Do not re-dispatch and never mark clean. End the turn; when the review-loop's completion notice arrives, run step 2 again.
    - `stop-parse-failure` or `stop-usage` → the packet or the call was bad. If you ran the gate mark in parallel, run `~/.claude/scripts/review/review-gate-mark dirty`. Show the user the problems. Never guess a missing field.
 

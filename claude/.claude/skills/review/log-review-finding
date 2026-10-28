@@ -53,8 +53,8 @@
 #     result=PASS|PASS WITH WARNINGS|NEEDS CHANGES|NOT DISPATCHED   (optional)
 #       Case and -/_ spelling are normalized, and the words gates reach for when
 #       none of the four fit are folded in: clean and intent-aligned are PASS,
-#       findings, gaps and residue are NEEDS CHANGES. Anything else is passed to
-#       `ledger write`, which stores it as `other`.
+#       findings, gaps and residue are NEEDS CHANGES. Any other value is refused
+#       (exit 1), and so is any arg with no `=`.
 #
 #   kind=finding ONLY
 #     disposition=fix|ask|nit       what the reviewer said should happen
@@ -133,6 +133,7 @@ if [ "${1:-}" = "--check" ]; then
   check_only=1
   shift
 fi
+kv_refuse_bare_words "$@"
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
@@ -221,16 +222,8 @@ esac
 # The repo is not set here: `ledger write` derives it from the cwd, and names a
 # linked worktree by its main checkout.
 
-# `result` is the gate's verdict, reported as a distribution. It was collecting
-# disposition words ("fix", "clean", "gaps", "actioned") instead — each one a
-# bucket of size 1 reading as a verdict the reviewer never gave. Free text
-# belongs in desc=.
-#
-# Rejecting outright loses the row, because telemetry never blocks the caller:
-# the gates with no natural PASS/NEEDS CHANGES vocabulary (plan-verifier,
-# test-intent-reviewer, test-reviewer) then log no run row at all and lose their
-# denominator. So spelling and the known synonyms are folded in, and a value
-# that maps to none goes to `ledger write` as given, which stores it as `other`.
+# `result` is the gate's verdict: one of the four, with spelling and the known
+# synonyms folded in. Any other value is refused. Free text belongs in desc=.
 if [ "$kind" = run ]; then
   res=$(jq -r '.result // ""' <<< "$json")
   norm=$(printf '%s' "$res" | tr '[:lower:]' '[:upper:]' | tr '_-' '  ')
@@ -240,7 +233,10 @@ if [ "$kind" = run ]; then
     PASS | CLEAN* | "INTENT ALIGNED") mapped="PASS" ;;
     "NEEDS CHANGES"* | FINDINGS | GAPS | "GAPS FOUND" | RESIDUE) mapped="NEEDS_CHANGES" ;;
     "NOT DISPATCHED"*) mapped="NOT_DISPATCHED" ;;
-    *) mapped="$res" ;;
+    *)
+      echo "refusing to log: result=$res is not PASS, PASS_WITH_WARNINGS, NEEDS_CHANGES or NOT_DISPATCHED." >&2
+      exit 1
+      ;;
   esac
   if [ "$mapped" != "$res" ]; then
     [ -z "$mapped" ] || echo "note: result=$res logged as $mapped" >&2

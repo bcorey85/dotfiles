@@ -31,6 +31,8 @@ In a `/code` bench run, the coder moved route tests into `app.test.ts`, a file t
 
 review findings per review run.
 
+Reading, 2026-10-27 intake: WORSE, kept. Review findings per review run went from a 3.62 median (range 2.88–5.20) to 5.95. The first after bin, 2026-10-18 to 10-24, read 3.72, inside the before range. The whole rise sits in 2026-10-25 to 10-27 (9.55), and most of it on 10-27, when `/code` began running the review loop as a script with its own finding writer. That day logged 388 code-reviewer finding rows against 214 findings declared by its run rows. Without 10-27 the after window reads about 4.3, inside the before range. The metric cannot read this edit until the scripted loop's finding rows match its run rows. The watch is closed.
+
 ## Back-out
 
 restore the path-list sentence in `/code` step 3. The script change acts only on a command that holds `{files}`

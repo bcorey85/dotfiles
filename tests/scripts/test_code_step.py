@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,7 @@ module_spec = importlib.util.spec_from_file_location("code_step", SCRIPT)
 code_step = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(code_step)
 import code_step_boundary  # noqa: E402
+import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
@@ -134,7 +136,7 @@ class CodeStepTest(unittest.TestCase):
         self.claude = self.tmp / "claude"
         (self.claude / "scripts").mkdir(parents=True)
         (self.claude / "skills/review").mkdir(parents=True)
-        for name in ("coder_gate.py", "resolve-task-dir.sh"):
+        for name in ("coder_gate.py", "resolve-task-dir.sh", "branch-base"):
             stage_script(REAL_CLAUDE / "scripts", name, self.claude / "scripts")
         for name in ("coder_packet.py", "plan_format.py", "script_utils.py", *toolkit_paths.CODE_STEP_MODULES,
                      *toolkit_paths.CODE_STEP_LIB_MODULES):
@@ -1484,6 +1486,53 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [x] Phase 1:", self.plan_text())
         self.assertIn("- [ ] Phase 2:", self.plan_text())
 
+    LOOP_OK_SECOND_ROUND = "status: converged\niter: 2\nfixed: []\nask: []\nnit: []"
+
+    def test_a_hand_back_whose_stop_the_gate_blocked_leaves_the_phase_open(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.logged_stop_row([], blocked=True)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: wait", out)
+        self.assertIn("its stop was blocked", out)
+        self.assertNotIn("marked done", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+        self.assertEqual("review", self.state()["stage"])
+
+    def test_the_hand_back_after_a_blocked_stop_marks_the_phase_done(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.logged_stop_row([], blocked=True)
+        self.step("after-review")
+        self.hook("review-loop", self.LOOP_OK_SECOND_ROUND, launched=False)
+        self.logged_stop_row([])
+
+        out = self.step("after-review")
+
+        self.assertIn("Phase 1 marked done", out)
+        self.assertEqual(2, self.state()["iter"])
+
+    def test_resume_waits_out_a_stop_the_gate_blocks_after_the_hand_back(self):
+        self.coder_round()
+        self.wait_env(10)
+        self.hook("review-loop", self.LOOP_OK)
+        self.late_stop_row(0.5, [], blocked=True)
+
+        def hand_back_and_stop():
+            self.hook("review-loop", self.LOOP_OK_SECOND_ROUND)
+            self.logged_stop_row([])
+
+        timer = threading.Timer(1.5, hand_back_and_stop)
+        self.addCleanup(timer.cancel)
+        timer.start()
+
+        out = self.step("resume")
+
+        self.assertIn("Phase 1 marked done", out)
+        self.assertEqual(2, self.state()["iter"])
+
     def test_failed_prohibition_blocks_marking(self):
         self.coder_round(source="console.log(1)\n")
         self.hook("review-loop", self.LOOP_OK)
@@ -1683,7 +1732,6 @@ class CodeStepTest(unittest.TestCase):
         self.coder_round()
         self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
         self.wait_env(1, "0.2")
-        self.logged_stop_row([], blocked=True)
 
         result = run(self.repo, self.env, "after-review")
 
@@ -1875,6 +1923,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(0, result.returncode)
 
     def test_closing_phase_invokes_skill(self):
+        self.on_feature_branch()
         text = self.plan_text()
         for n in (1, 2, 3):
             text = text.replace(f"- [ ] Phase {n}:", f"- [x] Phase {n}:")
@@ -2331,11 +2380,19 @@ class CodeStepTest(unittest.TestCase):
     def refactor_status_line(self, text):
         return next(line for line in text.splitlines() if "Refactor pass - /refactor cleanup sweep" in line)
 
-    def start_closing_phase_with_criteria(self, criteria=None):
+    def on_feature_branch(self):
+        # The refactor gate resolves a base branch for the checked-out branch, so a master checkout has none.
+        subprocess.run(["git", "checkout", "-q", "-B", "feature"], cwd=self.repo, check=True, env=self.env)
+
+    def start_closing_phase(self, criteria):
         self.mark_phases_done(1, 2, 3)
-        text = self.plan_text().replace("\nSweep.\n\n", criteria or self.CLOSING_CRITERIA, 1)
+        text = self.plan_text().replace("\nSweep.\n\n", criteria, 1)
         (self.repo / self.plan).write_text(text)
         return self.step("start", self.plan)
+
+    def start_closing_phase_with_criteria(self, criteria=None):
+        self.on_feature_branch()
+        return self.start_closing_phase(criteria or self.CLOSING_CRITERIA)
 
     def test_skill_done_pass_without_evidence_stops_and_changes_nothing(self):
         self.start_closing_phase_with_criteria()
@@ -2388,6 +2445,202 @@ class CodeStepTest(unittest.TestCase):
 
         self.step("skill-done", "pass")
 
+        self.assertTrue(self.refactor_status_line(self.plan_text()).startswith("- [x]"))
+
+    def commit_module_lines(self, module_dir, added_lines):
+        (self.repo / module_dir).mkdir(parents=True, exist_ok=True)
+        (self.repo / module_dir / "big.ts").write_text("export const x = 1\n" * added_lines)
+        self.commit_all()
+
+    def start_refactor_phase_with_branch_lines(self, module_dir, added_lines, criteria=None):
+        self.on_feature_branch()
+        self.commit_module_lines(module_dir, added_lines)
+        return self.start_closing_phase_with_criteria(
+            criteria or "\nSweep.\n\n### Success Criteria\n\n- [x] Done already\n\n")
+
+    def test_refactor_phase_prompt_reports_the_computed_counts_and_the_trigger(self):
+        out = self.start_refactor_phase_with_branch_lines("backend/src", 120)
+
+        self.assertIn("largest module backend/src 120 added lines (trigger 100)", out)
+        self.assertIn("TRIGGERED (concentrated): run `/refactor simplify backend/src`", out)
+
+    def test_refactor_skill_done_pass_refuses_a_triggered_gate_with_no_simplify_record(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 100)
+        plan_before = self.plan_text()
+
+        out = self.step("skill-done", "pass")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("concentration gate is not evaluated", out)
+        self.assertIn("largest module backend/src 100 added lines", out)
+        self.assertIn("--simplify", out)
+        self.assertEqual(plan_before, self.plan_text())
+        self.assertFalse(self.refactor_status_line(self.plan_text()).startswith("- [x]"))
+
+    def start_refactor_phase_on_master_with_big_commit(self):
+        # A master checkout has no base branch, so the gate cannot compute without --base.
+        self.commit_module_lines("backend/src", 120)
+        return self.start_closing_phase("\nSweep.\n\n### Success Criteria\n\n- [x] Done already\n\n")
+
+    def test_refactor_skill_done_pass_with_no_base_is_refused_naming_base_and_not_simplify(self):
+        prompt = self.start_refactor_phase_on_master_with_big_commit()
+        plan_before = self.plan_text()
+
+        out = self.step("skill-done", "pass")
+
+        self.assertIn("skill-done pass --base <ref>", prompt)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("no base branch found", out)
+        self.assertIn("skill-done pass --base <ref>", out)
+        self.assertNotIn("Run `/refactor simplify <module>`", out)
+        self.assertEqual(plan_before, self.plan_text())
+
+    def test_refactor_skill_done_pass_with_no_base_refuses_a_well_formed_simplify_record(self):
+        self.start_refactor_phase_on_master_with_big_commit()
+        plan_before = self.plan_text()
+
+        out = self.step("skill-done", "pass", "--simplify", "backend/src; concentrated")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("no base branch found", out)
+        self.assertEqual(plan_before, self.plan_text())
+
+    def test_refactor_skill_done_pass_with_base_computes_the_gate_from_that_ref(self):
+        self.start_refactor_phase_on_master_with_big_commit()
+
+        out = self.step("skill-done", "pass", "--base", "HEAD~1")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("largest module backend/src 120 added lines", out)
+        self.assertIn("TRIGGERED (concentrated)", out)
+
+    def test_refactor_phase_prompt_puts_the_simplify_record_in_the_pass_command(self):
+        out = self.start_refactor_phase_with_branch_lines("backend/src", 120)
+
+        self.assertIn('--simplify "backend/src; concentrated"', out)
+
+    def test_refactor_skill_done_pass_refuses_a_distributed_trigger_with_no_simplify_record(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 75)
+        for module_dir in ("backend/a", "backend/b", "backend/c"):
+            (self.repo / module_dir).mkdir(parents=True)
+            (self.repo / module_dir / "big.ts").write_text("export const x = 1\n" * 75)
+        self.commit_all()
+
+        out = self.step("skill-done", "pass")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("TRIGGERED (distributed)", out)
+        self.assertFalse(self.refactor_status_line(self.plan_text()).startswith("- [x]"))
+
+    def test_refactor_skill_done_pass_refuses_a_malformed_simplify_record(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 120)
+        plan_before = self.plan_text()
+
+        for record in ("backend/src", "backend/src;", "; concentrated", "  ;  ", ""):
+            with self.subTest(record=record):
+                out = self.step("skill-done", "pass", "--simplify", record)
+
+                self.assertIn("ACTION: stop", out)
+                self.assertIn('--simplify "<module>; <trigger>"', out)
+                self.assertEqual(plan_before, self.plan_text())
+
+    def test_refactor_skill_done_pass_with_a_simplify_record_closes_the_phase(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 120, self.CLOSING_CRITERIA)
+
+        self.step("skill-done", "pass", "--evidence", "ruff green", "--evidence", "largest module 120; branch 120",
+                  "--simplify", "backend/src; largest module 120 added lines")
+
+        self.assertTrue(self.refactor_status_line(self.plan_text()).startswith("- [x]"))
+
+    GATE_CRITERION_LINE = ("- [ ] Concentration gate evaluated (module dispatched with the trigger named, or both "
+                           "counts stated)")
+
+    def test_refactor_skill_done_pass_refuses_a_simplify_record_when_a_triggered_phase_has_no_gate_item(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 120)
+        plan_before = self.plan_text()
+
+        out = self.step("skill-done", "pass", "--base", "HEAD~1", "--simplify", "backend/src; concentrated")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("no open concentration-gate item", out)
+        self.assertIn(self.GATE_CRITERION_LINE, out.splitlines())
+        self.assertIn('skill-done pass --base HEAD~1 --simplify "backend/src; concentrated"`', out)
+        self.assertIn("one `--evidence` per open item, including the new one", out)
+        self.assertNotIn("without `--simplify`", out)
+        self.assertEqual(plan_before, self.plan_text())
+        self.assertFalse(self.refactor_status_line(self.plan_text()).startswith("- [x]"))
+
+    def test_refactor_skill_done_pass_closes_after_the_printed_criterion_is_added_and_the_command_rerun(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 120)
+        record = "backend/src; concentrated"
+        refused = self.step("skill-done", "pass", "--simplify", record)
+        criterion_line = next(line for line in refused.splitlines() if line.startswith("- [ ] "))
+        rerun_line = next(line for line in refused.splitlines() if line.startswith("Then rerun `"))
+        rerun_words = shlex.split(rerun_line.split("`")[1])
+        rerun_args = rerun_words[rerun_words.index("skill-done"):]
+        self.assertFalse(self.refactor_status_line(self.plan_text()).startswith("- [x]"))
+
+        plan_text = self.plan_text().replace("- [x] Done already\n", f"- [x] Done already\n{criterion_line}\n", 1)
+        (self.repo / self.plan).write_text(plan_text)
+        self.step(*rerun_args, "--evidence", "largest module backend/src 120 added lines; branch 120")
+
+        text = self.plan_text()
+        self.assertTrue(self.refactor_status_line(text).startswith("- [x]"))
+        self.assertIn("  - Done: largest module backend/src 120 added lines; branch 120\n"
+                      "  - Done: simplify backend/src (concentrated)\n", text)
+
+    def test_refactor_skill_done_pass_with_a_simplify_record_on_an_untriggered_gate_advises_dropping_it(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 20)
+        plan_before = self.plan_text()
+
+        out = self.step("skill-done", "pass", "--simplify", "backend/src; concentrated")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("no open concentration-gate item", out)
+        self.assertIn("without `--simplify`", out)
+        self.assertNotIn(self.GATE_CRITERION_LINE, out)
+        self.assertEqual(plan_before, self.plan_text())
+
+    def test_the_gate_criterion_text_is_found_by_concentration_gate_position(self):
+        items = [{"text": "Quality checks green"}, {"text": code_step_concentration.GATE_CRITERION}]
+
+        self.assertEqual(1, code_step_concentration.concentration_gate_position(items))
+
+    def test_concentration_gate_position_finds_a_hyphenated_or_spaced_gate_item(self):
+        for text in ("Concentration-gate evaluated", "concentration gate evaluated", "Concentration  gate evaluated"):
+            with self.subTest(text=text):
+                items = [{"text": "Ruff green"}, {"text": text}]
+
+                self.assertEqual(1, code_step_concentration.concentration_gate_position(items))
+
+        self.assertIsNone(code_step_concentration.concentration_gate_position([{"text": "Ruff green"}]))
+
+    def test_refactor_skill_done_pass_writes_the_simplify_record_under_the_gate_item(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 120, self.CLOSING_CRITERIA)
+
+        self.step("skill-done", "pass", "--evidence", "ruff green", "--evidence", "largest module 120; branch 120",
+                  "--simplify", "backend/src; concentrated")
+
+        self.assertIn("- [x] Concentration gate evaluated; both counts stated\n  and the module named\n"
+                      "  - Done: largest module 120; branch 120\n"
+                      "  - Done: simplify backend/src (concentrated)\n", self.plan_text())
+
+    def test_refactor_skill_done_pass_refuses_a_simplify_module_the_gate_did_not_name(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 120)
+        plan_before = self.plan_text()
+
+        out = self.step("skill-done", "pass", "--simplify", "frontend/src; concentrated")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("Expected module: `backend/src`", out)
+        self.assertEqual(plan_before, self.plan_text())
+
+    def test_refactor_skill_done_pass_closes_a_phase_under_both_triggers_with_no_record(self):
+        self.start_refactor_phase_with_branch_lines("backend/src", 99)
+
+        out = self.step("skill-done", "pass")
+
+        self.assertNotIn("not evaluated", out)
         self.assertTrue(self.refactor_status_line(self.plan_text()).startswith("- [x]"))
 
     def test_closing_phase_prompt_names_the_open_items_and_the_command(self):
@@ -2923,6 +3176,16 @@ class CodeStepTest(unittest.TestCase):
 
     def test_asks_coder_already_done_line_with_a_closing_period_finishes_the_phase(self):
         self.assert_already_done_line_finishes_the_phase("ALREADY-DONE: 1 — backend/src/orders.ts:2.")
+
+    def test_asks_coder_already_done_line_naming_a_passing_check_finishes_the_phase(self):
+        self.assert_already_done_line_finishes_the_phase(
+            "ALREADY-DONE: 1 — `npm test -- orders` -> exit 0\nRan the tests; they pass, so nothing changed.")
+
+    def test_asks_coder_already_done_line_naming_a_failing_check_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — `npm test -- orders` -> exit 1")
+
+    def test_asks_coder_already_done_line_naming_a_check_with_text_after_its_exit_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — `npm test -- orders` -> exit 0 but 2 skipped")
 
     def test_asks_coder_already_done_line_for_another_ask_number_does_not_count(self):
         self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 2 — backend/src/orders.ts:2")
@@ -3608,6 +3871,22 @@ class CodeStepTest(unittest.TestCase):
         self.assertIsNone(self.gate_mark())
         self.assertNotIn("- [x] Phase 1:", self.plan_text())
 
+    def test_review_again_recovers_a_false_clean_stop_in_place(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        shutil.rmtree(self.tmp / "handback-store")
+
+        stop = self.step("after-review")
+        self.assertIn("invoke Skill code with `review-again`", stop)
+        self.assertNotIn("Tell the user", stop)
+        self.assertEqual("false-clean", self.state()["stopReason"])
+
+        again = self.step("review-again")
+        self.assertIn("AGENT: review-loop", again)
+        self.assertEqual("review", self.state()["stage"])
+        self.hook("review-loop", self.LOOP_OK, agent_id="a2")
+        self.assertIn("ACTION: stop-block-B", self.step("after-review"))
+
     def test_missing_handback_module_stops_the_run_and_writes_no_gate_file(self):
         bare = self.tmp / "bare"
         bare.mkdir()
@@ -3719,6 +3998,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(0, run(self.repo, self.env, "plan-hook", stdin=json.dumps(event)).returncode)
 
     def test_the_closing_phase_commit_line_names_only_the_files_the_phase_changed(self):
+        self.on_feature_branch()
         self.mark_phases_done(1, 2, 3)
         self.commit_all()
         (self.repo / "docs/plans/other").mkdir()

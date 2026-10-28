@@ -2,7 +2,9 @@
 # Lints first (ruff with the rules in ruff.toml fails the run; C901 only reports, but fails the run in the code-step
 # and review-flow files; a missing ruff stops the run), then checks for any duplicate code
 # (tests/duplicate_code.py), then runs every unit test under tests/, one process per test
-# file, nproc at a time. The tests run even when the lint fails. Exits non-zero on any failure.
+# file, nproc at a time. The tests run even when the lint fails. When the lint, the duplicate check or the tests
+# fail, the last line names each failed step ("FAILED: lint tests"), after the test summary, and the exit is
+# non-zero.
 # `REAL_PLANS=1 bash tests/run.sh` also parses every real plan under ~/dev.
 set -euo pipefail
 
@@ -36,6 +38,12 @@ python3 "$repoRoot/tests/duplicate_code.py" || duplicateStatus=1
 testStatus=0
 python3 "$repoRoot/tests/parallel_tests.py" || testStatus=1
 
-if [ "$lintStatus" -ne 0 ] || [ "$duplicateStatus" -ne 0 ] || [ "$testStatus" -ne 0 ]; then
+failedSteps=()
+[ "$lintStatus" -eq 0 ] || failedSteps+=(lint)
+[ "$duplicateStatus" -eq 0 ] || failedSteps+=(duplicate-check)
+[ "$testStatus" -eq 0 ] || failedSteps+=(tests)
+
+if [ "${#failedSteps[@]}" -gt 0 ]; then
+    echo "FAILED: ${failedSteps[*]}"
     exit 1
 fi

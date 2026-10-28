@@ -42,6 +42,7 @@ BASH_TIMEOUT_MS = 600000
 CODER = "coder"
 REVIEW_LOOP = "review-loop"
 REVIEW_LOOP_SCRIPT = SCRIPTS_DIR / "review" / "review_loop_script.py"
+REVIEW_SCRIPT_AGENT_PREFIX = "loop-script-"
 FINISHED_REVIEW_SCRIPT_KEYS = ("reviewScriptPid", "resumableReview", "resumeWaitAt")
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
@@ -201,6 +202,10 @@ def ruled_asks_lines(cwd, plan):
 def session_pin():
     # The id of the session that runs /code. The fork sees its parent's id here, and hook events carry the same id.
     return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
+
+
+def run_session_id(state):
+    return state.get("sessionId") or session_pin() or ""
 
 
 def head_commit(repo_dir):
@@ -414,12 +419,47 @@ def dispatch_since(state):
     return None
 
 
-def awaited_handback(repo_dir, state):
-    # The hand-back event of the awaited agent after its dispatch, or None.
+def stop_row_wait_seconds():
+    # How long a reader of a review-loop's hand-back waits for the gate's stop row after it. CODE_STEP_WAIT_SECONDS=0
+    # skips the wait.
+    return min(float(os.environ.get("CODE_STEP_WAIT_SECONDS", HANDBACK_WAIT_SECONDS)), STOP_ROW_WAIT_SECONDS)
+
+
+def loop_stopped_after(state, handback, wait_for_stop):
+    # A review-loop agent's hand-back counts unless the review-loop gate blocked every stop after it: a blocked stop
+    # sends the loop back to work, so only a later stop counts. The wait for a hand-back also waits for the gate's stop
+    # row, up to the stop-row wait; with none by then, the gate wrote none. A coder and a review script stop with no
+    # gate.
+    is_script = str(handback.get("agent_id")).startswith(REVIEW_SCRIPT_AGENT_PREFIX)
+    if expected_agent(state) != REVIEW_LOOP or is_script:
+        return True
+
+    module, _import_error = load_handback()
+    if module is None:
+        return True
+    session_id = state.get("sessionId") or session_pin() or ""
+    stops = module.stop_rows_after(session_id, handback.get("agent_id"), handback["ts"])
+    if any(not row.get("blocked") for row in stops):
+        return True
+    if stops:
+        return False
+    return not wait_for_stop or time.time() - handback["ts"] >= stop_row_wait_seconds()
+
+
+def newest_handback(repo_dir, state):
+    # The newest hand-back event of the awaited agent after its dispatch, whether or not the loop stopped after it.
     since = dispatch_since(state)
     if since is None or not state.get("runId"):
         return None
     return handback_event(read_events(repo_dir, state["runId"]), awaited_agent_id(repo_dir, state), since)
+
+
+def awaited_handback(repo_dir, state, wait_for_stop=False):
+    # The hand-back event of the awaited agent after its dispatch, or None while the loop it came from goes on.
+    handback = newest_handback(repo_dir, state)
+    if handback is None or not loop_stopped_after(state, handback, wait_for_stop):
+        return None
+    return handback
 
 
 def take_handback(repo_dir, state, agent_type, missing_text):
@@ -427,6 +467,9 @@ def take_handback(repo_dir, state, agent_type, missing_text):
     # printing the stop. A resumed agent that has not handed back yet gets its own stop.
     is_resumed = awaits_resumed_coder(state) or awaits_resumed_review(state)
     handback = awaited_handback(repo_dir, state)
+    if handback is None and newest_handback(repo_dir, state) is not None:
+        return emit("wait", f"The {agent_type} handed back, but its stop was blocked, so it is still working. Do not "
+                    f"dispatch it again. Run {timed_command(RESUME_VERB)} to wait for its next hand-back.")
     if handback is None:
         return emit("stop", resumed_agent_pending_stop(agent_type) if is_resumed else missing_text)
 
@@ -641,11 +684,11 @@ def stop_review_script(state):
 
 
 def handback_or_unlaunched(repo_dir, state, agent_type, cap_spent):
-    if awaited_handback(repo_dir, state):
+    if awaited_handback(repo_dir, state, wait_for_stop=True):
         return "handback", None
     if state.get("reviewScriptPid") and not review_script_running(state):
         # The script writes its hand-back, then exits: a hand-back that landed after the first read still counts.
-        return ("handback", None) if awaited_handback(repo_dir, state) else ("script-gone", None)
+        return ("handback", None) if awaited_handback(repo_dir, state, wait_for_stop=True) else ("script-gone", None)
     if launch_has_no_agent_id(repo_dir, state):
         return "no-agent-id", None
     if cap_spent:
@@ -683,6 +726,11 @@ def wait_for_handback(repo_dir, state, verb):
         return stop_on_gone_review_script(repo_dir, state)
     if found:
         return True
+
+    # A wait that ends before the stop-row wait does still takes a hand-back the gate has not blocked.
+    if awaited_handback(repo_dir, state):
+        return True
+
     if until_cap <= limit:
         stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap)
         return False
@@ -698,12 +746,12 @@ def wait_for_loop_stop(state, module, handback):
     # the review gate blocked is followed by more ledger rows. A reader of the stop row's ask rows waits, on the
     # hand-back poll, for a stop the gate let through at or after the hand-back. CODE_STEP_WAIT_SECONDS=0 skips the
     # wait. On a timeout it says so on stderr and the reader goes on without the row.
-    limit = min(float(os.environ.get("CODE_STEP_WAIT_SECONDS", HANDBACK_WAIT_SECONDS)), STOP_ROW_WAIT_SECONDS)
+    limit = stop_row_wait_seconds()
     if limit <= 0:
         return
 
     interval = float(os.environ.get("CODE_STEP_POLL_SECONDS", HANDBACK_POLL_SECONDS))
-    session_id = state.get("sessionId") or session_pin() or ""
+    session_id = run_session_id(state)
     agent_id = handback.get("agent_id")
     settled = script_utils.wait_for(lambda: module.settled_stop_row(session_id, agent_id, handback["ts"]),
                                     limit, interval)

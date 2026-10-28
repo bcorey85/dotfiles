@@ -33,6 +33,8 @@ Installed 2026-10-20. The `verify-branch` front matter kept its live description
 - `verify-branch-one-call`: main-session responses per turn for `/verify-branch`, expected down.
 - `verify-branch-one-call-escapes`: review escapes per review run, expected flat.
 
+Reading, 2026-10-27 intake: `verify-branch-one-call` BETTER, closed. Main-session responses per `/verify-branch` turn went from a 9.85 median (range 7.35–13.50) to 6.42, over 33 turns. The escapes watch has no data yet.
+
 ## Back-out
 
 Restore the previous `SKILL.md`, `closing-phases.md` and `code-step.py` from the dotfiles history and delete the three scripts.

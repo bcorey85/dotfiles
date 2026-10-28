@@ -285,14 +285,24 @@ def wait_for_loop(skill, stop_ts):
     return WAIT_EXIT_CODE
 
 
-def stop_for_unreviewed(skill):
-    """The loop handed back clean after a code change with no reviewer run: the review did not happen."""
+def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
+    """The loop handed back clean with no reviewer run. The first time, the caller re-dispatches it at the same round
+    count; the second time in a row, it stops."""
     keep_dirty = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
+    if unreviewed_in_a_row < 2:
+        print_action("stop-no-reviewer",
+                     "The review-loop handed back clean but dispatched no reviewer. Nothing was routed, logged or "
+                     "posted.",
+                     f"Re-dispatch review-loop once with the same arguments plus the line below, in place of any "
+                     f"`iter=` line, then run `packet --skill {skill}` again. Do not mark the gate clean.",
+                     f"iter={packet['iter']}",
+                     keep_dirty)
+        return 2
+
     print_action("stop-no-reviewer",
-                 "The review-loop handed back clean but dispatched no reviewer after its last code change. Nothing was "
-                 "routed, logged or posted.",
-                 f"Re-dispatch review-loop with the same arguments for a real review pass, then run "
-                 f"`packet --skill {skill}` again. Do not mark the gate clean.",
+                 f"The review-loop handed back clean with no reviewer run {unreviewed_in_a_row} times in a row. "
+                 "Nothing was routed, logged or posted.",
+                 "Stop. Do not re-dispatch again. Tell the user no reviewer ran, so the gate stays dirty.",
                  keep_dirty)
     return 2
 
@@ -524,24 +534,25 @@ def saved_hand_back(session_id):
 
 
 def read_message():
-    """(packet text, run id, whether the loop handed back clean with no reviewer run).
-    A saved hand-back is one run per stored row (agent id and time), so two dispatches that return the same text are
-    two runs. A packet on stdin has no row: its text hash is the run id."""
+    """(packet text, run id, how many hand-backs in a row ended clean with no reviewer run, this one included,
+    whether a coder ran after the loop's last reviewer). A saved hand-back is one run per stored row (agent id and
+    time), so two dispatches that return the same text are two runs. A packet on stdin has no row: its text hash is
+    the run id."""
     stdin_text = "" if sys.stdin.isatty() else sys.stdin.read()
     if stdin_text.strip():
-        return stdin_text, "stdin:" + hashlib.sha1(stdin_text.encode("utf-8")).hexdigest(), False
+        return stdin_text, "stdin:" + hashlib.sha1(stdin_text.encode("utf-8")).hexdigest(), 0, False
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     stored_row = saved_hand_back(session_id)
-    return stored_row["message"], hand_back_id(stored_row, session_id), bool(stored_row.get("no_reviewer"))
+    unreviewed_in_a_row = handback.unreviewed_streak(session_id)
+    unreviewed_fix = handback.ended_on_unreviewed_fix(session_id, stored_row.get("agent_id"))
+    return stored_row["message"], hand_back_id(stored_row, session_id), unreviewed_in_a_row, unreviewed_fix
 
 
 def new_state(options, packet, packet_id):
     previous = read_state() or {}
     same_run = previous.get("packet_id") == packet_id
     waiting_packets = [] if same_run else carried_waiting_packets(previous)
-    fixed_paths = []
-    for item in packet["fixed"]:
-        fixed_paths += [path for path in handback.entry_paths(item) if path not in fixed_paths]
+    fixed_paths = handback.fixed_paths(packet)
     state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
              "spec_iter": packet["spec_iter"], "status": packet["status"], "repo": script_utils.repo_name("."),
              "branch": script_utils.current_branch(".") or "-", "packet_id": packet_id,
@@ -628,15 +639,15 @@ def stop_for_status(packet, options, state):
 def command_packet(argv):
     options = packet_arguments(argv)
     try:
-        message, packet_id, unreviewed = read_message()
+        message, packet_id, unreviewed_in_a_row, unreviewed_fix = read_message()
     except NoHandbackError as error:
         stop_for_missing_hand_back(options.skill, error.last_hand_back_id)
         return 2
     except LoopWaitingError as error:
         return wait_for_loop(options.skill, error.stop_ts)
     packet = handback.load(message)
-    if unreviewed:
-        return stop_for_unreviewed(options.skill)
+    if unreviewed_in_a_row:
+        return stop_for_unreviewed(options.skill, packet, unreviewed_in_a_row)
     state = new_state(options, packet, packet_id)
     if state.get("stage") in FINISHED_STAGES:
         return print_action("done", f"This packet was already processed (stage {state['stage']}). Nothing was "
@@ -656,15 +667,22 @@ def command_packet(argv):
         present_packet_asks(packet, state)
     else:
         print_action("render-and-finish", gate_mark_line())
-    sections = [("Aikido replies", replies)] if replies else []
-    ledger_warning = script_utils.missing_ledger_warning()
-    if ledger_warning:
-        sections.append(("Ledger", [ledger_warning]))
+    sections = packet_sections(packet, replies, unreviewed_fix)
     print_user_block(handback.render(packet, options.skill, sections))
     print_logged(notes)
     if options.skill == "review" and not is_outstanding(packet):
         print(f"Nothing is outstanding: say \"{NOTHING_OUTSTANDING}\"")
     print("MODEL STILL DOES: " + model_duties(packet, options))
+
+
+def packet_sections(packet, replies, unreviewed_fix):
+    sections = [("Aikido replies", replies)] if replies else []
+    if unreviewed_fix:
+        sections.append(handback.unreviewed_fix_section(packet))
+    ledger_warning = script_utils.missing_ledger_warning()
+    if ledger_warning:
+        sections.append(("Ledger", [ledger_warning]))
+    return sections
 
 
 def model_duties(packet, options):

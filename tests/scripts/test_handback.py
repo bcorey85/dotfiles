@@ -744,6 +744,22 @@ def full_check_run(tool_use_id):
                             "input": {"command": "npm test > /tmp/review-gate.log 2>&1"}})
 
 
+def background_reviewer_launch(tool_use_id, agent_id):
+    """A code-reviewer dispatch and the result that says it runs in the background."""
+    launch = transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Agent",
+                              "input": {"subagent_type": "code-reviewer", "prompt": "review"}})
+    launched = transcript_line({"type": "tool_result", "tool_use_id": tool_use_id,
+                                "content": [{"type": "text", "text": f"Async agent launched\nagentId: {agent_id}"}]},
+                               "user")
+    return [launch, launched]
+
+
+def task_notification(tool_use_id):
+    prompt = (f"<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>{tool_use_id}</tool-use-id>\n"
+              "</task-notification>")
+    return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": prompt}}
+
+
 class OneCheckedHandBackTest(HandbackTestBase):
     def setUp(self):
         super().setUp()
@@ -809,6 +825,24 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertIn("deny", self.hand_back([full_check_run("t1"), coder_step("t2")]))
         self.assertIn("deny", self.hand_back([full_check_run("t1"), coder_step("t2"), full_check_run("t3"),
                                               coder_step("t4")]))
+
+    def test_a_hand_back_while_a_background_reviewer_has_not_reported_is_denied_with_the_wait_reason(self):
+        message = "status: critical-blocker\niter: 1\nblockers:\n  - \"returned before the reviewer\"\n"
+        for agent_id, packet in (("a1", CONVERGED), ("a2", message)):
+            with self.subTest(status=packet.splitlines()[0]):
+                out = self.hand_back([full_check_run("t1"), *background_reviewer_launch("t2", "arev")],
+                                     agent_id=agent_id, message=packet)
+
+                decision = json.loads(out)["hookSpecificOutput"]
+                self.assertEqual(decision["permissionDecision"], "deny")
+                self.assertIn("background", decision["permissionDecisionReason"])
+                self.assertEqual(self.handback_rows(), [])
+
+    def test_a_hand_back_after_the_background_reviewer_reported_passes(self):
+        steps = [*background_reviewer_launch("t1", "arev"), task_notification("t1"), full_check_run("t2")]
+
+        self.assertEqual(self.hand_back(steps), "")
+        self.assertEqual(len(self.handback_rows()), 1)
 
     def test_an_unreadable_transcript_never_blocks(self):
         self.transcript.write_text("not json\n", encoding="utf-8")

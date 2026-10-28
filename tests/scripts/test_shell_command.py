@@ -23,6 +23,7 @@ from shell_command import (
     quoted_positions,
     redirection_writes_file,
     runs_only_after_success,
+    segment_words,
     shell_code_argument,
     split_command_steps,
     split_simple_commands,
@@ -436,6 +437,13 @@ class ShellCodeArgumentTest(unittest.TestCase):
 
     def test_a_backslash_before_a_dollar_or_backtick_is_removed_as_the_shell_does(self):
         self.assertEqual("echo \"$(echo a)\" `x`", shell_code_argument(["bash", "-c", 'echo "\\$(echo a)" \\`x\\`']))
+
+    def test_segment_words_keeps_quoted_code_with_operator_characters_as_one_word(self):
+        segment = "python3 -c 'x = 1 > 0; (y) | z'"
+        self.assertEqual(["python3", "-c", "x = 1 > 0; (y) | z"], segment_words(segment))
+
+    def test_segment_words_splits_text_with_an_unbalanced_quote_on_whitespace(self):
+        self.assertEqual(["echo", "'a", "b"], segment_words("echo 'a  b"))
 
 
 if __name__ == "__main__":

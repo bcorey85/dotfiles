@@ -817,18 +817,12 @@ class LoopRun:
         """One coder pass on the findings. Returns (report, diffs, changed files)."""
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, findings, list(nits), list(before), self.gate_env)
-<<<<<<< HEAD
+        self.last_pass = "coder"
         try:
             return coder_call(call_name, prompt, self.repo, self.out)
         except CoderCallError as error:
             self.files_touched.update(error.changed)
             raise
-||||||| ab08ccb9
-        return coder_call(call_name, prompt, self.repo, self.out)
-=======
-        self.last_pass = "coder"
-        return coder_call(call_name, prompt, self.repo, self.out)
->>>>>>> origin/master
 
     def fix_round(self, round_fix, round_nits):
         """The coder pass on the round's merged fixes, and the plan for the next round. Returns False when the loop

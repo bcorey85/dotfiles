@@ -79,7 +79,7 @@ def read_task_file(args, flag_position):
     return task_text
 
 
-LEADING_FLAG_WORDS = ("--task", "--phase", "--repo", "--restart", "+fast", "+deep")
+LEADING_FLAG_WORDS = ("--task", "--phase", "--repo", "--restart", "--coder-stopped", "+fast", "+deep")
 TASK_FILE_REPO_LINE = re.compile(r"^Repo(?: root)?:[ \t]*(\S.*?)[ \t]*$")
 
 

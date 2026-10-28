@@ -29,6 +29,10 @@ class TempDirTest(unittest.TestCase):
             self.assertFalse(hook_input.is_under_temp_dir("/tmpfoo/b.log"))
             self.assertFalse(hook_input.is_under_temp_dir("/home/user/b.log"))
 
+    def test_var_tmp_is_a_temp_root_whatever_tmpdir_names(self):
+        with unittest.mock.patch.dict(os.environ, {"TMPDIR": "/tmp"}):
+            self.assertTrue(hook_input.is_under_temp_dir("/var/tmp/clippy/run.log"))
+
 
 class ExpandEnvNamesTest(unittest.TestCase):
     def test_only_the_named_set_variables_are_replaced(self):

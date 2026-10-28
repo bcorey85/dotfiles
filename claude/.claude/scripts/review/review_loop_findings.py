@@ -8,6 +8,8 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
+import plan_format
+import script_utils
 
 UNLOCATED = "unlocated"
 
@@ -139,6 +141,42 @@ def absent_file_split(repo, tree_paths, review):
             else:
                 kept[disposition].append(item)
     return {**review, **kept}, absent
+
+
+RULING_HEADINGS = (plan_format.DEVIATIONS_HEADING, "Constraints")
+RULED_PLAN_NOTE = " — a recorded plan ruling covers this line; the fix would undo it"
+
+
+def ruled_plan_line(plan_lines, line_number):
+    """True when the plan line sits under a ruling heading, or holds a backticked value a ruling line holds."""
+    ruling_indexes = [index for heading in RULING_HEADINGS
+                      for index in script_utils.heading_section_indexes(plan_lines, heading)]
+    target_index = line_number - 1
+    if target_index in ruling_indexes:
+        return True
+    if not 0 <= target_index < len(plan_lines):
+        return False
+
+    ruled_values = {value for index in ruling_indexes for value in re.findall(r"`([^`]+)`", plan_lines[index])}
+    target_text = plan_lines[target_index]
+    return any(value in target_text for value in ruled_values)
+
+
+def ruled_plan_split(repo, plan, fixes):
+    """(the fixes, the fixes that target a plan line a recorded ruling covers, turned into asks)."""
+    plan_path = pathlib.Path(repo) / plan
+    if not plan or not plan_path.is_file():
+        return fixes, []
+
+    plan_lines = plan_path.read_text().splitlines()
+    kept, ruled = [], []
+    for item in fixes:
+        path, line = finding_file(item)
+        if path == plan and ruled_plan_line(plan_lines, line):
+            ruled.append(item + RULED_PLAN_NOTE)
+        else:
+            kept.append(item)
+    return kept, ruled
 
 
 def finding_class(line):

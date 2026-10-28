@@ -69,6 +69,7 @@ from review_loop_findings import (
     last_json_object,
     merge_findings,
     parse_review,
+    ruled_plan_split,
 )
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
 from worktree_snapshot import CHANGE_KINDS
@@ -610,8 +611,8 @@ class LoopRun:
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
-    def __init__(self, repo, out, brief, gate_env, progress):
-        self.repo, self.out, self.brief, self.gate_env = repo, out, brief, gate_env
+    def __init__(self, repo, out, brief, gate_env, progress, plan=""):
+        self.repo, self.out, self.brief, self.gate_env, self.plan = repo, out, brief, gate_env, plan
         self.progress = progress
         self.fixed, self.files_touched = progress["fixed"], progress["files_touched"]
         self.iter_count = 0
@@ -706,6 +707,8 @@ class LoopRun:
             self.skipped_fp += [{"item": item, "reason": ABSENT_FILE_REASON} for item in absent]
             design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
             fixes = [item for item in parsed["fix"] if item not in design]
+            fixes, ruled = ruled_plan_split(self.repo, self.plan, fixes)
+            parsed["ask"] += ruled
 
             plan_changes = [item for item in parsed["ask"] if PLAN_CHANGE_MARK.match(item)]
             if plan_changes:
@@ -892,7 +895,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     brief = reviewer_brief(header, handoff)
     gate_env = plan_format.gate_env_words_in(handoff)
     scope_fields = ["scope=phase"] + ([f"phase={header['phase']}"] if header.get("phase") else [])
-    loop = LoopRun(repo, out, brief, gate_env, progress)
+    loop = LoopRun(repo, out, brief, gate_env, progress, header.get("plan", ""))
 
     log_call(repo, [str(SKILLS / "review-scope"), "caller=code"])
     check_command = check_command_for(repo, out)

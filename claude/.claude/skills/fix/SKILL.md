@@ -20,6 +20,7 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`). A script parses t
    - the findings, from whichever source applies: `/cc` entries (`path`, `line`, `body`, `id` — highest priority, user-authored), a `/review` handoff block, or the conversation
    - any `handoff:` block (schema: `~/.claude/skills/_shared/handoff-block.md`), `iter=N`, and any `+fast` / `+deep` modifier
    - `no-review` if present — the agent then verifies via the execution gate and returns without a reviewer pass
+   - `repo: <absolute path>` when the work lives outside your cwd's repo (a sibling worktree)
 
    Invoked bare, with no findings in args and no handoff: if `~/.claude/claude-comments.md` may hold inline comments, point the user at `/cc` rather than parsing that file here.
 

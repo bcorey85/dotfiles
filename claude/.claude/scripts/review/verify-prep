@@ -20,6 +20,19 @@ import verify_common as vc
 REVIEW_PROMPT = ("Branch-wide deep review: review the whole branch diff against its base branch (git diff "
                  "{base}...HEAD), backend and frontend together. This is the only review of cross-phase interactions. "
                  "Report findings with file:line and severity.")
+VERIFIER_RUN_RULES = (
+    "Run each Automated Verification command the plan lists, as written. Beyond those, run only the file of a "
+    "covering test that the plan's commands do not run. Run no other test and no suite sweep of your own.",
+    "Outside the plan's own commands, never run a test or command that snapshots, edits, creates or deletes files "
+    "outside this checkout (~/.claude, ~/.config, sibling repos). A tool reading its own config (git, npm) is "
+    "fine. A covering test file this forbids is not run: its criterion can still be covered by reading the test; "
+    "note that it was not run. A Manual Verification item whose command does this is human-only: do not run it.",
+    "Run every command in the foreground and read its output from the call. Start no background run, and leave "
+    "no process running when you report. A Manual Verification item that needs a process left running (a "
+    "server, a watcher) is human-only: do not start it.",
+    "Delete, move or kill nothing. Create no file yourself: your only write is a Manual Verification "
+    "checkbox line.",
+)
 UNTRACKED_LISTED = 20
 
 
@@ -247,6 +260,8 @@ def print_plan(context):
                      "own record of the logged review stood in. Name this skipped input in your report.")
     lines += gate_env_lines
     lines += [f"  {ticket_line}" for ticket_line in criteria["ticketLines"]]
+    lines.append("  run rules:")
+    lines += [f"  - {rule}" for rule in VERIFIER_RUN_RULES]
     lines.append("  ---")
     lines.append("  Then convert its verdict table to rows JSON and run: verify-log --rows <file> "
                  "(see SKILL.md for the row shape).")

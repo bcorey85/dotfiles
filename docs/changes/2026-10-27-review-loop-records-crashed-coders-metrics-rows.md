@@ -73,4 +73,5 @@ No new watch. The fixes correct the rows that the review watches read; they add 
 
 ## Back-out
 
-Revert the commit.
+Revert the commit. `repair()` also sets `last_pass = "coder"`, from a change merged in from master: keep that line
+when reverting.

@@ -1,8 +1,11 @@
 """Where the toolkit files under test live: the claude/.claude folder of the tree these tests sit in, or the folder
-TOOLKIT_CLAUDE_DIR names."""
+TOOLKIT_CLAUDE_DIR names.
+
+Importing it also guards the real ledger: see guard_real_ledger."""
 import os
 import pathlib
 import shutil
+import tempfile
 
 TREE_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
 CLAUDE_DIR = pathlib.Path(os.environ.get("TOOLKIT_CLAUDE_DIR") or TREE_CLAUDE_DIR)
@@ -35,3 +38,36 @@ def script_in(scripts_root, name):
     if not found:
         raise FileNotFoundError(f"{name} is in no folder of {scripts_root}")
     return found[0]
+
+
+# The env var that names the guard folder, so a reload or a child test process reuses it.
+LEDGER_GUARD_VARIABLE = "TOOLKIT_TEST_LEDGER_GUARD"
+# The exit code of the guard's `ledger`: EX_SOFTWARE, so a script that reaches it reports a failed ledger call.
+LEDGER_GUARD_EXIT = 70
+LEDGER_GUARD_SOURCE = f"""#!/bin/sh
+echo "ledger: a test reached the real ledger; install fake_ledger or hide the ledger from PATH" >&2
+exit {LEDGER_GUARD_EXIT}
+"""
+
+
+def guard_real_ledger():
+    """Put a `ledger` that always fails first on PATH and point CARGO_HOME at a folder with no ledger, so a test that
+    plants no stand-in can never write rows to the ledger this machine installed. A stand-in from fake_ledger.install
+    goes ahead of the guard on PATH. Runs once per process tree: a child process inherits the guard."""
+    guard_folder = os.environ.get(LEDGER_GUARD_VARIABLE)
+    if guard_folder and os.path.isfile(os.path.join(guard_folder, "ledger")):
+        return pathlib.Path(guard_folder)
+
+    global _ledger_guard
+    _ledger_guard = tempfile.TemporaryDirectory(prefix="ledger-guard-")
+    guard_ledger = pathlib.Path(_ledger_guard.name) / "ledger"
+    guard_ledger.write_text(LEDGER_GUARD_SOURCE)
+    guard_ledger.chmod(0o755)
+
+    os.environ[LEDGER_GUARD_VARIABLE] = _ledger_guard.name
+    os.environ["PATH"] = f"{_ledger_guard.name}{os.pathsep}{os.environ.get('PATH', '')}"
+    os.environ["CARGO_HOME"] = _ledger_guard.name
+    return pathlib.Path(_ledger_guard.name)
+
+
+guard_real_ledger()

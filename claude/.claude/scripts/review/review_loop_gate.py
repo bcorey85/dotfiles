@@ -62,7 +62,8 @@ CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
 HANDOFF = re.compile(r"(?im)^[ \t]*handoff[ \t]*:")
 PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b")
 REDIRECT = re.compile(r"\d*>>?\s*&?\S+|&>\s*\S+")
-SEGMENT_END = re.compile(r"&&|\|\||[;|\n]")
+# One shell command ends at a ;, a | or && that joins the next command, or at a newline no backslash escapes.
+SEGMENT_END = re.compile(r"&&|\|\||[;|]|(?<!\\)\n")
 SCOPED = re.compile(r"(?:^|\s)(?:-k|-t|-m|-run|--testNamePattern|--grep|--findRelatedTests|--onlyChanged|--changedSince"
                     r"|--related)(?=[\s=]|$)|(?:^|\s)(?!\./\.\.\.(?:\s|$))[^\s-]\S*(?:/|::|\.(?:[cm]?[jt]sx?|py|go|rb|rs|php|vue|svelte)\b)")
 # By checker: the flags whose value names a package, a project or a manifest, never a test, so the value does not
@@ -113,19 +114,35 @@ LAYOUTS = (
      lambda level, title: bool(INTENT_SECTIONS.match(title))),
 )
 ASSESSMENT = re.compile(r"Overall Assessment\*{0,2}:?\s*\**(PASS WITH WARNINGS|PASS|NEEDS CHANGES)")
-PROMPT_LANE = re.compile(r"(?im)^[ \t>*`-]*lane[`*]*[ \t]*:[ \t`*]*(eng-spec|code|test-audit|other|none)\b")
-PROMPT_PLAN = re.compile(r"(?im)^[ \t>*`-]*plan[`*]*[ \t]*:[ \t`*]*(\S+?)[`*]*[ \t]*$")
+
+
+def prompt_field(key, value):
+    """A pattern for a `key: value` line of the dispatch prompt, with the markdown a prompt may wrap it in."""
+    return re.compile(rf"(?im)^[ \t>*`-]*{key}[`*]*[ \t]*:[ \t`*]*{value}")
+
+
+PROMPT_LANE = prompt_field("lane", r"(eng-spec|code|test-audit|other|none)\b")
+PROMPT_PLAN = prompt_field("plan", r"(\S+?)[`*]*[ \t]*$")
 HELPER_ASSIGNMENT = re.compile(r"(?:^|[\s;&|])(\w+)=[\"']?[^\s;&|\"']*log-review-finding[\"']?(?=[\s;&|]|$)")
 FINDING_CALL_TAIL = r"\s+kind=finding\b"
-FINDING_CALL_ARGUMENTS_TAIL = r"\s+(kind=finding\b[^\n;&|]*)"
+FINDING_CALL_ARGUMENTS_TAIL = rf"\s+(kind=finding\b(?:(?!{SEGMENT_END.pattern}).)*)"
 SHELL_VARIABLE_DIRECTORY = re.compile(r"^\$\{?\w+\}?/")
 METRICS_CALL = re.compile(r"log-review-metrics\b")
+METRICS_REFUSAL = "refusing to log"
+SCOPE_CALL = re.compile(r"review-scope\b")
+SCOPE_ROOT = re.compile(r"(?m)^ROOT=(\S.*?)\s*$")
+PROMPT_REPO = prompt_field("repo", r"(\S+?)[`*]*[ \t]*$")
 PACKET_ROW_KEYS = ("fixed", "skipped_fp", "findings_remaining", "ask", "nit")
-PROMPT_PHASE = re.compile(r"(?im)^[ \t>*`-]*phase[`*]*[ \t]*:[ \t`*]*([\w.-]+)")
+PROMPT_PHASE = prompt_field("phase", r"([\w.-]+)")
 
 LEDGER_REASON = ("The packet lists {owed} finding(s) (fixed, skipped, deferred, ask, nit) but only {logged} "
                  "per-finding row(s) were logged{metrics}. Run Step 7 and Step 7b now, one "
                  "`log-review-finding kind=finding` call per finding, then return the packet.")
+NIT_REASON = ("The packet lists {owed} nit(s) but only {logged} `disposition=nit` row(s) were logged. Log one "
+              "`log-review-finding kind=finding disposition=nit` row per nit, then return the packet.")
+METRICS_REASON = ("The last metrics line was logged before the last reviewer round, or its counts differ from the "
+                  "packet's. Log the Step 7 metrics line again with the final counts (fixed={fixed}, "
+                  "skipped_fp={skipped_fp}), then return the packet.")
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
                     "that edit, and return the finding that needs a plan change as `status: plan-impact`.")
 GATE_REASON = ("No full check ran after the last code change in this phase. A scoped run, including the "
@@ -180,6 +197,17 @@ def finding_call_fields(arguments):
     return dict(word.split("=", 1) for word in words if "=" in word)
 
 
+def metrics_calls(command):
+    """The key=value fields of each log-review-metrics call in one command, in order."""
+    calls = []
+    for match in METRICS_CALL.finditer(command):
+        rest = command[match.end():]
+        end = SEGMENT_END.search(rest)
+        arguments = rest[:end.start()] if end else rest
+        calls.append(finding_call_fields(arguments))
+    return calls
+
+
 class LoopTranscript:
     """One read of a loop transcript: what the stop check and the run rows need from it."""
 
@@ -199,7 +227,9 @@ class LoopTranscript:
         self.handback_ids = set()  # tool_use_ids of the SubagentHandback calls
         self.handback_lines = []  # the transcript lines of the SubagentHandback calls a hook did not deny
         self.finding_rows_logged = 0  # per-finding ledger rows the loop's own Bash calls wrote
-        self.metrics_logged = False
+        self.metrics_calls = []  # (transcript line, key=value fields, Bash tool_use_id) of each log-review-metrics call
+        self.scope_calls = set()  # Bash tool_use_ids of the review-scope calls
+        self.scope_root = None  # the ROOT= that the last review-scope call printed
         self.finding_calls = {}  # Bash tool_use_id -> the key=value fields of each `kind=finding` call, in order
         self.ask_rows = []  # {file, line, finding_id} of each `actioned=ask` row whose id the log helper printed
         self.full_checks = []  # the transcript lines of the shell calls that ran a full check
@@ -247,8 +277,23 @@ class LoopTranscript:
             self.results[block["tool_use_id"]] = text_of(block.get("content"))
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.send_lines:
             self.read_send_result(block)
-        elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.finding_calls:
+        elif block.get("type") == "tool_result":
+            self.read_bash_result(block)
+
+    def read_bash_result(self, block):
+        """One Bash call can chain a finding row, a metrics row and a scope call, so each check reads the result."""
+        tool_use_id = block.get("tool_use_id")
+        if tool_use_id in self.finding_calls:
             self.read_printed_finding_ids(block)
+        refused = block.get("is_error") or METRICS_REFUSAL in text_of(block.get("content"))
+        if tool_use_id in self.metrics_ids() and refused:
+            self.metrics_calls = [call for call in self.metrics_calls if call[2] != tool_use_id]
+        if tool_use_id in self.scope_calls:
+            root = SCOPE_ROOT.search(text_of(block.get("content")))
+            self.scope_root = root.group(1) if root else self.scope_root
+
+    def metrics_ids(self):
+        return {tool_use_id for _, _, tool_use_id in self.metrics_calls}
 
     def read_printed_finding_ids(self, block):
         """Pair each `kind=finding` call of a command with the finding_id the helper printed for it, in order, and keep
@@ -294,14 +339,25 @@ class LoopTranscript:
             self.read_command(n, block.get("id"), str(tool_input.get("command") or ""))
 
     def read_command(self, n, tool_use_id, command):
+        command = command.replace("\\\n", " ")
         self.finding_rows_logged += len(finding_call_pattern(command, FINDING_CALL_TAIL).findall(command))
         arguments_pattern = finding_call_pattern(command, FINDING_CALL_ARGUMENTS_TAIL)
         finding_calls = [finding_call_fields(arguments) for arguments in arguments_pattern.findall(command)]
         if finding_calls:
             self.finding_calls[tool_use_id] = finding_calls
-        self.metrics_logged = self.metrics_logged or bool(METRICS_CALL.search(command))
+        self.metrics_calls += [(n, fields, tool_use_id) for fields in metrics_calls(command)]
+        if SCOPE_CALL.search(command):
+            self.scope_calls.add(tool_use_id)
         if full_check(command):
             self.full_checks.append(n)
+
+    def reviewed_root(self):
+        """The repo the loop reviewed: the ROOT= review-scope printed, else the prompt's `repo:` line, when it names a
+        directory that still exists; else None."""
+        repo = PROMPT_REPO.search(self.prompt or "")
+        named = os.path.expanduser(repo.group(1).strip("`\"'")) if repo else None
+        candidates = [path for path in (self.scope_root, named) if path and os.path.isdir(path)]
+        return candidates[0] if candidates else None
 
     def launched_agent(self, tool_use_id):
         """The agent id that the dispatch's tool_result names, or None."""
@@ -385,15 +441,51 @@ def ledger_reasons(transcript, final):
     reasons = []
 
     owed = sum(len(packet.get(key) or []) for key in PACKET_ROW_KEYS)
-    missing_metrics = not transcript.metrics_logged
+    missing_metrics = not transcript.metrics_calls
     if transcript.finding_rows_logged < owed or missing_metrics:
         metrics = " and no metrics line" if missing_metrics else ""
         reasons.append(LEDGER_REASON.format(owed=owed, logged=transcript.finding_rows_logged, metrics=metrics))
+    elif unlogged_nits(transcript, packet):
+        reasons.append(NIT_REASON.format(owed=len(packet.get("nit") or []), logged=nit_rows(transcript)))
+    elif stale_metrics(transcript, packet):
+        reasons.append(METRICS_REASON.format(fixed=len(packet.get("fixed") or []),
+                                             skipped_fp=len(packet.get("skipped_fp") or [])))
 
     plan = PROMPT_PLAN.search(transcript.prompt or "")
     if plan and touches_plan(packet.get("files_touched") or [], plan.group(1)):
         reasons.append(PLAN_EDIT_REASON.format(plan=plan.group(1)))
     return reasons
+
+
+def nit_rows(transcript):
+    return sum(fields.get("disposition") == "nit" for calls in transcript.finding_calls.values() for fields in calls)
+
+
+def unlogged_nits(transcript, packet):
+    """True when the packet lists more nits than the loop logged `disposition=nit` rows. A finding call whose
+    disposition is not spelled out (a shell variable, or no `disposition=` at all) leaves the count unknown, so
+    nothing is claimed."""
+    calls = [fields for calls in transcript.finding_calls.values() for fields in calls]
+    if any(not fields.get("disposition", "").isalpha() for fields in calls):
+        return False
+    return nit_rows(transcript) < len(packet.get("nit") or [])
+
+
+def stale_metrics(transcript, packet):
+    """True when the last metrics line came before the last reviewer round, or when a fixed= or skipped_fp= count it
+    logged differs from the packet's. A count the line leaves out or sends as a shell variable is not compared."""
+    line, fields, _ = transcript.metrics_calls[-1]
+    reviews = [transcript.dispatched_at[tool_use_id] for tool_use_id, kind in transcript.kinds.items()
+               if RUN_GATES.search(kind)]
+    last_review = max(reviews, default=-1)
+    if line < last_review:
+        return True
+
+    for key in ("fixed", "skipped_fp"):
+        logged = fields.get(key, "")
+        if logged.isdigit() and int(logged) != len(packet.get(key) or []):
+            return True
+    return False
 
 
 def touches_plan(files_touched, plan):
@@ -495,10 +587,11 @@ def reviewer_runs(transcript):
     return runs, lane.group(1) if lane else "none", phase.group(1) if phase else "-"
 
 
-def write_run_row(hook, run, lane, phase):
-    """True when log-review-finding wrote the row. It writes nothing while the telemetry switch is off, and it
-    prints one stderr line for each skip. With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) the row
-    goes to review-findings.jsonl, and the writer's stderr line is passed on."""
+def write_run_row(hook, run, lane, phase, root=None):
+    """True when log-review-finding wrote the row. The logger runs in root, the repo the loop reviewed, so the row
+    names that repo and branch; with no root it runs in the session cwd. It writes nothing while the telemetry
+    switch is off, and it prints one stderr line for each skip. With no ledger found (PATH, then
+    `${CARGO_HOME:-~/.cargo}/bin`) the row goes to review-findings.jsonl, and the writer's stderr line is passed on."""
     claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or OWN_CLAUDE_DIR)
     switch_script = claude_dir / "scripts" / "telemetry" / "telemetry_enabled.sh"
     if not switch_script.is_file():
@@ -530,7 +623,8 @@ def write_run_row(hook, run, lane, phase):
     if run["result"]:
         command.append("result=" + run["result"])
     env = {**os.environ, "CLAUDE_CODE_SESSION_ID": hook["session_id"]}
-    done = subprocess.run(command, env=env, cwd=hook.get("cwd") or None, capture_output=True, text=True, timeout=30)
+    done = subprocess.run(command, env=env, cwd=root or hook.get("cwd") or None, capture_output=True, text=True,
+                          timeout=30)
     if done.returncode:
         print(
             "review-loop-gate: run row for {} not written: {}".format(run["gate"], done.stderr.strip()), file=sys.stderr
@@ -559,6 +653,7 @@ def log_run_rows(hook, transcript):
         if not session_id:
             return
         runs, lane, phase = reviewer_runs(transcript)
+        root = transcript.reviewed_root()
         state_file = state_file_for(session_id)
         marks = {}
         for row in script_utils.read_jsonl(state_file):
@@ -569,7 +664,7 @@ def log_run_rows(hook, transcript):
             # The mark goes first: when it cannot be saved the row is not written, so a repeat stop never
             # duplicates it. A row the logger did not write (switch off, logger error) takes its mark back.
             script_utils.append_jsonl(state_file, {"tool_use_id": run["tool_use_id"]})
-            if not write_run_row(hook, run, lane, phase):
+            if not write_run_row(hook, run, lane, phase, root):
                 script_utils.append_jsonl(state_file, {"tool_use_id": run["tool_use_id"], "undone": True})
     except Exception as e:
         print(f"review-loop-gate: run rows skipped, {type(e).__name__}: {e}", file=sys.stderr)

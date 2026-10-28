@@ -24,6 +24,11 @@ import json
 import os
 import pathlib
 
+import toolkit_paths
+
+# A test that imports this module and plants no stand-in still fails at the guard, never at the real ledger.
+toolkit_paths.guard_real_ledger()
+
 LEDGER_SOURCE = '''#!/usr/bin/env python3
 import json
 import os

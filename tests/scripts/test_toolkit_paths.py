@@ -1,6 +1,8 @@
 import importlib
 import os
 import pathlib
+import shutil
+import subprocess
 import unittest
 import unittest.mock
 
@@ -50,6 +52,29 @@ class ToolkitPathsTest(unittest.TestCase):
             {"code": reloaded.CODE_DIR, "review": reloaded.REVIEW_DIR, "telemetry": reloaded.TELEMETRY_DIR,
              "lib": reloaded.LIB_DIR, "tools": reloaded.TOOLS_DIR, "gates": reloaded.GATES_DIR},
         )
+
+
+class RealLedgerGuardTest(unittest.TestCase):
+    def test_a_test_that_plants_no_stand_in_reaches_only_the_failing_guard(self):
+        guard_folder = pathlib.Path(os.environ[toolkit_paths.LEDGER_GUARD_VARIABLE])
+
+        found_ledger = shutil.which("ledger")
+        write = subprocess.run(["ledger", "write", "review_run"], input="{}", capture_output=True, text=True)
+
+        self.assertEqual(str(guard_folder / "ledger"), found_ledger)
+        self.assertEqual(toolkit_paths.LEDGER_GUARD_EXIT, write.returncode)
+        self.assertIn("a test reached the real ledger", write.stderr)
+        self.assertFalse((pathlib.Path(os.environ["CARGO_HOME"]) / "bin" / "ledger").exists())
+
+    def test_a_reload_keeps_the_one_guard(self):
+        guard_folder = os.environ[toolkit_paths.LEDGER_GUARD_VARIABLE]
+        path_before = os.environ["PATH"]
+
+        importlib.reload(toolkit_paths)
+
+        self.assertEqual(guard_folder, os.environ[toolkit_paths.LEDGER_GUARD_VARIABLE])
+        self.assertEqual(path_before, os.environ["PATH"])
+        self.assertTrue(pathlib.Path(guard_folder, "ledger").is_file())
 
 
 if __name__ == "__main__":

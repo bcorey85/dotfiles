@@ -11,7 +11,10 @@
 # words (PASS WITH WARNINGS, NEEDS CHANGES, NOT DISPATCHED); they are stored with
 # underscores, and `PASS (NITS ONLY)` is stored as PASS_WITH_WARNINGS, as
 # log-review-finding folds it. clean, residue and findings are stored as sent.
-# date, schema_version, repo, session and desc are accepted and never stored; the
+# Every call, with or without `out=` and with telemetry off, exits 2 and writes nothing on an
+# arg with no `=` (the words a spaced value leaves unquoted). A ledger row also needs
+# `result=` from that set: any other value or a missing one exits 2, with telemetry off too.
+# date, schema_version, repo, session, desc and diff_base are accepted and never stored; the
 # writer adds the date, repo and session, and keys `branch=` into branch_key (with no
 # ledger, stored raw in the local jsonl file).
 # With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) `ledger-write` appends the row to
@@ -29,6 +32,19 @@ script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 source "$script_dir/../../scripts/lib/_kv.sh"
 kv_help_exit "${BASH_SOURCE[0]}" "$@"
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+
+# A bare word is the tail of an unquoted spaced value (result=PASS WITH WARNINGS);
+# skipping it would store a row with a cut or empty verdict.
+for arg in "$@"; do
+  case "$arg" in
+    *=*) ;;
+    *)
+      echo "log-review-metrics: refusing to log: '$arg' is not key=value." >&2
+      echo "Quote a spaced value as one word: \"result=PASS WITH WARNINGS\"." >&2
+      exit 2
+      ;;
+  esac
+done
 out=""
 # Second-draft rows route to the second-draft log even when the caller forgets
 # out= — a second_draft= key in the review-metrics rows corrupts both datasets.
@@ -66,6 +82,31 @@ case "$out" in
   "~/"*) out="$HOME/${out#"~/"}" ;;
 esac
 
+# A ledger row's verdict is checked before the telemetry switch, so a bad call fails the same way with it off.
+if [ -z "$out" ]; then
+  payload=$(jq -c '
+    def result_verdict:
+      (ascii_upcase | gsub("[_-]"; " ")) as $norm
+      | if ($norm | test("^PASS WITH WARNINGS")) or $norm == "PASS (NITS ONLY)" then "PASS_WITH_WARNINGS"
+      elif $norm == "PASS" then "PASS"
+      elif $norm | test("^NEEDS CHANGES") then "NEEDS_CHANGES"
+      elif $norm | test("^NOT DISPATCHED") then "NOT_DISPATCHED"
+      else gsub(" "; "_") end;
+    del(.desc, .diff_base)
+    | (if .result then .result |= result_verdict else . end)
+    | with_entries(.key |= (if . == "branch" then "branch_key" else . end))' <<< "$json")
+
+  verdict=$(jq -r '.result // ""' <<< "$payload")
+  case "$verdict" in
+    PASS|PASS_WITH_WARNINGS|NEEDS_CHANGES|NOT_DISPATCHED|clean|residue|findings) ;;
+    *)
+      echo "log-review-metrics: refusing to log: result='$verdict' is not one of PASS, PASS WITH WARNINGS," \
+        "PASS (NITS ONLY), NEEDS CHANGES, NOT DISPATCHED, clean, residue, findings." >&2
+      exit 2
+      ;;
+  esac
+fi
+
 "$script_dir/../../scripts/telemetry/telemetry_enabled.sh" 2>/dev/null || exit 0
 
 if [ -n "$out" ]; then
@@ -74,15 +115,4 @@ if [ -n "$out" ]; then
   exit 0
 fi
 
-payload=$(jq -c '
-  def result_verdict:
-    (ascii_upcase | gsub("[_-]"; " ")) as $norm
-    | if ($norm | test("^PASS WITH WARNINGS")) or $norm == "PASS (NITS ONLY)" then "PASS_WITH_WARNINGS"
-    elif $norm == "PASS" then "PASS"
-    elif $norm | test("^NEEDS CHANGES") then "NEEDS_CHANGES"
-    elif $norm | test("^NOT DISPATCHED") then "NOT_DISPATCHED"
-    else gsub(" "; "_") end;
-  del(.desc)
-  | (if .result then .result |= result_verdict else . end)
-  | with_entries(.key |= (if . == "branch" then "branch_key" else . end))' <<< "$json")
 printf '%s\n' "$payload" | bash "$script_dir/../../scripts/telemetry/ledger-write" review_metrics

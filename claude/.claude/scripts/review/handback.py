@@ -6,8 +6,11 @@
   handback.py hook dispatch|handback < hook event JSON
                                         PreToolUse hook. Matcher Agent records each review-loop dispatch; matcher
                                         SubagentHandback validates and records each review-loop hand-back, and denies a
-                                        bad packet once per agent so the loop can repair it. Any other argument does
-                                        nothing.
+                                        bad packet once per agent so the loop can repair it, denies a hand-back (any
+                                        status but plan-impact, in a repo whose CLAUDE.md does not say
+                                        `Full suite: CI`) whose own transcript shows no full check after its
+                                        last code change (once per code change), and denies any call from an agent
+                                        whose report is already stored. Any other argument does nothing.
 
 Importers use parse, validate, load, render, record, latest, hand_back_gap, false_clean_reason,
 ended_on_unreviewed_fix, fixed_paths, unreviewed_streak and unreviewed_fix_section. The store also holds
@@ -30,7 +33,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import script_utils
 from script_utils import first_number, one_line, unquote
 
-STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached"]
+STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
 CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "full_check", "files_touched", "nit", "load_bearing_clean",
@@ -41,8 +44,9 @@ SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "load_bearing_clean"
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
 STATUS_REQUIRES = {"plan-impact": ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
-                   "cap-reached": ("findings_remaining", "empty"),
+                   "setup-fault": ("blockers", "empty"), "cap-reached": ("findings_remaining", "empty"),
                    "deferred": ("findings_remaining", "missing or empty")}
+BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
 ITEM_KEYS = [
     "disposition",
     "smell",
@@ -66,6 +70,9 @@ CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap"
            "correctness", "docs", "other"]
 REVIEW_LOOP = "review-loop"
 NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
+REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
+ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])/[^\s`'\"<>|;:,()]+")
+GIT_TIMEOUT_SECONDS = 10
 DEFAULT_GATE = "code-reviewer"
 FENCE_OPEN = "```"
 BLOCKER_TEXT = re.compile(r"\[blocker\]|\bblocker\s*[:=]\s*(?:yes|true)\b", re.I)
@@ -607,10 +614,11 @@ def latest(session_id):
     review-loop stop row after the last dispatch or None, "unanswered": the number of dispatches after the last
     hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
     it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
-    session_id; a hand-back row also agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row
-    also agent_id, open_dispatches (the background agents and shells the loop still waited on when it stopped) and
-    ask_rows. A stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by
-    append, not by clock."""
+    session_id; a dispatch row also no_review and repo (the top level of the repo it reviews, or None); a hand-back
+    row also agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row also agent_id,
+    open_dispatches (the background agents and shells the loop still waited on when it stopped) and ask_rows. A
+    stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by append, not by
+    clock."""
     standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
     if not session_id:
         return standing
@@ -753,27 +761,90 @@ def deny_line(reason):
                                               "permissionDecisionReason": reason}})
 
 
+ALREADY_DELIVERED_REASON = ("Your report was already delivered; a second hand-back cannot reach the caller. Use "
+                            "SendMessage for anything further, then stop.")
+UNCHECKED_KIND = "unchecked-code"
+
+
+def last_unchecked_step(session_id, agent_id):
+    """The last code step the hook saw when it denied agent_id for an unchecked change, or None."""
+    stored_rows = script_utils.read_jsonl(session_file(session_id))
+    steps = [row.get("last_code_step", 0) for row in stored_rows
+             if row.get("kind") == UNCHECKED_KIND and row.get("agent_id") == agent_id]
+    return max(steps, default=None)
+
+
+def unchecked_code_reason(event, session_id, agent_id, message):
+    """The deny reason when the loop's own transcript shows no full check after its last code change, else None.
+    The denial is recorded with the last code step it saw and repeats only after a later code change, so a loop that
+    hands back again on the same state passes. A transcript that cannot be read never blocks."""
+    try:
+        import review_loop_gate  # imports this module at its top, so it loads here, not at ours
+        transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(event))
+        in_ci = review_loop_gate.full_suite_in_ci(event.get("cwd"))
+        ungated, _open_dispatches = review_loop_gate.scan(transcript, message, in_ci)
+        last_step = review_loop_gate.last_code_step(transcript)
+    except Exception as error:
+        print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
+        return None
+    if not ungated:
+        return None
+    denied_at = last_unchecked_step(session_id, agent_id)
+    if denied_at is not None and last_step <= denied_at:
+        return None
+    record(session_id, UNCHECKED_KIND, agent_id=agent_id, last_code_step=last_step)
+    return review_loop_gate.GATE_REASON
+
+
+def handle_dispatch(event, session_id, tool_input):
+    """Record a review-loop dispatch, or a coder or reviewer step inside one."""
+    subagent_type = str(tool_input.get("subagent_type") or "")
+    if event.get("agent_type") == REVIEW_LOOP:
+        step = "coder" if script_utils.CODERS.match(subagent_type) else "reviewer"
+        if step == "coder" or script_utils.REVIEWERS.match(subagent_type):
+            record(session_id, "step", agent_id=event.get("agent_id") or "unknown", step=step)
+    elif subagent_type == REVIEW_LOOP:
+        prompt = str(tool_input.get("prompt") or "")
+        record(session_id, "dispatch", no_review=NO_REVIEW_MODE.search(prompt) is not None,
+               repo=reviewed_repo(prompt, event.get("cwd")))
+
+
+def reviewed_repo(prompt, cwd):
+    """The top level of the repo a review-loop dispatch reviews, by the rule the loop itself follows: the prompt's
+    `repo:` line, read from cwd, else the first absolute path the prompt names, else cwd. None when that lies in no
+    work tree."""
+    named = REPO_LINE.search(prompt)
+    first_path = ABSOLUTE_PATH.search(prompt)
+    if named:
+        directory = os.path.join(cwd or "", os.path.expanduser(named.group(1)))
+    elif first_path:
+        directory = script_utils.nearest_existing_folder(first_path.group(0))
+    else:
+        directory = cwd
+    if not directory:
+        return None
+    top = script_utils.repo_root(directory, timeout=GIT_TIMEOUT_SECONDS)
+    return str(top) if top else None
+
+
 def handle_hook(event, kind):
-    """Record a review-loop dispatch or hand-back. Returns the deny reason for a bad packet seen the first time from
-    its agent, else None."""
+    """Record a review-loop dispatch or hand-back. Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
+    agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
+    unreviewed reason for a clean packet with no reviewer run, or review_loop_gate.GATE_REASON when no full check ran
+    after the last code change."""
     session_id = event.get("session_id")
     if not session_id:
         return None
     tool_input = event.get("tool_input") or {}
     if kind == "dispatch":
-        subagent_type = str(tool_input.get("subagent_type") or "")
-        if event.get("agent_type") == REVIEW_LOOP:
-            step = "coder" if script_utils.CODERS.match(subagent_type) else "reviewer"
-            if step == "coder" or script_utils.REVIEWERS.match(subagent_type):
-                record(session_id, "step", agent_id=event.get("agent_id") or "unknown", step=step)
-        elif subagent_type == REVIEW_LOOP:
-            prompt = str(tool_input.get("prompt") or "")
-            record(session_id, "dispatch", no_review=NO_REVIEW_MODE.search(prompt) is not None)
+        handle_dispatch(event, session_id, tool_input)
         return None
     if kind != "handback" or event.get("agent_type") != REVIEW_LOOP:
         return None
     message = str(tool_input.get("message", ""))
     agent_id = event.get("agent_id") or "unknown"
+    if was_recorded(session_id, agent_id, "handback"):
+        return ALREADY_DELIVERED_REASON
     try:
         packet = load(message)
         status, problems = packet["status"], []
@@ -790,6 +861,9 @@ def handle_hook(event, kind):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
+    unchecked_reason = unchecked_code_reason(event, session_id, agent_id, message)
+    if unchecked_reason:
+        return unchecked_reason
 
     unreviewed_fix = (status in CLEAN_STATUSES and "reviewer" in steps
                       and steps[-1:] == ["coder"])

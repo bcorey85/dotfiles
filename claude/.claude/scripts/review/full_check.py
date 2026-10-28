@@ -4,17 +4,20 @@
     full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] -- '<command>'
 
 Runs the command, given as one quoted word or as plain words, through the shell in the repo, output to the log, and
-prints `full check: <result>` first: `passed`, `failed (exit N)` with the failing step's lines after it (each lint
-error with its file:line, the FAIL and ERROR lines; the log's last lines when the log holds none),
-`not run (check-command error: <line>)` when a step of the command stops on a path that does not exist and did not
-exist at the diff base either (`--base`, HEAD by default; a path the diff removed or moved is a failure),
-`not run (timeout)` when the command runs past the limit, or `not run (CI)` when the repo's CLAUDE.md holds the line
-`Full suite: CI` (the command does not run then). `run` with no command returns `not run (no check found; ...)`.
+prints `full check: <result>` first: `passed`, `failed (exit N)` with the failing step's lines after it (on a lint
+error, each lint error with its file:line and the FAIL and ERROR lines; else the failing tests and the log's last
+lines),
+`setup fault (exit N)` with the same when the environment could not run the check (no program, a runner that cannot
+start, no package manifest, no test found), `not run (check-command error: <line>)` when a step of the command stops
+on a path that does not exist and did not exist at the diff base either (`--base`, HEAD by default; a path the diff
+removed or moved is a failure), `not run (timeout)` when the command runs past the limit, or `not run (CI)` when the
+repo's CLAUDE.md holds the line `Full suite: CI` (the command does not run then). `run` with no command returns
+`not run (no check found; ...)`.
 A command past the limit is killed with its whole process group, so no test process outlives the check. A repo with
 a `.python-version` file runs the command with the pyenv shims first on PATH. A failed check whose log says
 `No module named X`, for an X that the repo declares as a dependency (requirements*.txt, pyproject.toml, setup.cfg
 or Pipfile, by normalized name), prints `not run (environment gap: No module named 'X')`.
-Exit 0, or 1 when the check failed.
+Exit 0, or 1 when the check failed or hit a setup fault.
 """
 
 import argparse
@@ -32,6 +35,7 @@ import tomllib
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 
 import script_utils
+from check_output import is_setup_fault, tail_with_failing_tests
 
 FULL_SUITE_IN_CI = "Full suite: CI"
 LIST_MARKER = re.compile(r"^\s*[-*]\s+")
@@ -41,6 +45,8 @@ NOT_RUN_TIMEOUT = "not run (timeout)"
 NOT_RUN_NO_CHECK = "not run (no check found; the coder's scoped tests stand)"
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)'?")
 REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# The check could not run here: no program, a runner that cannot start, no package manifest, or no test found.
+SETUP_FAULT = "setup fault"
 # Under the Bash tool's 600 s ceiling, so a loop's shell call ends before the tool moves it to the background.
 DEFAULT_TIMEOUT_SECONDS = 540
 TAIL_LINES = 40
@@ -252,12 +258,23 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD")
         if not existed_at_base(repo, base, missing_path):
             return f"not run (check-command error: {missing_path_line.strip()})", tail
 
+    tail = tail_with_failing_tests(log_text, tail)
+    # An undeclared missing module is a code failure here: the change may use a dependency it did not declare.
+    if is_setup_fault(exit_code, log_text, repo, include_missing_modules=False):
+        return f"{SETUP_FAULT} (exit {exit_code})", tail
+
     failing_lines = failing_step_lines(log_lines)
-    return f"failed (exit {exit_code})", "\n".join(failing_lines) if failing_lines else tail
+    if any(LINT_RULE_LINE.match(line) for line in failing_lines):
+        return f"failed (exit {exit_code})", "\n".join(failing_lines)
+    return f"failed (exit {exit_code})", tail
 
 
 def is_failure(result):
     return result.startswith("failed")
+
+
+def is_setup_fault_result(result):
+    return result.startswith(SETUP_FAULT)
 
 
 def main(argv):
@@ -279,7 +296,7 @@ def main(argv):
 
     result, tail = run(args.repo, check_command, args.log, args.timeout, base=args.base)
     print(f"full check: {result}")
-    if is_failure(result):
+    if is_failure(result) or is_setup_fault_result(result):
         print(tail)
         return 1
     return 0

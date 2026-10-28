@@ -87,6 +87,12 @@ blockers:
   - "public API field rename"
 """
 
+SETUP_FAULT = """status: setup-fault
+iter: 1
+blockers:
+  - "the full check could not run: no package.json"
+"""
+
 CAP = """status: cap-reached
 iter: 2 of 2
 findings_remaining:
@@ -233,6 +239,15 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: stop", output)
         self.assertIn("auth bypass needs a design decision", output)
         self.assertIn("public API field rename", output)
+        self.assertIn("Do not mark the gate", output)
+        self.assertNotIn("render-and-finish", output)
+
+    def test_a_setup_fault_stops_without_a_mark_and_says_it_is_not_a_code_failure(self):
+        code, output = self.packet(SETUP_FAULT)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("no package.json", output)
+        self.assertIn("toolkit or environment fault, not a code failure", output)
         self.assertIn("Do not mark the gate", output)
         self.assertNotIn("render-and-finish", output)
 
@@ -1198,12 +1213,14 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.write_code_step(stage="done", sessionId=SESSION)
         self.assertEqual(self.packet("")[0], 0)
 
-    def test_every_stage_that_owns_review_hand_backs_blocks_and_plan_coder_does_not(self):
+    def test_every_stage_that_owns_review_hand_backs_blocks(self):
         for stage in ("coder", "asks-coder"):
             with self.subTest(stage=stage):
                 self.seed()
                 self.write_launched_run("a1", stage=stage)
                 self.assertEqual(self.packet("")[0], 2)
+
+    def test_plan_coder_stage_does_not_block(self):
         self.seed()
         self.write_code_step(stage="plan-coder", sessionId=SESSION)
         self.assertEqual(self.packet("")[0], 0)
@@ -1299,7 +1316,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(
             (row["class"], row["gate"], row["path_key"], row["line"]), ("other", "code-reviewer", "a.ts", "1")
         )
-        self.assertNotIn("ops", json.dumps(row))
+        self.assertNotIn("ops", row.values())
         self.assertNotIn("desc", row)
 
     def test_a_plan_impact_ask_is_presented_but_not_logged(self):

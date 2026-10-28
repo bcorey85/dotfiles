@@ -609,6 +609,9 @@ def remaining_lines(packet):
 STOP_STATUSES = {
     "critical-blocker": ("Present these blockers and wait for direction. Do not re-dispatch. Do not run /fix. "
                          "Do not mark the gate.", blocker_lines),
+    "setup-fault": ("The full check could not run in this environment. This is a toolkit or environment fault, not a "
+                    "code failure. Present these lines and wait for direction. Do not re-dispatch. Do not run /fix. "
+                    "Do not mark the gate.", blocker_lines),
     "cap-reached": ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
                     "run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.",
                     remaining_lines),

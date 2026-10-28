@@ -80,21 +80,13 @@ from shell_command import (
     split_simple_commands,
 )
 
-CODERS = ("coder", "coder-deep", "backend-coder", "backend-coder-deep", "frontend-coder", "frontend-coder-deep")
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
-# A command that changes folder or repo anywhere in its text (cd, pushd, popd, or a git dir or work-tree option or
-# variable; eval, source and `.` are read from the command words). The gate never parses where the chain leads.
-CHANGES_FOLDER = re.compile(r"(?<![\w./-])(?:cd|pushd|popd)(?![\w./-])|--git-dir|--work-tree|GIT_DIR|GIT_WORK_TREE")
-# A folder change whose target no word of the command names. `$` and a backtick are tested apart, on the text
-# without the spans that run nothing.
-UNKNOWN_TARGET = re.compile(r"(?<![\w./-])(?:eval|source|popd)(?![\w./-])"
-                            r"|(?<![\w./-])(?:cd|pushd)[ \t]+-(?![\w./-])|(?<![\w./-])pushd[ \t]*(?:$|[;&|)\n])"
-                            r"|--git-dir|--work-tree|GIT_DIR|GIT_WORK_TREE",
-                            re.MULTILINE)
+# A command that changes folder or repo anywhere in its text (cd, pushd, popd, eval, source, or a git dir or work-tree
+# option or variable; `.` is read from the command words). The gate never parses where the chain leads.
+CHANGES_FOLDER = re.compile(r"(?<![\w./-])(?:cd|pushd|popd|eval|source)(?![\w./-])"
+                            r"|--git-dir|--work-tree|GIT_DIR|GIT_WORK_TREE")
 # The command words (first word of a simple command, quotes and escapes resolved) that change folder or repo.
 FOLDER_COMMAND_WORDS = ("cd", "pushd", "popd", "eval", "source", ".")
-# The word forms of the text alternatives in UNKNOWN_TARGET, for a command word written in a disguise.
-UNKNOWN_COMMAND_WORDS = ("popd", "eval", "source", ".")
 # A double-quoted string or an escaped character stays; a single-quoted string and a comment are dropped. The comment
 # alternative comes last, so a `#` inside quotes is consumed by them.
 QUOTED_SPAN = re.compile(r"\"(?:\\.|[^\"\\])*\"|\\.|'[^']*'|(?:^|(?<=[\s;&|()]))#[^\n]*", re.DOTALL | re.MULTILINE)
@@ -430,7 +422,7 @@ def dirty_since(events, transcript_path):
 
 def on_post_tool_use(root, state_file):
     """Record a coder dispatch with the id of the agent it ran."""
-    if jq_field(root, "tool_input", "subagent_type") not in CODERS:
+    if not script_utils.CODERS.match(jq_field(root, "tool_input", "subagent_type")):
         return
     tool_response = jq_get(root, "tool_response")
     agent_id = tool_response.get("agentId") if isinstance(tool_response, dict) else None
@@ -494,21 +486,6 @@ def resolved_command_words(command):
     return [words for words in unwrapped if words]
 
 
-def names_unknown_target(command, command_words):
-    """True when the command changes folder or repo to a place no word of it names: `$` or a backtick outside the
-    spans that run nothing (a quoted-heredoc message, a single-quoted string, a comment), `eval`, `source`, `.`,
-    `popd`, `cd -`, a bare `pushd`, or a git dir or work-tree option or variable. See has_substitution_text for the
-    heredoc text left after the message heredocs are dropped."""
-    if has_substitution_text(command) or UNKNOWN_TARGET.search(command):
-        return True
-    for words in command_words:
-        if words[0] in UNKNOWN_COMMAND_WORDS or (words[0] == "pushd" and len(words) == 1):
-            return True
-        if words[0] in ("cd", "pushd") and words[1:2] == ["-"]:
-            return True
-    return False
-
-
 def readable_command(command):
     """The command text with each double-quoted quoted-heredoc message emptied, then line continuations removed (a
     backslash-newline in a quoted heredoc body is literal)."""
@@ -556,7 +533,7 @@ def credit_repo_dirs(command, cwd):
     in the directories commit_repo_dirs reads."""
     command_words = resolved_command_words(command)
     changes_folder = CHANGES_FOLDER.search(command) or any(words[0] in FOLDER_COMMAND_WORDS for words in command_words)
-    if changes_folder or names_unknown_target(command, command_words):
+    if changes_folder or has_substitution_text(command):
         return [None]
     return commit_repo_dirs(command, cwd)
 
@@ -718,7 +695,7 @@ def main():
     state = {"event": ""}
     rc = None
     try:
-        run(sys.stdin.buffer.read().decode("utf-8", "replace"), state)
+        run(hook_input.read_stdin_text(), state)
     except DenyError as denied:
         hook_input.emit_decision("deny", str(denied))
     except JqError as error:

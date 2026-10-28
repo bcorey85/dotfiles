@@ -63,6 +63,33 @@ FILES_PLACEHOLDER = re.compile(r"\{files(?::([^{}]*))?\}")
 # manage.py test exits 0 when its labels hold no Django tests, as pytest-style tests do: that run gave no test result.
 DJANGO_TEST_COMMAND = re.compile(r"\bmanage\.py\s+test\b")
 DJANGO_RAN_NO_TESTS = re.compile(r"^Ran 0 tests\b", re.MULTILINE)
+# The coder's stored lists that clear prints after its result, each with its label, in print order.
+CLEAR_COMMAND_LISTS = (("failed", "failed"), ("timed_out", "timed out (no test result)"),
+                       ("setup_faults", "setup fault (no test result)"),
+                       ("command_errors", "command error (missing path)"), ("skipped", "skipped"))
+# The stamp section of each kind of command that gave no test result: (stored list of commands, stored detail of each
+# command, heading, closing advice, line format of one command). The heading fills {timeout_seconds}. When a section's
+# stored-list key is None, the detail keyed by command stands for the list: the section names those commands in the
+# detail's order.
+NO_RESULT_STAMP_SECTIONS = (
+    ("timed_out", "timed_out_tails",
+     "\nHAND-BACK GATE TIMEOUT: these commands timed out after {timeout_seconds} s with no test result:",
+     "\nThe gate got no result from these commands; they are not among the failures. The command is too broad for the "
+     "gate, or a test hangs. Read the output tail for a failure printed before the hang.",
+     "\n  `{command}`, output tail:\n{detail}"),
+    ("setup_faults", "setup_fault_tails",
+     "\nHAND-BACK GATE SETUP FAULT: these commands could not run the checks in this environment:",
+     "\nThe gate got no test result from these commands; they are not among the failures. The command misses the "
+     "repo's test runner or virtualenv, or a dependency is not installed, or no package manifest is where it ran, or "
+     "it ran no test, or the package-manager or engine version does not match. Run the repo's own test command for "
+     "these files.",
+     "\n  `{command}`, output tail:\n{detail}"),
+    (None, "command_error_lines",
+     "\nHAND-BACK GATE COMMAND ERROR: these commands name a path that does not exist where they ran:",
+     "\nThe gate got no test result from these commands; they are not among the failures and spent no denial. The gate "
+     "command is wrong, not the code. Run the repo's own test command for these files.",
+     "\n  `{command}`: {detail}"),
+)
 
 
 def gate_path(cwd):
@@ -124,6 +151,11 @@ def set_gate(commands, gate_assignments=()):
     print(f"coder gate set: {len(commands)} command(s)")
 
 
+def joined_commands(coder, key):
+    # The coder's stored list of commands as one comma-separated text, "none" when the list is empty or missing.
+    return ", ".join(coder.get(key, [])) or "none"
+
+
 def clear_gate():
     gate_file = gate_path(".")
     if gate_file is None or not gate_file.exists():
@@ -132,15 +164,8 @@ def clear_gate():
 
     gate = json.loads(gate_file.read_text())
     for coder in gate["coders"].values():
-        failed_commands = ", ".join(coder["failed"]) or "none"
-        timed_out_commands = ", ".join(coder.get("timed_out", [])) or "none"
-        skipped_commands = ", ".join(coder.get("skipped", [])) or "none"
-        setup_fault_commands = ", ".join(coder.get("setup_faults", [])) or "none"
-        command_error_commands = ", ".join(coder.get("command_errors", [])) or "none"
-        print(f"coder gate: {coder['result']} after {coder['runs']} run(s), failed: {failed_commands}, "
-              f"timed out (no test result): {timed_out_commands}, "
-              f"setup fault (no test result): {setup_fault_commands}, "
-              f"command error (missing path): {command_error_commands}, skipped: {skipped_commands}")
+        command_lists = ", ".join(f"{label}: {joined_commands(coder, key)}" for key, label in CLEAR_COMMAND_LISTS)
+        print(f"coder gate: {coder['result']} after {coder['runs']} run(s), {command_lists}")
     if not gate["coders"]:
         print("coder gate: never ran, no coder handed back through it")
 
@@ -253,44 +278,30 @@ def denial(failures):
     failure_text = "\n\n".join(chunks)
     reason = ("The hand-back gate ran the phase's checks and they failed.\n\n" + failure_text
               + "\n\nFix these. Do not run the checks yourself. Then call SubagentHandback again.")
-    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                   "permissionDecisionReason": reason}}
+    return reason
+
+
+def no_result_commands(coder, commands_key, details_key):
+    # (command, detail) for each command of one stamp section, in the order the section names them.
+    details = coder.get(details_key, {})
+    if commands_key is None:
+        return list(details.items())
+    return [(command, details.get(command, "")) for command in coder.get(commands_key, [])]
 
 
 def stamped_handback(tool_input, coder):
     # The coder writes its report before the gate runs, so the report can still say that a re-run is pending.
-    failed_commands = ", ".join(coder["failed"]) or "none"
-    skipped_commands = ", ".join(coder.get("skipped", [])) or "none"
     stamp = (f"{script_utils.HAND_BACK_GATE_MARKER} {coder['result']} after {coder['runs']} run(s), "
-             f"failed: {failed_commands}, "
-             f"skipped (no changed files): {skipped_commands}. "
+             f"failed: {joined_commands(coder, 'failed')}, "
+             f"skipped (no changed files): {joined_commands(coder, 'skipped')}. "
              "The gate ran after this report was written. The report is final.")
-    timed_out_commands = coder.get("timed_out", [])
-    if timed_out_commands:
-        tails = coder.get("timed_out_tails", {})
-        timed_out_lines = "".join(f"\n  `{command}`, output tail:\n{tails.get(command, '')}"
-                                  for command in timed_out_commands)
-        stamp += (f"\nHAND-BACK GATE TIMEOUT: these commands timed out after {COMMAND_TIMEOUT_SECONDS} s with no "
-                  f"test result:{timed_out_lines}\nThe gate got no result from these commands; they are not among "
-                  "the failures. The command is too broad for the gate, or a test hangs. Read the output tail for a "
-                  "failure printed before the hang.")
-    setup_fault_commands = coder.get("setup_faults", [])
-    if setup_fault_commands:
-        tails = coder.get("setup_fault_tails", {})
-        setup_fault_lines = "".join(f"\n  `{command}`, output tail:\n{tails.get(command, '')}"
-                                    for command in setup_fault_commands)
-        stamp += ("\nHAND-BACK GATE SETUP FAULT: these commands could not run the checks in this environment:"
-                  f"{setup_fault_lines}\nThe gate got no test result from these commands; they are not among the "
-                  "failures. The command misses the repo's test runner or virtualenv, or a dependency is not "
-                  "installed, or no package manifest is where it ran, or it ran no test, or the package-manager "
-                  "or engine version does not match. Run the repo's own test command for these files.")
-    command_error_lines = coder.get("command_error_lines", {})
-    if command_error_lines:
-        error_lines = "".join(f"\n  `{command}`: {line}" for command, line in command_error_lines.items())
-        stamp += ("\nHAND-BACK GATE COMMAND ERROR: these commands name a path that does not exist where they ran:"
-                  f"{error_lines}\nThe gate got no test result from these commands; they are not among the "
-                  "failures and spent no denial. The gate command is wrong, not the code. Run the repo's own test "
-                  "command for these files.")
+    for commands_key, details_key, heading, advice, line_format in NO_RESULT_STAMP_SECTIONS:
+        no_result = no_result_commands(coder, commands_key, details_key)
+        if not no_result:
+            continue
+
+        lines = "".join(line_format.format(command=command, detail=detail) for command, detail in no_result)
+        stamp += heading.format(timeout_seconds=COMMAND_TIMEOUT_SECONDS) + lines + advice
     stamped_input = dict(tool_input)
     stamped_input["message"] = str(tool_input.get("message", "")) + stamp
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
@@ -363,7 +374,7 @@ def run_hook():
     log_gate_run(gate, coder, seconds, len(failures), len(timed_out), len(setup_faults))
 
     if coder["result"] == "deny":
-        print(json.dumps(denial(failures)))
+        script_utils.pre_tool_use_deny(denial(failures))
         return
 
     tool_input = event.get("tool_input") or {}
@@ -385,8 +396,7 @@ def run_bash_hook():
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repo_name, "result": "whole-package-deny"}
     append_gate_log(row)
 
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                             "permissionDecisionReason": reason}}))
+    script_utils.pre_tool_use_deny(reason)
 
 
 def main():

@@ -1429,6 +1429,53 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [x] Phase 1:", self.plan_text())
         self.assertIn("- [ ] Phase 2:", self.plan_text())
 
+    LOOP_OK_SECOND_ROUND = "status: converged\niter: 2\nfixed: []\nask: []\nnit: []"
+
+    def test_a_hand_back_whose_stop_the_gate_blocked_leaves_the_phase_open(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.logged_stop_row([], blocked=True)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: wait", out)
+        self.assertIn("its stop was blocked", out)
+        self.assertNotIn("marked done", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+        self.assertEqual("review", self.state()["stage"])
+
+    def test_the_hand_back_after_a_blocked_stop_marks_the_phase_done(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.logged_stop_row([], blocked=True)
+        self.step("after-review")
+        self.hook("review-loop", self.LOOP_OK_SECOND_ROUND, launched=False)
+        self.logged_stop_row([])
+
+        out = self.step("after-review")
+
+        self.assertIn("Phase 1 marked done", out)
+        self.assertEqual(2, self.state()["iter"])
+
+    def test_resume_waits_out_a_stop_the_gate_blocks_after_the_hand_back(self):
+        self.coder_round()
+        self.wait_env(10)
+        self.hook("review-loop", self.LOOP_OK)
+        self.late_stop_row(0.5, [], blocked=True)
+
+        def hand_back_and_stop():
+            self.hook("review-loop", self.LOOP_OK_SECOND_ROUND)
+            self.logged_stop_row([])
+
+        timer = threading.Timer(1.5, hand_back_and_stop)
+        self.addCleanup(timer.cancel)
+        timer.start()
+
+        out = self.step("resume")
+
+        self.assertIn("Phase 1 marked done", out)
+        self.assertEqual(2, self.state()["iter"])
+
     def test_failed_prohibition_blocks_marking(self):
         self.coder_round(source="console.log(1)\n")
         self.hook("review-loop", self.LOOP_OK)
@@ -1628,7 +1675,6 @@ class CodeStepTest(unittest.TestCase):
         self.coder_round()
         self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
         self.wait_env(1, "0.2")
-        self.logged_stop_row([], blocked=True)
 
         result = run(self.repo, self.env, "after-review")
 
@@ -3074,6 +3120,16 @@ class CodeStepTest(unittest.TestCase):
     def test_asks_coder_already_done_line_with_a_closing_period_finishes_the_phase(self):
         self.assert_already_done_line_finishes_the_phase("ALREADY-DONE: 1 — backend/src/orders.ts:2.")
 
+    def test_asks_coder_already_done_line_naming_a_passing_check_finishes_the_phase(self):
+        self.assert_already_done_line_finishes_the_phase(
+            "ALREADY-DONE: 1 — `npm test -- orders` -> exit 0\nRan the tests; they pass, so nothing changed.")
+
+    def test_asks_coder_already_done_line_naming_a_failing_check_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — `npm test -- orders` -> exit 1")
+
+    def test_asks_coder_already_done_line_naming_a_check_with_text_after_its_exit_stops(self):
+        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — `npm test -- orders` -> exit 0 but 2 skipped")
+
     def test_asks_coder_already_done_line_for_another_ask_number_does_not_count(self):
         self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 2 — backend/src/orders.ts:2")
 
@@ -3757,6 +3813,22 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("no review-loop hand-back is stored", out)
         self.assertIsNone(self.gate_mark())
         self.assertNotIn("- [x] Phase 1:", self.plan_text())
+
+    def test_review_again_recovers_a_false_clean_stop_in_place(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        shutil.rmtree(self.tmp / "handback-store")
+
+        stop = self.step("after-review")
+        self.assertIn("invoke Skill code with `review-again`", stop)
+        self.assertNotIn("Tell the user", stop)
+        self.assertEqual("false-clean", self.state()["stopReason"])
+
+        again = self.step("review-again")
+        self.assertIn("AGENT: review-loop", again)
+        self.assertEqual("review", self.state()["stage"])
+        self.hook("review-loop", self.LOOP_OK, agent_id="a2")
+        self.assertIn("ACTION: stop-block-B", self.step("after-review"))
 
     def test_missing_handback_module_stops_the_run_and_writes_no_gate_file(self):
         bare = self.tmp / "bare"

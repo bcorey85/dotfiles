@@ -3,7 +3,7 @@ type: "Change"
 title: "The review commit gate scopes coder work to its repo and stops misreading merges, peer messages and closed loops"
 description: "The review commit gate denies a commit only in a repo a coder edited, credits a converged review-loop hand-back however the run closed, gives merge credit after a leading cd, and keeps a [no-review] order through peer messages, summaries and shell echoes."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T21:58:18-05:00"}
-seq: 128
+seq: 134
 kind: "fix"
 components: ["script/review-commit-gate"]
 evidence: ["census"]
@@ -35,6 +35,12 @@ unmeasured: ""
   credit. The gate does not follow the chain's shape. A target no word names (`$` or a backtick outside a quoted
   heredoc message or single quotes, `eval`, `source`, `.`, `popd`, `cd -`, a bare `pushd`, a git dir or work-tree
   option or variable) is judged against every repo. A disguised `cd` such as `c\d` or `'c'd` counts as `cd`.
+- The gate scopes a commit to its repos only when it reads every word of the command for certain. Any of these
+  judges the commit against every repo, as before this change: a command name that is neither a plain builtin nor
+  a program on PATH (an alias or function), a wrapper that runs other code (`env`, `time`, `command`, `builtin`,
+  `exec`, `eval`, `nohup`, `sudo`, `xargs`, a shell), a `$` or backtick in command position, a function
+  definition, `alias`, `trap`, `CDPATH` set in the command or the hook's environment, or `IFS` named. A commit
+  message written as a quoted heredoc is not read as commands.
 - A `[no-review]` order holds through records that are not the user's prompt: a peer session's message, a
   compaction summary, a `!` shell echo, a task notification and a tool result. A later human prompt still ends it.
 - `git commit-tree` and `git commit-graph` no longer count as a commit.
@@ -60,6 +66,7 @@ unmeasured: ""
   - `test_a_disguised_folder_change_or_repo_switch_is_judged_against_the_coders_repo`
   - `test_a_folder_change_to_a_target_no_word_names_is_judged_against_every_repo`
   - `test_a_bare_cd_is_judged_against_the_home_repo`
+  - `test_a_command_the_gate_cannot_read_for_certain_is_judged_against_every_repo`
 - `tests/scripts/test_handback.py::StoreTest::test_a_dispatch_row_names_the_repo_its_prompt_or_cwd_holds`
 
 ## Result

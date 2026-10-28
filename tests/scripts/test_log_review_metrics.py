@@ -64,8 +64,8 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
         env = {**os.environ, **GIT_ENV}
         return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout
 
-    def run_metrics(self, *args):
-        env = {**os.environ, **GIT_ENV, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": "1",
+    def run_metrics(self, *args, telemetry="1"):
+        env = {**os.environ, **GIT_ENV, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": telemetry,
                **self.ledger_env}
         return subprocess.run([str(self.script), *args], env=env, cwd=self.worktree, capture_output=True, text=True)
 
@@ -99,6 +99,34 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
         row = self.ledger_row("result=PASS WITH WARNINGS")
         self.assertEqual((row["branch_key"], row["result"]), ("some-branch", "PASS_WITH_WARNINGS"))
         self.assertNotIn("branch", row)
+
+    def test_findings_and_not_dispatched_results_are_accepted_and_stored(self):
+        for sent, stored in (("findings", "findings"), ("NOT DISPATCHED", "NOT_DISPATCHED")):
+            with self.subTest(result=sent):
+                pathlib.Path(self.ledger_env["FAKE_LEDGER_ROWS"]).unlink(missing_ok=True)
+
+                row = self.ledger_row(f"result={sent}")
+
+                self.assertEqual(row["result"], stored)
+
+    def test_diff_base_is_accepted_and_never_stored(self):
+        self.assertNotIn("diff_base", self.ledger_row("diff_base=origin/master"))
+
+    def test_an_unquoted_spaced_result_is_refused_and_writes_no_row(self):
+        metrics_run = self.run_metrics("iter=7", "result=PASS", "WITH", "WARNINGS")
+
+        self.assertEqual(metrics_run.returncode, 2)
+        self.assertIn("'WITH' is not key=value", metrics_run.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_metrics"), [])
+
+    def test_a_result_outside_the_verdict_set_or_missing_is_refused(self):
+        for args, telemetry in ((["result=plan impact"], "1"), ([], "1"), (["result=plan impact"], "0")):
+            with self.subTest(args=args, telemetry=telemetry):
+                metrics_run = self.run_metrics("iter=7", *args, telemetry=telemetry)
+
+                self.assertEqual(metrics_run.returncode, 2)
+                self.assertIn("is not one of PASS", metrics_run.stderr)
+                self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_metrics"), [])
 
     def test_leading_tilde_slash_expands_to_home(self):
         home_log_path = self.home / "x"

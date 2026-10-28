@@ -729,6 +729,16 @@ def write_rows(input_path, pending):
     return refused
 
 
+def check_run_rows(writes):
+    """The writer owns the run row's vocabulary; its --check refuses a bad row before anything is written."""
+    for script, pairs in writes:
+        if script != LOG_FINDING or pairs[0] != "kind=run":
+            continue
+        done = subprocess.run(["bash", script, "--check", *pairs], capture_output=True, text=True)
+        if done.returncode != 0:
+            raise RefactorFlowError(f"writer refused the run row, nothing written:\n{done.stderr.strip()}")
+
+
 def check_targets_match(mode, validated_log):
     """A target that matches no tracked file would log diff_loc 0 as if the finder had read nothing."""
     if not validated_log["finder"] or mode not in ("audit", "simplify"):
@@ -763,6 +773,8 @@ def log_verb(opts):
         print("Logging: nothing written, the base and the branch share no history.")
         print(err)
         return 0
+
+    check_run_rows(writes)
 
     input_path = str(Path(opts.input).resolve())
     already_written = written_digests(input_path)

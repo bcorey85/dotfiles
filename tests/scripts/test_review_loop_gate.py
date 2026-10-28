@@ -140,6 +140,27 @@ class ReviewLoopGateTest(unittest.TestCase):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         self.assertEqual(self.stop(records, stop_hook_active=True), "")
 
+    def repo_with_claude_md(self, claude_md):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        subprocess.run(["git", "init", "-q", tmp.name], check=True)
+        pathlib.Path(tmp.name, "CLAUDE.md").write_text(claude_md)
+        return tmp.name
+
+    def test_a_repo_whose_full_suite_runs_in_ci_owes_no_full_check(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        repo = self.repo_with_claude_md("# Repo\n\n- Full suite: CI\n")
+
+        self.assertEqual(self.stop(records, cwd=repo), "")
+
+    def test_a_repo_without_the_exact_full_suite_line_still_owes_a_full_check(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        for claude_md in ("# Repo\n", "Full suite: ci\n", "Full-suite: CI\n", "The full suite: CI\n"):
+            with self.subTest(claude_md=claude_md):
+                repo = self.repo_with_claude_md(claude_md)
+
+                self.assertIn("No full check ran", json.loads(self.stop(records, cwd=repo))["reason"])
+
     def test_a_foreground_report_that_quotes_the_launch_text_is_not_an_open_dispatch(self):
         report = "Reviewed the gate. It counts `Async agent launched` results as open dispatches.\nagentId: arev1"
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
@@ -381,6 +402,14 @@ class FullCheckTest(unittest.TestCase):
     def test_a_flag_at_the_end_of_its_command_takes_no_value_from_the_next_one(self):
         self.assert_scoped("cargo test -p; pytest tests/a.py")
 
+    def test_a_full_check_script_call_counts_unless_its_command_is_scoped(self):
+        call = "python3 ~/.claude/scripts/review/full_check.py /r/app --log /tmp/review-gate-feat.log -- "
+
+        self.assert_full(call + "'npm test'")
+        self.assert_full(call + "make check")
+        self.assert_scoped(call + "'pytest tests/test_a.py'")
+        self.assert_scoped(call + "npx jest src/a.test.ts")
+
 
 def indented(report):
     """A report as the harness hands it over: framed, every line indented two spaces."""
@@ -590,6 +619,60 @@ class RunRowTest(unittest.TestCase):
         self.stop(records)
         self.assertEqual([], self.rows())
         self.assertIn("telemetry_enabled.sh is missing", self.stderr)
+
+    def reviewed_worktree(self):
+        """A git worktree on its own branch, outside the session cwd."""
+        worktree = os.path.join(self.tmp.name, "shop-api-feature")
+        os.makedirs(worktree)
+        git_env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+        for args in (["init", "-q", "-b", "main"], ["checkout", "-q", "-b", "feature-x"]):
+            subprocess.run(["git", *args], cwd=worktree, env=git_env, check=True, capture_output=True)
+        return worktree
+
+    def test_a_review_of_a_worktree_outside_the_cwd_logs_that_worktrees_repo_and_branch(self):
+        worktree = self.reviewed_worktree()
+        review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT)),
+                  bash("npm test > /tmp/review-gate.log 2>&1")]
+        scope_call = [bash(f"~/.claude/skills/review/review-scope caller=review root={worktree}", "t_scope"),
+                      result("t_scope", f"ROOT={worktree}\nMODE=worktree\n")]
+        cases = {"the review-scope ROOT= line": ([user("review loop\nlane: code")], scope_call),
+                 "the prompt's repo: line": ([user(f"review loop\nlane: code\nrepo: {worktree}")], [])}
+        for case, (prompt, scope) in cases.items():
+            with self.subTest(case=case):
+                state_dir = os.path.join(self.tmp.name, "state")
+                shutil.rmtree(state_dir, ignore_errors=True)
+                pathlib.Path(self.env["FAKE_LEDGER_ROWS"]).unlink(missing_ok=True)
+
+                self.assertEqual(self.stop([*prompt, *scope, *review]), "")
+
+                (row,) = self.rows()
+                self.assertEqual((row["_cwd"], row["branch_key"]), (os.path.realpath(worktree), "feature-x"))
+
+    def test_a_prompt_repo_that_does_not_exist_writes_the_row_quietly(self):
+        review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT)),
+                  bash("npm test > /tmp/review-gate.log 2>&1")]
+        missing = os.path.join(self.tmp.name, "no-such-repo")
+
+        self.assertEqual(self.stop([user(f"review loop\nlane: code\nrepo: {missing}"), *review]), "")
+
+        self.assertEqual(1, len(self.rows()))
+
+    def test_the_scope_root_wins_over_a_prompt_repo_on_another_branch(self):
+        worktree = self.reviewed_worktree()
+        other_repo = os.path.join(self.tmp.name, "other-repo")
+        os.makedirs(other_repo)
+        git_env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+        subprocess.run(["git", "init", "-q", "-b", "other-branch"], cwd=other_repo, env=git_env, check=True,
+                       capture_output=True)
+        scope_call = [bash(f"~/.claude/skills/review/review-scope caller=review root={worktree}", "t_scope"),
+                      result("t_scope", f"ROOT={worktree}\nMODE=worktree\n")]
+        review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT)),
+                  bash("npm test > /tmp/review-gate.log 2>&1")]
+
+        self.assertEqual(self.stop([user(f"review loop\nlane: code\nrepo: {other_repo}"), *scope_call, *review]), "")
+
+        (row,) = self.rows()
+        self.assertEqual(row["branch_key"], "feature-x")
 
     def test_a_run_row_goes_through_ledger_write_and_no_findings_file_is_written(self):
         records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])
@@ -909,6 +992,96 @@ class LedgerRowsTest(ReviewLoopGateTest):
 
     def test_every_row_logged_passes(self):
         self.assertEqual(self.stop_with_packet(self.loop(FINDING_ROW, METRICS_ROW, plan="other.md"), "b.py"), "")
+
+    def test_a_metrics_line_logged_before_the_last_reviewer_round_is_blocked(self):
+        records = [user("review loop\nlane: code\nplan: other.md"), bash(METRICS_ROW),
+                   dispatch("t_verify", "code-reviewer"), result("t_verify", "ok"),
+                   bash("npm test > /tmp/review-gate.log 2>&1"), bash(FINDING_ROW)]
+
+        reason = json.loads(self.stop_with_packet(records, "b.py"))["reason"]
+
+        self.assertIn("before the last reviewer round", reason)
+        self.assertIn("fixed=1, skipped_fp=0", reason)
+        self.assertEqual(self.stop_with_packet([*records, bash(METRICS_ROW)], "b.py"), "")
+
+    def test_a_nit_with_no_nit_row_is_blocked_even_when_the_row_total_matches(self):
+        packet = (PACKET % "b.py").replace("nit: []", 'nit: ["b.py:4 rename x - applied"]')
+        doubled = FINDING_ROW.replace("line=3", "line=5")
+        records = self.loop(FINDING_ROW, doubled, METRICS_ROW, plan="other.md")
+
+        reason = json.loads(self.stop(records, last_assistant_message=packet))["reason"]
+
+        self.assertIn("1 nit(s) but only 0 `disposition=nit` row(s)", reason)
+        nit_row = FINDING_ROW.replace("disposition=fix", "disposition=nit")
+        self.assertEqual(self.stop(self.loop(FINDING_ROW, nit_row, METRICS_ROW, plan="other.md"),
+                                   last_assistant_message=packet), "")
+
+    def test_a_metrics_line_whose_counts_differ_from_the_packet_is_blocked(self):
+        undercount = METRICS_ROW.replace("fixed=1", "fixed=0 skipped_fp=0")
+
+        reason = json.loads(self.stop_with_packet(self.loop(FINDING_ROW, undercount, plan="other.md"), "b.py"))
+
+        self.assertIn("fixed=1, skipped_fp=0", reason["reason"])
+
+    def test_a_metrics_count_mismatch_is_blocked_when_the_call_spans_lines_or_is_followed_by_another_command(self):
+        cases = {
+            "fixed on the second line": METRICS_ROW.replace("fixed=1", "\\\n  fixed=0 skipped_fp=0"),
+            "fixed=1 in a command that follows": METRICS_ROW.replace("fixed=1", "fixed=0") + " && echo fixed=1",
+            "skipped_fp alone differs": METRICS_ROW + " skipped_fp=2",
+        }
+        for case, metrics_call in cases.items():
+            with self.subTest(case=case):
+                records = self.loop(FINDING_ROW, metrics_call, plan="other.md")
+
+                reason = json.loads(self.stop_with_packet(records, "b.py"))["reason"]
+
+                self.assertIn("fixed=1, skipped_fp=0", reason)
+
+    def test_a_metrics_call_the_logger_refused_does_not_count_as_logged(self):
+        refusals = {"an error result": {"is_error": True, "text": "exit 2"},
+                    "the refusal text": {"is_error": False, "text": "log-review-metrics: refusing to log: result='x'"}}
+        for case, refusal in refusals.items():
+            with self.subTest(case=case):
+                refused = {"type": "tool_result", "tool_use_id": "t_metrics", "is_error": refusal["is_error"],
+                           "content": [{"type": "text", "text": refusal["text"]}]}
+                records = [*self.loop(FINDING_ROW, plan="other.md"), bash(METRICS_ROW, "t_metrics"),
+                           {"type": "user", "message": {"role": "user", "content": [refused]}}]
+
+                reason = json.loads(self.stop_with_packet(records, "b.py"))["reason"]
+
+                self.assertIn("no metrics line", reason)
+
+    def test_a_refused_metrics_call_chained_after_a_finding_call_does_not_count_as_logged(self):
+        refused = {"type": "tool_result", "tool_use_id": "t_both", "is_error": True,
+                   "content": [{"type": "text", "text": "log-review-metrics: refusing to log: result='bogus'"}]}
+        chained = bash(FINDING_ROW + " && " + METRICS_ROW.replace("result=PASS", "result=bogus"), "t_both")
+        records = [*self.loop(plan="other.md"), chained,
+                   {"type": "user", "message": {"role": "user", "content": [refused]}}]
+
+        reason = json.loads(self.stop_with_packet(records, "b.py"))["reason"]
+
+        self.assertIn("no metrics line", reason)
+
+    def test_a_nit_row_written_in_the_documented_multi_line_form_counts(self):
+        packet = (PACKET % "b.py").replace("nit: []", 'nit: ["b.py:4 rename x - applied"]')
+        multi_line = FINDING_ROW.replace(" disposition=fix", " \\\n  disposition=%s")
+        fix_row, nit_row = multi_line % "fix", multi_line % "nit"
+
+        blocked = self.loop(FINDING_ROW, fix_row, METRICS_ROW, plan="other.md")
+        reason = json.loads(self.stop(blocked, last_assistant_message=packet))["reason"]
+        self.assertIn("1 nit(s) but only 0 `disposition=nit` row(s)", reason)
+
+        logged = [user("review loop\nlane: code\nplan: other.md"), bash("npm test > /tmp/review-gate.log 2>&1"),
+                  bash(FINDING_ROW, "t_fix"), bash(nit_row, "t_nit"), bash(METRICS_ROW, "t_metrics")]
+        self.assertEqual(self.stop(logged, last_assistant_message=packet), "")
+
+    def test_a_nit_row_whose_disposition_is_a_shell_variable_leaves_the_nit_count_unclaimed(self):
+        packet = (PACKET % "b.py").replace("nit: []", 'nit: ["b.py:4 rename x - applied"]')
+        variable_row = FINDING_ROW.replace("disposition=fix", "disposition=$D")
+        records = [user("review loop\nlane: code\nplan: other.md"), bash("npm test > /tmp/review-gate.log 2>&1"),
+                   bash(FINDING_ROW, "t_fix"), bash(variable_row, "t_variable"), bash(METRICS_ROW, "t_metrics")]
+
+        self.assertEqual(self.stop(records, last_assistant_message=packet), "")
 
     def test_a_second_stop_in_a_row_passes(self):
         records = self.loop(plan="other.md")

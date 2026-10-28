@@ -59,6 +59,21 @@ kv_fold() {
   done
 }
 
+# kv_refuse_bare_words [arg ...]: exits the calling script 1 on any arg with no `=`, where
+# kv_fold only warns and skips it. An unquoted `result=NEEDS CHANGES` sends `CHANGES` bare.
+kv_refuse_bare_words() {
+  local kv
+  for kv in "$@"; do
+    case "$kv" in
+      *=*) ;;
+      *)
+        echo "refusing to log: '$kv' is not key=value. Quote a value that holds spaces." >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
 # kv_is_free <free_text_keys> <key>: true when the key may hold spaces.
 kv_is_free() {
   [ "$1" = "*" ] && return 0

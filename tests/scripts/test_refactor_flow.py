@@ -745,6 +745,21 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(finding_rows[0]["result"], "PASS")
         self.assertEqual(self.escape_rows(), [])
 
+    def test_log_result_outside_the_verdicts_writes_nothing(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        payload = {"finder": "smell-reviewer", "lane": "code", "findings": [], "result": "NEEDS"}
+        done = self.log("branch", payload)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("is not PASS, PASS_WITH_WARNINGS, NEEDS_CHANGES or NOT_DISPATCHED", done.stderr)
+        self.assertEqual(self.finding_rows(), [])
+
+    def test_log_underscore_result_is_accepted_by_the_writer(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        payload = {"finder": "smell-reviewer", "lane": "code", "findings": [], "result": "NEEDS_CHANGES"}
+        done = self.log("branch", payload)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(len(self.finding_rows()), 1)
+
     def test_log_missing_guard_writes_nothing(self):
         self.branch_with({"a.py": "x = 1\n"})
         payload = {"finder": "smell-reviewer", "lane": "code", "findings": [self.finding()], "guards": {}}
@@ -910,7 +925,7 @@ class RefactorFlowTest(unittest.TestCase):
     def test_log_writer_failure_after_earlier_rows_still_hands_off_and_keeps_the_earlier_rows(self):
         self.branch_with({"a.py": "x = 1\n"})
         failing = self.temp_root / "failing-writer"
-        failing.write_text("#!/usr/bin/env bash\nexit 7\n")
+        failing.write_text('#!/usr/bin/env bash\n[ "$1" = --check ] && exit 0\nexit 7\n')
         payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"},
                    "findings": [self.finding()], "handoff": self.handoff_input()}
         done = self.log("branch", payload, extra_env={"REFACTOR_LOG_FINDING": str(failing)})
@@ -927,7 +942,7 @@ class RefactorFlowTest(unittest.TestCase):
         self.write("src/a.py", "a\n")
         self.git("add", "-A")
         failing = self.temp_root / "failing-writer"
-        failing.write_text("#!/usr/bin/env bash\nexit 7\n")
+        failing.write_text('#!/usr/bin/env bash\n[ "$1" = --check ] && exit 0\nexit 7\n')
         payload = {"finder": "smell-reviewer", "lane": "code", "target": ["src"], "findings": []}
         done = self.log("audit", payload, extra_env={"REFACTOR_LOG_FINDING": str(failing)})
         self.assertEqual(done.returncode, 2)

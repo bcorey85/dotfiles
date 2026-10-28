@@ -214,7 +214,15 @@ class CodeStepTest(unittest.TestCase):
             return None
         return json.loads(finished.stdout)["hookSpecificOutput"]
 
-    def hook(self, agent_type, message, agent_id="a1", session=SESSION, launched=True, cwd=None):
+    def next_default_agent_id(self, agent_type):
+        # A review-loop agent hands back once; each later default hand-back in a test is a new agent. Coders keep a1.
+        if agent_type != "review-loop":
+            return "a1"
+        self.default_loop_hand_backs = getattr(self, "default_loop_hand_backs", 0) + 1
+        return f"a{self.default_loop_hand_backs}"
+
+    def hook(self, agent_type, message, agent_id=None, session=SESSION, launched=True, cwd=None):
+        agent_id = agent_id or self.next_default_agent_id(agent_type)
         # The fork hands back. The PreToolUse hooks of settings.json see the call: the coder gate may deny it or stamp
         # its message, the hand-back packet hook may deny it, and so may the code-step hook. A hand-back that goes
         # through is logged by the PostToolUse log hook with the message as stamped; a denied one never reaches it.
@@ -1429,8 +1437,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [x] Phase 1:", self.plan_text())
         self.assertIn("- [ ] Phase 2:", self.plan_text())
 
-    LOOP_OK_SECOND_ROUND = "status: converged\niter: 2\nfixed: []\nask: []\nnit: []"
-
     def test_a_hand_back_whose_stop_the_gate_blocked_leaves_the_phase_open(self):
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
@@ -1444,18 +1450,18 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         self.assertEqual("review", self.state()["stage"])
 
-    def test_the_hand_back_after_a_blocked_stop_marks_the_phase_done(self):
+    def test_the_stop_after_a_blocked_stop_marks_the_phase_done_with_the_one_delivered_hand_back(self):
+        # The hand-back hook denies a loop's second hand-back, so the first packet stands once a later stop passes.
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
         self.logged_stop_row([], blocked=True)
         self.step("after-review")
-        self.hook("review-loop", self.LOOP_OK_SECOND_ROUND, launched=False)
         self.logged_stop_row([])
 
         out = self.step("after-review")
 
         self.assertIn("Phase 1 marked done", out)
-        self.assertEqual(2, self.state()["iter"])
+        self.assertEqual(1, self.state()["iter"])
 
     def test_resume_waits_out_a_stop_the_gate_blocks_after_the_hand_back(self):
         self.coder_round()
@@ -1463,18 +1469,14 @@ class CodeStepTest(unittest.TestCase):
         self.hook("review-loop", self.LOOP_OK)
         self.late_stop_row(0.5, [], blocked=True)
 
-        def hand_back_and_stop():
-            self.hook("review-loop", self.LOOP_OK_SECOND_ROUND)
-            self.logged_stop_row([])
-
-        timer = threading.Timer(1.5, hand_back_and_stop)
+        timer = threading.Timer(1.5, self.logged_stop_row, args=([],))
         self.addCleanup(timer.cancel)
         timer.start()
 
         out = self.step("resume")
 
         self.assertIn("Phase 1 marked done", out)
-        self.assertEqual(2, self.state()["iter"])
+        self.assertEqual(1, self.state()["iter"])
 
     def test_failed_prohibition_blocks_marking(self):
         self.coder_round(source="console.log(1)\n")

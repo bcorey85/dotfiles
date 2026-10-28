@@ -41,16 +41,17 @@ VERIFY_TIMEOUT_SECONDS = 600
 # A filtered test run that exits 0 but reports no passed test did not run the phase's test: it fails the box.
 NO_TEST_MATCHED_EXIT_CODE = 1
 NO_TEST_MATCHED_NOTE = "\nthe test filter matched no test: the run exits 0 but reports no passed test\n"
-# An rg or grep line is a ban (exit 1, no match, holds it) unless its text, outside the command, says it checks
-# presence (exit 0 passes). Ban wording on the same line wins. A git grep line is always a ban.
-SEARCH_COMMAND = re.compile(r"^(?:rg|grep|egrep)\s")
+# An rg, grep or git grep line is a ban (exit 1, no match, holds it) unless its text, outside the command, says it
+# checks presence (exit 0 passes). Ban wording on the same line wins. A search wrapped in another command, such as
+# `test -n "$(git grep ...)"`, is judged by its own exit code.
+SEARCH_COMMAND = re.compile(r"^(?:rg|grep|egrep|git grep)\s")
 BAN_WORDING = re.compile(r"\bprohibition\b|\bno\s+(?:match(?:es)?|output|hits?)\b|\bprints?\s+nothing\b"
                          r"|\bexit(?:s|ing)?\s+(?:code\s+)?1\b|\babsent\b|\bmust\s+not\b|\bnone\b|\bnothing\b"
                          r"|\bgone\b|\bremoved\b|\bzero\b|\bno\s+longer\b",
                          re.IGNORECASE)
 PRESENCE_WORDING = re.compile(r"\bpresence\b|\bpresent\b|\bexists?\b|\bcontains?\b|\bdefines?\b|\bdefined\b"
                               r"|\bfinds?\b|\bfound\b|\ba\s+hit\b|\bmatches\b", re.IGNORECASE)
-SEARCH_BAN_NOTE = ("\nan rg or grep line is a ban unless its text says it checks presence "
+SEARCH_BAN_NOTE = ("\nan rg, grep or git grep line is a ban unless its text says it checks presence "
                    "(present, exists, contains, finds)\n")
 # A ban written `! rg ...` is the same ban as `rg ...`: no match holds it.
 # A leading `cd <dir> &&` does not change what the command searches: it stays in the command and is ignored here.
@@ -320,9 +321,6 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
 
 
 def is_search_ban(command, line):
-    if "git grep" in command:
-        return True
-
     if not SEARCH_COMMAND.match(without_leading_cd_and_env(command)):
         return False
 
@@ -374,7 +372,7 @@ def run_verification_commands(repo_dir, phase_section):
         code, output = run_command(command, repo_dir, timeout=timeout)
         if is_search_ban(command, line):
             result = check_prohibition(repo_dir, command, code, output)
-            if result[1] != 0 and "git grep" not in command and not PRESENCE_WORDING.search(line.replace(command, "")):
+            if result[1] != 0 and not PRESENCE_WORDING.search(line.replace(command, "")):
                 result = (result[0], result[1], result[2] + SEARCH_BAN_NOTE)
             results.append(result)
             continue

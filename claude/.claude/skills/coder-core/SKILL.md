@@ -81,3 +81,5 @@ PLAN-IMPACT:
 End with `REVIEW: recommended — <changed files>`, or `REVIEW: skip (trivial)` for a typo, single-line, rename, or comment-only edit.
 
 If your report has a `PLAN-IMPACT:` block, end with `PLAN-IMPACT: yes`.
+
+To escalate an architectural task, end with the line `RECOMMEND: eng-spec`. Never write that line otherwise.

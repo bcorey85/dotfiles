@@ -233,6 +233,42 @@ class ReviewScriptTest(base.CodeStepTest):
         self.assertNotIn("SendMessage", out)
         self.step("abort")
 
+    def test_a_running_script_with_progress_past_the_cap_keeps_the_wait_going(self):
+        self.env["FAKE_LOOP_MODE"] = "hang"
+        self.coder_round()
+        self.wait_for_file("started")
+        self.age_dispatches(100)
+        self.set_state(dispatchAt=time.time() - 100)
+        self.wait_env(1, "0.2", waits=3)
+        script_dir = pathlib.Path(self.state()["reviewScriptLog"]).parent
+        (script_dir / "calls.jsonl").write_text("{}\n")
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: wait", out)
+        self.assertNotIn("died", out)
+        self.assertEqual("review", self.state()["stage"])
+        self.step("abort")
+
+    def test_the_wait_cap_stop_of_a_running_script_with_no_progress_does_not_say_it_died(self):
+        self.env["FAKE_LOOP_MODE"] = "hang"
+        self.coder_round()
+        self.wait_for_file("started")
+        self.age_dispatches(100)
+        self.set_state(dispatchAt=time.time() - 100)
+        self.wait_env(1, "0.2", waits=3)
+        script_dir = pathlib.Path(self.state()["reviewScriptLog"]).parent
+        full_check_log = script_dir / "full-check.log"
+        full_check_log.write_text("running\n")
+        os.utime(full_check_log, (time.time() - 100, time.time() - 100))
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("still running", out)
+        self.assertNotIn("died", out)
+        self.step("abort")
+
     def test_a_script_dispatch_carries_the_plans_own_gate_variables(self):
         self.set_verification("- [ ] **Env**: passes - `GATE_X=1 npx vitest run`")
 

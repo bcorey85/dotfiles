@@ -218,7 +218,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
 
-    def test_a_round_two_prompt_over_one_argument_limit_reaches_the_reviewer_whole(self):
+    def test_a_round_two_fix_over_one_argument_limit_converges(self):
         long_fix = "".join(f"limit_{line} = {line}\n" for line in range(12000))
 
         completed = self.run_script({
@@ -230,9 +230,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
         self.assertEqual((packet["status"], packet["iter"]), ("converged", 2))
-        round_two_prompt = [call["prompt"] for call in self.fake_calls() if call["key"] == "code-reviewer"][1]
-        self.assertGreater(len(round_two_prompt.encode()), 131072)
-        self.assertIn("limit_11999 = 11999", round_two_prompt)
 
     def test_untracked_binary_file_does_not_stop_a_clean_review(self):
         (self.repo / "logo.png").write_bytes(b"\x89PNG\xff\xfe\x00")
@@ -299,6 +296,30 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("review2-code-reviewer call failed", packet["blockers"][0])
         self.assertFalse(row["no_reviewer"])
 
+    def test_the_second_reviewer_reads_the_fix_diff_from_a_file_not_from_its_prompt(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        second_prompt = [call["prompt"] for call in self.fake_calls() if call["key"] == "code-reviewer"][1]
+        self.assertNotIn("+limit = 20", second_prompt)
+        diff_path = re.search(r"^Round-one fix diff.*: (\S+)$", second_prompt, re.M).group(1)
+        self.assertIn("+limit = 20", pathlib.Path(diff_path).read_text())
+
+    def test_a_too_long_reviewer_prompt_is_a_tool_fault_not_a_finding(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": "Prompt is too long", "exit": 1}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+        })
+
+        self.assertNotEqual(completed.returncode, 0)
+        _, packet = self.stored_packet()
+        self.assertIn("Prompt is too long", packet["tool_fault"])
+        self.assertIn("review2-code-reviewer call failed", packet["tool_fault"])
+
     def test_coder_that_dies_after_editing_reports_its_files_and_its_reply(self):
         limit_hit = "You've hit your usage limit"
 
@@ -325,16 +346,18 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertEqual(self.fake_calls()[0]["key"], "check-finder")
 
-    def test_no_check_found_stops_before_any_reviewer_call(self):
+    def test_a_repo_with_no_check_found_is_reviewed_and_its_packet_says_no_full_check_ran(self):
         no_check = '{"command": null, "reason": "no CI config or task runner"}'
 
-        completed = self.run_script({"check-finder": [{"result": no_check}]}, claude_md="No check named here.\n")
+        completed = self.run_script({"check-finder": [{"result": no_check}],
+                                     "code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="No check named here.\n")
 
-        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], "critical-blocker")
-        self.assertIn("no CI config or task runner", packet["blockers"][0])
-        self.assertEqual([call["key"] for call in self.fake_calls()], ["check-finder"])
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check"], "not run (no check found; the coder's scoped tests stand)")
+        self.assertIn("code-reviewer", [call["key"] for call in self.fake_calls()])
 
     def test_plan_change_ask_maps_to_plan_impact(self):
         ask_review = (f"## Fix\nNone\n\n## Ask\n- {PLAN_CHANGE_STATUS}: the fix needs a new column the plan "
@@ -424,6 +447,19 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "setup-fault")
         coder_calls = [call for call in self.fake_calls() if call["key"] == "coder"]
         self.assertEqual(len(coder_calls), 1)
+
+    def test_a_full_check_missing_a_declared_module_converges_with_the_environment_gap(self):
+        self.commit_files({"requirements.txt": "ruff==0.6.9\n"})
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+        }, quality_check="echo \"No module named 'ruff'\"; exit 1")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check"], "not run (environment gap: No module named 'ruff')")
+        self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
 
     def test_ask_finding_id_reaches_packet_and_stop_row(self):
         ask_review = "## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n\n## Nit\nNone\n"

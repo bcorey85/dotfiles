@@ -3,7 +3,7 @@ type: "Change"
 title: "The review commit gate stops misreading merges, peer messages and closed loops"
 description: "The review commit gate credits a converged review-loop hand-back however the run closed, keeps a [no-review] order through peer messages, summaries and shell echoes, and stops counting commit-tree; it still denies a commit in any repo while coder work is unreviewed."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T21:58:18-05:00"}
-seq: 134
+seq: 150
 kind: "fix"
 components: ["script/review-commit-gate"]
 evidence: ["census"]

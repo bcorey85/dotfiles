@@ -302,6 +302,28 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("start --task", out)
         self.assertEqual(before, self.state_bytes())
 
+    def test_resume_with_text_that_names_a_task_file_and_no_open_run_starts_a_run_with_it(self):
+        task_file = self.tmp / "scratchpad" / "brief.md"
+        task_file.parent.mkdir()
+        task_file.write_text("Add retries to the orders client.\n")
+        task_text = f"Task file: {task_file}. Repo: {self.repo}"
+
+        out = self.step("resume", task_text)
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn(f"Implement: {task_text}", out)
+        self.assertIsNone(self.state().get("plan"))
+
+    def test_resume_with_a_task_file_path_and_no_open_run_prints_the_task_file_start(self):
+        task_file = self.tmp / "scratchpad" / "brief.md"
+        task_file.parent.mkdir()
+        task_file.write_text("Add retries to the orders client.\n")
+
+        out = self.step("resume", str(task_file))
+
+        self.assert_refused_with_rerun(out, f"start --task-file {task_file}")
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
+
     # ---------- a new session takes the run over ----------
 
     NEW_SESSION = "sess-2"

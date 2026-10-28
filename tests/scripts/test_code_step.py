@@ -1961,19 +1961,11 @@ class CodeStepTest(unittest.TestCase):
 
     def test_coder_recommending_eng_spec_stops_instead_of_reviewing(self):
         self.begin_coder()
-        self.hook("coder", "This is architectural.\nRECOMMEND: /eng-spec")
+        self.hook("coder", "This is architectural.\nRECOMMEND: eng-spec")
         out = self.step("after-coder")
         self.assertIn("ACTION: stop", out)
-        self.assertIn("The coder recommended /eng-spec.", out)
         self.assertNotIn("AGENT: review-loop", out)
-
-    def test_coder_that_denies_an_eng_spec_recommendation_still_goes_to_review(self):
-        self.start_phase_one()
-        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
-        self.hook("coder", "BEHAVIOR: done\nI did not recommend /eng-spec: the task stayed small.")
-        out = self.step("after-coder")
-        self.assertIn("AGENT: review-loop", out)
-        self.assertNotIn("ACTION: stop", out)
+        self.assertIn("The coder recommended /eng-spec.", out)
 
     def test_coder_with_no_change_stop_names_the_missing_change_as_its_cause(self):
         self.start_phase_one()
@@ -1981,6 +1973,12 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-coder")
         self.assertIn("The coder produced no reviewable change.", out)
         self.assertNotIn("recommended /eng-spec", out)
+
+    def test_a_coder_report_that_only_mentions_eng_spec_goes_on_to_review(self):
+        out = self.coder_round("The task is not architectural, so no /eng-spec is needed.\n" + self.CODER_REPORT)
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
 
     def test_deleted_file_counts_as_changed(self):
         self.start_phase_one()
@@ -2302,6 +2300,32 @@ class CodeStepTest(unittest.TestCase):
         again = self.step("review-again")
         self.assertIn("AGENT: review-loop", again)
         self.assertIn(self.SKIP_LINE, again)
+
+    TOOL_FAULT_PACKET = ("status: critical-blocker\niter: 2\nblockers:\n  - the review2-code-reviewer call failed "
+                         "(exit 1) saying \"Prompt is too long\"\ntool_fault: the review2-code-reviewer call failed "
+                         "(exit 1) saying \"Prompt is too long\"")
+
+    def test_a_crashed_review_call_stops_as_a_tool_fault_not_as_a_blocker(self):
+        self.coder_round()
+        self.hook("review-loop", self.TOOL_FAULT_PACKET)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("critical blocker", out)
+        self.assertIn("Prompt is too long", out)
+        self.assertIn("invoke Skill code with `review-again`", out)
+        self.assertEqual("tool-fault", self.state()["stopReason"])
+
+    def test_review_again_after_a_crashed_review_call_dispatches_the_review_loop(self):
+        self.coder_round()
+        self.hook("review-loop", self.TOOL_FAULT_PACKET)
+        self.step("after-review")
+
+        out = self.step("review-again")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual("review", self.state()["stage"])
 
     def test_review_again_with_no_unreadable_packet_pending_stops(self):
         self.start_phase_one()
@@ -2897,6 +2921,46 @@ class CodeStepTest(unittest.TestCase):
         self.finish_phase_one()
         self.assertIn("- [x] Phase 1:", self.plan_text())
 
+    GIT_GREP_PRESENCE = ("- [ ] **Presence**: the export exists - "
+                         "`git grep -n --untracked 'export const o' -- backend/src/orders.ts`")
+
+    def test_a_git_grep_presence_check_passes_plan_check_and_verify_on_a_hit(self):
+        self.set_verification(self.GIT_GREP_PRESENCE)
+        plan_check = subprocess.run([sys.executable, str(SCRIPT), "plan", "check", self.plan],
+                                    cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(plan_check.returncode, 0, plan_check.stdout + plan_check.stderr)
+
+        outcome = self.finish_phase_one()
+        self.assertNotIn("Automated Verification failed", outcome)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
+    def test_a_git_grep_presence_check_fails_on_no_hit(self):
+        self.set_verification(self.GIT_GREP_PRESENCE.replace("export const o", "export const missing"))
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.assertIn("Automated Verification failed", self.step("after-review"))
+
+    def test_a_git_grep_line_with_no_wording_is_a_ban_and_fails_on_a_hit(self):
+        self.set_verification("- [ ] **Rename**: the old name is gone - "
+                              "`git grep -n --untracked 'export const o' -- backend/src/orders.ts`")
+        outcome = self.finish_phase_one()
+        self.assertIn("Automated Verification failed", outcome)
+        self.assertIn("unless its text says it checks presence", outcome)
+
+    def test_a_git_grep_line_with_presence_and_ban_wording_is_a_ban(self):
+        line = "- [ ] **Prohibition**: no match, the call must not exist - `git grep -n x -- src`"
+        self.assertTrue(code_step_boundary.is_search_ban("git grep -n x -- src", line))
+
+    def test_a_test_n_wrapped_git_grep_is_not_a_ban(self):
+        command = 'test -n "$(git grep -n --untracked \'export const o\' -- backend/src/orders.ts)"'
+        line = f"- [ ] **Check**: the export is there - `{command}`"
+        self.assertFalse(code_step_boundary.is_search_ban(command, line))
+
+        self.set_verification(line)
+        outcome = self.finish_phase_one()
+        self.assertNotIn("Automated Verification failed", outcome)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
 
     # ---------- defects from the second code review ----------
 
@@ -3080,7 +3144,7 @@ class CodeStepTest(unittest.TestCase):
         self.assert_unchanged_asks_coder_stops("Open question: which name should the rename use?")
 
     def test_asks_coder_that_changed_nothing_and_recommends_eng_spec_stops(self):
-        self.assert_unchanged_asks_coder_stops("This is architectural.\nRECOMMEND: /eng-spec")
+        self.assert_unchanged_asks_coder_stops("This is architectural; run /eng-spec.")
 
     def test_asks_coder_that_changed_nothing_and_could_not_apply_the_ask_stops(self):
         self.assert_unchanged_asks_coder_stops("Could not apply the rename; left as is.")
@@ -3161,7 +3225,7 @@ class CodeStepTest(unittest.TestCase):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nOpen question: which name should it use?")
 
     def test_asks_coder_already_done_line_with_an_eng_spec_recommendation_stops(self):
-        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: /eng-spec")
+        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: eng-spec")
 
     def test_asks_coder_already_done_line_with_a_plan_impact_report_stops(self):
         self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\n" + self.IMPACT_REPORT)
@@ -5866,6 +5930,15 @@ class CodeForkToolsTest(unittest.TestCase):
 
         disallowed_tools = {tool.strip() for tool in disallowed.split(",")}
         self.assertLessEqual({"Edit", "Write", "NotebookEdit"}, disallowed_tools)
+
+    def test_the_code_fork_can_reply_at_once_to_a_mid_run_scope_message(self):
+        skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"
+        agent = REAL_CLAUDE / "agents" / f"{code_step_core.FORK_AGENT_TYPE}.md"
+        disallowed = frontmatter_value(agent, "disallowedTools") or ""
+
+        disallowed_tools = {tool.strip() for tool in disallowed.split(",")}
+        self.assertNotIn("SendMessage", disallowed_tools)
+        self.assertIn("takes no scope change mid-run", skill.read_text())
 
 
 if __name__ == "__main__":

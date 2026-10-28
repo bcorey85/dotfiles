@@ -44,6 +44,8 @@ REVIEW_LOOP = "review-loop"
 REVIEW_LOOP_SCRIPT = SCRIPTS_DIR / "review" / "review_loop_script.py"
 REVIEW_SCRIPT_AGENT_PREFIX = "loop-script-"
 FINISHED_REVIEW_SCRIPT_KEYS = ("reviewScriptPid", "resumableReview", "resumeWaitAt")
+# The files beside the review loop script's log that it writes as it works: a write to one restarts the wait cap.
+REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", "full-check.log")
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
@@ -670,6 +672,29 @@ def review_script_running(state):
     return True
 
 
+def review_script_progress_at(state):
+    # The newest write to a running review loop script's progress files, or None.
+    log_path = state.get("reviewScriptLog")
+    if not log_path or not review_script_running(state):
+        return None
+
+    script_dir = pathlib.Path(log_path).parent
+    write_times = []
+    for progress_name in REVIEW_SCRIPT_PROGRESS_FILES:
+        with contextlib.suppress(OSError):
+            write_times.append((script_dir / progress_name).stat().st_mtime)
+    return max(write_times, default=None)
+
+
+def cap_clock_start(repo_dir, state, since, wait_started):
+    # A running review loop script's cap counts from its last progress when that is later than the wait clock.
+    clock_start = wait_clock_start(repo_dir, state, since, wait_started)
+    progress_at = review_script_progress_at(state)
+    if progress_at is None:
+        return clock_start
+    return max(clock_start, progress_at)
+
+
 def stop_review_script(state):
     # Kills the running review loop script and every claude call it started. The caller saves the state.
     pid = state.pop("reviewScriptPid", None)
@@ -711,7 +736,7 @@ def wait_for_handback(repo_dir, state, verb):
     agent_type = expected_agent(state)
     total_cap = limit * float(os.environ.get("CODE_STEP_WAIT_MULTIPLE", HANDBACK_TOTAL_WAIT_MULTIPLE))
     wait_started = time.time()
-    clock_start = wait_clock_start(repo_dir, state, since, wait_started)
+    clock_start = cap_clock_start(repo_dir, state, since, wait_started)
     # The wait ends at the cap, not at the end of the wait that passes it.
     until_cap = max(0.0, clock_start + total_cap - wait_started)
 
@@ -731,7 +756,9 @@ def wait_for_handback(repo_dir, state, verb):
     if awaited_handback(repo_dir, state):
         return True
 
-    if until_cap <= limit:
+    # Progress during this wait moves the cap past it.
+    progressed_at = cap_clock_start(repo_dir, state, since, wait_started)
+    if until_cap <= limit and progressed_at <= clock_start:
         stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap)
         return False
 
@@ -808,7 +835,13 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     state.pop("resumeWaitAt", None)
     save_state(repo_dir, state)
     silent_text = (f"The {agent_type} has not handed back in {stopped_at - clock_start:.0f} seconds, counted from "
-                   f"{dispatch_time_text(clock_start)} (the cap is {total_cap:g}). It may have died or been stopped.")
+                   f"{dispatch_time_text(clock_start)} (the cap is {total_cap:g}).")
+    if review_script_running(state):
+        progress_names = " or ".join(REVIEW_SCRIPT_PROGRESS_FILES)
+        silent_text += (f" Its script (pid {state['reviewScriptPid']}) is still running and has written no "
+                        f"{progress_names} in that time.")
+    else:
+        silent_text += " It may have died or been stopped."
     stop_with_question(repo_dir, silent_text, [], resume_text.strip(),
                        silent_text + " Do not dispatch it again and do not wait longer. Tell the user." + resume_text)
 

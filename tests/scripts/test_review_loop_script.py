@@ -192,6 +192,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["files_touched"], ["app.py"])
         self.assertIn("one exit, all re-read", packet["class_closure"])
         self.assertEqual((row["agent_id"], row["status"], row["no_reviewer"]), (AGENT_ID, "converged", False))
+        self.assertFalse(row["unreviewed_fix"])
 
         handback_events = [event for event in self.run_events() if event["event"] == "handback"]
         self.assertEqual(len(handback_events), 1)
@@ -350,6 +351,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn("still failing after one repair", packet["blockers"][0])
+        self.assertFalse(self.stored_packet()[0]["unreviewed_fix"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
 
     def test_ask_finding_id_reaches_packet_and_stop_row(self):
@@ -767,6 +769,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual((packet["status"], packet["iter"]), ("converged", 3))
         self.assertIn(open_member, [entry["finding"] for entry in packet["fixed"]])
+        self.assertTrue(self.stored_packet()[0]["unreviewed_fix"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
         metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
         self.assertEqual(metrics[0]["fixed"], "2")
@@ -866,6 +869,34 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertNotIn("check-finder", [call["key"] for call in self.fake_calls()])
 
+    def test_a_repo_whose_full_suite_runs_in_ci_converges_without_running_its_check(self):
+        for claude_md in ("Quality check: `false`\nFull suite: CI\n", "- Full suite: CI\n"):
+            with self.subTest(claude_md=claude_md):
+                (self.fake_dir / "calls.jsonl").unlink(missing_ok=True)
+                (self.fake_dir / "counters.json").unlink(missing_ok=True)
+                (self.scratch / "handback").mkdir(exist_ok=True)
+                for stored in (self.scratch / "handback").iterdir():
+                    stored.unlink()
+
+                completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, claude_md=claude_md)
+
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                _, packet = self.stored_packet()
+                self.assertEqual((packet["status"], packet["full_check"]), ("converged", "not run (CI)"))
+                self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
+
+    def test_a_full_check_past_its_limit_is_not_run_and_no_failure(self):
+        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+        loop_script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loop_script)
+
+        with mock.patch.object(loop_script, "CHECK_TIMEOUT_SECONDS", 1):
+            result, _tail = loop_script.run_full_check(self.repo, self.scratch, "sleep 30")
+
+        self.assertEqual(result, "not run (timeout)")
+        self.assertFalse(loop_script.full_check.is_failure(result))
+        self.assertEqual(loop_script.LIVE_CHILDREN, set())
+
     def test_sigterm_kills_the_process_group_of_a_running_claude_call(self):
         self.env["FAKE_CLAUDE_HANG"] = "1"
         (self.fake_dir / "scenario.json").write_text(json.dumps({"code-reviewer": [{"result": CLEAN_REVIEW}]}))
@@ -919,6 +950,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertEqual(packet["findings_remaining"], [])
         self.assertFalse(row["no_reviewer"])
+        self.assertTrue(row["unreviewed_fix"])
 
     @unittest.skipIf(os.geteuid() == 0, "root reads a mode 000 file")
     def test_crash_writes_a_critical_blocker_packet_and_the_rows(self):

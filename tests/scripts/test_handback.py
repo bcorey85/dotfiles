@@ -327,6 +327,15 @@ class RenderTest(HandbackTestBase):
         packet = handback.load(CONVERGED.replace("class_closure: enumerated every query\n", ""))
         self.assertIn("receipt is missing", handback.render(packet, "review"))
 
+    def test_a_full_check_that_did_not_run_says_so_and_a_passed_one_prints_nothing(self):
+        for full_check in ("not run (CI)", "not run (timeout)"):
+            with self.subTest(full_check=full_check):
+                packet = handback.load(CONVERGED + f"full_check: {full_check}\n")
+
+                self.assertIn(f"Full check: {full_check}", handback.render(packet, "review"))
+        passed = handback.load(CONVERGED + "full_check: passed\n")
+        self.assertNotIn("Full check", handback.render(passed, "review"))
+
     def test_sections_print_before_the_trailer(self):
         packet = handback.load(NUMBERED)
         rendered = handback.render(packet, "fix", [("Aikido replies", ["- a.ts:1: Fixed"])])
@@ -603,16 +612,19 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertEqual(self.hand_back(), (0, ""))
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
-    def test_coder_dispatched_after_the_last_reviewer_is_denied(self):
+    def test_coder_dispatched_after_the_last_reviewer_passes_flagged_as_an_unreviewed_fix(self):
         self.dispatch("review-loop")
         self.dispatch("code-reviewer", "a1")
         self.dispatch("backend-coder-deep", "a1")
-        self.assert_denied(self.hand_back())
+        self.assertEqual(self.hand_back(), (0, ""))
+        self.assertTrue(handback.latest(SESSION)["handback"]["unreviewed_fix"])
+        self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_no_review_mode_dispatch_passes_with_no_reviewer(self):
         self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
         self.dispatch("coder", "a1")
         self.assertEqual(self.hand_back(), (0, ""))
+        self.assertFalse(handback.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_a_normal_loop_is_denied_after_a_later_no_review_loop_claimed_the_exemption(self):
@@ -644,36 +656,44 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.dispatch("code-reviewer", "a2")
         self.assert_denied(self.hand_back())
 
-    def test_cap_exit_coder_after_the_second_review_passes_when_converged(self):
+    def two_rounds_ending_on_the_cap_exit_coder(self):
         self.dispatch("review-loop")
         self.dispatch("code-reviewer", "a1")
         self.dispatch("coder", "a1")
         self.dispatch("code-reviewer", "a1")
         self.dispatch("coder", "a1")
+
+    def test_cap_exit_coder_passes_and_the_gate_accepts_it_when_converged(self):
+        self.two_rounds_ending_on_the_cap_exit_coder()
         self.assertEqual(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")), (0, ""))
+        self.assertTrue(handback.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
-    def test_cap_exit_coder_after_the_second_review_passes_when_deferred(self):
-        self.dispatch("review-loop")
-        self.dispatch("code-reviewer", "a1")
-        self.dispatch("coder", "a1")
-        self.dispatch("code-reviewer", "a1")
-        self.dispatch("coder", "a1")
+    def test_cap_exit_coder_passes_and_the_gate_accepts_it_when_deferred(self):
+        self.two_rounds_ending_on_the_cap_exit_coder()
         message = ("status: deferred\niter: 2\nfixed: []\n"
                    "findings_remaining:\n- {finding: x, file_line: a.ts:1}\n")
         self.assertEqual(self.hand_back(message=message), (0, ""))
+        self.assertTrue(handback.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
-    def test_round_two_hand_back_with_no_reviewer_ever_run_is_denied(self):
+    def test_unreviewed_streak_counts_the_latest_flagged_hand_backs_and_a_reviewed_one_ends_it(self):
         self.dispatch("review-loop")
         self.dispatch("coder", "a1")
-        self.assert_denied(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")))
+        self.hand_back("a1")
+        self.hand_back("a1")
+        self.assertEqual(handback.unreviewed_streak(SESSION), 1)
 
-    def test_round_two_reviewer_by_another_agent_id_does_not_exempt_the_trailing_coder(self):
         self.dispatch("review-loop")
-        self.dispatch("code-reviewer", "a2")
-        self.dispatch("coder", "a1")
-        self.assert_denied(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")))
+        self.dispatch("coder", "a2")
+        self.hand_back("a2")
+        self.hand_back("a2")
+        self.assertEqual(handback.unreviewed_streak(SESSION), 2)
+
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a3")
+        self.hand_back("a3")
+        self.assertEqual(handback.unreviewed_streak(SESSION), 0)
 
     def test_other_agent_types_are_not_steps(self):
         self.dispatch("review-loop")

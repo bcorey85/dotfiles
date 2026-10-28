@@ -140,6 +140,27 @@ class ReviewLoopGateTest(unittest.TestCase):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         self.assertEqual(self.stop(records, stop_hook_active=True), "")
 
+    def repo_with_claude_md(self, claude_md):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        subprocess.run(["git", "init", "-q", tmp.name], check=True)
+        pathlib.Path(tmp.name, "CLAUDE.md").write_text(claude_md)
+        return tmp.name
+
+    def test_a_repo_whose_full_suite_runs_in_ci_owes_no_full_check(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        repo = self.repo_with_claude_md("# Repo\n\n- Full suite: CI\n")
+
+        self.assertEqual(self.stop(records, cwd=repo), "")
+
+    def test_a_repo_without_the_exact_full_suite_line_still_owes_a_full_check(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        for claude_md in ("# Repo\n", "Full suite: ci\n", "Full-suite: CI\n", "The full suite: CI\n"):
+            with self.subTest(claude_md=claude_md):
+                repo = self.repo_with_claude_md(claude_md)
+
+                self.assertIn("No full check ran", json.loads(self.stop(records, cwd=repo))["reason"])
+
     def test_a_foreground_report_that_quotes_the_launch_text_is_not_an_open_dispatch(self):
         report = "Reviewed the gate. It counts `Async agent launched` results as open dispatches.\nagentId: arev1"
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
@@ -380,6 +401,14 @@ class FullCheckTest(unittest.TestCase):
 
     def test_a_flag_at_the_end_of_its_command_takes_no_value_from_the_next_one(self):
         self.assert_scoped("cargo test -p; pytest tests/a.py")
+
+    def test_a_full_check_script_call_counts_unless_its_command_is_scoped(self):
+        call = "python3 ~/.claude/scripts/review/full_check.py /r/app --log /tmp/review-gate-feat.log -- "
+
+        self.assert_full(call + "'npm test'")
+        self.assert_full(call + "make check")
+        self.assert_scoped(call + "'pytest tests/test_a.py'")
+        self.assert_scoped(call + "npx jest src/a.test.ts")
 
 
 def indented(report):

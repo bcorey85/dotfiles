@@ -29,12 +29,15 @@ COMMENT_LINE = re.compile(r"^" + SPACE + r"*(//|#|\*(" + SPACE + r"|$)|--|;|/\*|
 # A bare docstring/JSDoc delimiter is structure, not prose.
 DELIMITER_LINE = re.compile(r"^" + SPACE + r"*(\"\"\"|'''|/\*\*?|\*/)" + SPACE + r"*$")
 
-CASE_INSENSITIVE_MARKERS = [re.compile(pattern, re.I) for pattern in (
-    r"\bphases?" + SPACE + r"*[0-9]",
+# A plan path or provenance in a shipped string still leaks, so these search the whole line, strings included.
+RAW_LINE_MARKERS = [re.compile(pattern, re.I) for pattern in (
     r"docs/plans/",
-    r"\b(PR|issue)" + SPACE + r"*#[0-9]+",
     r"per the (architect|plan|spec|ledger)",
     r"written by the (coder|architect|poller|assistant|agent)",
+)]
+CASE_INSENSITIVE_MARKERS = [re.compile(pattern, re.I) for pattern in (
+    r"\bphases?" + SPACE + r"*[0-9]",
+    r"\b(PR|issue)" + SPACE + r"*#[0-9]+",
     r"decision ledger|acceptance criteri|acceptance contract",
     r"plan[ -]?impact",
     r"user ruling",
@@ -109,6 +112,17 @@ def comment_numbers_of(file_lines, style):
     return set(source_text.comment_line_numbers(file_lines, style))
 
 
+def has_marker(row, markers):
+    return any(p.search(row) for p in markers) and not NOT_A_MARKER.search(row)
+
+
+def marker_hit(raw_row, searched_row):
+    """Whether a row carries a marker: the raw-line markers search raw_row, the others searched_row, the row with
+    string text removed."""
+    return (has_marker(raw_row, RAW_LINE_MARKERS)
+            or has_marker(searched_row, CASE_INSENSITIVE_MARKERS + CASE_SENSITIVE_MARKERS))
+
+
 def marker_rows(file_lines, comments_only=False, file_path=""):
     """Numbered non-blank lines carrying a workflow marker, ordered by line number.
 
@@ -127,14 +141,16 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
         if comments_only and not is_comment:
             continue
         if number in closing_tails:
-            searched = searchable_text(closing_tails[number], style)
+            raw = closing_tails[number]
+            searched = searchable_text(raw, style)
         elif number in openings:
-            searched = searchable_text(openings[number], style)
+            raw = openings[number]
+            searched = searchable_text(raw, style)
         else:
+            raw = line
             searched = line if is_comment else searchable_text(line, style)
-        row = f"{number}:{searched}"
-        hit = any(p.search(row) for p in CASE_INSENSITIVE_MARKERS) or any(p.search(row) for p in CASE_SENSITIVE_MARKERS)
-        if hit and not NOT_A_MARKER.search(row):
+
+        if marker_hit(f"{number}:{raw}", f"{number}:{searched}"):
             rows.append((number, line))
     return rows
 

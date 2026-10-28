@@ -177,6 +177,22 @@ class ReviewLoopGateTest(unittest.TestCase):
 
         self.assertEqual(self.stop(records, cwd=repo), "")
 
+    def test_a_loop_reviewing_a_repo_whose_full_suite_runs_in_ci_owes_no_full_check_from_another_cwd(self):
+        reviewed = self.repo_with_claude_md("# Repo\n\n- Full suite: CI\n")
+        other = self.repo_with_claude_md("# Other repo\n")
+        records = [user(f"review loop\nrepo: {reviewed}"), dispatch("toolu_coder", "coder"),
+                   result("toolu_coder", "done")]
+
+        self.assertEqual(self.stop(records, cwd=other), "")
+
+    def test_a_loop_reviewing_a_repo_without_the_ci_line_owes_a_full_check_though_the_cwd_has_it(self):
+        reviewed = self.repo_with_claude_md("# Repo\n")
+        other = self.repo_with_claude_md("- Full suite: CI\n")
+        records = [user(f"review loop\nrepo: {reviewed}"), dispatch("toolu_coder", "coder"),
+                   result("toolu_coder", "done")]
+
+        self.assertIn("No full check ran", json.loads(self.stop(records, cwd=other))["reason"])
+
     def test_a_repo_without_the_exact_full_suite_line_still_owes_a_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         for claude_md in ("# Repo\n", "Full suite: ci\n", "Full-suite: CI\n", "The full suite: CI\n"):

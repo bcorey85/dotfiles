@@ -325,9 +325,12 @@ def send_message_to(agent_id):
 
 def store_review_loop_report(repo, message, agent_id="a1"):
     # The shared hand-back store records a review-loop dispatch and its hand-back. A packet that does not parse is
-    # refused once and recorded when the agent hands back again, as the real hook does.
+    # refused once and recorded when the agent hands back again, as the real hook does. The loop's own transcript is
+    # empty: it started no background work and changed no code.
+    loop_transcript = repo / ".git" / f"agent-{agent_id}.jsonl"
+    loop_transcript.touch()
     event = {"session_id": GIT_ENV["CLAUDE_CODE_SESSION_ID"], "agent_type": "review-loop", "agent_id": agent_id,
-             "tool_input": {"message": message}}
+             "agent_transcript_path": str(loop_transcript), "tool_input": {"message": message}}
     with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(repo / ".git/handback-store")}):
         handback.handle_hook({**event, "tool_input": {"subagent_type": "review-loop"}}, "dispatch")
         for _ in range(2):

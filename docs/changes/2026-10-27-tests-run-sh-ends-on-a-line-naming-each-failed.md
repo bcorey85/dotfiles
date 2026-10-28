@@ -3,7 +3,7 @@ type: "Change"
 title: "tests/run.sh ends on a line naming each failed step"
 description: "When lint, the duplicate check or the tests fail, tests/run.sh ends on a FAILED line naming each failed step, after the test summary, so a lint failure no longer ends on a line that reads as a pass."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T17:26:09-05:00"}
-seq: 114
+seq: 117
 kind: "fix"
 components: ["script/run-sh"]
 evidence: ["judgment"]

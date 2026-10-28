@@ -139,7 +139,7 @@ from code_step_review import (
     command_review_again,
     emit_plan_impact_modal,
     emit_review_dispatch,
-    is_capped_review,
+    left_findings_open,
     prior_issues,
 )
 from code_step_start import RESUME_ALIASES, command_start, emit_closing_skill, phase_label
@@ -323,8 +323,8 @@ def review_coder_report(repo_dir, state, handback):
     changed_now = file_hashes(repo_dir)
     changed_files = coder_changed_files(repo_dir, state, changed_now)
     outcome = unreviewable_outcome(repo_dir, state, report, changed_files, changed_now)
-    is_capped = is_capped_review(state)
-    if outcome == "converged" and not is_capped:
+    is_open = left_findings_open(state)
+    if outcome == "converged" and not is_open:
         return finish_without_review(
             repo_dir, state, changed_files, coder_stage,
             "The asks coder changed nothing, and named where each confirmed ask is already in the code or the passing "
@@ -334,9 +334,10 @@ def review_coder_report(repo_dir, state, handback):
         return stop_on_coder_report(repo_dir, state, report, handback.get("agent_id"))
 
     asks_baseline = state.get("asksBaseline")
-    if is_ask_fix and asks_baseline is not None and not is_capped:
+    if is_ask_fix and asks_baseline is not None and not is_open:
         # The review after an asks-coder covers only what the asks-coder changed. A state from before asksBaseline
-        # existed keeps the whole-phase scope, and so does a capped review: its carried findings may sit in any file.
+        # existed keeps the whole-phase scope, and so does a review that left findings open (a cap, or a critical
+        # blocker with asks): its carried findings may sit in any file.
         changed_files = asks_coder_changed_files(changed_now, asks_baseline)
         if all(name.lower().endswith(DOCS_SUFFIXES) for name in changed_files):
             return finish_without_review(repo_dir, state, changed_files, coder_stage,
@@ -415,6 +416,9 @@ def stopped_route(repo_dir, state):
         if state.get("reviewScriptPid"):
             return "after-review"
         return "after-review" if review_answer_sent(repo_dir, state) else "ask-review-cap"
+
+    if state.get("stopReason") == "review-blocker":
+        return "ask-review-blocker"
 
     return "ask-coder-cap" if state.get("stopReason") == "coder-cap" else "ask-unknown"
 
@@ -514,6 +518,14 @@ def ask_about_review_cap(repo_dir, state):
              "resume. If it died, invoke Skill code with `review-again`.")
 
 
+def ask_about_review_blocker(repo_dir, state):
+    restart_instruction_text = restart_instruction(state)
+    review_again_command = script_command("review-again")
+    ask_user(repo_dir, "The review stopped on a blocker, and the coder's finished diff is kept. Once the user has "
+             f"cleared the blocker, run `{review_again_command}` to review the "
+             f"same diff again. To dispatch the phase coder again instead, {restart_instruction_text}.")
+
+
 def ask_about_coder_cap(repo_dir, state):
     restart_instruction_text = restart_instruction(state)
     ask_user(repo_dir, "The coder never handed back and cannot be resumed here: it is a plan-edit coder, or "
@@ -525,7 +537,7 @@ RESUME_HANDLERS = {
     "start": resume_start, "done": resume_done, "after-coder": resume_after_coder,
     "after-review": resume_after_review, "after-plan-edit": resume_after_plan_edit, "ask-impact": ask_about_impact,
     "ask-asks": ask_about_asks, "ask-coder": ask_about_stopped_coder, "ask-review-cap": ask_about_review_cap,
-    "ask-coder-cap": ask_about_coder_cap,
+    "ask-coder-cap": ask_about_coder_cap, "ask-review-blocker": ask_about_review_blocker,
 }
 
 

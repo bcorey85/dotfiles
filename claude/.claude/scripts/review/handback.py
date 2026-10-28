@@ -204,7 +204,8 @@ def flow_item(chunk):
 
 def split_top_level_items(body):
     """Split a list body at its item markers. A marker indented deeper than the shallowest one is a sub-bullet:
-    it stays inside its parent item. Chunk 0 is the lead prose before the first marker."""
+    it stays inside its parent item, and so does a marker of the other kind (bullet or numbered) at the shallowest
+    indent. Chunk 0 is the lead prose before the first marker."""
     markers = list(ITEM_START.finditer(body))
     if not markers:
         return [body]
@@ -213,8 +214,12 @@ def split_top_level_items(body):
         marker_line = marker.group(0).rsplit("\n", 1)[-1]
         return len(marker_line) - len(marker_line.lstrip())
 
+    def is_bullet(marker):
+        return marker.group(0).lstrip().startswith("-")
+
     shallowest = min(indent_of(marker) for marker in markers)
-    top_level = [marker for marker in markers if indent_of(marker) == shallowest]
+    first_kind = is_bullet(next(marker for marker in markers if indent_of(marker) == shallowest))
+    top_level = [marker for marker in markers if indent_of(marker) == shallowest and is_bullet(marker) == first_kind]
     chunks = []
     position = 0
     for marker in top_level:
@@ -222,6 +227,18 @@ def split_top_level_items(body):
         position = marker.end()
     chunks.append(body[position:])
     return chunks
+
+
+def mapping_with_trailing_lines(chunk):
+    """A mapping followed by more lines of the same item: the lines add to its question,
+    or to its finding when it has no question."""
+    groups = script_utils.top_level_braces(chunk)
+    trailing = chunk[len(groups[0]):].strip() if groups and chunk.startswith(groups[0]) else ""
+    flow_fields = parse_flow_mapping(groups[0]) if trailing else None
+    if flow_fields:
+        key = "question" if "question" in flow_fields else "finding"
+        flow_fields[key] = f"{flow_fields.get(key, '')}\n{trailing}".strip()
+    return flow_fields
 
 
 def read_list(raw):
@@ -250,6 +267,8 @@ def read_list(raw):
         if not chunk:
             continue
         flow_fields = parse_flow_mapping(chunk) if chunk.startswith("{") and chunk.endswith("}") else None
+        if chunk.startswith("{") and not flow_fields:
+            flow_fields = mapping_with_trailing_lines(chunk)
         if flow_fields:
             list_entries.append(flow_fields)
             continue

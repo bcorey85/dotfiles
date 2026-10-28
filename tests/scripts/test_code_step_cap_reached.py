@@ -12,6 +12,9 @@ import test_code_step as base
 CAP = ('status: cap-reached\niter: 2\nfixed: []\nfindings_remaining:\n'
        '- {finding: "the rounding stays open", file_line: "backend/src/orders.ts:1"}\n')
 CAP_WITH_ASK = CAP + base.CodeStepTest.ASK.split("\n", 3)[3] + "\n"
+BLOCKER_WITH_ASK = ('status: critical-blocker\niter: 1\nblockers:\n'
+                    '- {finding: "the rounding is broken", file_line: "backend/src/orders.ts:1"}\n'
+                    + base.CodeStepTest.ASK.split("\n", 3)[3] + "\n")
 
 
 class CapReachedTest(base.CodeStepTest):
@@ -146,6 +149,59 @@ class CapReachedTest(base.CodeStepTest):
 
         self.assertIn("ACTION: stop", out)
         self.assertNotEqual("asks", self.state()["stage"])
+
+    def test_a_critical_blocker_stop_with_an_ask_lets_asks_done_record_it_and_carries_the_blocker_to_one_more_review(
+            self):
+        out = self.cap_round(BLOCKER_WITH_ASK)
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("the rounding is broken", self.said())
+        self.assertIsNone(self.gate_mark())
+
+        out = self.step("asks-done", "rejected")
+
+        prompt = self.printed_prompt(out)
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("the rounding is broken", prompt)
+        self.assertIn("f - keep? (backend/src/orders.ts:2): rejected", prompt)
+
+    def test_a_docs_only_asks_coder_after_a_critical_blocker_still_gets_one_more_review_with_the_blocker(self):
+        self.cap_round(BLOCKER_WITH_ASK)
+        self.step("asks-done", "accepted")
+        (self.repo / "docs").mkdir(exist_ok=True)
+        (self.repo / "docs/notes.md").write_text("a note\n")
+        self.hook("coder", "BEHAVIOR: a note", agent_id="c2")
+
+        out = self.step("after-coder")
+
+        prompt = self.printed_prompt(out)
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("the rounding is broken", prompt)
+
+    def test_the_review_after_an_asks_coder_that_touched_other_files_still_covers_the_blocker_file(self):
+        self.cap_round(BLOCKER_WITH_ASK)
+        self.step("asks-done", "accepted")
+        (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
+        self.hook("coder", "BEHAVIOR: x is a const", agent_id="c2")
+
+        out = self.step("after-coder")
+
+        prompt = self.printed_prompt(out)
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("- path: backend/src/orders.ts", prompt)
+
+    def test_a_second_critical_blocker_with_an_ask_after_a_preset_rejection_stops_with_no_human_loop(self):
+        self.env["CODE_STEP_ASKS_OUTCOME"] = "rejected"
+        out = self.cap_round(BLOCKER_WITH_ASK)
+        self.assertIn("AGENT: review-loop", out)
+        self.hook("review-loop", BLOCKER_WITH_ASK, agent_id="r2")
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.assertEqual("review-blocker", self.state()["stopReason"])
+        self.assertIn("- ask: f - keep? (backend/src/orders.ts:2)", out)
 
     def test_resume_at_a_cap_reached_stop_names_review_again(self):
         self.cap_round(CAP)

@@ -356,6 +356,33 @@ class RenderTest(HandbackTestBase):
 
 
 class StoreTest(HandbackTestBase):
+    def test_a_dispatch_row_names_the_repo_its_prompt_or_cwd_holds(self):
+        with tempfile.TemporaryDirectory() as folder:
+            named, cwd_repo, outside = (os.path.join(folder, name) for name in ("named", "cwd", "outside"))
+            for repo in (named, cwd_repo):
+                subprocess.run(["git", "init", "-q", repo], check=True)
+            os.mkdir(outside)
+            self.assertEqual(handback.reviewed_repo("mode: review-first\nrepo: ../named\n", cwd_repo),
+                             os.path.realpath(named))
+            self.assertEqual(handback.reviewed_repo("mode: review-first\n", cwd_repo), os.path.realpath(cwd_repo))
+            self.assertIsNone(handback.reviewed_repo("mode: review-first\n", outside))
+            handoff_prompt = f"mode: review-first\nUncommitted changes in {named}/src/a.py (branch b)\n"
+            self.assertEqual(handback.reviewed_repo(handoff_prompt, cwd_repo), os.path.realpath(named))
+
+    def test_the_dispatch_hook_stores_the_repo_a_review_loop_dispatch_reviews(self):
+        with tempfile.TemporaryDirectory() as folder:
+            named, cwd_repo = (os.path.join(folder, name) for name in ("named", "cwd"))
+            for repo in (named, cwd_repo):
+                subprocess.run(["git", "init", "-q", repo], check=True)
+            cases = (("repo: ../named\n", named), ("mode: review-first\n", cwd_repo))
+            for prompt, expected_repo in cases:
+                with self.subTest(prompt=prompt):
+                    event = {"session_id": SESSION, "cwd": cwd_repo,
+                             "tool_input": {"subagent_type": "review-loop", "prompt": prompt}}
+                    code, _, _ = self.run_cli(["hook", "dispatch"], json.dumps(event))
+                    self.assertEqual(code, 0)
+                    self.assertEqual(handback.latest(SESSION)["dispatch"]["repo"], os.path.realpath(expected_repo))
+
     def test_latest_reports_dispatch_handback_and_pending(self):
         self.assertEqual(handback.latest(SESSION),
                          {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False})

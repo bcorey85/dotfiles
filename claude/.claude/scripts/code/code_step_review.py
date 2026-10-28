@@ -512,7 +512,7 @@ def launch_review_script(repo_dir, state, prompt):
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
     session_id = run_session_id(state)
-    module.record(session_id, "dispatch", no_review=False)
+    module.record(session_id, "dispatch", no_review=False, repo=module.reviewed_repo("", repo_dir))
 
     code_step_dir = state_dir(repo_dir)
     script_dir = code_step_dir / "loop-script" / agent_id

@@ -44,6 +44,7 @@ Thin wrapper over the `review-loop` agent (`mode: fix-first`). A script parses t
    - `ask-user-plan-impact` → call `AskUserQuestion` as printed, then run the `decide` command it names. On `ACTION: redispatch`, re-dispatch with the same arguments plus the lines it printed (both counters kept), then run step 2 again. On `ACTION: discuss`, talk it through, then run the `decide` command that it printed for the outcome.
    - `stop` → present what it printed and wait. When it lists asks, run its printed asks-done line after the user answers. Do NOT re-dispatch. The session is correctly left `dirty`.
    - `stop-no-handback` → the loop ended without handing back. Do what the lines say: the first time, re-dispatch `review-loop` once with the same arguments and run step 2 again; the second time, stop and show the user the loop's final text. Never mark clean.
+   - `stop-no-reviewer` → the first time, re-dispatch `review-loop` once with the same arguments, the printed `iter=` line in place of any `iter=` line, and run step 2 again; the second time, stop and tell the user no reviewer ran. Never mark clean.
    - `wait-for-loop` → the loop is waiting on an agent or shell it started in the background. Do not re-dispatch and never mark clean. End the turn; when the review-loop's completion notice arrives, run step 2 again.
    - `stop-parse-failure` or `stop-usage` → the packet or the call was bad. If you ran the gate mark in parallel, run `~/.claude/scripts/review/review-gate-mark dirty`. Show the user the problems. Never guess a missing field.
 

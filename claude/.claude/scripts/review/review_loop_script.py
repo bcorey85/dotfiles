@@ -641,6 +641,7 @@ class LoopRun:
         self.round_two_fix_diff = ""
         self.files = {}
         self.dispatches = []
+        self.last_pass = ""
 
     def next_round(self):
         self.iter_count += 1
@@ -671,6 +672,7 @@ class LoopRun:
         plan-change ask stops the loop and leaves the reviews after it unread."""
         with ThreadPoolExecutor(max_workers=len(self.dispatches)) as pool:
             reviews = list(pool.map(self.review_one, self.dispatches))
+        self.last_pass = "reviewer"
 
         round_fix, round_nits = [], []
         for (agent, owned), parsed in zip(self.dispatches, reviews, strict=True):
@@ -694,6 +696,7 @@ class LoopRun:
         """One coder pass on the findings. Returns (report, diffs, changed files)."""
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, findings, list(nits), list(before), self.gate_env)
+        self.last_pass = "coder"
         return coder_call(call_name, prompt, self.repo, self.out)
 
     def fix_round(self, round_fix, round_nits):
@@ -771,6 +774,7 @@ class LoopRun:
             "class_closure": self.class_closure,
             "files_touched": sorted(self.files_touched),
             "nits": self.nits,
+            "unreviewed_fix": self.last_pass == "coder",
         }
 
 
@@ -868,7 +872,8 @@ def crash_outcome(progress, reason):
     return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
             "skipped_fp": [], "blockers": [reason], "plan_change": [], "asks": [],
             "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",
-            "files_touched": sorted(progress["files_touched"]), "nits": []}
+            "files_touched": sorted(progress["files_touched"]), "nits": [],
+            "unreviewed_fix": False}
 
 
 # ---------- hand-back rows ----------
@@ -877,8 +882,9 @@ def report_write_failure(what, error):
     print(f"review-loop-script: {what} not written, {type(error).__name__}: {error}", file=sys.stderr)
 
 
-def write_handback_rows(repo, args, message, status, ask_rows):
-    # The driver's skipped re-reviews are its benched routes, so no clean row counts as unreviewed.
+def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
+    # The driver's skipped re-reviews are its benched routes, so a clean row never sets no_reviewer;
+    # a coder pass after the last reviewer round sets unreviewed_fix.
     try:
         code_step_core.log_event(repo, args.run_id, "handback", args.session, agent_id=args.agent_id,
                                  agent_type=handback.REVIEW_LOOP, message=message)
@@ -886,7 +892,7 @@ def write_handback_rows(repo, args, message, status, ask_rows):
         report_write_failure("run event", error)
     try:
         handback.record(args.session, "handback", agent_id=args.agent_id, status=status, problems=[], message=message,
-                        no_reviewer=False)
+                        no_reviewer=False, unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
     except Exception as error:
         report_write_failure("hand-back row", error)
     review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)
@@ -981,7 +987,7 @@ def main(argv=None):
 
     status = handback.load(message)["status"]
     (out / "packet.txt").write_text(message + "\n")
-    write_handback_rows(repo, args, message, status, outcome["ask_rows"])
+    write_handback_rows(repo, args, message, status, outcome["ask_rows"], outcome["unreviewed_fix"])
     write_usage_row(repo, started)
     print(message)
     return exit_code

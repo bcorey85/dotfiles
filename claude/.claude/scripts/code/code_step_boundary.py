@@ -27,6 +27,7 @@ from code_step_core import (
     load_handback,
     load_state,
     repo_root_or_exit,
+    run_session_id,
     save_state,
     say,
     script_command,
@@ -423,7 +424,7 @@ def mark_review_gate_clean(repo_dir, state):
         emit("stop", f"The phase stays open: its review loop ended {review_status}, not converged. Nothing is "
              "committed and the review gate is not marked clean. Report to the user what the review waits on.")
         return False
-    reviewing_session = state.get("sessionId") or session_pin()
+    reviewing_session = run_session_id(state)
     reason = module.false_clean_reason(reviewing_session)
     if reason:
         emit("stop", f"The review gate is not marked clean: {reason}. Tell the user.")

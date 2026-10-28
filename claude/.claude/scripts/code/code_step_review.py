@@ -40,6 +40,7 @@ from code_step_core import (
     record_ruled_asks,
     restart_instruction,
     ruled_asks_lines,
+    run_session_id,
     runs_review_script,
     save_state,
     say,
@@ -524,7 +525,7 @@ def launch_review_script(repo_dir, state, prompt):
     marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, RESUME_VERB, REVIEW_LOOP, "script", prompt)
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"loop-script-{state['runId']}-{dispatch_id}"
-    session_id = state.get("sessionId") or session_pin() or ""
+    session_id = run_session_id(state)
     module.record(session_id, "dispatch", no_review=False)
 
     code_step_dir = state_dir(repo_dir)
@@ -639,7 +640,12 @@ def command_after_review(repo_dir, state, args):
         return
 
     save_state(repo_dir, state)
-    say(repo_dir, module.render(packet, "code"))
+
+    sections = []
+    session_id = run_session_id(state)
+    if session_id and module.ended_on_unreviewed_fix(session_id, handback.get("agent_id")):
+        sections.append(module.unreviewed_fix_section(packet))
+    say(repo_dir, module.render(packet, "code", sections))
     print("The review packet was saved for the user. Do not repeat it.")
     asks = packet["ask"]
     if asks:
@@ -730,7 +736,7 @@ def fill_review_ask_ids(repo_dir, state, module, handback, asks):
         if key in kept_ids and not module.ask_finding_id(item):
             item["finding_id"] = kept_ids[key]
 
-    session_id = state.get("sessionId") or session_pin() or ""
+    session_id = run_session_id(state)
     logger = CLAUDE_DIR / "skills/review/log-review-finding"
     module.supply_ask_finding_ids(asks, session_id, logger, ask_log_context(repo_dir, state), repo_dir)
     for item, key in zip(asks, keys, strict=True):

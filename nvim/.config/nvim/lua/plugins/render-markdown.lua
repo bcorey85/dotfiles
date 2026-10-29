@@ -36,5 +36,11 @@ return {
       right_pad = 2,
     },
     latex = { enabled = false },
+    -- Keep the cursor line rendered, so moving the cursor doesn't unhide link
+    -- URLs and rewrap the line. Insert mode still shows raw text.
+    anti_conceal = { enabled = false },
+    win_options = {
+      concealcursor = { rendered = "nc" },
+    },
   },
 }

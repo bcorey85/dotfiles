@@ -3,7 +3,7 @@ type: "Change"
 title: "A coder gate runs every test file the coder creates when the phase names none"
 description: "The derived coder-gate test command for a phase that names no test file now runs every changed file that `is_runnable_test_file` counts as a test (foo.spec.js, foo.test.mts, __tests__/foo.jsx under jest, test_foo.py), through a new `{tests}` placeholder, in place of a fixed suffix list that missed them."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T07:12:59-05:00"}
-seq: 232
+seq: 247
 kind: "fix"
 components: ["script/code-step", "script/coder-gate"]
 evidence: ["transcript read"]

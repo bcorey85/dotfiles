@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """full_check.py — the review loop's one full check of a phase, under a time limit.
 
-    full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] -- '<command>'
+    full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] [--plan <path> --phase <id>] -- '<command>'
+
+With --plan and --phase, the phase's `Expected red:` lines whose later phase is still open leave their `&&` steps out
+of the command (lib/expected_red.py), and each left-out line prints as `expected red: <command> until Phase <id>`
+after the result line. When they leave out the whole command, nothing runs and the result is
+`not run (expected red until Phase <id>[, <id>...])`.
 
 Runs the command, given as one quoted word or as plain words, through the shell in the repo, output to the log, and
 prints `full check: <result>` first: `passed`, `unverified (exit 0, no runner summary)` when the command exited 0 but
@@ -12,9 +17,10 @@ the same when the environment could not run the check (no program, a runner that
 no test found, a package-manager or engine version mismatch), `not run (check-command error: <line>)` when a step of
 the command stops on a path that does not exist and did not exist at the diff base either (`--base`, HEAD by
 default; a path the diff removed or moved is a failure), `not run (timeout)` when the command runs past the limit, or
-`not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and the command is not its `Quality check:`
-command (the command does not run then, scoped or not), `passed (check only; CI runs the full suite)` when that
-repo's `Quality check:` command exited 0 with no runner summary, `not run (scoped command: ...)` when the command
+`not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and the command does not equal its
+`Quality check:` command or one of its && steps (the command does not run then, scoped or not),
+`passed (check only; CI runs the full suite)` when the command equals that repo's `Quality check:` command, or is
+&& steps of it, and exits 0 with no runner summary, `not run (scoped command: ...)` when the command
 runs tests or lint on named files or tests, or with a changed-files flag, and its text does not equal the CLAUDE.md
 `Quality check:` command (it does not run then), or `not run (unresolved command: ...)` when lib/check_scope cannot
 read what it runs, such as a make call with a NAME=value argument or a target no Makefile names, under the same
@@ -52,7 +58,9 @@ import tomllib
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 
 import check_scope
+import expected_red
 import script_utils
+import shell_command
 from check_output import (
     FAILING_TEST_LINE,
     failing_block_details,
@@ -134,6 +142,23 @@ def configured_check_command(repo):
         return None
 
     return match.group(1)
+
+
+def is_configured_check(check_command, configured):
+    """True when the command equals the configured `Quality check:` command, or joins only && steps that each appear
+    among the configured command's && steps."""
+    if configured is None:
+        return False
+
+    if check_command == configured:
+        return True
+
+    steps = shell_command.and_steps(check_command)
+    configured_steps = shell_command.and_steps(configured)
+    if steps is None or configured_steps is None:
+        return False
+
+    return all(step in configured_steps for step in steps)
 
 
 def pinned_interpreter_env(repo, env):
@@ -306,12 +331,13 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
     log's last lines. `on_start`, when given, is called with the pid of the process group
     the check leads. A command that is no full check (it names files or tests, or its scope cannot be read) is not run
     and returns `NOT_RUN_SCOPED` or `NOT_RUN_UNRESOLVED`, unless it equals the CLAUDE.md `Quality check:` command.
-    `scope_checked=True` skips the refusal, for a caller whose
-    own run of the command already passed it (`base_run`)."""
+    `scope_checked=True` skips the refusal, for a caller that already passed the command through it (`base_run`, and
+    `main`, which checks the command it was given before Expected red lines rewrite it)."""
     details = empty_details()
     in_ci = full_suite_runs_in_ci(repo)
-    declared = check_command is not None and check_command == configured_check_command(repo)
-    if in_ci and not declared:
+    configured = configured_check_command(repo)
+    declared = check_command is not None and check_command == configured
+    if in_ci and (check_command is None or not is_configured_check(check_command, configured)):
         return NOT_RUN_CI, "", details
     if check_command is None:
         return NOT_RUN_NO_CHECK, "", details
@@ -525,6 +551,17 @@ def is_setup_fault_result(result):
     return result.startswith(SETUP_FAULT)
 
 
+def phase_check(repo, check_command, plan, phase):
+    """(the command the phase's full check runs, None when the phase's Expected red lines leave out all of it; the
+    Expected red entries left out). `plan` is the plan path, relative to the repo or absolute. With no plan or phase
+    the command is as given. A plan that cannot be read raises OSError."""
+    if not plan or not phase or not check_command:
+        return check_command, []
+
+    plan_lines = (pathlib.Path(repo) / plan).read_text().splitlines()
+    return expected_red.check_for_phase(check_command, plan_lines, phase)
+
+
 def scope_refusal(check_command, repo):
     """The not-run result for a check command that is no full check: one that runs on named files or tests, or one
     whose scope cannot be read. None for a whole-suite command."""
@@ -536,27 +573,11 @@ def scope_refusal(check_command, repo):
     return None
 
 
-def main(argv):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("repo")
-    parser.add_argument("--log", required=True)
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
-    parser.add_argument("--base", default="HEAD")
-    if "--" not in argv:
-        parser.error("no command after --")
-
-    separator = argv.index("--")
-    args = parser.parse_args(argv[:separator])
-    if UNFILLED_LOG_NAME.search(pathlib.Path(args.log).name):
-        parser.error(f"--log name {pathlib.Path(args.log).name!r} holds an unfilled placeholder (`...`, `<` or `>`)")
-
-    command_words = argv[separator + 1:]
-    check_command = shlex.join(command_words) if len(command_words) > 1 else "".join(command_words)
-    if not check_command:
-        parser.error("no command after --")
-
-    result, tail, details = run(args.repo, check_command, args.log, args.timeout, base=args.base)
+def print_result(result, details, left_out):
+    """The result lines: the result, each Expected red entry left out, the summary and the files the check touched."""
     print(f"full check: {result}")
+    for entry in left_out:
+        print("expected red: " + expected_red.entry_text(entry))
     summary = summary_text(result, details["summaries"])
     if summary is not None:
         print("summary: " + summary)
@@ -566,6 +587,49 @@ def main(argv):
         print("rewrote edited files: " + ", ".join(details["rewrote_edited"]))
     if details["created"]:
         print("created by the check: " + ", ".join(details["created"]))
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("repo")
+    parser.add_argument("--log", required=True)
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--base", default="HEAD")
+    parser.add_argument("--plan")
+    parser.add_argument("--phase")
+    if "--" not in argv:
+        parser.error("no command after --")
+
+    separator = argv.index("--")
+    args = parser.parse_args(argv[:separator])
+    if UNFILLED_LOG_NAME.search(pathlib.Path(args.log).name):
+        parser.error(f"--log name {pathlib.Path(args.log).name!r} holds an unfilled placeholder (`...`, `<` or `>`)")
+    if bool(args.plan) != bool(args.phase):
+        parser.error("--plan and --phase go together")
+
+    command_words = argv[separator + 1:]
+    check_command = shlex.join(command_words) if len(command_words) > 1 else "".join(command_words)
+    if not check_command:
+        parser.error("no command after --")
+
+    try:
+        phase_command, left_out = phase_check(args.repo, check_command, args.plan, args.phase)
+    except OSError as error:
+        parser.error(f"--plan {args.plan}: {error.strerror}")
+
+    configured = configured_check_command(args.repo)
+    in_ci = full_suite_runs_in_ci(args.repo)
+    declared = check_command == configured
+    refusal = scope_refusal(check_command, args.repo)
+    if phase_command is None:
+        result, tail, details = expected_red.not_run_result(left_out), "", empty_details()
+    elif not declared and refusal and (not in_ci or is_configured_check(check_command, configured)):
+        result, tail, details = refusal, "", empty_details()
+    else:
+        result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base,
+                                    scope_checked=True)
+    print_result(result, details, left_out)
+
     if is_failure(result) or is_setup_fault_result(result):
         print(tail)
         return 1

@@ -29,7 +29,7 @@ if command -v ruff >/dev/null 2>&1; then
         claude/.claude/scripts/review/review_loop_packet.py claude/.claude/scripts/review/review_loop_closure.py
         claude/.claude/scripts/review/full_check_gate.py claude/.claude/scripts/review/full_check.py
         claude/.claude/scripts/review/handback_store.py claude/.claude/scripts/review/saved_handback.py
-        claude/.claude/scripts/review/finding_record.py)
+        claude/.claude/scripts/review/finding_record.py claude/.claude/scripts/lib/loop_transcript.py)
     ruff check --no-cache --select C901 "${codeStepFiles[@]}" "${reviewFlowFiles[@]}" || lintStatus=1
 else
     echo "ruff not installed: install it (pacman -S ruff, brew install ruff or pipx install ruff) and rerun" >&2

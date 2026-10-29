@@ -19,8 +19,9 @@ FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 CHECKBOX = re.compile(r"\[[xX]\]")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
-PATH_LINE = re.compile(r"`?([\w@./-]+\.\w+:\d+(?:[-,]\d+)*)`?")
-FILE_NAME = re.compile(r"^[\w@./-]+\.\w+(?::\d|$)")
+PATH_TEXT = r"[\w@./-]+\.\w+"
+PATH_LINE = re.compile(rf"`?({PATH_TEXT}:\d+(?:[-,]\d+)*)`?")
+FILE_NAME = re.compile(rf"^{PATH_TEXT}(?::\d|$)")
 QUOTE_OPENERS = " :[{,\t\n"
 BACKTICKED = re.compile(r"`([^`]+)`")
 # Subagent types: the agents that change code, and the agents that review it (code-reviewer, perf-reviewer-deep, ...).

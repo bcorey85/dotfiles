@@ -3,7 +3,7 @@
 background agent it launched has reported.
 
 Denies a hand-back while the researcher's own transcript holds a background launch with no task notification (the
-count `review_loop_gate.LoopTranscript.open_dispatches` keeps), and tells it to wait for the notice, Glob for the
+count `loop_transcript.LoopTranscript.open_dispatches` keeps), and tells it to wait for the notice, Glob for the
 file the child writes, then hand back, and to hand back a failure when the child failed. The deny is once per
 agent (kept in the handback store): a later hand-back passes, so a child that never reports cannot trap it. Every
 other agent type passes, and so does a hand-back with no open child.
@@ -19,7 +19,7 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
-import review_loop_gate
+import loop_transcript
 import script_utils
 
 GATED_AGENT = "goal-blind-researcher"
@@ -36,7 +36,7 @@ def deny_reason_for(hook):
     """The deny reason when the hook is a goal-blind-researcher hand-back with a child still open, else None."""
     if hook.get("agent_type") != GATED_AGENT:
         return None
-    transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(hook))
+    transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(hook))
     open_children = transcript.open_dispatches()
     if not open_children:
         return None

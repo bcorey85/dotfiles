@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "One plan grammar with a check at write time, and closing phases after coding phases"
 description: "code-step reads every plan through one parse function that stops on any line it cannot read, checks a plan when it is written, and runs the closing phases only after every coding phase, so a phase added during a run cannot run after the Verify pass."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T18:56:02-05:00"}
 seq: 8
+kind: "behavior"
 components: ["script/code-step", "skill/eng-spec"]
 evidence: ["census", "judgment"]
 watches: []

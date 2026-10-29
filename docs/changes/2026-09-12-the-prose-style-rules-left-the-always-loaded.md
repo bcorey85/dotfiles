@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The prose-style rules left the always-loaded instruction file and became a selectable output style"
 description: "The prose-style rules left the always-loaded instruction file and became a selectable output style; the persona plugin that overlapped them was removed."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["rule/global-claude-md", "rule/laconic-output-style"]
 evidence: ["judgment"]
 watches: []

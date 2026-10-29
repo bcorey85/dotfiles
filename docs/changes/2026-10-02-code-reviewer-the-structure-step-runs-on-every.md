@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code-reviewer: the structure step runs on every review pass, not only when the structure domain is eligible"
 description: "code-reviewer: the structure step runs on every review pass, not only when the structure domain is eligible."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["census", "seeded round"]
 watches: ["structure-pass-in-code-reviewer"]

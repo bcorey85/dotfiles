@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The global Safety Rails block was cut from 198 to 90 words"
-description: "The global Safety Rails block was cut from 198 to 90 words."
+change_type: "changed"
+title: "The global Safety Rails block is now 90 words, down from 198"
+description: "The global Safety Rails block is now 90 words, down from 198."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 12
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["removal round"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The global Safety Rails block was cut from 198 to 90 words. It keeps the list of blocked commands and the rule to report a block and stop, and adds that a skip comment needs the user's say-so. It drops the gate names, the omp bridge contract note, the workflow-gate escape details, and the line on commits after an unreviewed coder dispatch.
+The global Safety Rails block is now 90 words, down from 198. It keeps the list of blocked commands and the rule to report a block and stop, and adds that a skip comment needs the user's say-so. It drops the gate names, the omp bridge contract note, the workflow-gate escape details, and the line on commits after an unreviewed coder dispatch.
 
 ## Evidence
 

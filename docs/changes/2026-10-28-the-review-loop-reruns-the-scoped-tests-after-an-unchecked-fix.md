@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review loop reruns the scoped tests after a fix no full check verified"
 description: "A converged review loop whose last coder pass no passed full check followed reruns the run's scoped test commands, reports the result as scoped_tests in the hand-back, and stops critical-blocker when one fails."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T09:00:00-05:00"}

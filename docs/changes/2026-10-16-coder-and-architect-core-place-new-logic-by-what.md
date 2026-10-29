@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`coder` and `architect-core` place new logic by what it knows, not by its caller count"
 description: "`coder` and `architect-core` place new logic by what it knows, not by its caller count."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-16T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["agent/coder", "skill/architect-core"]
 evidence: ["seeded round"]
 watches: []

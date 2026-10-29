@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`code-reviewer` REST-specific checks gated on the surface being present"
 description: "`code-reviewer` REST-specific checks gated on the surface being present."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["census"]
 watches: []

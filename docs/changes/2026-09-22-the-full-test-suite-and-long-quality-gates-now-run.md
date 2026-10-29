@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The full test suite and long quality gates now run once per phase, at the review loop's execution gate"
 description: "The full test suite and long quality gates now run once per phase, at the review loop's execution gate."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-22T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["agent/review-loop", "agent/test-writer", "agent/code-reviewer", "rule/global-claude-md", "skill/test-audit"]
 evidence: ["judgment"]
 watches: []

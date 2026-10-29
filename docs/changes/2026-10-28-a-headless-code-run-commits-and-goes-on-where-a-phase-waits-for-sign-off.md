@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A headless /code run commits and goes on where a phase waits for sign-off"
 description: "`code_step.py start --headless` turns every block B sign-off stop into a block A commit and auto-advance, and carries the flag to each next phase and to a restart; the phase-end block text moves to code_step_phase_end.py."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T08:00:00-05:00"}

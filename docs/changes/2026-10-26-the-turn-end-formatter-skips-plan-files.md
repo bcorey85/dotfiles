@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The turn-end formatter skips plan files"
 description: "format_changed.py no longer runs prettier or oxfmt on files under docs/plans/, so a plan's next Edit and its review shards still match the text on disk."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T11:55:46-05:00"}

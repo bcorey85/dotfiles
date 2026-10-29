@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A busy ledger read waits about 90 s before it gives up"
 description: "script_utils.read_ledger retries a ledger read that exits 75 for up to LEDGER_WAIT_SECONDS = 90 (8 tries, 84 s of pauses), and verify_common and the branch-recap deferred read both go through it in place of their own retry loops."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:35:21-05:00"}

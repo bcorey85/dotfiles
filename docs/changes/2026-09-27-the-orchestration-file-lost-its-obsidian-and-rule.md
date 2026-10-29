@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The orchestration file lost its Obsidian and rule-maintenance sections and two of its three judgment items"
-description: "The orchestration file lost its Obsidian and rule-maintenance sections and two of its three judgment items: state the approach before non-trivial work, and push back only on material trade-offs."
+change_type: "removed"
+title: "The orchestration file is shorter: Obsidian, rule-maintenance and two of three judgment items are gone"
+description: "The orchestration file is shorter: its Obsidian and rule-maintenance sections and two of its three judgment items (state the approach before non-trivial work, and push back only on material trade-offs) are gone."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["rule/orchestration", "rule/global-claude-md"]
 evidence: ["removal round"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The orchestration file lost its Obsidian and rule-maintenance sections and two of its three judgment items: state the approach before non-trivial work, and push back only on material trade-offs. The unattended rule stays: proceed on the most reasonable reading and record the assumption. The CLAUDE.md pointer no longer names Obsidian or rule maintenance.
+The orchestration file is shorter: its Obsidian and rule-maintenance sections and two of its three judgment items (state the approach before non-trivial work, and push back only on material trade-offs) are gone. The unattended rule stays: proceed on the most reasonable reading and record the assumption. The CLAUDE.md pointer no longer names Obsidian or rule maintenance.
 
 ## Evidence
 

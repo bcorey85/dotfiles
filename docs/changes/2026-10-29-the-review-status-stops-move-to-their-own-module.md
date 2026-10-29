@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review status stops move to their own module"
 description: "code_step's review status stops (tool fault, critical blocker, setup fault, unverified check, review cap) move from code_step_review.py to code_step_review_stops.py, with no change in what a run prints or saves."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T11:54:45-05:00"}

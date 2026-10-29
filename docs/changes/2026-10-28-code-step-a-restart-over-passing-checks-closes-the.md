@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step: a restart over passing checks closes the phase without a coder"
-description: "start --restart over a reviewed, unfinished phase dispatched a fresh coder even when the code was done; it now runs the phase's Automated Verification first and closes the phase when every check passes."
+description: "start --restart over a reviewed, unfinished phase now runs the phase's Automated Verification first and closes the phase when every check passes. Before, it dispatched a fresh coder even when the code was done."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:51:07-05:00"}
 seq: 185
 kind: "fix"

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Git-only Bash hooks spawn only when the command names git or gh"
 description: "The git discipline gate, the review commit gate and the deferred push check now carry `if` filters on their PreToolUse Bash entries, so a Bash call that never mentions git or gh no longer spawns three Python processes. The filters start with a wildcard, because an anchored `Bash(git *)` let wrapped forms such as `env git commit` skip the gate."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T19:14:24-05:00"}

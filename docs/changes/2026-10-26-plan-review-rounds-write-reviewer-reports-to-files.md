@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Plan-review rounds write reviewer reports to files; round two checks them"
 description: "Each plan-review round writes every reviewer report to the task directory, and a script check fails round two when a prior round's report file is missing."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T15:23:40-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Let a dirty session commit docs-only changes without asking"
 description: "review-commit-gate.py no longer asks the user when a dirty session commits only docs/**.md files, and it now asks for git commit forms it used to miss."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T08:00:03-05:00"}
 seq: 3
+kind: "behavior"
 components: ["script/review-commit-gate", "script/shell-command"]
 evidence: ["work incident"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "New warn-only check on every written file: in documents it extracts each cited repository path and reports"
+change_type: "added"
+title: "New warn-only check reports cited repository paths and line numbers that no longer resolve"
 description: "New warn-only check on every written file: in documents it extracts each cited repository path and reports the ones that no longer resolve, plus line numbers past the end of the file they point into."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["script/stale-citation-gate"]
 evidence: ["gate ranking"]
 watches: []

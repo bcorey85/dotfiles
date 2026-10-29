@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The repeat-check cap counts only checks that ran and sees git changes"
 description: "The quality-check cap denies a repeat check only when the earlier run surely ran and the working tree did not change. It sees git merges and commits, never denies a formatter that writes, and lets the review loop's gate run through."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T08:03:31-05:00"}
 seq: 8
+kind: "fix"
 components: ["script/quality-check-cap"]
 evidence: ["work incident", "tests"]
 watches: []

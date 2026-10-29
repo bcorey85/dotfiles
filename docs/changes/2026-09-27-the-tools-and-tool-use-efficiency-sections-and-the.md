@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The Tools and Tool Use Efficiency sections and the first three Engineering Judgment items of the global"
+change_type: "changed"
+title: "The Tools, Tool Use Efficiency and first three Engineering Judgment items now load only in the main session"
 description: "The Tools and Tool Use Efficiency sections and the first three Engineering Judgment items of the global CLAUDE.md moved into the orchestration file, which only the main session loads."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["rule/global-claude-md", "rule/orchestration"]
 evidence: ["removal round"]
 watches: []

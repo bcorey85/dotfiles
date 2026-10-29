@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Ticket acceptance criteria are the contract, and /verify checks them with or without a plan"
 description: "Only the user's explicit sign-off overrides a ticket acceptance criterion. The plan verifier checks every ticket criterion from the ticket's own words, marks one that the plan dropped without sign-off as missing, and marks one about what a user sees as needs-manual unless a captured run shows it. /verify runs ticket-only when no plan exists."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-19T12:08:53-05:00"}
 seq: 10
+kind: "behavior"
 components: ["rule/global-claude-md", "agent/plan-verifier", "skill/verify"]
 evidence: ["judgment"]
 watches: ["ticket-acs-are-the-contract"]

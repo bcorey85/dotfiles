@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "quality-check-cap tells a denied chain that none of its other steps ran"
 description: "When the repeat-check cap denies a multi-step Bash call, the deny text says the whole call was refused for that fragment alone and to send the other steps again as their own call."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:41:50-05:00"}

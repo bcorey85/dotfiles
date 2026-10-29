@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A `perf` value added to the shared finding/escape class vocabulary"
 description: "A `perf` value added to the shared finding/escape class vocabulary."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 15
+kind: "behavior"
 components: ["shared/finding-log"]
 evidence: ["census"]
 watches: []

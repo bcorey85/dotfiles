@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "One adr-flow call does the fixed steps of /adr"
 description: "adr-flow.py prep resolves the task dir and prints the target path, PR url, sources and template. check validates the draft. finish checks it again and deletes the task dir only when every safety check passes."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-20T23:22:51-05:00"}
 seq: 17
+kind: "behavior"
 components: ["skill/adr", "script/adr-flow"]
 evidence: ["tests", "judgment"]
 watches: ["closing-scripts-cache-read", "closing-scripts-output", "closing-scripts-responses", "closing-scripts-active-time"]

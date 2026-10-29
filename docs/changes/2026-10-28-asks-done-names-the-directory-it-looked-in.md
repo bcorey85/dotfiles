@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "asks-done names the directory it looked in"
 description: "When asks-done finds no packet, the refusal names the review-fix state directory it looked in and the directory it ran from, so a call from another repo is told to run there."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T00:23:28-05:00"}

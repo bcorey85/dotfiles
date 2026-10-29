@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Scripted review loop records its clean tree for the commit gate"
 description: "When the scripted review loop hands back converged or deferred, it records the tree it ended on as reviewed, so the session's commit of that tree passes the commit gate even when the /code run that launched it ended first."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T12:46:57-05:00"}

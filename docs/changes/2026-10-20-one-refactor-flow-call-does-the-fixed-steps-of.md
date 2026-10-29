@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "One refactor-flow call does the fixed steps of each /refactor mode"
 description: "refactor-flow.py has one prep verb per mode, a log verb that writes the escape and finding rows once, and a handoff verb that renders the review hand-off. Each verb ends with a NEXT or STOP line."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-20T23:22:51-05:00"}
 seq: 18
+kind: "behavior"
 components: ["skill/refactor", "script/refactor-flow"]
 evidence: ["tests", "judgment"]
 watches: ["closing-scripts-cache-read", "closing-scripts-output", "closing-scripts-responses", "closing-scripts-active-time"]

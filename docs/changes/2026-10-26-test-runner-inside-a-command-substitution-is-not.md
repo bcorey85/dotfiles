@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Test runner inside a command substitution is not judged no-test-matched"
 description: "A test runner inside $(...) or backticks is not judged no-test-matched, because the outer command's output does not carry its report."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T11:00:34-05:00"}

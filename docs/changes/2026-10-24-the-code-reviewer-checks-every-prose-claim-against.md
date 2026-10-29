@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The code reviewer checks every prose claim against the code"
 description: "The code reviewer gains a prose-claims lens. Every comment, docstring, doc, ADR and run-time description that the diff adds, or that names something the diff changes, must hold for the code after the diff. A false or stale claim is a fix, never a smell or a nit."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T15:43:25-05:00"}

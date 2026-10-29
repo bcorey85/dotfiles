@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "/code resume with a task and no open run starts it"
 description: "code_step.py resume given text with no run open hands the text to start, so a task file or task text sent with no verb starts a run instead of a refusal that pointed at a bare resume."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T09:00:00-05:00"}

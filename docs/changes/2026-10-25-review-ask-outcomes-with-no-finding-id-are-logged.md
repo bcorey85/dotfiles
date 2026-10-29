@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Review ask outcomes with no finding id are logged under a new id"
 description: "When a review-loop hands back an ask with no valid finding_id, review_fix.py asks-done and code-step now log the user's answer under a new id instead of dropping it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T23:30:25-05:00"}

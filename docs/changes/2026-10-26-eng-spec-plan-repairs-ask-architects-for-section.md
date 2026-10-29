@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "eng-spec plan repairs ask architects for section text, not file edits"
 description: "When a design gap or a plan-review finding goes back to an architect, eng-spec now asks for the full text of each changed section and writes it into the plan files itself, because architects hold no Edit or Write tool."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T20:57:17-05:00"}

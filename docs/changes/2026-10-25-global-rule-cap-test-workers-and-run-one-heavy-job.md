@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Global rule: cap test workers and run one heavy job at a time"
 description: "The global CLAUDE.md gains a Machine Load section: cap test-runner workers at 2 in the repo config, run one heavy job at a time, check free memory first, and read the kernel log after a crash."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T20:42:39-05:00"}

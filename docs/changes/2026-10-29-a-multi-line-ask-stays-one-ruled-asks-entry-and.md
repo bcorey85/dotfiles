@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A multi-line ask stays one ruled-asks entry and indents under its number"
 description: "A ruled ask whose text spans lines folds onto one ruled-asks line with its outcome, and the ask listings indent a multi-line ask's later lines under its number."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T06:52:26-05:00"}

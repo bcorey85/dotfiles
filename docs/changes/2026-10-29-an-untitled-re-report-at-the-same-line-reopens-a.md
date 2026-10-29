@@ -1,7 +1,8 @@
 ---
 type: "Change"
-title: "An untitled re-report at the same line reopens a titled fixed finding"
-description: "When a plan-change round re-reported a fixed finding without a title, the loop matched it only against untitled fixed findings, so a titled finding at the same file and line stayed in fixed while its re-report stayed open. Two findings now match on a near title only when both have a title, and on the same file and line otherwise."
+change_type: "fixed"
+title: "An untitled re-report of a fixed finding at the same line now matches it"
+description: "Two findings now match on a near title only when both have a title, and on the same file and line otherwise. Before, when a plan-change round re-reported a fixed finding without a title, the loop matched it only against untitled fixed findings, so a titled finding at the same file and line stayed in fixed while its re-report stayed open."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T02:20:54-05:00"}
 seq: 226
 kind: "fix"

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code_step phase start carries trailing text to the coder as run notes"
 description: "Text after `<plan> --phase <id>` (or `Phase <id>`) reaches the coder brief as run notes, `start --help` matches the parser, and a closing phase stops on notes it cannot pass on."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:50:59-05:00"}

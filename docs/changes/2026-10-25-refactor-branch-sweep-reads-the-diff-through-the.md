@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Refactor branch sweep reads the diff through the shared parser"
 description: "refactor_flow's sweep for markers and commented-out code now reads the branch diff with lib/source_text.parse_unified_diff, not its own line walker, so a line that holds a form feed or a lone carriage return is swept whole."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T20:30:53-05:00"}

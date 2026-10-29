@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Code phase verification fails a filtered test run that matches no test"
 description: "code_step_boundary.run_verification_commands marks a filtered test command that exits 0 and reports no passed test as failed, with the zero-test check criteria_dry_run.py already used, now shared from lib/test_run_output.py; mocha and bun summaries now count as passed tests."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T08:33:10-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "SIGTERM test treats a vanished pid as killed"
 description: "The process-alive helper in the SIGTERM test returns dead when the pid leaves /proc between the signal check and the stat read."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T14:22:53-05:00"}

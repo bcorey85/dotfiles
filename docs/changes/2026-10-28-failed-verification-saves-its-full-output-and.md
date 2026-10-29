@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Failed verification saves its full output and quotes each test error"
-description: "When /code's Automated Verification failed, the stop report kept only the failing test names and the last 400 characters, so the panic text and assertion diffs were lost and a later /debug could not see the original failure. The stop now writes the full output of each failed command to verification-output.txt in the run folder, names that path, and quotes each failing test's error text, bounded, or the output's tail when some failing test has no error text after it."
+description: "When /code's Automated Verification fails, the stop now writes the full output of each failed command to verification-output.txt in the run folder, names that path, and quotes each failing test's error text, bounded, or the output's tail when some failing test has no error text after it. Before, the stop report kept only the failing test names and the last 400 characters, so the panic text and assertion diffs were lost and a later /debug could not see the original failure."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T21:11:08-05:00"}
 seq: 221
 kind: "fix"

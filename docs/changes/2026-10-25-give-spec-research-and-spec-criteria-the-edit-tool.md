@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Give spec-research and spec-criteria the Edit tool"
 description: "Agents that write a file they may later correct now have Edit, so a blocked sed -i no longer pushes them to an inline Python rewrite."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-25T22:54:04-05:00"}

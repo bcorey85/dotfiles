@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Calibration and mutation locks move out of the Claude config folder"
 description: "The mutation tester and /calibrate write their lock and backups under the XDG state folder, not under ~/.claude. The auto-mode classifier denied writes under ~/.claude, so mutation runs ended INDETERMINATE."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T08:08:02-05:00"}
 seq: 10
+kind: "fix"
 components: ["agent/mutation-tester", "skill/calibrate", "script/calibration-guard"]
 evidence: ["work incident", "tests"]
 watches: []

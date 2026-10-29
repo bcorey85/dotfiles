@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Nineteen user-driven skills set to user-invocable-only in settings"
 description: "Nineteen user-driven skills set to user-invocable-only in settings, keeping them typable while dropping their descriptions from the listing the model is shown."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 19
+kind: "behavior"
 components: ["rule/settings-json"]
 evidence: ["census"]
 watches: []

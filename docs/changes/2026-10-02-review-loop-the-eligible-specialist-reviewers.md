@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "review-loop: the eligible specialist reviewers (security, perf"
+change_type: "changed"
+title: "review-loop: specialist reviewers (security, perf, structure) run beside the first code review and share one fix pass"
 description: "review-loop: the eligible specialist reviewers (security, perf, structure) run beside the first code review instead of after convergence, and their findings share one fix pass."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/review-loop", "agent/test-writer"]
 evidence: ["seeded bench"]
 watches: []

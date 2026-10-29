@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`/code` step 3: the gate's lint command takes `{files:<suffixes>}` in place of the phase's path list"
 description: "`/code` step 3: the gate's lint command takes `{files:<suffixes>}` in place of the phase's path list."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-19T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["skill/code", "script/coder-gate"]
 evidence: ["judgment"]
 watches: ["coder-gate-lint-changed-files"]

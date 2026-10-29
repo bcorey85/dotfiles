@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The full check runs under the repo's pinned Python, and a missing module is an environment gap"
 description: "full_check.py puts the pyenv shims first on PATH in a repo with a .python-version file, and a check that fails on a missing module the repo declares as a dependency reports an environment gap that never stops the phase."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:59:00-05:00"}

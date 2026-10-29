@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code start runs in the checkout the task names and takes its arguments as given"
 description: "/code start takes --repo or a Repo: line at the top of the task file and runs in that checkout, so a run handed only a task file no longer lands in the session's cwd and hits another repo's open run. A --task brief passed as one string reaches a planless run, --phase with run notes uses the saved plan, plan --help prints usage, and say.md keeps one Implemented block."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:09:53-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review-and-fix loop now counts a correctness round when it dispatches a reviewer"
 description: "The review-and-fix loop now counts a correctness round when it dispatches a reviewer, not when it dispatches a fix, and the count starts at zero, so the number it reports is the number of rounds it ran."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 11
+kind: "fix"
 components: ["agent/review-loop"]
 evidence: ["census"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A failed full check names its failing step's lines"
 description: "full_check puts the lint errors and FAIL lines in a failed check's blocker, calls a step that stops on a missing path a check-command error, and the check finder keeps a workflow's default working directory on every step."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:59:30-05:00"}

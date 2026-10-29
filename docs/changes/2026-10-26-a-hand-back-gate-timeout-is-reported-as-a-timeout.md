@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A hand-back gate timeout is reported as a timeout, not a failing suite"
 description: "coder_gate.py records a command that hits its timeout apart from failures, lets the hand-back through stamped with the timeout and no test result, and code_step reports it as timed out; a new test covers the listed cargo commands on the --phase start path."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T18:29:14-05:00"}

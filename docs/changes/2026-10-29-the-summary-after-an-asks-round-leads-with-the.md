@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The summary after an asks round leads with the current asks coder"
 description: "After a round of review asks, the /code review summary leads with the current asks coder's report, shows earlier asks rounds as one line each, and drops the why notes the asks coder replaced."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T13:46:31-05:00"}

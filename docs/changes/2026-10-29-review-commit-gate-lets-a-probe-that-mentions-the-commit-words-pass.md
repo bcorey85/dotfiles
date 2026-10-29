@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "review-commit-gate lets a probe that mentions the commit words pass"
 description: "In a dirty session the gate denies a command when a parsed git call commits, in the command or in a `$( )` or backtick span, when a command it cannot read holds git then commit, or, failing closed, when any simple command is not a safe probe and the text holds the commit words. An echo, printf, grep, rg, cat, head, tail, wc or read-only git probe that prints or searches the words passes. A heredoc whose body holds the words is still denied unless its tag is a probe program's name."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T14:00:00-05:00"}

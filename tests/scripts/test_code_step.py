@@ -1142,8 +1142,26 @@ class CodeStepTest(unittest.TestCase):
 
         said = self.said()
         self.assertIn("Phase 2 complete (last phase).", said)
-        self.assertIn("Plan deviations adopted in this plan (the code won; no acceptance criterion changed):", said)
-        self.assertIn("- Phase 1: assumed: the importer reads a header row", said)
+        run_end_text = said.split("Phase 2 marked done", 1)[1]
+        self.assertIn("Plan deviations adopted in this plan (the code won; no acceptance criterion changed):",
+                      run_end_text)
+        self.assertIn("- Phase 1: assumed: the importer reads a header row", run_end_text)
+
+    def test_the_phase_end_block_omits_a_deviation_adopted_in_phase_1(self):
+        self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        self.step("after-plan-edit")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+
+        self.finish_phase_two()
+
+        said = self.said()
+        self.assertIn("Phase 2 complete", said)
+        phase_two_text = said.split("Phase 2 marked done", 1)[1]
+        self.assertNotIn("Plan deviations adopted in Phase 2", phase_two_text)
+        self.assertNotIn("the importer reads a header row", phase_two_text)
 
     def test_adopt_rewrites_the_plan_before_the_review(self):
         report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"

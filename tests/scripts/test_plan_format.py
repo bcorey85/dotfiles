@@ -400,6 +400,12 @@ class BelowCriteriaDeviationTest(unittest.TestCase):
         self.assertEqual([f"Phase 2: {summary}"], plan_format.below_criteria_deviations(plan_text, "2"))
         self.assertEqual([], plan_format.below_criteria_deviations(plan_text, "1"))
 
+    def test_the_summary_drops_bold_marks_before_the_header_word_and_leaves_no_stray_dash(self):
+        bold = "**plan_impact**: assumed: a header row —\n  acceptance_criteria: none\n  found: none"
+        self.assertEqual("assumed: a header row found: none", plan_format.below_criteria_summary(bold))
+        self.assertEqual(f"{plan_format.BELOW_CRITERIA_RULING} assumed: a header row found: none",
+                         plan_format.below_criteria_ruling(bold))
+
 
 class LoudFailureTest(unittest.TestCase):
     def assert_fails_at(self, text, line_number):

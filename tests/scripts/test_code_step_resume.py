@@ -559,6 +559,18 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("`skill-done fail --finding", out)
         self.assertEqual(before, self.state_bytes())
 
+    def test_resume_at_a_closing_phase_keeps_the_run_notes_it_started_with(self):
+        self.on_feature_branch()
+        self.finish_phase_one()
+        self.mark_phases_done(1, 2, 3)
+        self.step("start", self.plan, "--phase", "4", "build", "with", "two", "jobs")
+        self.env["CLAUDE_CODE_SESSION_ID"] = self.NEW_SESSION
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: invoke-skill", out)
+        self.assertIn("Run notes from the user. They bind this run; the plan stays the spec:\nbuild with two jobs", out)
+
     PLANLESS_RESTART = 'ask the user for the task text, then run `start --restart --task "<the task text>"`'
 
     def start_a_run_with_no_plan(self):

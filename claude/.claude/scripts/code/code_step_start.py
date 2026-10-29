@@ -77,7 +77,8 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                '       code_step.py start [--repo <path>] --task "<task text>"\n'
                '       code_step.py start [--repo <path>] --task-file <path>\n'
                '--phase <id> starts the named phase; the text after a plan file or ticket id and its phase is the '
-               "run notes: the coder's constraints for that run. Text that comes first, when there is no plan file, "
+               "run notes: the constraints for that run, given to its coder or, on a closing phase, to its skill. "
+               "Text that comes first, when there is no plan file, "
                'ticket id or directory, is the task text. --task-file reads the task text from a file, as it is. A '
                'flag before the text, or after a plan, must be known. --restart drops an unfinished run and starts '
                'over. With --restart, text that comes first becomes the run notes of the saved plan when that plan '
@@ -682,9 +683,6 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
     number = entry["number"] if entry else None
     section = plan_format.phase_text(plan_lines, number) if entry else "\n".join(plan_lines)
     closing_skill_name = plan_format.closing_skill(entry["title"]) if entry else None
-    if closing_skill_name and parsed.run_notes:
-        return emit("stop", f"Phase {number} is a closing phase and takes no run notes: they were not passed on. "
-                    "Tell the user.")
     if closing_skill_name:
         return start_closing_phase(repo_dir, plan_rel, lane, parsed, entry, closing_skill_name, section, branch)
 
@@ -768,12 +766,12 @@ def start_closing_phase(repo_dir, plan_rel, lane, parsed, entry, skill, section,
     state = {"stage": "skill", "plan": plan_rel, "lane": lane, "phase": entry["number"], "branch": branch,
              "modifier": parsed.modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [],
              "behavior": [], "baseline": file_hashes(repo_dir), "onlyPhase": parsed.phase_id,
-             "headless": parsed.headless, "sessionId": session_pin()}
+             "headless": parsed.headless, "sessionId": session_pin(), "runNotes": parsed.run_notes}
     save_state(repo_dir, state)
-    emit_closing_skill(repo_dir, plan_rel, entry["number"], entry["title"], skill, section)
+    emit_closing_skill(repo_dir, plan_rel, entry["number"], entry["title"], skill, section, parsed.run_notes)
 
 
-def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
+def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section, run_notes):
     open_items = plan_format.open_success_items(section.split("\n")) if section else []
     is_refactor = skill == REFACTOR_SKILL
     gate = concentration_gate(repo_dir) if is_refactor else None
@@ -799,6 +797,7 @@ def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section):
         f"Phase {number} ({title}) is a closing phase. Invoke the Skill tool with "
         f"`{skill}`; a coder is not dispatched.",
         *section_lines,
+        *run_notes_lines(run_notes),
         *ruled_lines,
         *gate_report,
         *evidence_request_lines(open_items),

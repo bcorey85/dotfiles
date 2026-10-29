@@ -241,6 +241,22 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
         self.assertFalse(marker.exists())
 
+    def test_the_declared_check_of_a_repo_whose_full_suite_runs_in_ci_runs_as_a_check_with_no_tests(self):
+        marker = self.repo / "ran"
+        declared = f"touch {marker}"
+
+        completed = self.check(declared, claude_md=f"- Full suite: CI\n- Quality check: `{declared}`\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(["full check: passed (check only; CI runs the full suite)"], completed.stdout.splitlines())
+        self.assertTrue(marker.exists())
+
+    def test_a_failing_declared_check_of_a_repo_whose_full_suite_runs_in_ci_fails(self):
+        completed = self.check("exit 3", claude_md="- Full suite: CI\n- Quality check: `exit 3`\n")
+
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 3)")
+
     def test_a_command_scoped_to_files_or_tests_is_not_run_and_a_whole_suite_command_is(self):
         marker = self.repo / "ran"
 

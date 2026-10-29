@@ -12,11 +12,13 @@ the same when the environment could not run the check (no program, a runner that
 no test found, a package-manager or engine version mismatch), `not run (check-command error: <line>)` when a step of
 the command stops on a path that does not exist and did not exist at the diff base either (`--base`, HEAD by
 default; a path the diff removed or moved is a failure), `not run (timeout)` when the command runs past the limit, or
-`not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` (the command does not run
-then, scoped or not), or `not run (scoped command: ...)` when the command runs tests or lint on named files or tests,
-or with a changed-files flag, and its text does not equal the CLAUDE.md `Quality check:` command (it does not run
-then). A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">` or
-`summary: not found`. `run` with no command returns `not run (no check found; ...)`.
+`not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and the command is not its `Quality check:`
+command (the command does not run then, scoped or not), `passed (check only; CI runs the full suite)` when that
+repo's `Quality check:` command exited 0 with no runner summary, or `not run (scoped command: ...)` when the command
+runs tests or lint on named files or tests, or with a changed-files flag, and its text does not equal the CLAUDE.md
+`Quality check:` command (it does not run then). A `passed` or `unverified` result is followed by
+`summary: <the runner summary lines joined with " | ">` or `summary: not found`. `run` with no command returns
+`not run (no check found; ...)`.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
 (`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
@@ -70,6 +72,8 @@ SUMMARY_SEPARATOR = " | "
 PASSED = "passed"
 # Exit 0 with no test runner's summary in the output: the command may have run no test, or the wrong ones.
 UNVERIFIED = "unverified (exit 0, no runner summary)"
+# Exit 0 of the declared check of a repo whose full suite runs in CI: a compile or format check that runs no test.
+CHECK_ONLY_PASSED = "passed (check only; CI runs the full suite)"
 # Exit 0 whose runner summary still counts failures: a wrapper that swallowed the runner's exit code.
 FAILED_EXIT_ZERO = "failed (exit 0, summary reports failures)"
 SUMMARY_FAILURE = re.compile(
@@ -298,7 +302,8 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD")
     log's last lines. `on_start`, when given, is called with the pid of the process group
     the check leads."""
     details = empty_details()
-    if full_suite_runs_in_ci(repo):
+    in_ci = full_suite_runs_in_ci(repo)
+    if in_ci and (check_command is None or check_command != configured_check_command(repo)):
         return NOT_RUN_CI, "", details
     if check_command is None:
         return NOT_RUN_NO_CHECK, "", details
@@ -319,8 +324,10 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD")
         return NOT_RUN_TIMEOUT, tail, details
     if exit_code == 0 and SUMMARY_FAILURE.search("\n".join(all_summaries)):
         return FAILED_EXIT_ZERO, tail_with_failing_tests(output, tail), details
+    if exit_code == 0 and all_summaries:
+        return PASSED, tail, details
     if exit_code == 0:
-        return (PASSED if all_summaries else UNVERIFIED), tail, details
+        return (CHECK_ONLY_PASSED if in_ci else UNVERIFIED), tail, details
 
     result, failure_lines = failed_run_result(repo, base, exit_code, output, tail)
     return result, failure_lines, details

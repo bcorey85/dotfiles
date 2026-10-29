@@ -540,6 +540,96 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("stage stopped with stop reason verification", self.said())
         self.assertIn("`verify`", self.said())
 
+    def launch_hook_result(self, skill, args, cwd=None):
+        cwd = cwd or self.repo
+        event = {"cwd": str(cwd), "session_id": self.SESSION, "tool_name": "Skill",
+                 "tool_input": {"skill": skill, "args": args}}
+        return base.run(cwd, self.env, "launch-hook", stdin=json.dumps(event))
+
+    def assert_launch_hook_passes(self, skill, args, cwd=None):
+        result = self.launch_hook_result(skill, args, cwd)
+
+        self.assertEqual("", result.stdout)
+        self.assertEqual("", result.stderr)
+
+    def launch_hook_decision(self, skill, args, cwd=None):
+        stdout = self.launch_hook_result(skill, args, cwd).stdout
+
+        return json.loads(stdout)["hookSpecificOutput"]
+
+    def stop_at_verification(self):
+        self.coder_round(source="console.log(1)\n")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("resume")
+        self.assertEqual("verification", self.state()["stopReason"])
+
+    def test_a_resume_at_a_failed_verification_stop_is_refused_before_the_fork_starts_and_names_fix_then_verify(self):
+        self.stop_at_verification()
+
+        for args in ("", "resume", "continue", "after-plan-edit", "resume x"):
+            with self.subTest(args=args):
+                decision = self.launch_hook_decision("code", args)
+
+                self.assertEqual("deny", decision["permissionDecision"])
+                self.assertIn("Dispatch the fix", decision["permissionDecisionReason"])
+                self.assertIn("invoke Skill code with `verify`", decision["permissionDecisionReason"])
+        self.assert_launch_hook_passes("code", "verify")
+        self.assert_launch_hook_passes("review", "")
+
+    def test_a_resume_at_an_unparsed_verification_item_stop_is_refused_and_names_a_plan_edit(self):
+        self.coder_round_then_edit_verification("- [ ] **Check**: the streams pass, see the log")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+        self.assertEqual("verification", self.state()["stopReason"])
+
+        decision = self.launch_hook_decision("code", "resume")
+
+        self.assertEqual("deny", decision["permissionDecision"])
+        self.assertIn("an item could not be run", decision["permissionDecisionReason"])
+        self.assertIn("edit the plan for an item that could not be run", decision["permissionDecisionReason"])
+        self.assertIn("invoke Skill code with `verify`", decision["permissionDecisionReason"])
+
+    def test_the_launch_hook_checks_only_the_resumed_run_when_a_pinned_checkout_is_stopped_at_verification(self):
+        self.start_phase_one()
+        healthy_repo = self.tmp / "healthy"
+        shutil.copytree(self.repo, healthy_repo, symlinks=True)
+        self.stop_at_verification()
+
+        self.assert_launch_hook_passes("code", "resume", healthy_repo)
+
+    def test_the_launch_hook_follows_the_sessions_only_open_run_when_the_cwd_holds_no_run(self):
+        cwd = self.tmp / "cwd"
+        shutil.copytree(self.base_repo, cwd, symlinks=True)
+        self.start_phase_one()
+        self.stop_at_verification()
+
+        decision = self.launch_hook_decision("code", "resume", cwd)
+
+        self.assertEqual("deny", decision["permissionDecision"])
+        self.assertIn(str(self.repo.resolve()), decision["permissionDecisionReason"])
+
+    def test_the_launch_hook_lets_a_resume_through_when_two_open_runs_lie_outside_the_cwd(self):
+        self.start_phase_one()
+        self.stop_at_verification()
+        second_run = self.tmp / "second"
+        shutil.copytree(self.base_repo, second_run, symlinks=True)
+        base.run(second_run, self.env, "start", "--task", "add retries")
+        cwd = self.tmp / "cwd"
+        shutil.copytree(self.base_repo, cwd, symlinks=True)
+
+        self.assert_launch_hook_passes("code", "resume", cwd)
+
+    def test_the_launch_hook_lets_a_resume_through_when_the_run_did_not_stop_on_verification(self):
+        self.start_phase_one()
+
+        self.assert_launch_hook_passes("code", "resume")
+
+    def test_the_launch_hook_lets_a_resume_through_when_the_run_stopped_for_another_reason(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stopReason="coder-cap")
+
+        self.assert_launch_hook_passes("code", "resume")
+
     def test_resume_from_a_new_session_at_a_closing_phase_invokes_its_skill_again(self):
         self.on_feature_branch()
         self.finish_phase_one()

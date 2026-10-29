@@ -84,6 +84,35 @@ class CheckOutputTest(unittest.TestCase):
         output = "ERROR collecting tests/test_a.py\nModuleNotFoundError: No module named 'app'"
         self.assertTrue(check_output.is_setup_fault(2, output, self.repo))
 
+    def test_failing_test_lines_name_each_cargo_and_nextest_failure_with_its_panic_text(self):
+        output = "\n".join([
+            "     Running tests/worker.rs (target/debug/deps/worker-1f2e)",
+            "test worker_drains_the_queue ... ok",
+            "       FAIL [  30.645s] (1890/1890) ledger::worker worker_exits_after_three_cache_busy_passes",
+            "    test worker_exits_after_three_cache_busy_passes ... FAILED",
+            "    thread 'worker_exits_after_three_cache_busy_passes' (2641884) panicked at tests/worker.rs:936:5:",
+            "    assertion `left == right` failed: the worker kept running",
+            "      left: 4",
+            "     right: 3",
+            "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+            "",
+            "test result: FAILED. 1889 passed; 1 failed; 0 ignored",
+        ])
+
+        expected = [
+            "FAIL [  30.645s] (1890/1890) ledger::worker worker_exits_after_three_cache_busy_passes",
+            "test worker_exits_after_three_cache_busy_passes ... FAILED",
+            "thread 'worker_exits_after_three_cache_busy_passes' (2641884) panicked at tests/worker.rs:936:5:\n"
+            "assertion `left == right` failed: the worker kept running\nleft: 4\nright: 3",
+        ]
+        self.assertEqual(expected, check_output.failing_test_lines(output))
+
+    def test_a_panic_line_compares_equal_across_runs_whatever_its_thread_id(self):
+        first_run = "thread 'worker_exits' (2641884) panicked at tests/worker.rs:936:5:"
+        second_run = "thread 'worker_exits' (311) panicked at tests/worker.rs:936:5:"
+
+        self.assertEqual(check_output.normalized_log_line(first_run), check_output.normalized_log_line(second_run))
+
     def test_failing_test_lines_cover_pytest_unittest_vitest_and_jest_and_repeat_nothing(self):
         output = "\n".join([
             "FAILED tests/test_a.py::test_one - assert 1 == 2",

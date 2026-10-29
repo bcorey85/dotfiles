@@ -56,6 +56,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+# The file in the loop's state folder that holds the whole output of a red scoped test run.
+SCOPED_TESTS_LOG = "scoped-tests.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import code_step_core
 import coder_gate
@@ -763,7 +765,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def scoped_tests_pass(self, gate_commands):
         """The phase's scoped tests after a fix that no passed full check ran after. A red one stops the loop."""
-        self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, gate_commands, self.gate_env)
+        log_path = self.out / SCOPED_TESTS_LOG
+        self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, gate_commands, self.gate_env, log_path)
         if tails:
             self.stop("critical-blocker", ["scoped tests failing after the last fix:\n" + "\n\n".join(tails)])
 

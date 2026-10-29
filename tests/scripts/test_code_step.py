@@ -575,6 +575,14 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual([], [command for command in commands if "cargo test --tests" in command])
         self.assertEqual([], [command for command in commands if "cargo clippy" in command])
 
+    def test_gate_takes_the_listed_cargo_commands_behind_nice_env_and_taskset_wrappers(self):
+        nextest = "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(orders_total)'"
+        check = "taskset -c 0-5 nice -n 19 env CARGO_BUILD_JOBS=4 cargo check --all-targets"
+        listed_rows = f"- [ ] Orders total passes: `{nextest}`\n- [ ] Crate builds: `{check}`"
+        commands = self.make_helper_phase_with_verification(listed_rows)
+
+        self.assertEqual([nextest, check], [command for command in commands if "cargo" in command])
+
     def test_gate_keeps_the_derived_cargo_commands_when_the_phase_lists_no_cargo_command(self):
         commands = self.make_helper_phase_with_verification("- [ ] No stray logging: `git grep -n TODO -- crate/src`")
 
@@ -6492,13 +6500,14 @@ class CodeForkToolsTest(unittest.TestCase):
         self.assertNotIn("SendMessage", disallowed_tools)
         self.assertIn("takes no scope change mid-run", skill.read_text())
 
-    def test_the_code_fork_hands_a_question_back_even_when_the_task_names_a_session_to_ask(self):
+    def test_the_code_fork_hands_a_question_or_report_back_even_when_the_task_names_a_session(self):
         skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"
 
         skill_text = skill.read_text()
 
-        self.assertIn("Never send a question by message", skill_text)
-        self.assertIn("that session relays it", skill_text)
+        self.assertIn("Never send a question or a report by message", skill_text)
+        self.assertIn("ask or to report to", skill_text)
+        self.assertIn("that session relays them", skill_text)
 
 
 class StateDirTest(unittest.TestCase):

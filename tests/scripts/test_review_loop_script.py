@@ -264,8 +264,23 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
-        self.assertEqual(packet["scoped_tests"], "failed: grep -q 'limit = 99' app.py")
+        self.assertTrue(packet["scoped_tests"].startswith("failed: grep -q 'limit = 99' app.py; full output: "))
         self.assertIn("grep -q 'limit = 99' app.py", packet["blockers"][0])
+
+    def test_a_red_scoped_test_names_the_failing_test_and_its_panic_text_and_keeps_the_full_output(self):
+        failing_run = ("printf 'early line\\ntest orders_total ... FAILED\\n"
+                       "thread '\\''orders_total'\\'' (77) panicked at tests/orders.rs:9:5:\\nexpected 3, got 4\\n' "
+                       "&& seq 1 3000 && false")
+        completed = self.run_with_scoped_tests([failing_run], FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        log_path = self.state_dir / "loop-script" / AGENT_ID / "scoped-tests.log"
+        self.assertIn("early line", log_path.read_text())
+        self.assertIn(f"full output: {log_path}", packet["scoped_tests"])
+        self.assertIn("failing tests: test orders_total ... FAILED", packet["scoped_tests"])
+        self.assertIn("expected 3, got 4", packet["blockers"][0])
+        self.assertIn(str(log_path), packet["blockers"][0])
 
     def test_a_loop_that_made_no_fix_runs_no_scoped_tests(self):
         completed = self.run_with_scoped_tests(["false"], {"code-reviewer": [{"result": CLEAN_REVIEW}],

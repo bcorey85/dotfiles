@@ -648,6 +648,10 @@
           {
             "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py stop-hook"
+          },
+          {
+            "type": "command",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/staged_claim_gate.py"
           }
         ]
       },
@@ -680,6 +684,10 @@
           {
             "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py say-hook"
+          },
+          {
+            "type": "command",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/staged_claim_gate.py"
           }
         ]
       },

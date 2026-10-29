@@ -21,6 +21,12 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("After `EnterWorktree`, Claude Code's own worktree guard refuses", text)
         self.assertIn("one simple command per call with literal paths", text)
 
+    def test_a_main_push_line_waits_for_the_branch_s_verify_branch_and_non_negotiables_results(self):
+        text = guidance_text("orchestration.md")
+        self.assertIn("only after the branch reports `/verify-branch` done and, where the repo's CLAUDE.md names a "
+                      "non-negotiables check, that check passed", text)
+        self.assertIn("A green gate or CI run alone never produces that line.", text)
+
     def test_a_cancelled_spec_deletes_its_questions_file_and_research_writes_nothing_without_it(self):
         phase_text = guidance_text("skills/eng-spec/phases/2-research.md")
         self.assertIn("delete only `<task-dir>/01-questions.md` with a plain `rm <path>` (no flags)", phase_text)

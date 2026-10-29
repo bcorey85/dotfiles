@@ -3,9 +3,10 @@
 
   SubagentStop (review-loop), the backstop: blocks once when no full check ran after the last code
       change: a shell call of review/full_check.py whose tool_result holds the line
-      `full check: passed`. A failed, unverified, setup-fault or not-run result, and a checker run by hand, never
-      count; full_check.py itself refuses a command scoped to files or tests, unless its text equals the CLAUDE.md
-      `Quality check:` command. The last coder step — a
+      `full check: passed`; a shell call of several full_check.py calls counts only when each printed that line. A
+      failed, unverified, setup-fault or not-run result, and a checker run by hand, never count; full_check.py itself
+      refuses a command scoped to files or tests, or one whose scope cannot be read, unless its text equals the
+      CLAUDE.md `Quality check:` command. The last coder step — a
       dispatch, or a SendMessage to a coder it dispatched — is the last code change; with none, the loop start
       is, since the phase changed code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
       `status: plan-impact` owes no check, and neither does a loop in a repo whose CLAUDE.md holds the line
@@ -203,7 +204,7 @@ class LoopTranscript:
         self.scope_root = None  # the ROOT= that the last review-scope call printed
         self.finding_calls = {}  # Bash tool_use_id -> the key=value fields of each `kind=finding` call, in order
         self.ask_rows = []  # {file, line, finding_id} of each `actioned=ask` row whose id the log helper printed
-        self.full_check_calls = {}  # Bash tool_use_id -> transcript line, of each full_check.py call
+        self.full_check_calls = {}  # Bash tool_use_id -> (transcript line, full_check.py calls in it)
         self.full_checks = []  # the transcript lines of the full_check.py calls whose result is `full check: passed`
         with open(path, encoding="utf-8") as fh:
             for n, line in enumerate(fh):
@@ -258,9 +259,10 @@ class LoopTranscript:
         """One Bash call can chain a finding row, a metrics row and a scope call, so each check reads the result."""
         tool_use_id = block.get("tool_use_id")
         if tool_use_id in self.full_check_calls:
-            first_result = FULL_CHECK_RESULT.search(text_of(block.get("content")))
-            if first_result and first_result.group(1).strip() == "passed":
-                self.full_checks.append(self.full_check_calls[tool_use_id])
+            line, call_count = self.full_check_calls[tool_use_id]
+            full_check_results = [found.strip() for found in FULL_CHECK_RESULT.findall(text_of(block.get("content")))]
+            if len(full_check_results) >= call_count and all(found == "passed" for found in full_check_results):
+                self.full_checks.append(line)
         if tool_use_id in self.finding_calls:
             self.read_printed_finding_ids(block)
         refused = block.get("is_error") or METRICS_REFUSAL in text_of(block.get("content"))
@@ -326,8 +328,9 @@ class LoopTranscript:
         self.metrics_calls += [(n, fields, tool_use_id) for fields in metrics_calls(command)]
         if SCOPE_CALL.search(command):
             self.scope_calls.add(tool_use_id)
-        if FULL_CHECK_SCRIPT.search(command):
-            self.full_check_calls[tool_use_id] = n
+        call_count = len(FULL_CHECK_SCRIPT.findall(command))
+        if call_count:
+            self.full_check_calls[tool_use_id] = (n, call_count)
 
     def reviewed_root(self):
         """The repo the loop reviewed: the ROOT= review-scope printed, else the prompt's `repo:` line, when it names a

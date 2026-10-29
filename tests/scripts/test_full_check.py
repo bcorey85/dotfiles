@@ -258,6 +258,47 @@ class FullCheckTest(unittest.TestCase):
             in_ci = self.check("pytest tests/test_a.py", claude_md="# Repo\n\n- Full suite: CI\n")
             self.assertEqual(in_ci.stdout.splitlines()[0], "full check: not run (CI)")
 
+    def test_a_runner_that_check_scope_reads_by_its_flags_is_not_run_on_named_files_or_tests(self):
+        marker = self.repo / "ran"
+
+        for command in ("cargo test tests/foo.rs",
+                        "cargo test --manifest-path /r/a/Cargo.toml -- --exact parser::tests::empty",
+                        "cargo test -p core",
+                        "cargo test --test=integration",
+                        "cargo test --bin=app",
+                        "cargo test --examples",
+                        "go test -run TestX ./...",
+                        "go test ./pkg/...",
+                        "bats -p test/login.bats",
+                        "bundle exec rspec spec/models/user_spec.rb",
+                        "phpunit --filter testLogin"):
+            with self.subTest(command=command):
+                completed = self.check(f"touch {marker}; {command}")
+
+                self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
+                self.assertFalse(marker.exists())
+
+    def test_a_make_target_whose_recipe_runs_a_scoped_runner_is_not_run(self):
+        marker = self.repo / "ran"
+        (self.repo / "Makefile").write_text("test:\n\tgo test -run TestX ./...\n")
+
+        completed = self.check(f"touch {marker}; make test")
+
+        self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
+        self.assertFalse(marker.exists())
+
+    def test_a_command_whose_scope_check_scope_cannot_read_is_not_run(self):
+        marker = self.repo / "ran"
+        (self.repo / "Makefile").write_text("test:\n\tpytest\n")
+
+        for command in ("make test TESTS=tests/a.py", "make missing"):
+            with self.subTest(command=command):
+                completed = self.check(f"touch {marker}; {command}")
+
+                self.assertTrue(completed.stdout.startswith("full check: not run (unresolved command"),
+                                completed.stdout)
+                self.assertFalse(marker.exists())
+
     def test_the_command_the_claude_md_declares_runs_even_when_it_names_a_tests_folder(self):
         marker = self.repo / "ran"
         declared = f"touch {marker}; pytest tests/"

@@ -315,6 +315,14 @@ class ParseTest(HandbackTestBase):
         self.assertEqual(packet["fixed"][0]["file_line"], "src/a.ts:4")
         self.assertEqual(packet["fixed"][0]["blocker"], "no")
 
+    def test_an_ask_with_an_empty_question_asks_its_change(self):
+        packet = handback.load(
+            'status: converged\niter: 1\nfixed: []\nask: [{"question": "", "file_line": "unlocated", '
+            '"change": "read the limit from settings", "gate": "code-reviewer", "class": "bug"}]\n'
+        )
+
+        self.assertEqual(packet["ask"][0]["question"], "read the limit from settings")
+
     def test_an_entry_that_is_neither_text_nor_a_mapping_is_a_problem(self):
         for text, problem in (("status: converged\niter: 1\nfixed: [null]\n", "fixed entry has no finding: 'None'"),
                               ("status: converged\niter: 1\nfixed: [5]\n", "fixed entry has no finding: '5'"),

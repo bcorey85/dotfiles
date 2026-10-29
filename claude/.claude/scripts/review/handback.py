@@ -475,8 +475,10 @@ def read_header(raw):
 def normalize_ask(item):
     if item.get("from_text"):
         item["finding"] = item["question"]
-    elif item.get("finding") and not item.get("question"):
-        item["question"] = item["finding"]
+    elif not item.get("question"):
+        question_source = item.get("finding") or item.get("change")
+        if question_source:
+            item["question"] = question_source
     item["gate"] = first_token(item.get("gate")) or DEFAULT_GATE
 
     ask_class = str(item.get("class") or "").strip()

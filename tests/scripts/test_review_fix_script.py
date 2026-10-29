@@ -925,9 +925,10 @@ class ReviewFixScriptTest(unittest.TestCase):
             CONVERGED.replace('finding: "orders query lacked a tenant filter", ', ""), "no finding"
         )
 
-    def test_ask_entry_without_a_question_is_a_parse_failure(self):
+    def test_ask_entry_without_a_question_or_a_change_is_a_parse_failure(self):
         self.assert_parse_failure(
-            WITH_ASK.replace('finding: "no index", ', "").replace('question: "Add an index on tenant_id?", ', ""),
+            WITH_ASK.replace('finding: "no index", ', "").replace('question: "Add an index on tenant_id?", ', "")
+            .replace('change: "add an index on tenant_id", ', ""),
             "no question",
         )
 

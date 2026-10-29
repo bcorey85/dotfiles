@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The reviewer's rule for a prior issue the fixer skipped now names the failure on both sides"
 description: "The reviewer's rule for a prior issue the fixer skipped now names the failure on both sides, and one duplicated scope instruction was cut."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 11
+kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["census"]
 watches: []

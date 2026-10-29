@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The code skill runs each code-step verb alone so the coder prompt is not cut"
 description: "The /code skill tells the subagent to run each code-step.py verb as its own Bash call, with no pipe, head, sed or second command. A cut output loses the coder prompt."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T16:57:27-05:00"}
 seq: 21
+kind: "fix"
 components: ["skill/code"]
 evidence: ["transcript read"]
 watches: []

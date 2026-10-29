@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` set to `sonnet`"
+change_type: "changed"
+title: "settings.json: the general-purpose and catch-all agents run on Sonnet 5.5 via `CLAUDE_CODE_SUBAGENT_MODEL`"
 description: "settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` set to `sonnet`."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["rule/settings-json", "agent/general-purpose"]
 evidence: ["judgment"]
 watches: []

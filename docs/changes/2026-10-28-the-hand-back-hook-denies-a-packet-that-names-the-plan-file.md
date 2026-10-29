@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The hand-back hook denies a packet that names the plan file"
 description: "A review-loop packet whose files_touched names the plan file is denied before delivery, and the stop gate skips its plan check once a hand-back was delivered."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T01:30:00-05:00"}

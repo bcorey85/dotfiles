@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "branch-recap reads the deferred queue through a script that waits out a cache behind"
 description: "branch-recap Step 2 runs scripts/tools/ledger_deferred.py, which waits the shared 90 s for a ledger that is behind and otherwise prints deferred: not read with the command to run, never an empty queue."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:35:21-05:00"}

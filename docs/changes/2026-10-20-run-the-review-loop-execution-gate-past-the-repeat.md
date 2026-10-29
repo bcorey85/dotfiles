@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Run the review-loop execution gate past the repeat-check cap"
 description: "The review loop's one full quality-check run now carries a trailing `#skip-quality-cap`, so the cap on repeated checks cannot deny the gate that decides convergence."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T20:21:22-05:00"}
 seq: 12
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["judgment", "census"]
 watches: []

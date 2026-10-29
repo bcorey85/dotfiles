@@ -1,10 +1,12 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A dirty commit is denied with a /review reason instead of a prompt"
 description: "`review-commit-gate` denies a `git commit` while coder work from the session has no converged review. The reason tells the session to run /review and commit after it converges. A docs-only commit chain that ends in `git rev-parse` now passes. An internal error in the gate still asks."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-23T20:40:16-05:00"}
 seq: 7
 kind: "behavior"
+reverts: "2026-10-16-review-commit-gate-asks-the-user-to-confirm-a-git"
 components: ["script/review-commit-gate"]
 evidence: ["work incident", "tests"]
 watches: ["commit-prompt-wait"]

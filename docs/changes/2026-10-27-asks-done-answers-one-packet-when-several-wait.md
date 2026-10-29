@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "asks-done answers one packet when several wait"
 description: "A second packet no longer replaces the first packet's unanswered asks; asks-done takes --packet to pick which packet it answers."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T17:31:35-05:00"}

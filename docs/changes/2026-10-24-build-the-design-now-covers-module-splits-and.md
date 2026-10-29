@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Build the design now covers module splits and folder layout"
 description: "The global rule against deferred design now names module splits and folder layout, and says small size is no reason to wait."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T12:32:14-05:00"}

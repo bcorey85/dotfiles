@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "asks-done records whether the user or the session ruled"
 description: "The asks-done verb of review_fix.py and code_step.py takes --by user|session, each ask outcome row carries ask_decided_by, and the ask prompts tell the session to rule itself when the repo's CLAUDE.md hands it ask decisions."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T09:44:25-05:00"}

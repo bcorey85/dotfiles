@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code-step runs env-prefixed checks, clippy for Rust phases, and commits a plan edited before the phase"
 description: "code-step reads a verification command with leading NAME=value assignments and runs it with them set. A phase that touches Rust code gets a clippy gate. The phase commit includes the plan when the phase ticked it, even if the plan had edits before the phase. coder-packet no longer reads Phase 6.1 as Phase 6. One plan parser and one stage-guard table replace the duplicates."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T09:30:33-05:00"}
 seq: 14
+kind: "behavior"
 components: ["script/code-step", "script/plan-format", "script/coder-packet", "script/script-utils"]
 evidence: ["work incident", "tests"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A plan-impact ruling names who made it, and only the user's ruling changes the criteria"
 description: "decide adopt|keep needs --by user|session. Only --by user signs with the git user name and lets the plan-edit coder rewrite the acceptance criteria. A session or pre-set ruling edits the plan only, and code-step.py restores the criteria if the coder changes them."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T00:00:14-05:00"}
 seq: 1
+kind: "behavior"
 components: ["script/code-step", "script/review-fix", "skill/code", "skill/review", "skill/fix"]
 evidence: ["judgment", "tests"]
 watches: []

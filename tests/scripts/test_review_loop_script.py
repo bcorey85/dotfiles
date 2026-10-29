@@ -430,6 +430,31 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("no converged /review", self.commit_gate_reply())
 
+    def test_the_packet_the_script_hands_back_is_one_json_object(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        row, packet = self.stored_packet()
+        sent = json.loads(row["message"])
+        self.assertIsInstance(sent, dict)
+        self.assertEqual((sent["status"], sent["iter"], sent["files_touched"]), ("converged", 2, ["app.py"]))
+        self.assertEqual(sent["fixed"][0]["file_line"], "app.py:2")
+        self.assertEqual(handback.load(row["message"]), packet)
+        self.assertNotIn("old free-text packet", completed.stderr)
+
+    def test_the_crash_packet_is_one_json_object_with_its_blocker_and_tool_fault(self):
+        progress = {"iter": 1, "fixed": [], "files_touched": {"app.py"}}
+        message = review_loop_packet.packet_message(review_loop_packet.crash_outcome(progress, "boom:\n- line two"))
+
+        sent = json.loads(message)
+        self.assertEqual((sent["status"], sent["blockers"], sent["tool_fault"]),
+                         ("critical-blocker", ["boom:\n- line two"], "boom:\n- line two"))
+        self.assertEqual(handback.load(message)["blockers"], ["boom:\n- line two"])
+
     def test_failed_reviewer_call_is_a_critical_blocker_not_a_clean_review(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}],

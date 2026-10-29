@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A filtered test run that matches no test reads RED in the eng-spec dry run"
 description: "The dry-run script marks a filtered test run RED unless the output reports at least one passed test."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T00:21:00-05:00"}

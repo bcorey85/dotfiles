@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "plan-reviewer: a new finding class, phase shape"
-description: "plan-reviewer: a new finding class, phase shape."
+change_type: "changed"
+title: "plan-reviewer now flags oversized phases, a skeleton phase with no Phase 0 contract, and criteria files over 8 criteria"
+description: "plan-reviewer has a new finding class, phase shape: it flags a phase past about 10 files with no atomic reason, a skeleton phase that never runs a Phase 0 contract, and an acceptance-criteria file with more than 8 criteria."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["agent/plan-reviewer"]
 evidence: ["seeded round", "census"]
 watches: ["plan-review-phase-shape"]
@@ -11,7 +13,7 @@ watches: ["plan-review-phase-shape"]
 
 ## Change
 
-plan-reviewer: a new finding class, phase shape. It flags a phase past about 10 files with no atomic reason, a skeleton phase that never runs a Phase 0 contract, and an acceptance-criteria file with more than 8 criteria. The opencode copy matches
+plan-reviewer has a new finding class, phase shape. It flags a phase past about 10 files with no atomic reason, a skeleton phase that never runs a Phase 0 contract, and an acceptance-criteria file with more than 8 criteria. The opencode copy matches
 
 ## Evidence
 

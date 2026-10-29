@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Every plan phase line must now carry a reviewers tag, with `none` as a legal value that declares no domain"
 description: "Every plan phase line must now carry a reviewers tag, with `none` as a legal value that declares no domain."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["census"]
 watches: []

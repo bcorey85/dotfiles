@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The git discipline gate now denies any `git commit`, `gh pr create` or `gh pr edit` command whose text"
+change_type: "changed"
+title: "The git discipline gate now blocks commits and PR text that carry a Claude session trailer, session link or co-author line"
 description: "The git discipline gate now denies any `git commit`, `gh pr create` or `gh pr edit` command whose text carries `Claude-Session:`, a `claude.ai/code/session_` link or `Co-Authored-By: Claude`."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["script/git-discipline-gate", "rule/global-claude-md"]
 evidence: ["judgment"]
 watches: []

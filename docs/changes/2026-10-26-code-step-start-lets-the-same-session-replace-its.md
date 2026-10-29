@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code_step start lets the same session replace its stopped run and prints a restart form it accepts"
 description: "A run that stopped on the coder's report no longer blocks the same session's next `start`, and the open-run refusal prints a `--restart` command the script accepts."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:50:59-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Ruled /code asks reach later review and refactor passes"
 description: "asks-done and pre-set ask outcomes are saved in the code-step state directory, and later review hand-offs and the closing refactor prompt list them so a matching finding is dropped instead of raised again."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T00:15:29-05:00"}

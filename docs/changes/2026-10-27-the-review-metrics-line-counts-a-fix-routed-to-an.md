@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review metrics line counts a fix routed to an ask under ask"
 description: "A [design-decision] fix that the review loop sends to the user as an ask now counts under ask on the metrics line, not under fix, in the scripted loop and in the review-loop agent's Step 7 rule."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T14:30:59-05:00"}

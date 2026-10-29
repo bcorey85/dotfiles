@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Worktrees inside herdr open through `herdr-worktree --fork <branch>`"
 description: "Worktrees inside herdr open through `herdr-worktree --fork <branch>`."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-16T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["skill/herdr"]
 evidence: ["judgment"]
 watches: []

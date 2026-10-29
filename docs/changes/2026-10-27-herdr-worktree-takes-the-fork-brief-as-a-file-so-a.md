@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "herdr-worktree takes the fork brief as a file, so a worktree session can fork"
 description: "herdr-worktree --fork takes --prompt-file <path>, and the orchestration rule runs it with literal paths in place of --prompt \"$(cat <brief file>)\", which Claude Code's worktree guard refuses."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T14:52:45-05:00"}

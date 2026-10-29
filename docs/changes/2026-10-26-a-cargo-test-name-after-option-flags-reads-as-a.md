@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A cargo test name after option flags reads as a filtered run"
 description: "A cargo test command is filtered when a bare name follows its options, or any token follows --, so a name that matches no test reads RED in the eng-spec dry run and the code-phase verification."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T10:33:09-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Only the main session hands the user a command"
 description: "The global rules now say a subagent never writes a command for the user to run; it reports the step it could not do to its caller, which runs it or hands it on."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T13:40:37-05:00"}

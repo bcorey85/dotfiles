@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Review loop: one fix coder takes every `fix` finding, test gaps included"
 description: "Review loop: one fix coder takes every `fix` finding, test gaps included."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 13
+kind: "behavior"
 components: ["agent/review-loop", "skill/fix", "agent/test-writer", "agent/test-reviewer"]
 evidence: ["bench smoke"]
 watches: []

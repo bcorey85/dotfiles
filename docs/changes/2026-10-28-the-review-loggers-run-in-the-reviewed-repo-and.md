@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review loggers run in the reviewed repo and log the scoped reviewer's deferrals"
 description: "log-review-finding and log-review-metrics take root=<path> and run there, so a review loop working on a sibling worktree logs against that worktree, and the cap exit's scoped reviewer defers its fix findings as source=scoped instead of being refused."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T19:40:14-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "test-reviewer never mutates the shared tree"
 description: "test-reviewer is told it is read-only and reports a mutation check as a finding instead of running it on the tree its sibling reviewers test."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:46:49-05:00"}

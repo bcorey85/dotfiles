@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The finalization phase writes the two self-sufficiency spec sections from the template instead of re-teaching"
 description: "The finalization phase writes the two self-sufficiency spec sections from the template instead of re-teaching their rules."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 23
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["census"]
 watches: []

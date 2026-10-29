@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Run the 19 shell hooks as Python scripts"
 description: "19 hooks written in bash now run as Python scripts with the same decisions and output. batch-reads-nudge points straight at its Python file. At work, each bash hook takes 110–470 ms per call because bash and every program it starts are slow to launch there. Python starts in 13 ms. The predicted cut is about 0.5 s of hook time per Bash call at work."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T07:40:45-05:00"}
 seq: 1
+kind: "behavior"
 components: ["script/shell-write-gate", "script/quality-check-cap", "script/git-discipline-gate", "script/review-commit-gate", "script/comment-bloat-gate", "script/stale-citation-gate", "script/dead-prose-gate", "script/claudemd-linecount", "script/calibration-refs-guard", "script/spec-budget-gate", "script/test-edit-telemetry", "script/agent-model-guard", "script/agent-foreground", "script/log-agent-usage", "script/log-skill-use", "script/format-changed", "script/emit-orchestration", "script/calibration-guard", "script/warn-skip-hooks", "script/batch-reads-nudge", "script/claude-doctor", "skill/review"]
 evidence: ["census"]
 watches: ["hook-port-python"]

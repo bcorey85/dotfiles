@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The review loop's run-logging glossary stops claiming that its disposition counts sum"
-description: "The review loop's run-logging glossary stops claiming that its disposition counts sum."
+change_type: "fixed"
+title: "The review loop's run-logging glossary no longer wrongly claims its disposition counts sum"
+description: "The review loop's run-logging glossary no longer claims that its disposition counts sum."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 14
+kind: "fix"
 components: ["agent/review-loop"]
 evidence: ["census"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The review loop's run-logging glossary stops claiming that its disposition counts sum. One of the three terms in that claim is not a field of the row it governs. Routing sends some findings marked for fixing to other buckets by design, so the claim marked specified behavior as a logging fault.
+The review loop's run-logging glossary no longer claims that its disposition counts sum. One of the three terms in that claim is not a field of the row it governs. Routing sends some findings marked for fixing to other buckets by design, so the claim marked specified behavior as a logging fault.
 
 ## Evidence
 

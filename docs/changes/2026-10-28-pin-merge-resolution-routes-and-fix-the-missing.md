@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Pin merge-resolution routes and fix the missing-module rule"
 description: "Two tests pin merge resolutions that had none (a tool fault outranks the blocker-with-asks route; an environment gap outranks a setup fault), and the review-loop's missing-module rule now excludes declared dependencies."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T05:04:25-05:00"}

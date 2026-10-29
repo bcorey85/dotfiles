@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step start takes a phase named after the plan, and the refactor skill shows a log input that parses"
 description: "`code_step.py start <plan> Phase <id>` and `start <plan> <id>` start that phase where they used to stop on 'text after the plan', and the /refactor skill shows a JSON log input that `refactor_flow.py log` accepts, so two first calls that callers got wrong daily now pass."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T21:10:00-05:00"}

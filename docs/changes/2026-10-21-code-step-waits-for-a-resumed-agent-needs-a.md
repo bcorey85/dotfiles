@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step waits for a resumed agent, needs a dispatch time, and skips gated phases"
 description: "code-step waits for the hand-back of the coder or review loop of this phase, including one resumed by SendMessage. It stops when a state has no dispatch time, instead of reading an earlier row. start skips an open phase whose status line has a gate clause, and names it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T12:11:31-05:00"}
 seq: 15
+kind: "fix"
 components: ["script/code-step", "script/plan-format", "skill/plan-format"]
 evidence: ["work incident", "tests"]
 watches: []

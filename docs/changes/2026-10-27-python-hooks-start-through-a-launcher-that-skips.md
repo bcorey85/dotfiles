@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Python hooks start through a launcher that skips the pyenv shim"
 description: "Every Python hook in settings.json runs through scripts/tools/hook-python, which finds a real interpreter without starting pyenv, so a tool call no longer waits 1-2 s on a version manager's shim."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T17:30:40-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The diff reviewer's rule about trusting a reported check no longer repeats a generic rule"
-description: "The diff reviewer's rule about trusting a reported check no longer repeats a generic rule."
+change_type: "changed"
+title: "The diff reviewer's rule about trusting a reported check now holds only its own conditional half"
+description: "The diff reviewer's rule about trusting a reported check now holds only its conditional half, without repeating a generic rule."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 17
+kind: "behavior"
 components: ["agent/code-reviewer", "rule/global-claude-md"]
 evidence: ["census", "judgment"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The diff reviewer's rule about trusting a reported check no longer repeats a generic rule. The same file names that generic rule two lines above, and the global rules file states it with no condition. The conditional half stands, because it is the only part the reviewer file adds. The opencode copy took the same change.
+The diff reviewer's rule about trusting a reported check now holds only its conditional half, without repeating a generic rule. The same file names that generic rule two lines above, and the global rules file states it with no condition. The conditional half stands, because it is the only part the reviewer file adds. The opencode copy took the same change.
 
 ## Evidence
 

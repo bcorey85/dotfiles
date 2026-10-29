@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The review loop stated its two-round budget two ways, and its exit at the round cap left before the closing"
-description: "The review loop stated its two-round budget two ways, and its exit at the round cap left before the closing checks."
+change_type: "fixed"
+title: "The review loop now states its two-round budget one way and runs the closing checks at the round cap"
+description: "The review loop now states its two-round budget one way, and its exit at the round cap runs the closing checks."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-22T00:00:00-05:00"}
 seq: 1
+kind: "fix"
 components: ["agent/review-loop", "skill/fix"]
 evidence: ["census", "judgment"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The review loop stated its two-round budget two ways, and its exit at the round cap left before the closing checks. The step list now governs: every `fix` finding of a full review gets a coder, in the first round and in the second, and the cap stops a third full review and nothing else. At the cap the loop reads any unread fix diff, then runs the execution gate, the class check, the specialist pass and the logs, and it returns the budget status only when a finding remains. Past the cap only a blocking finding of the fix-diff pass or of the execution gate gets a coder. A failing gate gets one coder there and one more run, and an open class gets none. A fix diff that a later full review covered counts as read, so no pass follows a clean second review. The fix step now builds the list of prior issues for that review and adds the coder's changed files to its scope, and the fix-first mode adds its coders' files in the same way. The cap test applies when a full review comes due, so a fix-first run that starts at the cap still gets its coder. The ban on an empty converged return now names a repair by a coder of the invocation as its condition, and no longer the round number. The opencode copy carries the same strings. The audit skill's distribution line names the present counter values, and its threshold row on second rounds is deleted, because a second round is now the design.
+The review loop now states its two-round budget one way, and its exit at the round cap runs the closing checks. Before, it stated the budget two ways and the cap exit left before the closing checks. The step list now governs: every `fix` finding of a full review gets a coder, in the first round and in the second, and the cap stops a third full review and nothing else. At the cap the loop reads any unread fix diff, then runs the execution gate, the class check, the specialist pass and the logs, and it returns the budget status only when a finding remains. Past the cap only a blocking finding of the fix-diff pass or of the execution gate gets a coder. A failing gate gets one coder there and one more run, and an open class gets none. A fix diff that a later full review covered counts as read, so no pass follows a clean second review. The fix step now builds the list of prior issues for that review and adds the coder's changed files to its scope, and the fix-first mode adds its coders' files in the same way. The cap test applies when a full review comes due, so a fix-first run that starts at the cap still gets its coder. The ban on an empty converged return now names a repair by a coder of the invocation as its condition, and no longer the round number. The opencode copy carries the same strings. The audit skill's distribution line names the present counter values, and its threshold row on second rounds is deleted, because a second round is now the design.
 
 ## Evidence
 

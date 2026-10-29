@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Wrapped shell block names the direct form"
 description: "The deny text for a wrapped shell command now tells the agent to run the inner command directly as its own Bash call."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-25T22:40:00-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A plan phase can be marked moved to another ticket"
 description: "The plan grammar accepts `- [-] Phase <id>: … moved to <KEY>` with a Plan Deviations line that records the move. code-step never runs a moved phase, and verify-branch lists it as moved, not as done or missing."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T09:51:54-05:00"}
 seq: 4
+kind: "behavior"
 components: ["script/plan-format", "script/code-step", "script/verify-common", "script/verify-log", "script/script-utils"]
 evidence: ["work incident"]
 watches: []

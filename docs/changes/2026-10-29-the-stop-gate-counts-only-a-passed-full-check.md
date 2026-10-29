@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The stop gate counts only a passed full check result"
 description: "The review-loop stop gate reads full_check.py's result line instead of the command text, so a failed, unverified or bare-runner check no longer lets the loop stop, and full_check.py refuses a command scoped to files or tests."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T08:46:35-05:00"}
@@ -22,7 +23,7 @@ unmeasured: ""
   scope (`CHECKER`, `SCOPED`, `NON_SCOPING_FLAGS`, `GATE_LOG`, `REDIRECT`, `scoping_words`, `full_check`) are gone.
 - `full_check.py`: the CLI (`main()`, not `run()`) refuses a command that `check_scope.command_check_scope` scores as
   targeted, with `full check: not run (scoped command: ...)`, unless the command equals the CLAUDE.md
-  `Quality check:` command. In a `Full suite: CI` repo it prints `not run (CI)` for any command. Scope is judged in `check_scope` only, the module the coder gate reads.
+  `Quality check:` command. In a `Full suite: CI` repo it prints `not run (CI)` for any command other than the `Quality check:` command. Scope is judged in `check_scope` only, the module the coder gate reads.
 - `review-loop.md` Step 6: on the scoped result, run the CLAUDE.md quality-check command as written.
 - `script_utils.strip_flag_values` and its tests are deleted (no production caller).
 

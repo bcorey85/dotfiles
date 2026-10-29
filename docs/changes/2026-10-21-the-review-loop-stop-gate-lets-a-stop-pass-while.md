@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review-loop stop gate lets a stop pass while the loop waits on its own agents"
 description: "review-loop-gate.py no longer blocks a review loop's stop while one of the loop's background agents has not reported. The loop ends its turn to wait for each report, and the gate read every wait as an attempt to finish."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T07:29:17-05:00"}
 seq: 3
+kind: "fix"
 components: ["script/review-loop-gate"]
 evidence: ["transcript read", "census", "tests"]
 watches: []

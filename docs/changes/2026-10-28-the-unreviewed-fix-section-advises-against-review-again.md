@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The unreviewed-fix section says no reviewer read the last fixes and that review-again is not advised"
 description: "The hand-back's last-fix section states plainly that no reviewer read the loop's last fixes, names their files, and says a review-again ends the same way."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T09:00:00-05:00"}

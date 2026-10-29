@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The git rules file and the Obsidian and rule-maintenance sections of the global CLAUDE.md moved into the"
+change_type: "changed"
+title: "The git rules and the Obsidian and rule-maintenance sections now load only in the main session"
 description: "The git rules file and the Obsidian and rule-maintenance sections of the global CLAUDE.md moved into the orchestration file, which only the main session loads."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["rule/global-claude-md", "rule/orchestration"]
 evidence: ["census", "judgment"]
 watches: []

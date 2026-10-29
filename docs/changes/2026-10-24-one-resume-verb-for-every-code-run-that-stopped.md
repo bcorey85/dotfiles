@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "One resume verb for every /code run that stopped"
 description: "`code-step.py resume` replaces `continue`, `after-coder`, `after-review` and `after-plan-edit` as the one way to go on with a stopped /code run. `start` refuses over an open run and names `resume` or `start --restart`. Six stop routes that no run reached are cut, and the /code skill runs `resume` for empty task text."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T00:02:51-05:00"}

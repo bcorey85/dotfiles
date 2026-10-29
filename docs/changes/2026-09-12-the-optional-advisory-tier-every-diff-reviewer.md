@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The optional advisory tier every diff reviewer shares is now budgeted: at most two per run"
 description: "The optional advisory tier every diff reviewer shares is now budgeted: at most two per run, and none at all in a run that also reports something to fix."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 13
+kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["finding census"]
 watches: []

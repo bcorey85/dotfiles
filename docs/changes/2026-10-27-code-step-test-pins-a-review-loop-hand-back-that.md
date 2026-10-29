@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code_step test pins a review-loop hand-back that lands after the wait-cap stop"
 description: "A test replays the LED-10 run: the fork's SendMessage to a review-loop is queued before the wait-cap stop, the loop hands back after it, and `resume` takes that hand-back instead of asking the user."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T09:45:52-05:00"}

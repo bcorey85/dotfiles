@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A cancelled spec leaves no research file behind"
 description: "eng-spec's research phase deletes the questions file before it stops the researcher, and spec-research writes nothing when its questions file is gone."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:46:03-05:00"}

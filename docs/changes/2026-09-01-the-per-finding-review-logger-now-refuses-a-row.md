@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The per-finding review logger now refuses a row whose non-free-text value contains a space"
 description: "The per-finding review logger now refuses a row whose non-free-text value contains a space, and its call template passes context fields as an array instead of one unquoted string."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["script/log-review-finding"]
 evidence: ["census"]
 watches: []

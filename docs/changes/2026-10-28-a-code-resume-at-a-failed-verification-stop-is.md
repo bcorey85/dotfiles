@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A code resume at a verification stop is refused before its fork starts"
 description: "A PreToolUse hook on Skill denies `/code`, `/code resume` and `/code continue` while the open run is stopped at its Automated Verification (a command failed, or an item could not be run), and names the step the main session runs: fix the cause, then invoke `/code verify`."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T21:09:48-05:00"}

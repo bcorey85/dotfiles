@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "review-loop hands back once, after the full check"
 description: "The hand-back hook denies a review-loop report with no full check after its last code change, and denies a second report from an agent whose first was delivered; the stop gate no longer sends a delivered loop back to work."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T21:45:52-05:00"}

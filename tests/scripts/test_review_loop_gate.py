@@ -88,7 +88,7 @@ def resume_background_coder():
 
 
 class StopHookMixin:
-    def stop(self, records, **extra):
+    def stop(self, records, old_packet_form=False, **extra):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = os.path.join(tmp.name, "loop.jsonl")
@@ -99,7 +99,10 @@ class StopHookMixin:
         hook.update(extra)
         proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
                               text=True, check=True)
-        self.assertEqual(proc.stderr, "")
+        if old_packet_form:
+            self.assertIn("old free-text packet", proc.stderr)
+        else:
+            self.assertEqual(proc.stderr, "")
         return proc.stdout
 
 
@@ -122,7 +125,7 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
     def test_a_delivered_hand_back_ends_the_full_check_block_but_a_stop_without_one_keeps_it(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
-                        "input": {"message": "status: converged"}}
+                        "input": {"message": '{"status": "converged"}'}}
         delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
                      result("toolu_hb", "delivered")]
         self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
@@ -131,7 +134,7 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
     def test_a_denied_hand_back_does_not_end_the_full_check_block(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
-                        "input": {"message": "status: converged"}}
+                        "input": {"message": '{"status": "converged"}'}}
         denied = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
                   {"type": "user", "message": {"role": "user", "content": [
                       {"type": "tool_result", "tool_use_id": "toolu_hb", "content": "denied", "is_error": True}]}}]
@@ -140,8 +143,26 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
     def test_a_plan_impact_report_owes_no_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
-        out = self.stop(records, last_assistant_message="status: plan-impact\niter: 1\nplan_impact: a, b\n")
+        out = self.stop(records, old_packet_form=True,
+                        last_assistant_message="status: plan-impact\niter: 1\nplan_impact: a, b\n")
         self.assertNotIn("No passed full_check.py result", out)
+
+    def test_a_json_plan_impact_report_owes_no_full_check(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        packet = json.dumps({"status": "plan-impact", "iter": 1, "plan_impact": "a, b"})
+        padded = [json.dumps({"status": status, "iter": 1}) for status in
+                  ("plan-impact (needs ruling)", "`plan-impact`", " plan-impact")]
+        for message in (packet, f"```json\n{packet}\n```", json.dumps({"iter": 1, "status": "plan-impact"}, indent=2),
+                        *padded):
+            with self.subTest(message=message):
+                out = self.stop(records, last_assistant_message=message)
+                self.assertNotIn("No passed full_check.py result", out)
+
+    def test_a_json_converged_report_still_owes_a_full_check(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impact": '"status": "plan-impact"'})
+        out = self.stop(records, last_assistant_message=packet)
+        self.assertIn("No passed full_check.py result", json.loads(out)["reason"])
 
     def test_full_check_after_reviewed_coder_passes(self):
         records = [user("review loop"),
@@ -975,14 +996,10 @@ if __name__ == "__main__":
     unittest.main()
 
 
-PACKET = """status: converged
-iter: 1
-fixed: [{finding: "null deref", file_line: "a.py:3", blocker: no}]
-skipped_fp: []
-ask: []
-class_closure: n/a — fixed[] empty
-files_touched: [a.py, %s]
-nit: []"""
+PACKET = json.dumps({"status": "converged", "iter": 1,
+                     "fixed": [{"finding": "null deref", "file_line": "a.py:3", "blocker": False}],
+                     "skipped_fp": [], "ask": [], "class_closure": "n/a - fixed[] empty",
+                     "files_touched": ["a.py", "%s"], "nit": []})
 FINDING_ROW = ("~/.claude/skills/review/log-review-finding kind=finding lane=code scope=phase iter=1 "
                "gate=code-reviewer disposition=fix class=bug file=a.py line=3 actioned=fixed")
 METRICS_ROW = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=1 ask=0 nit=0 fixed=1 result=PASS"
@@ -1021,7 +1038,7 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
         self.assertEqual(self.stop_with_packet([*records, bash(METRICS_ROW)], "b.py"), "")
 
     def test_a_nit_with_no_nit_row_is_blocked_even_when_the_row_total_matches(self):
-        packet = (PACKET % "b.py").replace("nit: []", 'nit: ["b.py:4 rename x - applied"]')
+        packet = (PACKET % "b.py").replace('"nit": []', '"nit": ["b.py:4 rename x - applied"]')
         doubled = FINDING_ROW.replace("line=3", "line=5")
         records = self.loop(FINDING_ROW, doubled, METRICS_ROW, plan="other.md")
 
@@ -1033,10 +1050,10 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
                                    last_assistant_message=packet), "")
 
     def test_a_delivered_stop_with_missing_nit_rows_tells_the_loop_to_stop_not_return_the_packet(self):
-        packet = (PACKET % "b.py").replace("nit: []", 'nit: ["b.py:4 rename x - applied"]')
+        packet = (PACKET % "b.py").replace('"nit": []', '"nit": ["b.py:4 rename x - applied"]')
         doubled = FINDING_ROW.replace("line=3", "line=5")
         handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
-                        "input": {"message": "status: converged"}}
+                        "input": {"message": '{"status": "converged"}'}}
         delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
                      result("toolu_hb", "delivered")]
         records = [*self.loop(FINDING_ROW, doubled, METRICS_ROW, plan="other.md"), *delivered]
@@ -1094,7 +1111,7 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
         self.assertIn("no metrics line", reason)
 
     def test_a_nit_row_written_in_the_documented_multi_line_form_counts(self):
-        packet = (PACKET % "b.py").replace("nit: []", 'nit: ["b.py:4 rename x - applied"]')
+        packet = (PACKET % "b.py").replace('"nit": []', '"nit": ["b.py:4 rename x - applied"]')
         multi_line = FINDING_ROW.replace(" disposition=fix", " \\\n  disposition=%s")
         fix_row, nit_row = multi_line % "fix", multi_line % "nit"
 
@@ -1107,7 +1124,7 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
         self.assertEqual(self.stop(logged, last_assistant_message=packet), "")
 
     def test_a_nit_row_whose_disposition_is_a_shell_variable_leaves_the_nit_count_unclaimed(self):
-        packet = (PACKET % "b.py").replace("nit: []", 'nit: ["b.py:4 rename x - applied"]')
+        packet = (PACKET % "b.py").replace('"nit": []', '"nit": ["b.py:4 rename x - applied"]')
         variable_row = FINDING_ROW.replace("disposition=fix", "disposition=$D")
         records = [user("review loop\nlane: code\nplan: other.md"), *full_check_run(),
                    bash(FINDING_ROW, "t_fix"), bash(variable_row, "t_variable"), bash(METRICS_ROW, "t_metrics")]
@@ -1125,7 +1142,7 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
 
     def test_a_plan_file_in_files_touched_after_a_delivered_hand_back_passes(self):
         handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
-                        "input": {"message": "status: converged"}}
+                        "input": {"message": '{"status": "converged"}'}}
         delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
                      result("toolu_hb", "delivered")]
 

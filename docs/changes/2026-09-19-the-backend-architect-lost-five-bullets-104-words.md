@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The backend architect lost five bullets (104 words, 455 remain in the agent file)"
-description: "The backend architect lost five bullets (104 words, 455 remain in the agent file)."
+change_type: "changed"
+title: "The backend architect's agent file is 104 words shorter, with five bullets trimmed (455 words remain)"
+description: "The backend architect's agent file is 104 words shorter after five bullets were trimmed (455 words remain)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-19T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/backend-architect"]
 evidence: ["removal round"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The backend architect lost five bullets (104 words, 455 remain in the agent file). From the list of what a complete plan specifies: API endpoints, async tasks, and quality mechanics. From the edge-case list: route order and validator precision, with the intro example that named route order. The deviations bullet, the no-op bullet, the return-type bullet, and the scope fence stay. The opencode copy keeps every bullet, because it runs a different model.
+The backend architect's agent file is 104 words shorter (455 remain) after five bullets were trimmed. From the list of what a complete plan specifies: API endpoints, async tasks, and quality mechanics. From the edge-case list: route order and validator precision, with the intro example that named route order. The deviations bullet, the no-op bullet, the return-type bullet, and the scope fence stay. The opencode copy keeps every bullet, because it runs a different model.
 
 ## Evidence
 

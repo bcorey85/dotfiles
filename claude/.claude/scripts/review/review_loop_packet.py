@@ -56,7 +56,7 @@ def packet_message(outcome):
         "skipped_fp": [{"item": entry["item"], "reason": entry["reason"], "file_line": located(entry["item"])}
                        for entry in outcome["skipped_fp"]],
         "blockers": outcome["blockers"],
-        "findings_remaining": [],
+        "findings_remaining": [{"disposition": "fix", **finding_entry(text)} for text in outcome["open_fixes"]],
         "ask": asks,
         "class_closure": script_utils.one_line(outcome["class_closure"], limit=None),
         "files_touched": outcome["files_touched"],
@@ -86,7 +86,7 @@ def crash_outcome(progress, reason):
     # A crash is a tool fault, not a finding: tool_fault tells code_step to offer review-again.
     fixed = [item for item in progress["fixed"] if isinstance(item, str) and item.strip()]
     return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
-            "skipped_fp": [], "blockers": [reason], "plan_change": [], "asks": [],
+            "skipped_fp": [], "blockers": [reason], "plan_change": [], "open_fixes": [], "asks": [],
             "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",
             "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
             "check_rewrote_edited": [], "check_created": [],

@@ -53,7 +53,7 @@ import code_step_core
 import handback
 import plan_format
 import script_utils
-from handback import PacketError, item_text
+from handback import PacketError, is_plan_impact_ask, item_text
 from script_utils import one_line, run_command, split_location
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -72,7 +72,6 @@ KEEP_DIRTY = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}`
 NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
 LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
-PLAN_IMPACT_PREFIX = "PLAN-IMPACT"
 PLAN_IMPACT = "plan-impact"
 NEW_FINDING_ID = "new-finding-id"
 # Exit code of `wait-for-loop`: non-zero so no caller reads it as a finished run, and not 2, the code of a real stop.
@@ -305,7 +304,12 @@ def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
 
 
 def present_plan_impact(packet, state):
-    state.update({"stage": "plan-impact", "plan_impact": packet["plan_impact"]})
+    state.update({"stage": "plan-impact", "plan_impact": packet["plan_impact"],
+                  "carried_findings": handback.carried_findings(packet)})
+    if not plan_format.changes_acceptance_criteria(packet["plan_impact"]):
+        print("The plan impact changes no acceptance criterion, so the plan follows the code. No question to the user.")
+        return record_plan_ruling(state, "adopt", "session", plan_format.BELOW_CRITERIA_RULING, None)
+
     save_fix_state(state)
     print_action(
         "ask-user-plan-impact",
@@ -793,10 +797,6 @@ def command_escape(argv):
 
 # ---------- asks ----------
 
-def is_plan_impact_ask(item):
-    return any(str(item.get(key) or "").lstrip().startswith(PLAN_IMPACT_PREFIX) for key in ("finding", "question"))
-
-
 def log_ask_outcome(state, item, outcome, finding_id, decided_by="user"):
     """(exit code, output) of the outcome row's log call."""
     return run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
@@ -971,26 +971,37 @@ def command_decide(argv):
     if plan_path is not None and not plan_path.exists():
         raise UsageError(f"--plan {options.plan} does not exist")
 
-    choice = DECISION_WORDS[options.decision]
-    owner = plan_format.ruling_owner(".", options.by)
+    record_plan_ruling(state, options.decision, options.by, options.ruling, plan_path)
+
+
+def record_plan_ruling(state, decision, by, ruling, plan_path):
+    """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds) and print the
+    re-dispatch."""
+    choice = DECISION_WORDS[decision]
+    owner = plan_format.ruling_owner(".", by)
     ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, options.ruling, state["plan_impact"])
+    entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, state["plan_impact"])
     if plan_path is not None:
         plan_format.append_deviation(plan_path, entry)
 
     spec = state.get("spec_iter")
-    session_note = " The session ruled, not the user." if options.by == "session" else ""
-    lines = [f"plan_impact: RESOLVED - {choice}.{session_note} Ruling: {one_line(options.ruling)}",
+    session_note = " The session ruled, not the user." if by == "session" else ""
+    lines = [f"plan_impact: RESOLVED - {choice}.{session_note} Ruling: {one_line(ruling)}",
              f"iter={state['iter']}"]
     if spec is not None:
         lines.append(f"spec_iter={spec}")
+    carried = state.get("carried_findings") or []
+    if carried:
+        lines.append("carried-findings:  # left open by the round the plan impact stopped; review them too")
+        lines += [f"  - {finding}" for finding in carried]
+
     state["stage"] = "redispatch"
     save_fix_state(state)
     print_action(
         "redispatch",
         (
-            f"Recorded in {options.plan} under ## Plan Deviations."
-            if options.plan
+            f"Recorded in {plan_path} under ## Plan Deviations."
+            if plan_path is not None
             else "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
         ),
         *entry,

@@ -1105,6 +1105,29 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(asks), 2)
         self.assertTrue(asks[1].startswith("`app.py:4` second"))
 
+    def test_an_ask_with_nested_bullets_and_a_trailing_paragraph_parses_as_one_ask(self):
+        module = self.load_script_module()
+        review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` the limit is fixed in two places:\n"
+                  "  - the list endpoint caps at 10\n  - the export caps at 10\n\n"
+                  "  Should both read one setting? Change if accepted: read both from settings\n\n## Nit\nNone\n")
+
+        asks = module.parse_review(review)["ask"]
+        entry = review_loop_packet.ask_entry(asks[0], "code-reviewer", None)
+
+        self.assertEqual(len(asks), 1)
+        self.assertEqual(entry["change"], "read both from settings")
+        self.assertIn("the export caps at 10", entry["question"])
+        self.assertTrue(entry["question"].endswith("Should both read one setting?"))
+
+    def test_asks_indented_alike_under_the_heading_stay_separate(self):
+        module = self.load_script_module()
+        review = ("## Fix\nNone\n\n## Ask\n  - `app.py:3` first question?\n  - `app.py:4` second question?\n\n"
+                  "## Nit\nNone\n")
+
+        asks = module.parse_review(review)["ask"]
+
+        self.assertEqual(len(asks), 2)
+
     def test_change_if_accepted_marker_splits_question_from_change(self):
         ask = "`app.py:3` should it be configurable? Change if accepted: read from settings"
 

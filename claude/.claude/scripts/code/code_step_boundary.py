@@ -700,6 +700,8 @@ def announce_boundary(repo_dir, state, boundary):
     done_line = boundary["done_line"]
     print(done_line)
     say(repo_dir, done_line)
+    if boundary["deviation_text"]:
+        say(repo_dir, boundary["deviation_text"])
     if boundary["commit_text"]:
         say(repo_dir, boundary["commit_text"])
     ledger_warning = script_utils.missing_ledger_warning()
@@ -724,6 +726,18 @@ def announce_boundary(repo_dir, state, boundary):
         "block at the end of the turn: do not write it. Then wait for the user. When they say continue, run "
         f"`code_step.py {RESUME_VERB}`.",
     )
+
+
+def adopted_deviation_text(plan_path, number, is_run_end):
+    # The plan changes the code won without a question: this phase's at a phase end, every phase's at the run end.
+    phase = None if is_run_end else number
+    deviations = plan_format.below_criteria_deviations(plan_path.read_text(), phase)
+    if not deviations:
+        return ""
+
+    scope = "this plan" if is_run_end else f"Phase {number}"
+    heading = f"Plan deviations adopted in {scope} (the code won; no acceptance criterion changed):"
+    return "\n".join([heading, *[f"- {line}" for line in deviations]])
 
 
 def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verification):
@@ -753,7 +767,8 @@ def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verific
         "next_number": next_ungated["number"] if next_ungated else None,
         "gate_block_message": plan_format.gate_block_text(gated_ahead, next_ungated) if gated_ahead else "",
         "moved_text": plan_format.moved_phase_text(entries),
-        "done_line": done_line_of(state, section, verify_results, skipped, reopened)}
+        "done_line": done_line_of(state, section, verify_results, skipped, reopened),
+        "deviation_text": adopted_deviation_text(plan_path, number, block == "C")}
     announce_boundary(repo_dir, state, boundary)
 
 

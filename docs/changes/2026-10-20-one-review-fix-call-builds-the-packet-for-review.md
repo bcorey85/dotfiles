@@ -41,6 +41,8 @@ Installed 2026-10-20 with both settings entries. Known gap: no captured hook eve
 
 `review-fix-one-call`: main-session responses per turn for `/review` and `/fix`, expected down.
 
+Reading, 2026-10-28 intake: NO CHANGE, kept with no gain shown. Responses per turn read 10.15 after against a 7.25 before median (range 5.53 to 12.95). The first after bin, 11.23, holds 10-27, when 17 `/review` runs ran on one day; the last two days read 6.66. Routing replies per `/review` run stay at 3 to 6, the same as before the edit, so the script has not taken routing off the model. Kept because a revert costs a lane and the edit loses nothing measured. Next step: read the routing replies in one `/review` run to see which step still costs a reply.
+
 ## Back-out
 
 Restore the previous review and fix `SKILL.md` files, remove the two settings entries, reinstall the previous `review-commit-gate.py`, and delete `review-fix.py`, `handback.py` and `text_utils.py`.

@@ -34,7 +34,10 @@ only global options (a known one that takes a value is followed by it, which may
 substitution), then `commit` appears in it, or when a simple command runs git (any word whose base name is `git`, so
 `env git` or a path counts), with any global options, and then `commit`. A global option the hook does not know may
 take a value, so `commit` anywhere after it counts. A command shlex cannot read counts when `git`, then only
-option-like words with an optional value each, then `commit` appears in it.
+option-like words with an optional value each, then `commit` appears in it. The `git commit` and git-then-commit
+text patterns (not the shlex reading) also run on each text (as written and with substitutions shrunk) with every
+quoted-string join (a quote, optional whitespace, `+`, optional whitespace, a quote; the quotes may be
+backslash-escaped) removed, so a probe that splits the words (`"gi" + "t com" + "mit"`) counts.
 The session stays dirty; a later commit that ships code is denied again.
 
 A dirty session still commits in four more cases, each checked against something a subagent cannot write:
@@ -93,6 +96,8 @@ QUOTED_SPAN = re.compile(r"\"(?:\\.|[^\"\\])*\"|\\.|'[^']*'|(?:^|(?<=[\s;&|()]))
 # `(?!-)`: `git commit-tree` and `git commit-graph` write objects and move no branch.
 COMMIT = re.compile(r"\bgit[ \t\r\f\v]+commit\b(?!-)")
 LINE_CONTINUATION = re.compile(r"\\\r?\n")
+# A closing quote, `+`, an opening quote: two string literals joined in a script's source.
+QUOTED_STRING_JOIN = re.compile(r"""\\?["']\s*\+\s*\\?["']""")
 # An option's value: a quoted string, a `$( )` or backtick substitution, or a plain word.
 OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 # For a command shlex cannot read: git, then only option-like words with an optional value each, then commit.
@@ -242,10 +247,16 @@ def is_commit_command(command):
     `commit` counts, whether or not shlex can read the command. A git simple command with global options before
     `commit` counts too. A command shlex cannot read also counts when `git`, then only option-like words with an
     optional value each, then `commit` appears in it. Both readings run on the text as written and on the text with
-    each substitution span shrunk, so `git -p""$(cat <<'X' ...)"" commit` counts too."""
+    each substitution span shrunk, so `git -p""$(cat <<'X' ...)"" commit` counts too. The two text patterns, not the
+    shlex reading, also run on each text (as written and with substitutions shrunk) with every quoted-string join
+    (a quote, optional whitespace, `+`, optional whitespace, a quote; the quotes may be backslash-escaped) removed,
+    so `"gi" + "t com" + "mit"` counts."""
     joined = LINE_CONTINUATION.sub("", command)
     shrunk = SUBSTITUTION_SPAN.sub("$S", joined)
-    return reads_as_commit(joined) or (shrunk != joined and reads_as_commit(shrunk))
+    readings = {joined, shrunk}
+    unsplit_readings = {QUOTED_STRING_JOIN.sub("", reading) for reading in readings}
+    return (any(reads_as_commit(reading) for reading in readings)
+            or any(COMMIT.search(reading) or GIT_THEN_COMMIT.search(reading) for reading in unsplit_readings))
 
 
 def reads_as_commit(joined):

@@ -79,7 +79,7 @@ def resume_background_coder():
             result("toolu_resume", resumed)]
 
 
-class ReviewLoopGateTest(unittest.TestCase):
+class StopHookMixin:
     def stop(self, records, **extra):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -94,9 +94,8 @@ class ReviewLoopGateTest(unittest.TestCase):
         self.assertEqual(proc.stderr, "")
         return proc.stdout
 
-    def test_open_background_dispatch_passes(self):
-        self.assertEqual(self.stop(coder_and_background_reviewer()), "")
 
+class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
     def test_reported_background_dispatch_blocks_without_full_check(self):
         out = self.stop([*coder_and_background_reviewer(), notification("toolu_rev")])
         self.assertIn("No full check ran", json.loads(out)["reason"])
@@ -325,24 +324,18 @@ class StopRowTest(unittest.TestCase):
         half_written = [*coder_and_background_reviewer(), '{"type": "user", "mess']
         torn = self.stop_in_session(half_written, store)
         missing = self.stop_in_session([], store, transcript_path=os.path.join(store, "no-such-loop.jsonl"))
-        self.assertEqual((torn.stdout, missing.stdout), ("", ""))
+        not_an_object = self.stop_in_session([*coder_and_background_reviewer(), "[]"], store)
+        self.assertEqual((torn.stdout, missing.stdout, not_an_object.stdout), ("", "", ""))
         self.assertIn("skipped", torn.stderr)
         self.assertIn("skipped", missing.stderr)
-        self.assertEqual(self.open_counts(store), [1, 0, 0])
+        self.assertIn("skipped", not_an_object.stderr)
+        self.assertEqual(self.open_counts(store), [1, 0, 0, 0])
 
     def test_a_resume_result_with_only_the_short_id_matches_the_launched_agent_by_prefix(self):
         store = self.new_store()
         short_only = [*resume_background_coder()[:-1], result("toolu_resume", "Resuming agent a5bc2eb")]
         self.stop_in_session(short_only, store)
         self.stop_in_session([*short_only, notification("toolu_resume")], store)
-        self.assertEqual(self.open_counts(store), [1, 0])
-
-    def test_a_non_object_transcript_line_writes_a_zero_row_and_still_fails_open(self):
-        store = self.new_store()
-        self.stop_in_session(coder_and_background_reviewer(), store)
-        done = self.stop_in_session([*coder_and_background_reviewer(), "[]"], store)
-        self.assertEqual(done.stdout, "")
-        self.assertIn("skipped", done.stderr)
         self.assertEqual(self.open_counts(store), [1, 0])
 
     def test_a_background_resume_is_open_until_a_later_notification_or_agent_message(self):
@@ -438,7 +431,7 @@ class FullCheckTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assert_full(command)
 
-    def test_a_test_name_filter_or_a_trailing_test_target_still_scopes_a_run(self):
+    def test_a_test_name_filter_a_trailing_test_target_or_a_scope_after_a_flag_value_still_scopes_a_run(self):
         for command in ("pytest -k login",
                         "pytest -p xdist tests/a.py",
                         "pytest -p xdist -k login",
@@ -448,7 +441,9 @@ class FullCheckTest(unittest.TestCase):
                         "cargo test --manifest-path /r/a/Cargo.toml -- --exact parser::tests::empty",
                         "cargo test -p core parser::tests",
                         "cargo test --package core -- --exact a::b",
-                        "npm test --workspace packages/web"):
+                        "npm test --workspace packages/web",
+                        "cargo test -p core && cargo test tests/foo.rs",
+                        "cargo test -p; pytest tests/a.py"):
             with self.subTest(command=command):
                 self.assert_scoped(command)
 
@@ -461,12 +456,6 @@ class FullCheckTest(unittest.TestCase):
                         "npx vitest -p a/b"):
             with self.subTest(command=command):
                 self.assert_scoped(command)
-
-    def test_a_flag_value_in_one_command_does_not_hide_a_scope_in_the_next(self):
-        self.assert_scoped("cargo test -p core && cargo test tests/foo.rs")
-
-    def test_a_flag_at_the_end_of_its_command_takes_no_value_from_the_next_one(self):
-        self.assert_scoped("cargo test -p; pytest tests/a.py")
 
     def test_a_full_check_script_call_counts_unless_its_command_is_scoped(self):
         call = "python3 ~/.claude/scripts/review/full_check.py /r/app --log /tmp/review-gate-feat.log -- "
@@ -811,56 +800,23 @@ class RunRowTest(unittest.TestCase):
         self.stop(self.loop([dispatch(tool_use_id, gate), result(tool_use_id, indented(report))]))
         return self.rows()[-1]["n_findings"]
 
-    def test_lines_inside_code_fences_are_not_findings_or_headings(self):
-        report = """## Code Review Summary
+    def test_findings_are_counted_by_section_shape_not_by_lines_that_look_like_findings(self):
+        header = "## Code Review Summary\n\n**Overall Assessment**: NEEDS CHANGES\n\n"
+        cases = {
+            "lines inside code fences are not findings or headings": (
+                header + "### Fix\n- a.py:1 — real\n```\n- b.py:2 — quoted in a fence\n### Ask\n```\n"
+                "- c.py:3 — also real\n\n### Ask\nNone.", "2"),
+            "a deeper heading stays inside the findings section": (
+                header + "### Fix\n#### Correctness\n- a.py:1 — one\n#### Tests\n- b.py:2 — two", "2"),
+            "bold and plural section headings are findings sections": (
+                header + "### **Fix**\n- a.py:1 — one\n\n### Fixes\n- b.py:2 — two", "2"),
+            "a none marker counts only when it is the whole line": (
+                header + "### Ask\nNone of the above is a blocker, but this is:\n- a.py:1 — real", "1"),
+        }
 
-**Overall Assessment**: NEEDS CHANGES
-
-### Fix
-- a.py:1 — real
-```
-- b.py:2 — quoted in a fence
-### Ask
-```
-- c.py:3 — also real
-
-### Ask
-None."""
-        self.assertEqual("2", self.counted(report))
-
-    def test_a_deeper_heading_stays_inside_the_findings_section(self):
-        report = """## Code Review Summary
-
-**Overall Assessment**: NEEDS CHANGES
-
-### Fix
-#### Correctness
-- a.py:1 — one
-#### Tests
-- b.py:2 — two"""
-        self.assertEqual("2", self.counted(report))
-
-    def test_bold_and_plural_section_headings_are_findings_sections(self):
-        report = """## Code Review Summary
-
-**Overall Assessment**: NEEDS CHANGES
-
-### **Fix**
-- a.py:1 — one
-
-### Fixes
-- b.py:2 — two"""
-        self.assertEqual("2", self.counted(report))
-
-    def test_a_none_marker_counts_only_when_it_is_the_whole_line(self):
-        report = """## Code Review Summary
-
-**Overall Assessment**: NEEDS CHANGES
-
-### Ask
-None of the above is a blocker, but this is:
-- a.py:1 — real"""
-        self.assertEqual("1", self.counted(report))
+        for name, (report, expected) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(expected, self.counted(report))
 
     def test_zero_entries_under_a_failing_assessment_is_uncounted(self):
         needs = "## Code Review Summary\n\n**Overall Assessment**: NEEDS CHANGES\n\n### Fix\nNone.\n\n### Nit\n- a nit"
@@ -1062,7 +1018,7 @@ FINDING_ROW = ("~/.claude/skills/review/log-review-finding kind=finding lane=cod
 METRICS_ROW = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=1 ask=0 nit=0 fixed=1 result=PASS"
 
 
-class LedgerRowsTest(ReviewLoopGateTest):
+class LedgerRowsTest(StopHookMixin, unittest.TestCase):
     def loop(self, *rows, plan="spec.md"):
         return [user(f"review loop\nlane: code\nplan: {plan}"), bash("npm test > /tmp/review-gate.log 2>&1"),
                 *[bash(row) for row in rows]]

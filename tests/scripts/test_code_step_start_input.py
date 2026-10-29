@@ -454,6 +454,26 @@ class StartArgsTest(unittest.TestCase):
                 self.assertEqual(restart, parsed.restart)
                 self.assertIsNone(parsed.task_text)
 
+    def test_each_switch_and_task_file_in_one_quoted_argument_splits_into_its_words(self):
+        cases = [
+            ("--headless first", ["--headless --task fix the totals"], "headless"),
+            ("--coder-stopped first", ["--coder-stopped --task fix the totals"], "coder_stopped"),
+            ("--restart first", ["--restart --task fix the totals"], "restart"),
+        ]
+        for label, args, switch in cases:
+            with self.subTest(label):
+                parsed = self.parse(args)
+
+                self.assertEqual("fix the totals", parsed.task_text)
+                self.assertTrue(getattr(parsed, switch))
+
+        task_file = pathlib.Path(self.plan).parent / "task.txt"
+        task_file.write_text("fix the totals\n")
+
+        parsed = self.parse([f"--task-file {task_file}"])
+
+        self.assertEqual("fix the totals\n", parsed.task_text)
+
 
 def load_tests(loader, tests, pattern):
     # The tests of CodeStepTest run in test_code_step.py: this file runs its own.

@@ -127,19 +127,28 @@ def near_title(title, other_title):
     return script_utils.text_similarity(title, other_title) >= REFILE_SIMILARITY
 
 
+def same_finding(location, title, other_location, other_title):
+    """Whether two findings in the same file name the same issue: a near title when both have one, else the same
+    line."""
+    if location[0] != other_location[0]:
+        return False
+    if title and other_title:
+        return near_title(other_title, title)
+    return location[1] == other_location[1]
+
+
 def unreported_parts(fixed_item, open_fixes):
-    """The findings folded into a fixed entry that no open fix finding reports again. An open fix reports a titled
-    part again when it names the same file with the same or a near title, and an untitled part when it names the same
-    file and line. A part with no file is never reported again."""
+    """The findings folded into a fixed entry that no open fix finding reports again. An open fix reports a part
+    again when it names the same file and, when both have a title, the same or a near title, or else the same line.
+    A part with no file is never reported again."""
     open_parts = [part for item in open_fixes for part in item.split(MERGED_SEPARATOR)]
     open_located = [(finding_file(part), finding_title(part)) for part in open_parts]
     kept = []
     for fixed_part in fixed_item.split(MERGED_SEPARATOR):
-        path, line = finding_file(fixed_part)
+        location = finding_file(fixed_part)
         title = finding_title(fixed_part)
-        reported = bool(path) and any(
-            open_path == path and (near_title(open_title, title) if title else open_line == line)
-            for (open_path, open_line), open_title in open_located)
+        reported = bool(location[0]) and any(same_finding(location, title, open_location, open_title)
+                                             for open_location, open_title in open_located)
         if not reported:
             kept.append(fixed_part)
     return kept

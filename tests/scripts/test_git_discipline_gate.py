@@ -149,6 +149,116 @@ class GitDisciplineGateTest(unittest.TestCase):
         self.assert_allowed("git status", branch="main")
         self.assert_allowed("git commit -m x", branch="feature/main")
 
+    def test_commit_rules_read_the_branch_of_the_c_or_cd_target(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        for command in (f"git -C {feature_worktree} commit -m x", f"cd {feature_worktree} && git commit -m x",
+                        f"cd {feature_worktree.parent} && git -C {feature_worktree.name} commit -m x"):
+            with self.subTest(command=command):
+                self.assert_allowed(command, cwd=main_checkout)
+        for command in (f"git -C {main_checkout} commit -m x", f"cd {main_checkout} && git commit -m x",
+                        f"cd {main_checkout}; git status; git commit -m x"):
+            with self.subTest(command=command):
+                self.assert_denied(command, "[git-discipline-gate] git commit on main", cwd=feature_worktree)
+        worktree_branch = self.repo_on("worktree-abc")
+        self.assert_denied(f"git -C {worktree_branch} push", "[git-discipline-gate] branch 'worktree-abc'",
+                           cwd=feature_worktree)
+
+    def test_a_cd_in_a_subshell_does_not_carry_to_later_statements(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        self.assert_denied(f"(cd {feature_worktree} && true) && git commit -m x",
+                           "[git-discipline-gate] git commit on main", cwd=main_checkout)
+
+    def test_a_command_substitution_keeps_cd_tracking_on(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        self.assert_denied(f"REPO=$(pwd); cd {main_checkout} && git commit -m x",
+                           "[git-discipline-gate] git commit on main", cwd=feature_worktree)
+
+    def test_a_substitution_after_a_cd_runs_in_the_cd_target(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        for command in (f"cd {main_checkout} && echo $(git commit -m x)",
+                        f"cd {main_checkout} && echo `git commit -m x`"):
+            with self.subTest(command=command):
+                self.assert_denied(command, "[git-discipline-gate] git commit on main", cwd=feature_worktree)
+
+    def test_a_cd_before_a_code_runner_moves_the_text_calls(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        self.assert_denied(f"cd {main_checkout} && xargs git commit -m x",
+                           "[git-discipline-gate] git commit on main", cwd=feature_worktree)
+
+    def test_a_call_before_a_later_cd_runs_in_the_earlier_directory(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        for command in (f"echo $(git commit -m x); cd {feature_worktree}",
+                        f"echo `git commit -m x`; cd {feature_worktree}",
+                        f"bash -c 'git commit -m x'; cd {feature_worktree}"):
+            with self.subTest(command=command):
+                self.assert_denied(command, "[git-discipline-gate] git commit on main", cwd=main_checkout)
+
+    def test_a_cd_option_is_skipped_and_cd_dash_is_not_followed(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        self.assert_denied("cd - && git commit -m x", "[git-discipline-gate] git commit on main",
+                           cwd=main_checkout)
+        for option in ("-L", "-P", "-e", "-@", "--", "-P --"):
+            with self.subTest(option=option):
+                self.assert_allowed(f"cd {option} {feature_worktree} && git commit -m x", cwd=main_checkout)
+
+    def test_a_cd_inside_a_nested_substitution_does_not_leak_to_outer_statements(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        leak = f"echo $(cd {feature_worktree} && echo $(true)) ; git commit -m x"
+        self.assert_denied(leak, "[git-discipline-gate] git commit on main", cwd=main_checkout)
+        self.assert_allowed(leak, cwd=feature_worktree)
+        self.assert_denied(f"echo $(cd {main_checkout} && echo $(true)) ; git commit -m x",
+                           "[git-discipline-gate] git commit on main", cwd=main_checkout)
+        self.assert_allowed(f"echo $(cd {main_checkout} && echo $(true)) ; git commit -m x", cwd=feature_worktree)
+
+    def test_a_bare_cd_follows_to_home(self):
+        main_checkout = self.repo_on("main")
+        self.assert_allowed("cd && git commit -m x", cwd=main_checkout)
+
+    def test_a_span_is_placed_by_its_offset_not_by_a_text_search(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        substitution = "echo $(git commit -m x)"
+        for command in (f"cd {feature_worktree} && {substitution}; cd {main_checkout} && {substitution}",
+                        f"echo git commit -m x; cd {main_checkout} && {substitution}"):
+            with self.subTest(command=command):
+                self.assert_denied(command, "[git-discipline-gate] git commit on main", cwd=feature_worktree)
+
+    def test_a_git_value_option_before_the_subcommand_keeps_the_commit_rules(self):
+        self.assert_denied("git --attr-source HEAD commit -m x", "[git-discipline-gate] git commit on main",
+                           branch="main")
+
+    def test_a_subdirectory_of_a_direct_edit_repo_is_exempt(self):
+        repo = self.repo_on("main", claude_md="This is a direct-edit repo.\n")
+        (repo / "sub").mkdir()
+        self.assert_allowed("git commit -m x", cwd=repo / "sub")
+        self.assert_allowed(f"git -C {repo / 'sub'} commit -m x", cwd=self.repo_on("feature"))
+
+    def test_an_unreadable_target_falls_back_to_the_cwd(self):
+        main_checkout = self.repo_on("main")
+        feature_worktree = self.repo_on("feature")
+        for command in ('git -C "$REPO" commit -m x', 'cd "$REPO" && git commit -m x',
+                        "git -C $REPO commit -m x", "cd $REPO && git commit -m x",
+                        f'git -C "{feature_worktree}" commit -m x'):
+            with self.subTest(command=command):
+                self.assert_denied(command, "[git-discipline-gate] git commit on main", cwd=main_checkout)
+        self.assert_denied(f"git -C ~/{main_checkout.name} commit -m x", "[git-discipline-gate] git commit on main",
+                           cwd=feature_worktree)
+
+    def test_direct_edit_repo_is_read_from_the_target_repo(self):
+        direct_edit_main = self.repo_on("main", claude_md="This is a direct-edit repo.\n")
+        self.assert_allowed(f"git -C {direct_edit_main} commit -m x", cwd=self.repo_on("feature"))
+        plain_main = self.repo_on("main")
+        self.assert_denied(f"git -C {plain_main} commit -m x", "[git-discipline-gate] git commit on main",
+                           cwd=self.repo_on("main", claude_md="This is a direct-edit repo.\n"))
+
     def test_direct_edit_repo_is_exempt_case_insensitively(self):
         for text in ("this is a Direct-Edit Repo\n", "intro\ndirect-edit repo (dotfiles)\n"):
             self.assert_allowed("git commit -m x", cwd=self.repo_on("main", claude_md=text))

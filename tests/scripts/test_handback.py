@@ -147,6 +147,65 @@ class ParseTest(HandbackTestBase):
         self.assertEqual(ask["class"], "plan-drift")
         self.assertEqual(ask["question"], "which one holds?")
 
+    def test_bullets_after_a_text_ask_ending_in_a_colon_stay_inside_that_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees with the plan: | src/retry.py:4\n"
+                "- the plan says 3\n- the code says 5\n- which one holds?\n"
+                "- should tenant_id get an index? | src/db.ts:5\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 2)
+        self.assertEqual(asks[0]["file_line"], "src/retry.py:4")
+        self.assertIn("- the code says 5", asks[0]["question"])
+        self.assertIn("which one holds?", asks[0]["question"])
+        self.assertEqual(asks[1]["file_line"], "src/db.ts:5")
+
+    def test_a_mapping_bullet_after_a_text_ask_ending_in_a_colon_adds_its_change_to_that_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees with the plan: | src/retry.py:4\n"
+                "- which one holds?\n- change: set it to 3\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertEqual(asks[0]["file_line"], "src/retry.py:4")
+        self.assertEqual(asks[0]["change"], "set it to 3")
+        self.assertIn("which one holds?", asks[0]["question"])
+
+    def test_a_text_bullet_after_a_mapping_bullet_stays_a_dash_line_in_a_text_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees: | src/retry.py:4\n"
+                "- the plan says 3\n- change: set it to 3\n- the code says 5\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertIn("- the code says 5", asks[0]["question"])
+
+    def test_a_text_ask_not_ending_in_a_colon_takes_no_bullets(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- which cache holds the session?\n- should tenant_id get an index?\nnit: []\n")
+        self.assertEqual(len(handback.load(text)["ask"]), 2)
+
+    def test_a_blocker_text_bullet_after_a_mapping_bullet_marks_the_text_ask_a_blocker(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees with the plan: | src/retry.py:4\n"
+                "- {change: set it to 3}\n- [blocker] data loss\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertTrue(handback.is_blocker(asks[0]))
+
+    def test_a_blocker_text_bullet_marks_a_mapping_lead_with_no_blocker_field_a_blocker(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- {finding: the retry count disagrees with the plan, file_line: src/r.py:4, "
+                "question: which one holds?, change: set it to 3}\n- [blocker] data loss\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertTrue(handback.is_blocker(asks[0]))
+
+    def test_a_mapping_bullet_with_blocker_yes_marks_the_text_ask_a_blocker(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees with the plan: | src/retry.py:4\n"
+                "- {change: set it to 3, blocker: yes}\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertTrue(handback.is_blocker(asks[0]))
+
     def test_empty_list_key_does_not_swallow_the_next_unindented_line(self):
         packet = handback.parse("status: converged\niter: 1\nfixed: []\nask: []\nclass_closure: done\nnit: []\n")
         self.assertEqual(packet["class_closure"], "done")

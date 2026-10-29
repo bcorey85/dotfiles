@@ -25,6 +25,8 @@ Same tickets. On 12 diffs from coders without the placement rule, each with a bu
 
 shared with the coder row.
 
+Reading, 2026-10-28 intake: NO CHANGE, kept. Duplication escapes per code-reviewer run read 0.04 (3 of 79) after against a 0.02 median, inside the 0.00 to 0.11 before range. Three escapes cannot tell this check from the twelve edits that share the window. The seeded catch gain (4 to 11 of 12) stands; read again when the after window reaches 20 escapes.
+
 ## Back-out
 
 delete item 6.

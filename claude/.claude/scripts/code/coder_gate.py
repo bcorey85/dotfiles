@@ -46,7 +46,14 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
 import script_utils
-from check_output import is_django_settings_fault, is_setup_fault, missing_path, tail_with_failing_tests
+from check_output import (
+    failing_test_lines,
+    failing_test_quote,
+    is_django_settings_fault,
+    is_setup_fault,
+    missing_path,
+    tail_with_failing_tests,
+)
 from check_scope import scanned_command
 
 MAX_DENIES = 3
@@ -270,29 +277,50 @@ def sort_failures(failures, repo_root):
     return real_failures, setup_faults, command_errors
 
 
-def run_scoped_tests(repo_root, commands, gate_env=()):
+def run_scoped_tests(repo_root, commands, gate_env, log_path):
     # (one-line result, the failing commands' tails). The scoped commands, run as the gate runs them, outside a hook.
+    # A failing or timed-out command's whole output goes to log_path, and a failed, setup-fault, command-error or
+    # timeout result names it.
     if not commands:
         return "not run (no scoped test commands)", []
 
     gate = {"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_env)}
     failures, skipped, timed_out = run_commands(gate)
+    if failures or timed_out:
+        timed_out_outputs = [(command, "timeout", output) for command, output in timed_out]
+        script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
+    log_note = f"; full output: {log_path}"
     failures, setup_faults, command_errors = sort_failures(failures, repo_root)
 
     if failures:
-        tails = [f"`{command}` ({outcome}):\n{tail_with_failing_tests(output, output[-TAIL_CHARS:])}"
-                 for command, outcome, output in failures]
-        return "failed: " + "; ".join(command for command, _outcome, _output in failures), tails
+        return scoped_test_failure(failures, log_path)
     if setup_faults:
-        return "setup fault: " + "; ".join(command for command, _output in setup_faults), []
+        return "setup fault: " + "; ".join(command for command, _output in setup_faults) + log_note, []
     if command_errors:
-        return "command error: " + "; ".join(f"{command} ({line})" for command, line in command_errors), []
+        command_error_text = "; ".join(f"{command} ({line})" for command, line in command_errors)
+        return "command error: " + command_error_text + log_note, []
     if timed_out:
-        return "not run (timeout): " + "; ".join(command for command, _output in timed_out), []
+        return "not run (timeout): " + "; ".join(command for command, _output in timed_out) + log_note, []
     if len(skipped) == len(commands):
         return "not run (no changed file matches)", []
     return "passed", []
+
+
+def scoped_test_failure(failures, log_path):
+    # (one-line result, tails) for real scoped-test failures: the result names the commands, each failing test and the
+    # log; each tail quotes the failing tests' error text, or the output tail when a test has none.
+    tails = []
+    failing_tests = []
+    for command, outcome, output in failures:
+        quote = failing_test_quote(output, output[-TAIL_CHARS:])
+        tails.append(f"`{command}` ({outcome}):\n{quote}\nFull output: {log_path}")
+        failing_tests += failing_test_lines(output)
+
+    result = "failed: " + "; ".join(command for command, _outcome, _output in failures)
+    if failing_tests:
+        result += "; failing tests: " + " | ".join(failing_tests)
+    return f"{result}; full output: {log_path}", tails
 
 
 def denial(failures):

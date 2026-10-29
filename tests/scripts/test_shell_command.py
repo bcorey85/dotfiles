@@ -381,6 +381,8 @@ class CommandAfterWrappersTest(unittest.TestCase):
             "stdbuf -o L -e0 tee f": ["tee", "f"],
             "ionice -c 3 -n 7 tee f": ["tee", "f"],
             "setsid tee f": ["tee", "f"],
+            "taskset -c 0-5 nice -n 19 cargo test": ["cargo", "test"],
+            "taskset 0x3 tee f": ["tee", "f"],
             "unbuffer tee f": ["tee", "f"],
             "{ sh": ["sh"],
             "uv pip install x": ["uv", "pip", "install", "x"],

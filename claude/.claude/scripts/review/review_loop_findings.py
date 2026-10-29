@@ -10,12 +10,10 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import handback
 import plan_format
 import script_utils
+from plan_format import PLAN_CHANGE_MARK
 
 UNLOCATED = handback.UNLOCATED
 
-# A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its
-# bracketed tags, in either order.
-PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{EN DASH}:-]*)*plan[-_ ]?impact", re.I)
 PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
 # The marker before the one edit an accepted ask makes: `... — the question — change: the edit`.
 ASK_CHANGE_MARK = re.compile(r"\bchange(?:\s+if\s+accepted)?:", re.I)
@@ -104,6 +102,10 @@ def identifiers(finding):
     return names
 
 
+MERGED_SEPARATOR = " Also reported: "
+REFILE_SIMILARITY = 0.8
+
+
 def merge_findings(findings):
     """One list for the coder: a finding that names the same file and a shared identifier as an earlier one is
     folded into it."""
@@ -116,8 +118,58 @@ def merge_findings(findings):
         if home is None:
             merged.append(finding)
         else:
-            merged[home] += f" Also reported: {finding}"
+            merged[home] += f"{MERGED_SEPARATOR}{finding}"
     return merged
+
+
+def near_title(title, other_title):
+    """Whether two finding titles are the same or near."""
+    return script_utils.text_similarity(title, other_title) >= REFILE_SIMILARITY
+
+
+def same_finding(location, title, other_location, other_title):
+    """Whether two findings in the same file name the same issue: a near title when both have one, else the same
+    line."""
+    if location[0] != other_location[0]:
+        return False
+    if title and other_title:
+        return near_title(other_title, title)
+    return location[1] == other_location[1]
+
+
+def unreported_parts(fixed_item, open_fixes):
+    """The findings folded into a fixed entry that no open fix finding reports again. An open fix reports a part
+    again when it names the same file and, when both have a title, the same or a near title, or else the same line.
+    A part with no file is never reported again."""
+    open_parts = [part for item in open_fixes for part in item.split(MERGED_SEPARATOR)]
+    open_located = [(finding_file(part), finding_title(part)) for part in open_parts]
+    kept = []
+    for fixed_part in fixed_item.split(MERGED_SEPARATOR):
+        location = finding_file(fixed_part)
+        title = finding_title(fixed_part)
+        reported = bool(location[0]) and any(same_finding(location, title, open_location, open_title)
+                                             for open_location, open_title in open_located)
+        if not reported:
+            kept.append(fixed_part)
+    return kept
+
+
+def reported_again(fixed_item, open_fixes):
+    """Whether an open fix finding reports again any finding folded into a fixed entry."""
+    fixed_parts = fixed_item.split(MERGED_SEPARATOR)
+    kept = unreported_parts(fixed_item, open_fixes)
+    return len(kept) < len(fixed_parts)
+
+
+def still_fixed(fixed_items, open_fixes):
+    """The fixed entries with the findings that open fix findings report again taken out; an entry with none left
+    is dropped."""
+    kept = []
+    for item in fixed_items:
+        parts = unreported_parts(item, open_fixes)
+        if parts:
+            kept.append(MERGED_SEPARATOR.join(parts))
+    return kept
 
 
 FINDING_FILE = re.compile(r"([\w./-]+\.\w+):(\d+)")
@@ -134,6 +186,11 @@ def names_absent_file(repo, tree_paths, finding):
     if not path or (pathlib.Path(repo) / path).exists():
         return False
     return not any(known == path or known.endswith("/" + path) for known in tree_paths)
+
+
+def plan_change_items(items):
+    """The items that say the fix would change the approved plan."""
+    return [item for item in items if PLAN_CHANGE_MARK.match(item)]
 
 
 def absent_file_split(repo, tree_paths, review):

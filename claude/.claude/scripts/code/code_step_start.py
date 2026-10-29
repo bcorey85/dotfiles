@@ -26,6 +26,7 @@ from code_step_core import (
     RESUME_VERB,
     SCRIPTS_DIR,
     TICKET_ID,
+    VERB_WORDS_REPLACED_BY_RESUME,
     abandon_open_dispatch,
     ask_user,
     branch_label,
@@ -89,9 +90,6 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                'stopped run, which never handed back, was stopped.')
 FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: invoke Skill code with "
                   "`start --task \"<text>\"`.")
-# The verbs that older printed commands still name. Each one now does what `resume` does.
-RESUME_ALIASES = ("after-coder", "after-review", "after-plan-edit")
-VERB_WORDS_REPLACED_BY_RESUME = ("continue", "resume", *RESUME_ALIASES)
 VERB_WORDS_THAT_CARRY_INPUT = ("review-again", "decide", "asks-done", "skill-done", "tick", "verify")
 
 

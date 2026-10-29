@@ -48,6 +48,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for
 import script_utils
 from check_output import (
     failing_test_lines,
+    failing_test_quote,
     is_django_settings_fault,
     is_setup_fault,
     missing_path,
@@ -276,48 +277,49 @@ def sort_failures(failures, repo_root):
     return real_failures, setup_faults, command_errors
 
 
-def write_scoped_test_log(log_path, failures, timed_out):
-    # The whole output of each failing and timed-out command, under a header that names the command.
-    sections = [f"=== `{command}` ({outcome}) ===\n{output}" for command, outcome, output in failures]
-    sections += [f"=== `{command}` (timeout) ===\n{output}" for command, output in timed_out]
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text("\n\n".join(sections))
-
-
-def run_scoped_tests(repo_root, commands, gate_env=(), log_path=None):
+def run_scoped_tests(repo_root, commands, gate_env, log_path):
     # (one-line result, the failing commands' tails). The scoped commands, run as the gate runs them, outside a hook.
-    # With log_path, a failing or timed-out command's whole output goes to that file, and a failed result names the
-    # failing tests and the file.
+    # A failing or timed-out command's whole output goes to log_path, and every result that is not a pass names it.
     if not commands:
         return "not run (no scoped test commands)", []
 
     gate = {"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_env)}
     failures, skipped, timed_out = run_commands(gate)
-    if log_path and (failures or timed_out):
-        write_scoped_test_log(log_path, failures, timed_out)
+    if failures or timed_out:
+        timed_out_outputs = [(command, "timeout", output) for command, output in timed_out]
+        script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
+    log_note = f"; full output: {log_path}"
     failures, setup_faults, command_errors = sort_failures(failures, repo_root)
 
     if failures:
-        log_note = f"\nFull output: {log_path}" if log_path else ""
-        tails = [f"`{command}` ({outcome}):\n{tail_with_failing_tests(output, output[-TAIL_CHARS:])}{log_note}"
-                 for command, outcome, output in failures]
-        result = "failed: " + "; ".join(command for command, _outcome, _output in failures)
-        failing_tests = [line for _command, _outcome, output in failures for line in failing_test_lines(output)]
-        if failing_tests:
-            result += "; failing tests: " + " | ".join(failing_tests)
-        if log_path:
-            result += f"; full output: {log_path}"
-        return result, tails
+        return scoped_test_failure(failures, log_path)
     if setup_faults:
-        return "setup fault: " + "; ".join(command for command, _output in setup_faults), []
+        return "setup fault: " + "; ".join(command for command, _output in setup_faults) + log_note, []
     if command_errors:
-        return "command error: " + "; ".join(f"{command} ({line})" for command, line in command_errors), []
+        command_error_text = "; ".join(f"{command} ({line})" for command, line in command_errors)
+        return "command error: " + command_error_text + log_note, []
     if timed_out:
-        return "not run (timeout): " + "; ".join(command for command, _output in timed_out), []
+        return "not run (timeout): " + "; ".join(command for command, _output in timed_out) + log_note, []
     if len(skipped) == len(commands):
         return "not run (no changed file matches)", []
     return "passed", []
+
+
+def scoped_test_failure(failures, log_path):
+    # (one-line result, tails) for real scoped-test failures: the result names the commands, each failing test and the
+    # log; each tail quotes the failing tests' error text, or the output tail when a test has none.
+    tails = []
+    failing_tests = []
+    for command, outcome, output in failures:
+        quote = failing_test_quote(output, output[-TAIL_CHARS:])
+        tails.append(f"`{command}` ({outcome}):\n{quote}\nFull output: {log_path}")
+        failing_tests += failing_test_lines(output)
+
+    result = "failed: " + "; ".join(command for command, _outcome, _output in failures)
+    if failing_tests:
+        result += "; failing tests: " + " | ".join(failing_tests)
+    return f"{result}; full output: {log_path}", tails
 
 
 def denial(failures):

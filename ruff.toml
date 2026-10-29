@@ -51,3 +51,6 @@ max-complexity = 10
 "tests/scripts/test_plan_format.py" = ["E402", "RUF001"]
 # The no-break space and em space are the whitespace characters the test feeds to the parser.
 "tests/scripts/test_review_fixes.py" = ["RUF001"]
+# The heavy right-pointing angle (U+276F) is the marker vitest prints before a failure's source location, so the
+# strings keep it.
+"tests/scripts/test_check_output.py" = ["RUF001"]

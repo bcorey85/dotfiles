@@ -68,7 +68,6 @@ import plan_format
 import script_utils
 from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check
 from review_loop_findings import (
-    PLAN_CHANGE_MARK,
     PLAN_CHANGE_YES,
     UNLOCATED,
     absent_file_split,
@@ -77,14 +76,17 @@ from review_loop_findings import (
     finding_title,
     last_json_object,
     merge_findings,
+    near_title,
     parse_review,
+    plan_change_items,
+    reported_again,
     ruled_plan_split,
+    still_fixed,
 )
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
-REFILE_SIMILARITY = 0.8
 LARGE_ADDED_LINES = 40
 SPLIT_FILES = 5
 SPLIT_LINES = 300
@@ -339,7 +341,8 @@ def coder_prompt(repo, findings, small_items, files, gate_env=()):
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
     body += [f"{index}. {finding}" for index, finding in enumerate(findings, 1)]
     body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
-                 "where n is the issue number above.", "", SCOPED_TESTS]
+                 "where n is the issue number above. When you stop on a PLAN-IMPACT, write that line for each issue "
+                 "you left unapplied.", "", SCOPED_TESTS]
     if small_items:
         body += ["", "## Small items", "", SMALL_ITEMS, ""] + [f"- {item}" for item in small_items]
     body += ["", "Files in scope: " + ", ".join(files)]
@@ -584,6 +587,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.fixed, self.files_touched = progress["fixed"], progress["files_touched"]
         self.iter_count = 0
         self.skipped_fp, self.remaining, self.asks, self.nits, self.run_rows = [], [], [], [], []
+        self.open_fixes = []  # the fix findings a plan-change stop leaves unapplied
         self.ask_gates = {}
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
                         "result": "PASS"}
@@ -622,7 +626,12 @@ class LoopRun(full_check_gate.FullCheckSteps):
         disposition and a near title. None when it is new."""
         return next((entry for entry in entries if id(entry) not in self.round_claimed
                      and entry["disposition"] == finding["disposition"]
-                     and script_utils.text_similarity(entry["title"], finding["title"]) >= REFILE_SIMILARITY), None)
+                     and near_title(entry["title"], finding["title"])), None)
+
+    def ask_already_filed(self, text):
+        """Whether another reviewer already asked this text, so it stays one ask and files no second finding."""
+        return text in self.asks or any(entry["disposition"] == "ask" and entry["text"] == text
+                                        for entries in self.filed.values() for entry in entries)
 
     def filing_row(self, agent, owned, parsed, fixes, design):
         """The run row of one review. A fix starts `actioned: none`; fix_round sets it once the coder returns. A
@@ -645,6 +654,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
                     finding["text"] = earlier["text"]
                 earlier.update(finding)
                 finding = earlier
+            elif finding["disposition"] == "ask" and self.ask_already_filed(finding["text"]):
+                continue
             else:
                 finding["spot"] = new_spot(path, finding["title"], entries)
                 entries.append(finding)
@@ -657,9 +668,69 @@ class LoopRun(full_check_gate.FullCheckSteps):
         return {"iter": self.iter_count, "gate": agent, "loc": loc, "result": parsed["assessment"] or "PASS",
                 "findings": findings}
 
+    def record_review(self, agent, owned, parsed, fixes, design):
+        """Files one review's row, tallies its new findings and returns them by disposition."""
+        row = self.filing_row(agent, owned, parsed, fixes, design)
+        new_findings = {disposition: [finding["text"] for finding in row["findings"]
+                                      if finding["disposition"] == disposition]
+                        for disposition in ("fix", "ask", "nit")}
+        tally_review(self.tallies, new_findings, parsed["assessment"])
+        self.run_rows.append(row)
+        return new_findings
+
+    def split_review(self, tree_paths, review):
+        """(the review without its absent-file findings, its fixes, its [design-decision] fixes, its absent-file
+        findings). The fixes a plan ruling covers move to the review's asks."""
+        parsed, absent = absent_file_split(self.repo, tree_paths, review)
+        design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
+        fixes = [item for item in parsed["fix"] if item not in design]
+        fixes, ruled = ruled_plan_split(self.repo, self.plan, fixes)
+        parsed["ask"] += ruled
+        return parsed, fixes, design, absent
+
+    def stop_on_review_plan_change(self, tree_paths, round_fix, stopping_review, later_reviews):
+        """A plan-change ask stops the loop. The round's fix findings, the later reviews' included, stay open, and the
+        stopping and later reviews' other asks and [design-decision] items join the asks."""
+        agent, owned, parsed, fixes, design = stopping_review
+        new_findings = self.record_review(agent, owned, parsed, fixes, design)
+        open_fixes = [item for _agent, earlier_fixes in round_fix for item in earlier_fixes] + fixes
+        open_asks = [(agent, item) for item in new_findings["ask"]]
+        plan_changes = plan_change_items(parsed["ask"] + design)
+        for (later_agent, later_owned), later in later_reviews:
+            later_parsed, later_fixes, later_design, later_absent = self.split_review(tree_paths, later)
+            self.skipped_fp += [{"item": item, "reason": ABSENT_FILE_REASON} for item in later_absent]
+            later_new = self.record_review(later_agent, later_owned, later_parsed, later_fixes, later_design)
+            open_fixes += later_fixes
+            open_asks += [(later_agent, item) for item in later_new["ask"]]
+            plan_changes += plan_change_items(later_parsed["ask"] + later_design)
+
+        ask_texts = [item for _agent, item in open_asks]
+        plan_change_asks = set(plan_change_items(ask_texts))
+        for ask_agent, item in open_asks:
+            if item not in plan_change_asks:
+                self.add_ask(ask_agent, item)
+
+        self.open_fixes = merge_findings(open_fixes)
+        for row in self.run_rows:
+            for finding in row["findings"]:
+                if finding["actioned"] == "fixed" and reported_again(finding["text"], self.open_fixes):
+                    finding["actioned"] = "none"
+        self.fixed[:] = still_fixed(self.fixed, self.open_fixes)
+
+        unique_changes = list(dict.fromkeys(plan_changes))
+        self.stop("plan-change", unique_changes)
+
+    def add_ask(self, agent, item):
+        """Adds one ask with its reviewer as its gate. The same text from a second reviewer stays one ask, under the
+        first reviewer."""
+        if item in self.asks:
+            return
+        self.asks.append(item)
+        self.ask_gates[item] = agent
+
     def review_round(self):
         """Runs the round's reviewers in parallel and sorts their findings. Returns (round_fix, round_nits). A
-        plan-change ask stops the loop and leaves the reviews after it unread."""
+        plan-change ask stops the loop (stop_on_review_plan_change)."""
         with ThreadPoolExecutor(max_workers=len(self.dispatches)) as pool:
             reviews = list(pool.map(self.review_one, self.dispatches))
         self.last_pass = "reviewer"
@@ -667,31 +738,22 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.round_claimed, self.round_fixes = set(), []
         round_fix, round_nits = [], []
         tree_paths = git_lines(self.repo, "ls-files", "--cached", "--others", "--exclude-standard")
-        for (agent, owned), review in zip(self.dispatches, reviews, strict=True):
-            parsed, absent = absent_file_split(self.repo, tree_paths, review)
+        dispatched_reviews = list(zip(self.dispatches, reviews, strict=True))
+        for index, ((agent, owned), review) in enumerate(dispatched_reviews):
+            parsed, fixes, design, absent = self.split_review(tree_paths, review)
             self.skipped_fp += [{"item": item, "reason": ABSENT_FILE_REASON} for item in absent]
-            design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
-            fixes = [item for item in parsed["fix"] if item not in design]
-            fixes, ruled = ruled_plan_split(self.repo, self.plan, fixes)
-            parsed["ask"] += ruled
 
-            plan_changes = [item for item in parsed["ask"] if PLAN_CHANGE_MARK.match(item)]
-            if plan_changes:
-                tally_review(self.tallies, {"fix": fixes, "ask": parsed["ask"] + design, "nit": parsed["nit"]},
-                             parsed["assessment"])
-                self.stop("plan-change", plan_changes)
+            if plan_change_items(parsed["ask"] + design):
+                later_reviews = dispatched_reviews[index + 1:]
+                self.stop_on_review_plan_change(tree_paths, round_fix, (agent, owned, parsed, fixes, design),
+                                                later_reviews)
                 break
 
-            row = self.filing_row(agent, owned, parsed, fixes, design)
-            new_findings = {disposition: [finding["text"] for finding in row["findings"]
-                                          if finding["disposition"] == disposition]
-                            for disposition in ("fix", "ask", "nit")}
-            tally_review(self.tallies, new_findings, parsed["assessment"])
-            self.asks += new_findings["ask"]
-            self.ask_gates.update(dict.fromkeys(new_findings["ask"], agent))
+            new_findings = self.record_review(agent, owned, parsed, fixes, design)
+            for item in new_findings["ask"]:
+                self.add_ask(agent, item)
             round_nits += parsed["nit"]
             round_fix.append((agent, fixes))
-            self.run_rows.append(row)
         return round_fix, round_nits
 
     def repair(self, call_name, findings, nits=()):
@@ -706,6 +768,19 @@ class LoopRun(full_check_gate.FullCheckSteps):
             self.files_touched.update(error.changed)
             raise
 
+    def stop_on_coder_plan_change(self, round_findings, skips, changed, report):
+        """A coder that reports a plan change keeps the edits it made. The issues it did not skip go to fixed when it
+        changed a file; the skipped ones, or all of them when it changed none, stay open. The loop ran no full check
+        or scoped-test pass on those fixes."""
+        applied = [item for number, item in enumerate(round_findings, 1) if changed and number not in skips]
+        self.fixed += applied
+        for finding in self.round_fixes:
+            if any(finding["text"] in item for item in applied):
+                finding["actioned"] = "fixed"
+
+        self.open_fixes = [item for item in round_findings if item not in applied]
+        self.stop("plan-change", [report.strip()])
+
     def fix_round(self, round_fix, round_nits):
         """The coder pass on the round's merged fixes, and the plan for the next round. Returns False when the loop
         ends here."""
@@ -715,11 +790,12 @@ class LoopRun(full_check_gate.FullCheckSteps):
             return False
 
         report, coder_diffs, changed = self.repair(f"coder{self.iter_count}", round_findings, round_nits)
+        self.files_touched.update(changed)
+        skips = skipped_issues(report, len(round_findings))
         if PLAN_CHANGE_YES.search(report.strip()):
-            self.stop("plan-change", [report.strip()])
+            self.stop_on_coder_plan_change(round_findings, skips, changed, report)
             return False
 
-        skips = skipped_issues(report, len(round_findings))
         self.skipped_fp += [{"item": round_findings[number - 1], "reason": line}
                             for number, line in sorted(skips.items())]
         skipped_findings = [round_findings[number - 1] for number in sorted(skips)]
@@ -731,7 +807,6 @@ class LoopRun(full_check_gate.FullCheckSteps):
             skipped = any(finding["text"] in item for item in skipped_findings)
             finding["actioned"] = "skipped_fp" if skipped else "fixed"
         self.fixed += [item for item in round_findings if item not in skipped_findings]
-        self.files_touched.update(changed)
         self.prior_issues = prior_issue_entries(round_findings, skips)
 
         self.files = scope(self.repo)
@@ -778,6 +853,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "skipped_fp": self.skipped_fp,
             "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],
             "plan_change": self.remaining if self.status == "plan-change" else [],
+            "open_fixes": self.open_fixes,
             "asks": self.asks,
             "ask_gates": self.ask_gates,
             "ask_ids": ask_ids,

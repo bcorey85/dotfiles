@@ -36,7 +36,7 @@ Cuts skipped: other candidate merges in test_test_run_output whose inputs take d
 
 ## Evidence
 
-Census of test names against the tests that pin the same behavior. Full suite before: 3938 tests in 98 files, wall-clock 242.4s, sum of per-file seconds 1450.9s, 0 failed. After: 3775 tests in 98 files, wall-clock 230.3s, sum of per-file seconds 1210.7s, 0 failed. Merged cases still run as table rows. (counts adjusted by hand for the one test added after the full-suite run; seconds are from that run)
+Census of test names against the tests that pin the same behavior. Full suite before: 3938 tests in 98 files, wall-clock 242.4s, sum of per-file seconds 1450.9s, 0 failed. After: 3775 tests in 98 files, wall-clock 230.3s, sum of per-file seconds 1210.7s, 0 failed. Merged cases still run as table rows. (counts adjusted by hand for the one test added after the full-suite run; seconds are from that run) After merging the integration branch, which carries another test cull: 3693 tests in 99 files, wall-clock 232.6s, sum of per-file seconds 1173.4s, 0 failed.
 
 ## Result
 

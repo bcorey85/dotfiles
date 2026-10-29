@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "Dispatch attribution retired as a yield metric"
-description: "Dispatch attribution retired as a yield metric."
+title: "Agent usage logging no longer reports dispatch attribution as a yield metric"
+description: "Dispatch attribution is no longer reported as a yield metric, because it measures routing and not yield."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 4
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-Dispatch attribution retired as a yield metric
+Dispatch attribution is no longer reported as a yield metric. Before, it was reported as one.
 
 ## Evidence
 

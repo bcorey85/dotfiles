@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "code-vocabulary and coder-core: ticket keys are no longer banned from committed code"
-description: "code-vocabulary and coder-core: ticket keys are no longer banned from committed code."
+title: "Committed code may now contain ticket keys"
+description: "The coder may write ticket keys into committed code; the shared code vocabulary and the coder core no longer ban them."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 4
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-code-vocabulary and coder-core: ticket keys are no longer banned from committed code
+Committed code may now contain ticket keys. Before, code-vocabulary and coder-core banned them.
 
 ## Evidence
 

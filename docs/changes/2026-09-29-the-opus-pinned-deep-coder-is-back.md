@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The Opus-pinned deep coder is back"
-description: "The Opus-pinned deep coder is back."
+title: "The deep modifier dispatches the Opus-pinned deep coder again"
+description: "On the deep modifier, the code skill, the review loop and the shared modifier rules dispatch the Opus-pinned deep coder in place of the plain coder."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 4
 kind: "behavior"
@@ -14,7 +14,7 @@ watches: []
 
 ## Change
 
-The Opus-pinned deep coder is back. On the deep modifier, the code skill, the review loop and the shared modifier rules dispatch it in place of the plain coder
+The deep modifier dispatches the Opus-pinned deep coder again. On the deep modifier, the code skill, the review loop and the shared modifier rules dispatch it in place of the plain coder
 
 ## Evidence
 

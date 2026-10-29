@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "Auto-`-deep`-on-high-risk cut"
-description: "Auto-`-deep`-on-high-risk cut."
+title: "`/eng-spec` no longer switches a plan to deep tier because one phase is high-risk"
+description: "`/eng-spec` stays at its normal tier on a high-risk phase instead of pricing the whole plan at deep tier."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 7
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-Auto-`-deep`-on-high-risk cut
+`/eng-spec` no longer switches a plan to deep tier because one phase is high-risk. Before, a high-risk phase made the whole plan run at deep tier.
 
 ## Evidence
 

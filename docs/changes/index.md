@@ -14,6 +14,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 * [The plan reviewer's instruction to batch its tree checks was removed](2026-09-13-the-plan-reviewer-s-instruction-to-batch-its-tree.md): **tokens -38% (1.3e+06 tokens → 800000 tokens)** [agent/plan-reviewer] ([2026-09-12-tokbatch-1](../../../agent-evals/findings/2026-09-12-tokbatch-1.md))
 
+### Cost
+
+* [One `coder` now builds a full-stack change, with no frontend/backend fence](2026-08-04-fe-be-coder-split-one-unfenced-coder-for-fullstack.md): **cost -36% ($140.93 → $89.97)** [agent/coder] ([2026-07-12-seam-ab-r2](../../../agent-evals/findings/2026-07-12-seam-ab-r2.md))
+
 ## Week of 2026-10-26
 
 ### Added
@@ -446,7 +450,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [eng-spec finalize, spec template and decision format: the spec states each fact once](2026-10-12-eng-spec-finalize-spec-template-and-decision.md) [skill/eng-spec] eng-spec finalize, spec template and decision format: the spec states each fact once.
 * [plan-reviewer and plan-format: no cap on acceptance criteria](2026-10-12-plan-reviewer-and-plan-format-no-cap-on-acceptance.md) [agent/plan-reviewer, shared/plan-format] plan-reviewer and plan-format: no cap on acceptance criteria.
 * [plan-reviewer: a new finding class, phase shape](2026-10-12-plan-reviewer-a-new-finding-class-phase-shape.md) [agent/plan-reviewer] plan-reviewer: a new finding class, phase shape.
-* [code-vocabulary and coder-core: ticket keys are no longer banned from committed code](2026-10-12-code-vocabulary-and-coder-core-ticket-keys-are-no.md) [shared/code-vocabulary, skill/coder-core] code-vocabulary and coder-core: ticket keys are no longer banned from committed code.
+* [Committed code may now contain ticket keys](2026-10-12-code-vocabulary-and-coder-core-ticket-keys-are-no.md) [shared/code-vocabulary, skill/coder-core] The coder may write ticket keys into committed code; the shared code vocabulary and the coder core no longer ban them.
 * [plan-reviewer: a new finding class, a class scoped as a list](2026-10-12-plan-reviewer-a-new-finding-class-a-class-scoped.md) [agent/plan-reviewer] plan-reviewer: a new finding class, a class scoped as a list.
 * [Global CLAUDE.md: never unstage files that the user staged, unless the user says to](2026-10-12-global-claude-md-never-unstage-files-that-the-user.md) [rule/global-claude-md] Global CLAUDE.md: never unstage files that the user staged, unless the user says to.
 * [`/code` and `/review`: end the turn only at a STOP (or a wait, in `/review`)](2026-10-12-code-and-review-end-the-turn-only-at-a-stop-or-a.md) [skill/code, skill/review] `/code` and `/review`: end the turn only at a STOP (or a wait, in `/review`).
@@ -470,7 +474,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Removed
 
 * [test-ownership-gate: the script is deleted](2026-10-09-test-ownership-gate-the-script-is-deleted.md) [script/shell-write-gate] test-ownership-gate: the script is deleted.
-* [The security and query-cost specialist reviewers are removed, with their Opus copies](2026-10-09-the-security-and-query-cost-specialist-reviewers.md) [agent/code-reviewer] The security and query-cost specialist reviewers are removed, with their Opus copies.
+* [`code-reviewer` covers security and query cost on every pass, with no specialist reviewers](2026-10-09-the-security-and-query-cost-specialist-reviewers.md) [agent/code-reviewer] `code-reviewer` covers security and query cost on every pass; the specialist reviewers, their Opus copies, the phase `(reviewers: …)` tag and the specialist flags are gone.
 * [Test-ownership hook removed from `settings.json`; the global hook list again omits coder test writes and](2026-10-09-test-ownership-hook-removed-from-settings-json-the.md) [rule/settings-json, rule/global-claude-md] Test-ownership hook removed from `settings.json`; the global hook list again omits coder test writes and again tells the agent to redo a blocked shell write with Write or Edit.
 
 ## Week of 2026-09-28
@@ -496,7 +500,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [The 12 agents that named the `sonnet` alias, the coder among them, now name `claude-sonnet-5-5` in full](2026-09-29-the-12-agents-that-named-the-sonnet-alias-the.md) [agent/coder] The 12 agents that named the `sonnet` alias, the coder among them, now name `claude-sonnet-5-5` in full. (reverted by 2026-09-29-the-12-agents-that-named-claude-sonnet-5-5-in-full)
 * [Escape and review logs name the code they saw: every review-log row records the commit and whether the tree](2026-09-29-escape-and-review-logs-name-the-code-they-saw.md) [script/log-review-metrics, skill/pr-comments, script/log-escape] Escape and review logs name the code they saw: every review-log row records the commit and whether the tree was dirty, and the PR-comment step logs each escape with its line and the comment's commit.
 * [settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` set to `sonnet`](2026-09-29-settings-json-claude-code-subagent-model-set-to.md) [rule/settings-json, agent/general-purpose] settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` set to `sonnet`. (reverted by 2026-09-29-settings-json-claude-code-subagent-model-removed)
-* [The Opus-pinned deep coder is back](2026-09-29-the-opus-pinned-deep-coder-is-back.md) [agent/review-loop] The Opus-pinned deep coder is back.
+* [The deep modifier dispatches the Opus-pinned deep coder again](2026-09-29-the-opus-pinned-deep-coder-is-back.md) [agent/review-loop] On the deep modifier, the code skill, the review loop and the shared modifier rules dispatch the Opus-pinned deep coder in place of the plain coder.
 * [The coder agent runs on the `sonnet` alias (Sonnet 5.5) in place of Opus, for every dispatch](2026-09-29-the-coder-agent-runs-on-the-sonnet-alias-sonnet-5.md) [agent/coder] The coder agent runs on the `sonnet` alias (Sonnet 5.5) in place of Opus, for every dispatch.
 * [coder-core: the coder writes files with Write and Edit, and uses Bash only to run commands](2026-09-29-coder-core-the-coder-writes-files-with-write-and.md) [skill/coder-core] coder-core: the coder writes files with Write and Edit, and uses Bash only to run commands.
 * [The 11 agents pinned to the `sonnet` alias moved to Sonnet 5.5 on 2026-09-28 through the CLI update](2026-09-29-the-11-agents-pinned-to-the-sonnet-alias-moved-to.md) [agent/coder] The 11 agents pinned to the `sonnet` alias moved to Sonnet 5.5 on 2026-09-28 through the CLI update, with no file edit.
@@ -504,10 +508,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Removed
 
 * [Test-intent reviewer: the lost-coverage check is cut](2026-10-02-test-intent-reviewer-the-lost-coverage-check-is.md) [agent/test-intent-reviewer, skill/test-audit] Test-intent reviewer: the lost-coverage check is cut.
-* [Test-writer agent deleted (Claude and opencode copies)](2026-10-02-test-writer-agent-deleted-claude-and-opencode.md) [agent/test-writer, skill/test-audit, agent/test-intent-reviewer, skill/fix, skill/branch-recap, shared/closing-phases] Test-writer agent deleted (Claude and opencode copies).
-* [review-loop and code-reviewer: the security and query-cost reviewers no longer run in the loop](2026-10-02-review-loop-and-code-reviewer-the-security-and.md) [agent/review-loop, agent/code-reviewer] review-loop and code-reviewer: the security and query-cost reviewers no longer run in the loop.
+* [Weak-assertion findings now go to `/fix`, with no separate test-writer agent](2026-10-02-test-writer-agent-deleted-claude-and-opencode.md) [agent/test-writer, skill/test-audit, agent/test-intent-reviewer, skill/fix, skill/branch-recap, shared/closing-phases] The test audit and the test-intent reviewer send weak-assertion findings to `/fix`; the test-writer agent is deleted from the Claude and opencode copies.
+* [The code reviewer now covers security and query cost on every pass](2026-10-02-review-loop-and-code-reviewer-the-security-and.md) [agent/review-loop, agent/code-reviewer] The code reviewer owns security and query cost on every pass, beside correctness and structure, so the review loop no longer runs separate reviewers for them.
 * [settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` removed, the same day that it was added](2026-09-29-settings-json-claude-code-subagent-model-removed.md) [rule/settings-json, agent/general-purpose] settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` removed, the same day that it was added.
-* [The Opus-pinned deep coder is removed](2026-09-29-the-opus-pinned-deep-coder-is-removed.md) [agent/review-loop] The Opus-pinned deep coder is removed. (reverted by 2026-09-29-the-opus-pinned-deep-coder-is-back)
+* [The deep modifier now dispatches the plain Sonnet coder](2026-09-29-the-opus-pinned-deep-coder-is-removed.md) [agent/review-loop] On the deep modifier, the code skill, the review loop and the shared modifier rules dispatch the plain Sonnet coder. (reverted by 2026-09-29-the-opus-pinned-deep-coder-is-back)
 
 ### Fixed
 
@@ -525,8 +529,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 * [settings.json: ten unused built-in skills set to `user-invocable-only`](2026-09-27-settings-json-ten-unused-built-in-skills-set-to.md) [rule/settings-json] settings.json: ten unused built-in skills set to `user-invocable-only`, and `skillListingBudgetFraction` set to 0.0001, so the skill listing carries names only.
 * [coder-core review handoff trimmed to the line formats; the calibration clauses on BEHAVIOR, WHY](2026-09-27-coder-core-review-handoff-trimmed-to-the-line.md) [skill/coder-core] coder-core review handoff trimmed to the line formats; the calibration clauses on BEHAVIOR, WHY, REFACTOR CANDIDATES, REVIEW and PLAN-IMPACT: yes removed, "one line per note" kept.
-* [The global quality-checks block was cut from 94 to about 30 words](2026-09-27-the-global-quality-checks-block-was-cut-from-94-to.md) [agent/review-loop] The global quality-checks block was cut from 94 to about 30 words: coders run only the tests for the files they changed, the full suite runs once at the end of review, and a failing approach gets three attempts before a stop.
-* [The global Safety Rails block was cut from 198 to 90 words](2026-09-27-the-global-safety-rails-block-was-cut-from-198-to.md) [rule/global-claude-md] The global Safety Rails block was cut from 198 to 90 words.
+* [The global quality-checks block is now about 30 words, down from 94](2026-09-27-the-global-quality-checks-block-was-cut-from-94-to.md) [agent/review-loop] The global quality-checks block is now about 30 words, down from 94: coders run only the tests for the files they changed, the full suite runs once at the end of review, and a failing approach gets three attempts before a stop.
+* [The global Safety Rails block is now 90 words, down from 198](2026-09-27-the-global-safety-rails-block-was-cut-from-198-to.md) [rule/global-claude-md] The global Safety Rails block is now 90 words, down from 198.
 * [The global naming rule was rewritten: take names from the ticket and the code's domain terms](2026-09-27-the-global-naming-rule-was-rewritten-take-names.md) [rule/global-claude-md] The global naming rule was rewritten: take names from the ticket and the code's domain terms, never name a value for its container or role alone, and keep every qualifier the domain needs (`compareDateRangeErrors`, not `compareErrors`).
 * [The git discipline gate now denies any `git commit`, `gh pr create` or `gh pr edit` command whose text](2026-09-27-the-git-discipline-gate-now-denies-any-git-commit.md) [script/git-discipline-gate, rule/global-claude-md] The git discipline gate now denies any `git commit`, `gh pr create` or `gh pr edit` command whose text carries `Claude-Session:`, a `claude.ai/code/session_` link or `Co-Authored-By: Claude`.
 * [The Tools and Tool Use Efficiency sections and the first three Engineering Judgment items of the global](2026-09-27-the-tools-and-tool-use-efficiency-sections-and-the.md) [rule/global-claude-md, rule/orchestration] The Tools and Tool Use Efficiency sections and the first three Engineering Judgment items of the global CLAUDE.md moved into the orchestration file, which only the main session loads.
@@ -550,9 +554,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [The unattended rule and its Engineering Judgment heading left the orchestration file](2026-09-27-the-unattended-rule-and-its-engineering-judgment.md) [rule/orchestration, rule/global-claude-md] The unattended rule and its Engineering Judgment heading left the orchestration file, and the CLAUDE.md pointer no longer names working judgment.
 * [The orchestration file lost its Obsidian and rule-maintenance sections and two of its three judgment items](2026-09-27-the-orchestration-file-lost-its-obsidian-and-rule.md) [rule/orchestration, rule/global-claude-md] The orchestration file lost its Obsidian and rule-maintenance sections and two of its three judgment items: state the approach before non-trivial work, and push back only on material trade-offs.
 * [The bullet in the orchestration file's Tools section that told the main session to search past sessions](2026-09-27-the-bullet-in-the-orchestration-file-s-tools.md) [rule/orchestration] The bullet in the orchestration file's Tools section that told the main session to search past sessions before asking the user to recall past work was deleted.
-* [The Laconic output style was deleted, and the settings no longer name an output style](2026-09-27-the-laconic-output-style-was-deleted-and-the.md) [rule/laconic-output-style, rule/global-claude-md] The Laconic output style was deleted, and the settings no longer name an output style.
-* [The workflow routing block left the main-session orchestration file](2026-09-27-the-workflow-routing-block-left-the-main-session.md) [rule/orchestration] The workflow routing block left the main-session orchestration file.
-* [The Opus-pinned deep coder and the Opus-pinned deep code reviewer are deleted](2026-09-23-the-opus-pinned-deep-coder-and-the-opus-pinned.md) [agent/code-reviewer, agent/review-loop, skill/peer-review] The Opus-pinned deep coder and the Opus-pinned deep code reviewer are deleted.
+* [The main session now runs on the default coding instructions plus a one-line style rule](2026-09-27-the-laconic-output-style-was-deleted-and-the.md) [rule/laconic-output-style, rule/global-claude-md] The main session gets the default coding instructions plus the per-turn style line, with no output style named in the settings.
+* [The main-session orchestration file is shorter: each skill now holds its own routing rules](2026-09-27-the-workflow-routing-block-left-the-main-session.md) [rule/orchestration] The workflow routing block is out of the main-session orchestration file, because every rule in it except three is stated in the skill or agent that it governs.
+* [The deep modifier now uses the plain coder and code reviewer, with no Opus pin](2026-09-23-the-opus-pinned-deep-coder-and-the-opus-pinned.md) [agent/code-reviewer, agent/review-loop, skill/peer-review] On the deep modifier, the code skill, review loop and closing review dispatch the plain coder and plain code reviewer, and the deep modifier changes only the specialist reviewers.
 
 ### Fixed
 
@@ -697,7 +701,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
-* [dead-symbol, clone-block, and drifted-copy scans retired — firing site, scripts](2026-08-13-dead-symbol-clone-block-and-drifted-copy-scans.md) [script/log-scan] dead-symbol, clone-block, and drifted-copy scans retired — firing site, scripts, and log-scan validator entries all removed.
+* [The branch recap no longer runs the dead-symbol, clone-block and drifted-copy scans](2026-08-13-dead-symbol-clone-block-and-drifted-copy-scans.md) [script/log-scan] The branch recap drops three scans that produced 513 candidates across 6 runs and none confirmed; the prohibition scans stay.
 
 ## Week of 2026-08-03
 
@@ -731,27 +735,27 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Review loop reads the fix diff before it exits](2026-08-08-review-loop-reads-the-fix-diff-before-it-exits.md) [agent/review-loop] Review loop reads the fix diff before it exits.
 * [`code-reviewer` pinned to opus](2026-08-08-code-reviewer-pinned-to-opus.md) [agent/code-reviewer] `code-reviewer` pinned to opus.
 * [`code-reviewer` REST-specific checks gated on the surface being present](2026-08-08-code-reviewer-rest-specific-checks-gated-on-the.md) [agent/code-reviewer] `code-reviewer` REST-specific checks gated on the surface being present.
-* [Severity tiers → `fix` / `ask` / `nit` + orthogonal `blocker` flag](2026-08-07-severity-tiers-fix-ask-nit-orthogonal-blocker-flag.md) [skill/fix] Severity tiers → `fix` / `ask` / `nit` + orthogonal `blocker` flag.
-* [Review loop capped at ONE correctness round; residue defers to branch exit](2026-08-07-review-loop-capped-at-one-correctness-round.md) [agent/review-loop] Review loop capped at ONE correctness round; residue defers to branch exit.
+* [Review findings are now labelled `fix`, `ask` or `nit`, with a separate `blocker` flag](2026-08-07-severity-tiers-fix-ask-nit-orthogonal-blocker-flag.md) [skill/fix] Each review finding says what to do with it (`fix`, `ask` or `nit`) and carries a `blocker` flag, in place of a severity tier.
+* [The review loop now runs one correctness round and defers what is left to branch exit](2026-08-07-review-loop-capped-at-one-correctness-round.md) [agent/review-loop] The review loop stops re-reviewing settled code after one correctness round and defers the residue to branch exit; a `blocker` is the only exemption.
 * [`/eng-spec` goal-blind research order](2026-08-04-eng-spec-goal-blind-research-order.md) [skill/eng-spec] `/eng-spec` goal-blind research order.
 * [Mechanical checks over instructed checks (hooks, not prose)](2026-08-04-mechanical-checks-over-instructed-checks-hooks-not.md) [rule/global-claude-md] Mechanical checks over instructed checks (hooks, not prose).
-* [fe+be coder split → one unfenced `coder` for fullstack](2026-08-04-fe-be-coder-split-one-unfenced-coder-for-fullstack.md) [agent/coder] fe+be coder split → one unfenced `coder` for fullstack.
+* [One `coder` now builds a full-stack change, with no frontend/backend fence](2026-08-04-fe-be-coder-split-one-unfenced-coder-for-fullstack.md) [agent/coder] One `coder` builds a full-stack change from end to end in place of a frontend coder and a backend coder. **cost -36% ($140.93 → $89.97)**
 * [Opus in the test path](2026-08-04-opus-in-the-test-path.md) [agent/test-writer] Opus in the test path.
 * [coder / test-writer split (hook-enforced)](2026-08-04-coder-test-writer-split-hook-enforced.md) [agent/test-writer] coder / test-writer split (hook-enforced).
 * [`perf`/`security` triggers rewritten](2026-08-04-perf-security-triggers-rewritten.md) [agent/review-loop, agent/perf-reviewer, agent/security-reviewer] `perf`/`security` triggers rewritten.
-* [Author self-sweep → fresh-eyes `smell-reviewer`](2026-08-04-author-self-sweep-fresh-eyes-smell-reviewer.md) [agent/smell-reviewer] Author self-sweep → fresh-eyes `smell-reviewer`.
+* [A fresh-eyes `smell-reviewer` now checks structure in place of the author's self-sweep](2026-08-04-author-self-sweep-fresh-eyes-smell-reviewer.md) [agent/smell-reviewer] A fresh-eyes `smell-reviewer` now checks a change for duplication and structure problems that its author cannot see.
 * [`smell-reviewer` size trigger (≥40 added lines OR ≥1 new source file)](2026-08-04-smell-reviewer-size-trigger-40-added-lines-or-1.md) [agent/smell-reviewer] `smell-reviewer` size trigger (≥40 added lines OR ≥1 new source file).
 
 ### Removed
 
 * [`code-reviewer` differential-comparison reporting requirement cut](2026-08-08-code-reviewer-differential-comparison-reporting.md) [agent/code-reviewer] `code-reviewer` differential-comparison reporting requirement cut.
-* [Post-convergence MEDIUM-classification pass deleted](2026-08-07-post-convergence-medium-classification-pass.md) [agent/review-loop] Post-convergence MEDIUM-classification pass deleted.
-* [Per-phase weak-assertion lens retired → recap boundary](2026-08-04-per-phase-weak-assertion-lens-retired-recap.md) [skill/test-audit, agent/test-intent-reviewer] Per-phase weak-assertion lens retired → recap boundary.
-* [Per-phase bug-pinning audit retired](2026-08-04-per-phase-bug-pinning-audit-retired.md) [skill/test-audit, agent/test-intent-reviewer] Per-phase bug-pinning audit retired.
-* [Auto-`-deep`-on-high-risk cut](2026-08-04-auto-deep-on-high-risk-cut.md) [skill/eng-spec] Auto-`-deep`-on-high-risk cut.
+* [The review loop ends without a separate pass to classify MEDIUM findings](2026-08-07-post-convergence-medium-classification-pass.md) [agent/review-loop] Reviewers label each finding's disposition when they find it, so the review loop no longer needs a classification pass after it converges.
+* [Weak assertions are now checked once at the branch recap, not after every phase](2026-08-04-per-phase-weak-assertion-lens-retired-recap.md) [skill/test-audit, agent/test-intent-reviewer] The weak-assertion check runs at the recap boundary, because a single phase cannot see assertions that are absent.
+* [Each phase no longer runs a bug-pinning test audit](2026-08-04-per-phase-bug-pinning-audit-retired.md) [skill/test-audit, agent/test-intent-reviewer] A phase skips the bug-pinning test audit, which was redundant once the coder/test-writer split was enforced by a hook; this saved about $26-53 per run.
+* [`/eng-spec` no longer switches a plan to deep tier because one phase is high-risk](2026-08-04-auto-deep-on-high-risk-cut.md) [skill/eng-spec] `/eng-spec` stays at its normal tier on a high-risk phase instead of pricing the whole plan at deep tier.
 * [`code-reviewer` removal](2026-08-04-code-reviewer-removal.md) [agent/code-reviewer] `code-reviewer` removal.
-* [Dispatch attribution retired as a yield metric](2026-08-04-dispatch-attribution-retired-as-a-yield-metric.md) [script/log-agent-usage] Dispatch attribution retired as a yield metric.
-* [Per-phase `plan-verifier` retired → branch scope only](2026-08-04-per-phase-plan-verifier-retired-branch-scope-only.md) [agent/plan-verifier] Per-phase `plan-verifier` retired → branch scope only.
+* [Agent usage logging no longer reports dispatch attribution as a yield metric](2026-08-04-dispatch-attribution-retired-as-a-yield-metric.md) [script/log-agent-usage] Dispatch attribution is no longer reported as a yield metric, because it measures routing and not yield.
+* [`plan-verifier` now checks the plan once per branch, not after every phase](2026-08-04-per-phase-plan-verifier-retired-branch-scope-only.md) [agent/plan-verifier] `plan-verifier` runs at branch scope only; its per-phase runs found nothing to fix across 71 runs.
 
 ### Fixed
 
@@ -819,13 +823,13 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [New agents `plan-fanout` (Opus, pinned) and `plan-coder-view` (Sonnet](2026-10-12-new-agents-plan-fanout-opus-pinned-and-plan-coder.md) - no reason recorded
 * [eng-spec finalize: open the criteria walk with a read-back of at most 15 lines](2026-10-12-eng-spec-finalize-open-the-criteria-walk-with-a.md) - no reason recorded
 * [plan-reviewer and plan-format: no cap on acceptance criteria](2026-10-12-plan-reviewer-and-plan-format-no-cap-on-acceptance.md) - no reason recorded
-* [code-vocabulary and coder-core: ticket keys are no longer banned from committed code](2026-10-12-code-vocabulary-and-coder-core-ticket-keys-are-no.md) - no reason recorded
+* [Committed code may now contain ticket keys](2026-10-12-code-vocabulary-and-coder-core-ticket-keys-are-no.md) - no reason recorded
 * [plan-reviewer: a new finding class, a class scoped as a list](2026-10-12-plan-reviewer-a-new-finding-class-a-class-scoped.md) - no reason recorded
 * [Global CLAUDE.md: never unstage files that the user staged, unless the user says to](2026-10-12-global-claude-md-never-unstage-files-that-the-user.md) - no reason recorded
 * [`/code` and `/review`: end the turn only at a STOP (or a wait, in `/review`)](2026-10-12-code-and-review-end-the-turn-only-at-a-stop-or-a.md) - no reason recorded
 * [coder-core: every test, lint, typecheck or build command runs with its full output in a `/tmp/` log](2026-10-09-coder-core-every-test-lint-typecheck-or-build.md) - no reason recorded
 * [test-ownership-gate: the script is deleted](2026-10-09-test-ownership-gate-the-script-is-deleted.md) - no reason recorded
-* [The security and query-cost specialist reviewers are removed, with their Opus copies](2026-10-09-the-security-and-query-cost-specialist-reviewers.md) - no reason recorded
+* [`code-reviewer` covers security and query cost on every pass, with no specialist reviewers](2026-10-09-the-security-and-query-cost-specialist-reviewers.md) - no reason recorded
 * [The structure reviewer and the module simplification reviewer now run only on Opus](2026-10-09-the-structure-reviewer-and-the-module.md) - no reason recorded
 * [Global hook list: after any block with an approved path (Write or Edit, a script file, the direct command](2026-10-09-global-hook-list-after-any-block-with-an-approved.md) - no reason recorded
 * [Test-ownership hook removed from `settings.json`; the global hook list again omits coder test writes and](2026-10-09-test-ownership-hook-removed-from-settings-json-the.md) - no reason recorded
@@ -835,11 +839,11 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Coder: before it keeps a test, it names the bug that test alone would catch](2026-10-02-coder-before-it-keeps-a-test-it-names-the-bug-that.md) - no reason recorded
 * [Test audit log row: adds `tests_added`, taken from a new tests-added header line in the test-intent](2026-10-02-test-audit-log-row-adds-tests-added-taken-from-a.md) - no reason recorded
 * [Test-intent reviewer: the lost-coverage check is cut](2026-10-02-test-intent-reviewer-the-lost-coverage-check-is.md) - no reason recorded
-* [Test-writer agent deleted (Claude and opencode copies)](2026-10-02-test-writer-agent-deleted-claude-and-opencode.md) - no reason recorded
+* [Weak-assertion findings now go to `/fix`, with no separate test-writer agent](2026-10-02-test-writer-agent-deleted-claude-and-opencode.md) - no reason recorded
 * [Review loop: one fix coder takes every `fix` finding, test gaps included](2026-10-02-review-loop-one-fix-coder-takes-every-fix-finding.md) - no reason recorded
 * [Global Safety Rails: when a hook blocks a shell write and tells the agent to use Write or Edit](2026-10-02-global-safety-rails-when-a-hook-blocks-a-shell.md) - no reason recorded
 * [review-loop: on a large diff (the size test that sends the test reviewer)](2026-10-02-review-loop-on-a-large-diff-the-size-test-that.md) - no reason recorded
-* [review-loop and code-reviewer: the security and query-cost reviewers no longer run in the loop](2026-10-02-review-loop-and-code-reviewer-the-security-and.md) - no reason recorded
+* [The code reviewer now covers security and query cost on every pass](2026-10-02-review-loop-and-code-reviewer-the-security-and.md) - no reason recorded
 * [review-loop and code-reviewer: when the structure domain is eligible](2026-10-02-review-loop-and-code-reviewer-when-the-structure.md) - no reason recorded
 * [test-reviewer: a new step reads every expected value a test pins against the acceptance criteria](2026-10-02-test-reviewer-a-new-step-reads-every-expected-2.md) - no reason recorded
 * [test-reviewer: a new step reads every expected value a test pins against the ticket or plan](2026-10-02-test-reviewer-a-new-step-reads-every-expected.md) - no reason recorded
@@ -853,29 +857,29 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Escape and review logs name the code they saw: every review-log row records the commit and whether the tree](2026-09-29-escape-and-review-logs-name-the-code-they-saw.md) - no reason recorded
 * [settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` removed, the same day that it was added](2026-09-29-settings-json-claude-code-subagent-model-removed.md) - no reason recorded
 * [settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` set to `sonnet`](2026-09-29-settings-json-claude-code-subagent-model-set-to.md) - no reason recorded
-* [The Opus-pinned deep coder is removed](2026-09-29-the-opus-pinned-deep-coder-is-removed.md) - no reason recorded
-* [The Opus-pinned deep coder is back](2026-09-29-the-opus-pinned-deep-coder-is-back.md) - no reason recorded
+* [The deep modifier now dispatches the plain Sonnet coder](2026-09-29-the-opus-pinned-deep-coder-is-removed.md) - no reason recorded
+* [The deep modifier dispatches the Opus-pinned deep coder again](2026-09-29-the-opus-pinned-deep-coder-is-back.md) - no reason recorded
 * [coder-core: the coder writes files with Write and Edit, and uses Bash only to run commands](2026-09-29-coder-core-the-coder-writes-files-with-write-and.md) - no reason recorded
 * [settings.json: ten unused built-in skills set to `user-invocable-only`](2026-09-27-settings-json-ten-unused-built-in-skills-set-to.md) - no reason recorded
 * [coder-core review handoff trimmed to the line formats; the calibration clauses on BEHAVIOR, WHY](2026-09-27-coder-core-review-handoff-trimmed-to-the-line.md) - no reason recorded
 * [The coder's core skill lost three sentences: the ban on dispatching or spawning a reviewer](2026-09-27-the-coder-s-core-skill-lost-three-sentences-the.md) - no reason recorded
 * [The Precedence section of the global CLAUDE.md, which ranked the user's current instruction over project](2026-09-27-the-precedence-section-of-the-global-claude-md.md) - no reason recorded
-* [The global quality-checks block was cut from 94 to about 30 words](2026-09-27-the-global-quality-checks-block-was-cut-from-94-to.md) - no reason recorded
-* [The global Safety Rails block was cut from 198 to 90 words](2026-09-27-the-global-safety-rails-block-was-cut-from-198-to.md) - no reason recorded
+* [The global quality-checks block is now about 30 words, down from 94](2026-09-27-the-global-quality-checks-block-was-cut-from-94-to.md) - no reason recorded
+* [The global Safety Rails block is now 90 words, down from 198](2026-09-27-the-global-safety-rails-block-was-cut-from-198-to.md) - no reason recorded
 * [The global naming rule was rewritten: take names from the ticket and the code's domain terms](2026-09-27-the-global-naming-rule-was-rewritten-take-names.md) - no reason recorded
 * [The global CLAUDE.md lost its pointer to the orchestration file and its Ansible Vault rule](2026-09-27-the-global-claude-md-lost-its-pointer-to-the.md) - no reason recorded
 * [The git discipline gate now denies any `git commit`, `gh pr create` or `gh pr edit` command whose text](2026-09-27-the-git-discipline-gate-now-denies-any-git-commit.md) - no reason recorded
 * [The unattended rule and its Engineering Judgment heading left the orchestration file](2026-09-27-the-unattended-rule-and-its-engineering-judgment.md) - no reason recorded
 * [The orchestration file lost its Obsidian and rule-maintenance sections and two of its three judgment items](2026-09-27-the-orchestration-file-lost-its-obsidian-and-rule.md) - no reason recorded
 * [The bullet in the orchestration file's Tools section that told the main session to search past sessions](2026-09-27-the-bullet-in-the-orchestration-file-s-tools.md) - no reason recorded
-* [The Laconic output style was deleted, and the settings no longer name an output style](2026-09-27-the-laconic-output-style-was-deleted-and-the.md) - no reason recorded
+* [The main session now runs on the default coding instructions plus a one-line style rule](2026-09-27-the-laconic-output-style-was-deleted-and-the.md) - no reason recorded
 * [The Tools and Tool Use Efficiency sections and the first three Engineering Judgment items of the global](2026-09-27-the-tools-and-tool-use-efficiency-sections-and-the.md) - no reason recorded
 * [The git rules file and the Obsidian and rule-maintenance sections of the global CLAUDE.md moved into the](2026-09-27-the-git-rules-file-and-the-obsidian-and-rule.md) - no reason recorded
 * [The delegation block in the main-session orchestration file was trimmed from 283 to 111 words](2026-09-27-the-delegation-block-in-the-main-session.md) - no reason recorded
-* [The workflow routing block left the main-session orchestration file](2026-09-27-the-workflow-routing-block-left-the-main-session.md) - no reason recorded
+* [The main-session orchestration file is shorter: each skill now holds its own routing rules](2026-09-27-the-workflow-routing-block-left-the-main-session.md) - no reason recorded
 * [A new PostToolUse hook on Bash, Read, Grep and Glob](2026-09-23-a-new-posttooluse-hook-on-bash-read-grep-and-glob.md) - no reason recorded
 * [The branch-wide closing review now logs its findings with the branch-exit scope](2026-09-23-the-branch-wide-closing-review-now-logs-its.md) - no reason recorded
-* [The Opus-pinned deep coder and the Opus-pinned deep code reviewer are deleted](2026-09-23-the-opus-pinned-deep-coder-and-the-opus-pinned.md) - no reason recorded
+* [The deep modifier now uses the plain coder and code reviewer, with no Opus pin](2026-09-23-the-opus-pinned-deep-coder-and-the-opus-pinned.md) - no reason recorded
 * [Recorded late, for an edit made 2026-09-21: the refactor skill's description now gives one clause per mode](2026-09-23-recorded-late-for-an-edit-made-2026-09-21-the.md) - no reason recorded
 * [The coder agent now runs on Opus in place of Sonnet, for every dispatch: builds from a plan](2026-09-23-the-coder-agent-now-runs-on-opus-in-place-of.md) - no reason recorded
 * [The full test suite and long quality gates now run once per phase, at the review loop's execution gate](2026-09-22-the-full-test-suite-and-long-quality-gates-now-run.md) - no reason recorded
@@ -975,7 +979,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [The finalization phase now dry-runs each phase's verification criteria before any coder is dispatched](2026-08-13-the-finalization-phase-now-dry-runs-each-phase-s.md) - no reason recorded
 * [The review-audit lane now joins deferred correctness findings to the escape log to price the one-round loop](2026-08-13-the-review-audit-lane-now-joins-deferred.md) - no reason recorded
 * [fix_induced=bug auto-promotes to blocker in the review loop's finding log](2026-08-13-fix-induced-bug-auto-promotes-to-blocker-in-the.md) - no reason recorded
-* [dead-symbol, clone-block, and drifted-copy scans retired — firing site, scripts](2026-08-13-dead-symbol-clone-block-and-drifted-copy-scans.md) - no reason recorded
+* [The branch recap no longer runs the dead-symbol, clone-block and drifted-copy scans](2026-08-13-dead-symbol-clone-block-and-drifted-copy-scans.md) - no reason recorded
 * [The branch-exit residue step now distinguishes "nothing left unstaged" from "the classifier had no diff to](2026-08-08-the-branch-exit-residue-step-now-distinguishes.md) - no reason recorded
 * [The global two-run cap on quality checks is no longer restated in the branch-exit skill](2026-08-08-the-global-two-run-cap-on-quality-checks-is-no.md) - no reason recorded
 * [The mutation verdicts are now read from the agent that defines them instead of summarized at the call site](2026-08-08-the-mutation-verdicts-are-now-read-from-the-agent.md) - no reason recorded
@@ -1001,21 +1005,21 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [`code-reviewer` pinned to opus](2026-08-08-code-reviewer-pinned-to-opus.md) - no reason recorded
 * [`code-reviewer` REST-specific checks gated on the surface being present](2026-08-08-code-reviewer-rest-specific-checks-gated-on-the.md) - no reason recorded
 * [`code-reviewer` differential-comparison reporting requirement cut](2026-08-08-code-reviewer-differential-comparison-reporting.md) - no reason recorded
-* [Post-convergence MEDIUM-classification pass deleted](2026-08-07-post-convergence-medium-classification-pass.md) - no reason recorded
-* [Severity tiers → `fix` / `ask` / `nit` + orthogonal `blocker` flag](2026-08-07-severity-tiers-fix-ask-nit-orthogonal-blocker-flag.md) - no reason recorded
-* [Review loop capped at ONE correctness round; residue defers to branch exit](2026-08-07-review-loop-capped-at-one-correctness-round.md) - no reason recorded
+* [The review loop ends without a separate pass to classify MEDIUM findings](2026-08-07-post-convergence-medium-classification-pass.md) - no reason recorded
+* [Review findings are now labelled `fix`, `ask` or `nit`, with a separate `blocker` flag](2026-08-07-severity-tiers-fix-ask-nit-orthogonal-blocker-flag.md) - no reason recorded
+* [The review loop now runs one correctness round and defers what is left to branch exit](2026-08-07-review-loop-capped-at-one-correctness-round.md) - no reason recorded
 * [Per-finding gate log (silent runs included)](2026-08-07-per-finding-gate-log-silent-runs-included.md) - no reason recorded
 * [`/eng-spec` goal-blind research order](2026-08-04-eng-spec-goal-blind-research-order.md) - no reason recorded
 * [Mechanical checks over instructed checks (hooks, not prose)](2026-08-04-mechanical-checks-over-instructed-checks-hooks-not.md) - no reason recorded
-* [fe+be coder split → one unfenced `coder` for fullstack](2026-08-04-fe-be-coder-split-one-unfenced-coder-for-fullstack.md) - no reason recorded
+* [One `coder` now builds a full-stack change, with no frontend/backend fence](2026-08-04-fe-be-coder-split-one-unfenced-coder-for-fullstack.md) - no reason recorded
 * [Opus in the test path](2026-08-04-opus-in-the-test-path.md) - no reason recorded
-* [Per-phase weak-assertion lens retired → recap boundary](2026-08-04-per-phase-weak-assertion-lens-retired-recap.md) - no reason recorded
-* [Per-phase bug-pinning audit retired](2026-08-04-per-phase-bug-pinning-audit-retired.md) - no reason recorded
+* [Weak assertions are now checked once at the branch recap, not after every phase](2026-08-04-per-phase-weak-assertion-lens-retired-recap.md) - no reason recorded
+* [Each phase no longer runs a bug-pinning test audit](2026-08-04-per-phase-bug-pinning-audit-retired.md) - no reason recorded
 * [coder / test-writer split (hook-enforced)](2026-08-04-coder-test-writer-split-hook-enforced.md) - no reason recorded
-* [Auto-`-deep`-on-high-risk cut](2026-08-04-auto-deep-on-high-risk-cut.md) - no reason recorded
+* [`/eng-spec` no longer switches a plan to deep tier because one phase is high-risk](2026-08-04-auto-deep-on-high-risk-cut.md) - no reason recorded
 * [`code-reviewer` removal](2026-08-04-code-reviewer-removal.md) - no reason recorded
 * [`perf`/`security` triggers rewritten](2026-08-04-perf-security-triggers-rewritten.md) - no reason recorded
-* [Dispatch attribution retired as a yield metric](2026-08-04-dispatch-attribution-retired-as-a-yield-metric.md) - no reason recorded
-* [Per-phase `plan-verifier` retired → branch scope only](2026-08-04-per-phase-plan-verifier-retired-branch-scope-only.md) - no reason recorded
-* [Author self-sweep → fresh-eyes `smell-reviewer`](2026-08-04-author-self-sweep-fresh-eyes-smell-reviewer.md) - no reason recorded
+* [Agent usage logging no longer reports dispatch attribution as a yield metric](2026-08-04-dispatch-attribution-retired-as-a-yield-metric.md) - no reason recorded
+* [`plan-verifier` now checks the plan once per branch, not after every phase](2026-08-04-per-phase-plan-verifier-retired-branch-scope-only.md) - no reason recorded
+* [A fresh-eyes `smell-reviewer` now checks structure in place of the author's self-sweep](2026-08-04-author-self-sweep-fresh-eyes-smell-reviewer.md) - no reason recorded
 * [`smell-reviewer` size trigger (≥40 added lines OR ≥1 new source file)](2026-08-04-smell-reviewer-size-trigger-40-added-lines-or-1.md) - no reason recorded

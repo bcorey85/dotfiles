@@ -15,8 +15,9 @@ ANSWER_USAGE = ('usage: code_step.py resume ["<the user\'s answer to the stopped
 VERB_USAGES = {
     "resume": ANSWER_USAGE,
     "decide": f"usage: code_step.py {DECIDE_COMMAND}\n       code_step.py decide discuss",
-    "asks-done": ('usage: code_step.py asks-done [--by <user|session>] <accepted|rejected|modified>...\n'
-                  'One outcome per ask, in order.'),
+    "asks-done": ('usage: code_step.py asks-done [--by <user|session>] [--also "<text>"] <accepted|rejected|modified>...\n'
+                  'One outcome per ask, in order. --also carries other work the user named alongside the outcomes '
+                  'to the coder.'),
     "skill-done": ('usage: code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...\n'
                    'A closing phase\'s skill returned.'),
     "verify": ("usage: code_step.py verify\nRuns the phase gates and closes the phase, after a failed Automated "

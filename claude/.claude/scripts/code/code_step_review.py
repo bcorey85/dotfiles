@@ -65,7 +65,8 @@ from source_paths import is_counted_source
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or modified. Each modified ask needs the "
-                   "user's change after it as `--change \"<text>\"`. `--by user` or `--by session` says who ruled.")
+                   "user's change after it as `--change \"<text>\"`. `--by user` or `--by session` says who ruled. `--also \"<text>\"` "
+                   "carries any other work the user named alongside the outcomes.")
 # The state each guarded verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped",
 # and the refusal text when the state is anything else. `start`, `tick` and `resume` run at any stage and are not in
 # the table. A review-loop resumed after the wait cap also counts for review-again, and a converged review of the
@@ -930,8 +931,10 @@ def log_ask_outcomes(repo_dir, state, outcomes, decided_by="user"):
             print(f"code-step: {new_finding_id_note}", file=sys.stderr)
 
 
-def asks_coder_prompt(accepted_asks):
-    lines = ["Apply these review asks. The user accepted them. Make the change each one names and nothing else.", ""]
+def asks_coder_prompt(accepted_asks, also_text=""):
+    lines = []
+    if accepted_asks:
+        lines += ["Apply these review asks. The user accepted them. Make the change each one names and nothing else.", ""]
     for number, (item, outcome, change_text) in enumerate(accepted_asks, 1):
         location = item.get("file_line", "")
         lines.append(f"{number}. [{outcome}] {ask_text(item)}"
@@ -940,6 +943,8 @@ def asks_coder_prompt(accepted_asks):
             lines.append(f"   The user's change: {change_text}")
         elif item.get("change"):
             lines.append(f"   The proposed change: {item['change']}")
+    if also_text:
+        lines += ["", "Also do this, as the user instructed alongside the asks:", also_text]
     lines += [
         "",
         "Run the typecheck, and lint and tests for only the files you changed, once, after all edits. "
@@ -952,7 +957,7 @@ def asks_coder_prompt(accepted_asks):
     return "\n".join(lines)
 
 
-def apply_asks_or_finish(repo_dir, state, outcomes, change_texts):
+def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
     # An accepted or modified ask is owed work: a coder applies it, then a review of that coder's diff runs (none when
     # the diff is docs only) before the phase can finish. After a review that left findings open (a cap or a critical
     # blocker), that review covers the whole phase and runs even on a docs-only diff, or when every ask was rejected
@@ -962,15 +967,17 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts):
         for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=False)
         if outcome != "rejected"
     ]
-    if not accepted_asks and left_findings_open(state):
+    # Extra text the user gave alongside the outcomes is owed work too: it keeps a coder dispatched when every ask
+    # was rejected.
+    if not accepted_asks and not also_text and left_findings_open(state):
         state["iter"] = 0
         return emit_review_dispatch(repo_dir, state)
-    if not accepted_asks:
+    if not accepted_asks and not also_text:
         state["stage"] = "review"
         save_state(repo_dir, state)
         return finish_phase(repo_dir, state)
 
-    state.update({"stage": "asks-coder", "acceptedAsks": accepted_asks, "asksApplied": True,
+    state.update({"stage": "asks-coder", "acceptedAsks": accepted_asks, "asksApplied": True, "asksAlso": also_text,
                   "asksBaseline": file_hashes(repo_dir), "followUpBefore": change_snapshot(repo_dir)})
     open_dispatch(state)
     save_state(repo_dir, state)
@@ -982,31 +989,34 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts):
         review_sentence = ("A review of that coder's diff runs after it (none when the diff is docs only) before the "
                            "phase can finish.")
     emit_dispatch(repo_dir, state, RESUME_VERB, "The user accepted review asks. Dispatch a coder to apply them. "
-                  + review_sentence, prompt=asks_coder_prompt(accepted_asks), agent="coder", model=model)
+                  + review_sentence, prompt=asks_coder_prompt(accepted_asks, also_text), agent="coder", model=model)
 
 
 def split_asks_done_args(args):
-    # Outcome words in order, and the text after each `--change` flag, one per modified ask, in order.
+    # Outcome words in order, the text after each `--change` flag (one per modified ask, in order), and the text of
+    # `--also` joined by blank lines ("" when none). A flag with no text after it makes the change texts None.
     outcomes = []
     change_texts = []
+    also_texts = []
     position = 0
     while position < len(args):
-        if args[position] == "--change":
+        if args[position] in ("--change", "--also"):
             if position + 1 >= len(args):
-                return outcomes, None
-            change_texts.append(args[position + 1])
+                return outcomes, None, ""
+            target = change_texts if args[position] == "--change" else also_texts
+            target.append(args[position + 1])
             position += 2
             continue
         outcomes.append(args[position])
         position += 1
-    return outcomes, change_texts
+    return outcomes, change_texts, "\n\n".join(also_texts)
 
 
 def command_asks_done(repo_dir, state, args):
     outcome_args, decided_by = script_utils.pop_option(args, "--by")
     if decided_by is None:
         decided_by = "user"
-    outcomes, given_changes = split_asks_done_args(outcome_args)
+    outcomes, given_changes, also_text = split_asks_done_args(outcome_args)
     if decided_by not in ("user", "session") or len(outcomes) != len(state["asks"]) \
             or any(outcome not in ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
             or len(given_changes) != outcomes.count("modified"):
@@ -1016,4 +1026,4 @@ def command_asks_done(repo_dir, state, args):
     change_texts = [next(remaining_changes) if outcome == "modified" else None for outcome in outcomes]
     log_ask_outcomes(repo_dir, state, outcomes, decided_by)
     record_ruled_asks(repo_dir, state, outcomes, change_texts)
-    apply_asks_or_finish(repo_dir, state, outcomes, change_texts)
+    apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text)

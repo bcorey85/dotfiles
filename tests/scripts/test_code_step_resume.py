@@ -468,7 +468,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round()
         self.hook("review-loop", BLOCKER_PACKET)
         self.step("resume")
-        self.set_state(stopReason=None)
+        self.set_state(stop=None)
         self.assertEqual("stopped", self.state()["stage"])
         before = self.state_bytes()
 
@@ -483,7 +483,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round()
         self.hook("review-loop", BLOCKER_PACKET)
         self.step("resume")
-        self.assertEqual(("stopped", "critical-blocker"), (self.state()["stage"], self.state()["stopReason"]))
+        self.assertEqual(("stopped", "critical-blocker"), (self.state()["stage"], self.state()["stop"]["kind"]))
         review_again = self.own_command("review-again")
 
         resume_out = self.step("resume")
@@ -500,7 +500,7 @@ class ResumeTest(base.CodeStepTest):
     def test_resume_at_a_stop_for_a_guarded_verb_prints_the_state_and_names_that_verb(self):
         self.leave_unreadable_packet()
         self.step("resume")
-        self.assertEqual("invalid-packet", self.state()["stopReason"])
+        self.assertEqual("invalid-packet", self.state()["stop"]["kind"])
 
         self.step("resume")
 
@@ -512,7 +512,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round(source="console.log(1)\n")
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("Automated Verification failed", self.step("resume"))
-        self.assertEqual("verification", self.state()["stopReason"])
+        self.assertEqual("verification", self.state()["stop"]["kind"])
 
         out = self.step("resume")
 
@@ -541,7 +541,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round(source="console.log(1)\n")
         self.hook("review-loop", self.LOOP_OK)
         self.step("resume")
-        self.assertEqual("verification", self.state()["stopReason"])
+        self.assertEqual("verification", self.state()["stop"]["kind"])
 
     def test_a_resume_at_a_failed_verification_stop_is_refused_before_the_fork_starts_and_names_fix_then_verify(self):
         self.stop_at_verification()
@@ -569,7 +569,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round_then_edit_verification("- [ ] **Check**: the streams pass, see the log")
         self.hook("review-loop", self.LOOP_OK)
         self.step("resume")
-        self.assertEqual("verification", self.state()["stopReason"])
+        self.assertEqual("verification", self.state()["stop"]["kind"])
 
         decision = self.launch_hook_decision("code", "resume")
 
@@ -760,7 +760,7 @@ class ResumeTest(base.CodeStepTest):
 
     def test_the_coder_cap_with_a_launch_id_is_resumed_by_that_agents_hand_back(self):
         self.stop_the_coder_at_the_wait_cap(launched_as="c1")
-        self.assertEqual("c1", self.state()["resumableCoderId"])
+        self.assertEqual("c1", self.state()["stop"]["agentId"])
         self.send_message("c1")
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", self.CODER_REPORT, agent_id="c1")
@@ -794,7 +794,7 @@ class ResumeTest(base.CodeStepTest):
 
     def test_the_coder_cap_with_no_launch_record_asks_for_a_restart(self):
         self.stop_the_coder_at_the_wait_cap()
-        self.assertEqual("coder-cap", self.state()["stopReason"])
+        self.assertEqual("coder-cap", self.state()["stop"]["kind"])
 
         out = self.step("resume")
 
@@ -812,8 +812,8 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("ACTION: stop", out)
         self.assertIn("coder c1 with SendMessage", out)
         self.assertIn("start --restart", out)
-        self.assertEqual("c1", self.state()["resumableCoderId"])
-        self.assertNotIn("stopReason", self.state())
+        self.assertEqual("c1", self.state()["stop"]["agentId"])
+        self.assertEqual("coder-resumable", self.state()["stop"]["kind"])
 
     def test_the_plan_coder_at_the_cap_says_only_the_phase_coder_resumes_and_start_restart_dispatches_it(self):
         self.adopt_plan_change_with_the_plan_coder_out()
@@ -830,7 +830,7 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("plan-edit coder cannot be resumed", out)
         self.assertIn("start --restart", out)
         self.assertIn("To dispatch the phase coder again", out)
-        self.assertEqual(("stopped", "coder-cap"), (self.state()["stage"], self.state()["stopReason"]))
+        self.assertEqual(("stopped", "coder-cap"), (self.state()["stage"], self.state()["stop"]["kind"]))
 
     def test_the_plan_coder_cap_stop_of_a_single_phase_deep_run_restarts_with_the_phase_and_the_modifier(self):
         self.start_phase_one("--phase", "1", "+deep")
@@ -1001,6 +1001,30 @@ class ResumeTest(base.CodeStepTest):
         self.assertEqual(0, accepted.returncode, accepted.stderr)
         self.assertIn("The user answered: use the -v flag.", self.said())
 
+    def test_a_state_file_in_the_old_stop_format_resumes_the_coder_as_before(self):
+        self.stop_the_coder_at_the_wait_cap(launched_as="a1")
+        self.set_state(stop=None, stage="stopped", stopReason="coder-cap", resumableCoderId="a1",
+                       resumableCoderAt=time.time() - 100, resumeWaitAt=time.time() - 100)
+
+        coder_out = base.run(self.repo, self.env, "resume", "use", "the", "flag")
+
+        self.assertEqual(0, coder_out.returncode, coder_out.stderr)
+        self.assertIn("The user answered: use the flag.", self.said())
+        self.assertEqual(("coder-resumable", "a1"), (self.state()["stop"]["kind"], self.state()["stop"]["agentId"]))
+        for old_key in ("stopReason", "resumableCoderId", "resumableCoderAt", "resumeWaitAt"):
+            self.assertNotIn(old_key, self.state())
+
+    def test_a_state_file_with_the_old_resumable_review_key_resumes_the_review_as_before(self):
+        self.begin_coder()
+        self.set_state(stage="stopped", resumableReview=time.time(), reviewScriptPid=os.getpid())
+        review_out = base.run(self.repo, self.env, "resume")
+
+        self.assertEqual(0, review_out.returncode, review_out.stderr)
+        self.assertIn("The resumed review-loop has not handed back yet", review_out.stdout)
+        self.assertEqual("review-resumable", self.state()["stop"]["kind"])
+        for old_key in ("stopReason", "resumableReview"):
+            self.assertNotIn(old_key, self.state())
+
     # ---------- a stale phase ----------
 
     def renumber_phase_one(self):
@@ -1075,7 +1099,7 @@ class ResumeTest(base.CodeStepTest):
         self.hook("review-loop", self.LOOP_OK)
         self.break_manual_section()
         self.step("resume")
-        self.assertEqual("plan-format", self.state()["stopReason"])
+        self.assertEqual("plan-format", self.state()["stop"]["kind"])
         (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
 
         self.step("resume")
@@ -1316,7 +1340,7 @@ class ResumeTest(base.CodeStepTest):
                 self.coder_round()
                 self.hook("review-loop", packet)
                 stop = self.step("resume")
-                self.assertEqual(stop_reason, self.state()["stopReason"])
+                self.assertEqual(stop_reason, self.state()["stop"]["kind"])
                 self.assertIn(review_again, question_path.read_text())
                 self.assertIn("ACTION: stop", stop)
 
@@ -1342,13 +1366,13 @@ class ResumeTest(base.CodeStepTest):
         self.hook("review-loop", self.LOOP_OK)
         self.forget_the_hand_back_store()
         self.step("resume")
-        self.assertEqual("false-clean", self.state()["stopReason"])
+        self.assertEqual("false-clean", self.state()["stop"]["kind"])
 
         out = self.step("resume")
 
         self.assertIn("AGENT: review-loop", out)
         self.assertEqual("review", self.state()["stage"])
-        self.assertNotIn("stopReason", self.state())
+        self.assertNotIn("stop", self.state())
 
     # ---------- a restart that keeps the phase ----------
 
@@ -1356,7 +1380,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round(source="console.log(1)\n")
         self.hook("review-loop", self.LOOP_OK)
         self.step("resume")
-        self.assertEqual("verification", self.state()["stopReason"])
+        self.assertEqual("verification", self.state()["stop"]["kind"])
         (self.repo / self.plan).write_text(self.plan_text().replace("`npx vitest run`", "`npx vitest run --silent`"))
 
         self.step("resume")
@@ -1368,7 +1392,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round(source="console.log(1)\n")
         self.hook("review-loop", self.LOOP_OK)
         self.step("resume")
-        self.assertEqual("verification", self.state()["stopReason"])
+        self.assertEqual("verification", self.state()["stop"]["kind"])
         (self.repo / self.plan).write_text(self.plan_text().replace("`npx vitest run`", "`npx vitest run --silent`"))
 
         self.step("verify")

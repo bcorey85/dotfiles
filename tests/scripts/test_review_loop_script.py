@@ -1106,6 +1106,13 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(entry["change"], "read from settings")
         self.assertEqual(entry["question"], "`app.py:3` should it be configurable?")
 
+    def test_an_ask_that_opens_with_its_change_marker_asks_its_change(self):
+        for ask in ("Change if accepted: read from settings", "change: read from settings"):
+            with self.subTest(ask=ask):
+                entry = review_loop_packet.ask_entry(ask, "code-reviewer", None)
+
+                self.assertEqual((entry["question"], entry["change"]), ("read from settings", "read from settings"))
+
     def test_the_finding_id_changes_with_the_gate(self):
         loader = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
         module = importlib.util.module_from_spec(loader)

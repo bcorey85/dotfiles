@@ -287,7 +287,7 @@ skipped_fp: [{item, reason}]             # `fix` findings dropped as false posit
 blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here)
 findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
-ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome
+ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; question is never empty: an ask with no question takes its finding, or else its change, as its question; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome
 perf: [{finding, principle, file_line}]
 specialists: [security | perf | smell]   # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>

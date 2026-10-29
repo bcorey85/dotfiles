@@ -1,8 +1,8 @@
 """code_step_core.py: what every part of code_step.py shares: the constants, the git and state-file helpers, the
 event log of a run, the hand-back matcher and the printed output.
 
-Installed beside code_step.py. Imports run one way: code_step_core, code_step_boundary, code_step_hooks,
-code_step_gates, code_step_start, code_step_report, code_step_review, code_step.
+Installed beside code_step.py. Imports run one way: code_step_core, code_step_verification, code_step_boundary,
+code_step_closing, code_step_hooks, code_step_gates, code_step_start, code_step_report, code_step_review, code_step.
 
 A hand-back is one `handback` event in the run's events.jsonl, written by the log hook. A verb that waits for an agent
 looks for the newest hand-back event of the awaited agent's id after the time it was dispatched."""

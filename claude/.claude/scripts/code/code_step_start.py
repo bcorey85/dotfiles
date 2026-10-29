@@ -9,16 +9,8 @@ import time
 
 import plan_format
 import script_utils
-from code_step_boundary import (
-    criteria_rel,
-    evidence_command_shape,
-    evidence_request_lines,
-    finish_phase,
-    run_verification_commands,
-    settle_criteria_guard,
-    stop_while_plan_edit_coder_is_out,
-    verification_format_failure,
-)
+from code_step_boundary import criteria_rel, finish_phase, settle_criteria_guard, stop_while_plan_edit_coder_is_out
+from code_step_closing import evidence_command_shape, evidence_request_lines
 from code_step_concentration import REFACTOR_SKILL, concentration_gate, gate_lines, simplify_option
 from code_step_core import (
     CODER_RESUMABLE,
@@ -79,6 +71,7 @@ from code_step_start_args import (
     start_repo_path,
     starts_task_text,
 )
+from code_step_verification import run_verification_commands, verification_format_failure
 from script_utils import run_command
 
 START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep] [--phase <id>] [--restart] '

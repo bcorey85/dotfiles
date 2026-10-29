@@ -6,11 +6,15 @@ its own tests run there, not here.
 
 run: python3 -m unittest test_code_step_review_script
 """
+import contextlib
+import io
 import json
 import os
 import pathlib
 import signal
+import tempfile
 import time
+from unittest import mock
 
 import test_code_step as base
 
@@ -373,6 +377,45 @@ class ReviewScriptTest(base.CodeStepTest):
 for inherited_test in [name for name in dir(base.CodeStepTest) if name.startswith("test_")]:
     if inherited_test not in vars(ReviewScriptTest):
         setattr(ReviewScriptTest, inherited_test, None)
+
+
+class GoneReviewScriptTest(base.unittest.TestCase):
+    """stop_on_gone_review_script, called with the saved state of a run whose script pid probe read it as gone."""
+
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.repo = pathlib.Path(temp_dir.name)
+        self.log_path = self.repo / "script.log"
+        self.state = {"stage": "review", "reviewScriptPid": 4242, "reviewScriptLog": str(self.log_path),
+                      "resumableReview": 1.0}
+
+    def stop(self):
+        core = base.code_step_core
+        with (mock.patch.object(core, "awaited_agent_id", return_value="loop-script-r-d1"),
+              mock.patch.object(core, "save_state"),
+              contextlib.redirect_stdout(io.StringIO()) as printed):
+            return core.stop_on_gone_review_script(self.repo, self.state), printed.getvalue()
+
+    def test_the_stop_names_the_pid_the_agent_and_the_tail_of_the_script_log(self):
+        self.log_path.write_text("early line\n" + "\n".join(f"line {number}" for number in range(20))
+                                 + "\nreview-loop-script: run event not written, TypeError: boom\n")
+
+        goes_on, printed = self.stop()
+
+        self.assertFalse(goes_on)
+        self.assertEqual(("stopped", "invalid-packet"), (self.state["stage"], self.state["stopReason"]))
+        self.assertIn("pid 4242 is not running", printed)
+        self.assertIn("loop-script-r-d1", printed)
+        self.assertIn("run event not written, TypeError: boom", printed)
+        self.assertNotIn("early line", printed)
+        self.assertIn("review-again", printed)
+
+    def test_the_stop_says_so_when_the_script_log_cannot_be_read(self):
+        goes_on, printed = self.stop()
+
+        self.assertFalse(goes_on)
+        self.assertIn("log not readable", printed)
 
 
 if __name__ == "__main__":

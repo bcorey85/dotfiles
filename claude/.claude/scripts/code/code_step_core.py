@@ -852,14 +852,24 @@ def wait_for_loop_stop(state, module, handback):
               "may be missed, so an ask it logged may get a second ask row.", file=sys.stderr)
 
 
+SCRIPT_LOG_TAIL_LINES = 8
+SCRIPT_LOG_TAIL_CHARS = 800
+
+
 def stop_on_gone_review_script(repo_dir, state):
     log_path = state.get("reviewScriptLog", "")
+    script_pid = state.get("reviewScriptPid")
     # A wait-cap stop before this one left the review resumable; a gone script has nothing left to resume.
     for finished_key in FINISHED_REVIEW_SCRIPT_KEYS:
         state.pop(finished_key, None)
     state.update({"stage": "stopped", "stopReason": "invalid-packet"})
     save_state(repo_dir, state)
-    emit("stop", f"The review loop script exited with no hand-back. Show the user its log: {log_path}",
+    agent_id = awaited_agent_id(repo_dir, state) or "(none logged)"
+    log_tail = script_utils.file_tail(log_path, SCRIPT_LOG_TAIL_LINES, SCRIPT_LOG_TAIL_CHARS)
+    emit("stop", f"The review loop script exited with no hand-back (pid {script_pid} is not running and the run's "
+         f"event log holds no hand-back from agent {agent_id} after the dispatch). "
+         f"Show the user its log: {log_path}",
+         "End of the log:", log_tail,
          "To review the same diff again, invoke Skill code with `review-again`.")
     return False
 

@@ -44,6 +44,7 @@ import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
+import criteria_verdict  # noqa: E402
 import plan_format  # noqa: E402
 
 PLAN = """# Orders Plan
@@ -1217,11 +1218,15 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("decide adopt --by user --ruling", self.said())
         self.assertIn("pass `--by session`", self.said())
 
-    def test_decide_without_ruling_words_names_the_by_form(self):
+    def test_decide_without_ruling_words_names_the_by_form_and_changes_nothing(self):
         self.coder_round(self.IMPACT_REPORT)
+        before = self.state()
         out = self.step("decide", "keep", "--by", "user")
         self.assertIn("ACTION: stop", out)
         self.assertIn("decide keep --by user --ruling", out)
+        self.assertNotIn("AGENT:", out)
+        self.assertEqual(before, self.state())
+        self.assertNotIn("## Plan Deviations", self.plan_text())
 
     def test_user_adopt_signs_with_the_git_user_and_lets_the_coder_rewrite_the_criteria(self):
         self.set_git_user("Pat Signer")
@@ -1230,6 +1235,7 @@ class CodeStepTest(unittest.TestCase):
         ruling = self.state()["ruling"]
         self.assertTrue(ruling["byUser"])
         self.assertEqual("Pat Signer", ruling["by"])
+        self.assertEqual("drop the header", ruling["words"])
         self.assertIn(f"`Signed off by Pat Signer, {ruling['at']}: <the change in one line>`", out)
         self.assertIn(f"and its acceptance criteria file {self.CRITERIA}", out)
         self.assertIn("The user adopted the plan change. Dispatch a coder to rewrite the plan steps and acceptance "
@@ -3399,7 +3405,7 @@ class CodeStepTest(unittest.TestCase):
         line = "- [ ] **Check**: `cd backend && ! rg -n x src/orders.ts`"
         command = code_step_boundary.verification_command(line)
         self.assertEqual(command, "cd backend && rg -n x src/orders.ts")
-        self.assertTrue(code_step_boundary.is_search_ban(command, line + " exists"))
+        self.assertTrue(criteria_verdict.is_search_ban(command, line + " exists"))
 
     def test_an_rg_ban_with_a_match_fails(self):
         self.set_verification("- [ ] **Prohibition**: no console.log - `rg -n console.log backend/src/orders.ts`")
@@ -3446,14 +3452,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Automated Verification failed", outcome)
         self.assertIn("unless its text says it checks presence", outcome)
 
-    def test_a_git_grep_line_with_presence_and_ban_wording_is_a_ban(self):
-        line = "- [ ] **Prohibition**: no match, the call must not exist - `git grep -n x -- src`"
-        self.assertTrue(code_step_boundary.is_search_ban("git grep -n x -- src", line))
-
     def test_a_test_n_wrapped_git_grep_is_not_a_ban(self):
         command = 'test -n "$(git grep -n --untracked \'export const o\' -- backend/src/orders.ts)"'
         line = f"- [ ] **Check**: the export is there - `{command}`"
-        self.assertFalse(code_step_boundary.is_search_ban(command, line))
+        self.assertFalse(criteria_verdict.is_search_ban(command, line))
 
         self.set_verification(line)
         outcome = self.finish_phase_one()

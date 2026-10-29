@@ -1,0 +1,25 @@
+     Running unittests src/lib.rs (target/debug/deps/crate-137bfc5461dd12e0)
+
+running 4 tests
+test tests::m_ign ... ignored
+test tests::a_ok ... ok
+test tests::x_total ... FAILED
+test tests::z_ok ... ok
+
+failures:
+
+---- tests::x_total stdout ----
+
+thread 'tests::x_total' (2268265) panicked at src/lib.rs:8:9:
+assertion `left == right` failed
+  left: 3
+ right: 4
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::x_total
+
+test result: FAILED. 2 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

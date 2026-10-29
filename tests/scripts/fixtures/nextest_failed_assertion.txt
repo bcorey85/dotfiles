@@ -1,0 +1,32 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+────────────
+ Nextest run ID 90f4754a-3414-456d-aec6-5436870270af with nextest profile: default
+    Starting 3 tests across 1 binary (1 test skipped)
+        PASS [   0.003s] (1/3) crate tests::a_ok
+        PASS [   0.003s] (2/3) crate tests::z_ok
+        FAIL [   0.004s] (3/3) crate tests::x_total
+  stdout ───
+
+    running 1 test
+    test tests::x_total ... FAILED
+
+    failures:
+
+    failures:
+        tests::x_total
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tests::x_total' (2268333) panicked at src/lib.rs:8:9:
+    assertion `left == right` failed
+      left: 3
+     right: 4
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure
+────────────
+     Summary [   0.006s] 3 tests run: 2 passed, 1 failed, 1 skipped
+        FAIL [   0.004s] (3/3) crate tests::x_total
+error: test run failed

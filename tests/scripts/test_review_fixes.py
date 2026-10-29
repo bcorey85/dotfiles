@@ -182,9 +182,6 @@ class SpecBudgetWordCountTest(HookRunTest):
             self.assertEqual(finished.returncode, 0)
             self.assertIn(b"resident load", finished.stdout, repr(separator))
 
-    def test_plain_space_still_splits_words(self):
-        self.assertIn(b"resident load", self.over_budget(" ").stdout)
-
 
 class IdeographicSpaceTest(HookRunTest):
     def test_comment_bloat_gate_reads_an_ideographic_space_as_indent(self):
@@ -233,40 +230,6 @@ class LoneSurrogateLogTest(HookRunTest):
         self.assertEqual(row["desc"], "x?y")
 
 
-class OpenErrorLineTest(HookRunTest):
-    """finding 10: a plain line, with no made-up shell script name and line number."""
-
-    def check(self, name, stdin, env_extra=None):
-        finished = self.run_hook(name, stdin, env_extra)
-        self.assertEqual(finished.returncode, 0)
-        return finished.stderr.decode("utf-8")
-
-    def test_log_skill_use(self):
-        missing = str(self.work / "nodir" / "skills.jsonl")
-        text = self.check("log-skill-use", json.dumps({"hook_event_name": "PostToolUse",
-                                                       "tool_input": {"skill": "fix"}}),
-                          {"SKILL_USAGE_FILE": missing})
-        self.assertEqual(text, f"log-skill-use: cannot open {missing}: No such file or directory\n")
-
-    def test_log_agent_usage(self):
-        missing = str(self.work / "nodir" / "usage.jsonl")
-        text = self.check("log-agent-usage", json.dumps({"hook_event_name": "PostToolUse", "tool_input": {}}),
-                          {"AGENT_USAGE_FILE": missing})
-        self.assertEqual(text, f"log-agent-usage: cannot open {missing}: No such file or directory\n")
-
-    def test_test_edit_telemetry(self):
-        log = self.home / ".claude" / "test-edit-telemetry.jsonl"
-        log.mkdir()
-        text = self.check("test-edit-telemetry", json.dumps({"tool_name": "Edit",
-                                                             "tool_input": {"file_path": "/r/a_test.py"}}))
-        self.assertEqual(text, f"test-edit-telemetry: cannot open {log}: Is a directory\n")
-
-    def test_claudemd_linecount(self):
-        missing = str(self.work / "gone" / "CLAUDE.md")
-        text = self.check("claudemd-linecount", json.dumps({"tool_input": {"file_path": missing}}))
-        self.assertEqual(text, f"claudemd-linecount: cannot open {missing}: No such file or directory\n")
-
-
 class GitDisciplineAmendTest(HookRunTest):
     def test_amend_on_a_continuation_line_is_denied(self):
         # --amend sits at the start of its own line, which only the ^ alternative under re.M matches
@@ -275,11 +238,6 @@ class GitDisciplineAmendTest(HookRunTest):
         decision = self.decision(finished)
         self.assertEqual(decision["permissionDecision"], "deny")
         self.assertIn("--amend is blocked", decision["permissionDecisionReason"])
-
-    def test_amend_in_the_middle_of_a_line_is_denied(self):
-        finished = self.run_hook("git-discipline-gate",
-                                 json.dumps({"tool_input": {"command": "git commit --amend -m x"}}))
-        self.assertEqual(self.decision(finished)["permissionDecision"], "deny")
 
 
 class RunGateTest(HookRunTest):

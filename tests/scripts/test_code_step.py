@@ -2495,6 +2495,51 @@ class CodeStepTest(unittest.TestCase):
         event["tool_input"]["file_path"] = str(self.repo / "backend/src/orders.ts")
         self.assertEqual(0, run(self.repo, self.env, "plan-hook", stdin=json.dumps(event)).returncode)
 
+    def plan_hook_stderr_for(self, text):
+        self.start_phase_one()
+        (self.repo / self.plan).write_text(text)
+        event = {"cwd": str(self.repo), "tool_input": {"file_path": str(self.repo / self.plan)}}
+        result = run(self.repo, self.env, "plan-hook", stdin=json.dumps(event))
+        self.assertEqual(2, result.returncode)
+        return result.stderr
+
+    def test_plan_hook_on_a_duplicate_phase_id_asks_for_a_re_check_after_the_last_edit_and_no_stop(self):
+        stderr = self.plan_hook_stderr_for(self.plan_text().replace("- [ ] Phase 3:", "- [ ] Phase 2:"))
+        self.assertIn("duplicate-id", stderr)
+        self.assertIn("mid-edit", stderr)
+        self.assertIn("re-check after the last Edit", stderr)
+        self.assertNotIn("Report each line to the user and stop", stderr)
+
+    def test_plan_hook_on_a_section_without_a_status_entry_asks_for_a_re_check(self):
+        text = self.plan_text().replace(
+            "## Testing Strategy", "## Phase 5: Extra\n\nNo status entry.\n\n## Testing Strategy"
+        )
+        stderr = self.plan_hook_stderr_for(text)
+        self.assertIn("section-without-status", stderr)
+        self.assertNotIn("duplicate-id", stderr)
+        self.assertNotIn("missing-section", stderr)
+        self.assertIn("mid-edit", stderr)
+        self.assertNotIn("Report each line to the user and stop", stderr)
+
+    def test_plan_hook_on_a_renamed_phase_section_heading_asks_for_a_re_check(self):
+        stderr = self.plan_hook_stderr_for(self.plan_text().replace("## Phase 3:", "## Phase 2:"))
+        self.assertIn("mid-edit", stderr)
+        self.assertIn("re-check after the last Edit", stderr)
+
+    def test_plan_hook_on_sections_one_three_four_asks_for_a_re_check(self):
+        stderr = self.plan_hook_stderr_for(self.plan_text().replace("## Phase 2: Totals", "## Notes"))
+        self.assertIn("missing-section", stderr)
+        self.assertIn("mid-edit", stderr)
+        self.assertNotIn("Report each line to the user and stop", stderr)
+
+    def test_plan_hook_on_a_duplicate_id_with_an_unparsed_line_keeps_the_stop_message(self):
+        text = self.plan_text().replace(
+            "- [ ] Phase 3: Audit trail (risk: high)\n", "- [ ] Phase 2: Audit trail (risk: high)\n- [ ] Step five\n")
+        stderr = self.plan_hook_stderr_for(text)
+        self.assertIn("unparsed-line", stderr)
+        self.assertIn("Report each line to the user and stop", stderr)
+        self.assertNotIn("mid-edit", stderr)
+
     def test_plan_hook_during_a_hook_stage_exits_2_and_names_the_bad_manual_verification_line(self):
         self.start_phase_one()
         ok_line = "- [ ] **Manual-verified** (agent-verified): hit /orders"

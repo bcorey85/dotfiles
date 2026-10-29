@@ -129,7 +129,7 @@ class PlanImpactFlowTest(unittest.TestCase):
         write_state(repo, coder_state(repo, ["a.py"]))
         save_report(repo, "review-loop", "review", REVIEW_PACKET)
 
-        output = run(repo, "after-review")
+        output = run(repo, "resume")
 
         self.assertIn("ACTION: ask-user", output)
         self.assertNotIn("AskUserQuestion", output + say_text(repo))
@@ -196,7 +196,7 @@ class PlanImpactFlowTest(unittest.TestCase):
 
         run(repo, "decide", "adopt", "--by", "user", "--ruling", RULING)
         (repo / "b.py").write_text("b = 2\n")
-        run(repo, "after-plan-edit")
+        run(repo, "resume")
         state_after_edit = read_state(repo)
 
         self.assertIn("b.py", state_after_edit["files"])
@@ -262,10 +262,10 @@ class ReviewReportEdgeTest(unittest.TestCase):
         repo = make_repo(self)
         write_state(repo, coder_state(repo, ["a.py"]))
         save_report(repo, "review-loop", "review", REVIEW_PACKET)
-        first_output = run(repo, "after-review")
+        first_output = run(repo, "resume")
         run(repo, "decide", "keep", "--by", "user", "--ruling", RULING)
 
-        output = run(repo, "after-review")
+        output = run(repo, "resume")
 
         self.assertIn("ACTION: ask-user", first_output)
         self.assertIn("ACTION: stop", output)
@@ -280,7 +280,7 @@ class ReviewReportEdgeTest(unittest.TestCase):
         save_report(repo, "review-loop", "review",
                     'status: converged\niter: 1\nfixed: []\nask: {"file_line": ["a.py:1"], "question": "keep it?"}\n')
 
-        output = run(repo, "after-review")
+        output = run(repo, "resume")
 
         self.assertNotIn("Traceback", output)
         self.assertIn("ACTION: stop", output)

@@ -50,9 +50,9 @@ FULL_CHECK_LOG = "full-check.log"
 FULL_CHECK_BASE_LOG = "full-check-base.log"
 REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", FULL_CHECK_LOG, FULL_CHECK_BASE_LOG)
 RESUME_VERB = "resume"
-# The verbs that older printed commands still name. Each one now does what `resume` does.
-RESUME_ALIASES = ("after-coder", "after-review", "after-plan-edit")
-VERB_WORDS_REPLACED_BY_RESUME = ("continue", "resume", *RESUME_ALIASES)
+# The task words that mean `resume`: the code skill runs some as `resume`,
+# and `start` refuses the rest and names `resume`.
+VERB_WORDS_REPLACED_BY_RESUME = ("continue", "resume", "after-coder", "after-review", "after-plan-edit")
 RESUME_LINE = f"When the {{noun}} is fixed, run `{INSTALLED_COMMAND} {{verb}}`."
 # What a stop tells the main session to do to review the same diff again, and the sentence that says it alone.
 REVIEW_AGAIN_INVOKE = "invoke Skill code with `review-again`"
@@ -204,8 +204,8 @@ def take_snapshot_part(state, name):
 
 
 def old_stop_record(state):
-    # The stop record that the old stop keys of a state say, laid over the record it already has (code that still
-    # writes old keys may write one of them alone). A resumable coder outranks a resumable review, which outranks a
+    # The stop record that the old stop keys of a state say, laid over the record it already has (an old state file
+    # may hold one of those keys alone). A resumable coder outranks a resumable review, which outranks a
     # stop reason.
     record = dict(state.get("stop") or {"kind": None, "at": None})
     coder_at = state.get("resumableCoderAt")
@@ -224,9 +224,8 @@ def old_stop_record(state):
 
 
 def migrate_old_state(state):
-    # The one place old keys become the new ones, on every read and every save: it is also what keeps code that still
-    # writes `stage` "stopped" with `stopReason` working. Idempotent. Old stop keys of a run that is not stopped were
-    # never read, so they go.
+    # The one place old keys become the new ones, on every read of the state file. Idempotent. Old stop keys of a run
+    # that is not stopped were never read, so they go.
     if not isinstance(state, dict):
         return state
 
@@ -254,7 +253,6 @@ def branch_label(cwd):
 
 
 def save_state(cwd, state):
-    migrate_old_state(state)
     state_dir(cwd).mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(state_file(cwd), json.dumps(state, indent=1))
 
@@ -331,29 +329,45 @@ def read_ruled_asks(cwd):
 
 def record_ruled_asks(cwd, state, outcomes, change_texts):
     # The outcome of every ask the user (or a pre-set outcome) ruled on. It outlives the phase: a later review, plan
-    # impact or refactor pass of the same plan reads it so that it does not raise the same ask again.
+    # impact or refactor pass of the same plan reads it so that it does not raise the same ask again. `change` holds
+    # the change the ruling names: the ask's proposal for an accepted or rejected ask, the user's change for a modified
+    # one. An ask with no proposed change of its own carries its question as its change, so that copy is no proposal.
     ruled = read_ruled_asks(cwd)
     for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=True):
+        question = str(item.get("question") or "")
+        proposed = str(item.get("change") or "")
+        if proposed.strip() == question.strip():
+            proposed = ""
+
+        named_change = (change_text or "") if outcome == "modified" else proposed
         ruled.append({"plan": state.get("plan"), "phase": state.get("phase"), "file_line": item.get("file_line", ""),
-                      "ask": script_utils.joined_distinct([str(item.get("finding") or ""),
-                                                           str(item.get("question") or "")]),
-                      "outcome": outcome, "change": change_text or ""})
+                      "ask": script_utils.ask_text(item), "outcome": outcome, "change": named_change})
     state_dir(cwd).mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(ruled_asks_path(cwd), json.dumps(ruled, indent=1))
 
 
+RULED_ASK_OUTCOMES = {"accepted": "accepted, so the ask's proposed change is made",
+                      "rejected": "rejected, so the ask's proposed change is not made",
+                      "modified": "modified, so the user's change is made in place of the ask's proposal"}
+
+
 def ruled_asks_lines(cwd, plan):
     # One line per ask already ruled in this plan's run, for a prompt. Empty when none was ruled. A multi-line ask or
-    # change folds onto its one line, so every line of it stays inside the list entry that carries its outcome.
+    # change folds onto its one line, so every line of it stays inside the list entry that carries its outcome. The
+    # outcome says what it did to the code and names the change when the record holds one, and the phase comes last, so
+    # an ask that offers phases never reads as answered by the phase it was ruled in.
     lines = []
     for ruled in read_ruled_asks(cwd):
         if ruled["plan"] != plan:
             continue
+
         ask = script_utils.one_line(ruled["ask"], limit=None)
         where = f" ({ruled['file_line']})" if ruled["file_line"] else ""
+        outcome = RULED_ASK_OUTCOMES[ruled["outcome"]]
         change_text = script_utils.one_line(ruled["change"], limit=None)
-        change = f" - the user's change: {change_text}" if change_text else ""
-        lines.append(f"{ask}{where}: {ruled['outcome']}, Phase {ruled['phase']}{change}")
+        change = f": {change_text}" if change_text else ""
+        phase = f" (ruled in Phase {ruled['phase']})" if ruled["phase"] is not None else ""
+        lines.append(f"{ask}{where}: {outcome}{change}{phase}")
     return lines
 
 
@@ -462,7 +476,7 @@ def newest_dispatch_standing(repo_dir, state):
     return dispatch_standing(read_events(repo_dir, state["runId"]))
 
 
-def record_dispatch(repo_dir, state, verb, agent_type, model, prompt):
+def record_dispatch(repo_dir, state, agent_type, model, prompt):
     # Saves the dispatch prompt in the run's folder, ending with the marker line that the launch hook reads back, and
     # logs the dispatch. Returns the prompt with its marker and the path of the saved file.
     run_id = state["runId"]
@@ -473,7 +487,7 @@ def record_dispatch(repo_dir, state, verb, agent_type, model, prompt):
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(marked_prompt + "\n")
     log_event(repo_dir, run_id, "dispatch", session_pin(), id=dispatch_id, agent_type=agent_type, stage=state["stage"],
-              verb=verb, model=model, prompt_file=str(prompt_file))
+              model=model, prompt_file=str(prompt_file))
     return marked_prompt, prompt_file
 
 
@@ -493,15 +507,16 @@ def checkout_line(repo_dir):
             "and run each Bash command from it. Name this checkout in the prompt of every agent you dispatch.")
 
 
-def emit_dispatch(repo_dir, state, verb, *lines, prompt, agent, model=None):
+def emit_dispatch(repo_dir, state, *lines, prompt, agent, model=None):
     # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
     # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt.
     prompt_in_checkout = f"{checkout_line(repo_dir)}\n\n{prompt}"
     prompt = prompt_with_gate_env(repo_dir, state, prompt_in_checkout)
 
-    marked_prompt, prompt_file = record_dispatch(repo_dir, state, verb, agent, model, prompt)
+    marked_prompt, prompt_file = record_dispatch(repo_dir, state, agent, model, prompt)
 
-    emit("dispatch", *lines, next_after(verb), prompt=marked_prompt, agent=agent, model=model, prompt_file=prompt_file)
+    emit("dispatch", *lines, next_after(), prompt=marked_prompt, agent=agent, model=model,
+         prompt_file=prompt_file)
 
 
 def open_dispatch(state):
@@ -662,7 +677,7 @@ def take_handback(repo_dir, state, agent_type, missing_text):
     handback = awaited_handback(repo_dir, state)
     if handback is None and newest_handback(repo_dir, state) is not None:
         return emit("wait", f"The {agent_type} handed back, but its stop was blocked, so it is still working. Do not "
-                    f"dispatch it again. Run {timed_command(RESUME_VERB)} to wait for its next stop.")
+                    f"dispatch it again. Run {timed_command()} to wait for its next stop.")
     if handback is None:
         return emit("stop", resumed_agent_pending_stop(agent_type) if is_resumed else missing_text)
 
@@ -757,7 +772,7 @@ def put_resumed_review_back(repo_dir, state):
 def resumed_agent_pending_stop(agent_type):
     # The stop text for a resume that ran while the agent the user resumed has not handed back yet.
     return (f"The resumed {agent_type} has not handed back yet. Do not dispatch again and do not run `start`. Once it "
-            f"has handed back, run {timed_command(RESUME_VERB)}.")
+            f"has handed back, run {timed_command()}.")
 
 
 PLAN_EDIT_OPEN_CHOICE = re.compile(r"^[ \t]*OPEN CHOICE:[ \t]*(\S.*)$", re.MULTILINE)
@@ -794,12 +809,12 @@ def phase_coder_reports(repo_dir, state):
     return reports
 
 
-def timed_command(verb):
-    return f"`{INSTALLED_COMMAND} {verb}` as a Bash call with timeout {BASH_TIMEOUT_MS}"
+def timed_command():
+    return f"`{INSTALLED_COMMAND} {RESUME_VERB}` as a Bash call with timeout {BASH_TIMEOUT_MS}"
 
 
-def next_after(verb):
-    return f"NEXT: right after the Agent call, run {timed_command(verb)}."
+def next_after():
+    return f"NEXT: right after the Agent call, run {timed_command()}."
 
 
 def expected_agent(state):
@@ -836,7 +851,7 @@ def emit_unlaunched_dispatch(dispatch):
     age = time.time() - dispatch["ts"]
     notice = (f"Dispatch {dispatch['id']} was logged {age:.0f} seconds ago and no Agent call for it was launched. "
               "Make the Agent call now with the prompt below; do not wait for it.")
-    next_verb = next_after(dispatch["verb"])
+    next_verb = next_after()
     agent = dispatch.get("agent_type")
     model = dispatch.get("model")
 
@@ -1048,11 +1063,11 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     if agent_type == REVIEW_LOOP and state.get("reviewScriptPid"):
         set_stop(state, REVIEW_RESUMABLE, at=stopped_at)
         resume_text = (f" The review loop runs as a script; its log is {state.get('reviewScriptLog', '')}. If the user "
-                       f"wants it to keep waiting, run {timed_command(RESUME_VERB)}. If the user wants it killed and a "
+                       f"wants it to keep waiting, run {timed_command()}. If the user wants it killed and a "
                        f"new loop started on the same diff, run `{INSTALLED_COMMAND} review-again`.")
     elif agent_type == REVIEW_LOOP:
         set_stop(state, REVIEW_RESUMABLE, at=stopped_at)
-        resume_text = (f" If the user resumes it with SendMessage, run {timed_command(RESUME_VERB)}. If it died, "
+        resume_text = (f" If the user resumes it with SendMessage, run {timed_command()}. If it died, "
                        f"the user's word to review the same diff again runs `{INSTALLED_COMMAND} review-again`.")
     else:
         resume_text = stop_a_silent_coder(repo_dir, state, stopped_at)
@@ -1167,7 +1182,7 @@ def stop_a_silent_coder(repo_dir, state, stopped_at):
 
     set_stop(state, CODER_RESUMABLE, at=stopped_at, agent_id=agent_id)
     state.pop("dispatchAt", None)
-    return (f" If the user resumes coder {agent_id} with SendMessage, run {timed_command(RESUME_VERB)}. To dispatch a "
+    return (f" If the user resumes coder {agent_id} with SendMessage, run {timed_command()}. To dispatch a "
             f"new coder instead, {restart_instruction_text}.")
 
 

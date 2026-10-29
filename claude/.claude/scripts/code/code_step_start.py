@@ -750,7 +750,7 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     open_dispatch(state)
     save_state(repo_dir, state)
     model = "haiku" if parsed.modifier == "+fast" else None
-    emit_dispatch(repo_dir, state, RESUME_VERB, gate_note, prompt=prompt, agent="coder", model=model)
+    emit_dispatch(repo_dir, state, gate_note, prompt=prompt, agent="coder", model=model)
 
 
 def start_planless(repo_dir, modifier, task_text, branch="-"):
@@ -764,7 +764,7 @@ def start_planless(repo_dir, modifier, task_text, branch="-"):
     prompt = (f"Implement: {task_text}\nRun the typecheck, and lint and tests for only the files you changed, once, "
               f"after all edits. {ENG_SPEC_BRIEF}")
     model = "haiku" if modifier == "+fast" else None
-    emit_dispatch(repo_dir, state, RESUME_VERB, prompt=prompt, agent="coder", model=model)
+    emit_dispatch(repo_dir, state, prompt=prompt, agent="coder", model=model)
 
 
 def start_closing_phase(repo_dir, plan_rel, lane, parsed, entry, skill, section, branch):

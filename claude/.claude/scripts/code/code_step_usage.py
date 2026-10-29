@@ -1,9 +1,8 @@
-"""code_step_usage.py: the usage text of every verb of code_step.py, and the argument parser of `resume`.
+"""code_step_usage.py: the usage text of every verb of code_step.py, and the leading-dash check of `resume`.
 `<verb> --help` prints that verb's usage and exits 0 before a verb reads or changes any state; `start` keeps its own
 parser in code_step_start_args.
 
 Imports run one way: script_utils, code_step_usage, then code_step_boundary and code_step_review, then code_step."""
-import argparse
 import sys
 
 import script_utils
@@ -33,26 +32,6 @@ VERB_USAGES = {
 HOOK_USAGE = "usage: code_step.py {verb}\nA hook: it reads the hook event as JSON on stdin and takes no arguments."
 
 
-def answer_word(word):
-    if word.startswith("-"):
-        raise argparse.ArgumentTypeError(f"an answer must not start with '-': {word!r}")
-    return word
-
-
-class VerbParser(argparse.ArgumentParser):
-    def error(self, message):
-        print(f"code_step.py {self.prog}: {message}\n{self.usage}", file=sys.stderr)
-        sys.exit(2)
-
-
-def resume_parser():
-    parser = VerbParser(prog="resume", usage=ANSWER_USAGE, add_help=False, allow_abbrev=False)
-    # Only the first word decides: an answer may hold a dashed word later (`use the -v flag`).
-    parser.add_argument("first_answer_word", nargs="?", type=answer_word)
-    parser.add_argument("other_answer_words", nargs="*")
-    return parser
-
-
 def usage_text(verb, is_hook=False):
     # The usage of a verb, or None for a verb that prints its own (start) or has none.
     if is_hook:
@@ -70,8 +49,8 @@ def print_usage_if_asked(verb, args, is_hook=False):
 
 
 def check_verb_arguments(verb, args):
-    # Exits 2 with the usage on a refused argument; returns nothing. Only resume reads its words with a strict grammar;
-    # every other verb keeps its words as they are.
-    if verb == "resume":
-        # "--" makes every word an answer word, so a mistyped flag gets the dash refusal, not a bare "unrecognized".
-        resume_parser().parse_args(["--", *args])
+    # Exits 2 with the usage on a refused argument; returns nothing. Only resume checks its words; every other verb
+    # keeps its words as they are. Only the first word decides: an answer may hold a dashed later word (`use -v`).
+    if verb == "resume" and args and args[0].startswith("-"):
+        print(f"code_step.py resume: an answer must not start with '-': {args[0]!r}\n{ANSWER_USAGE}", file=sys.stderr)
+        sys.exit(2)

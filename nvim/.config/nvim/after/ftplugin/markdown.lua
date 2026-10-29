@@ -40,6 +40,15 @@ vim.keymap.set("n", "gf", function()
   vim.cmd.edit(vim.fn.fnameescape(full_path))
 end, { buffer = true, desc = "Follow markdown link" })
 
+-- z1..z4 — outline view: fold every section so only headings of level 1..N
+-- show. Treesitter folds one level per heading depth, so it's foldlevel N-1.
+-- zR opens everything again.
+for level = 1, 4 do
+  vim.keymap.set("n", "z" .. level, function()
+    vim.opt_local.foldlevel = level - 1
+  end, { buffer = true, desc = "Show headings to level " .. level })
+end
+
 -- ]] / [[ — nvim's markdown heading jumps — also scroll the heading to the top.
 local heading_jump_descs = { ["]]"] = "Next heading to top", ["[["] = "Previous heading to top" }
 

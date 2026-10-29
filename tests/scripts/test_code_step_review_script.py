@@ -48,13 +48,21 @@ if mode == "hang":
     signal.signal(signal.SIGTERM, terminated)
     (out / "started").write_text(str(os.getpid()))
     time.sleep(60)
-if mode in ("converged", "plan-impact", "unreviewed-fix"):
+if mode in ("converged", "plan-impact", "plan-impact-dropped-ask", "plan-impact-below-criteria-dropped-ask",
+            "unreviewed-fix"):
     message = "status: converged\\niter: 1\\nfixed: []\\nask: []\\nnit: []"
     if mode == "unreviewed-fix":
         message = ("status: converged\\niter: 2\\nfixed: [{finding: f, file_line: src/orders.ts:4, blocker: false}]"
                    "\\nask: []\\nnit: []")
     if mode == "plan-impact":
         message = "status: plan-impact\\niter: 1\\nplan_impact: |\\n    PLAN-IMPACT:\\n      found: B\\n"
+    if mode == "plan-impact-dropped-ask":
+        message = ("status: plan-impact\\niter: 1\\nplan_impact: |\\n    PLAN-IMPACT:\\n      found: B\\n"
+                   "ask:\\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}\\n")
+    if mode == "plan-impact-below-criteria-dropped-ask":
+        message = ("status: plan-impact\\niter: 1\\nplan_impact: |\\n    PLAN-IMPACT:\\n      found: B\\n"
+                   "      acceptance_criteria: none\\n"
+                   "ask:\\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}\\n")
     code_step_core.log_event(arguments[0], options["--run-id"], "handback", options["--session"],
                              agent_id=options["--agent-id"], agent_type="review-loop", message=message)
     handback.record(options["--session"], "handback", agent_id=options["--agent-id"], status="converged",
@@ -231,6 +239,31 @@ class ReviewScriptTest(base.CodeStepTest):
         self.assertNotEqual(first_pid, second_pid)
         self.assertEqual(2, len(self.dispatch_rows()))
         self.step("abort")
+
+    def assert_resume_prints_the_dropped_ask_warning(self, fake_loop_mode):
+        self.env["FAKE_LOOP_MODE"] = fake_loop_mode
+        self.coder_round()
+        self.wait_for_script_exit(self.state()["reviewScriptPid"])
+
+        out = self.step("resume")
+
+        self.assertIn("DROPPED ASKS (tell the user; the review went on without them):\n"
+                      "- ask entry has no question, finding or change, so it was dropped: "
+                      "file_line a.ts:1, gate code-reviewer", out)
+        return out
+
+    def test_a_plan_impact_that_asks_the_user_prints_the_dropped_ask_warning(self):
+        out = self.assert_resume_prints_the_dropped_ask_warning("plan-impact-dropped-ask")
+        self.assertIn("ACTION: ask-user", out)
+
+    def test_a_plan_impact_ruled_by_the_preset_decision_prints_the_dropped_ask_warning(self):
+        self.env["CODE_STEP_IMPACT_DECISION"] = "keep"
+        out = self.assert_resume_prints_the_dropped_ask_warning("plan-impact-dropped-ask")
+        self.assertIn("answered by the pre-set decision 'keep'", out)
+
+    def test_a_plan_impact_that_changes_no_criterion_prints_the_dropped_ask_warning(self):
+        out = self.assert_resume_prints_the_dropped_ask_warning("plan-impact-below-criteria-dropped-ask")
+        self.assertIn("changes no acceptance criterion", out)
 
     def test_the_wait_cap_stop_of_a_running_script_names_its_log_and_the_two_verbs(self):
         self.env["FAKE_LOOP_MODE"] = "hang"

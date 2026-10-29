@@ -323,11 +323,35 @@ class ParseTest(HandbackTestBase):
 
         self.assertEqual(packet["ask"][0]["question"], "read the limit from settings")
 
+    def test_an_ask_with_no_question_finding_or_change_is_dropped_with_a_warning_and_the_rest_survive(self):
+        good_ask = ('{"question": "cap at 3?", "file_line": "src/a.ts:4", "change": "cap retries at 3", '
+                    '"gate": "code-reviewer", "class": "bug"}')
+        bad_asks = (('{"question": "", "file_line": "unlocated", "gate": "code-reviewer", "class": "bug"}',
+                     "file_line unlocated, gate code-reviewer"),
+                    ("null", "'None'"), ('["q"]', '''"['q']"'''))
+        for bad_ask, named in bad_asks:
+            with self.subTest(bad_ask=bad_ask):
+                packet = handback.load(f"status: converged\niter: 1\nfixed: []\nask: [{bad_ask}, {good_ask}]\n")
+
+                self.assertEqual([item["question"] for item in packet["ask"]], ["cap at 3?"])
+                self.assertEqual(len(packet["dropped_asks"]), 1)
+                self.assertIn(f"ask entry has no question, finding or change, so it was dropped: {named}",
+                              packet["dropped_asks"][0])
+
+    def test_check_prints_each_dropped_ask_warning_after_the_ok_line(self):
+        code, out, _err = self.run_cli(
+            ["check"], 'status: converged\niter: 1\nfixed: []\nask: [{"question": "", "file_line": "a.ts:1", '
+            '"gate": "code-reviewer", "class": "bug"}]\n')
+
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines()[1:],
+                         ["DROPPED ASKS (tell the user; the review went on without them):",
+                          "- ask entry has no question, finding or change, so it was dropped: "
+                          "file_line a.ts:1, gate code-reviewer"])
+
     def test_an_entry_that_is_neither_text_nor_a_mapping_is_a_problem(self):
         for text, problem in (("status: converged\niter: 1\nfixed: [null]\n", "fixed entry has no finding: 'None'"),
-                              ("status: converged\niter: 1\nfixed: [5]\n", "fixed entry has no finding: '5'"),
-                              ("status: converged\niter: 1\nfixed: []\nask: [null]\n", "ask entry has no question"),
-                              ("status: converged\niter: 1\nfixed: []\nask: [[\"q\"]]\n", "ask entry has no question")):
+                              ("status: converged\niter: 1\nfixed: [5]\n", "fixed entry has no finding: '5'")):
             with self.subTest(text=text), self.assertRaises(handback.PacketError) as raised:
                 handback.load(text)
             self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],

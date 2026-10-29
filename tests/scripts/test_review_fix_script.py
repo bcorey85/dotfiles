@@ -70,6 +70,10 @@ ask:
 """
 )
 
+DROPPED_ASK_WARNING = ("DROPPED ASKS (tell the user; the review went on without them):\n"
+                       "- ask entry has no question, finding or change, so it was dropped: "
+                       "file_line a.ts:1, gate code-reviewer")
+
 PLAN_IMPACT = """status: plan-impact
 iter: 1
 spec_iter: 2
@@ -341,6 +345,18 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: ask-user-plan-impact", output)
         self.assertNotIn("ACTION: redispatch", output)
+
+    def test_every_plan_impact_route_prints_the_dropped_ask_warning(self):
+        dropped_ask = "ask:\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}\n"
+        routes = (("asks the user", "AC-2 drops the retry", "ACTION: ask-user-plan-impact"),
+                  ("no acceptance criterion changed", "none", "ACTION: redispatch"))
+        for route, criteria, action in routes:
+            with self.subTest(route=route):
+                code, output = self.packet(PLAN_IMPACT + f"    acceptance_criteria: {criteria}\n" + dropped_ask)
+
+                self.assertEqual(code, 0, output)
+                self.assertIn(action, output)
+                self.assertIn(DROPPED_ASK_WARNING, output)
 
     def test_a_loosely_marked_plan_change_with_no_criteria_line_still_asks_the_user(self):
         two_changes = (PLAN_IMPACT + "    acceptance_criteria: none\n"
@@ -925,19 +941,29 @@ class ReviewFixScriptTest(unittest.TestCase):
             CONVERGED.replace('finding: "orders query lacked a tenant filter", ', ""), "no finding"
         )
 
-    def test_ask_entry_without_a_question_or_a_change_is_a_parse_failure(self):
-        self.assert_parse_failure(
+    def test_ask_entry_without_a_question_or_a_change_is_dropped_and_the_other_ask_is_presented(self):
+        code, output = self.packet(
             WITH_ASK.replace('finding: "no index", ', "").replace('question: "Add an index on tenant_id?", ', "")
-            .replace('change: "add an index on tenant_id", ', ""),
-            "no question",
+            .replace('change: "add an index on tenant_id", ', "")
         )
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: present-asks", output)
+        self.assertIn("Should retries be capped at 3 or configurable?", output)
+        self.assertIn("DROPPED ASKS (tell the user; the review went on without them):\n"
+                      "- ask entry has no question, finding or change, so it was dropped", output)
 
     def test_ask_entry_without_a_file_line_is_a_parse_failure(self):
         self.assert_parse_failure(WITH_ASK.replace("file_line: src/db.ts:5, ", ""), "no file_line")
 
-    def test_ask_with_keys_but_no_finding_or_question_is_a_parse_failure(self):
+    def test_ask_with_keys_but_no_finding_or_question_is_dropped_and_the_review_finishes(self):
         text = CLEAN_EMPTY.replace("ask: []", "ask:\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}")
-        self.assert_parse_failure(text, "ask entry has no question")
+
+        code, output = self.packet(text)
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
+        self.assertIn(DROPPED_ASK_WARNING, output)
 
     def test_plain_text_ask_without_a_file_line_still_reaches_the_user(self):
         code, output = self.packet(CLEAN_EMPTY.replace("ask: []", "ask:\n  - see the thread above"))

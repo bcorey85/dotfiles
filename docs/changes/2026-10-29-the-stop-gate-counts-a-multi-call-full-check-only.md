@@ -3,7 +3,7 @@ type: "Change"
 title: "The stop gate counts a multi-call full check only when each call passed"
 description: "The stop gate counts a shell call of several full_check.py calls only when it printed one result line per call and each is passed."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T00:00:00-05:00"}
-seq: 262
+seq: 267
 kind: "fix"
 components: ["script/review-loop-gate"]
 evidence: ["judgment"]

@@ -41,7 +41,7 @@ class HandBackTest(base.CodeStepTest):
         self.start_phase_one()
         self.hook("coder", "BEHAVIOR: none\nblocked on two steps")
 
-        out = self.step("after-coder")
+        out = self.step("resume")
 
         self.assertIn("ACTION: stop", out)
         question_text = self.assert_stop_question("the coder produced no reviewable change", "blocked on two steps")
@@ -51,7 +51,7 @@ class HandBackTest(base.CodeStepTest):
     def stop_after_review(self, packet):
         self.coder_round()
         self.hook("review-loop", packet)
-        return self.step("after-review")
+        return self.step("resume")
 
     def stop_on_the_coder_wait_cap(self):
         self.start_phase_one()
@@ -100,7 +100,7 @@ class HandBackTest(base.CodeStepTest):
         self.coder_round()
         self.hook("review-loop", UNVERIFIED_PACKET)
 
-        out = self.step("after-review")
+        out = self.step("resume")
 
         self.assertIn("ACTION: stop", out)
         self.assertEqual(("stopped", "check-unverified"), (self.state()["stage"], self.state()["stopReason"]))
@@ -117,7 +117,7 @@ class HandBackTest(base.CodeStepTest):
         self.coder_round()
         self.hook("review-loop", UNVERIFIED_PACKET)
 
-        out = self.step("after-review")
+        out = self.step("resume")
 
         self.assertIn("ACTION: stop", out)
         question_text = self.question()
@@ -141,7 +141,7 @@ class HandBackTest(base.CodeStepTest):
                 self.set_state(**carried)
                 self.hook("review-loop", packet + f"\nfixed: []\nask: [{CACHE_ASK}]")
 
-                out = self.step("after-review")
+                out = self.step("resume")
 
                 question_text = self.question()
                 self.assertIn("Open questions:", question_text, out)
@@ -180,7 +180,7 @@ class HandBackTest(base.CodeStepTest):
         (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
         self.hook("coder", "BEHAVIOR: plan rewritten\nOPEN CHOICE: add one more later step?", agent_id="p1")
 
-        out = self.step("after-plan-edit")
+        out = self.step("resume")
 
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("- add one more later step?", self.said())
@@ -197,7 +197,7 @@ class HandBackTest(base.CodeStepTest):
         )
         self.hook("coder", report)
 
-        self.step("after-coder")
+        self.step("resume")
 
         said = say_path.read_text()
         self.assertNotIn("the first try", said)

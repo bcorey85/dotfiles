@@ -21,11 +21,11 @@ class CapReachedTest(base.CodeStepTest):
     def cap_round(self, packet):
         self.coder_round()
         self.hook("review-loop", packet, agent_id="r1")
-        return self.step("after-review")
+        return self.step("resume")
 
     def converge(self):
         self.hook("review-loop", self.LOOP_OK, agent_id="r2")
-        return self.step("after-review")
+        return self.step("resume")
 
     def test_a_cap_reached_stop_with_an_ask_sends_the_ruling_and_the_open_findings_to_one_more_review_that_converges(
             self):
@@ -68,7 +68,7 @@ class CapReachedTest(base.CodeStepTest):
         self.assertIn("AGENT: coder", out)
         (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
         self.hook("coder", "BEHAVIOR: o is a const", agent_id="c2")
-        out = self.step("after-coder")
+        out = self.step("resume")
         prompt = self.printed_prompt(out)
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("finding: the rounding stays open", prompt)
@@ -88,7 +88,7 @@ class CapReachedTest(base.CodeStepTest):
                 (self.repo / "docs/notes.md").write_text("a note\n")
                 self.hook("coder", "BEHAVIOR: a note", agent_id="c2")
 
-                out = self.step("after-coder")
+                out = self.step("resume")
 
                 prompt = self.printed_prompt(out)
                 self.assertIn("AGENT: review-loop", out)
@@ -104,7 +104,7 @@ class CapReachedTest(base.CodeStepTest):
                 (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
                 self.hook("coder", "BEHAVIOR: x is a const", agent_id="c2")
 
-                out = self.step("after-coder")
+                out = self.step("resume")
 
                 prompt = self.printed_prompt(out)
                 self.assertIn("AGENT: review-loop", out)
@@ -142,7 +142,7 @@ class CapReachedTest(base.CodeStepTest):
         self.step("review-again")
         self.hook("review-loop", CAP, agent_id="r2")
 
-        out = self.step("after-review")
+        out = self.step("resume")
 
         self.assertIn("ACTION: stop", out)
         question = (self.repo / ".git/code-step/question.md").read_text()
@@ -155,7 +155,7 @@ class CapReachedTest(base.CodeStepTest):
         self.step("asks-done", "rejected")
         self.hook("review-loop", CAP_WITH_ASK, agent_id="r2")
 
-        out = self.step("after-review")
+        out = self.step("resume")
 
         self.assertIn("ACTION: stop", out)
         self.assertNotEqual("asks", self.state()["stage"])
@@ -181,7 +181,7 @@ class CapReachedTest(base.CodeStepTest):
         self.assertIn("AGENT: review-loop", out)
         self.hook("review-loop", BLOCKER_WITH_ASK, agent_id="r2")
 
-        out = self.step("after-review")
+        out = self.step("resume")
 
         self.assertIn("ACTION: stop", out)
         self.assertEqual("stopped", self.state()["stage"])

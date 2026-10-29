@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "code-step: verify closes a phase whose review converged"
-description: "verify ran only after a failed Automated Verification or a plan-format stop; it now also runs whenever the phase's review converged and no coder works on it, so the runner records the checks."
+description: "verify now also runs whenever the phase's review converged and no coder works on it, so the runner records the checks. Before, it ran only after a failed Automated Verification or a plan-format stop."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:51:07-05:00"}
 seq: 184
 kind: "fix"

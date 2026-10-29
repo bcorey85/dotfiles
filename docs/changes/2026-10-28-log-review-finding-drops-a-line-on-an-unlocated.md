@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "log-review-finding drops a line on an unlocated finding and logs it"
-description: "log-review-finding exited on `file=unlocated` with a `line=` and logged no row; it now drops the line with a warning on stderr and logs the row with no file and no line."
+description: "log-review-finding now drops the line with a warning on stderr and logs the row with no file and no line when it gets `file=unlocated` with a `line=`. Before, it exited and logged no row."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T11:04:42-05:00"}
 seq: 182
 kind: "fix"

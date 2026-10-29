@@ -10,6 +10,7 @@ components: ["agent/coder", "skill/code", "agent/code-reviewer"]
 evidence: ["gate ranking", "census"]
 watches: ["stale-prose-handback-docs-findings", "stale-prose-handback-severe-findings", "stale-prose-handback-coder-cache-read"]
 proof: ["2026-10-25-stale-prose-hand-back-check-with-a-value-only"]
+impact: {"metric": "quality", "before": 12.1, "after": 3.4, "unit": "stale doc lines left of 15", "finding": "2026-10-25-stale-prose-hand-back-check-with-a-value-only", "better": "lower"}
 overlap: "The review-findings watches read docs and bug/correctness classes only; the earlier open watches on that metric read all classes or test classes. The cache-read watch shares its metric with the earlier coder-gate and sibling-suite watches, whose readings land before this edit's after-window; read this one against its own before-window."
 ---
 

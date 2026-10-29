@@ -398,6 +398,15 @@ def ask_text(item):
     return joined_distinct([str(item.get("finding") or ""), str(item.get("question") or "")])
 
 
+def hanging_indent_lines(lead, text, indent="   "):
+    """The lines of text (any value, printed as text), the first behind lead and each later one behind indent. No
+    lines for empty text."""
+    text_lines = str(text).splitlines()
+    if not text_lines:
+        return []
+    return [lead + text_lines[0], *(indent + line for line in text_lines[1:])]
+
+
 def visible_text(line, in_comment):
     """Return (line without HTML comment text, still inside an unclosed comment). A `<!--` inside an
     inline code span opens nothing."""

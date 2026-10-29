@@ -4,6 +4,9 @@ import pathlib
 import re
 
 MAX_FAILING_TEST_LINES = 20
+MAX_ERROR_LINES_PER_TEST = 6
+MAX_ERROR_LINES_TOTAL = 40
+MAX_ERROR_LINE_CHARS = 300
 
 # Exit codes and runner text that mean the check never ran: the shell found no program or could not run it, uv,
 # poetry or pipenv could not start one, or the package manager found no package manifest where it ran.
@@ -25,7 +28,18 @@ RAN_NO_TESTS = re.compile(r"No test(?: file)?s found, exiting with code [1-9]|(?
                           r"|(?m:^Ran 0 tests\b)")
 # The line a runner prints for one failed test: pytest `FAILED `/`ERROR ` summary lines, unittest and Django
 # `FAIL: `/`ERROR: ` lines, vitest and jest `FAIL ` lines and lines that start with the multiplication sign.
-FAILING_TEST_LINE = re.compile(r"^(?:FAILED |ERROR |FAIL: |ERROR: |\s*FAIL\s|\s*\xd7)")
+# unittest's final `FAILED (failures=1)` result line is not a test.
+FAILING_TEST_LINE = re.compile(r"^(?:FAILED (?!\()|ERROR |FAIL: |ERROR: |\s*FAIL\s|\s*\xd7)")
+FAILING_TESTS_HEADER = "Failing tests:\n"
+# Lines of a failing block that are not error text: a vitest passing-test line and a `⎯⎯⎯`, `---` or `===` rule.
+PASSING_TEST_LINE = re.compile(r"^\s*✓")
+RULE_LINE = re.compile(r"^\s*(?:⎯+(?:.*⎯)?|-{3,}|={3,})\s*$")
+# The first line of one test's error text in a jest file block: `  ● suite > test`.
+TEST_HEADING_LINE = re.compile(r"^\s*●")
+# The lines unittest and Django print after the last failing block: the test-database setup and teardown, the run
+# count, the final `FAILED (…)` result and `OK`.
+UNITTEST_RUN_LINE = re.compile(
+    r"^(?:(?:Creating|Destroying) test database for alias\b|Ran \d+ tests? in\b|FAILED \(|OK(?: \(.*\))?\s*$)")
 # The text of an elapsed time (`1.5s`, `120 ms`) and of a clock time (`10:20:30`), which the timing patterns share.
 ELAPSED_TIME = r"\d+(?:\.\d+)?\s*m?s\b"
 CLOCK_TIME = r"\d+:\d{2}:\d{2}"
@@ -56,6 +70,8 @@ SUMMARY_TOTAL = re.compile(r"\(\d+\)")
 RUNNER_SUMMARY_LINE = re.compile(
     rf"^[\s=]*(?:(?:Test Files|Tests|Test Suites)\s*:?\s*)?{SUMMARY_COUNT}(?:\s*[,|]\s*{SUMMARY_COUNT})*"
     rf"(?:\s*\(\d+\))?(?:\s+in {ELAPSED_TIME}(?: \({CLOCK_TIME}\))?)?[\s=]*$")
+# The summary, clock, passing-test, rule and unittest run lines of a failing block, which are not error text.
+NOT_ERROR_TEXT_LINES = (RUNNER_SUMMARY_LINE, RUN_CLOCK_LINE, PASSING_TEST_LINE, RULE_LINE, UNITTEST_RUN_LINE)
 # A Django settings error under pytest, the pytest command that raises it, and the files whose change can raise it
 # themselves: a settings module or an app config.
 DJANGO_SETTINGS_ERROR = re.compile(r"ImproperlyConfigured|settings are not configured|Apps aren't loaded yet")
@@ -91,7 +107,67 @@ def tail_with_failing_tests(output, tail):
     missing = [line for line in failing_test_lines(output) if line not in tail]
     if not missing:
         return tail
-    return "Failing tests:\n" + "\n".join(missing) + "\n\n" + tail
+    return FAILING_TESTS_HEADER + "\n".join(missing) + "\n\n" + tail
+
+
+def failing_test_quote(output, tail, errors_suffix=""):
+    """The error text of each failing test, capped at MAX_ERROR_LINES_TOTAL lines, then the names of the tests the cap
+    cut (among the first MAX_FAILING_TEST_LINES failing tests), then `errors_suffix`, when each of those tests has
+    some error text; else the tail with the failing-test lines above it."""
+    errors = failing_test_errors(output)
+    names = failing_test_lines(output)
+    if errors and all(name in errors for name in names):
+        capped_errors = errors[:MAX_ERROR_LINES_TOTAL]
+        cut_names = [name for name in names if name not in capped_errors]
+        return "\n" + FAILING_TESTS_HEADER + "\n".join(capped_errors + cut_names) + errors_suffix
+    return tail_with_failing_tests(output, tail)
+
+
+def failing_test_errors(output, lines_per_test=MAX_ERROR_LINES_PER_TEST):
+    """The error text of each failing test in the output: its failing line and the non-blank error-text lines after it
+    up to the next failing line, with the runner summary, clock, passing-test, rule and unittest run lines left out,
+    each line cut at MAX_ERROR_LINE_CHARS. Each jest `●` test in a file block is its own sub-block, and any other block
+    is one sub-block. A sub-block with more lines than `lines_per_test` keeps its first line and its last
+    `lines_per_test - 1`, so a traceback keeps its final error message. Empty when no failing line has any error text
+    after it."""
+    quoted = []
+    for failing_line, *detail_lines in failing_blocks(output.splitlines()):
+        details = []
+        for sub_block in split_at_test_headings(detail_lines):
+            kept = [line.rstrip()[:MAX_ERROR_LINE_CHARS] for line in sub_block
+                    if not any(pattern.match(line) for pattern in NOT_ERROR_TEXT_LINES)]
+            if len(kept) > lines_per_test:
+                kept = [kept[0], *kept[len(kept) - (lines_per_test - 1):]]
+            details += kept
+        if details:
+            quoted += [failing_line.strip(), *details]
+    return quoted
+
+
+def split_at_test_headings(detail_lines):
+    """The detail lines as sub-blocks, a new one at each jest `●` heading."""
+    sub_blocks = [[]]
+    for line in detail_lines:
+        if TEST_HEADING_LINE.match(line):
+            sub_blocks.append([])
+        sub_blocks[-1].append(line)
+    return sub_blocks
+
+
+def failing_blocks(lines):
+    """Each failing block of the log as [failing line, *detail lines]: the non-blank lines after a failing line up to
+    the next failing test line or the end of the log. Jest prints one FAIL line per file and a `●` block per test, with
+    blank lines between the blocks, so a block runs across its blank lines. A jest `PASS` line is not a detail."""
+    block = None
+    for line in lines:
+        if FAILING_TEST_LINE.match(line):
+            if block:
+                yield block
+            block = [line]
+        elif block and line.strip() and not PASSING_FILE_LINE.match(line):
+            block.append(line)
+    if block:
+        yield block
 
 
 def normalized_log_line(line):
@@ -117,17 +193,8 @@ def normalized_log_line(line):
 
 
 def failing_block_details(log_lines):
-    """The normalized detail lines of the failing blocks: the non-blank lines after a failing line up to the next
-    failing test line or the end of the log. Jest prints one FAIL line per file and a `●` block per test, with blank
-    lines between the blocks, so a block runs across its blank lines. A jest `PASS` line is not a detail."""
-    details = set()
-    in_block = False
-    for line in log_lines:
-        if FAILING_TEST_LINE.match(line):
-            in_block = True
-        elif in_block and line.strip() and not PASSING_FILE_LINE.match(line):
-            details.add(normalized_log_line(line))
-    return details
+    """The normalized detail lines of the failing blocks (see failing_blocks)."""
+    return {normalized_log_line(line) for block in failing_blocks(log_lines) for line in block[1:]}
 
 
 def missing_path(lines):

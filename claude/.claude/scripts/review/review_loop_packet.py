@@ -1,5 +1,5 @@
-"""The review loop's hand-back: the packet text handback.py reads, the crash packet, and the rows a hand-back
-writes (run event, hand-back store row, stop row, reviewed tree, agent-usage row)."""
+"""The review loop's hand-back: the packet (one JSON object) handback.py reads, the crash packet, and the rows a
+hand-back writes (run event, hand-back store row, stop row, reviewed tree, agent-usage row)."""
 
 import json
 import os
@@ -47,7 +47,7 @@ def ask_entry(ask, gate, finding_id):
 
 
 def packet_message(outcome):
-    """The outcome in the packet grammar handback.py reads: one `key: value` line per field, list fields as JSON."""
+    """The outcome as the packet handback.py reads: one JSON object with one key per field."""
     status = "plan-impact" if outcome["status"] == "plan-change" else outcome["status"]
     asks = [ask_entry(ask, outcome["ask_gates"].get(ask, handback.DEFAULT_GATE), outcome["ask_ids"].get(ask))
             for ask in outcome["asks"]]
@@ -79,10 +79,7 @@ def packet_message(outcome):
             fields[key] = outcome[key]
     if outcome["plan_change"]:
         fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
-    lines = []
-    for key, value in fields.items():
-        lines.append(f"{key}: {value if isinstance(value, str | int) else json.dumps(value)}")
-    return "\n".join(lines)
+    return json.dumps(fields, ensure_ascii=False)
 
 
 def crash_outcome(progress, reason):

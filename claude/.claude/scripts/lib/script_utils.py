@@ -93,6 +93,29 @@ def fenced_line_indexes(lines):
     return fenced
 
 
+JSON_TYPE_NAMES = ((str, "a string"), (bool, "a boolean"), (int, "a number"), (float, "a number"), (list, "a list"),
+                   (dict, "an object"), (type(None), "null"))
+
+
+def json_type_name(value):
+    """The name of a decoded JSON value's type, as a phrase for an error message."""
+    return next(name for kind, name in JSON_TYPE_NAMES if isinstance(value, kind))
+
+
+def unfenced_text(text):
+    """The text without whitespace around it and without one wrapping code fence."""
+    text = text.strip()
+    opener = FENCE_OPEN.match(text)
+    if not opener:
+        return text
+    fence = opener.group(1)
+    fenced_lines = text.splitlines()[1:]
+    closer = fenced_lines[-1].strip() if fenced_lines else ""
+    if closer and set(closer) == {fence[0]} and len(closer) >= len(fence):
+        fenced_lines = fenced_lines[:-1]
+    return "\n".join(fenced_lines).strip()
+
+
 def heading_section_indexes(lines, heading_text):
     """0-based indexes of the lines under every markdown heading whose text is exactly heading_text, the heading line
     itself left out. A section runs to the next heading of its own level or a higher one; a deeper heading stays inside

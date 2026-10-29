@@ -2,7 +2,8 @@
 """handback.py: the one reader of the review-loop hand-back packet. The per-session store is handback_store.py.
 
   handback.py check < packet            exit 0 and one `ok` line for a packet that parses and validates; exit 1 and the
-                                        problems on stderr for a bad one
+                                        problems on stderr for a bad one. A packet is one JSON object; the old
+                                        free-text `key: value` form still parses, with a stderr note
   handback.py hook dispatch|handback < hook event JSON
                                         PreToolUse hook. Matcher Agent records each review-loop dispatch; matcher
                                         SubagentHandback validates and records each review-loop hand-back, and denies a
@@ -113,6 +114,74 @@ class PacketError(Exception):
 
 # ---------- parsing ----------
 
+INTEGER_KEYS = ("iter", "spec_iter")
+
+
+def json_packet_text(message):
+    """The message without whitespace around it and without one wrapping code fence, when what is left opens a JSON
+    object; None for any other message."""
+    text = script_utils.unfenced_text(message)
+    return text if text.startswith("{") else None
+
+
+def json_field_problem_or_text(key, value):
+    """(problem, text) of one JSON field: the raw text validate reads, or why the value has the wrong shape."""
+    if key in LIST_KEYS:
+        if not isinstance(value, list):
+            return f"{key} must be a JSON list, not {script_utils.json_type_name(value)}", None
+        return None, json.dumps(value)
+    if isinstance(value, str):
+        return None, value
+    is_integer = isinstance(value, int) and not isinstance(value, bool)
+    if key in INTEGER_KEYS and is_integer:
+        return None, str(value)
+    allowed = "a JSON string or integer" if key in INTEGER_KEYS else "a JSON string"
+    return f"{key} must be {allowed}, not {script_utils.json_type_name(value)}", None
+
+
+def parse_json_packet(text):
+    """The packet's raw fields from a JSON object, in the shape parse_free_text returns."""
+    try:
+        loaded = json.loads(text)
+    except ValueError as error:
+        raise PacketError([f"the packet is not valid JSON: {error}"]) from error
+    if not isinstance(loaded, dict):
+        raise PacketError([f"the packet must be one JSON object, not {script_utils.json_type_name(loaded)}"])
+    problems = []
+    packet = {}
+    trailer = []
+    for key, value in loaded.items():
+        if key not in PACKET_KEYS:
+            value_text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
+            trailer.append(f"{key}: {value_text}")
+            continue
+        problem, field_text = json_field_problem_or_text(key, value)
+        if problem:
+            problems.append(problem)
+            continue
+        packet[key] = field_text
+    if problems:
+        raise PacketError(problems)
+    packet["trailer"] = "\n".join(trailer)
+    return packet
+
+
+def parse(message):
+    """The packet's raw fields as text, plus `trailer` (prose outside any field). The packet is one JSON object; a
+    message that is not one is read as the old free-text form."""
+    json_text = json_packet_text(message)
+    if json_text is not None:
+        return parse_json_packet(json_text)
+    packet = parse_free_text(message)
+    if len(packet) > 1:
+        print("handback: parsed an old free-text packet; hand back one JSON object", file=sys.stderr)
+    return packet
+
+
+# ---------- the old free-text form ----------
+# Everything from here to the end of read_list reads the old `key: value` packet form. It is kept for one release and
+# removed after it. read_list's first branch (a JSON list) also serves the JSON path.
+
 def is_block_scalar(value_lines):
     return BLOCK_INDICATOR.match(value_lines[0].strip()) is not None
 
@@ -150,7 +219,7 @@ def packet_value(value_lines):
     return rest.strip("\n")
 
 
-def parse(message):
+def parse_free_text(message):
     """The packet's raw fields as text, plus `trailer` (prose outside any field)."""
     lines = [line.rstrip() for line in message.splitlines() if not line.strip().startswith(FENCE_OPEN)]
     text_lines = textwrap.dedent("\n".join(lines)).splitlines()
@@ -954,7 +1023,8 @@ def handle_hook(event, kind):
     if problems and not was_recorded(session_id, agent_id, "rejected"):
         record(session_id, "rejected", agent_id=agent_id, problems=problems)
         return ("The review-loop packet does not parse: " + "; ".join(problems) +
-                ". Fix the packet to the schema in your instructions and hand back again.")
+                ". Hand back one JSON object alone (no fence, no prose around it) with the keys and rules of the "
+                "Return packet section in your instructions.")
     steps = loop_steps(session_id, agent_id)
     unreviewed = (status in CLEAN_STATUSES and "reviewer" not in steps
                   and not claim_no_review(session_id, agent_id))

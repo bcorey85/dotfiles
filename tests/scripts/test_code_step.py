@@ -824,6 +824,14 @@ class CodeStepTest(unittest.TestCase):
 
                 self.assertEqual([expected], commands)
 
+    def test_a_listed_manage_py_test_that_excludes_a_tag_is_taken_verbatim(self):
+        (self.repo / "manage.py").write_text("")
+        for listed in ("python manage.py test --exclude-tag slow", "python manage.py test --exclude-tag=slow"):
+            with self.subTest(listed=listed):
+                commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase(listed))
+
+                self.assertEqual([listed], commands)
+
     def test_a_phase_that_lists_a_whole_suite_pytest_keeps_pytest_in_a_django_repo(self):
         (self.repo / "manage.py").write_text("")
         (self.repo / "pyproject.toml").write_text("")

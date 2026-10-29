@@ -44,6 +44,7 @@ import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
+import code_step_verification  # noqa: E402
 import coder_gate  # noqa: E402
 import criteria_verdict  # noqa: E402
 import plan_format  # noqa: E402
@@ -920,9 +921,9 @@ class CodeStepTest(unittest.TestCase):
     def test_a_verification_item_may_start_with_an_environment_setting(self):
         item = "- [ ] **Tests**: the streams pass - `CARGO_BUILD_JOBS=4 cargo test --test side_streams`"
 
-        command = code_step_boundary.verification_command(item)
+        command = code_step_verification.verification_command(item)
         self.assertEqual("CARGO_BUILD_JOBS=4 cargo test --test side_streams", command)
-        self.assertIsNone(code_step_boundary.verification_item_problem(item, self.repo))
+        self.assertIsNone(code_step_verification.verification_item_problem(item, self.repo))
 
     def test_gate_runs_no_cargo_command_when_the_phase_names_no_rust_file(self):
         (self.repo / "crate").mkdir()
@@ -2830,6 +2831,20 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 4:", self.plan_text())
         self.assertEqual("stopped", self.state()["stage"])
 
+    def test_skill_done_fail_after_option_stops_without_marking(self):
+        self.start_closing_phase_with_criteria()
+        out = self.step("skill-done", "--evidence", "x", "fail")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("- [ ] Phase 4:", self.plan_text())
+        self.assertEqual("stopped", self.state()["stage"])
+
+    def test_skill_done_rejects_a_verdict_that_is_not_pass_or_fail(self):
+        self.start_closing_phase_with_criteria()
+        out = self.step("skill-done", "maybe")
+        self.assertIn("skill-done takes pass or fail.", out)
+        self.assertIn("- [ ] Phase 4:", self.plan_text())
+        self.assertNotEqual("done", self.state()["stage"])
+
     CLOSING_CRITERIA = (
         "\nSweep.\n\n### Success Criteria\n\n#### Automated Verification\n\n"
         "- [ ] Quality checks green\n"
@@ -3377,9 +3392,9 @@ class CodeStepTest(unittest.TestCase):
 
     def test_other_test_scripts_are_run_not_skipped(self):
         for command in ("npm run test:e2e", "npm run lint:fix", "npx vitest run src/a.test.ts"):
-            self.assertIsNone(code_step_boundary.WHOLE_SUITE.match(command), command)
+            self.assertIsNone(code_step_verification.WHOLE_SUITE.match(command), command)
         for command in ("cd backend && npm test", "npm run lint", "npx vitest run", "pytest", "ruff check"):
-            self.assertIsNotNone(code_step_boundary.WHOLE_SUITE.match(command), command)
+            self.assertIsNotNone(code_step_verification.WHOLE_SUITE.match(command), command)
         self.env["CODE_STEP_VERIFY_TIMEOUT"] = "5"
         self.set_verification("- [ ] **E2E**: `python3 -c 'raise SystemExit(3)'`")
         self.coder_round()
@@ -3475,7 +3490,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_cd_then_negated_rg_is_a_ban(self):
         line = "- [ ] **Check**: `cd backend && ! rg -n x src/orders.ts`"
-        command = code_step_boundary.verification_command(line)
+        command = code_step_verification.verification_command(line)
         self.assertEqual(command, "cd backend && rg -n x src/orders.ts")
         self.assertTrue(criteria_verdict.is_search_ban(command, line + " exists"))
 
@@ -4612,7 +4627,7 @@ class CodeStepTest(unittest.TestCase):
     def test_a_cargo_verification_item_is_read_as_a_command(self):
         item = "- [ ] **Tests**: the streams pass - `cargo test --test side_streams && cargo clippy -- -D warnings`"
         self.assertEqual("cargo test --test side_streams && cargo clippy -- -D warnings",
-                         code_step_boundary.verification_command(item))
+                         code_step_verification.verification_command(item))
 
     def test_a_phase_whose_verification_items_yield_no_command_is_not_marked_done(self):
         self.coder_round_then_edit_verification("- [ ] **Check**: the streams pass, see the log")
@@ -4864,7 +4879,7 @@ class CodeStepTest(unittest.TestCase):
     def test_an_automated_verification_section_of_only_not_applicable_items_is_empty(self):
         for item in ("- [ ] N/A — docs only", "- [ ] **N/A**: nothing to run", "- [x] none"):
             with self.subTest(item=item):
-                self.assertEqual(([], [], []), code_step_boundary.run_verification_commands(
+                self.assertEqual(([], [], []), code_step_verification.run_verification_commands(
                     self.repo, f"#### Automated Verification:\n\n{item}\n\n#### Manual Verification:\n"))
 
     def test_a_phase_with_only_a_not_applicable_automated_item_is_marked_done(self):
@@ -4876,10 +4891,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("done", self.state()["stage"])
 
     def test_a_script_path_or_sh_command_is_read_as_a_verification_command(self):
-        self.assertEqual("./scripts/check.sh --fast", code_step_boundary.verification_command(
+        self.assertEqual("./scripts/check.sh --fast", code_step_verification.verification_command(
             "- [ ] **Check**: passes - `./scripts/check.sh --fast`"))
         self.assertEqual(
-            "sh scripts/check.sh", code_step_boundary.verification_command("- [ ] **Check**: `sh scripts/check.sh`")
+            "sh scripts/check.sh", code_step_verification.verification_command("- [ ] **Check**: `sh scripts/check.sh`")
         )
 
     def test_a_command_with_leading_variable_assignments_runs_with_them_set(self):
@@ -4895,13 +4910,13 @@ class CodeStepTest(unittest.TestCase):
     def test_the_prefixed_command_wins_over_a_later_span_without_a_prefix(self):
         item = "- [ ] **Env**: `PARITY_PATH=/x/y.py cargo test --test watch_parity`, not `cargo test`"
 
-        command = code_step_boundary.verification_command(item)
+        command = code_step_verification.verification_command(item)
         self.assertEqual("PARITY_PATH=/x/y.py cargo test --test watch_parity", command)
 
     def test_a_quoted_assignment_value_with_spaces_is_kept_in_the_command(self):
         item = "- [ ] **Env**: `GREETING=\"a b\" echo hi`"
 
-        self.assertEqual("GREETING=\"a b\" echo hi", code_step_boundary.verification_command(item))
+        self.assertEqual("GREETING=\"a b\" echo hi", code_step_verification.verification_command(item))
 
     def test_a_command_that_hands_a_shell_its_code_is_not_a_verification_command(self):
         for item in ("- [ ] **Check**: `sh -c 'npm test | tee out.log'`",
@@ -4912,15 +4927,15 @@ class CodeStepTest(unittest.TestCase):
                      "- [ ] **Check**: `timeout 60 bash -c 'npm test'`",
                      "- [ ] **Check**: `cd backend && sh -c 'pytest -q'`"):
             with self.subTest(item=item):
-                self.assertIsNone(code_step_boundary.verification_command(item, self.repo))
+                self.assertIsNone(code_step_verification.verification_command(item, self.repo))
                 self.assertIn("hands a shell its code",
-                              code_step_boundary.verification_item_problem(item, self.repo))
+                              code_step_verification.verification_item_problem(item, self.repo))
 
     def test_a_shell_that_runs_a_script_file_is_still_a_verification_command(self):
         for command in ("sh scripts/check.sh", "bash -e scripts/check.sh --fast", "bash -o pipefail scripts/check.sh",
                         "bash -euo pipefail scripts/check.sh", "sh scripts/check.sh -c fast"):
             with self.subTest(command=command):
-                self.assertEqual(command, code_step_boundary.verification_command(f"- [ ] **Check**: `{command}`"))
+                self.assertEqual(command, code_step_verification.verification_command(f"- [ ] **Check**: `{command}`"))
 
     def test_a_plan_whose_check_hands_a_shell_its_code_stops_at_write_time(self):
         self.set_verification("- [ ] **Check**: `bash -c 'npm test | tee out.log'`")
@@ -4937,26 +4952,26 @@ class CodeStepTest(unittest.TestCase):
             "- [ ] **Env**: `PARITY_PATH=/x/y.py nosuchprogram hi`",
         ):
             with self.subTest(item=item):
-                self.assertIsNone(code_step_boundary.verification_command(item))
+                self.assertIsNone(code_step_verification.verification_command(item))
 
     def test_an_assignment_that_expands_a_variable_or_runs_a_command_still_leads_to_the_command(self):
         for command in ("LEDGER_REAL_DOTFILES=$HOME/dotfiles cargo test --test watch_parity",
                         "PATH=/x/bin:$PATH cargo test", 'DATABASE_URL="$TEST_DB" pytest -q',
                         "T=$(find . -name x) cargo test", "A=1 B=$HOME/x make all"):
             with self.subTest(command=command):
-                self.assertTrue(code_step_boundary.COMMAND_START.match(command))
+                self.assertTrue(code_step_verification.COMMAND_START.match(command))
                 item = f"- [ ] **Check**: passes - `{command}`"
-                self.assertEqual(command, code_step_boundary.verification_command(item))
+                self.assertEqual(command, code_step_verification.verification_command(item))
 
     def test_an_assignment_followed_by_a_control_operator_is_not_a_command_start(self):
         for span in ("A=1 && cargo test", "A=1 ; cargo test", "A=1 | cat", "A=1 # note"):
             with self.subTest(span=span):
-                self.assertIsNone(code_step_boundary.COMMAND_START.match(span))
+                self.assertIsNone(code_step_verification.COMMAND_START.match(span))
 
     def test_a_whole_suite_command_with_a_variable_prefix_is_still_skipped(self):
         section = "#### Automated Verification:\n\n- [ ] **All**: `CI=1 npm test`\n\n#### Manual Verification:\n"
 
-        results, skipped, unparsed = code_step_boundary.run_verification_commands(self.repo, section)
+        results, skipped, unparsed = code_step_verification.run_verification_commands(self.repo, section)
 
         self.assertEqual(([], ["CI=1 npm test"], []), (results, skipped, unparsed))
 
@@ -4968,7 +4983,7 @@ class CodeStepTest(unittest.TestCase):
     def test_a_filtered_test_run_that_matches_no_test_fails_the_verification(self):
         command = """python3 -c "print('vitest: no tests found')" -t nomatch"""
 
-        results, _, _ = code_step_boundary.run_verification_commands(self.repo, self.verification_section(command))
+        results, _, _ = code_step_verification.run_verification_commands(self.repo, self.verification_section(command))
 
         (ran_command, code, output), = results
         self.assertEqual(command, ran_command)
@@ -5016,8 +5031,8 @@ class CodeStepTest(unittest.TestCase):
         for label, item_text, source, holds, names_ban_note in cases:
             with self.subTest(label):
                 (self.repo / "backend/src/orders.ts").write_text(source)
-                with unittest.mock.patch.object(code_step_boundary, "log_prohibition_scan"):
-                    results, skipped, unparsed = code_step_boundary.run_verification_commands(
+                with unittest.mock.patch.object(code_step_verification, "log_prohibition_scan"):
+                    results, skipped, unparsed = code_step_verification.run_verification_commands(
                         self.repo, f"#### Automated Verification:\n\n- [ ] {item_text}\n\n"
                                    "#### Manual Verification:\n")
 
@@ -5035,7 +5050,7 @@ class CodeStepTest(unittest.TestCase):
     def test_a_filtered_test_run_that_reports_a_passed_test_stays_green(self):
         command = """python3 -c "print('vitest: 2 passed')" -t match"""
 
-        results, _, _ = code_step_boundary.run_verification_commands(self.repo, self.verification_section(command))
+        results, _, _ = code_step_verification.run_verification_commands(self.repo, self.verification_section(command))
 
         (_, code, _), = results
         self.assertEqual(0, code)
@@ -6370,17 +6385,18 @@ class CodeStepTest(unittest.TestCase):
         self.make_repo_script("check-orders")
         text = self.bad_item_plan("- [ ] **Check**: the orders pass - `check-orders --all`")
 
-        self.assertFalse(code_step_boundary.starts_like_a_program_here("check-orders --all", self.repo))
+        self.assertFalse(code_step_verification.starts_like_a_program_here("check-orders --all", self.repo))
         self.assertEqual(1, self.plan_check(text).returncode)
 
     def test_a_line_that_names_a_path_program_and_then_holds_the_real_command_gives_the_real_command(self):
         item = "- [ ] **Check**: with `ls -la` listing the files, `npm run build` exits 0."
 
-        self.assertEqual("npm run build", code_step_boundary.verification_command(item))
+        self.assertEqual("npm run build", code_step_verification.verification_command(item))
 
     def test_a_program_of_the_path_needs_an_argument_to_be_a_fallback_command(self):
-        self.assertIsNone(code_step_boundary.verification_command("- [ ] **Check**: the `ls` program lists them"))
-        self.assertEqual("ls -la", code_step_boundary.verification_command("- [ ] **Check**: lists them - `ls -la`"))
+        self.assertIsNone(code_step_verification.verification_command("- [ ] **Check**: the `ls` program lists them"))
+        listing_command = code_step_verification.verification_command("- [ ] **Check**: lists them - `ls -la`")
+        self.assertEqual("ls -la", listing_command)
 
     def test_a_program_that_never_ends_or_waits_for_input_is_never_a_fallback_command(self):
         spans = ("watch -n 1 date", "top -b", "htop -d 5", "less notes.txt", "more notes.txt", "vi notes.txt",
@@ -6391,23 +6407,24 @@ class CodeStepTest(unittest.TestCase):
         with unittest.mock.patch.object(shutil, "which", return_value="/usr/bin/anything"):
             for span in spans:
                 with self.subTest(span=span):
-                    self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
+                    self.assertFalse(code_step_verification.starts_like_a_program_here(span, self.repo))
 
     def test_tail_without_follow_is_a_fallback_command(self):
         with unittest.mock.patch.object(shutil, "which", return_value="/usr/bin/tail"):
             for span in ("tail -n 5 app.log", "tail app.log", "tail -c 20 app.log"):
                 with self.subTest(span=span):
-                    self.assertTrue(code_step_boundary.starts_like_a_program_here(span, self.repo))
+                    self.assertTrue(code_step_verification.starts_like_a_program_here(span, self.repo))
 
     def test_claude_and_yes_are_never_a_fallback_command_by_name_or_by_a_path_to_them(self):
         for span in ("claude -p hello", "yes please", "FOO=1 claude --version"):
             with self.subTest(span=span):
-                self.assertIsNone(code_step_boundary.verification_command(f"- [ ] **Check**: runs `{span}`"))
+                self.assertIsNone(code_step_verification.verification_command(f"- [ ] **Check**: runs `{span}`"))
 
         for span in ("/usr/bin/yes y", "/home/u/.local/bin/claude -p hi", "FOO=1 /usr/bin/yes y"):
             with self.subTest(span=span):
-                self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
-                self.assertIsNone(code_step_boundary.verification_command(f"- [ ] **Check**: runs `{span}`", self.repo))
+                self.assertFalse(code_step_verification.starts_like_a_program_here(span, self.repo))
+                item = f"- [ ] **Check**: runs `{span}`"
+                self.assertIsNone(code_step_verification.verification_command(item, self.repo))
 
     def test_a_file_outside_the_repo_is_not_a_repo_file_command(self):
         outside = self.repo.parent / "outside-tool"
@@ -6419,14 +6436,14 @@ class CodeStepTest(unittest.TestCase):
 
         for span in (f"../{outside.name} --x", "./link-tool --x"):
             with self.subTest(span=span):
-                self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
+                self.assertFalse(code_step_verification.starts_like_a_program_here(span, self.repo))
 
     def test_a_relative_path_is_never_looked_up_from_the_working_directory_as_a_path_program(self):
         with unittest.mock.patch.object(shutil, "which", return_value="/anywhere/tool"):
-            self.assertFalse(code_step_boundary.starts_like_a_program_here("../tool --x", self.repo))
-            self.assertFalse(code_step_boundary.starts_like_a_program_here("sub/tool --x", self.repo))
-            self.assertTrue(code_step_boundary.starts_like_a_program_here("tool --x", self.repo))
-            self.assertTrue(code_step_boundary.starts_like_a_program_here("/opt/bin/tool --x", self.repo))
+            self.assertFalse(code_step_verification.starts_like_a_program_here("../tool --x", self.repo))
+            self.assertFalse(code_step_verification.starts_like_a_program_here("sub/tool --x", self.repo))
+            self.assertTrue(code_step_verification.starts_like_a_program_here("tool --x", self.repo))
+            self.assertTrue(code_step_verification.starts_like_a_program_here("/opt/bin/tool --x", self.repo))
 
     def test_a_file_inside_the_repo_by_a_path_that_goes_through_a_folder_is_a_repo_file_command(self):
         (self.repo / "bin").mkdir()
@@ -6436,7 +6453,7 @@ class CodeStepTest(unittest.TestCase):
 
         for span in ("bin/tool --x", "./bin/tool --x", "bin/../bin/tool --x", f"{tool} --x"):
             with self.subTest(span=span):
-                self.assertTrue(code_step_boundary.starts_like_a_program_here(span, self.repo))
+                self.assertTrue(code_step_verification.starts_like_a_program_here(span, self.repo))
 
     def test_the_write_time_check_applies_the_argument_and_program_rules_of_the_fallback(self):
         for item in ("- [ ] **Check**: the `ls` program lists them", "- [ ] **Check**: asks `claude -p hello`",
@@ -6447,15 +6464,15 @@ class CodeStepTest(unittest.TestCase):
     def test_a_repo_file_is_a_command_only_when_it_is_executable(self):
         check_file = self.make_repo_script("scripts/check-orders", 0o644)
         item = "- [ ] **Check**: the orders pass - `scripts/check-orders --all`"
-        not_executable = code_step_boundary.verification_command(item, self.repo)
+        not_executable = code_step_verification.verification_command(item, self.repo)
         check_file.chmod(0o755)
-        executable = code_step_boundary.verification_command(item, self.repo)
+        executable = code_step_verification.verification_command(item, self.repo)
 
         self.assertEqual((None, "scripts/check-orders --all"), (not_executable, executable))
 
     def test_the_item_problem_names_the_command_word_after_the_variable_assignments(self):
         item = "- [ ] **Check**: the orders pass - `FOO=1 RUN x`"
-        problem = code_step_boundary.verification_item_problem(item, self.repo)
+        problem = code_step_verification.verification_item_problem(item, self.repo)
 
         self.assertIn("it starts with `RUN`", problem)
         self.assertNotIn("FOO=1", problem)
@@ -6468,20 +6485,20 @@ class CodeStepTest(unittest.TestCase):
                      "- [x] **Human-only:** open it", "- [ ] **Test-verified**: HUMAN-ONLY, a person looks"):
             with self.subTest(item=item):
                 self.assertIsNotNone(code_step.plan_format.deferred_verification_tag(item))
-                self.assertIsNone(code_step_boundary.verification_item_problem(item, self.repo))
+                self.assertIsNone(code_step_verification.verification_item_problem(item, self.repo))
                 self.assertEqual(0, self.plan_check(self.bad_item_plan(item)).returncode)
 
     def test_an_item_that_only_mentions_ci_verified_after_other_words_is_not_tagged(self):
         item = "- [ ] **Check**: the orders pass, not CI-verified yet"
 
         self.assertIsNone(code_step.plan_format.deferred_verification_tag(item))
-        self.assertIsNotNone(code_step_boundary.verification_item_problem(item, self.repo))
+        self.assertIsNotNone(code_step_verification.verification_item_problem(item, self.repo))
 
     def test_an_item_tagged_for_ci_or_a_person_is_never_run_even_with_a_command_in_it(self):
         section = ("#### Automated Verification:\n\n- [ ] **CI-verified**: the pipeline runs `touch ran-by-code-step`\n"
                    "- [ ] Human-only: look at the page\n\n#### Manual Verification:\n")
 
-        self.assertEqual(([], [], []), code_step_boundary.run_verification_commands(self.repo, section))
+        self.assertEqual(([], [], []), code_step_verification.run_verification_commands(self.repo, section))
         self.assertFalse((self.repo / "ran-by-code-step").exists())
 
     def test_a_not_applicable_item_is_never_run_even_with_a_command_in_it(self):
@@ -6490,7 +6507,7 @@ class CodeStepTest(unittest.TestCase):
             "Verification:\n"
         )
 
-        self.assertEqual(([], [], []), code_step_boundary.run_verification_commands(self.repo, section))
+        self.assertEqual(([], [], []), code_step_verification.run_verification_commands(self.repo, section))
         self.assertFalse((self.repo / "ran-na-item").exists())
 
     def test_deferred_items_are_listed_with_their_tag_in_file_order(self):
@@ -6499,7 +6516,7 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual([("CI-verified", "**CI-verified**: the pipeline runs it"),
                           ("human-only", "Human-only: look at the page")],
-                         code_step_boundary.deferred_verification_items(section))
+                         code_step_verification.deferred_verification_items(section))
 
     def test_start_accepts_a_plan_with_an_item_tagged_ci_verified(self):
         (self.repo / self.plan).write_text(self.bad_item_plan("- [ ] **CI-verified**: the pipeline runs it"))
@@ -6534,7 +6551,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("CI-verified**: push and watch the pipeline - ", out)
 
     def test_the_item_shape_text_names_the_three_shapes(self):
-        shape = code_step_boundary.VERIFICATION_ITEM_SHAPE
+        shape = code_step_verification.VERIFICATION_ITEM_SHAPE
 
         for text in ("one of three shapes", "N/A", "CI-verified", "Human-only", "executable file in the repo",
                      "'- [ ] **Name**: what it checks - `npm test`'"):

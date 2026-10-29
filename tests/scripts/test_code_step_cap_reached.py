@@ -185,7 +185,7 @@ class CapReachedTest(base.CodeStepTest):
 
         self.assertIn("ACTION: stop", out)
         self.assertEqual("stopped", self.state()["stage"])
-        self.assertEqual("critical-blocker", self.state()["stopReason"])
+        self.assertEqual("critical-blocker", self.state()["stop"]["kind"])
         self.assertIn("Open questions:\n- f - keep? (backend/src/orders.ts:2)", out)
 
     def test_resume_at_a_cap_reached_stop_names_review_again(self):

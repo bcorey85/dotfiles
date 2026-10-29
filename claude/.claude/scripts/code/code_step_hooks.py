@@ -39,6 +39,7 @@ from code_step_core import (
     say_file_in,
     session_repo_dirs,
     state_dir,
+    stop_kind,
     timed_command,
 )
 
@@ -268,7 +269,7 @@ def command_launch_hook():
         if call is None:
             return
 
-        if call.state.get("stage") != "stopped" or call.state.get("stopReason") != "verification":
+        if stop_kind(call.state) != "verification":
             return
 
         script_utils.pre_tool_use_deny(

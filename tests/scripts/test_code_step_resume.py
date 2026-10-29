@@ -57,10 +57,11 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round()
         before = self.state_bytes()
 
-        out = self.step("start", "after-review")
+        for replaced_verb in ("after-review", "after-plan-edit"):
+            out = self.step("start", replaced_verb)
 
-        self.assert_refused_with_rerun(out, "resume")
-        self.assertEqual(before, self.state_bytes())
+            self.assert_refused_with_rerun(out, "resume")
+            self.assertEqual(before, self.state_bytes())
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("Phase 1 marked done", self.step("resume"))
 
@@ -394,11 +395,11 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertEqual(started.replace(str(other_repo), str(self.repo)), resumed)
 
-    def test_the_old_name_of_the_review_step_is_an_alias_of_resume(self):
+    def test_resume_after_a_clean_review_marks_the_phase_done(self):
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
 
-        out = self.step("after-coder")
+        out = self.step("resume")
 
         self.assertIn("Phase 1 marked done", out)
 
@@ -532,10 +533,19 @@ class ResumeTest(base.CodeStepTest):
         self.assert_launch_hook_passes("code", "verify")
         self.assert_launch_hook_passes("review", "")
 
+    def test_missing_plan_at_verify_stops(self):
+        self.stop_at_verification()
+        (self.repo / self.plan).unlink()
+
+        out = self.step("verify")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("is missing (a branch switch", out)
+
     def test_a_resume_at_an_unparsed_verification_item_stop_is_refused_and_names_a_plan_edit(self):
         self.coder_round_then_edit_verification("- [ ] **Check**: the streams pass, see the log")
         self.hook("review-loop", self.LOOP_OK)
-        self.step("after-review")
+        self.step("resume")
         self.assertEqual("verification", self.state()["stop"]["kind"])
 
         decision = self.launch_hook_decision("code", "resume")
@@ -926,17 +936,28 @@ class ResumeTest(base.CodeStepTest):
 
         verbs = ("resume", "decide", "abort", "status", "review-again", "verify", "tick", "asks-done", "skill-done",
                  "hook", "stop-hook")
-        # A resume alias prints the usage of resume itself.
-        usage_verbs = {verb: verb for verb in verbs} | {"after-coder": "resume"}
-        for verb, usage_verb in usage_verbs.items():
+        for verb in verbs:
             for flag in ("--help", "-h"):
                 finished = base.run(self.repo, self.env, verb, flag)
                 self.assertEqual(0, finished.returncode, (verb, flag))
-                self.assertIn(f"usage: code_step.py {usage_verb}", finished.stdout)
+                self.assertIn(f"usage: code_step.py {verb}", finished.stdout)
                 self.assertNotIn("ACTION:", finished.stdout)
                 self.assertNotIn("The user answered", finished.stdout)
                 self.assertEqual(before, self.state_bytes(), (verb, flag))
         self.assertEqual(question_before, (self.repo / ".git/code-step/question.md").read_bytes())
+
+    def test_a_former_resume_alias_is_refused_as_an_unknown_verb_and_changes_nothing(self):
+        self.stop_the_coder_at_the_wait_cap(launched_as="a1")
+        before = self.state_bytes()
+
+        for alias in ("after-coder", "after-review", "after-plan-edit"):
+            with self.subTest(alias):
+                refused = base.run(self.repo, self.env, alias)
+
+                self.assertNotEqual(0, refused.returncode)
+                self.assertIn("usage: code_step.py start|resume|decide", refused.stderr)
+                self.assertEqual("", refused.stdout)
+                self.assertEqual(before, self.state_bytes())
 
     def test_a_resume_answer_with_a_dashed_later_word_is_accepted_and_a_dashed_first_word_is_refused(self):
         self.stop_the_coder_at_the_wait_cap(launched_as="a1")
@@ -1020,7 +1041,7 @@ class ResumeTest(base.CodeStepTest):
         (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
         self.hook("coder", self.CODER_REPORT)
 
-        out = self.step("after-coder")
+        out = self.step("resume")
 
         self.assertIn("AGENT: review-loop", out)
         self.assertNotIn("stale", out)
@@ -1054,7 +1075,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
         self.break_manual_section()
-        self.step("after-review")
+        self.step("resume")
         self.assertEqual("plan-format", self.state()["stop"]["kind"])
         (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
 
@@ -1212,7 +1233,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round()
         (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
         self.hook("review-loop", self.ASK)
-        self.step("after-review")
+        self.step("resume")
         self.assertEqual("asks", self.state()["stage"])
 
         out = self.step("resume")
@@ -1225,7 +1246,7 @@ class ResumeTest(base.CodeStepTest):
     def test_a_plan_edit_after_the_review_loop_handed_back_is_still_stale(self):
         self.coder_round()
         self.hook("review-loop", self.ASK)
-        self.step("after-review")
+        self.step("resume")
         (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
 
         out = self.step("resume")
@@ -1237,7 +1258,7 @@ class ResumeTest(base.CodeStepTest):
         self.adopt_plan_change_with_the_plan_coder_out()
         (self.repo / self.plan).write_text(self.plan_with_phase_one_test_file_changed())
         self.hook("coder", "Rewrote the step.")
-        self.step("after-plan-edit")
+        self.step("resume")
         self.assertEqual("review", self.state()["stage"])
         reworded = self.plan_text().replace("backend/src/other.test.ts", "backend/src/orders.spec.ts")
         (self.repo / self.plan).write_text(reworded)
@@ -1261,7 +1282,7 @@ class ResumeTest(base.CodeStepTest):
     def test_start_restart_with_text_over_a_stopped_plan_run_dispatches_the_coder_with_the_text_as_notes(self):
         self.coder_round()
         self.hook("review-loop", BLOCKER_PACKET)
-        self.step("after-review")
+        self.step("resume")
         self.assertEqual("stopped", self.state()["stage"])
 
         out = self.step("start", "--restart", "the", "tool", "is", "installed", "now")
@@ -1295,7 +1316,7 @@ class ResumeTest(base.CodeStepTest):
                 question_path = self.repo / ".git/code-step/question.md"
                 self.coder_round()
                 self.hook("review-loop", packet)
-                stop = self.step("after-review")
+                stop = self.step("resume")
                 self.assertEqual(stop_reason, self.state()["stop"]["kind"])
                 self.assertIn(review_again, question_path.read_text())
                 self.assertIn("ACTION: stop", stop)
@@ -1321,7 +1342,7 @@ class ResumeTest(base.CodeStepTest):
         self.coder_round()
         self.hook("review-loop", self.LOOP_OK)
         self.forget_the_hand_back_store()
-        self.step("after-review")
+        self.step("resume")
         self.assertEqual("false-clean", self.state()["stop"]["kind"])
 
         out = self.step("resume")
@@ -1360,9 +1381,9 @@ class ResumeTest(base.CodeStepTest):
         self.pass_coder_gate()
         (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
         self.hook("coder", "BEHAVIOR: totals exist\nREVIEW: recommended")
-        self.step("after-coder")
+        self.step("resume")
         self.hook("review-loop", BLOCKER_PACKET)
-        self.step("after-review")
+        self.step("resume")
         self.assertEqual("stopped", self.state()["stage"])
         self.assertEqual("2", self.state()["onlyPhase"])
 

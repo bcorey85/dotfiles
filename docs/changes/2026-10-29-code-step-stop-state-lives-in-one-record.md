@@ -21,12 +21,11 @@ unmeasured: ""
   `stop_kind` and their siblings are how a new stop is written and how most code reads its kind; `code_step.py` and
   `code_step_start.py` still read `state["stop"]` fields directly in a few places. `state["snapshot"]` holds the
   plan-edit, asks and follow-up baselines.
-- `migrate_old_state` runs in `read_state_file` and `save_state`, so a state file written before this change resumes
-  as it did. Precedence is coder, then review, then reason, as the old readers saw them.
+- `migrate_old_state` runs in `read_state_file`, so a state file written before this change resumes as it did. Precedence is coder, then review, then reason, as the old readers saw them.
 - The unread `state["packet"]` write and the duplicate `asksApplied` flag are gone. `dispatchAt` and
   `reviewScriptPid` stay their own keys: each outlives or predates a stop.
-- `code_step_review.py` still writes the old `stopReason` key directly at four sites (tool fault, stop status,
-  unverified check, cap reached); `migrate_old_state` converts those on save.
+- `code_step_review_stops.py` writes its tool-fault, blocker, unverified-check and cap-reached stops through
+  `set_stop`, so no code writes an old key.
 
 ## Evidence
 

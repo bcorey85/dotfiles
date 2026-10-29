@@ -717,6 +717,16 @@ def inside_git_work_tree(path, timeout_seconds=2):
     return answer.strip() == "true"
 
 
+def is_git_ignored(path, timeout_seconds=2):
+    """True only when git reports path (a file that may not exist yet) as ignored. A tracked file is never ignored,
+    whatever a .gitignore pattern says. A path outside a repo, a git that cannot run, times out or errors all give
+    False."""
+    real_path = os.path.realpath(path)
+    folder = nearest_existing_folder(real_path)
+    answer = git_output(folder, "check-ignore", "-q", "--", real_path, timeout=timeout_seconds)
+    return answer is not None
+
+
 def _is_bare_repo(folder):
     return (os.path.isfile(os.path.join(folder, "HEAD")) and os.path.isdir(os.path.join(folder, "objects"))
             and os.path.isdir(os.path.join(folder, "refs")))

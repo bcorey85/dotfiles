@@ -21,7 +21,7 @@ sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
 import code_step_boundary
 import plan_format
 import script_utils
-from test_run_output import matches_no_test
+from criteria_verdict import item_verdict
 
 DEFAULT_TIMEOUT_SECONDS = 600
 FENCE_LINE = re.compile(r"^\s*(?:`{3,}|~{3,})")
@@ -139,12 +139,6 @@ def phase_code_lines(lines, section):
             if index in fenced and not FENCE_LINE.match(line)]
 
 
-def is_ban(line, command):
-    """True when the item writes its command as a negated search (`! rg ...`): exit 1, no match, holds it."""
-    spans = script_utils.backticked_spans(line)
-    return any(code_step_boundary.without_negation(span) == command and span != command for span in spans)
-
-
 def criteria_in_plan(lines, repo_dir):
     """(label, line, command, code_lines) for each Automated Verification item that gets a command, in plan order;
     label is `<phase>.<n>` with n counting from 1 across the whole plan. Items with no command to run come back with
@@ -166,17 +160,6 @@ def criteria_in_plan(lines, repo_dir):
     return criteria
 
 
-def verdict_for(command, banned, code, output):
-    """GREEN, RED or BROKEN for one run, and the flag text for a zero-test match."""
-    if code in (script_utils.COMMAND_NOT_FOUND_EXIT_CODE, script_utils.TIMEOUT_EXIT_CODE):
-        return "BROKEN", None
-    if matches_no_test(command, code, output):
-        return "RED", "matches no test: the run exits 0 but reports no passed test, so it reads RED until a test exists"
-    if banned:
-        return ("GREEN" if code == 1 else "RED" if code == 0 else "BROKEN"), None
-    return ("GREEN" if code == 0 else "RED"), None
-
-
 def dry_run(plan_path, repo_dir, skipped, timeout):
     """Run the plan's criteria and print the report. Returns the exit code."""
     lines = plan_path.read_text().splitlines()
@@ -192,9 +175,10 @@ def dry_run(plan_path, repo_dir, skipped, timeout):
             continue
 
         code, output = script_utils.run_command(command, repo_dir, timeout=timeout)
-        verdict, flag = verdict_for(command, is_ban(line, command), code, output)
+        judged = item_verdict(command, line, code, output)
+        verdict = judged.outcome
         print(f"CHECK {label} {verdict} rc={code} {command}")
-        flags = [flag] if flag else []
+        flags = [judged.flag] if judged.flag else []
 
         pgrep_pattern = self_matching_pgrep(command)
         if pgrep_pattern:

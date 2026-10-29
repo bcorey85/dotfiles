@@ -58,6 +58,9 @@ from code_step_report import ENG_SPEC_BRIEF
 from code_step_review import guarded_verb_runs
 from code_step_start_args import (
     START_MODIFIERS,
+    SWITCH_FLAGS,
+    TASK_FLAG,
+    VALUE_FLAGS,
     RepoFlagError,
     TaskFileError,
     absolute_path_args,
@@ -110,12 +113,12 @@ def phase_flag_value(args, position):
 
 
 def reject_unknown_flag(word):
-    # --restart, --headless and --coder-stopped are the flags besides --phase, --task, --task-file and --repo. --help
-    # prints usage and exits 0 before any state is touched; any other flag exits 2.
+    # A switch is the only flag left to read here. --help prints usage and exits 0 before any state is touched; any
+    # other flag exits 2.
     if word in script_utils.USAGE_WORDS:
         print(START_USAGE)
         sys.exit(0)
-    if word not in ("--restart", "--headless", "--coder-stopped"):
+    if word not in SWITCH_FLAGS:
         usage_error(f"unknown flag {word}")
 
 
@@ -140,7 +143,7 @@ def parse_start_args(args):
     position = 0
     while position < len(args):
         word = args[position]
-        if word == "--task":
+        if word == TASK_FLAG:
             task_text = " ".join(args[position + 1:])
             break
         if task_text is not None and starts_task_text(word):
@@ -153,7 +156,7 @@ def parse_start_args(args):
             phase_id = phase_flag_value(args, position)
             position += 2
             continue
-        if word == "--repo":
+        if word in VALUE_FLAGS:
             position += 2
             continue
         if starts_task_text(word):
@@ -183,7 +186,7 @@ def phase_words_as_flag(args):
     # `<plan> Phase <id>` and `<plan> <id>` name a phase of that plan: the words with `--phase <id>` in their place.
     # Any other args come back as they were.
     words = script_utils.words_of_arguments(args) if args else []
-    if "--task" in words or "--task-file" in words or "--phase" in words:
+    if TASK_FLAG in words or "--task-file" in words or "--phase" in words:
         return args
 
     has_phase_word = len(words) >= 3 and words[-2].lower() == "phase"

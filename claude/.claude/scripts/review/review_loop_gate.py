@@ -53,8 +53,7 @@ import shlex
 import subprocess
 import sys
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../code", "../lib")]
-import code_step_core
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import full_check as full_check_script
 import handback
 import script_utils
@@ -710,7 +709,7 @@ def dispatch_deny_reason(hook):
     tool_input = hook.get("tool_input") or {}
     if tool_input.get("subagent_type") != "review-loop":
         return None
-    if hook.get("agent_id") and hook.get("agent_type") != code_step_core.FORK_AGENT_TYPE:
+    if hook.get("agent_id") and hook.get("agent_type") != script_utils.FORK_AGENT_TYPE:
         return NESTED_REASON
 
     prompt = tool_input.get("prompt") or ""

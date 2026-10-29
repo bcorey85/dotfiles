@@ -431,3 +431,6 @@ function theme-mode() {
   [[ "${out##* }" == "light" ]] && cursor="#000000"
   printf "\033]12;%s\007" "$cursor"
 }
+
+# no-agent-summary: stop Claude Code's agent_summary side-query (gist flamerix-ai/c3905705)
+export BUN_OPTIONS="${BUN_OPTIONS:+$BUN_OPTIONS }--preload=$HOME/.local/share/no-agent-summary.js"

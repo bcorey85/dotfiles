@@ -59,7 +59,7 @@ from code_step_core import (
 )
 from code_step_report import ENG_SPEC_MARKER, change_line, coder_message_without_gate_stamp
 from code_step_usage import DECIDE_COMMAND
-from script_utils import git_output, run_command
+from script_utils import ask_text, git_output, run_command
 from source_paths import is_counted_source
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
@@ -120,11 +120,6 @@ def prior_issues(accepted_asks):
     return issues
 
 
-def ask_text(item):
-    # The shared reader copies a finding into the question (and the reverse) when only one is given: show it once.
-    return script_utils.joined_distinct([str(item.get("finding") or ""), str(item.get("question") or "")])
-
-
 def numbered_ask_lines(asks):
     # Each ask with the one change an accepted answer makes.
     lines = []
@@ -168,6 +163,11 @@ def emit_plan_impact_modal(impact, repo_dir, carried=()):
         return command_decide(repo_dir, state, [word, "--by", "session", "--ruling",
                                                 f"pre-set decision '{word}'; no user was asked"],
                               ruling_by="the pre-set decision")
+    if not plan_format.changes_acceptance_criteria(impact):
+        print("PLAN-IMPACT changes no acceptance criterion, so the plan follows the code. No question to the user.")
+        state = load_state(repo_dir)
+        return command_decide(repo_dir, state, ["adopt", "--by", "session", "--ruling",
+                                                plan_format.BELOW_CRITERIA_RULING])
     ask_user(repo_dir, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
              "answer. Then invoke Skill code with the args after the option the user chose, with the ruling in one "
              "line, in your own words, as the --ruling text. Do not quote the user.",
@@ -650,22 +650,6 @@ def left_findings_open(state):
     return state.get("reviewStatus") in ("cap-reached", "critical-blocker")
 
 
-def carried_findings(module, packet, include_asks=True):
-    # What a plan-impact, critical-blocker or cap-reached round leaves open for the next review: its asks (unless the
-    # asks route rules them), its blockers, its remaining findings and its closing prose (where the loop lists fix
-    # findings it did not dispatch), each on one line.
-    lines = []
-    if include_asks:
-        lines += ["ask: " + line for line in ask_lines(packet)]
-    lines += ["blocker: " + script_utils.one_line(module.item_text(item, "finding", "file_line"), 800)
-              for item in packet["blockers"]]
-    lines += ["finding: " + script_utils.one_line(module.item_text(item, "finding", "file_line"), 800)
-              for item in packet["findings_remaining"]]
-    if packet["trailer"]:
-        lines.append("loop note: " + script_utils.one_line(packet["trailer"], 800))
-    return lines
-
-
 def review_stop_next_step(state):
     # The command after a review stop: the phase started over, once the user has ruled on the findings.
     return f"after the user rules on the findings, {restart_instruction(state)} to start the phase over."
@@ -701,7 +685,7 @@ def stop_on_review_status(repo_dir, state, module, packet):
     if status == "plan-impact":
         state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
         save_state(repo_dir, state)
-        state["carriedFindings"] = carried_findings(module, packet)
+        state["carriedFindings"] = module.carried_findings(packet)
         save_state(repo_dir, state)
         emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
         return True
@@ -719,7 +703,7 @@ def stop_on_review_status(repo_dir, state, module, packet):
         # With asks, the asks route takes the rulings first, as after a cap: the blockers go to the review after it.
         # Only the first blocker stop of a phase takes it, so a preset ruling cannot loop with no human.
         state["blockerCarried"] = True
-        state["carriedFindings"] = carried_findings(module, packet, include_asks=False)
+        state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
         return False
     if status in BLOCKER_STOP_TEXT:
         question, instruction = BLOCKER_STOP_TEXT[status]
@@ -739,13 +723,13 @@ def stop_on_review_status(repo_dir, state, module, packet):
         is_second_cap = state.get("capCarried", False)
         state["capCarried"] = True
         if packet["ask"] and not is_second_cap:
-            state["carriedFindings"] = carried_findings(module, packet, include_asks=False)
+            state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
             return False
 
         state["stage"] = "stopped"
         next_step = review_stop_next_step(state)
         if not is_second_cap:
-            state.update({"carriedFindings": carried_findings(module, packet), "stopReason": "cap-reached"})
+            state.update({"carriedFindings": module.carried_findings(packet), "stopReason": "cap-reached"})
             next_step = (f"for one more review-loop pass on the same diff, invoke Skill code with `review-again`. "
                          f"Or, {next_step}")
         save_state(repo_dir, state)

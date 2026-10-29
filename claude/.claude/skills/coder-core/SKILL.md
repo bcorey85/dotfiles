@@ -31,7 +31,7 @@ For one phase of a multi-phase plan, read the shared sections before the first p
 
 ## Check the plan against the code it names
 
-Before you use an existing type, function, or field that the plan describes, open its definition — never rely on the plan's summary of it. For each existing field that your code branches, matches, parses, or computes on, find the code that sets it, and put one line in your report: `SET BY: <field> — <file:line>`, or `SET BY: <field> — never assigned`. If the code differs from the plan — a field's meaning, a signature, a stored format — that is a `PLAN-IMPACT` finding even when you can work around it: report the block, and build only what the difference does not touch. Never adapt silently to either side.
+Before you use an existing type, function, or field that the plan describes, open its definition — never rely on the plan's summary of it. For each existing field that your code branches, matches, parses, or computes on, find the code that sets it, and put one line in your report: `SET BY: <field> — <file:line>`, or `SET BY: <field> — never assigned`. If the code differs from the plan — a field's meaning, a signature, a stored format — that is a `PLAN-IMPACT` finding even when you can work around it: report the block. When the difference changes no acceptance criterion, the code wins: build to the code, and the plan follows it with no question to the user. When it changes one, build only what the difference does not touch. Never adapt silently to either side.
 
 ## Copy import paths, never guess them
 
@@ -68,7 +68,10 @@ PLAN-IMPACT:
   assumed: <what the plan/design says>
   found: <what the code actually does — file:line>
   changes: <what in the plan this invalidates and the options you see>
+  acceptance_criteria: <none, or the criteria this changes>
 ```
+
+Write `acceptance_criteria: none` only when every acceptance criterion holds either way. Then the plan change is adopted and logged under Plan Deviations without asking the user. Any other value asks the user.
 
 ## Review handoff (last lines of your report)
 

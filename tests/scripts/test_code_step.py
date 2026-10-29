@@ -44,6 +44,7 @@ import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
+import coder_gate  # noqa: E402
 import plan_format  # noqa: E402
 
 PLAN = """# Orders Plan
@@ -942,6 +943,56 @@ class CodeStepTest(unittest.TestCase):
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
         self.assertEqual(["ruff check {files:.py}", "python -m pytest tests/"], commands)
+
+    def test_a_script_phase_naming_no_test_file_runs_every_test_file_the_coder_creates(self):
+        phase = "**File**: `backend/src/existing.ts`\n"
+        for name in ("src/existing.ts", "src/foo.spec.js", "src/foo.test.mts", "src/__tests__/foo.jsx",
+                     "src/helper.js"):
+            (self.repo / "backend" / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / "backend" / name).write_text("export {}\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+        test_command = next(command for command in commands if "vitest" in command)
+        filled_command = coder_gate.fill_files(test_command, str(self.repo))
+
+        self.assertEqual("cd backend && npx vitest run src/foo.spec.js src/foo.test.mts", filled_command)
+
+    def test_a_jest_phase_naming_no_test_file_also_runs_the_script_files_the_coder_creates_under_tests(self):
+        (self.repo / "pkg").mkdir()
+        (self.repo / "pkg/package.json").write_text('{"devDependencies": {"jest": "29"}}')
+        phase = "**File**: `pkg/src/a.ts`\n"
+        for name in ("src/a.ts", "src/foo.spec.js", "src/__tests__/foo.jsx", "src/helper.js"):
+            (self.repo / "pkg" / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / "pkg" / name).write_text("export {}\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+        test_command = next(command for command in commands if "jest" in command)
+        filled_command = coder_gate.fill_files(test_command, str(self.repo))
+
+        self.assertEqual("cd pkg && npx jest src/__tests__/foo.jsx src/foo.spec.js", filled_command)
+
+    def test_a_python_phase_naming_no_test_file_runs_every_test_file_the_coder_creates(self):
+        (self.repo / "pyproject.toml").write_text("")
+        phase = "**File**: `app/models.py`\n"
+        for name in ("app/models.py", "app/test_models.py", "app/orders_test.py", "app/conf.py",
+                     "tests/__init__.py", "tests/conftest.py"):
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text("")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+        test_command = next(command for command in commands if "pytest" in command)
+        filled_command = coder_gate.fill_files(test_command, str(self.repo))
+
+        self.assertEqual("python3 -m pytest app/orders_test.py app/test_models.py", filled_command)
+
+    def test_a_django_phase_runs_the_tests_module_it_names(self):
+        (self.repo / "manage.py").write_text("")
+        phase = ("**File**: `app/models.py`\n**File**: `app/tests.py`\n**File**: `app/tests_views.py`\n"
+                 "**File**: `app/orders_test.py`\n")
+
+        commands = code_step_gates.derive_gate_commands(self.repo, phase)
+
+        self.assertIn("python3 manage.py test app.tests app.tests_views --noinput", commands)
 
     def test_a_verification_item_may_start_with_an_environment_setting(self):
         item = "- [ ] **Tests**: the streams pass - `CARGO_BUILD_JOBS=4 cargo test --test side_streams`"

@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "asks-done logs the outcome of an ask that names no file"
-description: "An ask whose file_line is `unlocated` sent `line=0` to the finding writer, which refuses a line on an unlocated finding, so its ask row and its outcome row were lost; the row now carries no line."
+description: "An ask whose file_line is `unlocated` now logs its ask row and outcome row, because the row carries no line. Before, it sent `line=0` to the finding writer, which refuses a line on an unlocated finding, so both rows were lost."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:54:45-05:00"}
 seq: 203
 kind: "fix"

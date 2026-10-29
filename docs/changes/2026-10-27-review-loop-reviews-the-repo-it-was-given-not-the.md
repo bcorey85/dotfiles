@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-review-loop's Step 0 ran review-scope with no root, so a loop briefed on a sibling worktree scoped the session's own repo. The agent now takes a `repo: <path>` input. When that input is absent, it uses the repo of the first absolute path the prompt names, and only then its cwd. Step 0 passes `root=<repo>`, and when ROOT differs from the cwd, every later git, check and log command runs as `cd <ROOT> && ...`; otherwise it runs plain. `Repo root: <ROOT>` goes in each reviewer and coder prompt. /code always passes `repo:`; /review and /fix pass it when the work lives outside the session's repo. An empty `ROOT=` or an exit 2 "cannot enter" now returns a critical-blocker packet instead of falling back to git status.
+The review loop now takes a `repo: <path>` input, so a loop briefed on a sibling worktree reviews that worktree's diff. Before, Step 0 ran review-scope with no root and scoped the session's own repo. When that input is absent, it uses the repo of the first absolute path the prompt names, and only then its cwd. Step 0 passes `root=<repo>`, and when ROOT differs from the cwd, every later git, check and log command runs as `cd <ROOT> && ...`; otherwise it runs plain. `Repo root: <ROOT>` goes in each reviewer and coder prompt. /code always passes `repo:`; /review and /fix pass it when the work lives outside the session's repo. An empty `ROOT=` or an exit 2 "cannot enter" now returns a critical-blocker packet instead of falling back to git status.
 
 The opencode port, opencode/.config/opencode/agents/review-loop.md, is knowingly not updated.
 

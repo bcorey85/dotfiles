@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "code-step: a failed Automated Verification keeps the failing test names"
-description: "An Automated Verification stop showed only the last 400 characters of a failed command, so the failing test names were lost; it now lists the failing-test lines of the whole output above that tail."
+description: "An Automated Verification stop now lists the failing-test lines of the whole output above the last 400 characters. Before, it showed only those last 400 characters of a failed command, so the failing test names were lost."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:51:07-05:00"}
 seq: 183
 kind: "fix"

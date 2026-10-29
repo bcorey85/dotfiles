@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "verify-log refuses a run with no verdict row for a ticket criterion"
-description: "verify-log checked that every acceptance-criteria.md id had a verdict row, but never checked the ticket's own criteria. A ticket-only run, or a task dir with no criteria file, logged CLEAN with any non-empty rows. verify-prep now saves the ticket criterion labels, and verify-log exits 2 and writes nothing when a `Ticket #n` has no row."
+description: "verify-prep now saves the ticket criterion labels, and verify-log exits 2 and writes nothing when a `Ticket #n` has no row. Before, verify-log checked only the acceptance-criteria.md ids, so a ticket-only run, or a task dir with no criteria file, logged CLEAN with any non-empty rows."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T23:35:21-05:00"}
 seq: 21
 kind: "fix"

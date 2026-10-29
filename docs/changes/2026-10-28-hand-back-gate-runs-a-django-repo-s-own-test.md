@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "hand-back gate runs a Django repo's own test runner when the plan lists none"
-description: "With no usable test command in the plan, the hand-back gate ran bare pytest in a Django repo with no pytest-django settings, so collection failed on missing settings and the gate spent its denials on a non-code error. It now runs manage.py test on the changed test modules, a Django settings error under pytest is a setup fault, and a manage.py test run that ran no test is no pass."
+description: "With no usable test command in the plan, the hand-back gate now runs manage.py test on the changed test modules in a Django repo, a Django settings error under pytest is a setup fault, and a manage.py test run that ran no test is no pass. Before, it ran bare pytest in a Django repo with no pytest-django settings, so collection failed on missing settings and the gate spent its denials on a non-code error."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T01:16:00-05:00"}
 seq: 152
 kind: "fix"

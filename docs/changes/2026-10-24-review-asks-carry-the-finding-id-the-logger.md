@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "changed"
 title: "Review asks carry the finding id the logger printed"
-description: "The ledger writer switch changed the review text: each ask in the review-loop packet carries the `finding_id` that log-review-finding printed, the ask outcome supersedes the ask row by that id, and `desc=` is no longer stored."
+description: "Each ask in the review-loop packet carries the `finding_id` that log-review-finding printed, the ask outcome supersedes the ask row by that id, and `desc=` is no longer stored."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T05:06:55-05:00"}
 seq: 4
 kind: "behavior"

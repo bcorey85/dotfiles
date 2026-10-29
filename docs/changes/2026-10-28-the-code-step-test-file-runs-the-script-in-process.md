@@ -28,8 +28,7 @@ unmeasured: ""
   unticked.
 - `test_an_asks_coder_state_without_its_accepted_asks_does_not_tick_the_phase` now also asserts no traceback on
   stderr.
-- The in-process runner and its exit-code helper live in tests/scripts/in_process.py, shared with the termination
-  test.
+- The SystemExit-to-exit-code helper lives in tests/scripts/in_process.py, shared with the termination test.
 
 ## Evidence
 

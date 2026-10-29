@@ -24,6 +24,7 @@ from code_step_core import (
     PROMPT_DENIAL_LIMIT,
     RESUME_VERB,
     SAY_MAX_AGE_SECONDS,
+    VERB_WORDS_REPLACED_BY_RESUME,
     StateFileError,
     dispatch_marker,
     dispatch_standing,
@@ -34,6 +35,7 @@ from code_step_core import (
     own_path,
     read_events,
     read_state_file,
+    resume_run_repos,
     say_file_in,
     session_repo_dirs,
     state_dir,
@@ -222,6 +224,62 @@ def prompt_denial(call, standing):
         return (f"This Agent call was denied {denials} times. Stop. Do not dispatch again and do not run another "
                 f"verb. Tell the user the dispatch prompt in {prompt_file} could not be passed.")
     return (f"The prompt of this Agent call is not the dispatch prompt. Read {prompt_file} and pass its whole text.")
+
+
+def is_resume_skill_args(args):
+    # The args that end at `resume`: none, or a first word that is a resume verb word, with any text after
+    # (SKILL.md runs some as `resume`; `start` refuses the rest and names `resume`).
+    words = args.split()
+    return not words or words[0] in VERB_WORDS_REPLACED_BY_RESUME
+
+
+def resumed_call(calls, event):
+    # The call of the run a resume acts on: the session's run in the cwd, else the session's only open run. None when
+    # no call is for one such run.
+    session_id = event.get("session_id")
+    run_repos = resume_run_repos(event.get("cwd") or ".", session_id)
+    if len(run_repos) != 1:
+        return None
+
+    for call in calls:
+        if call.repo == run_repos[0]:
+            return call
+    return None
+
+
+def command_launch_hook():
+    # PreToolUse on Skill: a /code resume of a run stopped at its Automated Verification (a command failed, or an
+    # item could not be run) is denied before its fork starts. The fork has no Edit tool and the script dispatches no
+    # coder for that stop, so the fork would only say what the deny says: the main session fixes the cause, then
+    # runs `verify`.
+    try:
+        calls = read_hook_calls()
+        if not calls:
+            return
+
+        event = calls[0].event
+        tool_input = event.get("tool_input")
+        if not isinstance(tool_input, dict) or tool_input.get("skill") != "code":
+            return
+        if not is_resume_skill_args(str(tool_input.get("args") or "")):
+            return
+
+        call = resumed_call(calls, event)
+        if call is None:
+            return
+
+        if call.state.get("stage") != "stopped" or call.state.get("stopReason") != "verification":
+            return
+
+        script_utils.pre_tool_use_deny(
+            f"The open /code run in {call.repo} stopped at its Automated Verification: a command failed, or "
+            "an item could not be run. A resume cannot fix that: the /code fork has no Edit tool and "
+            "dispatches no coder for this stop. Fix the cause yourself. Dispatch the fix (a coder or /debug "
+            "for a failing command, at most 3 attempts), or edit the plan for an item that could not be run, "
+            "then invoke Skill code with `verify`. On the user's word only, `tick <phase>` instead marks the "
+            "phase done; then resume starts the next phase.")
+    except Exception as error:
+        print(f"code-step launch-hook: {error}", file=sys.stderr)
 
 
 def command_dispatch_hook():

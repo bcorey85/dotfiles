@@ -27,7 +27,7 @@ When you notice a bug or an inefficiency in the Claude Code toolkit (an agent, s
 
 ## Ticket Acceptance Criteria
 
-The ticket's ACs are the contract. Only the user's explicit sign-off overrides one. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who and when. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.
+The ticket's ACs are the contract. Only the user's explicit sign-off overrides one. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who and when, only in the plan's decision log (eng-spec's `03-decisions.md`, or the plan's `## Plan Deviations` line for a moved phase), never in code, comments, fixtures or commit messages. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.
 
 ## Messages to Other Sessions
 

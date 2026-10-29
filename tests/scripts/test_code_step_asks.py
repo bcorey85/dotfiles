@@ -21,6 +21,7 @@ loaded_review_fix = importlib.util.spec_from_file_location("review_fix", SCRIPTS
 review_fix = importlib.util.module_from_spec(loaded_review_fix)
 loaded_review_fix.loader.exec_module(review_fix)
 import code_step_review
+import review_asks
 
 # log-review-finding mints ids as 16 lowercase hex chars; review-fix logs no other shape.
 MINTED_FINDING_ID = "0123456789abcdef"
@@ -38,13 +39,13 @@ class LogAskOutcomes(unittest.TestCase):
     def setUp(self):
         self.calls = []
         self.logger_result = (0, "")
-        self.original_run_command = code_step_review.run_command
+        self.original_run_command = review_asks.run_command
         self.original_git_output = code_step_review.git_output
-        code_step_review.run_command = lambda command, cwd, **_: self.calls.append(command) or self.logger_result
+        review_asks.run_command = lambda command, cwd, **_: self.calls.append(command) or self.logger_result
         code_step_review.git_output = lambda *_: "some-branch"
 
     def tearDown(self):
-        code_step_review.run_command = self.original_run_command
+        review_asks.run_command = self.original_run_command
         code_step_review.git_output = self.original_git_output
 
     def log(self, asks, outcomes, phase="1"):
@@ -149,19 +150,28 @@ class LogAskOutcomes(unittest.TestCase):
         self.assertIn("ask outcomes not logged", stderr)
         self.assertIn("boom", stderr)
 
+    def test_a_plan_impact_ask_logs_no_outcome_row_as_review_does(self):
+        plan_impact_ask = ask_item(finding="PLAN-IMPACT: the plan names the wrong table", finding_id=None)
+
+        stderr = self.log([plan_impact_ask, ask_item()], ["accepted", "rejected"])
+
+        self.assertEqual([MINTED_FINDING_ID], self.logged_finding_ids())
+        self.assertIn("ask_outcome=rejected", self.calls[0])
+        self.assertEqual("", stderr)
+
 
 class ReviewFixLogAskOutcome(unittest.TestCase):
     def setUp(self):
         self.calls = []
-        self.original_run_command = review_fix.run_command
-        review_fix.run_command = lambda command, cwd=None: self.calls.append(command) or (0, "")
+        self.original_run_command = review_asks.run_command
+        review_asks.run_command = lambda command, cwd=None: self.calls.append(command) or (0, "")
         self.state = {"branch": "some-branch", "lane": "fix", "scope": "diff", "iter": 1}
 
     def tearDown(self):
-        review_fix.run_command = self.original_run_command
+        review_asks.run_command = self.original_run_command
 
     def test_argv_carries_finding_id_and_no_free_text(self):
-        review_fix.log_ask_outcome(self.state, ask_item(), "accepted", MINTED_FINDING_ID)
+        review_asks.log_ask_outcome(review_fix.ASK_LOGGER, self.state, ask_item(), "accepted", "user")
 
         self.assertEqual(len(self.calls), 1)
         argv = self.calls[0]
@@ -217,7 +227,7 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
                 return 1, "boom"
             return 0, ""
 
-        review_fix.run_command = run_command
+        review_asks.run_command = run_command
         asks = [ask_item(finding_id="1111111111111111"), ask_item(finding_id="2222222222222222")]
 
         first, _ = self.asks_done(asks, ["accepted", "rejected"])

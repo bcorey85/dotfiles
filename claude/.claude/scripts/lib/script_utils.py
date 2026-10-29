@@ -117,6 +117,13 @@ def heading_section_indexes(lines, heading_text):
     return indexes
 
 
+def top_level_sections(lines):
+    """0-based indexes of the lines that start a `## ` section, in order. A `## ` line inside a fenced code block is
+    not a heading."""
+    fenced = fenced_line_indexes(lines)
+    return [index for index, line in enumerate(lines) if line.startswith("## ") and index not in fenced]
+
+
 def _comparable_line(line):
     return CHECKBOX.sub("[ ]", " ".join(line.split()))
 
@@ -194,6 +201,14 @@ def git_output(cwd, *args, timeout=None):
     if finished.returncode != 0:
         return None
     return os.fsdecode(finished.stdout).rstrip("\n")
+
+
+def git_path(cwd, name):
+    """The absolute path git keeps `name` at for the repo of cwd (inside its git dir), or None when git cannot say."""
+    found = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", name)
+    if found is None:
+        return None
+    return pathlib.Path(found)
 
 
 def text_before_marker(text, marker):
@@ -552,13 +567,18 @@ def pre_tool_use_deny(reason):
                                              "permissionDecisionReason": reason}}))
 
 
+def subagent_transcript_path(session_transcript, agent_id):
+    """Where Claude Code keeps the transcript of a subagent of the session: `<session transcript without
+    .jsonl>/subagents/agent-<id>.jsonl`."""
+    return os.path.join(os.path.splitext(session_transcript)[0], "subagents", f"agent-{agent_id}.jsonl")
+
+
 def agent_transcript_path(hook):
     """The calling subagent's transcript: the path the hook event names, else the one under the session transcript."""
     named = hook.get("agent_transcript_path")
     if named:
         return named
-    session_transcript = hook["transcript_path"]
-    return os.path.join(session_transcript[:-len(".jsonl")], "subagents", f"agent-{hook['agent_id']}.jsonl")
+    return subagent_transcript_path(hook["transcript_path"], hook["agent_id"])
 
 
 def telemetry_switch_on():

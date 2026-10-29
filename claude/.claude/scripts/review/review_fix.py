@@ -50,14 +50,16 @@ SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
 import handback
 import plan_format
+import review_asks
 import script_utils
 from handback import PacketError, is_plan_impact_ask, item_text
+from review_asks import ASK_OUTCOMES
 from saved_handback import LoopWaitingError, NoHandbackError, dispatched_with_ruling, read_message
 from script_utils import one_line, run_command, split_location
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
 SOURCES = ["conversation", "cc", "handoff"]
-ASK_OUTCOMES = ["accepted", "rejected", "modified"]
+ASK_LOGGER = CLAUDE_DIR / "skills/review/log-review-finding"
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 DECIDE_SCRIPT = "python3 ~/.claude/scripts/review/review_fix.py"
@@ -84,19 +86,19 @@ class UsageError(Exception):
 # ---------- shell helpers ----------
 
 def review_fix_dir():
-    found = script_utils.git_output(".", "rev-parse", "--path-format=absolute", "--git-path", "review-fix")
+    found = script_utils.git_path(".", "review-fix")
     if found is None:
         raise UsageError("not inside a git repo")
-    return pathlib.Path(found)
+    return found
 
 
-def state_file():
+def review_fix_state_file():
     return review_fix_dir() / "state.json"
 
 
 def read_state():
     """The saved state, or None when there is none or it is unreadable."""
-    path = state_file()
+    path = review_fix_state_file()
     if not path.exists():
         return None
     try:
@@ -109,7 +111,7 @@ def load_fix_state():
     state = read_state()
     if state is not None:
         return state
-    path = state_file()
+    path = review_fix_state_file()
     if path.exists():
         raise UsageError(f"{path} is not readable JSON")
     raise UsageError(f"no packet was processed in {path.parent} (the state is kept per repo, and this call ran in "
@@ -118,7 +120,7 @@ def load_fix_state():
 
 
 def save_fix_state(state):
-    path = state_file()
+    path = review_fix_state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=1))
 
@@ -686,13 +688,6 @@ def command_escape(argv):
 
 # ---------- asks ----------
 
-def log_ask_outcome(state, item, outcome, finding_id, decided_by="user"):
-    """(exit code, output) of the outcome row's log call."""
-    return run_command(["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-                        f"finding_id={finding_id}", *handback.ask_row_fields(state, item), f"ask_outcome={outcome}",
-                        f"ask_decided_by={decided_by}"])
-
-
 def fill_packet_ask_ids(packet, state):
     """Give every ask without a valid finding_id the id of the ask row the loop logged for it, matched on file and
     line, or of an ask row logged here when the loop logged none. A valid id the loop wrote stays. A plan-impact ask
@@ -702,9 +697,7 @@ def fill_packet_ask_ids(packet, state):
         packet["ask"] = state["asks"]
         return
 
-    finding_asks = [item for item in packet["ask"] if not is_plan_impact_ask(item)]
-    handback.supply_ask_finding_ids(finding_asks, os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
-                                    CLAUDE_DIR / "skills/review/log-review-finding", state)
+    review_asks.supply_finding_ask_ids(packet["ask"], os.environ.get("CLAUDE_CODE_SESSION_ID", ""), ASK_LOGGER, state)
 
 
 def read_outcomes(argv, asks):
@@ -727,21 +720,20 @@ def log_fix_ask_outcomes(state, asks, outcomes, decided_by="user"):
     for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True)):
         if index in logged:
             continue
-        if is_plan_impact_ask(item):
+
+        outcome_row = review_asks.log_ask_outcome(ASK_LOGGER, state, item, outcome, decided_by)
+        if outcome_row is None:
             ask_counts[PLAN_IMPACT] += 1
             logged.append(index)
             continue
-
-        finding_id, new_finding_id_note = handback.ask_outcome_finding_id(item)
-        code, output = log_ask_outcome(state, item, outcome, finding_id, decided_by)
-        if code == 0:
+        if outcome_row.code == 0:
             logged.append(index)
-            if new_finding_id_note:
-                print(f"review-fix: {new_finding_id_note}", file=sys.stderr)
+            if outcome_row.new_finding_id_note:
+                print(f"review-fix: {outcome_row.new_finding_id_note}", file=sys.stderr)
                 ask_counts[NEW_FINDING_ID] += 1
             continue
         path, line = split_location(item.get("file_line") or "-")
-        failures.append(f"{path}:{line}: {one_line(output, 160)}")
+        failures.append(f"{path}:{line}: {one_line(outcome_row.output, 160)}")
     return ask_counts, failures
 
 
@@ -924,7 +916,7 @@ def main():
     except PacketError as error:
         stop_for_parse_failure(error, error.raw)
         try:
-            if state_file().exists():
+            if review_fix_state_file().exists():
                 save_fix_state({**load_fix_state(), "stage": "parse-failed"})
         except UsageError:
             pass

@@ -102,6 +102,20 @@ class HeadingSectionIndexesTest(unittest.TestCase):
         self.assertEqual([], script_utils.heading_section_indexes(["## A", "b"], "Notes"))
 
 
+class TopLevelSectionsTest(unittest.TestCase):
+    def test_only_two_hash_headings_outside_code_fences_start_a_section(self):
+        lines = ["# Title", "## A", "### Deeper", "```", "## in a fence", "```", "text", "## B", "##C"]
+        self.assertEqual([1, 7], script_utils.top_level_sections(lines))
+
+    def test_text_with_no_section_gives_no_indexes(self):
+        self.assertEqual([], script_utils.top_level_sections(["a", "# b"]))
+
+
+class SubagentTranscriptPathTest(unittest.TestCase):
+    def test_the_subagent_transcript_sits_in_a_folder_named_for_the_session_transcript(self):
+        self.assertEqual("/t/s/subagents/agent-a1.jsonl", script_utils.subagent_transcript_path("/t/s.jsonl", "a1"))
+
+
 class VisibleTextTest(unittest.TestCase):
     def test_a_line_without_comments_comes_back_whole(self):
         self.assertEqual(("plain text", False), script_utils.visible_text("plain text", False))

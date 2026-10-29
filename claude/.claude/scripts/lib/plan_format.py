@@ -29,6 +29,8 @@ import re
 import script_utils
 
 DONE_PREFIX = "- Done: "
+# A `path/with/a/folder.ext` in backticks, with an optional :line or :start-end suffix inside the ticks.
+PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"
 PHASE_HEADING = re.compile(rf"^(#{{2,4}})\s+Phase\s+({PHASE_ID})(?![A-Za-z0-9])")
 MANUAL_HEADING = re.compile(r"^(#{1,6})\s+manual verification\b(.*)$", re.I)
@@ -683,7 +685,7 @@ def append_deviation(plan_path, entry):
     """Add the entry lines at the end of the plan's `## Plan Deviations` section, creating the section before
     `## References` (or at the end) when the plan has none."""
     lines = plan_path.read_text().split("\n")
-    sections = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    sections = script_utils.top_level_sections(lines)
     existing = next((i for i in sections if lines[i].strip() == "## Plan Deviations"), None)
     if existing is not None:
         end = next((i for i in sections if i > existing), len(lines))

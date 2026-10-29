@@ -7,7 +7,15 @@ import sys
 import time
 
 import plan_format
+import review_asks
 import script_utils
+from code_step_asks import (
+    ASKS_DONE_USAGE,
+    asks_coder_prompt,
+    numbered_ask_lines,
+    preset_ask_outcome,
+    split_asks_done_args,
+)
 from code_step_boundary import (
     criteria_file,
     finish_phase,
@@ -59,16 +67,13 @@ from code_step_core import (
     wait_for_handback,
     wait_for_loop_stop,
 )
-from code_step_report import ENG_SPEC_MARKER, change_line, coder_message_without_gate_stamp
+from code_step_report import change_line, coder_message_without_gate_stamp
 from code_step_usage import DECIDE_COMMAND
 from script_utils import ask_text, git_output, run_command
 from source_paths import is_counted_source
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
-ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or modified. Each modified ask needs the "
-                   "user's change after it as `--change \"<text>\"`. `--by user` or `--by session` says who ruled. "
-                   "`--also \"<text>\"` carries any other work the user named alongside the outcomes.")
 # The state each guarded verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped",
 # and the refusal text when the state is anything else. `start`, `tick` and `resume` run at any stage and are not in
 # the table. A review-loop resumed after the wait cap also counts for review-again, and a converged review of the
@@ -109,28 +114,6 @@ def guarded_verb_runs(verb, state):
 
 NO_REVIEW_PACKET = ("No review-loop packet was saved. The log-hook (code_step.py log-hook) is not installed. "
                     "Tell the user.")
-
-
-def prior_issues(accepted_asks):
-    issues = []
-    for item, _outcome, change_text in accepted_asks:
-        file_line = item.get("file_line", "")
-        issue_text = ask_text(item)
-        if change_text:
-            issue_text += f" (user's change: {change_text})"
-        issues.append({"issue": issue_text, "file": file_line.partition(":")[0]})
-    return issues
-
-
-def numbered_ask_lines(asks):
-    # Each ask with the one change an accepted answer makes. A multi-line ask's later lines sit indented under its
-    # number.
-    lines = []
-    for number, item in enumerate(asks, 1):
-        lines += script_utils.hanging_indent_lines(f"{number}. ", ask_text(item))
-        if item.get("change"):
-            lines += script_utils.hanging_indent_lines("   Proposed change: ", item["change"])
-    return lines
 
 
 def preset_decision(repo_dir):
@@ -825,19 +808,6 @@ def command_after_review(repo_dir, state, args):
     finish_phase(repo_dir, state)
 
 
-ASK_OUTCOMES = ("accepted", "rejected", "modified")
-
-
-def preset_ask_outcome(repo_dir):
-    # A pre-answered outcome for every review ask, for runs with no user (claude -p, bench): env var or a file in the
-    # state dir.
-    word = os.environ.get("CODE_STEP_ASKS_OUTCOME", "").strip().lower()
-    preset_file = state_dir(repo_dir) / "asks-outcome"
-    if not word and preset_file.exists():
-        word = preset_file.read_text().strip().lower()
-    return word if word in ASK_OUTCOMES else None
-
-
 def present_asks(repo_dir, state, asks):
     nvim_jump = os.environ.get("CODE_STEP_NVIM_JUMP", "nvim-jump")
     is_nvim_jump_installed = shutil.which(nvim_jump) is not None
@@ -898,6 +868,11 @@ def ask_the_user(repo_dir, state, asks):
     )
 
 
+def ask_logger():
+    # Read at call time: CLAUDE_DIR is the toolkit folder this run was pointed at.
+    return CLAUDE_DIR / "skills/review/log-review-finding"
+
+
 def ask_log_context(repo_dir, state):
     # The run fields that an ask row and its outcome row share.
     return {"branch": git_output(repo_dir, "branch", "--show-current") or "-", "lane": state["lane"],
@@ -921,8 +896,8 @@ def fill_review_ask_ids(repo_dir, state, module, handback, asks):
             item["finding_id"] = kept_ids[key]
 
     session_id = run_session_id(state)
-    logger = CLAUDE_DIR / "skills/review/log-review-finding"
-    module.supply_ask_finding_ids(asks, session_id, logger, ask_log_context(repo_dir, state), repo_dir)
+    context = ask_log_context(repo_dir, state)
+    review_asks.supply_finding_ask_ids(asks, session_id, ask_logger(), context, repo_dir)
     for item, key in zip(asks, keys, strict=True):
         if module.ask_finding_id(item):
             kept_ids[key] = module.ask_finding_id(item)
@@ -937,43 +912,14 @@ def log_ask_outcomes(repo_dir, state, outcomes, decided_by="user"):
 
     context = ask_log_context(repo_dir, state)
     for item, outcome in zip(state["asks"], outcomes, strict=False):
-        finding_id, new_finding_id_note = module.ask_outcome_finding_id(item)
-        logger_code, logger_output = run_command(
-            ["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-             f"finding_id={finding_id}", *module.ask_row_fields(context, item), f"ask_outcome={outcome}",
-             f"ask_decided_by={decided_by}"], repo_dir)
-        if logger_code != 0:
-            print(f"code-step: ask outcome for finding_id {finding_id} not logged: log-review-finding exited "
-                  f"{logger_code}: {script_utils.one_line(logger_output)}", file=sys.stderr)
-        elif new_finding_id_note:
-            print(f"code-step: {new_finding_id_note}", file=sys.stderr)
-
-
-def asks_coder_prompt(accepted_asks, also_text=""):
-    lines = []
-    if accepted_asks:
-        lines += ["Apply these review asks. The user accepted them. Make the change each one names and nothing else.",
-                  ""]
-    for number, (item, outcome, change_text) in enumerate(accepted_asks, 1):
-        location = item.get("file_line", "")
-        lines.append(f"{number}. [{outcome}] {ask_text(item)}"
-                     + (f" ({location})" if location else ""))
-        if change_text:
-            lines.append(f"   The user's change: {change_text}")
-        elif item.get("change"):
-            lines.append(f"   The proposed change: {item['change']}")
-    if also_text:
-        lines += ["", "Also do this, as the user instructed alongside the asks:", also_text]
-    lines += [
-        "",
-        "Run the typecheck, and lint and tests for only the files you changed, once, after all edits. "
-        f"If an ask turns out architectural, end your report with the line `{ENG_SPEC_MARKER}`.",
-        "For each ask whose change the code already makes, so that it needs no edit, add one line to your report: "
-        "`ALREADY-DONE: <ask number> — <file:line>`. For an ask that only asks you to run checks, when they pass "
-        "with no edit, the line is `ALREADY-DONE: <ask number> — `<command>` -> exit 0`. Add that line for no "
-        "other ask.",
-    ]
-    return "\n".join(lines)
+        outcome_row = review_asks.log_ask_outcome(ask_logger(), context, item, outcome, decided_by, repo_dir)
+        if outcome_row is None:
+            continue
+        if outcome_row.code != 0:
+            print(f"code-step: ask outcome for finding_id {outcome_row.finding_id} not logged: log-review-finding "
+                  f"exited {outcome_row.code}: {script_utils.one_line(outcome_row.output)}", file=sys.stderr)
+        elif outcome_row.new_finding_id_note:
+            print(f"code-step: {outcome_row.new_finding_id_note}", file=sys.stderr)
 
 
 def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
@@ -1011,33 +957,13 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
                   + review_sentence, prompt=asks_coder_prompt(accepted_asks, also_text), agent="coder", model=model)
 
 
-def split_asks_done_args(args):
-    # Outcome words in order, the text after each `--change` flag (one per modified ask, in order), and the text of
-    # `--also` joined by blank lines ("" when none). A flag with no text after it makes the change texts None.
-    outcomes = []
-    change_texts = []
-    also_texts = []
-    position = 0
-    while position < len(args):
-        if args[position] in ("--change", "--also"):
-            if position + 1 >= len(args):
-                return outcomes, None, ""
-            target = change_texts if args[position] == "--change" else also_texts
-            target.append(args[position + 1])
-            position += 2
-            continue
-        outcomes.append(args[position])
-        position += 1
-    return outcomes, change_texts, "\n\n".join(also_texts)
-
-
 def command_asks_done(repo_dir, state, args):
     outcome_args, decided_by = script_utils.pop_option(args, "--by")
     if decided_by is None:
         decided_by = "user"
     outcomes, given_changes, also_text = split_asks_done_args(outcome_args)
     if decided_by not in ("user", "session") or len(outcomes) != len(state["asks"]) \
-            or any(outcome not in ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
+            or any(outcome not in review_asks.ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
             or len(given_changes) != outcomes.count("modified"):
         ask_count = len(state["asks"])
         return emit("stop", f"{ASKS_DONE_USAGE} {ask_count} ask(s) wait: give {ask_count} outcome(s), in order.")

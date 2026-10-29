@@ -86,7 +86,11 @@ def already_done_ask_numbers(repo_dir, report):
 
 
 def every_accepted_ask_already_done(repo_dir, state, report):
-    accepted_ask_numbers = set(range(1, len(state["acceptedAsks"]) + 1))
+    accepted_asks = state.get("acceptedAsks")
+    if not accepted_asks:
+        return False
+
+    accepted_ask_numbers = set(range(1, len(accepted_asks) + 1))
     return accepted_ask_numbers <= already_done_ask_numbers(repo_dir, report)
 
 

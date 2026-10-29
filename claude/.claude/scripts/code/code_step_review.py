@@ -73,12 +73,9 @@ from code_step_core import (
 )
 from code_step_report import change_line, coder_message_without_gate_stamp
 from code_step_review_stops import is_capped_review, left_findings_open, stop_on_review_status
-from code_step_usage import DECIDE_COMMAND
 from script_utils import git_output, run_command
 from source_paths import is_counted_source
 
-PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
-DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 # The state each guarded verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped",
 # and the refusal text when the state is anything else. `start`, `tick` and `resume` run at any stage and are not in
 # the table. A review-loop resumed after the wait cap also counts for review-again, and a converged review of the
@@ -134,10 +131,6 @@ def decide_call(word):
     return f"`decide {word} --by user --ruling \"<the decision in one line>\"`"
 
 
-DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
-                  "place of `--by user`. A session ruling never changes the acceptance criteria.")
-
-
 def carried_question_lines(carried):
     # The findings the plan-impact round left open, shown under the question so the user sees them with the ruling.
     if not carried:
@@ -164,12 +157,12 @@ def emit_plan_impact_modal(impact, repo_dir, carried=()):
              "line, in your own words, as the --ruling text. Do not quote the user.",
              impact, "",
              *carried_question_lines(carried),
-             f"1. {PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "
+             f"1. {plan_format.PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "
              f"{decide_call('adopt')}",
-             f"2. {PLAN_IMPACT_OPTIONS[1]}: {decide_call('keep')}",
-             f"3. {PLAN_IMPACT_OPTIONS[2]}: talk it through here, then invoke Skill code with "
+             f"2. {plan_format.PLAN_IMPACT_OPTIONS[1]}: {decide_call('keep')}",
+             f"3. {plan_format.PLAN_IMPACT_OPTIONS[2]}: talk it through here, then invoke Skill code with "
              f"{decide_call('adopt')} or {decide_call('keep')}",
-             DECIDE_BY_NOTE)
+             plan_format.DECIDE_BY_NOTE)
 
 
 def record_deviation(repo_dir, state):
@@ -214,22 +207,23 @@ def decision_for_word(repo_dir, state, word):
     # discuss).
     if not word:
         return emit("stop", STAGE_GUARDS["decide"]["message"])
-    decision = DECISION_WORDS.get(word)
+    decision = plan_format.DECISION_WORDS.get(word)
     if decision is None:
         return emit("stop", "decide takes adopt, keep or discuss.")
     if decision == "Discuss":
         return ask_user(repo_dir, "discuss this disagreement between the code and the plan with the user in plain "
                         f"words. When the user chooses, invoke Skill code with {decide_call('adopt')} or "
-                        f"{decide_call('keep')}. {DECIDE_BY_NOTE}", state["impact"])
+                        f"{decide_call('keep')}. {plan_format.DECIDE_BY_NOTE}", state["impact"])
     return decision
 
 
 def ruling_problem(word, by, ruling_words):
     # The stop text for a ruling that lacks who made it or what it says, or None.
-    if by not in ("user", "session"):
-        return f"decide {word} needs --by user or --by session. Usage: `{DECIDE_COMMAND}`. {DECIDE_BY_NOTE}"
+    if not plan_format.is_ruling_by(by):
+        usage = plan_format.DECIDE_USAGE_STEM
+        return f"decide {word} needs --by user or --by session. Usage: `{usage}`. {plan_format.DECIDE_BY_NOTE}"
     if not ruling_words:
-        return (f"decide {word} needs the ruling's words: {decide_call(word)}. {DECIDE_BY_NOTE} "
+        return (f"decide {word} needs the ruling's words: {decide_call(word)}. {plan_format.DECIDE_BY_NOTE} "
                 "Hand back and ask the main session for them.")
     return None
 
@@ -262,7 +256,7 @@ def command_decide(repo_dir, state, args, ruling_by=None):
         return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
 
     record_ruling(repo_dir, state, decision, by, ruling_words, ruling_by)
-    if decision == PLAN_IMPACT_OPTIONS[0]:
+    if decision == plan_format.PLAN_IMPACT_OPTIONS[0]:
         return emit_plan_edit_dispatch(repo_dir, state)
     emit_review_dispatch(repo_dir, state)
 
@@ -861,7 +855,7 @@ def command_asks_done(repo_dir, state, args):
     if decided_by is None:
         decided_by = "user"
     outcomes, given_changes, also_text = split_asks_done_args(outcome_args)
-    if decided_by not in ("user", "session") or len(outcomes) != len(state["asks"]) \
+    if not plan_format.is_ruling_by(decided_by) or len(outcomes) != len(state["asks"]) \
             or any(outcome not in review_asks.ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
             or len(given_changes) != outcomes.count("modified"):
         ask_count = len(state["asks"])

@@ -40,6 +40,8 @@ overlap: "The scripted-review-loop-escapes watch is still open on the same revie
 
 - 48 tests failed before and pass after, including the named test, the ask and blocker cases on the JSON form, and a
   test that the agent's template parses with exactly the packet's keys. Old-form tests pin the fallback.
+- Review asked whether an unknown JSON key fails the parse. It goes to the trailer, as the free-text form did, so the
+  change adds no check.
 - Output tokens per packet on 20 test fixtures (regex BPE estimate): median 56 → 68.5, total 1639 → 1854 (+13%) as
   compact JSON. Indented JSON would be +28%, so the agent is told to write it compact.
 

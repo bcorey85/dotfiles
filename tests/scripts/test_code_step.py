@@ -160,6 +160,24 @@ def in_process_modules():
     return [code_step, *imported_modules]
 
 
+class FastClock:
+    # Stands in for the clock of an in-process call: a sleep returns at once and moves the clock on by its length.
+    def __init__(self):
+        self.slept = 0.0
+
+    def sleep(self, seconds):
+        self.slept += seconds
+
+    @contextlib.contextmanager
+    def running(self):
+        real_time = time.time
+        real_monotonic = time.monotonic
+        with (unittest.mock.patch("time.sleep", self.sleep),
+              unittest.mock.patch("time.time", lambda: real_time() + self.slept),
+              unittest.mock.patch("time.monotonic", lambda: real_monotonic() + self.slept)):
+            yield
+
+
 class CodeStepTest(unittest.TestCase):
     SESSION = "sess-1"
     GIT_IDENTITY: ClassVar[dict[str, str]] = {
@@ -823,6 +841,14 @@ class CodeStepTest(unittest.TestCase):
                 commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase(listed))
 
                 self.assertEqual([expected], commands)
+
+    def test_a_listed_manage_py_test_that_excludes_a_tag_is_taken_verbatim(self):
+        (self.repo / "manage.py").write_text("")
+        for listed in ("python manage.py test --exclude-tag slow", "python manage.py test --exclude-tag=slow"):
+            with self.subTest(listed=listed):
+                commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase(listed))
+
+                self.assertEqual([listed], commands)
 
     def test_a_phase_that_lists_a_whole_suite_pytest_keeps_pytest_in_a_django_repo(self):
         (self.repo / "manage.py").write_text("")
@@ -3954,9 +3980,14 @@ class CodeStepTest(unittest.TestCase):
 
     def wait_env(self, seconds, interval="0.1", waits=60):
         # The cap is `waits` waits from the dispatch. The default keeps a slow setup under suite load from reaching it;
-        # a test of the stop at the cap passes waits=3, the script's own multiple.
+        # a test of the stop at the cap passes waits=3.
         self.env.update(CODE_STEP_WAIT_SECONDS=str(seconds), CODE_STEP_POLL_SECONDS=interval,
                         CODE_STEP_WAIT_MULTIPLE=str(waits))
+
+    def script_wait_env(self):
+        # The script's own wait and cap, polled seldom: a test that uses them runs the wait on a FastClock.
+        self.env.pop("CODE_STEP_WAIT_SECONDS")
+        self.env["CODE_STEP_POLL_SECONDS"] = "30"
 
     def late_hook(self, delay, agent_type, message):
         timer = threading.Timer(delay, self.hook, args=(agent_type, message))
@@ -3987,6 +4018,34 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("coder", self.state()["stage"])
         self.hook("coder", self.CODER_REPORT)
         self.assertIn("AGENT: review-loop", self.step("resume"))
+
+    def test_a_resume_with_no_row_returns_before_claude_code_moves_the_call_to_the_background(self):
+        # Claude Code moves a subagent's Bash call to the background once it has run 180 seconds, and the fork then
+        # loses the verb's output. The script's own wait prints its wait line well before that.
+        self.begin_coder()
+        self.launch_the_pending_dispatch("a1", "coder")
+        self.script_wait_env()
+        clock = FastClock()
+
+        with clock.running():
+            out = self.step("resume")
+
+        self.assertIn("ACTION: wait", out)
+        self.assertLess(clock.slept, 170)
+
+    def test_the_script_s_own_waits_reach_the_cap_stop_only_after_25_minutes(self):
+        self.begin_coder()
+        self.launch_the_pending_dispatch("a1", "coder")
+        self.script_wait_env()
+        clock = FastClock()
+
+        outs = []
+        with clock.running():
+            while len(outs) < 20 and not any("ACTION: stop" in out for out in outs):
+                outs.append(self.step("resume"))
+
+        self.assertIn("ACTION: stop", outs[-1])
+        self.assertGreater(clock.slept, 25 * 60)
 
     def test_a_coder_row_from_before_the_dispatch_does_not_end_the_wait(self):
         self.begin_coder()

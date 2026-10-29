@@ -58,7 +58,8 @@ Each run also keeps <git dir>/code-step/runs/<run id>/events.jsonl and one promp
 hooks write only that log; the verbs read it and write state.json.
 
 The code is split in files that import one way: code_step_core (state, event log, hand-back matcher, output),
-code_step_boundary (criteria guard, verification runner, phase boundary), code_step_hooks, code_step_gates (gate
+code_step_verification (Automated Verification reader and runner), code_step_boundary (criteria guard, phase boundary,
+tick and verify), code_step_closing (skill-done), code_step_hooks, code_step_gates (gate
 commands), code_step_start (the start verb), code_step_report (reading a coder report), code_step_review
 (plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_asks (the asks route's
 words: ask listing, pre-set outcome, asks-done arguments, asks coder prompt, prior issues; ask ids and outcome rows
@@ -81,7 +82,6 @@ from code_step_boundary import (
     command_verify,
     finish_phase,
     settle_criteria_guard,
-    verification_format_failure,
 )
 from code_step_closing import command_skill_done_with_question
 from code_step_core import (
@@ -172,6 +172,7 @@ from code_step_start import (
     stopped_run_restart_instruction,
 )
 from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
+from code_step_verification import verification_format_failure
 from script_utils import run_command
 
 WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")

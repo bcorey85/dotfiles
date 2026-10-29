@@ -18,7 +18,7 @@ import sys
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
-import code_step_boundary
+import code_step_verification
 import plan_format
 import script_utils
 from criteria_verdict import item_verdict
@@ -155,7 +155,7 @@ def criteria_in_plan(lines, repo_dir):
         for _, line in plan_format.automated_verification_rows(section_lines):
             if plan_format.runs_no_command(line):
                 continue
-            command = code_step_boundary.verification_command(line, repo_dir)
+            command = code_step_verification.verification_command(line, repo_dir)
             criteria.append((f"{phase_id}.{len(criteria) + 1}", line, command, code_lines))
     return criteria
 

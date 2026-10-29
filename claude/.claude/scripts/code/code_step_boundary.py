@@ -1,34 +1,26 @@
 """code_step_boundary.py: the part of code_step.py that guards the plan's acceptance criteria and ends a phase: the
-saved criteria copy, the Automated Verification runner, the phase boundary and the closing verbs (skill-done, tick,
-verify).
+saved criteria copy, the phase boundary and the closing verbs tick and verify.
 
-Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step_gates, code_step_start,
-code_step_report, code_step_review, code_step. The phase-end block text is in code_step_phase_end."""
+Imports run one way: code_step_core, code_step_verification, code_step_boundary, code_step_closing, code_step_hooks,
+code_step_gates, code_step_start, code_step_report, code_step_review, code_step. The phase-end block text is in
+code_step_phase_end; the Automated Verification reader is in code_step_verification, and skill-done in
+code_step_closing."""
 import datetime
 import os
 import pathlib
 import re
 import shlex
-import shutil
 import time
 
 import plan_format
 import reviewed_tree
 import script_utils
-import shell_command
 from check_output import failing_test_quote
-from code_step_concentration import (
-    concentration_gate_position,
-    manual_gate_item_end,
-    missing_gate_item_lines,
-    with_manual_gate_lines,
-)
 from code_step_core import (
     INSTALLED_COMMAND,
     RESUME_LINE,
     RESUME_VERB,
     REVIEW_SAME_DIFF_AGAIN_LINE,
-    SCRIPTS_DIR,
     branch_label,
     clear_stop,
     emit,
@@ -42,41 +34,21 @@ from code_step_core import (
     run_session_id,
     save_state,
     say,
-    script_command,
     session_pin,
     set_stop,
 )
 from code_step_phase_end import block_a, block_b_or_c, manual_groups_of
 from code_step_usage import VERB_USAGES
-from criteria_verdict import item_verdict, without_leading_cd_and_env, without_negation
-from script_utils import git_output, run_command
+from code_step_verification import (
+    VERIFICATION_ITEM_SHAPE,
+    deferred_verification_items,
+    run_verification_commands,
+    verification_item_problem,
+)
+from script_utils import git_output
 
-VERIFY_TIMEOUT_SECONDS = 600
 VERIFICATION_OUTPUT_NAME = "verification-output.txt"
-WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"
-                         r"|(?:cd \S+ && )?npx (?:vitest|jest)(?: run)?|(?:python3 -m )?pytest|ruff check)$")
 TICKET_IN_NAME = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])")
-COMMAND_START = re.compile(r"^(?:" + script_utils.ENV_PREFIX.pattern + r")?"
-                           r"(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
-                           r"|cargo |go |deno |bun |uv |poetry |pipenv |pdm |tsc\b|eslint |vitest|jest|mvn |gradle |\./"
-                           r"|dotnet |docker |just |rake |bundle |ruby |php |composer |mix |swift |sbt |bazel |tox\b"
-                           r"|mypy |pyright|sh )")
-# Programs that a prose span can start with but that are never a check: they start a session, never end or wait for
-# input. `tail` is one only when it follows a file (see TAIL_FOLLOWS).
-NOT_A_CHECK_PROGRAMS = ("claude", "yes", "watch", "top", "htop", "less", "more", "vi", "vim", "nano", "sleep")
-TAIL_FOLLOWS = re.compile(r"^(?:-[A-Za-z0-9]*[fF][A-Za-z0-9]*|--follow(?:=\w+)?)$")
-# A shell run on a code string (`sh -c '...'`, `bash -ec '...'`) is not a check command: see hands_a_shell_its_code.
-SHELL_CODE_PROBLEM = ("it hands a shell its code with `-c`, which the plan format forbids (the shell hook also blocks "
-                      "it when run by hand); write the command plainly, or put the pipeline in an executable repo "
-                      "script and run `path/to/script args`")
-VERIFICATION_ITEM_SHAPE = (
-    "Each Automated Verification item is one line in one of three shapes. (1) One backticked command that starts with "
-    "a program on PATH (with at least one argument) or an executable file in the repo, for example the line "
-    "'- [ ] **Name**: what it checks - `npm test`'. A check that needs a variable assignment, `&&`, a pipe or a "
-    "subshell goes in an executable repo script, run as `path/to/script args`; the script's comments name no ticket "
-    "or plan path. Never wrap a command in `sh -c` or `bash -c`. (2) N/A, for example '- [ ] N/A - docs only'. "
-    "(3) A tag that says CI or a person runs it, for example '- [ ] **CI-verified**: the pipeline runs it' or "
-    "'- [ ] Human-only: look at the page'. This script never runs the third shape.")
 
 
 # ---------- acceptance criteria guard ----------
@@ -176,191 +148,6 @@ def stop_while_plan_edit_coder_is_out(repo_dir, state, verb_text):
          f"`! {INSTALLED_COMMAND} {RESUME_VERB}` from the repo root first: it waits for the "
          f"report and restores the criteria. Then run `{verb_text}` again. Tell the user.")
     return True
-
-
-# ---------- verification runner ----------
-
-def deferred_verification_items(phase_section):
-    # (tag, item text) for each Automated Verification item the plan leaves to CI or to a person, in file order.
-    deferred = []
-    for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
-        tag = plan_format.deferred_verification_tag(line)
-        if not tag:
-            continue
-
-        item_text = plan_format.automated_item_text(line)
-        deferred.append((tag, item_text))
-    return deferred
-
-
-def never_returns(words):
-    # True when the command in `words` is a program that never ends or waits for input, so it cannot be a check.
-    program_name = pathlib.PurePath(words[0]).name
-    if program_name in NOT_A_CHECK_PROGRAMS:
-        return True
-
-    return program_name == "tail" and any(TAIL_FOLLOWS.match(word) for word in words[1:])
-
-
-def starts_like_a_program_here(span, repo_dir):
-    # A span COMMAND_START does not know is a command when it starts with a path to an executable file of the repo,
-    # or with a program on PATH that has at least one argument after it (a program word alone is how prose names a
-    # tool, and a bare word is looked up on PATH only, never in the repo).
-    words = script_utils.without_leading_env_assignments(span).split()
-    if not words:
-        return False
-
-    program = words[0]
-    has_slash = "/" in program
-    if has_slash and repo_dir is not None and script_utils.is_executable_file_inside(repo_dir, program):
-        return True
-
-    if len(words) < 2 or never_returns(words):
-        return False
-
-    # A relative path with a slash is looked up from the working directory, not PATH: only the repo-file rule above
-    # may accept it, and that rule keeps it inside the repo.
-    if has_slash and not pathlib.PurePath(program).is_absolute():
-        return False
-
-    return shutil.which(program) is not None
-
-
-def first_command_span(line, repo_dir):
-    # The first backticked span that starts with a known program, after any leading NAME=value assignments, which the
-    # shell passes to the command; when none does, the first span that starts with a program of this machine. The
-    # line may continue after it ("`npm run build` exits 0.").
-    spans = [without_negation(span) for span in script_utils.backticked_spans(line)]
-    for span in spans:
-        if COMMAND_START.match(span):
-            return span
-
-    for span in spans:
-        if starts_like_a_program_here(span, repo_dir):
-            return span
-
-    return None
-
-
-def hands_a_shell_its_code(span):
-    # True when the span runs a shell on a code string, as `sh -c '...'`, `bash -euo pipefail -c '...'` or
-    # `timeout 60 bash -c '...'`.
-    command = without_leading_cd_and_env(span)
-    words = shell_command.segment_words(command)
-    code = shell_command.shell_code_argument(words)
-
-    return code is not None
-
-
-def verification_command(line, repo_dir=None):
-    # The command an Automated Verification item runs, or None when it names none. A command that hands a shell its
-    # code is none: the runner already runs each command in a shell, and the shell hook blocks the wrapper wherever
-    # the command is run by hand.
-    span = first_command_span(line, repo_dir)
-    if span is None or hands_a_shell_its_code(span):
-        return None
-    return span
-
-
-def verification_item_problem(line, repo_dir):
-    # Why an Automated Verification item cannot run, or None when it runs, says there is nothing to run or is left to
-    # CI or a person. The write-time check of a plan and the stop after a phase use this one reading.
-    if plan_format.runs_no_command(line):
-        return None
-
-    span = first_command_span(line, repo_dir)
-    if span is not None and hands_a_shell_its_code(span):
-        return SHELL_CODE_PROBLEM
-    if span is not None:
-        return None
-
-    spans = script_utils.backticked_spans(line)
-    if not spans:
-        return "it has no backticked command and is not marked N/A, CI-verified or human-only"
-
-    start_words = []
-    for span in spans:
-        first_word = script_utils.first_command_word(span) or span
-        start_words.append(f"`{first_word}`")
-    return ("no backticked span starts with a program on PATH (with an argument) or an executable file in the repo "
-            f"(it starts with {', '.join(start_words)})")
-
-
-def phase_verification_rows(plan_lines, section, closing, plan_name):
-    # (index, line) of the checkbox items to check in one phase section, indexes relative to the section. A closing
-    # phase has no Automated Verification heading, so every checkbox line in it counts.
-    section_lines = plan_lines[section["start"]:section["end"]]
-    if closing:
-        return [(index, line) for index, line in enumerate(section_lines) if plan_format.AUTOMATED_ITEM.match(line)]
-    return plan_format.automated_verification_rows(section_lines, plan_name, section["start"] + 1, strict=True)
-
-
-def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
-    # The write-time message for open phases whose Automated Verification items cannot run, or None when all can. A
-    # closing phase is checked by its skill, which runs no verification command, so only its boxes that diff a moving
-    # branch name are reported.
-    problems = []
-    for entry in entries:
-        if not entry["open"]:
-            continue
-
-        section = plan_format.phase_section(plan_lines, entry["number"])
-        if section is None:
-            continue
-
-        try:
-            rows = phase_verification_rows(plan_lines, section, entry["closing"], plan_name)
-        except plan_format.PlanFormatError as error:
-            problems.append(str(error))
-            continue
-
-        for index, line in rows:
-            problem = None
-            if plan_format.moving_base_diff(line):
-                problem = plan_format.MOVING_BASE_DIFF_FIX
-            elif not entry["closing"]:
-                problem = verification_item_problem(line, repo_dir)
-            if problem:
-                problems.append(f"{plan_name}:{section['start'] + index + 1}: Phase {entry['number']}: "
-                                f"{line.strip()[:100]} - {problem}")
-
-    if not problems:
-        return None
-
-    return ("The plan has Automated Verification items that cannot run. Every open phase is checked at each start, "
-            "so a later phase's line stops the first phase's start. Fix each line:\n" + "\n".join(problems) + "\n"
-            + VERIFICATION_ITEM_SHAPE)
-
-
-def log_prohibition_scan(repo_dir, command, verdict):
-    run_command(["bash", str(SCRIPTS_DIR / "telemetry" / "log-scan"), f"repo={repo_dir.name}", "scan=prohibition",
-                 "stage=code-phase", f"exit={verdict.code}", f"candidates={verdict.hits}",
-                 f"confirmed={verdict.hits}", f"branch={branch_label(repo_dir)}", f"note={command[:120]}"], repo_dir)
-
-
-def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
-    # A whole-suite command is left to the review loop's own run unless the caller says nothing else will run it.
-    results = []
-    skipped = []
-    unparsed = []
-    timeout = int(os.environ.get("CODE_STEP_VERIFY_TIMEOUT", VERIFY_TIMEOUT_SECONDS))
-    for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
-        if plan_format.runs_no_command(line):
-            continue
-        command = verification_command(line, repo_dir)
-        if command is None:
-            unparsed.append(line.strip())
-            continue
-        is_whole_suite = WHOLE_SUITE.match(script_utils.without_leading_env_assignments(command))
-        if is_whole_suite and not run_whole_suites:
-            skipped.append(command)
-            continue
-        code, output = run_command(command, repo_dir, timeout=timeout)
-        verdict = item_verdict(command, line, code, output)
-        if verdict.hits is not None:
-            log_prohibition_scan(repo_dir, command, verdict)
-        results.append((command, verdict.code, verdict.output))
-    return results, skipped, unparsed
 
 
 # ---------- phase boundary ----------
@@ -810,108 +597,6 @@ def finish_phase(repo_dir, state, skip_verification=False, verification=None):
 
 
 # ---------- closing verbs ----------
-
-def evidence_command_shape(item_count):
-    # The `skill-done pass` line with one `--evidence` placeholder per open item.
-    placeholders = " ".join(f'--evidence "<item {number} evidence>"' for number in range(1, item_count + 1))
-    return script_command(f"skill-done pass {placeholders}")
-
-
-def evidence_request_lines(items):
-    # What the session records at `skill-done pass`: each open Success Criteria item, numbered, and the command.
-    if not items:
-        return []
-    numbered_items = [f"{number}. {item['text']}" for number, item in enumerate(items, 1)]
-    return [
-        "Open Success Criteria items. Give one `--evidence` per item, in this order; the script checks each box and "
-        "writes the evidence under it:",
-        *numbered_items,
-        f"Run `{evidence_command_shape(len(items))}`. Each evidence states what its item asks for, with the numbers "
-        "where it asks for counts (for example both concentration-gate counts, the test-audit denominator).",
-    ]
-
-
-def phase_open_items(plan_lines, number):
-    # The open Success Criteria items of one phase's section, and the section's first line index in the plan.
-    section = plan_format.phase_section(plan_lines, number)
-    if section is None:
-        return [], 0
-    return plan_format.open_success_items(plan_lines[section["start"]:section["end"]]), section["start"]
-
-
-def with_simplify_lines(items, evidence, simplify_done_texts):
-    # `evidence` with each given Done text added as a Done line under the concentration-gate item's evidence.
-    if not simplify_done_texts:
-        return evidence
-
-    simplify_lines = [f"\n  {plan_format.DONE_PREFIX}{text}" for text in simplify_done_texts]
-
-    gate_position = concentration_gate_position(items)
-    combined = list(evidence)
-    combined[gate_position] += "".join(simplify_lines)
-    return combined
-
-
-def stop_for_missing_gate_item(items, simplify_done_texts, rerun_command):
-    # Emits a stop and returns True when a simplify record has no open concentration-gate item to be written under.
-    # `rerun_command` is the refused `skill-done pass` when the gate triggered, else None.
-    if not simplify_done_texts or concentration_gate_position(items) is not None:
-        return False
-
-    emit("stop", *missing_gate_item_lines(rerun_command))
-    return True
-
-
-def record_closing_evidence(repo_dir, state, evidence, simplify_done_texts, rerun_command):
-    # Writes each open item's evidence into the plan, and the simplify Done texts under the concentration-gate item.
-    # Returns False, after a stop, when the evidence count does not match the open items or a simplify record has no
-    # open concentration-gate item; nothing is written then.
-    plan_path = repo_dir / state["plan"]
-    if not plan_path.is_file():
-        return True
-
-    plan_lines = plan_path.read_text().split("\n")
-    items, offset = phase_open_items(plan_lines, state["phase"])
-
-    manual_gate_end = None
-    if simplify_done_texts and concentration_gate_position(items) is None:
-        manual_gate_end = manual_gate_item_end(plan_lines, state["phase"])
-    if manual_gate_end is None and stop_for_missing_gate_item(items, simplify_done_texts, rerun_command):
-        return False
-
-    if len(items) != len(evidence):
-        listing = evidence_request_lines(items) or ["The phase has no open Success Criteria items: run "
-                                                    "`skill-done pass` with no `--evidence`."]
-        emit("stop", f"skill-done pass got {len(evidence)} --evidence values for {len(items)} open items. Nothing "
-             "was changed.", *listing)
-        return False
-
-    shifted = [{**item, "index": item["index"] + offset, "end": item["end"] + offset} for item in items]
-    if manual_gate_end is not None:
-        plan_lines, shifted = with_manual_gate_lines(plan_lines, shifted, manual_gate_end, simplify_done_texts)
-        simplify_done_texts = ()
-    if not items and manual_gate_end is None:
-        return True
-
-    recorded = with_simplify_lines(items, evidence, simplify_done_texts)
-    plan_path.write_text("\n".join(plan_format.write_item_evidence(plan_lines, shifted, recorded)))
-    return True
-
-
-def command_skill_done(repo_dir, state, args, simplify_done_texts=(), rerun_command=None):
-    words, evidence = script_utils.pop_repeated_option(args, "--evidence")
-    verdict = words[0].lower() if words else "pass"
-    if verdict not in ("pass", "fail"):
-        return emit("stop", "skill-done takes pass or fail.")
-    if verdict == "fail":
-        set_stop(state)
-        save_state(repo_dir, state)
-        return emit("stop", "The closing phase's check failed (a MISSING criterion, or an unmet Success Criteria). "
-                    "Do not mark the phase done. Report what failed to the user.")
-    if not record_closing_evidence(repo_dir, state, evidence, simplify_done_texts, rerun_command):
-        return
-    finish_phase(repo_dir, state, skip_verification=True)
-
 
 def tick_entry_stop(state, plan, number):
     # The stop text when the phase cannot be ticked, or None when it can.

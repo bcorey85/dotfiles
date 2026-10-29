@@ -1,8 +1,8 @@
 """code_step_hooks.py: the hook commands of code_step.py. The hooks write the run's event log and deny or block the
 fork's calls; none writes state.json.
 
-Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step_gates, code_step_start,
-code_step_report, code_step_review, code_step."""
+Imports run one way: code_step_core, code_step_verification, code_step_boundary, code_step_closing, code_step_hooks,
+code_step_gates, code_step_start, code_step_report, code_step_review, code_step."""
 import collections
 import datetime
 import json
@@ -13,7 +13,6 @@ import time
 
 import plan_format
 import script_utils
-from code_step_boundary import verification_format_failure
 from code_step_core import (
     BASH_TIMEOUT_MS,
     CODER,
@@ -42,6 +41,7 @@ from code_step_core import (
     stop_kind,
     timed_command,
 )
+from code_step_verification import verification_format_failure
 
 HookCall = collections.namedtuple("HookCall", "event repo state run_id session_id tool_input")
 

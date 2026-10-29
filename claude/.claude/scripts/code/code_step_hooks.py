@@ -277,8 +277,9 @@ def command_launch_hook():
             "an item could not be run. A resume cannot fix that: the /code fork has no Edit tool and "
             "dispatches no coder for this stop. Fix the cause yourself. Dispatch the fix (a coder or /debug "
             "for a failing command, at most 3 attempts), or edit the plan for an item that could not be run, "
-            "then invoke Skill code with `verify`. On the user's word only, `tick <phase>` instead marks the "
-            "phase done; then resume starts the next phase.")
+            "then invoke Skill code with `verify`. On the user's word only, `tick <phase>` marks the "
+            "phase done once the phase's verification commands pass (an item that could not be run is left to the "
+            "user's word); then resume starts the next phase.")
     except Exception as error:
         print(f"code-step launch-hook: {error}", file=sys.stderr)
 
@@ -381,9 +382,13 @@ def command_plan_hook():
 
 
 def plan_write_failure(plan, plan_lines, plan_name, repo_dir):
-    # The first message that stops a plan write: Phase Status, then Manual Verification, then Automated Verification.
+    # The first message the plan hook prints: Phase Status, then Manual Verification, then Automated Verification.
+    if plan["failures"] and all(failure["kind"] in plan_format.MID_EDIT_KINDS for failure in plan["failures"]):
+        return plan_format.plan_mid_edit_message(plan, plan_name)
+
     if plan["failures"]:
         return plan_format.plan_failure_message(plan, plan_name)
+
     manual_failure = plan_format.manual_format_failure(plan_lines, plan_name)
     if manual_failure:
         return manual_failure

@@ -34,6 +34,7 @@ from code_step_core import (
     emit,
     file_hashes,
     is_dispatch_open,
+    load_aborted_plan_state,
     load_handback,
     load_state,
     repo_root_or_exit,
@@ -337,7 +338,8 @@ def log_prohibition_scan(repo_dir, command, verdict):
                  f"confirmed={verdict.hits}", f"branch={branch_label(repo_dir)}", f"note={command[:120]}"], repo_dir)
 
 
-def run_verification_commands(repo_dir, phase_section):
+def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
+    # A whole-suite command is left to the review loop's own run unless the caller says nothing else will run it.
     results = []
     skipped = []
     unparsed = []
@@ -349,7 +351,8 @@ def run_verification_commands(repo_dir, phase_section):
         if command is None:
             unparsed.append(line.strip())
             continue
-        if WHOLE_SUITE.match(script_utils.without_leading_env_assignments(command)):
+        is_whole_suite = WHOLE_SUITE.match(script_utils.without_leading_env_assignments(command))
+        if is_whole_suite and not run_whole_suites:
             skipped.append(command)
             continue
         code, output = run_command(command, repo_dir, timeout=timeout)
@@ -641,14 +644,19 @@ def save_verification_output(repo_dir, state, failed):
     return output_file
 
 
+def verification_failure_lines(failed, errors_suffix=""):
+    failure_lines = []
+    for command, code, output in failed:
+        quote = failing_test_quote(output, output[-400:], errors_suffix) or "(no output)"
+        failure_lines.append(f"- `{command}` exit {code}: {quote}")
+    return failure_lines
+
+
 def stop_for_failed_commands(repo_dir, state, failed):
     output_file = save_verification_output(repo_dir, state, failed)
     set_stop(state, "verification")
     save_state(repo_dir, state)
-    failure_lines = []
-    for command, code, output in failed:
-        quote = failing_test_quote(output, output[-400:], "\n(full output in the output file)")
-        failure_lines.append(f"- `{command}` exit {code}: {quote}")
+    failure_lines = verification_failure_lines(failed, "\n(full output in the output file)")
 
     emit("stop", "Automated Verification failed. Do not mark the phase done. Report to the user:", *failure_lines,
          f"The full output of each failed command is in {output_file}; give that path to /debug.",
@@ -935,12 +943,36 @@ def tick_plan_stop(repo_dir, state, args):
     return tick_entry_stop(state, plan, args[0])
 
 
+def stop_for_failed_tick_verification(number, failed):
+    # The refusal when a command of the phase's Automated Verification fails at `tick`. Nothing is marked or saved.
+    failure_lines = verification_failure_lines(failed)
+
+    emit("stop", f"tick refused: Automated Verification of Phase {number} failed. Do not mark the phase done. "
+         "Report to the user:", *failure_lines,
+         "Fix the failure, or have the user correct the phase's Automated Verification line in the plan, then run "
+         "`tick` again.")
+
+
+def tick_verification_failures(repo_dir, state, number):
+    # The failed (command, exit code, output) of the phase's Automated Verification commands, run now, and how many
+    # commands ran. Whole-suite commands run too: after a stop or an abort nothing else ran the suite. An item that
+    # names no command is left to the user, whose word `tick` is.
+    plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+    section = plan_format.phase_text(plan_lines, number) or ""
+    verify_results, _, _ = run_verification_commands(repo_dir, section, run_whole_suites=True)
+    failed = [(command, code, output) for command, code, output in verify_results if code != 0]
+    return failed, len(verify_results)
+
+
 def command_tick(args):
-    # The user finished a phase outside /code. The main session runs this only on the user's word.
+    # The user finished a phase outside /code. The main session runs this only on the user's word. A run stopped in
+    # review, or dropped by `abort`, can still be ticked: the verification commands decide when the phase lists any;
+    # otherwise the user's word does.
     repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
-    state = load_state(repo_dir)
-    has_one_phase_arg = state is not None and state.get("plan") and len(args) == 1
+    live_state = load_state(repo_dir)
+    state = live_state or load_aborted_plan_state(repo_dir)
+    has_one_phase_arg = live_state is not None and live_state.get("plan") and len(args) == 1
     if has_one_phase_arg and stop_while_plan_edit_coder_is_out(repo_dir, state, "tick " + " ".join(args)):
         return
 
@@ -949,14 +981,25 @@ def command_tick(args):
         return emit("stop", stop_text)
 
     number = args[0]
+    failed, commands_run = tick_verification_failures(repo_dir, state, number)
+    if failed:
+        return stop_for_failed_tick_verification(number, failed)
+
     criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
     if criteria_message:
         say(repo_dir, criteria_message)
 
     plan_path = repo_dir / state["plan"]
     plan_format.mark_phase_done(plan_path, number)
+    if commands_run:
+        verification_note = f"its {commands_run} Automated Verification command(s) passed at `tick`."
+        scope_note = "outside the coder and review steps of /code"
+    else:
+        verification_note = "no Automated Verification command ran at `tick`."
+        scope_note = "outside the coder, review and verification steps of /code"
     plan_format.append_deviation(plan_path, [f"- {time.strftime('%Y-%m-%d')} (Phase {number}): marked done with "
-                                             "`tick`, outside the coder, review and verification steps of /code."])
+                                             f"`tick`, {scope_note}; {verification_note}"])
+    clear_stop(state)
     state.update({"stage": "done", "phase": number, "autoAdvance": False, "commitFiles": [], "commitLine": ""})
     state.pop("dispatchAt", None)
     save_state(repo_dir, state)

@@ -63,8 +63,9 @@ the cap stops a reviewer, never a coder; a coder change after the last reviewer 
   - `spec_iter=N` (default `spec_iter=0`) — **post-convergence specialist re-entries** only (Step 6b bullet 4: `[security]`, `[perf]`, `[smell]`). **If `spec_iter >= 2` when a specialist re-entry comes due, do not dispatch it** (two re-entries are the budget; checked before dispatch, same as `iter`) — return `cap-reached` with those findings in `findings_remaining` instead. A specialist re-entry never increments `iter`, and a correctness round never increments `spec_iter`.
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
+- **`carried-findings`**: each line is open from an earlier review. Pass them to every reviewer. Each one that still holds is a finding of this round. Your packet accounts for every carried line: in `fixed[]`, in `skipped_fp[]` with the reason, or in `findings_remaining[]`.
 
-- **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the user's ruling. Pass it to every reviewer as the standard the code must meet. Never return it as `plan-impact`; return `plan-impact` only for a disagreement the ruling does not settle.
+- **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the ruling, the user's or the session's by rule. Pass it to every reviewer as the standard the code must meet. Never return it as `plan-impact`; return `plan-impact` only for a disagreement the ruling does not settle.
 
 ## Step 2: Determine review scope
 

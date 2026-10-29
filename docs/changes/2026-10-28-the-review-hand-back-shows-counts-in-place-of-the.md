@@ -3,7 +3,7 @@ type: "Change"
 title: "The review hand-back shows counts in place of the fixed nit and skipped lists"
 description: "handback.render drops the Fixed, Nits and Skipped lists from the user text of /review, /fix and code_step and prints one count line, such as Fixed 4, nits 2, skipped 1. Open blockers (the stop statuses), remaining and deferred findings, blocked agents, asks, check lines and the class-closure line stay; a fixed blocker is counted under Fixed. The logged rows are unchanged."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T20:39:38-05:00"}
-seq: 225
+seq: 234
 kind: "user-rule"
 components: ["script/handback"]
 evidence: ["judgment"]

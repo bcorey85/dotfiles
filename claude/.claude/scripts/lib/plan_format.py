@@ -54,7 +54,9 @@ AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", 
 PLAN_IMPACT_OPENING = re.compile(r"plan[-_ ]?impact(?![*`_]*:[ \t*`_]*yes\b)", re.I)
 BELOW_CRITERIA_RULING = ("No acceptance criterion changes, so the code wins: the plan follows the code. Adopted by "
                          "rule; no one was asked.")
-PLAN_IMPACT_HEADER_WORD = re.compile(r"plan[-_ ]?impact[*`_]*[ \t]*:", re.I)
+PLAN_IMPACT_HEADER_WORD = re.compile(r"[*`_]*plan[-_ ]?impact[*`_]*[ \t]*:", re.I)
+# The `acceptance_criteria:` clause with the marks and separators before it, so removing it leaves no stray dash.
+AC_CHANGE_CLAUSE = re.compile(r"[\s;,—\N{EN DASH}-]*[*`_]*" + AC_CHANGE_LINE.pattern, re.I)
 DEVIATION_ENTRY = re.compile(rf"^- \d{{4}}-\d\d-\d\d(?: \(Phase ({PHASE_ID})\))?:")
 DEVIATION_RULING_PREFIX = "  The ruling: "
 STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
@@ -700,13 +702,16 @@ def changes_acceptance_criteria(impact):
     return len(answers) < impacts or any(answer != "none" for answer in answers)
 
 
-def below_criteria_ruling(impact):
-    """The ruling for a plan change that changes no acceptance criterion, with what the plan assumed and what the code
-    does, on one line."""
+def below_criteria_summary(impact):
+    """What the plan assumed and what the code does, on one line."""
     without_marks = PLAN_IMPACT_HEADER_WORD.sub(" ", impact)
-    disagreement = AC_CHANGE_LINE.sub(" ", without_marks)
-    summary = script_utils.one_line(disagreement, limit=400).strip(" ;,—-")
-    return f"{BELOW_CRITERIA_RULING} {summary}"
+    disagreement = AC_CHANGE_CLAUSE.sub(" ", without_marks)
+    return script_utils.one_line(disagreement, limit=400).strip(" ;,—-")
+
+
+def below_criteria_ruling(impact):
+    """The ruling for a plan change that changes no acceptance criterion, with its summary."""
+    return f"{BELOW_CRITERIA_RULING} {below_criteria_summary(impact)}"
 
 
 def below_criteria_deviations(plan_text, phase=None):

@@ -3,7 +3,7 @@ type: "Change"
 title: "The session shows each adopted plan deviation, and a later review drops a stale one"
 description: "A plan impact adopted below the acceptance criteria prints one deviation line, with no question: in code_step's say.md at phase end and run end, and in the /review and /fix closing block. Adopted deviations carry into a re-dispatch only when the dispatch prompt holds the resolved plan_impact; any other review shows none."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T20:39:30-05:00"}
-seq: 224
+seq: 233
 kind: "user-rule"
 components: ["script/review-fix", "script/handback", "script/code-step", "script/plan-format", "skill/fix", "skill/review", "agent/code-reviewer", "agent/review-loop"]
 evidence: ["judgment"]
@@ -16,9 +16,9 @@ unmeasured: ""
 
 ## Change
 
-- `plan_format`: `below_criteria_ruling` appends the disagreement summary to `BELOW_CRITERIA_RULING`; `below_criteria_deviations` lists a plan's adopted deviations, by phase.
+- `plan_format`: `below_criteria_summary` is the disagreement on one line, `below_criteria_ruling` prefixes it with `BELOW_CRITERIA_RULING`; the closing block lists the summary; `below_criteria_deviations` lists a plan's adopted deviations, by phase.
 - `code_step_boundary`: the phase-end hand-back lists the phase's adopted deviations. The run-end hand-back lists every phase's, headed "this plan".
-- `review_fix.present_plan_impact`: a block that changes no acceptance criterion prints `ACTION: redispatch` with "Show the user this line, and ask nothing: Plan deviation adopted, no question asked: ...". The closing block of the re-dispatched run lists the adopted deviations.
+- `review_fix.present_plan_impact`: a block that changes no acceptance criterion prints `ACTION: redispatch` with "Show the user this line, and ask nothing: Plan deviation adopted: ...". The closing block of the re-dispatched run lists the adopted deviations.
 - `handback`: a dispatch row records `resolved_plan_impact` when its prompt carries `plan_impact: RESOLVED`. `review_fix.new_state` carries adopted deviations only into such a dispatch; any other review drops them.
 - `/fix` and `/review`: the `redispatch` action shows the deviation line and asks nothing.
 - opencode `code-reviewer` and `review-loop` ports gain the `acceptance_criteria:` line and the carried findings.
@@ -29,7 +29,7 @@ unmeasured: ""
 
 ## Result
 
-- New tests: the phase-end and run-end deviation tests (test_code_step), the deviation shown and carried and the unrelated review after an abandoned re-dispatch (test_review_fix_script), `BelowCriteriaDeviationTest` (test_plan_format).
+- New tests: the phase-end and run-end deviation tests (test_code_step), the deviation shown and carried and the unrelated review after an abandoned re-dispatch (test_review_fix_script), `BelowCriteriaDeviationTest` (test_plan_format), the summary dropping bold marks before the header word with no stray dash (test_plan_format), and two plan impacts adopted across one re-dispatch both listed in the closing block (test_review_fix_script).
 
 ## Watch
 

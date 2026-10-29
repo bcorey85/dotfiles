@@ -389,7 +389,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("ask-user-plan-impact", output)
         self.assertNotIn("AskUserQuestion", output)
         self.assertIn("ACTION: redispatch", output)
-        self.assertIn("Plan deviation adopted, no question asked: No acceptance criterion changes, so the code wins",
+        self.assertIn("Plan deviation adopted: No acceptance criterion changes, so the code wins",
                       output)
         self.assertIn("assumed: the queue is at-least-once", output)
         self.assertIn("plan_impact: RESOLVED - Adopt plan change. The session ruled, not the user.", output)
@@ -400,12 +400,29 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
         self.assertIn("### Plan deviations adopted (the code won; no acceptance criterion changed)", output)
-        self.assertIn("- No acceptance criterion changes, so the code wins", output)
-        self.assertIn("assumed: the queue is at-least-once", output.split("### Plan deviations adopted", 1)[1])
+        self.assertIn("- assumed: the queue is at-least-once", output.split("### Plan deviations adopted", 1)[1])
 
         code, output = self.packet(CLEAN_EMPTY)
         self.assertEqual(code, 0, output)
         self.assertNotIn("Plan deviations adopted", output)
+
+    def test_two_plan_impacts_adopted_across_one_redispatch_are_both_listed_in_the_closing_block(self):
+        first_impact = PLAN_IMPACT + "    acceptance_criteria: none\n"
+        second_impact = first_impact.replace("the queue is at-least-once", "the cache is write-through")
+        resolved_prompt = "mode: review-first\nplan_impact: RESOLVED - Adopt plan change.\niter=1"
+        self.packet(first_impact)
+        self.dispatch(prompt=resolved_prompt)
+        self.hand_back(second_impact, agent_id="a1")
+        code, output = self.packet("")
+        self.assertIn("ACTION: redispatch", output)
+        self.dispatch(prompt=resolved_prompt)
+        self.hand_back(CONVERGED, agent_id="a2")
+
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        deviations = output.split("### Plan deviations adopted", 1)[1]
+        self.assertIn("assumed: the queue is at-least-once", deviations)
+        self.assertIn("assumed: the cache is write-through", deviations)
 
     def test_an_unrelated_review_after_an_abandoned_redispatch_shows_no_adopted_deviation(self):
         no_criterion = PLAN_IMPACT + "    acceptance_criteria: none\n"

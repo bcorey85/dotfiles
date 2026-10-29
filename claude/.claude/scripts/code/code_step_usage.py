@@ -18,6 +18,9 @@ VERB_USAGES = {
                   '<accepted|rejected|modified>...\n'
                   'One outcome per ask, in order. --also carries other work the user named alongside the outcomes '
                   'to the coder.'),
+    "correct-ruling": ('usage: code_step.py correct-ruling [--by <user|session>] [--also "<text>"] '
+                       '<accepted|rejected|modified>...\n'
+                       'The same words as asks-done, to correct the rulings while the asks coder runs.'),
     "skill-done": ('usage: code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...\n'
                    'A closing phase\'s skill returned.'),
     "verify": ("usage: code_step.py verify\nRuns the phase gates and closes the phase, after a failed Automated "
@@ -26,6 +29,8 @@ VERB_USAGES = {
                      "Dispatches the review loop again on the same diff, after a stop that names it."),
     "tick": "usage: code_step.py tick <phase id>\nMarks a phase done that the user finished outside /code.",
     "abort": "usage: code_step.py abort\nEnds the open run on purpose. The working tree stays as it is.",
+    "guide": ('usage: code_step.py guide "<text>"\nRecords the main session\'s guidance in the open run. Every later '
+              'coder and review dispatch carries it. It changes neither the task nor the plan.'),
     "status": "usage: code_step.py status\nPrints the saved state.",
     "plan": "usage: code_step.py plan check [--final]|parse <path>",
 }

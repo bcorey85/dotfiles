@@ -164,6 +164,12 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
         out = self.stop(records, last_assistant_message=packet)
         self.assertIn("No passed full_check.py result", json.loads(out)["reason"])
 
+    def test_a_check_the_phase_declares_expected_red_counts_as_run(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+                   *full_check_run("full check: not run (expected red until Phase 3)\n"
+                                   "expected red: `make test` until Phase 3")]
+        self.assertEqual(self.stop(records), "")
+
     def test_full_check_after_reviewed_coder_passes(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),

@@ -31,6 +31,8 @@ import script_utils
 DONE_PREFIX = "- Done: "
 # A `path/with/a/folder.ext` in backticks, with an optional :line or :start-end suffix inside the ticks.
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
+FILE_ENTRY = re.compile(r"^\s*(?:[-*]\s+)?\*\*Files?\*\*:?")
+TOP_LEVEL_BULLET = re.compile(r"^[-*]\s+")
 PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"
 PHASE_HEADING = re.compile(rf"^(#{{2,4}})\s+Phase\s+({PHASE_ID})(?![A-Za-z0-9])")
 MANUAL_HEADING = re.compile(r"^(#{1,6})\s+manual verification\b(.*)$", re.I)
@@ -139,6 +141,32 @@ def phase_section(lines, phase_id):
     """The first section of the phase with this exact id as {"start", "level", "title", "end"}, or None."""
     spans, _ = phase_spans(lines)
     return next((section for section_id, section in spans if section_id == phase_id), None)
+
+
+def file_entry_paths(plan_lines, section):
+    """The paths a section's Changes Required entries name: every backticked path on a `**File**:` or `**Files**:`
+    line, and the first one of each top-level bullet in the list under a `**Files**:` line that names none."""
+    if section is None:
+        return set()
+
+    fenced = script_utils.fenced_line_indexes(plan_lines)
+    paths = set()
+    in_list = False
+    for index in range(section["start"], section["end"]):
+        line = plan_lines[index]
+        if index in fenced:
+            in_list = False
+            continue
+
+        line_paths = [match.group(1) for match in PATH_IN_BACKTICKS.finditer(line)]
+        if FILE_ENTRY.match(line):
+            paths.update(line_paths)
+            in_list = not line_paths
+        elif in_list and TOP_LEVEL_BULLET.match(line):
+            paths.update(line_paths[:1])
+        elif in_list and line.strip() and not line[:1].isspace():
+            in_list = False
+    return paths
 
 
 def phase_status_entries(lines, closing_skill):

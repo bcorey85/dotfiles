@@ -14,8 +14,9 @@
                                         dispatch prompt's plan file, and denies any call from an agent whose
                                         report is already stored. Any other argument does nothing.
 
-Importers use parse, validate, load, render, record, latest, hand_back_gap, false_clean_reason,
-ended_on_unreviewed_fix, fixed_paths, unreviewed_streak and unreviewed_fix_section. The store also holds
+Importers use, among others, parse, validate, load, render, record, latest, hand_back_gap, false_clean_reason,
+ended_on_unreviewed_fix, fixed_paths, unreviewed_streak, unreviewed_fix_section, full_suite_in_ci and the
+re-exported finding-id constants FINDING_ID_HEX_LEN and PRINTED_FINDING_ID. The store also holds
 a `stop` row that review_loop_gate.py writes at each review-loop stop (agent_id, open_dispatches). `latest` keeps the
 last one after the last dispatch; while it shows open_dispatches > 0 and no hand-back is current, hand_back_gap returns
 LOOP_WAITING, and a later stop with none open, a hand-back or a new dispatch ends the wait. A validated packet's
@@ -30,6 +31,7 @@ import sys
 import textwrap
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import loop_transcript
 import script_utils
 from handback_store import (  # noqa: F401 (re-exports)
     LOOP_WAITING,
@@ -43,6 +45,7 @@ from handback_store import (  # noqa: F401 (re-exports)
     session_rows,
     unreviewed_streak,
 )
+from loop_transcript import FINDING_ID_HEX_LEN, FINDING_ID_PATTERN, PRINTED_FINDING_ID  # noqa: F401 (re-exports)
 from plan_format import PLAN_CHANGE_MARK
 from script_utils import first_number, one_line, unquote
 
@@ -101,10 +104,6 @@ BLOCKER_TEXT = re.compile(r"\[blocker\]|\bblocker\s*[:=]\s*(?:yes|true)\b", re.I
 INLINE_KEY_AT = re.compile(r"(?:^|\n\s*|([,.;|?!)])\s+)(" + "|".join(ITEM_KEYS) + r")\s*:\s*")
 KEPT_DELIMITERS = "?!)"
 ITEM_KEY_START = re.compile(r"(?:{})\s*:".format("|".join(ITEM_KEYS)))
-FINDING_ID_HEX_LEN = 16
-FINDING_ID_PATTERN = re.compile(rf"[0-9a-f]{{{FINDING_ID_HEX_LEN}}}")
-# A line `log-review-finding` prints for each finding row it writes.
-PRINTED_FINDING_ID = re.compile(r"(?m)^finding_id=(" + FINDING_ID_PATTERN.pattern + r")\s*$")
 
 
 class PacketError(Exception):
@@ -808,8 +807,7 @@ def open_work_reason(event):
     """OPEN_WORK_REASON when the loop's own transcript shows a background dispatch or shell that has not reported
     back, else None. A transcript that cannot be read never blocks."""
     try:
-        import review_loop_gate  # imports this module at its top, so it loads here, not at ours
-        transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(event))
+        transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
         open_dispatches = transcript.open_dispatches()
     except Exception as error:
         print(f"handback hook: open-work gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
@@ -817,6 +815,15 @@ def open_work_reason(event):
     if not open_dispatches:
         return None
     return OPEN_WORK_REASON.format(count=open_dispatches)
+
+
+def full_suite_in_ci(transcript, cwd):
+    """True when the repo the loop reviewed (else the repo holding cwd, the process cwd when empty) leaves its full
+    suite to CI."""
+    import full_check
+
+    repo = script_utils.repo_root(transcript.reviewed_root() or cwd or os.getcwd())
+    return repo is not None and full_check.full_suite_runs_in_ci(repo)
 
 
 def last_unchecked_step(session_id, agent_id):
@@ -831,11 +838,10 @@ def unchecked_code_reason(event, session_id, agent_id, message):
     The denial is recorded with the last code step it saw and repeats only after a later code change, so a loop that
     hands back again on the same state passes. A transcript that cannot be read never blocks."""
     try:
-        import review_loop_gate  # imports this module at its top, so it loads here, not at ours
-        transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(event))
-        in_ci = review_loop_gate.full_suite_in_ci(transcript, event.get("cwd"))
-        ungated, _open_dispatches = review_loop_gate.scan(transcript, message, in_ci)
-        last_step = review_loop_gate.last_code_step(transcript)
+        transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
+        in_ci = full_suite_in_ci(transcript, event.get("cwd"))
+        ungated, _open_dispatches = loop_transcript.scan(transcript, message, in_ci)
+        last_step = loop_transcript.last_code_step(transcript)
     except Exception as error:
         print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
         return None
@@ -845,22 +851,21 @@ def unchecked_code_reason(event, session_id, agent_id, message):
     if denied_at is not None and last_step <= denied_at:
         return None
     record(session_id, UNCHECKED_KIND, agent_id=agent_id, last_code_step=last_step)
-    return review_loop_gate.GATE_REASON
+    return loop_transcript.GATE_REASON
 
 
 def hand_back_plan_edit_reason(event, packet):
-    """review_loop_gate.PLAN_EDIT_REASON when the packet, of any status but plan-impact, has a files_touched that
+    """loop_transcript.PLAN_EDIT_REASON when the packet, of any status but plan-impact, has a files_touched that
     names the plan file of the loop's dispatch prompt, else None. A transcript that cannot be read never blocks."""
     if packet is None or packet["status"] == "plan-impact":
         return None
 
     try:
-        import review_loop_gate  # imports this module at its top, so it loads here, not at ours
-        transcript = review_loop_gate.LoopTranscript(script_utils.agent_transcript_path(event))
+        transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
     except Exception as error:
         print(f"handback hook: plan-file gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
         return None
-    return review_loop_gate.plan_edit_reason(transcript, packet)
+    return loop_transcript.plan_edit_reason(transcript, packet)
 
 
 def handle_dispatch(event, session_id, tool_input):
@@ -898,8 +903,8 @@ def reviewed_repo(prompt, cwd):
 def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back. Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
-    unreviewed reason for a clean packet with no reviewer run, review_loop_gate.GATE_REASON when no passed full_check.py
-    result follows the last code change, or review_loop_gate.PLAN_EDIT_REASON when the packet names the plan file."""
+    unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no passed full_check.py
+    result follows the last code change, or loop_transcript.PLAN_EDIT_REASON when the packet names the plan file."""
     session_id = event.get("session_id")
     if not session_id:
         return None

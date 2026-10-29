@@ -74,6 +74,27 @@ kv_refuse_bare_words() {
   done
 }
 
+# kv_require_whole_numbers <int_keys>: after kv_fold, exits the calling script 1 when any
+# listed key in `json` holds a string that is not a whole number, such as the empty
+# `line=` a zsh loop over `set -- $row` sends. `ledger write` refuses that row with
+# field_kind_mismatch. JSON null passes.
+kv_require_whole_numbers() {
+  local bad_pairs bad_pair
+  bad_pairs=$(jq -r --arg keys "$1" '
+    ($keys | split(" ") | map(select(. != ""))) as $int_keys
+    | to_entries[]
+    | select(.key as $key | $int_keys | index($key))
+    | select((.value | type) == "string" and (.value | test("\\A-?[0-9]+\\z") | not))
+    | "\(.key)=\(.value | gsub("\n"; "\\n") | gsub("\r"; "\\r"))"' <<< "$json")
+  [ -n "$bad_pairs" ] || return 0
+
+  while IFS= read -r bad_pair; do
+    echo "refusing to log: $bad_pair is not a whole number." >&2
+  done <<< "$bad_pairs"
+  echo "Pass each key=value as a literal argument, one call per row; zsh does not split an unquoted \$var." >&2
+  exit 1
+}
+
 # kv_is_free <free_text_keys> <key>: true when the key may hold spaces.
 kv_is_free() {
   [ "$1" = "*" ] && return 0

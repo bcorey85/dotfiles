@@ -47,16 +47,25 @@ class CommitSubject(unittest.TestCase):
         self.assertEqual("ABC-7: pin check names as strings in the spec-class oracle",
                          self.message("A1", ["adds a runner"]))
 
-    def test_a_phase_without_a_commit_line_uses_the_coder_summary(self):
-        self.assertEqual("ABC-7: adds a runner", self.message("A2", ["adds a runner"]))
+    def test_a_phase_without_a_commit_line_uses_the_coder_summary_and_names_the_phase(self):
+        self.assertEqual("ABC-7: adds a runner (phase A2)", self.message("A2", ["adds a runner"]))
 
     def test_a_none_summary_falls_back_to_the_phase_title(self):
         for summary in ("none (test-only change; pins names)", "None", "  none"):
             with self.subTest(summary=summary):
-                self.assertEqual("ABC-7: title of the stage A2", self.message("A2", [summary]))
+                self.assertEqual("ABC-7: title of the stage A2 (phase A2)", self.message("A2", [summary]))
 
     def test_a_summary_that_only_starts_with_the_letters_none_is_kept(self):
-        self.assertEqual("ABC-7: nonexistent users get a 404", self.message("A2", ["nonexistent users get a 404"]))
+        self.assertEqual("ABC-7: nonexistent users get a 404 (phase A2)",
+                         self.message("A2", ["nonexistent users get a 404"]))
+
+    def test_a_plan_run_with_no_phase_names_the_plan_folder(self):
+        self.assertEqual("ABC-7: adds a runner (plan ABC-7-checks)", self.message(None, ["adds a runner"]))
+
+    def test_a_planless_run_keeps_the_bare_summary(self):
+        state = {"plan": None, "phase": None, "title": "t", "behavior": ["adds a runner"], "branch": "main"}
+
+        self.assertEqual("adds a runner", code_step_boundary.commit_message(self.repo, state))
 
 
 if __name__ == "__main__":

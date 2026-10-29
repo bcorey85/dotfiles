@@ -3,7 +3,7 @@ type: "Change"
 title: "The review loop reports a full-check failure the diff did not cause as pre-existing"
 description: "When the full check fails, the review loop reruns it on HEAD without the diff; a failure whose every failing line also fails there is reported as pre-existing, spends no repair coder and does not block."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:43:40-05:00"}
-seq: 189
+seq: 200
 kind: "fix"
 components: ["agent/review-loop"]
 evidence: ["judgment"]

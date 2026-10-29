@@ -414,6 +414,14 @@ def awaits_resumed_review(state):
     return state.get("stage") == "stopped" and bool(state.get("resumableReview"))
 
 
+def phase_code_in_place(state):
+    # The phase's review converged and no coder works on it since, so `verify` may run its checks and close it.
+    module, _import_error = load_handback()
+    if module is None or state.get("stage") in (*CODER_STAGES, "plan-coder", "skill", "done"):
+        return False
+    return state.get("reviewStatus") in module.CLEAN_STATUSES
+
+
 def awaited_agent_id(repo_dir, state):
     # The agent the next verb waits for: the coder resumed after a stop, else the agent the newest dispatch launched
     # (a review-loop resumed with SendMessage keeps that id). None when no launch is logged yet.
@@ -1001,14 +1009,17 @@ def stop_a_silent_coder(repo_dir, state, stopped_at):
     # then reads like the stop on a coder's report. A coder that was resumed once keeps its id. Only the phase coder
     # is resumed this way: a resumed coder goes back to the coder stage, so a plan-edit coder, and a launch with no
     # agent id, leave only a restart.
-    restart_command = script_command("start --restart")
-    restart_instruction_text = restart_instruction(state, restart_command)
+    # A coder with an agent id may still run, so the restart stops it first.
+    restart_instruction_text = restart_instruction(state, script_command("start --restart"))
+    agent_id = awaited_agent_id(repo_dir, state)
+    if agent_id:
+        stopped_restart_text = restart_instruction(state, script_command("start --restart --coder-stopped"))
+        restart_instruction_text = f"stop coder {agent_id} with TaskStop, then {stopped_restart_text}"
     if state.get("stage") == "plan-coder":
         state["stopReason"] = "coder-cap"
         return (" The plan-edit coder cannot be resumed: only the phase coder can. To dispatch the phase coder "
                 f"again, {restart_instruction_text}.")
 
-    agent_id = awaited_agent_id(repo_dir, state)
     if not agent_id:
         state["stopReason"] = "coder-cap"
         return (f" Its launch has no agent id, so it cannot be resumed: {restart_instruction_text} "

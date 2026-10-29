@@ -34,6 +34,9 @@ switch is on, one agent-usage row. Exit 0 on a normal finish; exit 1 when the ru
 validation (a critical-blocker packet and the rows are still written). A SIGTERM (abort, review-again, start
 --restart) kills every running claude call and exits 143 with no packet and no rows.
 
+review_loop_findings.py reads the reviewers' text; review_loop_closure.py runs the class-closure check;
+review_loop_packet.py writes the packet and the hand-back rows.
+
 Not covered: the second-order caller supplement, the critical-blocker judgment (a reviewer routes it as an ask), and
 the fix-first mode.
 """
@@ -55,16 +58,27 @@ from concurrent.futures import ThreadPoolExecutor
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import code_step_core
+import coder_gate
 import full_check
 import full_check_gate
 import handback
 import plan_format
-import review_loop_gate
-import reviewed_tree
 import script_utils
-from review_findings import UNLOCATED, finding_class, finding_file, finding_title, merge_findings, parse_review
-from review_packet import crash_outcome, packet_message
-from script_utils import last_json_object
+from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check
+from review_loop_findings import (
+    PLAN_CHANGE_MARK,
+    PLAN_CHANGE_YES,
+    UNLOCATED,
+    absent_file_split,
+    finding_class,
+    finding_file,
+    finding_title,
+    last_json_object,
+    merge_findings,
+    parse_review,
+    ruled_plan_split,
+)
+from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
@@ -76,7 +90,8 @@ DIFF_CONTEXT = 12
 CALL_TIMEOUT_SECONDS = 1800
 LOG_TIMEOUT_SECONDS = 60
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
-NO_CLOSURE = "n/a - fixed[] empty"
+ABSENT_FILE_REASON = "the file is not in the tree"
+NO_CHANGE_REASON = "the coder made no change"
 TERMINAL_PANE_ENV = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET")
 CHILD_ENV = {**{name: value for name, value in os.environ.items() if name not in TERMINAL_PANE_ENV},
              "CLAUDE_FORMAT_HOOK_OFF": "1"}
@@ -106,18 +121,6 @@ SMALL_ITEMS = (
     'item never widens the change: no rename, no restructure, no new abstraction.'
 )
 
-CLOSURE_RULES = (
-    'For each finding in fixed[], ask whether it is class-shaped: one member of an enumerable set of '
-    'ways the same mistake can occur. Two shapes qualify:\n'
-    '- Enumerable exit/branch space: the fix touched one of N exits, cases, or branches, and the other '
-    'N-1 were never re-read. Close it by re-enumerating them and stating where each one lands.\n'
-    '- Proxy predicate: the fix removed a cheap check standing in for the property actually needed. '
-    'Close it by naming the other members that proxy was covering for.\n'
-    'Work from the fix diff; read a file only to see a member the diff does not show. If a fixed finding '
-    'is class-shaped and the class is NOT closed (some member still has the defect), list those members '
-    'as open findings, each with file and line and the one correction. You may not edit files.'
-)
-
 CHECK_FINDER = (
     'Repo root: {repo}\n\n'
     'Name the one shell command, run from the repo root, that runs this repo\'s full quality check: the lint, type '
@@ -131,16 +134,11 @@ CHECK_FINDER = (
     '"<what is missing>"}} when the files name no check.'
 )
 
-# A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its
-# bracketed tags, in either order.
-PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{EN DASH}:-]*)*plan[-_ ]?impact", re.I)
-PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
 CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, right after its file:line, or first when "
                   "it names none. One of: " + " ".join(f"[{name}]" for name in handback.CLASSES) + ".")
 
 CALLS = []
 CALLS_LOCK = threading.Lock()
-FIX_DIFFS = []
 LIVE_CHILDREN = full_check_gate.LIVE_CHILDREN
 
 
@@ -411,8 +409,9 @@ def changed_paths(before, after):
 
 def coder_call(role, prompt, repo, out):
     """The fix coder. Returns (report, diffs, changed): the diffs of what it changed feed the round-two brief, and
-    the global FIX_DIFFS feeds the class-closure check; changed lists the paths whose text differs. A failed call
-    raises CoderCallError naming the files it changed before it died."""
+    one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the class-closure check;
+    changed lists the paths whose text differs. A failed call raises CoderCallError naming the files it changed
+    before it died."""
     before = file_texts(repo)
     try:
         report = claude_call(role, prompt, repo, out, agent="coder")
@@ -426,37 +425,25 @@ def coder_call(role, prompt, repo, out):
         raise CoderCallError(message, changed) from error
 
     after = file_texts(repo)
-    start = len(FIX_DIFFS)
+    diffs = []
     paths = sorted(set(before) | set(after))
     for path in paths:
         old_lines = before.get(path, "").splitlines()
         new_lines = after.get(path, "").splitlines()
         difference = list(difflib.unified_diff(old_lines, new_lines, f"a/{path}", f"b/{path}", n=DIFF_CONTEXT,
                                                lineterm=""))
-        if difference:
-            FIX_DIFFS.append("\n".join(difference))
+        if not difference:
+            continue
+        diff_text = "\n".join(difference)
+        diffs.append(diff_text)
+        diff_file = out / "fix-diffs" / role / f"{path}.diff"
+        diff_file.parent.mkdir(parents=True, exist_ok=True)
+        diff_file.write_text(diff_text)
+        added = sum(1 for line in difference if line.startswith("+") and not line.startswith("+++"))
+        removed = sum(1 for line in difference if line.startswith("-") and not line.startswith("---"))
+        FIX_DIFF_STATS.append({"path": path, "added": added, "removed": removed, "diff_file": str(diff_file)})
     changed = changed_paths(before, after)
-    return report, FIX_DIFFS[start:], changed
-
-
-def closure_check(repo, out, fixed):
-    if not fixed:
-        return {"receipt": NO_CLOSURE, "open": []}
-    prompt = (
-        f"Repo root: {repo}\n\n{CLOSURE_RULES}\n\nfixed[]:\n" + "\n".join(f"- {item}" for item in fixed)
-        + "\n\nThe fix diff (what the coder changed, with surrounding context):\n" + "\n\n".join(FIX_DIFFS)
-        + '\n\nEnd your reply with one JSON object: {"receipt": "<the enumeration, or none plus each fixed finding '
-        'and why it fits neither shape>", '
-        '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed.'
-    )
-    reply = claude_call("class-closure", prompt, repo, out, model="sonnet", tools="Read,Grep")
-    parsed = last_json_object(reply, ("open",))
-    if parsed is not None:
-        parsed_open = parsed.get("open")
-        open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
-                         if isinstance(parsed_open, list) else [])
-        return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
-    raise ValueError(f'the class-closure reply holds no {{"receipt": .., "open": [..]}} object: {reply!r}')
+    return report, diffs, changed
 
 
 def skipped_issues(report, issue_count):
@@ -589,8 +576,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
-    def __init__(self, repo, out, brief, gate_env, progress):
-        self.repo, self.out, self.brief, self.gate_env = repo, out, brief, gate_env
+    def __init__(self, repo, out, brief, gate_env, progress, plan=""):
+        self.repo, self.out, self.brief, self.gate_env, self.plan = repo, out, brief, gate_env, plan
         self.progress = progress
         self.fixed, self.files_touched = progress["fixed"], progress["files_touched"]
         self.iter_count = 0
@@ -610,6 +597,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.round_fixes = []  # the fix entries this round's reviewers filed, for fix_round to mark
         self.check_fixed = 0  # findings the full check and the class closure fixed, which file no finding row
         self.last_pass = ""
+        self.untested_fix = False  # a coder pass that no passed full check ran after
+        self.scoped_tests = ""
 
     def next_round(self):
         self.iter_count += 1
@@ -675,9 +664,14 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
         self.round_claimed, self.round_fixes = set(), []
         round_fix, round_nits = [], []
-        for (agent, owned), parsed in zip(self.dispatches, reviews, strict=True):
+        tree_paths = git_lines(self.repo, "ls-files", "--cached", "--others", "--exclude-standard")
+        for (agent, owned), review in zip(self.dispatches, reviews, strict=True):
+            parsed, absent = absent_file_split(self.repo, tree_paths, review)
+            self.skipped_fp += [{"item": item, "reason": ABSENT_FILE_REASON} for item in absent]
             design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
             fixes = [item for item in parsed["fix"] if item not in design]
+            fixes, ruled = ruled_plan_split(self.repo, self.plan, fixes)
+            parsed["ask"] += ruled
 
             plan_changes = [item for item in parsed["ask"] if PLAN_CHANGE_MARK.match(item)]
             if plan_changes:
@@ -703,6 +697,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, findings, list(nits), list(before), self.gate_env)
         self.last_pass = "coder"
+        self.untested_fix = True
         try:
             return coder_call(call_name, prompt, self.repo, self.out)
         except CoderCallError as error:
@@ -726,6 +721,10 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.skipped_fp += [{"item": round_findings[number - 1], "reason": line}
                             for number, line in sorted(skips.items())]
         skipped_findings = [round_findings[number - 1] for number in sorted(skips)]
+        if not changed:
+            unchanged = [item for item in round_findings if item not in skipped_findings]
+            self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in unchanged]
+            skipped_findings += unchanged
         for finding in self.round_fixes:
             skipped = any(finding["text"] in item for item in skipped_findings)
             finding["actioned"] = "skipped_fp" if skipped else "fixed"
@@ -741,19 +740,32 @@ class LoopRun(full_check_gate.FullCheckSteps):
             self.dispatches = second_round_plan(round_fix, changed, skipped_findings, coder_diffs)
         return not (changed and all(path.endswith(".md") for path in changed))
 
+    def mark_repaired(self, findings, changed):
+        """A repair's findings go to fixed when it changed a file, else to skipped_fp."""
+        if not changed:
+            self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in findings]
+            return
+        self.fixed += findings
+        self.check_fixed += len(findings)
+        self.files_touched.update(changed)
+
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open."""
-        closure = closure_check(self.repo, self.out, self.fixed)
+        closure = closure_check(self.repo, self.out, self.fixed, claude_call)
         self.class_closure = closure["receipt"]
         if not closure["open"]:
             return
 
         _report, _diffs, class_changed = self.repair("coder-class", closure["open"])
-        self.fixed += closure["open"]
-        self.check_fixed += len(closure["open"])
-        self.files_touched.update(class_changed)
+        self.mark_repaired(closure["open"], class_changed)
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")
+
+    def scoped_tests_pass(self, gate_commands):
+        """The phase's scoped tests after a fix that no passed full check ran after. A red one stops the loop."""
+        self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, gate_commands, self.gate_env)
+        if tails:
+            self.stop("critical-blocker", ["scoped tests failing after the last fix:\n" + "\n\n".join(tails)])
 
     def outcome(self, ask_ids, ask_rows):
         return {
@@ -777,10 +789,11 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "files_touched": sorted(self.files_touched | set(self.check_details["rewrote_edited"])),
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
+            "scoped_tests": self.scoped_tests,
         }
 
 
-def run_loop(repo, out, session, header, handoff, progress):
+def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     """Walks the graph. Returns the outcome mapping. `progress` holds what a crash still reports: iter, fixed and
     files_touched, updated in place as the loop goes."""
     lane = header["lane"]
@@ -788,7 +801,7 @@ def run_loop(repo, out, session, header, handoff, progress):
     brief = reviewer_brief(header, handoff)
     gate_env = plan_format.gate_env_words_in(handoff)
     scope_fields = ["scope=phase"] + ([f"phase={header['phase']}"] if header.get("phase") else [])
-    loop = LoopRun(repo, out, brief, gate_env, progress)
+    loop = LoopRun(repo, out, brief, gate_env, progress, header.get("plan", ""))
 
     log_call(repo, [str(SKILLS / "review-scope"), "caller=code"])
     check_command = check_command_for(repo, out)
@@ -807,68 +820,14 @@ def run_loop(repo, out, session, header, handoff, progress):
         loop.full_check_pass(check_command)
     if loop.status == "converged":
         loop.class_closure_pass(check_command)
+    if loop.status == "converged" and loop.untested_fix:
+        loop.scoped_tests_pass(list(gate_commands))
 
     every_actioned = [finding["actioned"] for row in loop.run_rows for finding in row["findings"]]
     loop.tallies["fixed"] = every_actioned.count("fixed") + loop.check_fixed
     loop.tallies["skipped_fp"] = every_actioned.count("skipped_fp")
     ask_ids, ask_rows = telemetry(repo, session, lane, scope_fields, loop.iter_count, loop.tallies, loop.run_rows)
     return loop.outcome(ask_ids, ask_rows)
-
-
-# ---------- hand-back rows ----------
-
-def report_write_failure(what, error):
-    print(f"review-loop-script: {what} not written, {type(error).__name__}: {error}", file=sys.stderr)
-
-
-def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
-    # The driver's skipped re-reviews are its benched routes, so a clean row never sets no_reviewer;
-    # a coder pass after the last reviewer round sets unreviewed_fix.
-    try:
-        code_step_core.log_event(repo, args.run_id, "handback", args.session, agent_id=args.agent_id,
-                                 agent_type=handback.REVIEW_LOOP, message=message)
-    except Exception as error:
-        report_write_failure("run event", error)
-    try:
-        handback.record(args.session, "handback", agent_id=args.agent_id, status=status, problems=[], message=message,
-                        no_reviewer=False, unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
-    except Exception as error:
-        report_write_failure("hand-back row", error)
-    review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)
-
-    # The /code run that launched this loop can end before the loop hands back, and then nothing marks the gate. So
-    # the loop records the tree it ended clean on itself, under the same rule as `review-gate-mark clean`.
-    try:
-        if handback.false_clean_reason(args.session) is None:
-            reviewed_tree.record_reviewed(args.session, repo)
-    except Exception as error:
-        report_write_failure("reviewed tree", error)
-
-
-def write_usage_row(repo, started):
-    if not script_utils.telemetry_switch_on():
-        return
-    usage_file = os.environ.get("AGENT_USAGE_FILE") or pathlib.Path.home() / ".claude" / "agent-usage.jsonl"
-    finished_calls = [call for call in CALLS if call]
-    row = {
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "repo": pathlib.Path(repo).name,
-        "agent": handback.REVIEW_LOOP,
-        "model": "script",
-        "desc": "scripted review loop",
-        "tokens": sum(call["tokens"] for call in finished_calls),
-        "toolUses": None,
-        "durationMs": round((now() - started) * 1000),
-        "reportChars": None,
-        "noResult": None,
-        "respKeys": [],
-        "driver": "script",
-        "calls": len(finished_calls),
-    }
-    try:
-        script_utils.append_jsonl(usage_file, row)
-    except OSError as error:
-        report_write_failure("agent-usage row", error)
 
 
 # ---------- main ----------
@@ -907,7 +866,8 @@ def main(argv=None):
     outcome = None
     try:
         header, handoff = read_prompt(args.prompt_file)
-        outcome = run_loop(repo, out, args.session, header, handoff, progress)
+        run_state = code_step_core.read_state_file(pathlib.Path(args.state_dir)) or {}
+        outcome = run_loop(repo, out, args.session, header, handoff, progress, run_state.get("gateCommands", []))
         message = packet_message(outcome)
         handback.load(message)
     except handback.PacketError as error:
@@ -928,7 +888,7 @@ def main(argv=None):
     status = handback.load(message)["status"]
     (out / "packet.txt").write_text(message + "\n")
     write_handback_rows(repo, args, message, status, outcome["ask_rows"], outcome["unreviewed_fix"])
-    write_usage_row(repo, started)
+    write_usage_row(repo, started, CALLS)
     print(message)
     return exit_code
 

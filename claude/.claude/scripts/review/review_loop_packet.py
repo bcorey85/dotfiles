@@ -1,19 +1,20 @@
-"""The review loop's hand-back packet: the outcome of a loop in the grammar handback.py reads."""
+"""The review loop's hand-back: the packet text handback.py reads, the crash packet, and the rows a hand-back
+writes (run event, hand-back store row, stop row, reviewed tree, agent-usage row)."""
 
 import json
+import os
 import pathlib
-import re
 import sys
+import time
 
-SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "lib")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../code", "../lib")]
+import code_step_core
 import full_check
 import handback
+import review_loop_gate
+import reviewed_tree
 import script_utils
-from review_findings import UNLOCATED, finding_class, finding_file
-
-# The marker before the one edit an accepted ask makes: `... — the question — change: the edit`.
-ASK_CHANGE_MARK = re.compile(r"\bchange:", re.I)
+from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED, finding_class, finding_file
 
 
 def located(text):
@@ -68,14 +69,11 @@ def packet_message(outcome):
         summary = full_check.summary_text(outcome["full_check"], outcome["full_check_summaries"])
         if summary is not None:
             fields["full_check_summary"] = script_utils.one_line(summary, limit=None)
-    if outcome["check_changed"]:
-        fields["check_changed"] = outcome["check_changed"]
-    if outcome["check_rewrote_edited"]:
-        fields["check_rewrote_edited"] = outcome["check_rewrote_edited"]
-    if outcome["check_created"]:
-        fields["check_created"] = outcome["check_created"]
-    if outcome.get("tool_fault"):
-        fields["tool_fault"] = outcome["tool_fault"]
+    if outcome["scoped_tests"]:
+        fields["scoped_tests"] = script_utils.one_line(outcome["scoped_tests"], limit=None)
+    for key in ("check_changed", "check_rewrote_edited", "check_created", "tool_fault"):
+        if outcome.get(key):
+            fields[key] = outcome[key]
     if outcome["plan_change"]:
         fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
     lines = []
@@ -93,4 +91,58 @@ def crash_outcome(progress, reason):
             "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
             "check_rewrote_edited": [], "check_created": [],
             "files_touched": sorted(progress["files_touched"]), "nits": [],
-            "unreviewed_fix": False, "tool_fault": reason}
+            "unreviewed_fix": False, "scoped_tests": "", "tool_fault": reason}
+
+
+def report_write_failure(what, error):
+    print(f"review-loop-script: {what} not written, {type(error).__name__}: {error}", file=sys.stderr)
+
+
+def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
+    # The driver's skipped re-reviews are its benched routes, so a clean row never sets no_reviewer;
+    # a coder pass after the last reviewer round sets unreviewed_fix.
+    try:
+        code_step_core.log_event(repo, args.run_id, "handback", args.session, agent_id=args.agent_id,
+                                 agent_type=handback.REVIEW_LOOP, message=message)
+    except Exception as error:
+        report_write_failure("run event", error)
+    try:
+        handback.record(args.session, "handback", agent_id=args.agent_id, status=status, problems=[], message=message,
+                        no_reviewer=False, unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
+    except Exception as error:
+        report_write_failure("hand-back row", error)
+    review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)
+
+    # The /code run that launched this loop can end before the loop hands back, and then nothing marks the gate. So
+    # the loop records the tree it ended clean on itself, under the same rule as `review-gate-mark clean`.
+    try:
+        if handback.false_clean_reason(args.session) is None:
+            reviewed_tree.record_reviewed(args.session, repo)
+    except Exception as error:
+        report_write_failure("reviewed tree", error)
+
+
+def write_usage_row(repo, started, calls):
+    if not script_utils.telemetry_switch_on():
+        return
+    usage_file = os.environ.get("AGENT_USAGE_FILE") or pathlib.Path.home() / ".claude" / "agent-usage.jsonl"
+    finished_calls = [call for call in calls if call]
+    row = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "repo": pathlib.Path(repo).name,
+        "agent": handback.REVIEW_LOOP,
+        "model": "script",
+        "desc": "scripted review loop",
+        "tokens": sum(call["tokens"] for call in finished_calls),
+        "toolUses": None,
+        "durationMs": round((time.time() - started) * 1000),
+        "reportChars": None,
+        "noResult": None,
+        "respKeys": [],
+        "driver": "script",
+        "calls": len(finished_calls),
+    }
+    try:
+        script_utils.append_jsonl(usage_file, row)
+    except OSError as error:
+        report_write_failure("agent-usage row", error)

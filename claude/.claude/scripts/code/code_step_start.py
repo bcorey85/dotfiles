@@ -13,6 +13,8 @@ from code_step_boundary import (
     criteria_rel,
     evidence_command_shape,
     evidence_request_lines,
+    finish_phase,
+    run_verification_commands,
     settle_criteria_guard,
     stop_while_plan_edit_coder_is_out,
     verification_format_failure,
@@ -35,8 +37,10 @@ from code_step_core import (
     is_run_open,
     load_state,
     open_dispatch,
+    read_events,
     refuse,
     repo_root_or_exit,
+    restart_instruction,
     ruled_asks_lines,
     ruled_asks_path,
     save_state,
@@ -50,6 +54,7 @@ from code_step_core import (
 )
 from code_step_gates import derive_gate_commands
 from code_step_report import ENG_SPEC_BRIEF
+from code_step_review import guarded_verb_runs
 from code_step_start_args import (
     START_MODIFIERS,
     RepoFlagError,
@@ -68,7 +73,7 @@ from code_step_start_args import (
 from script_utils import run_command
 
 START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep] [--phase <id>] [--restart] '
-               '[--headless] [<run notes>]\n'
+               '[--headless] [--coder-stopped] [<run notes>]\n'
                '       code_step.py start [--repo <path>] --task "<task text>"\n'
                '       code_step.py start [--repo <path>] --task-file <path>\n'
                '--phase <id> starts the named phase; the text after a plan file or ticket id and its phase is the '
@@ -79,7 +84,8 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                'has open phases; use --task for planless work after --restart. --repo runs everything in that '
                'checkout, not the current directory; so does a `Repo: <path>` or `Repo root: <path>` first line in '
                'the task file. --headless is for a run no person watches: a phase that would wait for sign-off '
-               'commits and goes on to the next phase.')
+               'commits and goes on to the next phase. --coder-stopped tells a restart that the coder of the '
+               'stopped run, which never handed back, was stopped.')
 FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: invoke Skill code with "
                   "`start --task \"<text>\"`.")
 # The verbs that older printed commands still name. Each one now does what `resume` does.
@@ -94,7 +100,7 @@ def usage_error(message):
 
 
 StartArgs = collections.namedtuple("StartArgs", "modifier plan_args task_text phase_id restart positional_words "
-                                   "run_notes headless", defaults=(None, False))
+                                   "run_notes headless coder_stopped", defaults=(None, False, False))
 
 
 def phase_flag_value(args, position):
@@ -105,12 +111,12 @@ def phase_flag_value(args, position):
 
 
 def reject_unknown_flag(word):
-    # --restart and --headless are the flags besides --phase, --task, --task-file and --repo. --help prints usage and
-    # exits 0 before any state is touched; any other flag exits 2.
+    # --restart, --headless and --coder-stopped are the flags besides --phase, --task, --task-file and --repo. --help
+    # prints usage and exits 0 before any state is touched; any other flag exits 2.
     if word in script_utils.USAGE_WORDS:
         print(START_USAGE)
         sys.exit(0)
-    if word not in ("--restart", "--headless"):
+    if word not in ("--restart", "--headless", "--coder-stopped"):
         usage_error(f"unknown flag {word}")
 
 
@@ -166,7 +172,7 @@ def parse_start_args(args):
         position += 1
     modifier = "+deep" if "+deep" in modifiers else "+fast" if modifiers else None
     return StartArgs(modifier, plan_args, task_text, phase_id, "--restart" in switches, positional_words,
-                     headless="--headless" in switches)
+                     headless="--headless" in switches, coder_stopped="--coder-stopped" in switches)
 
 
 def phase_label(state):
@@ -267,12 +273,16 @@ def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
     stale_reason = stale_phase_reason(repo_dir, previous)
     if stale_reason:
         reason += f" The run is stale: {stale_reason}."
+    verify_commands = []
+    if guarded_verb_runs("verify", previous):
+        reason += " Run `verify` first: it runs the phase's checks and closes the phase when they pass."
+        verify_commands = [script_command("verify")]
     if not args:
-        return reason, [resume_command], ()
+        return reason, verify_commands or [resume_command], ()
 
     started_by = previous.get("sessionId")
     if started_by and session_pin() and started_by != session_pin():
-        return reason, [script_command("status")], (
+        return reason, [*verify_commands, script_command("status")], (
             "The run was started by another session, and `start --restart` would drop it: run that only on the "
             "user's word. To run in another checkout, pass `--repo <path>`.",)
 
@@ -280,8 +290,64 @@ def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
     plain_text_words = plain_task_words(parsed)
     if plain_text_words:
         restart_command = task_command(plain_text_words, parsed.modifier, *repo_flags, "--restart")
-    return reason, [resume_command, restart_command], (
+    return reason, [*verify_commands, resume_command, restart_command], (
         "`resume` goes on with the open run. `start --restart` drops it and starts over.",)
+
+
+def stopped_run_coder_id(previous, events):
+    # The agent id of the coder a stopped run left out: the coder the run stopped on (its report, or the wait cap with
+    # a launch id), else, for a plan-edit coder at the cap, the newest launch's id. None when no id names it.
+    coder_id = previous.get("resumableCoderId")
+    if coder_id and coder_id != "unknown":
+        return coder_id
+    if previous.get("stopReason") != "coder-cap":
+        return None
+
+    launches = [event for event in events if event.get("event") == "launch"]
+    return launches[-1].get("agent_id") if launches else None
+
+
+def coder_still_out(events, coder_id):
+    # Whether the coder's newest launch or SendMessage resume came after its newest hand-back: it may still be editing
+    # the tree.
+    of_coder = [event for event in events
+                if event.get("agent_id") == coder_id and event.get("event") in ("launch", "resume", "handback")]
+    return bool(of_coder) and of_coder[-1]["event"] != "handback"
+
+
+def out_coder_id(repo_dir, state):
+    # The id of the stopped run's coder that has not handed back, or None.
+    if state.get("stage") != "stopped" or not state.get("runId"):
+        return None
+
+    events = read_events(repo_dir, state["runId"])
+    coder_id = stopped_run_coder_id(state, events)
+    if coder_id is None or not coder_still_out(events, coder_id):
+        return None
+    return coder_id
+
+
+def stopped_run_restart_instruction(repo_dir, state):
+    # restart_instruction for a stopped run. With its coder still out, the coder is stopped first and the restart
+    # carries --coder-stopped.
+    coder_id = out_coder_id(repo_dir, state)
+    if coder_id is None:
+        return restart_instruction(state)
+
+    stopped_restart_text = restart_instruction(state, script_command("start --restart --coder-stopped"))
+    return f"stop coder {coder_id} with TaskStop, then {stopped_restart_text}"
+
+
+def live_coder_refusal(repo_dir, previous, args, parsed):
+    # A start that drops a stopped run while its coder has not handed back would put a second coder on the same tree:
+    # (reason, commands, notes), or None. --coder-stopped says that coder was stopped.
+    coder_id = None if parsed.coder_stopped else out_coder_id(repo_dir, previous)
+    if coder_id is None:
+        return None
+
+    stopped_command = script_command(shlex.join(["start", "--coder-stopped", *args]))
+    return (f"coder {coder_id} of the stopped run has not handed back, so it may still be editing this tree. Stop "
+            f"coder {coder_id} with TaskStop first, then run `{stopped_command}`.", [stopped_command], ())
 
 
 def plan_inside_task_refusal(words, parsed, repo_flags):
@@ -326,6 +392,10 @@ def start_refusal(repo_dir, previous, branch, args, parsed, repo_flags):
         return refusal
 
     refusal = open_run_refusal(repo_dir, previous, args, parsed, repo_flags)
+    if refusal:
+        return refusal
+
+    refusal = live_coder_refusal(repo_dir, previous, args, parsed)
     if refusal:
         return refusal
 
@@ -624,6 +694,21 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
         "plan_rel": plan_rel, "lane": lane, "entry": entry, "section": section, "has_phases": bool(plan["sections"])})
 
 
+def finish_passing_restart(repo_dir, previous, section):
+    # A restart over a phase whose code was reviewed goes to verify when every Automated Verification command passes
+    # on the code in place, and no coder is dispatched. False when a check fails, cannot run, or none runs.
+    results, skipped, unparsed = run_verification_commands(repo_dir, section)
+    has_failure = any(code != 0 for _command, code, _output in results)
+    if unparsed or not results or has_failure:
+        return False
+
+    restarted = {**previous, "phaseText": section}
+    print("The phase's Automated Verification passes on the code in place, so no coder is dispatched; the phase goes "
+          "to verify.")
+    finish_phase(repo_dir, restarted, verification=(results, skipped))
+    return True
+
+
 def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     plan_rel, entry, section = phase["plan_rel"], phase["entry"], phase["section"]
     number = entry["number"] if entry else None
@@ -631,6 +716,12 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     state_phase = number if use_packet else None
     is_same_unfinished_phase = (previous.get("plan") == plan_rel and previous.get("phase") == state_phase
                              and previous.get("stage") not in (None, "done") and previous.get("baseline") is not None)
+    # Run notes ask the coder for more work, so a restart that brings them always dispatches one.
+    restarts_reviewed_phase = (parsed.restart and is_same_unfinished_phase and not parsed.run_notes
+                               and (previous.get("reviewRan") or previous.get("reviewStatus") is not None))
+    if restarts_reviewed_phase and finish_passing_restart(repo_dir, previous, section):
+        return
+
     baseline = previous["baseline"] if is_same_unfinished_phase else file_hashes(repo_dir)
     base_head = (
         previous.get("baseHead") if is_same_unfinished_phase and previous.get("baseHead") else head_commit(repo_dir)

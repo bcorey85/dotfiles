@@ -137,7 +137,8 @@ class ReviewScriptTest(base.CodeStepTest):
         self.assert_first_phase_ticked()
         self.assert_marked_clean(out)
         self.assertIn("### Last fix not reviewed", self.said())
-        self.assertIn("Its files are among: src/orders.ts", self.said())
+        self.assertIn("No reviewer read the loop's last fixes. Their files are among: src/orders.ts", self.said())
+        self.assertIn("Review-again is not advised", self.said())
 
     def test_a_converged_hand_back_ending_on_a_reviewer_names_no_unreviewed_fix(self):
         self.coder_round()

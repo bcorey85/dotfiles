@@ -3,7 +3,7 @@ type: "Change"
 title: "code_step's gone-review-script stop names the pid, the agent and the end of the script log"
 description: "When the pid probe reads the review script as gone, the stop text names the pid, the agent whose hand-back is missing and the last lines of the script log."
 generated: {"by": "claude-code/sonnet-5-5", "at": "2026-10-28T19:07:20-05:00"}
-seq: 199
+seq: 206
 kind: "fix"
 components: ["script/code-step"]
 evidence: ["judgment"]

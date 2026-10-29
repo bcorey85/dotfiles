@@ -53,8 +53,8 @@ def remove_live_base_trees():
 
 
 class FullCheckSteps:
-    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, fixed and
-    check_fixed, and provides stop(status, remaining) and repair(call_name, findings)."""
+    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched and untested_fix,
+    and provides stop(status, remaining), repair(call_name, findings) and mark_repaired(findings, changed)."""
 
     def init_full_check_state(self):
         self.full_check = ""
@@ -81,9 +81,7 @@ class FullCheckSteps:
             return
 
         _report, _diffs, gate_changed = self.repair("coder-gate", gate_findings)
-        self.fixed += gate_findings
-        self.check_fixed += len(gate_findings)
-        self.files_touched.update(gate_changed)
+        self.mark_repaired(gate_findings, gate_changed)
         self.recheck_full_check(check_command, "full check still failing after one repair")
 
     def run_check(self, check_command):
@@ -94,6 +92,8 @@ class FullCheckSteps:
         edits it itself. A rewrote_edited file holds coder work and always counts as touched."""
         self.full_check_command = check_command or ""
         self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)
+        if self.full_check == full_check.PASSED:
+            self.untested_fix = False
         check_wrote = set(self.check_details["changed"]) | set(self.check_details["created"])
         details["rewrote_edited"] = [path for path in details["rewrote_edited"]
                                      if path not in check_wrote or path in self.files_touched]

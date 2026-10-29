@@ -85,12 +85,37 @@ def is_listed_row(row, repo, branch):
             and isinstance(line, int) and not isinstance(line, bool) and line >= 1)
 
 
+def place(row):
+    # The session, branch and normalized file and line a finding row points at; None when the row has no usable place.
+    line = row.get("line")
+    file = row.get("file")
+    if not isinstance(file, str) or not file or not isinstance(line, int) or isinstance(line, bool):
+        return None
+    return (row.get("session"), row.get("branch"), os.path.normpath(file), line)
+
+
+def last_fixed_dates(rows, repo, branch):
+    # Maps each place to the date of the last fixed row there, so a later round's fix hides an earlier deferral.
+    fixed = {}
+    for row in rows:
+        if row.get("kind") != "finding" or row.get("actioned") != "fixed" or row.get("repo") != repo:
+            continue
+        where = place(row)
+        if where is None or where[1] != branch:
+            continue
+        fixed[where] = max(fixed.get(where, ""), str(row.get("date") or ""))
+    return fixed
+
+
 def branch_findings(rows, repo, branch):
-    # Newest first, one row per finding, at most MAX_FINDINGS.
+    # Newest first, one row per finding, at most MAX_FINDINGS. A finding fixed later at the same place is left out.
     chosen = []
     seen = set()
+    fixed = last_fixed_dates(rows, repo, branch)
     for row in sorted((row for row in rows if is_listed_row(row, repo, branch)),
                       key=lambda row: str(row.get("date") or ""), reverse=True):
+        if fixed.get(place(row), "") >= str(row.get("date") or "") > "":
+            continue
         key = row.get("finding_id") or (row["file"], row["line"], row.get("gate"))
         if key in seen:
             continue

@@ -264,8 +264,34 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
-        self.assertEqual(packet["scoped_tests"], "failed: grep -q 'limit = 99' app.py")
+        log_path = self.state_dir / "loop-script" / AGENT_ID / "scoped-tests.log"
+        self.assertEqual(packet["scoped_tests"], f"failed: grep -q 'limit = 99' app.py; full output: {log_path}")
         self.assertIn("grep -q 'limit = 99' app.py", packet["blockers"][0])
+
+    def test_a_red_scoped_test_names_the_failing_test_and_its_panic_text_and_keeps_the_full_output(self):
+        fixture = pathlib.Path(__file__).resolve().parent / "fixtures" / "cargo_test_failed_assertion.txt"
+        failing_run = f"echo 'early line' && seq 1 3000 && cat {fixture} && false"
+        completed = self.run_with_scoped_tests([failing_run], FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        log_path = self.state_dir / "loop-script" / AGENT_ID / "scoped-tests.log"
+        self.assertIn("early line", log_path.read_text())
+        self.assertEqual(f"failed: {failing_run}; failing tests: test tests::x_total ... FAILED | "
+                         f"thread 'tests::x_total' (2268265) panicked at src/lib.rs:8:9:; full output: {log_path}",
+                         packet["scoped_tests"])
+        self.assertIn("  left: 3\n right: 4", packet["blockers"][0])
+        self.assertIn(str(log_path), packet["blockers"][0])
+
+    def test_a_scoped_test_that_cannot_run_names_the_log_that_keeps_its_output(self):
+        completed = self.run_with_scoped_tests(["echo no runner here && exit 127"], FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        log_path = self.state_dir / "loop-script" / AGENT_ID / "scoped-tests.log"
+        self.assertIn("no runner here", log_path.read_text())
+        self.assertTrue(packet["scoped_tests"].startswith("setup fault: "), packet["scoped_tests"])
+        self.assertIn(f"full output: {log_path}", packet["scoped_tests"])
 
     def test_a_loop_that_made_no_fix_runs_no_scoped_tests(self):
         completed = self.run_with_scoped_tests(["false"], {"code-reviewer": [{"result": CLEAN_REVIEW}],

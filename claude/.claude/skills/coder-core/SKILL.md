@@ -51,7 +51,7 @@ When a rule's cases are already tested at one layer, test each other entry point
 
 The plan's acceptance criteria (`docs/plans/<slug>/acceptance-criteria.md`) are the requirements list — read them as spec. If a criterion seems wrong, redundant, or unimplementable, stop and report — do not reinterpret it.
 
-The private workflow never reaches committed code: branch, PR, and issue numbers, phase numbers, decision ids (`D4`, `AC2`), plan paths, pipeline nouns, and agent provenance are banned from every file you write, including comments and filenames. Write the reason standalone.
+The private workflow never reaches committed code: branch, PR, and issue numbers, phase numbers, decision ids (`D4`, `AC2`), plan paths, pipeline nouns, agent provenance, the user's name, and sign-offs (who and when) are banned from every file you write, including comments and filenames. Write the reason standalone.
 
 ## Verify before you report
 

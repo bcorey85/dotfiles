@@ -14,6 +14,8 @@
 # Every call, with or without `out=` and with telemetry off, exits 2 and writes nothing on an
 # arg with no `=` (the words a spaced value leaves unquoted). A ledger row also needs
 # `result=` from that set: any other value or a missing one exits 2, with telemetry off too.
+# root=<path> runs the script in the reviewed repo or worktree, for a call from another folder;
+# it is never stored.
 # date, schema_version, repo, session, desc and diff_base are accepted and never stored; the
 # writer adds the date, repo and session, and keys `branch=` into branch_key (with no
 # ledger, stored raw in the local jsonl file).
@@ -27,10 +29,12 @@
 # ledger. Both redirects write only while the metrics switch is on.
 set -euo pipefail
 
-script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../../scripts/lib/_kv.sh
 source "$script_dir/../../scripts/lib/_kv.sh"
 kv_help_exit "${BASH_SOURCE[0]}" "$@"
+kv_enter_root "$@"
+set -- ${kv_args[@]+"${kv_args[@]}"}
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
 # A bare word is the tail of an unquoted spaced value (result=PASS WITH WARNINGS);

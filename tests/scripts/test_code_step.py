@@ -1939,6 +1939,14 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("   Proposed change: export o as a const", self.said())
         self.assertIn("accepted (make the proposed change), rejected (leave the code as it stands)", self.said())
 
+    def test_the_question_for_the_user_shows_one_change_flag_after_each_modified_word(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+
+        self.step("after-review")
+
+        self.assertIn('`asks-done accepted modified --change "<text>" modified --change "<text>"`', self.said())
+
     def test_an_accepted_ask_sends_its_proposed_change_to_the_asks_coder(self):
         self.coder_round()
         self.hook("review-loop", self.ASK)

@@ -1669,6 +1669,31 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("accepted: make the proposed change", output)
         self.assertIn("rejected: leave the code as it stands", output)
 
+    def test_present_asks_indents_a_multi_line_asks_folded_lines_under_its_number(self):
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n"
+            "  - {finding: jobs count changed, finding_id: a1b2c3d4e5f60031, file_line: plan.md:12, "
+            "change: restore -j8, gate: code-reviewer, class: smell}\n"
+            "  - the plan says -j8\n"
+            "  - which one holds?\n",
+        )
+        code, output = self.packet(text)
+        self.assertEqual(code, 0, output)
+        self.assertIn("\n   the plan says -j8\n   which one holds?\n", output)
+
+    def test_present_asks_indents_a_multi_line_proposed_changes_later_lines_under_its_number(self):
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n"
+            "  - {finding: jobs count changed, finding_id: a1b2c3d4e5f60031, file_line: plan.md:12, "
+            "question: which one holds?, change: restore -j8, gate: code-reviewer, class: smell}\n"
+            "  - {change: and log the count}\n",
+        )
+        code, output = self.packet(text)
+        self.assertEqual(code, 0, output)
+        self.assertIn("\n   Proposed change: restore -j8\n   and log the count\n", output)
+
     def test_an_either_or_ask_with_no_proposed_change_is_a_parse_failure(self):
         self.assert_parse_failure(WITH_ASK.replace('    change: "cap retries at 3"\n', ""), "ask entry has no change")
 

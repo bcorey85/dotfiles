@@ -393,6 +393,11 @@ def joined_distinct(values, separator=" - "):
     return separator.join(kept)
 
 
+def ask_text(item):
+    # The shared reader copies a finding into the question (and the reverse) when only one is given: show it once.
+    return joined_distinct([str(item.get("finding") or ""), str(item.get("question") or "")])
+
+
 def visible_text(line, in_comment):
     """Return (line without HTML comment text, still inside an unclosed comment). A `<!--` inside an
     inline code span opens nothing."""

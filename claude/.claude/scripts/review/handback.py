@@ -33,6 +33,7 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import script_utils
+from plan_format import PLAN_CHANGE_MARK
 from script_utils import first_number, one_line, unquote
 
 STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
@@ -302,6 +303,27 @@ def item_text(item, *keys):
     if isinstance(item, dict):
         return " - ".join(str(item[key]) for key in keys if item.get(key))
     return str(item)
+
+
+def is_plan_impact_ask(item):
+    return any(PLAN_CHANGE_MARK.match(str(item.get(key) or "").lstrip()) for key in ("finding", "question"))
+
+
+def carried_findings(packet, include_asks=True):
+    """What a plan-impact, critical-blocker or cap-reached round leaves open for the next review, one line each: its
+    asks (unless the asks route rules them; the plan ruling settles a PLAN-IMPACT ask), its blockers, its remaining
+    findings and its closing prose, where the loop lists fix findings it did not dispatch."""
+    lines = []
+    if include_asks:
+        open_asks = [item for item in packet["ask"] if not is_plan_impact_ask(item)]
+        for item in open_asks:
+            lines.append(f"ask: {one_line(script_utils.ask_text(item), 800)} ({item.get('file_line', '-')})")
+    lines += ["blocker: " + one_line(item_text(item, "finding", "file_line"), 800) for item in packet["blockers"]]
+    lines += ["finding: " + one_line(item_text(item, "finding", "file_line"), 800)
+              for item in packet["findings_remaining"]]
+    if packet["trailer"]:
+        lines.append("loop note: " + one_line(packet["trailer"], 800))
+    return lines
 
 
 def ask_finding_id(item):

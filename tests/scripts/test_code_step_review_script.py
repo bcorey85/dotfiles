@@ -30,7 +30,7 @@ import time
 scripts = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(scripts / "code"), str(scripts / "lib")]
 import code_step_core
-import handback
+import handback_store
 
 arguments = sys.argv[1:]
 options = dict(zip(arguments[1::2], arguments[2::2]))
@@ -65,8 +65,9 @@ if mode in ("converged", "plan-impact", "plan-impact-dropped-ask", "plan-impact-
                    "ask:\\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}\\n")
     code_step_core.log_event(arguments[0], options["--run-id"], "handback", options["--session"],
                              agent_id=options["--agent-id"], agent_type="review-loop", message=message)
-    handback.record(options["--session"], "handback", agent_id=options["--agent-id"], status="converged",
-                    problems=[], message=message, no_reviewer=False, unreviewed_fix=mode == "unreviewed-fix")
+    handback_store.record(options["--session"], "handback", agent_id=options["--agent-id"], status="converged",
+                          problems=[], message=message, no_reviewer=False,
+                          unreviewed_fix=mode == "unreviewed-fix")
 """
 
 

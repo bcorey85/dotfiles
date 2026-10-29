@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """saved_handback.py: the lookup of this session's saved review-loop hand-back for review_fix.py. It reads the stored
-rows through handback.py and the open /code run through code_step_core, and decides whether the hand-back is the
+rows through handback_store.py and the open /code run through code_step_core, and decides whether the hand-back is the
 session's to take, a miss, or a wait."""
 import hashlib
 import os
@@ -10,7 +10,7 @@ import sys
 SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
 import code_step_core
-import handback
+import handback_store
 from handback import PacketError
 
 
@@ -93,12 +93,12 @@ def saved_hand_back(session_id):
     if not session_id:
         raise PacketError(["the packet on stdin is empty and CLAUDE_CODE_SESSION_ID is not set, so no saved "
                            "hand-back can be looked up"])
-    seen = handback.latest(session_id)
-    gap = handback.hand_back_gap(seen)
+    seen = handback_store.latest(session_id)
+    gap = handback_store.hand_back_gap(seen)
     stored_row = seen["handback"] or {}
     # A pending dispatch (waiting, never handed back, or re-dispatched) is newer than any stored hand-back, so the
     # stored hand-back's owner is not the answer: the run owns it only when the run dispatched it.
-    if gap in (handback.LOOP_WAITING, handback.NO_HANDBACK, handback.REDISPATCHED):
+    if gap in (handback_store.LOOP_WAITING, handback_store.NO_HANDBACK, handback_store.REDISPATCHED):
         code_step = code_step_pending_review(session_id, seen["handback"])
     else:
         code_step = active_code_step(session_id, stored_row.get("agent_id"))
@@ -106,11 +106,11 @@ def saved_hand_back(session_id):
         raise PacketError([f"a /code run owns this session's review hand-backs (code-step state {code_step[0]}, stage "
                            f"{code_step[1]}): its packet goes through code_step.py resume, not `packet`"])
 
-    if gap == handback.LOOP_WAITING:
+    if gap == handback_store.LOOP_WAITING:
         raise LoopWaitingError(seen["stop"]["ts"])
-    if gap in (handback.NO_HANDBACK, handback.REDISPATCHED):
+    if gap in (handback_store.NO_HANDBACK, handback_store.REDISPATCHED):
         raise NoHandbackError(hand_back_id(seen["handback"], session_id))
-    if gap == handback.NO_DISPATCH:
+    if gap == handback_store.NO_DISPATCH:
         raise PacketError([f"this session has no review-loop dispatch on record (session {session_id}): a hand-back "
                            "from another session or an older run is never taken as current"])
     return seen["handback"]
@@ -126,8 +126,8 @@ def read_message():
         return stdin_text, "stdin:" + hashlib.sha1(stdin_text.encode("utf-8")).hexdigest(), 0, False
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     stored_row = saved_hand_back(session_id)
-    unreviewed_in_a_row = handback.unreviewed_streak(session_id)
-    unreviewed_fix = handback.ended_on_unreviewed_fix(session_id, stored_row.get("agent_id"))
+    unreviewed_in_a_row = handback_store.unreviewed_streak(session_id)
+    unreviewed_fix = handback_store.ended_on_unreviewed_fix(session_id, stored_row.get("agent_id"))
     return stored_row["message"], hand_back_id(stored_row, session_id), unreviewed_in_a_row, unreviewed_fix
 
 
@@ -138,5 +138,5 @@ def dispatched_with_ruling():
     if not session_id:
         return False
 
-    last_dispatch = handback.latest(session_id)["dispatch"] or {}
+    last_dispatch = handback_store.latest(session_id)["dispatch"] or {}
     return bool(last_dispatch.get("resolved_plan_impact"))

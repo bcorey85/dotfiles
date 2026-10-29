@@ -22,6 +22,7 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import finding_record
 import handback
+import handback_store
 import review_loop_findings
 import review_loop_packet
 
@@ -241,7 +242,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         stop = self.store_rows()[1]
         self.assertEqual((stop["agent_id"], stop["open_dispatches"], stop["ask_rows"]), (AGENT_ID, 0, []))
         with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
-            latest_stop = handback.latest(SESSION)["stop"]
+            latest_stop = handback_store.latest(SESSION)["stop"]
         self.assertEqual(latest_stop["open_dispatches"], 0)
 
         runs = fake_ledger.recorded_rows(self.env, "review_run")

@@ -11,9 +11,10 @@ when it surely ran: after a failure, a check behind `&&` or `||` may never have 
 a success, a check behind `||` is not. A check whose output redirection the shell could not open (a redirect into a
 missing folder, `> gone/x.log`) never started, so it is not recorded. A run record keeps
 the run's start in a line, so an edit made while the check ran allows the rerun; the record's own time is the run's
-end. A command with a formatter that rewrites files (`cargo fmt`, `prettier --write`, `ruff format`...) is never denied
-when every check in it runs only after the formatter succeeded (joined to it by `&&`, pipes allowed), and resets the
-cap like an edit; its checks are recorded with no start line. Key: normalized command + effective cwd (POSIX cksum) +
+end. A command with a formatter that rewrites files (`cargo fmt`, `prettier --write`, `ruff format`...) or a git
+call that rewrites the tree (`git merge`, `checkout`, `reset`...) is never denied when every check in it runs only
+after the formatter succeeded (joined to it by `&&`, pipes allowed), and resets the cap
+like an edit; its checks are recorded with no start line. Key: normalized command + effective cwd (POSIX cksum) +
 the agent that ran it: a run is capped only against an earlier run by the same agent, so a subagent's first run of a
 check is always allowed. The agent is the hook input's `agent_id` (set only inside a subagent); the main thread has
 none. Edits are shared by every agent of the session, because they change the tree all of them see. A `cargo test`
@@ -42,6 +43,7 @@ import hook_input
 import script_utils
 from hook_input import EMPTY_INPUT, JqError, cksum, exit_code_in_error_text, jq_field, jq_get, truthy
 from shell_command import (
+    git_subcommand,
     parse_simple_commands,
     path_word,
     redirection_writes_file,
@@ -64,6 +66,9 @@ FORMATTER_START = re.compile("^(" + FORMATTERS + ")(" + WS + "|$)")
 FORMATTER_WRITES = re.compile(r"--write|(^|\s)-w(\s|$)|--fix|--apply")
 FORMATTER_READS_ONLY = re.compile(r"--check|--diff|--dry-run|(^|\s)-l(\s|$)|--list-different")
 FORMATTER_WRITES_BY_DEFAULT = re.compile("^(cargo fmt|rustfmt|black|ruff format|go fmt|dotnet format)")
+# The git subcommands that rewrite the work tree.
+GIT_TREE_REWRITE_SUBCOMMANDS = {"merge", "checkout", "switch", "reset", "pull", "rebase", "restore", "cherry-pick",
+                                "revert", "am", "apply", "clean", "rm", "mv"}
 CARGO_TEST = re.compile("^cargo test(" + WS + "|$)")
 CARGO_TARGET_FLAGS = ("--test", "--bin", "--example", "--bench")
 CARGO_WHOLE_TREE_FLAGS = ("--workspace", "--all", "--all-targets")
@@ -369,7 +374,10 @@ def normalize(segment):
 
 
 def writes_files(segment):
-    """True when the segment is a formatter or fixer that rewrites files."""
+    """True when the segment is a formatter or fixer that rewrites files, or a git call that rewrites the tree."""
+    words = segment.split()
+    if words and words[0] == "git" and git_subcommand(words) in GIT_TREE_REWRITE_SUBCOMMANDS:
+        return True
     if not FORMATTER_START.search(segment):
         return False
     if FORMATTER_READS_ONLY.search(segment):

@@ -433,4 +433,5 @@ function theme-mode() {
 }
 
 # no-agent-summary: stop Claude Code's agent_summary side-query (gist flamerix-ai/c3905705)
-export BUN_OPTIONS="${BUN_OPTIONS:+$BUN_OPTIONS }--preload=$HOME/.local/share/no-agent-summary.js"
+[[ -f $HOME/.local/share/no-agent-summary.js ]] &&
+  export BUN_OPTIONS="${BUN_OPTIONS:+$BUN_OPTIONS }--preload=$HOME/.local/share/no-agent-summary.js"

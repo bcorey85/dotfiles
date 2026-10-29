@@ -127,7 +127,7 @@ def read_state_file(directory):
 # ---------- stop record and snapshot ----------
 # A stopped run keeps stage "stopped" (printed texts and the verb guards name it) and one `stop` record:
 # {"kind": why it stopped or None, "at": when, "agentId": the coder it can resume,
-#  "waitAt": first wait on a resumed agent}.
+#  "coderStage": the stage that coder stopped at, "waitAt": first wait on a resumed agent}.
 
 STOPPED = "stopped"
 CODER_RESUMABLE = "coder-resumable"
@@ -136,11 +136,14 @@ OLD_STOP_KEYS = ("stopReason", "resumableCoderAt", "resumableCoderId", "resumabl
 OLD_SNAPSHOT_KEYS = {"planEditBaseline": "planEdit", "asksBaseline": "asks", "followUpBefore": "followUp"}
 
 
-def set_stop(state, kind=None, *, at=None, agent_id=None):
+def set_stop(state, kind=None, *, at=None, agent_id=None, coder_stage=None):
     # The run stops here, whatever it was doing: the record replaces any earlier stop, its resume wait included.
+    # coder_stage is the stage of the stopped coder, which a resume of that coder goes back to.
     record = {"kind": kind, "at": time.time() if at is None else at}
     if agent_id is not None:
         record["agentId"] = agent_id
+    if coder_stage is not None:
+        record["coderStage"] = coder_stage
     state["stage"] = STOPPED
     state["stop"] = record
 
@@ -244,6 +247,11 @@ def migrate_old_state(state):
     if old_snapshot_parts:
         record_snapshot(state, **old_snapshot_parts)
     state.pop("packet", None)
+
+    # The asks coders' behavior was one flat list for all rounds; it reads as one earlier round.
+    old_ask_behavior = state.pop("askFixBehavior", None)
+    if old_ask_behavior and "askRounds" not in state:
+        state["askRounds"] = [list(old_ask_behavior)]
     return state
 
 
@@ -566,7 +574,7 @@ def handback_event(events, agent_id, since):
 
 def awaits_resumed_coder(state):
     # The run stopped on a coder's report and the user answered: that coder, resumed with SendMessage, has no dispatch
-    # of its own. The verb that finds its hand-back puts the stage back to coder.
+    # of its own. The verb that finds its hand-back puts the stage back to the stopped coder's stage.
     return stop_kind(state) == CODER_RESUMABLE
 
 
@@ -755,7 +763,7 @@ def sent_message_since(repo_dir, state, since, agent_id=None):
 def put_resumed_coder_back(repo_dir, state):
     # A coder resumed after the run stopped on its report is the same coder: its next hand-back goes to review. Its
     # dispatch time is the stop.
-    state["stage"] = "coder"
+    state["stage"] = state["stop"].get("coderStage", "coder")
     state["dispatchAt"] = state["stop"]["at"]
     clear_stop(state)
     save_state(repo_dir, state)
@@ -1161,9 +1169,9 @@ def changed_wording_lines(saved_wording, current_wording):
 
 def stop_a_silent_coder(repo_dir, state, stopped_at):
     # The coder wait ran to the cap. A coder whose launch has an agent id can be resumed with SendMessage: the state
-    # then reads like the stop on a coder's report. A coder that was resumed once keeps its id. Only the phase coder
-    # is resumed this way: a resumed coder goes back to the coder stage, so a plan-edit coder, and a launch with no
-    # agent id, leave only a restart.
+    # then reads like the stop on a coder's report. A coder that was resumed once keeps its id and its stage. Only
+    # the stages in CODER_STAGES are resumed this way: a plan-edit coder, and a launch with no agent id, leave only a
+    # restart.
     # A coder with an agent id may still run, so the restart stops it first.
     restart_instruction_text = restart_instruction(state, script_command("start --restart"))
     agent_id = awaited_agent_id(repo_dir, state)
@@ -1172,15 +1180,16 @@ def stop_a_silent_coder(repo_dir, state, stopped_at):
         restart_instruction_text = f"stop coder {agent_id} with TaskStop, then {stopped_restart_text}"
     if state.get("stage") == "plan-coder":
         set_stop(state, "coder-cap", at=stopped_at)
-        return (" The plan-edit coder cannot be resumed: only the phase coder can. To dispatch the phase coder "
-                f"again, {restart_instruction_text}.")
+        return (" The plan-edit coder cannot be resumed: only the phase coder and the asks coder can. To dispatch "
+                f"the phase coder again, {restart_instruction_text}.")
 
     if not agent_id:
         set_stop(state, "coder-cap", at=stopped_at)
         return (f" Its launch has no agent id, so it cannot be resumed: {restart_instruction_text} "
                 "to dispatch a new one.")
 
-    set_stop(state, CODER_RESUMABLE, at=stopped_at, agent_id=agent_id)
+    coder_stage = state["stop"].get("coderStage", "coder") if awaits_resumed_coder(state) else state["stage"]
+    set_stop(state, CODER_RESUMABLE, at=stopped_at, agent_id=agent_id, coder_stage=coder_stage)
     state.pop("dispatchAt", None)
     return (f" If the user resumes coder {agent_id} with SendMessage, run {timed_command()}. To dispatch a "
             f"new coder instead, {restart_instruction_text}.")
@@ -1207,7 +1216,8 @@ def say_file(repo_dir):
 
 def say(repo_dir, text, replaces_blocks_starting=None):
     # User-facing text goes to a file the /code subagent hands back verbatim, so the model never has to copy it.
-    # A block that starts with `replaces_blocks_starting` takes the place of the earlier blocks that start with it.
+    # A block that starts with one of the `replaces_blocks_starting` prefixes takes the place of the earlier blocks
+    # that start with one.
     directory = state_dir(repo_dir)
     if directory is None:
         return

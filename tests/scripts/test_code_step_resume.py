@@ -746,6 +746,25 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertIn("AGENT: review-loop", out)
 
+    def test_an_asks_coder_resumed_after_the_cap_has_its_hand_back_taken_at_the_asks_coder_stage(self):
+        self.apply_first_ask()
+        self.assertEqual("asks-coder", self.state()["stage"])
+        dispatch_id = self.events_named("dispatch")[-1]["id"]
+        self.launch_agent(f"code-step-dispatch: {self.state()['runId']}/{dispatch_id}", agent_id="ask1")
+        self.age_dispatches(100)
+        self.set_state(dispatchAt=time.time() - 100)
+        self.wait_env(1, "0.2")
+        self.assertIn("ACTION: stop", self.step("resume"))
+        self.assertEqual("asks-coder", self.state()["stop"]["coderStage"])
+        self.send_message("ask1")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask", agent_id="ask1")
+
+        out = self.step("resume")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("iter: 0", out)
+
     def test_a_restart_over_the_coder_cap_refuses_until_that_coder_is_stopped(self):
         cap_stop = self.stop_the_coder_at_the_wait_cap(launched_as="c1")
         self.assertIn("stop coder c1 with TaskStop", cap_stop)
@@ -792,7 +811,30 @@ class ResumeTest(base.CodeStepTest):
         self.assertEqual("c1", self.state()["stop"]["agentId"])
         self.assertEqual("coder-resumable", self.state()["stop"]["kind"])
 
-    def test_the_plan_coder_at_the_cap_says_only_the_phase_coder_resumes_and_start_restart_dispatches_it(self):
+    def test_an_asks_coder_that_reaches_the_cap_twice_is_still_reviewed_at_the_asks_coder_stage(self):
+        self.apply_first_ask()
+        dispatch_id = self.events_named("dispatch")[-1]["id"]
+        self.launch_agent(f"code-step-dispatch: {self.state()['runId']}/{dispatch_id}", agent_id="ask1")
+        self.age_dispatches(100)
+        self.set_state(dispatchAt=time.time() - 100)
+        self.wait_env(1, "0.2")
+        self.assertIn("ACTION: stop", self.step("resume"))
+        self.send_message("ask1")
+        self.set_state(resumableCoderAt=time.time() - 100, resumeWaitAt=time.time() - 100)
+
+        self.assertIn("ACTION: stop", self.step("resume"))
+
+        self.assertEqual("asks-coder", self.state()["stop"]["coderStage"])
+        self.send_message("ask1")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask", agent_id="ask1")
+
+        out = self.step("resume")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("iter: 0", out)
+
+    def test_the_plan_coder_at_the_cap_says_only_the_phase_and_asks_coders_resume_and_start_restart_dispatches_it(self):
         self.adopt_plan_change_with_the_plan_coder_out()
         self.assertEqual("plan-coder", self.state()["stage"])
         # The coder's own report sits just before this dispatch, so the dispatch time stays and the waits run to the
@@ -805,6 +847,7 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertIn("ACTION: stop", out)
         self.assertIn("plan-edit coder cannot be resumed", out)
+        self.assertIn("only the phase coder and the asks coder can", out)
         self.assertIn("start --restart", out)
         self.assertIn("To dispatch the phase coder again", out)
         self.assertEqual(("stopped", "coder-cap"), (self.state()["stage"], self.state()["stop"]["kind"]))

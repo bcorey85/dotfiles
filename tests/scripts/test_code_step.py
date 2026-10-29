@@ -2070,13 +2070,128 @@ class CodeStepTest(unittest.TestCase):
         self.hook("coder", "BEHAVIOR: tests only, schema unchanged")
         self.step("resume")
         said = self.said()
-        self.assertIn("Implemented: orders exist\n", said)
-        self.assertIn("Ask-fix: tests only, schema unchanged", said)
+        self.assertIn("Ask-fix coder (current report): tests only, schema unchanged\n", said)
+        self.assertIn("Phase coder's behavior (earlier): orders exist\n", said)
         self.assertNotIn("orders exist; tests only", said)
         self.assertEqual(["orders exist"], self.state()["behavior"])
         self.hook("review-loop", self.LOOP_OK)
         self.step("resume")
         self.assertNotIn("tests only", self.said().split("Behavior delta")[-1])
+
+    def asks_round(self, report, source):
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("resume")
+        self.step("asks-done", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text(source)
+        self.hook("coder", report)
+        self.step("resume")
+
+    def test_the_summary_after_two_asks_rounds_leads_with_the_current_asks_coder(self):
+        self.coder_round()
+        self.asks_round("BEHAVIOR: first ask fix\nWHY: backend/src/orders.ts 1-2 — first round note",
+                        "export const o = 2\n")
+        self.asks_round("BEHAVIOR: second ask fix\nWHY: backend/src/orders.ts 4-5 — second round note",
+                        "export const o = 3\n")
+
+        said = self.said()
+
+        summary = said.split("Auto-dispatching review")[-2].split("\n\n")[-1]
+        self.assertTrue(summary.startswith("Ask-fix coder (current report): second ask fix\n"), summary)
+        self.assertIn("Earlier ask-fix round 1: first ask fix\n", summary)
+        self.assertIn("Phase coder's behavior (earlier): orders exist\n", summary)
+        self.assertEqual(1, said.count("Ask-fix coder (current report): "))
+        self.assertIn("second round note", summary)
+        for replaced_note in ("order matters", "first round note"):
+            self.assertNotIn(replaced_note, summary)
+        self.assertEqual([["first ask fix"], ["second ask fix"]], self.state()["askRounds"])
+        self.assertEqual(["orders exist"], self.state()["behavior"])
+
+    def test_the_summary_keeps_the_phase_note_of_a_file_the_asks_coder_did_not_change(self):
+        report = ("BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\n"
+                  "WHY: backend/src/other.ts 1-2 — other matters\nREVIEW: recommended")
+        self.begin_coder()
+        (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
+        self.hook("coder", report)
+        self.step("resume")
+
+        self.asks_round("BEHAVIOR: ask fix\nWHY: backend/src/orders.ts 1-2 — ask note", "export const o = 2\n")
+
+        said = self.said()
+        self.assertIn("ask note", said)
+        self.assertIn("other matters", said)
+        self.assertNotIn("order matters", said)
+
+    def test_without_an_asks_snapshot_the_summary_replaces_only_the_notes_of_files_the_asks_coder_noted(self):
+        report = ("BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\n"
+                  "WHY: backend/src/other.ts 1-2 — other matters\nREVIEW: recommended")
+        self.begin_coder()
+        (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
+        self.hook("coder", report)
+        self.step("resume")
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("resume")
+        self.step("asks-done", "accepted")
+        snapshot = {part: value for part, value in self.state()["snapshot"].items() if part != "asks"}
+        self.set_state(snapshot=snapshot)
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: ask fix\nWHY: backend/src/orders.ts 1-2 — ask note")
+
+        self.step("resume")
+
+        said = self.said()
+        self.assertIn("ask note", said)
+        self.assertIn("other matters", said)
+        self.assertNotIn("order matters", said)
+
+    def test_a_second_asks_round_that_stopped_on_no_change_and_is_resumed_leads_the_summary_with_its_report(self):
+        self.coder_round()
+        self.asks_round("BEHAVIOR: first ask fix\nWHY: backend/src/orders.ts 1-2 — first round note",
+                        "export const o = 2\n")
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("resume")
+        self.step("asks-done", "accepted")
+        self.hook("coder", "BEHAVIOR: none\nstill blocked")
+        out = self.step("resume")
+        self.assertIn("ACTION: stop", out)
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 3\n")
+        self.hook("coder", "BEHAVIOR: second ask fix\nWHY: backend/src/orders.ts 4-5 — second round note")
+
+        self.step("resume")
+
+        said = self.said()
+        summary = said.split("Auto-dispatching review")[-2].split("\n\n")[-1]
+        self.assertTrue(summary.startswith("Ask-fix coder (current report): second ask fix\n"), summary)
+        self.assertIn("Earlier ask-fix round 1: first ask fix\n", summary)
+        self.assertEqual(["orders exist"], self.state()["behavior"])
+
+    def test_the_summary_keeps_the_phase_note_of_an_untouched_file_when_the_review_left_findings_open(self):
+        report = ("BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\n"
+                  "WHY: backend/src/other.ts 1-2 — other matters\nREVIEW: recommended")
+        self.begin_coder()
+        (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
+        self.hook("coder", report)
+        self.step("resume")
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("resume")
+        self.step("asks-done", "accepted")
+        self.set_state(reviewStatus="cap-reached")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: ask fix\nWHY: backend/src/orders.ts 1-2 — ask note")
+
+        self.step("resume")
+
+        said = self.said()
+        self.assertIn("ask note", said)
+        self.assertIn("other matters", said)
+        self.assertNotIn("order matters", said)
+
+    def test_an_old_flat_ask_fix_behavior_state_reads_as_one_earlier_round(self):
+        old_state = {"stage": "review", "askFixBehavior": ["one", "two"]}
+
+        migrated = code_step_core.migrate_old_state(old_state)
+
+        self.assertEqual([["one", "two"]], migrated["askRounds"])
+        self.assertNotIn("askFixBehavior", migrated)
 
     def test_rejected_asks_finish_the_phase_without_a_coder(self):
         self.coder_round()

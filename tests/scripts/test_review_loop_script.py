@@ -912,6 +912,19 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["full_check"], "not run (expected red until Phase 3)")
         self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
 
+    def test_a_check_the_phase_declares_expected_red_whole_runs_the_scoped_tests(self):
+        self.commit_files({"plan.md": self.EXPECTED_RED_PLAN})
+        self.state_dir.mkdir()
+        (self.state_dir / "state.json").write_text(json.dumps({"gateCommands": ["grep -q 'limit = 99' app.py"]}))
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=self.RED_CHECK)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        scoped_tests = packet["scoped_tests"]
+        self.assertTrue(scoped_tests.startswith("failed: grep -q 'limit = 99' app.py"), scoped_tests)
+
     def test_once_the_named_phase_is_done_the_failing_check_is_a_blocker_again(self):
         self.commit_files({"plan.md": self.EXPECTED_RED_PLAN.replace("- [ ] Phase 3:", "- [x] Phase 3:")})
 

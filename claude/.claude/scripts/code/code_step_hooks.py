@@ -190,7 +190,13 @@ def command_hook():
                 return
 
         for call in calls:
-            reason = later_phase_edit_denial(call)
+            try:
+                reason = later_phase_edit_denial(call)
+            except Exception as error:
+                plan_name = call.state.get("plan")
+                script_utils.pre_tool_use_deny(f"Do not hand back yet. The later-phase check of plan {plan_name} "
+                                               f"failed: {error}. Fix the cause, then hand back.")
+                return
             if reason:
                 script_utils.pre_tool_use_deny(reason)
                 return

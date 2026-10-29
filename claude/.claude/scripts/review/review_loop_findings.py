@@ -24,17 +24,28 @@ ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
 
 
 def section(text, name):
+    # The section body keeps the indent of its first line: review_section_findings compares marker indents.
     match = re.search(rf"^#+\s*{name}\s*$(.*?)(?=^#+\s|\Z)", text, re.S | re.M | re.I)
-    return match.group(1).strip() if match else None
+    if not match:
+        return None
+    return re.sub(r"\A(?:[ \t]*\n)+", "", match.group(1)).rstrip()
+
+
+def indent_of(line):
+    return len(line) - len(line.lstrip())
 
 
 def review_section_findings(block):
     if not block:
         return []
-    # A bullet or numbered marker starts an item; any other line, after a blank line too, continues the item before it.
+    # A bullet or numbered marker at the first marker's indent starts an item. A marker indented deeper is a
+    # sub-bullet, and it and any other line, after a blank line too, continue the item before it.
+    marker_lines = [line for line in block.splitlines() if ITEM_MARKER.match(line)]
+    item_indent = indent_of(marker_lines[0]) if marker_lines else 0
+
     found = []
     for line in block.splitlines():
-        starts_item = bool(ITEM_MARKER.match(line))
+        starts_item = bool(ITEM_MARKER.match(line)) and indent_of(line) <= item_indent
         stripped = ITEM_MARKER_STRIP.sub("", line).strip()
         if not stripped:
             continue

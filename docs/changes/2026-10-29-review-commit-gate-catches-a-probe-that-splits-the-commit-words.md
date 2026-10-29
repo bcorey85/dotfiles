@@ -3,7 +3,7 @@ type: "Change"
 title: "review-commit-gate catches a probe that splits the commit words"
 description: "The gate matches the git-commit text patterns again with quoted-string joins removed, so a dirty session's probe that builds the commit text from pieces is denied. The code-reviewer brief says a blocked command is reported, never run in another form."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T10:00:00-05:00"}
-seq: 221
+seq: 229
 kind: "fix"
 components: ["script/review-commit-gate", "agent/code-reviewer"]
 evidence: ["judgment"]

@@ -3,7 +3,7 @@ type: "Change"
 title: "git-discipline-gate reads the branch of the -C or cd target"
 description: "The commit-on-main and worktree-prefix rules now read the branch of the repo each git call runs in: its -C directory, taken relative to the target of an earlier cd in the same command, else to the cwd. A cd after a ( not preceded by $ and a quoted or variable target are not followed."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T21:30:00-05:00"}
-seq: 219
+seq: 227
 kind: "fix"
 components: ["script/git-discipline-gate"]
 evidence: ["judgment"]

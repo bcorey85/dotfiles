@@ -30,7 +30,8 @@
       The row also carries `ask_rows`: the file, line and printed finding_id of each `actioned=ask` row the loop
       logged, so `review_fix.py packet` can give each ask its id.
   PreToolUse (Agent): a review-loop dispatch whose prompt says `caller: code` must carry a
-      `handoff:` line.
+      `handoff:` line. A review-loop dispatch from a subagent other than the /code fork is refused: the
+      nested loop cannot ask for permission or wake on its reviewer's report, so it never hands back.
 
   SubagentStop (review-loop), when the stop passes and no background dispatch is open: writes one
     `kind=run` row per reviewer dispatch (`*-reviewer`, `*-reviewer-deep`) through log-review-finding,
@@ -52,7 +53,8 @@ import shlex
 import subprocess
 import sys
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../code", "../lib")]
+import code_step_core
 import full_check as full_check_script
 import handback
 import script_utils
@@ -158,6 +160,8 @@ GATE_REASON = ("No full check ran after the last code change in this phase. A sc
                "says, then return the packet.")
 HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. Build it per "
                   "~/.claude/skills/_shared/handoff-block.md and dispatch again.")
+NESTED_REASON = ("Run /review from the main session: a review-loop that a subagent dispatches cannot ask for "
+                 "permission or wake on its reviewer's report, so it ends with no hand-back.")
 
 
 def text_of(content):
@@ -701,11 +705,25 @@ def log_run_rows(hook, transcript):
         print(f"review-loop-gate: run rows skipped, {type(e).__name__}: {e}", file=sys.stderr)
 
 
-def check_dispatch(tool_input):
+def dispatch_deny_reason(hook):
+    """Why a review-loop dispatch is refused, or None. Only the main session and the /code fork may dispatch one."""
+    tool_input = hook.get("tool_input") or {}
+    if tool_input.get("subagent_type") != "review-loop":
+        return None
+    if hook.get("agent_id") and hook.get("agent_type") != code_step_core.FORK_AGENT_TYPE:
+        return NESTED_REASON
+
     prompt = tool_input.get("prompt") or ""
-    if tool_input.get("subagent_type") == "review-loop" and CALLER_CODE.search(prompt) and not HANDOFF.search(prompt):
+    if CALLER_CODE.search(prompt) and not HANDOFF.search(prompt):
+        return HANDOFF_REASON
+    return None
+
+
+def check_dispatch(hook):
+    reason = dispatch_deny_reason(hook)
+    if reason:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                 "permissionDecisionReason": HANDOFF_REASON}}))
+                                                 "permissionDecisionReason": reason}}))
 
 
 def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
@@ -755,7 +773,7 @@ def main():
     hook = json.load(sys.stdin)
     event = hook.get("hook_event_name")
     if event == "PreToolUse" and hook.get("tool_name") == "Agent":
-        check_dispatch(hook.get("tool_input") or {})
+        check_dispatch(hook)
     elif event == "SubagentStop" and hook.get("agent_type") == "review-loop":
         check_stop(hook)
 

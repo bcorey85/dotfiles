@@ -995,6 +995,29 @@ class HandoffDispatchTest(unittest.TestCase):
         self.assertIn("handoff", json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecisionReason"])
 
 
+class NestedDispatchTest(unittest.TestCase):
+    def dispatch(self, **caller):
+        hook = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "session-1", **caller,
+                "tool_input": {"subagent_type": "review-loop", "prompt": "mode: review-first\ncaller: review"}}
+        environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}
+        proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
+                              text=True, check=True, env=environment)
+        return proc.stdout
+
+    def test_a_review_loop_dispatch_from_a_lane_subagent_is_refused_with_the_main_session_route(self):
+        denial = json.loads(self.dispatch(agent_id="lane-1", agent_type="general-purpose"))
+        reason = denial["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual("deny", denial["hookSpecificOutput"]["permissionDecision"])
+        self.assertIn("main session", reason)
+
+    def test_a_review_loop_dispatch_from_the_main_session_or_the_code_fork_passes(self):
+        cases = [("the main session", {}),
+                 ("the /code fork", {"agent_id": "fork-1", "agent_type": "code-fork"})]
+        for message, caller in cases:
+            with self.subTest(message):
+                self.assertEqual("", self.dispatch(**caller))
+
+
 if __name__ == "__main__":
     unittest.main()
 

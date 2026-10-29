@@ -73,7 +73,9 @@ def script_package_commands(repo_dir, package_dir, paths, derives_tests):
     # With no test file named, the gate runs the test files the coder changed. Only jest runs a file under __tests__/
     # that is not test-named.
     runner = "vitest run" if "vitest" in dependencies else "jest" if "jest" in dependencies else None
-    runs_jest = runner == "jest"
+    # With no runner dependency, a test script that names jest or react-scripts runs jest through a wrapper.
+    wraps_jest = runner is None and re.search(r"\b(?:jest|react-scripts)\b", scripts.get("test", "")) is not None
+    runs_jest = runner == "jest" or wraps_jest
     test_paths = [p for p in relative_paths if p.endswith(SCRIPT_SUFFIXES) and is_runnable_test_file(p, runs_jest)]
     placeholder = "jest-tests" if runs_jest else "tests"
     scope = " ".join(shlex.quote(p) for p in test_paths) or "{" + placeholder + ":" + ",".join(SCRIPT_SUFFIXES) + "}"

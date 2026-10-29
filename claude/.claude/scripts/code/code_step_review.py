@@ -342,7 +342,7 @@ def emit_plan_edit_dispatch(repo_dir, state):
         headline = (f"The plan change was adopted by {ruling['by']}. Dispatch a coder to rewrite the branch's plan "
                     "docs it contradicts.")
         prompt = planless_plan_edit_prompt(state)
-        return emit_dispatch(repo_dir, state, RESUME_VERB, headline, prompt=prompt, agent="coder")
+        return emit_dispatch(repo_dir, state, headline, prompt=prompt, agent="coder")
 
     prompt = plan_edit_prompt(state, criteria_path)
     if ruling["byUser"]:
@@ -353,7 +353,7 @@ def emit_plan_edit_dispatch(repo_dir, state):
         unchanged_clause = " The acceptance criteria do not change." if criteria_path else ""
         headline = (f"The plan change was adopted by {ruling['by']}. Dispatch a coder to rewrite the plan steps it "
                     f"contradicts.{unchanged_clause}")
-    emit_dispatch(repo_dir, state, RESUME_VERB, headline, prompt=prompt, agent="coder")
+    emit_dispatch(repo_dir, state, headline, prompt=prompt, agent="coder")
 
 
 def command_review_again(repo_dir, state, args):
@@ -570,7 +570,7 @@ def emit_review_dispatch(repo_dir, state):
     say(repo_dir, "\n".join(summary), replaces_blocks_starting="Implemented: ")
     if runs_review_script():
         return launch_review_script(repo_dir, state, prompt)
-    emit_dispatch(repo_dir, state, RESUME_VERB, prompt=prompt, agent="review-loop", model="sonnet")
+    emit_dispatch(repo_dir, state, prompt=prompt, agent="review-loop", model="sonnet")
 
 
 def launch_review_script(repo_dir, state, prompt):
@@ -581,7 +581,7 @@ def launch_review_script(repo_dir, state, prompt):
         return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
 
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
-    marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, RESUME_VERB, REVIEW_LOOP, "script", prompt)
+    marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, REVIEW_LOOP, "script", prompt)
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
     session_id = run_session_id(state)
@@ -605,7 +605,7 @@ def launch_review_script(repo_dir, state, prompt):
     state["reviewScriptLog"] = str(log_path)
     save_state(repo_dir, state)
     emit("wait", f"The review loop runs as a script; its log is {log_path}. Do not dispatch an agent. Run "
-         f"{timed_command(RESUME_VERB)} to wait for its hand-back.")
+         f"{timed_command()} to wait for its hand-back.")
 
 
 def load_review_packet(repo_dir, state, message):
@@ -824,7 +824,7 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
     else:
         review_sentence = ("A review of that coder's diff runs after it (none when the diff is docs only) before the "
                            "phase can finish.")
-    emit_dispatch(repo_dir, state, RESUME_VERB, "The user accepted review asks. Dispatch a coder to apply them. "
+    emit_dispatch(repo_dir, state, "The user accepted review asks. Dispatch a coder to apply them. "
                   + review_sentence, prompt=asks_coder_prompt(accepted_asks, also_text), agent="coder", model=model)
 
 

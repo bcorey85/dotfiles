@@ -11,6 +11,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import code_step_core
 import full_check
 import handback
+import handback_store
 import review_loop_gate
 import reviewed_tree
 import script_utils
@@ -109,8 +110,9 @@ def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
     except Exception as error:
         report_write_failure("run event", error)
     try:
-        handback.record(args.session, "handback", agent_id=args.agent_id, status=status, problems=[], message=message,
-                        no_reviewer=False, unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
+        handback_store.record(args.session, "handback", agent_id=args.agent_id, status=status, problems=[],
+                              message=message, no_reviewer=False,
+                              unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
     except Exception as error:
         report_write_failure("hand-back row", error)
     review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)

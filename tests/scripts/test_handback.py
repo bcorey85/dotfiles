@@ -1,8 +1,10 @@
 """Checks for handback.py: the one reader of the review-loop hand-back packet and the per-session store."""
+import ast
 import importlib.util
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +20,7 @@ SESSION = "sess-1"
 spec = importlib.util.spec_from_file_location("handback_under_test", str(SCRIPT))
 handback = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(handback)
+import handback_store  # noqa: E402
 
 CONVERGED = """status: converged
 iter: 1
@@ -615,140 +618,141 @@ class StoreTest(HandbackTestBase):
                              "tool_input": {"subagent_type": "review-loop", "prompt": prompt}}
                     code, _, _ = self.run_cli(["hook", "dispatch"], json.dumps(event))
                     self.assertEqual(code, 0)
-                    self.assertEqual(handback.latest(SESSION)["dispatch"]["repo"], os.path.realpath(expected_repo))
+                    dispatch_row = handback_store.latest(SESSION)["dispatch"]
+                    self.assertEqual(dispatch_row["repo"], os.path.realpath(expected_repo))
 
     def test_latest_reports_dispatch_handback_and_pending(self):
-        self.assertEqual(handback.latest(SESSION),
+        self.assertEqual(handback_store.latest(SESSION),
                          {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False})
-        handback.record(SESSION, "dispatch")
-        self.assertTrue(handback.latest(SESSION)["pending"])
-        handback.record(SESSION, "handback", status="converged", message="m")
-        seen = handback.latest(SESSION)
+        handback_store.record(SESSION, "dispatch")
+        self.assertTrue(handback_store.latest(SESSION)["pending"])
+        handback_store.record(SESSION, "handback", status="converged", message="m")
+        seen = handback_store.latest(SESSION)
         self.assertEqual((seen["handback"]["status"], seen["pending"]), ("converged", False))
-        handback.record(SESSION, "dispatch")
-        self.assertTrue(handback.latest(SESSION)["pending"])
+        handback_store.record(SESSION, "dispatch")
+        self.assertTrue(handback_store.latest(SESSION)["pending"])
 
     def test_latest_counts_dispatches_since_the_last_hand_back(self):
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "dispatch")
-        self.assertEqual(handback.latest(SESSION)["unanswered"], 2)
-        handback.record(SESSION, "handback", status="converged", message="m")
-        self.assertEqual(handback.latest(SESSION)["unanswered"], 0)
-        handback.record(SESSION, "dispatch")
-        seen = handback.latest(SESSION)
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "dispatch")
+        self.assertEqual(handback_store.latest(SESSION)["unanswered"], 2)
+        handback_store.record(SESSION, "handback", status="converged", message="m")
+        self.assertEqual(handback_store.latest(SESSION)["unanswered"], 0)
+        handback_store.record(SESSION, "dispatch")
+        seen = handback_store.latest(SESSION)
         self.assertEqual((seen["unanswered"], seen["pending"]), (1, True))
 
     def test_a_dispatch_another_hook_denied_blocks_nothing_once_a_later_dispatch_hands_back(self):
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "handback", status="converged", message="m")
-        seen = handback.latest(SESSION)
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message="m")
+        seen = handback_store.latest(SESSION)
         self.assertFalse(seen["pending"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_hand_back_gap_names_why_there_is_no_current_hand_back(self):
-        seen = handback.latest(SESSION)
-        self.assertEqual(handback.hand_back_gap(seen), handback.NO_DISPATCH)
-        handback.record(SESSION, "dispatch")
-        seen = handback.latest(SESSION)
-        self.assertEqual(handback.hand_back_gap(seen), handback.NO_HANDBACK)
-        handback.record(SESSION, "handback", status="converged", message="m")
-        seen = handback.latest(SESSION)
-        self.assertIsNone(handback.hand_back_gap(seen))
-        handback.record(SESSION, "dispatch")
-        seen = handback.latest(SESSION)
-        self.assertEqual(handback.hand_back_gap(seen), handback.REDISPATCHED)
+        seen = handback_store.latest(SESSION)
+        self.assertEqual(handback_store.hand_back_gap(seen), handback_store.NO_DISPATCH)
+        handback_store.record(SESSION, "dispatch")
+        seen = handback_store.latest(SESSION)
+        self.assertEqual(handback_store.hand_back_gap(seen), handback_store.NO_HANDBACK)
+        handback_store.record(SESSION, "handback", status="converged", message="m")
+        seen = handback_store.latest(SESSION)
+        self.assertIsNone(handback_store.hand_back_gap(seen))
+        handback_store.record(SESSION, "dispatch")
+        seen = handback_store.latest(SESSION)
+        self.assertEqual(handback_store.hand_back_gap(seen), handback_store.REDISPATCHED)
 
     def test_a_stop_with_an_open_background_agent_is_a_wait_until_a_later_stop_or_a_hand_back(self):
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
-        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.LOOP_WAITING)
-        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0)
-        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.NO_HANDBACK)
-        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=2)
-        handback.record(SESSION, "handback", status="converged", message="m")
-        self.assertIsNone(handback.hand_back_gap(handback.latest(SESSION)))
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
+        self.assertEqual(handback_store.hand_back_gap(handback_store.latest(SESSION)), handback_store.LOOP_WAITING)
+        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0)
+        self.assertEqual(handback_store.hand_back_gap(handback_store.latest(SESSION)), handback_store.NO_HANDBACK)
+        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=2)
+        handback_store.record(SESSION, "handback", status="converged", message="m")
+        self.assertIsNone(handback_store.hand_back_gap(handback_store.latest(SESSION)))
 
     def test_a_stop_the_gate_blocked_is_not_the_standing_stop(self):
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[{"file": "a", "line": 1}])
-        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[], blocked=True)
-        self.assertEqual(handback.latest(SESSION)["stop"]["ask_rows"], [{"file": "a", "line": 1}])
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[{"file": "a", "line": 1}])
+        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[], blocked=True)
+        self.assertEqual(handback_store.latest(SESSION)["stop"]["ask_rows"], [{"file": "a", "line": 1}])
 
     def test_the_settled_stop_is_the_awaited_agents_unblocked_stop_at_or_after_the_hand_back(self):
-        before = handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0)["ts"]
-        handback.record(SESSION, "stop", agent_id="a2", open_dispatches=0)
-        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, blocked=True)
+        before = handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0)["ts"]
+        handback_store.record(SESSION, "stop", agent_id="a2", open_dispatches=0)
+        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0, blocked=True)
         self.assertIsNone(handback.settled_stop_row(SESSION, "a1", before + 0.0001))
-        settled = handback.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[])
+        settled = handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[])
         self.assertEqual(handback.settled_stop_row(SESSION, "a1", before + 0.0001), settled)
 
     def test_a_wait_after_a_redispatch_is_not_redispatched_and_a_new_dispatch_clears_an_old_stop(self):
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "handback", status="converged", message="m")
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
-        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.LOOP_WAITING)
-        handback.record(SESSION, "dispatch")
-        self.assertEqual(handback.hand_back_gap(handback.latest(SESSION)), handback.REDISPATCHED)
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message="m")
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
+        self.assertEqual(handback_store.hand_back_gap(handback_store.latest(SESSION)), handback_store.LOOP_WAITING)
+        handback_store.record(SESSION, "dispatch")
+        self.assertEqual(handback_store.hand_back_gap(handback_store.latest(SESSION)), handback_store.REDISPATCHED)
 
     def test_false_clean_reason_refuses_clean_while_the_loop_waits(self):
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
         self.assertIn("waiting on a background agent or shell", handback.false_clean_reason(SESSION))
-        handback.record(SESSION, "handback", status="converged", message="m")
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
+        handback_store.record(SESSION, "handback", status="converged", message="m")
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
         self.assertIn("waiting on a background agent or shell", handback.false_clean_reason(SESSION))
 
     def test_a_stored_hand_back_with_no_dispatch_row_has_its_own_reason(self):
-        handback.record(SESSION, "handback", status="converged", message="m")
+        handback_store.record(SESSION, "handback", status="converged", message="m")
         reason = handback.false_clean_reason(SESSION)
         self.assertIn("no review-loop dispatch on record", reason)
 
     def test_false_clean_reason_allows_only_a_current_converged_or_deferred_hand_back(self):
         self.assertIn("no review-loop hand-back", handback.false_clean_reason(SESSION))
         self.assertIn("no review-loop hand-back", handback.false_clean_reason(""))
-        handback.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "dispatch")
         self.assertIn("no review-loop hand-back", handback.false_clean_reason(SESSION))
-        handback.record(SESSION, "handback", status="critical-blocker", message="m")
+        handback_store.record(SESSION, "handback", status="critical-blocker", message="m")
         self.assertIn("critical-blocker", handback.false_clean_reason(SESSION))
-        handback.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "dispatch")
         self.assertIn("dispatched again", handback.false_clean_reason(SESSION))
-        handback.record(SESSION, "handback", status="deferred", message="m")
+        handback_store.record(SESSION, "handback", status="deferred", message="m")
         self.assertIsNone(handback.false_clean_reason(SESSION))
-        handback.record(SESSION, "dispatch")
-        handback.record(SESSION, "handback", status="converged", message="m")
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message="m")
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_sessions_never_see_or_overwrite_each_other(self):
-        handback.record("a", "dispatch")
-        handback.record("a", "handback", status="converged", message="m")
-        handback.record("b", "dispatch")
-        self.assertEqual(handback.latest("a")["handback"]["status"], "converged")
-        self.assertIsNone(handback.latest("b")["handback"])
+        handback_store.record("a", "dispatch")
+        handback_store.record("a", "handback", status="converged", message="m")
+        handback_store.record("b", "dispatch")
+        self.assertEqual(handback_store.latest("a")["handback"]["status"], "converged")
+        self.assertIsNone(handback_store.latest("b")["handback"])
         self.assertEqual(len((self.store / "a.jsonl").read_text().splitlines()), 2)
 
     def test_records_only_append(self):
-        handback.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "dispatch")
         first = (self.store / (SESSION + ".jsonl")).read_text()
-        handback.record(SESSION, "handback", status="converged", message="m")
+        handback_store.record(SESSION, "handback", status="converged", message="m")
         self.assertTrue((self.store / (SESSION + ".jsonl")).read_text().startswith(first))
 
     def test_session_ids_cannot_escape_the_store(self):
-        handback.record("../../evil", "dispatch")
+        handback_store.record("../../evil", "dispatch")
         self.assertEqual([path.name for path in self.store.iterdir()], [".._.._evil.jsonl"])
 
     def test_empty_session_has_no_rows_and_is_not_an_error(self):
-        self.assertEqual(handback.latest("")["handback"], None)
-        self.assertEqual(handback.latest(None)["dispatch"], None)
+        self.assertEqual(handback_store.latest("")["handback"], None)
+        self.assertEqual(handback_store.latest(None)["dispatch"], None)
 
     def test_stale_session_files_are_pruned_on_the_next_record(self):
-        handback.record("old", "dispatch")
+        handback_store.record("old", "dispatch")
         old = self.store / "old.jsonl"
         stale = time.time() - 30 * 86400
         os.utime(str(old), (stale, stale))
-        handback.record("new", "dispatch")
+        handback_store.record("new", "dispatch")
         self.assertFalse(old.exists())
         self.assertTrue((self.store / "new.jsonl").exists())
 
@@ -790,13 +794,13 @@ class HookTest(HandbackTestBase):
                     "tool_input": {"subagent_type": "code-reviewer"}}
         self.assertEqual(self.fire(reviewer)[:2], (0, ""))
         self.assertEqual(self.fire(self.event("SubagentHandback"))[:2], (0, ""))
-        seen = handback.latest(SESSION)
+        seen = handback_store.latest(SESSION)
         self.assertEqual(seen["handback"]["status"], "converged")
         self.assertFalse(seen["pending"])
 
         self.fire(self.event("Agent", agent="coder"))
         self.fire(self.event("SubagentHandback", agent="coder"))
-        self.assertEqual(handback.latest(SESSION), seen)
+        self.assertEqual(handback_store.latest(SESSION), seen)
 
     def test_bad_packet_is_denied_once_per_agent_then_stored_as_invalid(self):
         bad = self.event("SubagentHandback", message="status: pending")
@@ -804,10 +808,10 @@ class HookTest(HandbackTestBase):
         decision = json.loads(out)["hookSpecificOutput"]
         self.assertEqual((code, decision["permissionDecision"]), (0, "deny"))
         self.assertIn("status is", decision["permissionDecisionReason"])
-        self.assertIsNone(handback.latest(SESSION)["handback"])
+        self.assertIsNone(handback_store.latest(SESSION)["handback"])
         code, out, _err = self.fire(bad)
         self.assertEqual((code, out), (0, ""))
-        self.assertEqual(handback.latest(SESSION)["handback"]["status"], "invalid")
+        self.assertEqual(handback_store.latest(SESSION)["handback"]["status"], "invalid")
 
     def test_a_different_agent_id_is_denied_afresh(self):
         self.fire(self.event("SubagentHandback", message="junk"))
@@ -855,7 +859,7 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.dispatch("review-loop")
         self.dispatch("coder", "a1")
         self.assert_denied(self.hand_back())
-        self.assertIsNone(handback.latest(SESSION)["handback"])
+        self.assertIsNone(handback_store.latest(SESSION)["handback"])
         self.assertEqual(self.hand_back(), (0, ""))
         self.assertIn("no reviewer", handback.false_clean_reason(SESSION))
 
@@ -877,14 +881,14 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.dispatch("code-reviewer", "a1")
         self.dispatch("backend-coder-deep", "a1")
         self.assertEqual(self.hand_back(), (0, ""))
-        self.assertTrue(handback.latest(SESSION)["handback"]["unreviewed_fix"])
+        self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_no_review_mode_dispatch_passes_with_no_reviewer(self):
         self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
         self.dispatch("coder", "a1")
         self.assertEqual(self.hand_back(), (0, ""))
-        self.assertFalse(handback.latest(SESSION)["handback"]["unreviewed_fix"])
+        self.assertFalse(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_resolved_plan_impact_is_found_after_a_bullet_or_quote_marker(self):
@@ -932,7 +936,7 @@ class ReviewerRequiredTest(HandbackTestBase):
     def test_cap_exit_coder_passes_and_the_gate_accepts_it_when_converged(self):
         self.two_rounds_ending_on_the_cap_exit_coder()
         self.assertEqual(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")), (0, ""))
-        self.assertTrue(handback.latest(SESSION)["handback"]["unreviewed_fix"])
+        self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_cap_exit_coder_passes_and_the_gate_accepts_it_when_deferred(self):
@@ -940,7 +944,7 @@ class ReviewerRequiredTest(HandbackTestBase):
         message = ("status: deferred\niter: 2\nfixed: []\n"
                    "findings_remaining:\n- {finding: x, file_line: a.ts:1}\n")
         self.assertEqual(self.hand_back(message=message), (0, ""))
-        self.assertTrue(handback.latest(SESSION)["handback"]["unreviewed_fix"])
+        self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_a_nit_fixed_at_the_cap_exit_commits_and_a_blocker_left_over_does_not(self):
@@ -971,18 +975,18 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.dispatch("coder", "a1")
         self.hand_back("a1")
         self.hand_back("a1")
-        self.assertEqual(handback.unreviewed_streak(SESSION), 1)
+        self.assertEqual(handback_store.unreviewed_streak(SESSION), 1)
 
         self.dispatch("review-loop")
         self.dispatch("coder", "a2")
         self.hand_back("a2")
         self.hand_back("a2")
-        self.assertEqual(handback.unreviewed_streak(SESSION), 2)
+        self.assertEqual(handback_store.unreviewed_streak(SESSION), 2)
 
         self.dispatch("review-loop")
         self.dispatch("code-reviewer", "a3")
         self.hand_back("a3")
-        self.assertEqual(handback.unreviewed_streak(SESSION), 0)
+        self.assertEqual(handback_store.unreviewed_streak(SESSION), 0)
 
     def test_other_agent_types_are_not_steps(self):
         self.dispatch("review-loop")
@@ -1174,6 +1178,58 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertEqual(decision["permissionDecision"], "deny")
         self.assertIn("SendMessage", decision["permissionDecisionReason"])
         self.assertEqual(len(self.handback_rows()), 1)
+
+
+class NoStoreReExportTest(unittest.TestCase):
+    def test_every_script_reads_only_names_handback_defines(self):
+        handback_tree = ast.parse(SCRIPT.read_text())
+        defined = set()
+        for node in handback_tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                defined.add(node.name)
+            elif isinstance(node, ast.Assign):
+                defined.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                defined.add(node.target.id)
+            elif isinstance(node, ast.Import):
+                defined.update((alias.asname or alias.name).split(".")[0] for alias in node.names)
+        missing = []
+        for path in sorted(toolkit_paths.SCRIPTS_DIR.rglob("*.py")):
+            source = path.read_text()
+            tree = ast.parse(source)
+            # An `import handback` binds the name only in its own function, where other functions may use
+            # `handback` for a plain dict; an unindented one binds it for the whole file.
+            scopes = [(tree, {"handback"} if re.search(r"^import handback$", source, re.MULTILINE) else set())]
+            for function in ast.walk(tree):
+                if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                imports_handback = any(
+                    isinstance(inner, ast.Import) and any(alias.name == "handback" for alias in inner.names)
+                    for inner in ast.walk(function)
+                )
+                if imports_handback:
+                    scopes.append((function, {"handback"}))
+                # The code-step verbs pass the load_handback() module on as a parameter named `module`.
+                takes_handback_module = path.name.startswith("code_step") and any(
+                    argument.arg == "module" for argument in function.args.args)
+                if takes_handback_module:
+                    scopes.append((function, {"module"}))
+            if "= load_handback()" in source:
+                scopes.append((tree, {"module"}))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module == "handback":
+                    missing.extend(f"{path.name}:{node.lineno} from handback import {alias.name}"
+                                   for alias in node.names if alias.name not in defined)
+            for scope, handback_aliases in scopes:
+                for node in ast.walk(scope):
+                    is_handback_read = (
+                        isinstance(node, ast.Attribute)
+                        and isinstance(node.value, ast.Name)
+                        and node.value.id in handback_aliases
+                    )
+                    if is_handback_read and node.attr not in defined:
+                        missing.append(f"{path.name}:{node.lineno} {node.value.id}.{node.attr}")
+        self.assertEqual([], missing)
 
 
 if __name__ == "__main__":

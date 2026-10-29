@@ -64,6 +64,7 @@ import coder_gate
 import full_check
 import full_check_gate
 import handback
+import loop_transcript
 import plan_format
 import script_utils
 import source_paths
@@ -504,7 +505,7 @@ def stable_finding_id(session, lane, scope_fields, gate, spot):
     file and the finding's title plus a `#n` ordinal among same-title findings in that file; the line is left out, so a
     finding whose line moved keeps its id."""
     key = "\0".join([session, lane, *scope_fields, gate, spot])
-    return hashlib.sha256(key.encode()).hexdigest()[:handback.FINDING_ID_HEX_LEN]
+    return hashlib.sha256(key.encode()).hexdigest()[:loop_transcript.FINDING_ID_HEX_LEN]
 
 
 def new_spot(path, title, entries):
@@ -540,7 +541,7 @@ def telemetry(repo, session, lane, scope_fields, iter_count, tallies, run_rows):
             if finding["disposition"] == "fix":
                 command.append(f"source={finding['source']}")
             code, output = log_call(repo, command)
-            printed_ids = handback.PRINTED_FINDING_ID.findall(output)
+            printed_ids = loop_transcript.PRINTED_FINDING_ID.findall(output)
             if finding["disposition"] == "ask" and code == 0 and printed_ids:
                 ask_ids.setdefault(finding["finding"], printed_ids[0])
                 ask_rows.append({"file": path or UNLOCATED, "line": line, "finding_id": printed_ids[0]})

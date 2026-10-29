@@ -636,11 +636,12 @@ def review_handed_back_since(session, dirty_at, repo_top):
         return False
     try:
         import handback
+        import handback_store
     except ImportError:
         return False
     if handback.false_clean_reason(session) is not None:
         return False
-    seen = handback.latest(session)
+    seen = handback_store.latest(session)
     if seen["dispatch"].get("repo") != repo_top:
         return False
     handed_back_at = seen["handback"].get("ts")

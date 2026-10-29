@@ -14,9 +14,9 @@
                                         dispatch prompt's plan file, and denies any call from an agent whose
                                         report is already stored. Any other argument does nothing.
 
-Importers use, among others, parse, validate, load, render, record, latest, hand_back_gap, false_clean_reason,
-ended_on_unreviewed_fix, fixed_paths, unreviewed_streak, unreviewed_fix_section, full_suite_in_ci and the
-re-exported finding-id constants FINDING_ID_HEX_LEN and PRINTED_FINDING_ID. The store also holds
+Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths, unreviewed_fix_section
+and full_suite_in_ci; they read the store (record, latest, hand_back_gap, ended_on_unreviewed_fix, unreviewed_streak)
+from handback_store and the finding-id constants from loop_transcript. The store also holds
 a `stop` row that review_loop_gate.py writes at each review-loop stop (agent_id, open_dispatches). `latest` keeps the
 last one after the last dispatch; while it shows open_dispatches > 0 and no hand-back is current, hand_back_gap returns
 LOOP_WAITING, and a later stop with none open, a hand-back or a new dispatch ends the wait. A validated packet's
@@ -33,19 +33,17 @@ import textwrap
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import loop_transcript
 import script_utils
-from handback_store import (  # noqa: F401 (re-exports)
+from handback_store import (
     LOOP_WAITING,
     NO_DISPATCH,
-    NO_HANDBACK,
     REDISPATCHED,
-    ended_on_unreviewed_fix,
     hand_back_gap,
     latest,
     record,
     session_rows,
-    unreviewed_streak,
+    was_recorded,
 )
-from loop_transcript import FINDING_ID_HEX_LEN, FINDING_ID_PATTERN, PRINTED_FINDING_ID  # noqa: F401 (re-exports)
+from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
 from plan_format import PLAN_CHANGE_MARK
 from script_utils import first_number, one_line, unquote
 
@@ -821,11 +819,6 @@ def claim_no_review(session_id, agent_id):
         return False
     record(session_id, "no-review-exempt", agent_id=agent_id)
     return True
-
-
-def was_recorded(session_id, agent_id, kind):
-    """True when the session's file holds a row of this kind from this agent."""
-    return bool(session_rows(session_id, kind, agent_id))
 
 
 # ---------- hook ----------

@@ -601,12 +601,14 @@ def launch_review_script(repo_dir, state, prompt):
     if module is None:
         return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
 
+    import handback_store  # after the load check: a missing hand-back module must stop the run, not crash the import
+
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
     marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, REVIEW_LOOP, "script", prompt)
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
     session_id = run_session_id(state)
-    module.record(session_id, "dispatch", no_review=False, repo=module.reviewed_repo("", repo_dir))
+    handback_store.record(session_id, "dispatch", no_review=False, repo=module.reviewed_repo("", repo_dir))
 
     code_step_dir = state_dir(repo_dir)
     script_dir = code_step_dir / "loop-script" / agent_id
@@ -666,6 +668,8 @@ def command_after_review(repo_dir, state, args):
         return
     module, packet = loaded
 
+    import handback_store  # after the load check: a missing hand-back module must stop the run, not crash the import
+
     state["iter"] = packet["iter"]
     if packet["spec_iter"] is not None:
         state["spec_iter"] = packet["spec_iter"]
@@ -691,7 +695,7 @@ def command_after_review(repo_dir, state, args):
 
     sections = []
     session_id = run_session_id(state)
-    if session_id and module.ended_on_unreviewed_fix(session_id, handback.get("agent_id")):
+    if session_id and handback_store.ended_on_unreviewed_fix(session_id, handback.get("agent_id")):
         sections.append(module.unreviewed_fix_section(packet))
     say(repo_dir, module.render(packet, "code", sections))
     print("The review packet was saved for the user. Do not repeat it.")

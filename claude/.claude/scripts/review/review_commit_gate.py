@@ -401,7 +401,7 @@ def read_event(raw):
 
 def open_state_dir():
     """The gate's state folder, made when missing, with stale session files pruned."""
-    state_dir = os.environ["HOME"] + "/.claude/state/review-gate"
+    state_dir = str(reviewed_tree.review_gate_dir())
     try:
         os.makedirs(state_dir, exist_ok=True)
     except OSError as error:
@@ -441,7 +441,7 @@ def subagent_transcript(transcript_path, agent_id):
     `<session transcript without .jsonl>/subagents/agent-<id>.jsonl`. None without a transcript or an id."""
     if not transcript_path or not isinstance(agent_id, str) or not AGENT_ID.fullmatch(agent_id):
         return None
-    return os.path.join(os.path.splitext(transcript_path)[0], "subagents", f"agent-{agent_id}.jsonl")
+    return script_utils.subagent_transcript_path(transcript_path, agent_id)
 
 
 def worked_until(transcript_path, agent_id):

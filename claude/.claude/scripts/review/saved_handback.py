@@ -45,7 +45,7 @@ def code_run_at_review(session_id):
 
 
 def code_step_owner(code_step):
-    return code_step_core.state_dir(".") / "state.json", code_step["stage"]
+    return code_step_core.state_file("."), code_step["stage"]
 
 
 def active_code_step(session_id, hand_back_agent_id):

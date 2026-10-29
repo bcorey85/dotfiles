@@ -8,7 +8,6 @@ State: ~/.claude/state/review-gate/<session>.reviewed, one JSON object of repo t
 """
 import hashlib
 import json
-import os
 import pathlib
 
 import script_utils
@@ -18,7 +17,7 @@ REVIEWED_SUFFIX = ".reviewed"
 
 
 def review_gate_dir():
-    return pathlib.Path(os.environ["HOME"]) / ".claude" / "state" / "review-gate"
+    return pathlib.Path.home() / ".claude" / "state" / "review-gate"
 
 
 def reviewed_file(session):

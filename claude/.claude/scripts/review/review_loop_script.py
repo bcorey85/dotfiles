@@ -67,6 +67,7 @@ import handback
 import plan_format
 import script_utils
 import source_paths
+import worktree_snapshot
 from finding_record import parse_finding
 from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check
 from review_loop_findings import (
@@ -223,8 +224,8 @@ def git_lines(repo, *args):
 def scope(repo):
     """{path: [added, status]} for the working tree against HEAD, untracked files included."""
     files = {}
-    for line in git_lines(repo, "status", "--porcelain", "--untracked-files=all"):
-        status, path = line[:2].strip(), line[3:]
+    for path, code in worktree_snapshot.status_codes(repo).items():
+        status = code.strip()
         files[path] = [0, "??" if status == "??" else status[0]]
     for line in git_lines(repo, "diff", "--numstat", "HEAD"):
         added, _deleted, path = line.split("\t")

@@ -1,7 +1,7 @@
 """The review statuses that end a code_step run: a tool fault, a critical blocker, a setup fault, an unverified check
 and the review cap. Each prints its stop or question; the caller goes on to the asks or the phase end otherwise."""
 import script_utils
-from code_step_core import restart_instruction, save_state, script_command, stop_with_question
+from code_step_core import REVIEW_AGAIN_INVOKE, restart_instruction, save_state, script_command, stop_with_question
 from script_utils import ask_text
 
 
@@ -55,10 +55,10 @@ def stop_on_review_status(repo_dir, state, module, packet):
         save_state(repo_dir, state)
         stop_with_question(
             repo_dir, "a review call failed, so the review did not finish; it found nothing.",
-            [packet["tool_fault"]], "to run the review again on the same diff, invoke Skill code with `review-again`.",
+            [packet["tool_fault"]], f"to run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.",
             "The review did not run to the end: a tool fault, not a finding. Do not mark the phase done.",
             "Tool fault: " + packet["tool_fault"],
-            "To run the review again on the same diff, invoke Skill code with `review-again`.")
+            f"To run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.")
         return True
     if status == "critical-blocker" and packet["ask"] and not state.get("blockerCarried"):
         # With asks, the asks route takes the rulings first, as after a cap: the blockers go to the review after it.
@@ -118,7 +118,7 @@ def stop_on_review_status(repo_dir, state, module, packet):
         next_step = review_stop_next_step(state)
         if not is_second_cap:
             state.update({"carriedFindings": module.carried_findings(packet), "stopReason": "cap-reached"})
-            next_step = (f"for one more review-loop pass on the same diff, invoke Skill code with `review-again`. "
+            next_step = (f"for one more review-loop pass on the same diff, {REVIEW_AGAIN_INVOKE}. "
                          f"Or, {next_step}")
         save_state(repo_dir, state)
         remaining_lines = ["- " + module.item_text(item, "finding", "file_line")

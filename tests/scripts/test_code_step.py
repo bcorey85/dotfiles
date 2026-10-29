@@ -222,6 +222,14 @@ class CodeStepTest(unittest.TestCase):
                         CODE_STEP_REVIEW_LOOP="agent",
                         HANDBACK_STORE_DIR=str(self.tmp / "handback-store"),
                         PYTHONPATH=str(HANDBACK_SCRIPT.parent))
+        # `tick` runs the whole-suite commands of a phase. The sample plan names `npx vitest run`, and the real npx
+        # would fetch a package: a stand-in that passes keeps these tests offline.
+        passing_npx_folder = self.tmp / "passing-npx"
+        passing_npx_folder.mkdir()
+        passing_npx = passing_npx_folder / "npx"
+        passing_npx.write_text("#!/usr/bin/env bash\nexit 0\n")
+        passing_npx.chmod(0o755)
+        self.env["PATH"] = f"{passing_npx_folder}{os.pathsep}{self.env['PATH']}"
         self.env.pop("CODE_STEP_IMPACT_DECISION", None)
         self.env.pop("CODE_STEP_ASKS_OUTCOME", None)
         self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
@@ -1538,6 +1546,16 @@ class CodeStepTest(unittest.TestCase):
     def test_tick_stops_while_the_plan_edit_coder_is_out(self):
         self.check_a_verb_stops_while_the_plan_edit_coder_is_out(["tick", "1"])
 
+    def test_tick_after_an_abort_is_not_held_by_the_archived_plan_edit_guard(self):
+        self.open_plan_edit_with_a_late_criteria_write()
+        self.step("abort")
+
+        out = self.step("tick", "1")
+
+        self.assertIn("Phase 1 is marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+        self.assertNotIn("has not reported yet", out)
+
     def test_start_stops_while_the_plan_edit_coder_is_out(self):
         self.check_a_verb_stops_while_the_plan_edit_coder_is_out(["start", "--restart"])
 
@@ -2591,6 +2609,51 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("unparsed-line", result.stderr)
         event["tool_input"]["file_path"] = str(self.repo / "backend/src/orders.ts")
         self.assertEqual(0, run(self.repo, self.env, "plan-hook", stdin=json.dumps(event)).returncode)
+
+    def plan_hook_stderr_for(self, text):
+        self.start_phase_one()
+        (self.repo / self.plan).write_text(text)
+        event = {"cwd": str(self.repo), "tool_input": {"file_path": str(self.repo / self.plan)}}
+        result = run(self.repo, self.env, "plan-hook", stdin=json.dumps(event))
+        self.assertEqual(2, result.returncode)
+        return result.stderr
+
+    def test_plan_hook_on_a_duplicate_phase_id_asks_for_a_re_check_after_the_last_edit_and_no_stop(self):
+        stderr = self.plan_hook_stderr_for(self.plan_text().replace("- [ ] Phase 3:", "- [ ] Phase 2:"))
+        self.assertIn("duplicate-id", stderr)
+        self.assertIn("mid-edit", stderr)
+        self.assertIn("re-check after the last Edit", stderr)
+        self.assertNotIn("Report each line to the user and stop", stderr)
+
+    def test_plan_hook_on_a_section_without_a_status_entry_asks_for_a_re_check(self):
+        text = self.plan_text().replace(
+            "## Testing Strategy", "## Phase 5: Extra\n\nNo status entry.\n\n## Testing Strategy"
+        )
+        stderr = self.plan_hook_stderr_for(text)
+        self.assertIn("section-without-status", stderr)
+        self.assertNotIn("duplicate-id", stderr)
+        self.assertNotIn("missing-section", stderr)
+        self.assertIn("mid-edit", stderr)
+        self.assertNotIn("Report each line to the user and stop", stderr)
+
+    def test_plan_hook_on_a_renamed_phase_section_heading_asks_for_a_re_check(self):
+        stderr = self.plan_hook_stderr_for(self.plan_text().replace("## Phase 3:", "## Phase 2:"))
+        self.assertIn("mid-edit", stderr)
+        self.assertIn("re-check after the last Edit", stderr)
+
+    def test_plan_hook_on_sections_one_three_four_asks_for_a_re_check(self):
+        stderr = self.plan_hook_stderr_for(self.plan_text().replace("## Phase 2: Totals", "## Notes"))
+        self.assertIn("missing-section", stderr)
+        self.assertIn("mid-edit", stderr)
+        self.assertNotIn("Report each line to the user and stop", stderr)
+
+    def test_plan_hook_on_a_duplicate_id_with_an_unparsed_line_keeps_the_stop_message(self):
+        text = self.plan_text().replace(
+            "- [ ] Phase 3: Audit trail (risk: high)\n", "- [ ] Phase 2: Audit trail (risk: high)\n- [ ] Step five\n")
+        stderr = self.plan_hook_stderr_for(text)
+        self.assertIn("unparsed-line", stderr)
+        self.assertIn("Report each line to the user and stop", stderr)
+        self.assertNotIn("mid-edit", stderr)
 
     def test_plan_hook_during_a_hook_stage_exits_2_and_names_the_bad_manual_verification_line(self):
         self.start_phase_one()
@@ -4293,6 +4356,146 @@ class CodeStepTest(unittest.TestCase):
         self.step("tick", "1")
         self.assertIn("already marked done", self.step("tick", "1"))
         self.assertIn("usage: code_step.py tick", self.step("tick"))
+
+    def test_tick_on_a_stopped_run_marks_the_phase_done_once_its_verification_passes(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+
+        out = self.step("tick", "1")
+
+        self.assertIn("Phase 1 is marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+        self.assertIn("outside the coder and review steps of /code; its 2 Automated Verification command(s) "
+                      "passed at `tick`.", self.plan_text())
+        self.assertEqual("done", self.state()["stage"])
+
+    def test_tick_after_abort_refuses_once_a_planless_run_was_aborted_after_it(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        self.step("start", "--task", "add a flag")
+        self.step("abort")
+
+        out = self.step("tick", "1")
+
+        self.assertIn("no saved plan state", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_tick_after_abort_refuses_once_another_run_started_and_its_state_is_gone(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        self.step("start", "--task", "add a flag")
+        (self.repo / ".git" / "code-step" / "state.json").unlink()
+
+        out = self.step("tick", "1")
+
+        self.assertIn("no saved plan state", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def put_failing_npx_first_on_path(self, printed_lines):
+        # A stand-in `npx` that prints `printed_lines` and exits 1, ahead of the passing one from setUp.
+        failing_npx_folder = self.tmp / "failing-npx"
+        failing_npx_folder.mkdir()
+        failing_npx = failing_npx_folder / "npx"
+        printing = "".join(f"echo '{line}'\n" for line in printed_lines)
+        failing_npx.write_text(f"#!/usr/bin/env bash\n{printing}exit 1\n")
+        failing_npx.chmod(0o755)
+        self.env["PATH"] = f"{failing_npx_folder}{os.pathsep}{self.env['PATH']}"
+
+    def test_tick_runs_a_whole_suite_command_and_refuses_when_it_fails(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.put_failing_npx_first_on_path(["boom"])
+
+        out = self.step("tick", "1")
+
+        self.assertIn("tick refused", out)
+        self.assertIn("`npx vitest run` exit 1", out)
+        self.assertIn("then run `tick` again", out)
+        self.assertIn("Do not mark the phase done", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+        self.assertNotIn("marked done with `tick`", self.plan_text())
+        self.assertEqual("stopped", self.state()["stage"])
+
+    def test_tick_after_abort_refuses_a_failing_verification_and_leaves_no_state(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        self.put_failing_npx_first_on_path(["boom"])
+
+        out = self.step("tick", "1")
+
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+        self.assertIn("tick refused", out)
+
+    def test_tick_refusal_quotes_the_failing_test_of_the_command(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.put_failing_npx_first_on_path([" FAIL  src/orders.test.ts > totals", "AssertionError: expected 3 to be 4"])
+
+        out = self.step("tick", "1")
+
+        self.assertIn("src/orders.test.ts > totals", out)
+        self.assertIn("AssertionError: expected 3 to be 4", out)
+        self.assertNotIn("(no output)", out)
+
+    def test_tick_refusal_says_no_output_when_the_failing_command_printed_nothing(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.put_failing_npx_first_on_path([])
+
+        out = self.step("tick", "1")
+
+        self.assertIn("`npx vitest run` exit 1: (no output)", out)
+
+    def test_tick_records_that_no_verification_command_ran_when_no_item_parses(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        (self.repo / self.plan).write_text(self.plan_text().replace("`npx vitest run`", "see the log"))
+        self.set_verification("- [ ] **Check**: the streams pass, see the log")
+
+        out = self.step("tick", "1")
+
+        self.assertIn("Phase 1 is marked done", out)
+        self.assertIn("outside the coder, review and verification steps of /code; "
+                      "no Automated Verification command ran at `tick`", self.plan_text())
+        self.assertNotIn("passed at `tick`", self.plan_text())
+
+    def test_tick_after_two_aborts_reads_the_newest_aborted_plan(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        state_folder = self.repo / ".git/code-step"
+        (archive,) = state_folder.glob("aborted-*.json")
+        archive.rename(state_folder / "aborted-20260102T000000Z.json")
+        older_plan = "docs/plans/older/plan.md"
+        older_path = self.repo / older_plan
+        older_path.parent.mkdir(parents=True)
+        older_path.write_text("# Older\n\n## Phase Status\n\n- [ ] Phase 2: Something else\n")
+        (state_folder / "aborted-20260101T000000Z.json").write_text(
+            json.dumps({"plan": older_plan, "stage": "stopped"}))
+
+        out = self.step("tick", "1")
+
+        self.assertIn("Phase 1 is marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+        self.assertEqual("# Older\n\n## Phase Status\n\n- [ ] Phase 2: Something else\n", older_path.read_text())
+
+    def test_tick_refuses_when_the_newest_archive_names_no_plan(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        state_folder = self.repo / ".git/code-step"
+        (archive,) = state_folder.glob("aborted-*.json")
+        archive.rename(state_folder / "aborted-20260101T000000Z.json")
+        (state_folder / "aborted-20260102T000000Z.json").write_text(json.dumps({"stage": "stopped"}))
+
+        out = self.step("tick", "1")
+
+        self.assertIn("no saved plan state", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
 
     def test_the_no_change_stop_names_the_tick_command(self):
         self.start_phase_one()

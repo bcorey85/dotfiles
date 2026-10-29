@@ -16,6 +16,7 @@ import shutil
 import signal
 import sys
 import time
+import typing
 
 SIBLING_FOLDERS = ("code", "lib", "review", "telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in SIBLING_FOLDERS]
@@ -122,6 +123,37 @@ def read_state_file(directory):
         return migrate_old_state(json.loads(path.read_text()))
     except ValueError:
         raise StateFileError(f"{path} is not readable JSON") from None
+
+
+def load_aborted_plan_state(cwd):
+    # The newest archived state of an aborted run, or None when it is unreadable, names no plan, or a run started after
+    # the abort. `abort` archives the state under a UTC timestamp name, so the last name in sort order is the latest.
+    directory = state_dir(cwd)
+    if directory is None:
+        return None
+
+    archives = sorted(directory.glob("aborted-*.json"), reverse=True)
+    if not archives:
+        return None
+
+    try:
+        archived = migrate_old_state(json.loads(archives[0].read_text()))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(archived, dict) or not archived.get("plan"):
+        return None
+    if started_after_abort(directory, archived.get("runId")):
+        return None
+    return archived
+
+
+def started_after_abort(directory, archived_run_id):
+    # `start` clears the run folders of older runs before it logs its own, so a run folder other than the archived
+    # run's means a later start.
+    folder = directory / RUNS_DIR_NAME
+    if not folder.is_dir():
+        return False
+    return any(run_folder.name != archived_run_id for run_folder in folder.iterdir())
 
 
 # ---------- stop record and snapshot ----------
@@ -1327,11 +1359,22 @@ def script_command(verb_words):
     return f"{INSTALLED_COMMAND} {verb_words}".rstrip()
 
 
-def refuse(reason, *commands, notes=()):
+class Refusal(typing.NamedTuple):
+    # Why a verb does not run and what to run instead. A builder that returns a plain (reason, commands, notes) tuple
+    # reads as one with stop False.
+    reason: str
+    commands: list
+    notes: tuple = ()
+    stop: bool = False
+
+
+def refuse(reason, *commands, notes=(), stop=False):
     # The one shape of a refusal: `Refused: <reason>` first. One command to run instead prints `ACTION: rerun` with it;
-    # a choice between commands prints `ACTION: stop` and lists them. Nothing was changed.
+    # a choice between commands, or any refusal with stop, prints `ACTION: stop` and lists them. A refusal whose
+    # refused text must reach the user passes stop, since the skill runs a rerun's command at once. Nothing was
+    # changed.
     print("Refused: " + own_path(reason))
-    if len(commands) == 1:
+    if len(commands) == 1 and not stop:
         return emit("rerun", "COMMAND: " + commands[0], *notes)
     command_lines = [f"- `{command}`" for command in commands]
     choices = ["Run one of these on the user's word:", *command_lines]

@@ -1113,6 +1113,28 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(entry["change"], "read from settings")
         self.assertEqual(entry["question"], "`app.py:3` should it be configurable?")
 
+    def test_test_files_in_every_convention_go_to_the_test_reviewer(self):
+        module = self.load_script_module()
+        test_paths = ["web/__tests__/cart.js", "svc/test_cart.py", "svc/cart_test.go", "svc/tests/unit/helpers.py"]
+        files = {"svc/cart.py": [5, "M"]}
+        files.update({path: [5, "M"] for path in test_paths})
+        files["svc/big.py"] = [module.LARGE_ADDED_LINES, "M"]
+
+        dispatches = dict(module.first_round_plan(files))
+
+        self.assertEqual(sorted(dispatches["test-reviewer"]), sorted(test_paths))
+        self.assertEqual(sorted(dispatches["code-reviewer"]), ["svc/big.py", "svc/cart.py"])
+
+    def test_added_lines_of_tests_and_any_lockfile_stay_out_of_the_size_bar(self):
+        module = self.load_script_module()
+        uncounted = ["web/__tests__/cart.js", "svc/test_cart.py", "svc/cart_test.go", "svc/tests/unit/helpers.py",
+                     "yarn.lock", "svc/poetry.lock", "pnpm-lock.yaml"]
+
+        for path in uncounted:
+            with self.subTest(path=path):
+                files = {"svc/cart.py": [5, "M"], path: [module.LARGE_ADDED_LINES, "M"]}
+                self.assertEqual([agent for agent, _ in module.first_round_plan(files)], ["code-reviewer"])
+
     def test_the_finding_id_changes_with_the_gate(self):
         loader = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
         module = importlib.util.module_from_spec(loader)

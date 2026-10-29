@@ -3,6 +3,7 @@ import json
 import pathlib
 import re
 
+import coder_gate
 import script_utils
 from script_utils import git_output
 
@@ -163,19 +164,16 @@ def tests_run_text(gate, state):
         return "none"
     parts = []
     for coder in gate["coders"].values():
+        outcome_texts = {
+            coder_gate.FAILED: f"failed at the hand-back gate ({coder['result']})",
+            coder_gate.TIMED_OUT: "timed out at the hand-back gate, no test result",
+            coder_gate.SETUP_FAULT: "could not run at the hand-back gate (setup fault), no test result",
+            coder_gate.COMMAND_ERROR: "command error at the hand-back gate (missing path), no test result",
+            coder_gate.SKIPPED: "skipped, no changed files",
+        }
         for command in gate["commands"]:
-            if command in coder["failed"]:
-                parts.append(f"{command} -> failed at the hand-back gate ({coder['result']})")
-            elif command in coder.get("timed_out", []):
-                parts.append(f"{command} -> timed out at the hand-back gate, no test result")
-            elif command in coder.get("setup_faults", []):
-                parts.append(f"{command} -> could not run at the hand-back gate (setup fault), no test result")
-            elif command in coder.get("command_errors", []):
-                parts.append(f"{command} -> command error at the hand-back gate (missing path), no test result")
-            elif command in coder.get("skipped", []):
-                parts.append(f"{command} -> skipped, no changed files")
-            else:
-                parts.append(f"{command} -> exit 0")
+            outcome = coder.get("commands", {}).get(command, {}).get("outcome")
+            parts.append(f"{command} -> {outcome_texts.get(outcome, 'exit 0')}")
     return "; ".join(parts)
 
 

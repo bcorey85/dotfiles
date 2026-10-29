@@ -73,28 +73,40 @@ FILES_PLACEHOLDER = re.compile(r"\{(files|tests|jest-tests)(?::([^{}]*))?\}")
 # manage.py test exits 0 when its labels hold no Django tests, as pytest-style tests do: that run gave no test result.
 DJANGO_TEST_COMMAND = re.compile(r"\bmanage\.py\s+test\b")
 DJANGO_RAN_NO_TESTS = re.compile(r"^Ran 0 tests\b", re.MULTILINE)
-# The coder's stored lists that clear prints after its result, each with its label, in print order.
-CLEAR_COMMAND_LISTS = (("failed", "failed"), ("timed_out", "timed out (no test result)"),
-                       ("setup_faults", "setup fault (no test result)"),
-                       ("command_errors", "command error (missing path)"), ("skipped", "skipped"))
-# The stamp section of each kind of command that gave no test result: (stored list of commands, stored detail of each
-# command, heading, closing advice, line format of one command). The heading fills {timeout_seconds}. When a section's
-# stored-list key is None, the detail keyed by command stands for the list: the section names those commands in the
-# detail's order.
+# What a command did at the gate. A coder's stored "commands" map holds {command: {"outcome": ..., "detail": ...}} for
+# each command that did not pass: the detail is the output tail of a timeout or setup fault, the missing-path line of a
+# command error, else "".
+FAILED = "failed"
+TIMED_OUT = "timed-out"
+SETUP_FAULT = "setup-fault"
+COMMAND_ERROR = "command-error"
+SKIPPED = "skipped"
+# The outcome of a whole gate run, in the result vocabulary the coder stores.
+RESULT_FAILED = "failed"
+RESULT_COMMAND_ERROR = "command-error"
+RESULT_SETUP_FAULT = "setup-fault"
+RESULT_TIMEOUT = "timeout"
+RESULT_PASS = "pass"
+# The command outcomes that clear prints after a coder's result, each with its label, in print order.
+CLEAR_COMMAND_OUTCOMES = ((FAILED, "failed"), (TIMED_OUT, "timed out (no test result)"),
+                          (SETUP_FAULT, "setup fault (no test result)"),
+                          (COMMAND_ERROR, "command error (missing path)"), (SKIPPED, "skipped"))
+# The stamp section of each kind of command that gave no test result: (outcome, heading, closing advice, line format
+# of one command). The heading fills {timeout_seconds}.
 NO_RESULT_STAMP_SECTIONS = (
-    ("timed_out", "timed_out_tails",
+    (TIMED_OUT,
      "\nHAND-BACK GATE TIMEOUT: these commands timed out after {timeout_seconds} s with no test result:",
      "\nThe gate got no result from these commands; they are not among the failures. The command is too broad for the "
      "gate, or a test hangs. Read the output tail for a failure printed before the hang.",
      "\n  `{command}`, output tail:\n{detail}"),
-    ("setup_faults", "setup_fault_tails",
+    (SETUP_FAULT,
      "\nHAND-BACK GATE SETUP FAULT: these commands could not run the checks in this environment:",
      "\nThe gate got no test result from these commands; they are not among the failures. The command misses the "
      "repo's test runner or virtualenv, or a dependency is not installed, or no package manifest is where it ran, or "
      "it ran no test, or the package-manager or engine version does not match. Run the repo's own test command for "
      "these files.",
      "\n  `{command}`, output tail:\n{detail}"),
-    (None, "command_error_lines",
+    (COMMAND_ERROR,
      "\nHAND-BACK GATE COMMAND ERROR: these commands name a path that does not exist where they ran:",
      "\nThe gate got no test result from these commands; they are not among the failures and spent no denial. The gate "
      "command is wrong, not the code. Run the repo's own test command for these files.",
@@ -161,9 +173,10 @@ def set_gate(commands, gate_assignments=()):
     print(f"coder gate set: {len(commands)} command(s)")
 
 
-def joined_commands(coder, key):
-    # The coder's stored list of commands as one comma-separated text, "none" when the list is empty or missing.
-    return ", ".join(coder.get(key, [])) or "none"
+def joined_commands(coder, outcome):
+    # The coder's commands with this outcome as one comma-separated text, "none" when it has none. A coder stored
+    # before the commands map existed has no commands.
+    return ", ".join(script_utils.details_with_outcome(coder.get("commands", {}), outcome)) or "none"
 
 
 def clear_gate():
@@ -174,7 +187,8 @@ def clear_gate():
 
     gate = json.loads(gate_file.read_text())
     for coder in gate["coders"].values():
-        command_lists = ", ".join(f"{label}: {joined_commands(coder, key)}" for key, label in CLEAR_COMMAND_LISTS)
+        command_lists = ", ".join(f"{label}: {joined_commands(coder, outcome)}"
+                                  for outcome, label in CLEAR_COMMAND_OUTCOMES)
         print(f"coder gate: {coder['result']} after {coder['runs']} run(s), {command_lists}")
     if not gate["coders"]:
         print("coder gate: never ran, no coder handed back through it")
@@ -284,6 +298,37 @@ def sort_failures(failures, repo_root):
     return real_failures, setup_faults, command_errors
 
 
+def gate_outcome(real_failures, command_errors, setup_faults, timed_out):
+    # The one outcome of a gate run, worst first. A command error ranks above a setup fault: the command names a path
+    # that does not exist, so the command is wrong whatever the environment is, and the fix is to correct the command.
+    # A command that fails and also shows a setup fault was already sorted as a command error by sort_failures.
+    if real_failures:
+        return RESULT_FAILED
+    if command_errors:
+        return RESULT_COMMAND_ERROR
+    if setup_faults:
+        return RESULT_SETUP_FAULT
+    if timed_out:
+        return RESULT_TIMEOUT
+    return RESULT_PASS
+
+
+def command_outcomes(real_failures, command_errors, setup_faults, timed_out, skipped):
+    # The coder's {command: {"outcome": ..., "detail": ...}} map for every command that did not pass.
+    outcomes = {}
+    for command, _outcome, _output in real_failures:
+        outcomes[command] = {"outcome": FAILED, "detail": ""}
+    for command, output in timed_out:
+        outcomes[command] = {"outcome": TIMED_OUT, "detail": output[-TIMEOUT_TAIL_CHARS:]}
+    for command, output in setup_faults:
+        outcomes[command] = {"outcome": SETUP_FAULT, "detail": output[-TIMEOUT_TAIL_CHARS:]}
+    for command, missing_line in command_errors:
+        outcomes[command] = {"outcome": COMMAND_ERROR, "detail": missing_line}
+    for command in skipped:
+        outcomes[command] = {"outcome": SKIPPED, "detail": ""}
+    return outcomes
+
+
 def run_scoped_tests(repo_root, commands, gate_env, log_path):
     # (one-line result, the failing commands' tails). The scoped commands, run as the gate runs them, outside a hook.
     # A failing or timed-out command's whole output goes to log_path, and a failed, setup-fault, command-error or
@@ -300,14 +345,15 @@ def run_scoped_tests(repo_root, commands, gate_env, log_path):
     log_note = f"; full output: {log_path}"
     failures, setup_faults, command_errors = sort_failures(failures, repo_root)
 
-    if failures:
+    outcome = gate_outcome(failures, command_errors, setup_faults, timed_out)
+    if outcome == RESULT_FAILED:
         return scoped_test_failure(failures, log_path)
-    if setup_faults:
-        return "setup fault: " + "; ".join(command for command, _output in setup_faults) + log_note, []
-    if command_errors:
+    if outcome == RESULT_COMMAND_ERROR:
         command_error_text = "; ".join(f"{command} ({line})" for command, line in command_errors)
         return "command error: " + command_error_text + log_note, []
-    if timed_out:
+    if outcome == RESULT_SETUP_FAULT:
+        return "setup fault: " + "; ".join(command for command, _output in setup_faults) + log_note, []
+    if outcome == RESULT_TIMEOUT:
         return "not run (timeout): " + "; ".join(command for command, _output in timed_out) + log_note, []
     if len(skipped) == len(commands):
         return "not run (no changed file matches)", []
@@ -341,26 +387,18 @@ def denial(failures):
     return reason
 
 
-def no_result_commands(coder, commands_key, details_key):
-    # (command, detail) for each command of one stamp section, in the order the section names them.
-    details = coder.get(details_key, {})
-    if commands_key is None:
-        return list(details.items())
-    return [(command, details.get(command, "")) for command in coder.get(commands_key, [])]
-
-
 def stamped_handback(tool_input, coder):
     # The coder writes its report before the gate runs, so the report can still say that a re-run is pending.
     stamp = (f"{script_utils.HAND_BACK_GATE_MARKER} {coder['result']} after {coder['runs']} run(s), "
-             f"failed: {joined_commands(coder, 'failed')}, "
-             f"skipped (no changed files): {joined_commands(coder, 'skipped')}. "
+             f"failed: {joined_commands(coder, FAILED)}, "
+             f"skipped (no changed files): {joined_commands(coder, SKIPPED)}. "
              "The gate ran after this report was written. The report is final.")
-    for commands_key, details_key, heading, advice, line_format in NO_RESULT_STAMP_SECTIONS:
-        no_result = no_result_commands(coder, commands_key, details_key)
+    for outcome, heading, advice, line_format in NO_RESULT_STAMP_SECTIONS:
+        no_result = script_utils.details_with_outcome(coder.get("commands", {}), outcome)
         if not no_result:
             continue
 
-        lines = "".join(line_format.format(command=command, detail=detail) for command, detail in no_result)
+        lines = "".join(line_format.format(command=command, detail=detail) for command, detail in no_result.items())
         stamp += heading.format(timeout_seconds=COMMAND_TIMEOUT_SECONDS) + lines + advice
     stamped_input = dict(tool_input)
     stamped_input["message"] = str(tool_input.get("message", "")) + stamp
@@ -407,22 +445,14 @@ def run_hook():
 
         failures, setup_faults, command_errors = sort_failures(failures, gate["repoRoot"])
 
+        # Only the run and deny counts carry over; a coder stored in an older format loses its old command lists.
         agent_id = event.get("agent_id") or "unknown"
-        coder = gate["coders"].get(agent_id, {"runs": 0, "denies": 0, "failed": [], "result": "none"})
-        coder["runs"] += 1
-        coder["failed"] = [command for command, _, _ in failures]
-        coder["skipped"] = skipped
-        coder["timed_out"] = [command for command, _ in timed_out]
-        coder["timed_out_tails"] = {command: output[-TIMEOUT_TAIL_CHARS:] for command, output in timed_out}
-        coder["setup_faults"] = [command for command, _ in setup_faults]
-        coder["setup_fault_tails"] = {command: output[-TIMEOUT_TAIL_CHARS:] for command, output in setup_faults}
-        coder["command_errors"] = [command for command, _ in command_errors]
-        coder["command_error_lines"] = dict(command_errors)
-        if not failures:
-            if command_errors:
-                coder["result"] = "command-error"
-            else:
-                coder["result"] = "setup-fault" if setup_faults else "timeout" if timed_out else "pass"
+        earlier = gate["coders"].get(agent_id, {})
+        coder = {"runs": earlier.get("runs", 0) + 1, "denies": earlier.get("denies", 0), "result": "none",
+                 "commands": command_outcomes(failures, command_errors, setup_faults, timed_out, skipped)}
+        outcome = gate_outcome(failures, command_errors, setup_faults, timed_out)
+        if outcome != RESULT_FAILED:
+            coder["result"] = outcome
         elif coder["denies"] >= MAX_DENIES:
             coder["result"] = "cap"
         else:

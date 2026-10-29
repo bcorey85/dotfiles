@@ -20,6 +20,11 @@ GIT_IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GI
                 "GIT_COMMITTER_EMAIL": "t@example.com"}
 sys.path.insert(0, str(GATE_SCRIPT.parent.parent / "lib"))
 import check_scope  # noqa: E402
+import script_utils  # noqa: E402
+
+
+def commands_with(coder, outcome):
+    return list(script_utils.details_with_outcome(coder["commands"], outcome))
 
 
 class CoderGateEnvironmentTests(unittest.TestCase):
@@ -152,8 +157,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("timeout", coder["result"])
-        self.assertEqual([], coder["failed"])
-        self.assertEqual([command], coder["timed_out"])
+        self.assertEqual([], commands_with(coder, "failed"))
+        self.assertEqual([command], commands_with(coder, "timed-out"))
         output = json.loads(printed)["hookSpecificOutput"]
         self.assertEqual("allow", output["permissionDecision"])
         message = output["updatedInput"]["message"]
@@ -172,8 +177,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("deny", coder["result"])
-        self.assertEqual(["exit 3"], coder["failed"])
-        self.assertEqual(["sleep 5"], coder["timed_out"])
+        self.assertEqual(["exit 3"], commands_with(coder, "failed"))
+        self.assertEqual(["sleep 5"], commands_with(coder, "timed-out"))
         self.assertEqual("deny", json.loads(printed)["hookSpecificOutput"]["permissionDecision"])
 
     def test_a_missing_program_is_a_setup_fault_that_allows_the_hand_back_and_names_the_command(self):
@@ -185,8 +190,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("setup-fault", coder["result"])
         self.assertEqual(0, coder["denies"])
-        self.assertEqual([], coder["failed"])
-        self.assertEqual([command], coder["setup_faults"])
+        self.assertEqual([], commands_with(coder, "failed"))
+        self.assertEqual([command], commands_with(coder, "setup-fault"))
         output = json.loads(hook.stdout)["hookSpecificOutput"]
         self.assertEqual("allow", output["permissionDecision"])
         message = output["updatedInput"]["message"]
@@ -219,7 +224,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 hook = self.gate_hook()
 
                 self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
-                self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+                self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
 
     def test_a_denial_lists_the_failing_test_that_the_output_tail_cut_off(self):
         self.gate_set("""echo "FAIL: test_x (app.tests.T)"; seq 1 3000; exit 1""")
@@ -245,7 +250,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 coder = self.stored_gate()["coders"]["a1"]
                 self.assertEqual("setup-fault", coder["result"])
                 self.assertEqual(0, coder["denies"])
-                self.assertEqual([command], coder["setup_faults"])
+                self.assertEqual([command], commands_with(coder, "setup-fault"))
                 self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
 
     def test_a_django_settings_error_denies_when_the_coder_changed_a_settings_module_or_app_config(self):
@@ -261,7 +266,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 hook = self.gate_hook()
 
                 self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
-                self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+                self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
                 (self.repo / changed_path).unlink()
 
     def test_a_django_settings_error_stays_a_setup_fault_when_the_coder_changed_other_files(self):
@@ -288,7 +293,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 hook = self.gate_hook()
 
                 self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
-                self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+                self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
 
     def test_a_manage_py_test_run_that_exits_0_after_running_no_test_is_a_setup_fault_not_a_pass(self):
         command = """echo manage.py test; echo "Ran 0 tests in 0.000s"; exit 0"""
@@ -298,7 +303,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("setup-fault", coder["result"])
-        self.assertEqual([command], coder["setup_faults"])
+        self.assertEqual([command], commands_with(coder, "setup-fault"))
         self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
 
     def test_a_manage_py_test_run_that_ran_tests_passes(self):
@@ -316,8 +321,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("deny", coder["result"])
-        self.assertEqual(["echo assertion-broke; exit 3"], coder["failed"])
-        self.assertEqual(["exit 127"], coder["setup_faults"])
+        self.assertEqual(["echo assertion-broke; exit 3"], commands_with(coder, "failed"))
+        self.assertEqual(["exit 127"], commands_with(coder, "setup-fault"))
         reason = json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("assertion-broke", reason)
         self.assertNotIn("`exit 127`", reason)
@@ -339,8 +344,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 coder = self.stored_gate()["coders"]["a1"]
                 self.assertEqual("command-error", coder["result"])
                 self.assertEqual(0, coder["denies"])
-                self.assertEqual([], coder["failed"])
-                self.assertEqual([command], coder["command_errors"])
+                self.assertEqual([], commands_with(coder, "failed"))
+                self.assertEqual([command], commands_with(coder, "command-error"))
                 message = json.loads(hook.stdout)["hookSpecificOutput"]["updatedInput"]["message"]
                 self.assertIn("HAND-BACK GATE COMMAND ERROR", message)
                 self.assertIn(f"`{command}`: ", message)
@@ -355,7 +360,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         hook = self.gate_hook()
 
         self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
-        self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+        self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
 
     def test_a_real_failure_beside_a_command_error_denies_with_only_the_real_failure(self):
         missing = "python3 missing/manage.py test app.tests"
@@ -365,9 +370,37 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("deny", coder["result"])
-        self.assertEqual(["echo assertion-broke; exit 3"], coder["failed"])
-        self.assertEqual([missing], coder["command_errors"])
+        self.assertEqual(["echo assertion-broke; exit 3"], commands_with(coder, "failed"))
+        self.assertEqual([missing], commands_with(coder, "command-error"))
         self.assertNotIn(f"`{missing}`", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_a_setup_fault_beside_a_command_error_gets_the_same_outcome_from_the_scoped_run_and_the_hook(self):
+        setup_fault = "exit 127"
+        command_error = "python3 missing/manage.py test app.tests"
+        log_path = self.repo / "scoped-tests.log"
+        self.gate_set(setup_fault, command_error)
+
+        self.gate_hook()
+        scoped_result, _tails = load_gate_module().run_scoped_tests(str(self.repo), [setup_fault, command_error], (),
+                                                                    log_path)
+
+        hook_outcome = self.stored_gate()["coders"]["a1"]["result"]
+        scoped_outcome = scoped_result.split(":")[0].replace(" ", "-")
+        self.assertEqual("command-error", hook_outcome)
+        self.assertEqual(hook_outcome, scoped_outcome, scoped_result)
+
+    def test_a_coder_stored_with_the_old_command_lists_keeps_its_counts_and_gets_the_commands_map(self):
+        command = "echo ok"
+        self.gate_set(command)
+        gate = self.stored_gate()
+        gate["coders"]["a1"] = {"runs": 2, "denies": 1, "failed": ["old"], "skipped": [], "timed_out": [],
+                                "setup_faults": ["old"], "command_errors": [], "result": "deny"}
+        (self.repo / ".git/coder-gate.json").write_text(json.dumps(gate))
+
+        self.gate_hook()
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual({"runs": 3, "denies": 1, "result": "pass", "commands": {}}, coder)
 
     def test_a_gate_stored_before_variables_existed_still_runs(self):
         self.gate_set("true")

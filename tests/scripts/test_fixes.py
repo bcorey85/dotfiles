@@ -244,9 +244,9 @@ class ChangeFallbackTest(unittest.TestCase):
 class GateFlagTest(unittest.TestCase):
     def test_a_gate_command_error_is_flagged_apart_from_the_cap_as_no_code_failure(self):
         missing_line = "ERROR: file or directory not found: backend/app/tests/test_x.py"
-        gate = {"coders": {"a1": {"result": "cap", "failed": ["pytest app/tests/test_y.py"],
-                                  "command_errors": ["pytest backend/app/tests/test_x.py"],
-                                  "command_error_lines": {"pytest backend/app/tests/test_x.py": missing_line}}}}
+        gate = {"coders": {"a1": {"result": "cap", "commands": {
+            "pytest app/tests/test_y.py": {"outcome": "failed", "detail": ""},
+            "pytest backend/app/tests/test_x.py": {"outcome": "command-error", "detail": missing_line}}}}}
 
         flagged = code_step.coder_flagged({}, gate, "", is_ask_fix=False)
 

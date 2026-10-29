@@ -25,7 +25,6 @@ TEST_FAMILY_PATTERNS = {
 }
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
 BARE_CARGO_MANIFEST = re.compile(r"`(Cargo\.toml)`")
-PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 PYTHON_RUNNERS = (("uv.lock", ["uv", "run"]), ("poetry.lock", ["poetry", "run"]), ("pdm.lock", ["pdm", "run"]),
                   ("Pipfile.lock", ["pipenv", "run"]))
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&"}
@@ -373,7 +372,7 @@ def derive_gate_commands(repo_dir, phase_section):
     # The phase's listed test commands that run less than a whole suite are the gate's test commands, verbatim, and no
     # test command is derived. A phase that lists none of those gets the test commands derived from the files it names.
     paths = []
-    for match in PATH_IN_BACKTICKS.finditer(phase_section):
+    for match in plan_format.PATH_IN_BACKTICKS.finditer(phase_section):
         if match.group(1) not in paths:
             paths.append(match.group(1))
 

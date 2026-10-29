@@ -95,7 +95,8 @@ class FullCheckSteps:
         check leaves the files it rewrote or created in place, and a repair measures its changes as the text
         difference around its own call, so a changed or created file reaches files_touched only when the repair coder
         edits it itself. A rewrote_edited file holds coder work and always counts as touched. A check that the
-        Expected red entries leave out whole does not run, and sets untested_fix so the changed files' tests run."""
+        Expected red entries leave out whole does not run, and sets untested_fix so the changed files' tests run, and
+        so does a check-only pass in a repo whose full suite runs in CI."""
         self.full_check_command = check_command or ""
         if check_command is None and self.expected_red:
             self.full_check = expected_red.not_run_result(self.expected_red)
@@ -105,6 +106,8 @@ class FullCheckSteps:
         self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)
         if self.full_check == full_check.PASSED:
             self.untested_fix = False
+        elif self.full_check == full_check.CHECK_ONLY_PASSED:
+            self.untested_fix = True
         check_wrote = set(self.check_details["changed"]) | set(self.check_details["created"])
         details["rewrote_edited"] = [path for path in details["rewrote_edited"]
                                      if path not in check_wrote or path in self.files_touched]

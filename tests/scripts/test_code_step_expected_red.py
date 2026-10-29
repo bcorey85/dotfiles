@@ -96,14 +96,14 @@ class ExpectedRedTest(base.CodeStepTest):
 
         self.assertNotIn("permissionDecision", result.stdout)
 
-    def test_a_coder_hand_back_whose_later_phase_check_cannot_read_the_plan_is_denied(self):
+    def test_a_coder_hand_back_whose_later_phase_check_cannot_read_the_plan_goes_through_with_a_note(self):
         self.begin_coder()
         (self.repo / self.plan).write_bytes(b"\xff\xfe\x00")
 
         result = self.hook("coder", self.LATER_PHASE_REPORT)
 
-        self.assertIn('"permissionDecision": "deny"', result.stdout)
-        self.assertIn(f"later-phase check of plan {self.plan} failed", result.stdout)
+        self.assertNotIn("permissionDecision", result.stdout)
+        self.assertIn(f"later-phase check of plan {self.plan} failed", result.stderr)
 
     def test_a_file_the_phase_names_too_stays_editable(self):
         shared = self.plan_text().replace("**File**: `backend/src/orders.test.ts`",

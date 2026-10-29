@@ -274,6 +274,19 @@ def without_assignments(words):
     return words
 
 
+def without_flag_values(words, value_flags):
+    # The words with the value word after each of value_flags dropped. The flag itself stays.
+    kept_words = []
+    skip_value = False
+    for word in words:
+        if skip_value:
+            skip_value = False
+            continue
+        skip_value = word in value_flags
+        kept_words.append(word)
+    return kept_words
+
+
 def command_after_wrappers(words, peel_containers=True):
     """The words of the command that a simple command finally runs, with the wrapper words, their flags and their
     values dropped: env (flags, NAME=value), sudo, doas, timeout (flags, duration), taskset (flags, CPU list), nice,

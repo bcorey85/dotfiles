@@ -183,7 +183,7 @@ class StartInputTest(base.CodeStepTest):
         self.set_verification(f'- [ ] **Prohibition**: no console.log - `python3 -c "{counted_check}"`')
         self.coder_round(source="console.log(1)\n")
         self.hook("review-loop", self.LOOP_OK)
-        self.assertIn("Automated Verification failed", self.step("after-review"))
+        self.assertIn("Automated Verification failed", self.step("resume"))
 
     def check_runs(self):
         return (self.repo / ".git/av-runs").read_text().count("run\n")

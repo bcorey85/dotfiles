@@ -19,8 +19,10 @@ from code_step_core import (
     CLAUDE_DIR,
     PLAN_EDIT_STOP_REASONS,
     RESUME_VERB,
+    REVIEW_AGAIN_INVOKE,
     REVIEW_LOOP,
     REVIEW_LOOP_SCRIPT,
+    REVIEW_SAME_DIFF_AGAIN_LINE,
     REVIEW_SCRIPT_AGENT_PREFIX,
     ask_user,
     awaited_agent_id,
@@ -190,12 +192,11 @@ def record_deviation(repo_dir, state):
 
 
 def split_decide_args(args):
-    # The decision word, who ruled (`--by user|session`, None when missing), then the words after `--ruling`,
+    # The decision word, who ruled (`--by user|session`; None or "" when missing), then the words after `--ruling`,
     # joined when the caller left them unquoted.
     word = args[0].lower() if args else ""
     ruling_at = args.index("--ruling") if "--ruling" in args else len(args)
-    by_words = args[:ruling_at]
-    by = by_words[by_words.index("--by") + 1] if "--by" in by_words[:-1] else None
+    _, by = script_utils.pop_option(args[:ruling_at], "--by")
     ruling_words = " ".join(args[ruling_at + 1:])
     return word, by, ruling_words.strip()
 
@@ -638,7 +639,7 @@ def load_review_packet(repo_dir, state, message):
         save_state(repo_dir, state)
         return emit("stop", "The review-loop packet does not parse. Show the user the raw packet. Problems: "
                     + "; ".join(error.problems), message,
-                    "To review the same diff again, invoke Skill code with `review-again`.")
+                    REVIEW_SAME_DIFF_AGAIN_LINE)
 
 
 def is_capped_review(state):
@@ -697,10 +698,10 @@ def stop_on_review_status(repo_dir, state, module, packet):
         save_state(repo_dir, state)
         stop_with_question(
             repo_dir, "a review call failed, so the review did not finish; it found nothing.",
-            [packet["tool_fault"]], "to run the review again on the same diff, invoke Skill code with `review-again`.",
+            [packet["tool_fault"]], f"to run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.",
             "The review did not run to the end: a tool fault, not a finding. Do not mark the phase done.",
             "Tool fault: " + packet["tool_fault"],
-            "To run the review again on the same diff, invoke Skill code with `review-again`.")
+            f"To run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.")
         return True
     if status == "critical-blocker" and packet["ask"] and not state.get("blockerCarried"):
         # With asks, the asks route takes the rulings first, as after a cap: the blockers go to the review after it.
@@ -760,7 +761,7 @@ def stop_on_review_status(repo_dir, state, module, packet):
         next_step = review_stop_next_step(state)
         if not is_second_cap:
             state.update({"carriedFindings": module.carried_findings(packet), "stopReason": "cap-reached"})
-            next_step = (f"for one more review-loop pass on the same diff, invoke Skill code with `review-again`. "
+            next_step = (f"for one more review-loop pass on the same diff, {REVIEW_AGAIN_INVOKE}. "
                          f"Or, {next_step}")
         save_state(repo_dir, state)
         remaining_lines = ["- " + module.item_text(item, "finding", "file_line")

@@ -693,8 +693,7 @@ def dispatch_deny_reason(hook):
 def check_dispatch(hook):
     reason = dispatch_deny_reason(hook)
     if reason:
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                 "permissionDecisionReason": reason}}))
+        script_utils.pre_tool_use_deny(reason)
 
 
 def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):

@@ -11,12 +11,12 @@ import re
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import coder_gate
 import plan_format
 import script_utils
 from source_paths import SCRIPT_SUFFIXES
 
 MAX_IMPORTED_FILES = 15
-PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 SCRIPT_IMPORT = re.compile(r"""(?:from|import)\s*\(?\s*['"]([^'"]+)['"]""")
 PYTHON_IMPORT = re.compile(r"^from\s+(\.+)([\w.]*)\s+import", re.MULTILINE)
 TEST_HELPER_DIRECTORY = re.compile(r"test|fixture|factor", re.IGNORECASE)
@@ -28,7 +28,7 @@ def phase_bounds(plan_lines, phase_number):
     if section is None:
         sys.exit(f"coder-packet: no Phase {phase_number} heading in the plan")
 
-    headings = [index for index, line in enumerate(plan_lines) if line.startswith("## ")]
+    headings = script_utils.top_level_sections(plan_lines)
     spans, _ = plan_format.phase_spans(plan_lines)
     first_phase = min(span["start"] for _, span in spans)
     return headings, section["start"], section["end"], first_phase
@@ -51,7 +51,7 @@ def cited_sections(plan_lines, headings, first_phase, phase_text):
 
 def named_paths(phase_text, repo_root):
     existing, new = [], []
-    for match in PATH_IN_BACKTICKS.finditer(phase_text):
+    for match in plan_format.PATH_IN_BACKTICKS.finditer(phase_text):
         path = repo_root / match.group(1)
         bucket = existing if path.exists() else new
         if path not in existing and path not in new:
@@ -200,11 +200,10 @@ criteria = plan.parent / "acceptance-criteria.md"
 if criteria.is_file():
     plan_ranges.append(f"- {criteria.relative_to(repository_root)} (the requirements list)")
 
-gate_path = script_utils.git_output(repository_root, "rev-parse", "--path-format=absolute", "--git-path",
-                                    "coder-gate.json")
+gate_path = coder_gate.gate_path(repository_root)
 if gate_path is None:
     sys.exit(f"coder-packet: git cannot name the coder gate file in {repository_root}")
-if pathlib.Path(gate_path).exists():
+if gate_path.exists():
     check_rule = (
         "4. Do not run typecheck, lint, tests or any other check. When you call SubagentHandback, a hook runs "
         "the checks first and returns any failures to you. Fix them, then call SubagentHandback again."

@@ -1697,6 +1697,15 @@ class ReviewLoopScriptTest(unittest.TestCase):
             with self.subTest(text):
                 self.assertEqual(finding_record.code_identifiers(text), frozenset(expected))
 
+    def test_a_finding_on_a_scoped_package_path_keeps_its_at_sign(self):
+        text = "`@scope/pkg/file.ts:12-14` the limit is wrong"
+
+        finding = finding_record.parse_finding(text)
+
+        self.assertEqual((finding.path, finding.line), ("@scope/pkg/file.ts", 12))
+        self.assertEqual(finding.title, "the limit is wrong")
+        self.assertEqual(handback.entry_locations({"finding": text}), [(finding.path, finding.line)])
+
     def test_the_same_ask_from_two_reviewers_is_one_ask(self):
         same_ask = "- `app.py:1` should the limit be configurable? — change: read it from the config\n"
         first = f"## Fix\nNone\n\n## Ask\n{same_ask}\n## Nit\nNone\n"

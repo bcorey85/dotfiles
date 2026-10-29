@@ -20,6 +20,7 @@ import fake_ledger
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import finding_record
 import handback
 import review_loop_findings
 import review_loop_packet
@@ -1103,7 +1104,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         asks = module.parse_review(review)["ask"]
 
         self.assertEqual(len(asks), 2)
-        self.assertTrue(asks[1].startswith("`app.py:4` second"))
+        self.assertTrue(asks[1].text.startswith("`app.py:4` second"))
 
     def test_an_ask_with_nested_bullets_and_a_trailing_paragraph_parses_as_one_ask(self):
         module = self.load_script_module()
@@ -1131,7 +1132,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def test_change_if_accepted_marker_splits_question_from_change(self):
         ask = "`app.py:3` should it be configurable? Change if accepted: read from settings"
 
-        entry = review_loop_packet.ask_entry(ask, "code-reviewer", None)
+        entry = review_loop_packet.ask_entry(finding_record.parse_finding(ask), "code-reviewer", None)
 
         self.assertEqual(entry["change"], "read from settings")
         self.assertEqual(entry["question"], "`app.py:3` should it be configurable?")
@@ -1657,9 +1658,37 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         for name, (fixed_part, reported_fixes, expected) in cases.items():
             with self.subTest(name):
-                kept = review_loop_findings.unreported_parts(fixed_part, reported_fixes)
+                reported = [finding_record.parse_finding(text) for text in reported_fixes]
+                kept = review_loop_findings.unreported_parts(finding_record.parse_finding(fixed_part), reported)
 
-                self.assertEqual(kept, expected)
+                self.assertEqual([part.text for part in kept], expected)
+
+    def test_a_merged_finding_keeps_each_part_with_its_own_line(self):
+        first = finding_record.parse_finding("`app.py:2` the limit is wrong for `limit`")
+        second = finding_record.parse_finding("`app.py:9` `limit` has no upper bound")
+        third = finding_record.parse_finding("`app.py:14` `limit` is unchecked")
+        other_file = finding_record.parse_finding("`other.py:1` `limit` is read twice")
+
+        merged = review_loop_findings.merge_findings([first, second, other_file, third])
+
+        self.assertEqual(len(merged), 2)
+        self.assertEqual([(part.path, part.line) for part in merged[0].parts],
+                         [("app.py", 2), ("app.py", 9), ("app.py", 14)])
+        self.assertEqual([part.parts for part in merged[0].parts], [(), (), ()])
+        self.assertEqual(merged[0].text, f"{first.text} Also reported: {second.text} Also reported: {third.text}")
+        self.assertEqual(merged[1], other_file)
+
+    def test_code_identifiers_skip_file_paths_and_file_line_pointers(self):
+        cases = {
+            "`src/app.py` and `limit`": {"limit"},
+            "`app.py:3`": set(),
+            "`config.json`": set(),
+            "`load(path.json)`": {"load(path.json)"},
+        }
+
+        for text, expected in cases.items():
+            with self.subTest(text):
+                self.assertEqual(finding_record.code_identifiers(text), frozenset(expected))
 
     def test_the_same_ask_from_two_reviewers_is_one_ask(self):
         same_ask = "- `app.py:1` should the limit be configurable? — change: read it from the config\n"
@@ -1698,6 +1727,17 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
                          ["`app.py:4` the fourth value has no test"])
         self.assertIn("app.py", packet["files_touched"])
+
+    def test_a_crash_after_a_fix_round_keeps_the_fixed_finding_in_the_crash_packet(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+        })
+
+        self.assertNotEqual(completed.returncode, 0)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual([entry["file_line"] for entry in packet["fixed"]], ["app.py:2"])
 
     def test_an_ask_with_an_empty_change_is_a_critical_blocker_that_keeps_the_ask_rows(self):
         ask_review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable? — change:\n\n"

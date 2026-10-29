@@ -60,8 +60,9 @@ hooks write only that log; the verbs read it and write state.json.
 The code is split in files that import one way: code_step_core (state, event log, hand-back matcher, output),
 code_step_boundary (criteria guard, verification runner, phase boundary), code_step_hooks, code_step_gates (gate
 commands), code_step_start (the start verb), code_step_report (reading a coder report), code_step_review
-(plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_usage (usage text and the
-`resume` argument parser) and this file."""
+(plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_asks (the asks route's
+words: ask listing, pre-set outcome, asks-done arguments, asks coder prompt, prior issues; ask ids and outcome rows
+come from review/review_asks.py), code_step_usage (usage text and the `resume` argument parser) and this file."""
 import contextlib
 import fcntl
 import functools
@@ -72,8 +73,10 @@ import sys
 import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import coder_gate
 import plan_format
 import script_utils
+from code_step_asks import prior_issues
 from code_step_boundary import (
     command_tick,
     command_verify,
@@ -88,6 +91,7 @@ from code_step_core import (
     HOOK_STAGES,
     RESUME_ALIASES,
     RESUME_VERB,
+    REVIEW_AGAIN_INVOKE,
     SCRIPTS_DIR,
     StateFileError,
     ask_user,
@@ -118,6 +122,7 @@ from code_step_core import (
     session_pin,
     stale_phase_reason,
     state_dir,
+    state_file,
     stop_review_script,
     stop_with_question,
     take_handback,
@@ -159,7 +164,6 @@ from code_step_review import (
     emit_review_dispatch,
     guarded_verb_runs,
     left_findings_open,
-    prior_issues,
 )
 from code_step_start import (
     command_start,
@@ -241,10 +245,12 @@ def coder_flagged(state, gate, report, is_ask_fix):
     flagged = list(state.get("flagged", [])) if is_ask_fix else []
     coders = (gate or {"coders": {}})["coders"].values()
     for coder in coders:
+        coder_commands = coder.get("commands", {})
         if coder["result"] == "cap":
-            flagged.append("hand-back gate cap: " + ", ".join(coder["failed"]) + " still failing after 3 denials")
+            failed_commands = script_utils.details_with_outcome(coder_commands, coder_gate.FAILED)
+            flagged.append("hand-back gate cap: " + ", ".join(failed_commands) + " still failing after 3 denials")
 
-        for command, line in coder.get("command_error_lines", {}).items():
+        for command, line in script_utils.details_with_outcome(coder_commands, coder_gate.COMMAND_ERROR).items():
             flagged.append(f"hand-back gate command error, not a code failure: `{command}` names a missing path "
                            f"({line})")
     return flagged + coder_flags(report)
@@ -530,7 +536,7 @@ def resume_closing_skill(repo_dir, state):
 
 def ask_about_review_cap(repo_dir, state):
     ask_user(repo_dir, "The review-loop never handed back. If the user resumes it with SendMessage, run "
-             "resume. If it died, invoke Skill code with `review-again`.")
+             f"resume. If it died, {REVIEW_AGAIN_INVOKE}.")
 
 
 def ask_about_critical_blocker(repo_dir, state):
@@ -651,7 +657,7 @@ def command_abort(args):
     archive_path = directory / f"aborted-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
     lines = abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_pid,
                                 review_script_was_running)
-    (directory / "state.json").rename(archive_path)
+    state_file(repo_dir).rename(archive_path)
     emit("stop", *lines)
 
 

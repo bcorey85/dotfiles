@@ -58,22 +58,19 @@ class WaitLoopGateTest(unittest.TestCase):
         payload = {"agent_id": "x", "tool_input": {"command": "sleep 300"}}
         self.assertIn("deny", run_hook(json.dumps(payload)).stdout)
 
-    def test_bounded_for_loop_passes(self):
-        self.assert_passes("for i in $(seq 30); do curl -sf localhost:3000 && break; sleep 3; done")
-
-    def test_brace_range_and_word_list_pass(self):
-        self.assert_passes("for i in {1..20}; do check && break; sleep 5; done")
-        self.assert_passes("for i in a b c; do check && break; sleep 10; done")
-
-    def test_long_for_loop_denied(self):
-        self.assert_denied("for i in $(seq 100); do curl -sf localhost:3000 && break; sleep 5; done")
-
-    def test_for_loop_with_unknown_count_denied(self):
-        self.assert_denied("for i in $(ls); do sleep 1; done")
-        self.assert_denied("for i in $COUNT; do sleep 1; done")
-
-    def test_for_loop_without_sleep_passes(self):
-        self.assert_passes("for f in a.txt b.txt; do cat $f; done")
+    def test_a_for_loop_with_a_sleep_passes_only_when_its_count_is_known_and_short(self):
+        passing = ("for i in $(seq 30); do curl -sf localhost:3000 && break; sleep 3; done",
+                   "for i in {1..20}; do check && break; sleep 5; done",
+                   "for i in a b c; do check && break; sleep 10; done",
+                   "for f in a.txt b.txt; do cat $f; done")
+        denied = ("for i in $(seq 100); do curl -sf localhost:3000 && break; sleep 5; done",
+                  "for i in $(ls); do sleep 1; done", "for i in $COUNT; do sleep 1; done")
+        for command in passing:
+            with self.subTest(command=command):
+                self.assert_passes(command)
+        for command in denied:
+            with self.subTest(command=command):
+                self.assert_denied(command)
 
     def test_follow_modes_denied(self):
         for command in ("tail -f app.log", "tail -F app.log", "tail --follow app.log", "docker logs -f web",

@@ -27,6 +27,7 @@ from code_step_core import (
     INSTALLED_COMMAND,
     RESUME_LINE,
     RESUME_VERB,
+    REVIEW_SAME_DIFF_AGAIN_LINE,
     SCRIPTS_DIR,
     branch_label,
     emit,
@@ -101,8 +102,7 @@ def save_criteria_guard(repo_dir, state):
 
 def save_replaced_criteria(repo_dir, criteria_name, text):
     # Keep the text a restore replaces in the git dir, outside the worktree, one new file per restore.
-    found = git_output(repo_dir, "rev-parse", "--path-format=absolute", "--git-path", "code-step-replaced-criteria")
-    folder = pathlib.Path(found)
+    folder = script_utils.git_path(repo_dir, "code-step-replaced-criteria")
     folder.mkdir(parents=True, exist_ok=True)
 
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -413,9 +413,9 @@ def mark_review_gate_clean(repo_dir, state):
         state["stopReason"] = "false-clean"
         save_state(repo_dir, state)
         emit("stop", f"The review gate is not marked clean: {reason}. Nothing is committed.",
-             "To review the same diff again, invoke Skill code with `review-again`.")
+             REVIEW_SAME_DIFF_AGAIN_LINE)
         return False
-    gate_dir = pathlib.Path.home() / ".claude" / "state" / "review-gate"
+    gate_dir = reviewed_tree.review_gate_dir()
     gate_dir.mkdir(parents=True, exist_ok=True)
     committing_session = session_pin() or state.get("sessionId") or "unknown"
     (gate_dir / committing_session).write_text("clean\n")

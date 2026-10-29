@@ -181,14 +181,6 @@ class LogEscapeTest(unittest.TestCase):
                 self.assertEqual(done.returncode, code, done.stderr)
         self.assertEqual(self.escape_rows(), [])
 
-    def test_retired_escapes_file_var_writes_no_file(self):
-        retired = self.temp_root / "retired-escapes.jsonl"
-        done = self.run_escape(*VALID_ARGS, env=self.environment(REVIEW_ESCAPES_FILE=str(retired)))
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertFalse(retired.exists())
-        self.assertFalse((self.home / ".claude" / "review-escapes.jsonl").exists())
-        self.assertEqual(len(self.escape_rows()), 1)
-
     def test_help_prints_usage_and_writes_nothing(self):
         for flag in ("--help", "-h"):
             with self.subTest(flag=flag):

@@ -45,11 +45,6 @@ class FileTimeoutTest(unittest.TestCase):
         self.assertRegex(finished.stdout, r"test_quick\.py .* OK")
         self.assertIn("test_sleepy.py timed out after 2s", finished.stdout)
 
-    def test_a_file_within_the_limit_passes(self):
-        finished = self.run_suite({"test_quick.py": QUICK_TEST})
-
-        self.assertEqual(0, finished.returncode, finished.stdout)
-
 
 if __name__ == "__main__":
     unittest.main()

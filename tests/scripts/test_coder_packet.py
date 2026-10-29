@@ -61,6 +61,22 @@ class CoderPacketTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn(f"no Phase {WHOLE_ID} heading in the plan", result.stderr)
 
+    def test_an_import_resolves_to_the_typescript_file_when_a_javascript_file_shares_its_stem(self):
+        (self.repo / "src" / "orders").mkdir(parents=True)
+        (self.repo / "src" / "lib").mkdir()
+        (self.repo / "src" / "orders" / "list.service.ts").write_text('import { money } from "../lib/format";\n')
+        (self.repo / "src" / "lib" / "format.mts").write_text("export const money = 1;\n")
+        (self.repo / "src" / "lib" / "format.js").write_text("export const money = 1;\n")
+        plan_naming_a_new_service = PLAN_WITH_A_DOTTED_PHASE_FIRST.replace(
+            "whole body", "Create `src/orders/new.service.ts`."
+        )
+
+        result = self.packet(plan_naming_a_new_service, WHOLE_ID)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("- src/lib/format.mts", result.stdout)
+        self.assertNotIn("- src/lib/format.js", result.stdout)
+
     def test_a_plan_outside_any_git_repository_stops_with_a_message(self):
         outside = tempfile.TemporaryDirectory()
         self.addCleanup(outside.cleanup)

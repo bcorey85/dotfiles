@@ -144,6 +144,27 @@ class AskOutcomesReachLaterPasses(TempRepo):
 
         self.assertIn("cap it at five tries", self.handoff())
 
+    def test_a_multi_line_ask_is_one_ruled_asks_entry_with_its_outcome(self):
+        self.ASK = {**self.ASK, "question": "which cap holds?\nthe plan says three\nthe ruling says five"}
+        self.rule("rejected")
+
+        ruled_block = self.handoff().split("  ruled-asks:\n", 1)[1].split("\n  tests-run:", 1)[0]
+
+        self.assertEqual(["    - the retry loop has no cap - which cap holds? the plan says three the ruling says five "
+                          "(src/queue.py:40): rejected, Phase 2"], ruled_block.splitlines())
+
+    def test_the_question_for_the_user_indents_a_multi_line_asks_folded_lines_under_its_number(self):
+        ask = {**self.ASK, "question": "which cap holds?\nthe plan says three"}
+
+        self.assertEqual(["1. the retry loop has no cap - which cap holds?", "   the plan says three"],
+                         code_step_review.numbered_ask_lines([ask]))
+
+    def test_the_proposed_change_indents_its_later_lines_under_the_number(self):
+        ask = {**self.ASK, "change": "cap at 3\nlog the cap"}
+
+        self.assertEqual(["1. the retry loop has no cap - cap it?", "   Proposed change: cap at 3", "   log the cap"],
+                         code_step_review.numbered_ask_lines([ask]))
+
     def test_the_closing_refactor_phase_prompt_lists_the_ruled_ask(self):
         self.rule("rejected")
 

@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -83,6 +84,29 @@ class ParseTest(HandbackTestBase):
         self.assertEqual(len(packet["fixed"]), 2)
         self.assertIn("timeout case", packet["fixed"][0]["finding"])
 
+    def test_fixed_entries_keep_their_whole_text_in_every_real_shape(self):
+        cases = [
+            ('fixed: [{"finding": "x", "file_line": "a.ts:1", "blocker": false}]', ["x"], "JSON style"),
+            ('fixed: [{finding: "guard the read, then class: fix it", file_line: a.ts:1, blocker: false}]',
+             ["guard the read, then class: fix it"], "a comma and a key word in the text"),
+            ("fixed:\n- {smell: literals extracted to constants, file_line: a.py:397-530, blocker: no}\n"
+             "- {blank lines between steps in two helpers, file_line: a.py:346-474, blocker: no}\n"
+             "- {summary overwrote the per-project total, serve.go summary, blocker: true}",
+             ["blank lines between steps in two helpers", "summary overwrote the per-project total"],
+             "keyed by smell, or starting with bare text"),
+        ]
+        for fixed_field, kept_texts, label in cases:
+            packet = handback.load(f"status: converged\niter: 0\n{fixed_field}\nask: []\nnit: []\n")
+            fixed_texts = " | ".join(handback.item_text(item, "finding", "item") for item in packet["fixed"])
+            for kept in kept_texts:
+                self.assertIn(kept, fixed_texts, label)
+
+    def test_extra_whitespace_and_a_code_fence_around_the_packet_still_parse(self):
+        padded = "```\n" + "\n".join("   " + line + "   " if line else line for line in CONVERGED.splitlines())
+        packet = handback.load(padded + "\n\n\n```\n")
+        self.assertEqual("orders query lacked a tenant filter", packet["fixed"][0]["finding"])
+        self.assertEqual("src/orders.ts:42", packet["fixed"][0]["file_line"])
+
     def test_every_marker_of_an_indented_list_is_top_level(self):
         text = ("status: converged\niter: 1\nfixed:\n  - {finding: a, file_line: a.ts:1}\n"
                 "  - {finding: b, file_line: b.ts:2}\nnit: []\n")
@@ -143,7 +167,7 @@ class ParseTest(HandbackTestBase):
                 "change: restore -j8}\n"
                 "- {question: which one holds?, blocker: no, class: test-gap}\nnit: []\n")
         ask = handback.load(text)["ask"][0]
-        self.assertTrue(handback.is_blocker(ask))
+        self.assertIn(str(ask["blocker"]).lower(), ("true", "yes"))
         self.assertEqual(ask["class"], "plan-drift")
         self.assertEqual(ask["question"], "which one holds?")
 
@@ -516,10 +540,12 @@ class RenderTest(HandbackTestBase):
         rendered = handback.render(packet, "fix", [("Aikido replies", ["- a.ts:1: Fixed"])])
         self.assertLess(rendered.index("### Aikido replies"), rendered.index("Closing note"))
 
-    def test_blockers_sort_first_and_are_labelled(self):
+    def test_fixed_findings_show_as_a_count_and_never_as_a_list(self):
         text = CONVERGED.replace("fixed: [", "fixed: [{finding: small, file_line: a.ts:1, blocker: false}, ")
         rendered = handback.render(handback.load(text), "review")
-        self.assertLess(rendered.index("[blocker]"), rendered.index("small"))
+        self.assertIn("Fixed 2, nits 0, skipped 0", rendered)
+        self.assertNotIn("small", rendered)
+        self.assertNotIn("orders query lacked", rendered)
 
     def test_a_blocked_agent_and_the_step_it_skipped_print_under_their_own_heading(self):
         blocked_line = "test-reviewer: Step 1 test map skipped (credential hook denied a bulk cp)"
@@ -726,7 +752,7 @@ class HookTest(HandbackTestBase):
         kind = {"Agent": "dispatch", "SubagentHandback": "handback"}[event["tool_name"]]
         return self.run_cli(["hook", *(arguments or [kind])], json.dumps(event))
 
-    def test_review_loop_dispatch_and_good_hand_back_are_stored_without_output(self):
+    def test_review_loop_dispatch_and_good_hand_back_are_stored_without_output_and_other_agents_are_not(self):
         self.assertEqual(self.fire(self.event("Agent"))[:2], (0, ""))
         reviewer = {"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": "a1",
                     "tool_input": {"subagent_type": "code-reviewer"}}
@@ -736,10 +762,9 @@ class HookTest(HandbackTestBase):
         self.assertEqual(seen["handback"]["status"], "converged")
         self.assertFalse(seen["pending"])
 
-    def test_other_agents_are_not_stored(self):
         self.fire(self.event("Agent", agent="coder"))
         self.fire(self.event("SubagentHandback", agent="coder"))
-        self.assertFalse(self.store.exists())
+        self.assertEqual(handback.latest(SESSION), seen)
 
     def test_bad_packet_is_denied_once_per_agent_then_stored_as_invalid(self):
         bad = self.event("SubagentHandback", message="status: pending")
@@ -829,6 +854,13 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertEqual(self.hand_back(), (0, ""))
         self.assertFalse(handback.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_resolved_plan_impact_is_found_after_a_bullet_or_quote_marker(self):
+        for line in ("plan_impact: RESOLVED - adopt.", "- plan_impact: RESOLVED - adopt.",
+                     "> * plan_impact: RESOLVED - adopt."):
+            prompt = f"scope: branch\n{line}\n"
+            self.assertIsNotNone(handback.RESOLVED_PLAN_IMPACT.search(prompt), line)
+        self.assertIsNone(handback.RESOLVED_PLAN_IMPACT.search("see plan_impact: RESOLVED"))
 
     def test_a_normal_loop_is_denied_after_a_later_no_review_loop_claimed_the_exemption(self):
         self.dispatch("review-loop")
@@ -937,6 +969,9 @@ class OneCheckedHandBackTest(HandbackTestBase):
     def setUp(self):
         super().setUp()
         self.transcript = self.tmp / "loop.jsonl"
+        self.dispatch_loop_agents()
+
+    def dispatch_loop_agents(self):
         for agent_type in ("review-loop", "coder", "code-reviewer"):
             self.dispatch(agent_type, None if agent_type == "review-loop" else "a1")
 
@@ -956,19 +991,20 @@ class OneCheckedHandBackTest(HandbackTestBase):
         rows = [json.loads(line) for line in lines]
         return [row for row in rows if row["kind"] == "handback"]
 
-    def test_a_clean_hand_back_with_a_code_change_after_the_last_full_check_is_denied(self):
-        out = self.hand_back([full_check_run("t1"), coder_step("t2")])
-        decision = json.loads(out)["hookSpecificOutput"]
-        self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn("Step 6 execution gate", decision["permissionDecisionReason"])
-        self.assertEqual(self.handback_rows(), [])
+    def test_a_clean_or_cap_reached_hand_back_with_a_code_change_after_the_last_full_check_is_denied(self):
+        cap_reached = "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n"
 
-    def test_a_cap_reached_hand_back_with_a_code_change_after_the_last_full_check_is_denied(self):
-        message = ("status: cap-reached\niter: 2\n"
-                   "findings_remaining:\n- {finding: x, file_line: a.ts:1}\n")
-        out = self.hand_back([full_check_run("t1"), coder_step("t2")], message=message)
-        self.assertIn("Step 6 execution gate", json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"])
-        self.assertEqual(self.handback_rows(), [])
+        for status, message in (("converged", CONVERGED), ("cap-reached", cap_reached)):
+            with self.subTest(status):
+                shutil.rmtree(self.store, ignore_errors=True)
+                self.dispatch_loop_agents()
+                steps = [full_check_run("t1"), coder_step("t2")]
+                out = self.hand_back(steps, message=message)
+
+                decision = json.loads(out)["hookSpecificOutput"]
+                self.assertEqual(decision["permissionDecision"], "deny")
+                self.assertIn("Step 6 execution gate", decision["permissionDecisionReason"])
+                self.assertEqual(self.handback_rows(), [])
 
     def test_a_plan_impact_hand_back_with_a_code_change_after_the_last_full_check_passes(self):
         message = "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n"

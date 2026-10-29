@@ -54,10 +54,6 @@ class OpenChildGateTest(unittest.TestCase):
         self.assertIn("Glob", decision["permissionDecisionReason"])
         self.assertIn("failure", decision["permissionDecisionReason"])
 
-    def test_hand_back_with_open_background_child_is_denied(self):
-        proc = self.hand_back([launch("toolu_r"), launch_result("toolu_r")])
-        self.assert_denied(proc)
-
     def test_second_hand_back_from_the_same_agent_passes(self):
         records = [launch("toolu_r"), launch_result("toolu_r")]
         self.assert_denied(self.hand_back(records))

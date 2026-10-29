@@ -69,6 +69,11 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("git ls-remote --heads <remote-url> <branch>", text)
         self.assertIn("— not pushed", text)
 
+    def test_review_loop_writes_each_logger_call_with_literal_arguments(self):
+        text = guidance_text("agents/review-loop.md")
+        self.assertIn("Write each call out with literal key=value arguments, one call per row", text)
+        self.assertIn("never build the arguments by splitting a string in a loop", text)
+
     def test_sign_offs_stay_in_the_decision_log_and_out_of_code(self):
         text = guidance_text("CLAUDE.md")
         self.assertIn("Record each sign-off with who and when, only in the plan's decision log", text)

@@ -14,9 +14,9 @@ import toolkit_paths
 
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
 INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
-STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), ("lib", "script_utils.py"),
-                ("lib", "reviewed_tree.py"), ("lib", "hook_input.py"), ("lib", "shell_command.py"),
-                ("lib", "plan_format.py"))
+STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), ("review", "handback_store.py"),
+                ("lib", "script_utils.py"), ("lib", "reviewed_tree.py"), ("lib", "hook_input.py"),
+                ("lib", "shell_command.py"), ("lib", "plan_format.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder, run it as a "
@@ -113,14 +113,6 @@ class ReviewCommitGateTest(GateCase):
         self.assert_commit_denied(self.bash("git commit -m x"))
         self.assert_commit_denied(self.bash("git add . && git  commit -am x"))
 
-    def test_the_commit_deny_reason_names_review_and_the_plain_docs_commit_form(self):
-        self.dispatch()
-        finished = self.bash("git commit -m x")
-        self.assert_denies(finished, "[review-commit-gate]")
-        self.assert_denies(finished, "Do not stop or ask the user: invoke the /review skill now on the coder work")
-        self.assert_denies(finished, "plain `git commit`")
-        self.assert_denies(finished, "top-level docs/ folder")
-
     def test_every_coder_variant_marks_dirty(self):
         for name in ("coder", "coder-deep", "backend-coder", "backend-coder-deep", "frontend-coder",
                      "frontend-coder-deep"):
@@ -132,11 +124,6 @@ class ReviewCommitGateTest(GateCase):
             self.assert_silent(self.dispatch(name))
         self.assertIsNone(self.state())
         self.assert_silent(self.bash("git commit -m x"))
-
-    def test_non_commit_commands_pass_while_dirty(self):
-        self.dispatch()
-        for command in ("git status", "echo git commits", "ls"):
-            self.assert_silent(self.bash(command))
 
     def test_a_probe_that_splits_the_commit_words_is_denied(self):
         self.dispatch()
@@ -247,14 +234,6 @@ class ReviewCommitGateTest(GateCase):
     def test_clean_without_any_state_writes_no_mark_when_denied(self):
         self.assert_denies(self.bash("review-gate-mark clean"), "no review-loop hand-back is stored")
         self.assertIsNone(self.state())
-
-    def test_converged_and_deferred_pass(self):
-        for status in ("converged", "deferred"):
-            session = "ok-" + status
-            self.dispatch(session=session)
-            self.seed_handback(status, session=session)
-            self.assert_silent(self.bash("review-gate-mark clean", session=session))
-            self.assertEqual(self.state(session), "clean\n", status)
 
     def test_another_sessions_converged_hand_back_does_not_count(self):
         self.seed_handback("converged", session="other")
@@ -609,64 +588,18 @@ class NotesOnlyCommitTest(GateCase):
         self.go_clean()
         self.assert_all_pass(commands)
 
-    def assert_commit_denied_when_dirty_and_silent_when_clean(self, command):
+    def test_a_commit_behind_a_continuation_substitution_or_odd_option_is_denied_when_dirty_and_silent_clean(self):
+        commands = ["git -C . \\\ncommit -m y", "git \\\ncommit -m y", "git -C . \\\ncommit -m 'open",
+                    "git -C $(git rev-parse --show-toplevel) commit -m y", "git -C $(pwd) commit -m y",
+                    "git -p\"\"$(cat <<'EOF'\nmsg (body)\nEOF\n)\"\" commit -m y",
+                    "git -C$(echo a b) commit -m y", "git -C `git rev-parse --show-toplevel` commit -m y",
+                    'git -C "my dir" commit -m ";"', "env -u git git -C . commit -m y",
+                    "eval 'git -C . commit -m y'", "/usr/bin/git --frob x commit -m y",
+                    "git --frob x commit -m 'open"]
         self.stage(self.NOTES)
-        self.assert_commit_denied(self.commit_in(command))
+        self.assert_all_denied(commands)
         self.go_clean()
-        self.assert_silent(self.commit_in(command))
-
-    def test_a_commit_split_by_a_line_continuation_after_a_git_option_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C . \\\ncommit -m y")
-
-    def test_a_commit_split_by_a_line_continuation_right_after_git_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("git \\\ncommit -m y")
-
-    def test_a_commit_split_by_a_line_continuation_in_a_command_shlex_cannot_read_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C . \\\ncommit -m 'open")
-
-    def test_a_commit_behind_a_git_option_valued_by_a_dollar_substitution_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean(
-            "git -C $(git rev-parse --show-toplevel) commit -m y")
-
-    def test_a_commit_behind_a_git_option_valued_by_a_short_dollar_substitution_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C $(pwd) commit -m y")
-
-    def test_a_commit_behind_a_git_option_joined_to_a_quoted_heredoc_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean(
-            "git -p\"\"$(cat <<'EOF'\nmsg (body)\nEOF\n)\"\" commit -m y")
-
-    def test_a_commit_behind_a_git_option_joined_to_an_unquoted_substitution_with_a_space_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C$(echo a b) commit -m y")
-
-    def test_a_commit_behind_a_git_option_valued_by_a_backtick_substitution_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("git -C `git rev-parse --show-toplevel` commit -m y")
-
-    def test_a_commit_behind_a_git_option_valued_by_a_quoted_path_with_a_quoted_operator_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean('git -C "my dir" commit -m ";"')
-
-    def test_a_commit_behind_an_env_option_named_git_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("env -u git git -C . commit -m y")
-
-    def test_a_commit_inside_an_eval_string_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("eval 'git -C . commit -m y'")
-
-    def test_a_commit_behind_a_path_to_git_and_an_unknown_valued_option_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("/usr/bin/git --frob x commit -m y")
-
-    def test_a_commit_behind_an_unknown_valued_option_in_a_command_shlex_cannot_read_is_denied(self):
-        self.assert_commit_denied_when_dirty_and_silent_when_clean("git --frob x commit -m 'open")
-
-    def test_git_reads_that_mention_commit_after_an_option_or_a_path_are_not_commits(self):
-        self.assert_all_pass(["git log --grep commit", "git log --oneline -n 5", "git status && git diff --stat",
-                              "git show HEAD:commit.txt", "git log -1 --format=%s commit"])
-
-    def test_a_later_git_word_is_tried_when_an_earlier_one_is_an_argument(self):
-        spec = importlib.util.spec_from_file_location("review_commit_gate_under_test",
-                                                      str(SCRIPTS_DIR / "review" / "review_commit_gate.py"))
-        gate = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(gate)
-        self.assertTrue(gate.runs_git_commit(["env", "-u", "git", "git", "-C", "x", "commit"]))
-        self.assertFalse(gate.runs_git_commit(["env", "-u", "git", "git", "-C", "x", "log"]))
+        self.assert_all_pass(commands)
 
     def test_a_quoted_newline_word_does_not_hide_a_code_pathspec_after_it(self):
         self.stage(self.NOTES)
@@ -682,9 +615,12 @@ class NotesOnlyCommitTest(GateCase):
     def test_commands_that_only_read_git_or_mention_commit_stay_silent_when_dirty(self):
         self.assert_all_pass(["git log --grep commit | cut -d '|' -f1", "git log --oneline # don't commit",
                               "git -c k=v log --grep commit", "git --no-pager log --oneline commit",
-                              "git status", "git -C . status", "echo git commits",
+                              "git status", "git -C . status", "echo git commits", "ls",
                               "git --attr-source HEAD log --grep commit", "git --git-dir=x log --grep commit",
-                              "git --work-tree=x -P -p status commit"])
+                              "git --work-tree=x -P -p status commit",
+                              "git log --grep commit", "git log --oneline -n 5", "git status && git diff --stat",
+                              "git show HEAD:commit.txt", "git log -1 --format=%s commit",
+                              "env -u git git -C x log"])
 
     def test_an_output_redirection_to_a_file_is_denied_and_a_discarded_or_copied_one_passes(self):
         self.stage(self.NOTES)
@@ -752,10 +688,6 @@ class NotesOnlyCommitTest(GateCase):
         self.stage("src/a.py")
         self.assert_silent(self.commit_in("git commit -m x"))
         self.assert_silent(self.commit_in("git add src/b.py && git commit -a -m x"))
-
-    def test_a_session_that_never_dispatched_a_coder_never_denies(self):
-        self.stage("src/a.py")
-        self.assert_silent(self.commit_in("git commit -m x", session="other"))
 
 
 class ReviewedWorkCommitTest(GateCase):

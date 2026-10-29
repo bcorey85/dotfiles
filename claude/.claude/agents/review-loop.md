@@ -314,7 +314,7 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 ## What NOT to do
 
 - **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, say so in the packet and stop.
-- **Never write a ledger row anywhere but through its logger.** Call `~/.claude/skills/review/log-review-finding` by that full path; it is not on PATH. If the call fails, add `ledger: <its error line>` to `nit` and go on; never write the row to a file of your own.
+- **Never write a ledger row anywhere but through its logger.** Call `~/.claude/skills/review/log-review-finding` by that full path; it is not on PATH. Write each call out with literal key=value arguments, one call per row; never build the arguments by splitting a string in a loop. If the call fails, add `ledger: <its error line>` to `nit` and go on; never write the row to a file of your own.
 - **Never put the plan file in `files_touched`, and never let a coder edit it.** The plan changes only through a plan-edit dispatch from the caller. A finding that needs a plan change returns as `status: plan-impact`. The hand-back hook denies a packet that names the plan file.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.

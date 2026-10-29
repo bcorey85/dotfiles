@@ -58,7 +58,7 @@ Pull every review comment on the branch PR (inline plus top-level, any author), 
    Ratchet per `~/.claude/skills/_shared/escape-ratchet.md` including ADR addendum, batched by class; then per finding:
 
    ```bash
-   ~/.claude/scripts/telemetry/log-escape stage_found=<pr-human|pr-bot> gate_missed=<review|test-intent|eng-spec> class=<bug|smell|duplication|complexity|plan-drift|test-gap|docs|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<comment gist>" file=<repo-relative path> line=<comment line> commit=<comment commit_id>
+   ~/.claude/scripts/telemetry/log-escape stage_found=<pr-human|pr-bot> gate_missed=<review|test-intent|eng-spec> class=<bug|smell|duplication|complexity|plan-drift|test-gap|docs|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> desc="<comment gist>" file=<repo-relative path> line=<comment line; omit when the comment names none> commit=<comment commit_id>
    ```
 
    `class`: a comment that says a comment, doc or description is false or stale about the code is `docs`, never `smell` or `other`. `stage_found`: human commenter means pr-human, automated reviewer means pr-bot. `gate_missed`: faithful-to-wrong-plan means eng-spec, test-pinning-behavior means test-intent, else review. `lane` from planning artifacts; ask when ambiguous. Surface proposed guard with the table; apply on approval.

@@ -533,6 +533,58 @@ class CommandCheckScopeTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(expected, self.scope(command))
 
+    def test_a_runner_read_by_its_flags_is_targeted_on_a_name_or_selector_and_none_without(self):
+        targeted = (
+            "cargo test empty_input", "cargo test tests/foo.rs", "cargo test -p core", "cargo test --package=core",
+            "cargo test --test integration", "cargo test --test=integration", "cargo test --bench=parse",
+            "cargo test --lib", "cargo test --doc", "cargo test --bins", "cargo nextest run parser",
+            "cargo nextest run -E 'test(parser)'", "cargo nextest run -E='test(parser)'",
+            "go test -run TestX ./...", "go test -run=TestX ./...", "go test ./pkg/...", "go test .",
+            "rspec spec", "rspec -e login", "bundle exec rspec spec/models/user_spec.rb", "mypy src", "pyright src",
+            "phpunit tests", "phpunit --filter testLogin", "phpunit --filter=testLogin", "bats -p test/login.bats",
+            "docker compose exec web cargo test tests/x.rs", "mypy -p app", "go test -fuzz=FuzzParse",
+            "mypy --module=app", "rspec --pattern=spec/models", "rspec --only-failures", "bats --filter=login",
+            "cargo nextest run --skip=slow", "cargo nextest run --run-ignored only",
+            "cargo nextest run --run-ignored=ignored-only", "cargo nextest run --partition hash:1/2",
+            "cargo nextest run --partition=count:1/3", "cargo test -- --ignored", "npx rspec spec", "npx mypy src",
+            "bunx mypy src", "phpunit --group=slow", "phpunit --testsuite=unit", "dotnet test --filter=Login",
+            "bats --filter-tags=smoke", "rspec --tag=slow", "rspec --example=login", "go test -skip=TestX ./...",
+            "mypy --package=app", "cargo nextest run --filterset=test(x)", "cargo test --tests",
+            "rspec --next-failure", "cargo test --bin=app", "cargo test --example=demo", "cargo test --examples",
+            "cargo test --benches", "cargo nextest run --filter-expr=x", "tsc src/a.ts", "npx tsc src/a.ts",
+        )
+        whole_runs_read_none = (
+            "mypy .", "pyright .", "rspec .", "phpunit .", "bats .", "dotnet test .",
+            "cargo test", "cargo nextest run", "cargo +nightly test", "cargo test --manifest-path=/r/a/Cargo.toml",
+            "cargo test --target-dir target/x", "cargo test --color always", "cargo clippy --workspace -- -D warnings",
+            "cargo clippy --workspace --exclude foo -- -D warnings", "go test ./...", "go vet -p 4 ./...",
+            "go test -coverprofile cover/c.out ./...", "go build -o bin/app ./...", "go test -mod vendor ./...",
+            "tsc -p packages/web/tsconfig.json", "npx tsc --project packages/web/tsconfig.json",
+            "tsc -t es2020 --noEmit", "dotnet test --project src/App", "dotnet test --logger trx", "bats -p",
+            "rspec --format documentation", "bundle exec rspec --format progress",
+            "phpunit --configuration phpunit.xml", "mypy --python-version 3.11", "pyright --pythonversion 3.11",
+            "go test -coverpkg ./pkg/... ./...", "go test -bench . ./...", "go test -benchtime 2s -trace t.out ./...",
+            "go test -fuzztime 10s ./...", "phpunit --exclude-group slow", "phpunit -d memory_limit=1G",
+            "cargo nextest run --retries 2",
+            "phpunit --coverage-clover coverage.xml", "rspec --out results.txt .", "go test -buildmode pie ./...",
+            "cargo test --workspace -- --format terse", "cargo test -- --logfile out.txt", "bats -j 4 .",
+            "mypy --exclude tests .", "pyright --level error .", "dotnet test --collect \"Code Coverage\"",
+            "cargo nextest run --run-ignored all", "cargo nextest run --run-ignored=default",
+            "cargo nextest run -P ci", "phpunit --cache-directory .cache", "phpunit --processes 4",
+            "phpunit --log-tap out.tap", "rspec --failure-exit-code 2", "rspec --deprecation-out log.txt",
+            "rspec -O .rspec-ci", "dotnet test --results-directory out", "dotnet test -e CI=1",
+            "dotnet test --blame-hang-timeout 5m", "mypy --always-true DEBUG .",
+        )
+
+        for command in targeted:
+            with self.subTest(targeted=command):
+                self.assertEqual("targeted", self.scope(command))
+
+        # A whole run of these runners stays "none", so the coder gate lets a coder run it.
+        for command in whole_runs_read_none:
+            with self.subTest(whole=command):
+                self.assertEqual("none", self.scope(command))
+
     def test_make_scope_is_read_from_the_makefile(self):
         eight_deep = "".join(f"t{number}: t{number + 1}\n" for number in range(8)) + "t8:\n\tpytest\n"
         cases = [

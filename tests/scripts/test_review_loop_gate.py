@@ -193,6 +193,21 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
                    result("toolu_git", "clean"), result("toolu_full", FULL_CHECK_PASSED)]
         self.assertEqual(self.stop(records), "")
 
+    def test_a_command_of_two_full_check_calls_counts_only_when_each_call_printed_passed(self):
+        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        second_call = FULL_CHECK_CALL.replace("/r/app", "/r/lib").replace("'npm test'", "'npm run lint'")
+        command = f"{FULL_CHECK_CALL} ; {second_call}"
+        failed = "full check: failed (exit 1)\nFAIL src/a.test.ts"
+        blocked_by_output = {FULL_CHECK_PASSED: True,
+                             FULL_CHECK_PASSED + "\n" + failed: True,
+                             FULL_CHECK_PASSED + "\n" + FULL_CHECK_PASSED: False}
+
+        for output, blocked in blocked_by_output.items():
+            with self.subTest(output=output):
+                out = self.stop([*coder, *full_check_run(output, command)])
+
+                self.assertEqual(bool(out), blocked)
+
     def test_a_fix_coder_after_the_last_review_needs_only_the_full_check(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),

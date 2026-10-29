@@ -14,11 +14,12 @@ the command stops on a path that does not exist and did not exist at the diff ba
 default; a path the diff removed or moved is a failure), `not run (timeout)` when the command runs past the limit, or
 `not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and the command is not its `Quality check:`
 command (the command does not run then, scoped or not), `passed (check only; CI runs the full suite)` when that
-repo's `Quality check:` command exited 0 with no runner summary, or `not run (scoped command: ...)` when the command
+repo's `Quality check:` command exited 0 with no runner summary, `not run (scoped command: ...)` when the command
 runs tests or lint on named files or tests, or with a changed-files flag, and its text does not equal the CLAUDE.md
-`Quality check:` command (it does not run then). A `passed` or `unverified` result is followed by
-`summary: <the runner summary lines joined with " | ">` or `summary: not found`. `run` with no command returns
-`not run (no check found; ...)`.
+`Quality check:` command (it does not run then), or `not run (unresolved command: ...)` when lib/check_scope cannot
+read what it runs, such as a make call with a NAME=value argument or a target no Makefile names, under the same
+exception. A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">`
+or `summary: not found`. `run` with no command returns `not run (no check found; ...)`.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
 (`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
@@ -86,6 +87,7 @@ NOT_RUN_TIMEOUT = "not run (timeout)"
 SETUP_FAULT = "setup fault"
 NOT_RUN_NO_CHECK = "not run (no check found; the coder's scoped tests stand)"
 NOT_RUN_SCOPED = "not run (scoped command: it names files or tests, so it is no full check)"
+NOT_RUN_UNRESOLVED = "not run (unresolved command: what it runs cannot be read, so it is no full check)"
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)'?")
 REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 # Under the Bash tool's 600 s ceiling, so a loop's shell call ends before the tool moves it to the background.
@@ -511,6 +513,17 @@ def is_setup_fault_result(result):
     return result.startswith(SETUP_FAULT)
 
 
+def scope_refusal(check_command, repo):
+    """The not-run result for a check command that is no full check: one that runs on named files or tests, or one
+    whose scope cannot be read. None for a whole-suite command."""
+    scope = check_scope.command_check_scope(check_command, repo)
+    if scope == "targeted":
+        return NOT_RUN_SCOPED
+    if scope == "unresolved":
+        return NOT_RUN_UNRESOLVED
+    return None
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("repo")
@@ -531,9 +544,9 @@ def main(argv):
         parser.error("no command after --")
 
     declared = check_command == configured_check_command(args.repo)
-    scoped = check_scope.command_check_scope(check_command, args.repo) == "targeted"
-    if not declared and scoped and not full_suite_runs_in_ci(args.repo):
-        result, tail, details = NOT_RUN_SCOPED, "", empty_details()
+    refusal = scope_refusal(check_command, args.repo)
+    if not declared and refusal and not full_suite_runs_in_ci(args.repo):
+        result, tail, details = refusal, "", empty_details()
     else:
         result, tail, details = run(args.repo, check_command, args.log, args.timeout, base=args.base)
     print(f"full check: {result}")

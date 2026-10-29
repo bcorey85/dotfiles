@@ -26,6 +26,8 @@ BACKTICKED = re.compile(r"`([^`]+)`")
 # Subagent types: the agents that change code, and the agents that review it (code-reviewer, perf-reviewer-deep, ...).
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 REVIEWERS = re.compile(r"^([a-z]+-)*reviewer(-deep)?$")
+# The agent the /code skill forks into (its `agent:` line). It has no Edit or Write tool.
+FORK_AGENT_TYPE = "code-fork"
 # The line that starts the stamp the coder gate appends to a hand-back message. Everything after it is the gate's text.
 HAND_BACK_GATE_MARKER = "\n\nHAND-BACK GATE:"
 TIMEOUT_EXIT_CODE = 124

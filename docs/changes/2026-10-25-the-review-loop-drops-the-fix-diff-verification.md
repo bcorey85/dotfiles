@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "removed"
 title: "The review loop drops the fix-diff verification pass"
-description: "Step 5d is gone: no reviewer reads a fix diff that no full review follows, the execution gate is its only read, the loop gate no longer blocks on an unread fix diff, and a review-loop fix finding defers only as an open class member."
+description: "No reviewer reads a fix diff that no full review follows, the execution gate is its only read, the loop gate no longer blocks on an unread fix diff, and a review-loop fix finding defers only as an open class member."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T21:59:16-05:00"}
 seq: 21
 kind: "user-rule"

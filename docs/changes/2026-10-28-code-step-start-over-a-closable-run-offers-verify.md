@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "code-step: start over a closable run offers verify first"
-description: "start over an open run that verify may close refused with only resume, status or restart; it now names verify first, and a bare start reruns verify."
+description: "start over an open run that verify may close now names verify first, and a bare start reruns verify. Before, the refusal offered only resume, status or restart."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:51:07-05:00"}
 seq: 186
 kind: "fix"

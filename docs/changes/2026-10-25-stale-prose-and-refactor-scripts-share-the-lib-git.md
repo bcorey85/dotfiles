@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "Stale-prose and refactor scripts share the lib git runner and C-path decoder"
-description: "The stale-prose merge brought back a git_output copy and a second unquote_c_path, which the duplicate check failed on; stale_prose now runs git through script_utils.run_or_raise and refactor_flow decodes quoted paths through source_text."
+description: "stale_prose now runs git through script_utils.run_or_raise and refactor_flow decodes quoted paths through source_text. The stale-prose merge had brought back a git_output copy and a second unquote_c_path, which the duplicate check failed on."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T19:30:00-05:00"}
 seq: 11
 kind: "fix"

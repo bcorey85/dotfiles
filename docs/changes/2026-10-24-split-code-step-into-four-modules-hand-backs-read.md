@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "Split code_step into four modules; hand-backs read from the event log"
+title: "code-step is split into four modules and reads every hand-back from one event log"
 description: "code-step reads every hand-back from one record with one match rule, its hooks no longer write the state file, four unused edge cases are gone, and no function in it is over complexity 10."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T11:54:36-05:00"}
 seq: 9

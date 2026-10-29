@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "Metrics writers fold pairs that zsh left in one argument"
-description: "kv_fold refused a value such as `lane=code scope=phase iter=1`, which is what `C=\"lane=code scope=phase\"; writer $C` sends under zsh, since zsh does not split an unquoted variable. Each word after the first is now folded as its own pair when every one of them is name=value and the key is not free text. Any other spaced value is still refused."
+description: "The metrics writers now accept `lane=code scope=phase iter=1` as separate pairs, when every word after the first is name=value and the key is not free text. Before, kv_fold refused it; that is what `C=\"lane=code scope=phase\"; writer $C` sends under zsh, since zsh does not split an unquoted variable. Any other spaced value is still refused."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T21:34:47-05:00"}
 seq: 20
 kind: "fix"

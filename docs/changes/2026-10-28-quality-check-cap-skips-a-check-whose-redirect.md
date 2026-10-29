@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "quality-check-cap skips a check whose redirect failed and dates a run at its start"
-description: "The cap recorded a check whose output redirect could not be opened, so the check never ran, and then denied every rerun of it. It also dated a run at its end, so an edit made while the check ran did not count. A check whose redirect the shell could not open is not recorded, and a run record keeps the run's start."
+description: "A check whose output redirect the shell could not open is no longer recorded, and a run record keeps the run's start. Before, the cap recorded a check that never ran and then denied every rerun of it, and it dated a run at its end, so an edit made while the check ran did not count."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T00:51:35-05:00"}
 seq: 155
 kind: "fix"

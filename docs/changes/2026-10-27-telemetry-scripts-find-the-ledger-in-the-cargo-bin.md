@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "Telemetry scripts find the ledger in the cargo bin folder and warn when it is missing"
-description: "The telemetry writers, readers and hooks looked for `ledger` on PATH only. A hook or Bash call without the login PATH missed the installed ledger and wrote rows to the jsonl fallback, which the ledger's readers never see. Writers and readers now also look in ${CARGO_HOME:-~/.cargo}/bin; the settings.json hooks run a new `ledger-hook` wrapper. The /review and /code reports say so when no ledger is found. The fallback stays: no hard error."
+description: "The telemetry writers and readers now also look for `ledger` in ${CARGO_HOME:-~/.cargo}/bin; the settings.json hooks run a new `ledger-hook` wrapper. The /review and /code reports say so when no ledger is found. The fallback stays: no hard error. Before, they looked on PATH only, so a hook or Bash call without the login PATH missed the installed ledger and wrote rows to the jsonl fallback, which the ledger's readers never see."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T13:27:33-05:00"}
 seq: 109
 kind: "fix"

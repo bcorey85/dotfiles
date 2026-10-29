@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "fixed"
-title: "The review-loop stop gate ignores package and project flag values when it judges a scoped run"
+title: "The review-loop stop gate counts `cargo test -p core` as a full gate run"
 description: "review-loop-gate.py no longer reads the value of a package, project or manifest flag as a test filter, so `cargo test -p core` counts as a full gate run. The script also carries a hand-back check that is not registered in settings.json."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T09:53:16-05:00"}
 seq: 11

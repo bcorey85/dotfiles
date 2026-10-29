@@ -47,7 +47,7 @@ UNITTEST_SUMMARY = re.compile(r"^(Ran [1-9]\d* tests? in [\d.]+s)\s*\n+\s*(OK\b[
 # A command substitution `$(...)` or backticks: its runner's output goes into the outer command, not into its report.
 SUBSTITUTION = re.compile(r"\$\([^)]*\)|`[^`]*`")
 GO_NO_TESTS = "[no tests to run]"
-TEST_WORD = re.compile(r"^test(?:[:-][\w:.-]*)?$")
+TEST_WORD = re.compile(r"^(?:test(?:[:-][\w:.-]*)?|nextest)$")
 # Programs that run a named script or target, and Django's `manage.py`: a `test` word given to one runs tests.
 SCRIPT_RUNNERS = ("npm", "pnpm", "yarn", "bun", "make", "just", "task", "cargo", "go", "deno", "manage.py")
 # Programs whose arguments only name a test: a search, a file check, a print, a directory change.
@@ -56,9 +56,9 @@ NON_TEST_PROGRAMS = ("test", "cd", "git", "rg", "grep", "echo", "cat", "ls", "fi
 
 def runs_tests(command):
     """True when a step of the shell command runs tests: a word that is `pytest`, `vitest`, `jest` or `mocha`, or
-    `test` or a script or target name that starts `test:` or `test-`, given to a script runner (`npm test`,
-    `make test-unit`, `pnpm --filter api test`, `python manage.py test`). A search, a file check, a `cd` or a tool
-    whose argument merely names a test folder is not. False for text shlex cannot split."""
+    `test`, `nextest` or a script or target name that starts `test:` or `test-`, given to a script runner (`npm test`,
+    `make test-unit`, `pnpm --filter api test`, `python manage.py test`, `cargo nextest run`). A search, a file
+    check, a `cd` or a tool whose argument merely names a test folder is not. False for text shlex cannot split."""
     try:
         simple_commands = split_simple_commands(command)
     except ValueError:

@@ -31,6 +31,8 @@ Not measured yet. Expected: fewer tests added per phase, with no rise in test-ga
 
 Reading, 2026-10-27 intake: the coder output cost guard is closed as not tracked. Work subagent transcripts before Claude Code 2.1.308 carry output on about 5% of requests, so its before window cannot be compared. The findings watch is held: from 2026-10-27 the scripted review loop's finding rows are wrong until its logger is fixed.
 
+Reading, 2026-10-28 intake: NO CHANGE (0.35 per run against a 0.38 median), still held. The after window includes rows from the scripted loop's broken logger. The logger fix is on master; read the watch on rows written after the work machine installs it.
+
 ## Back-out
 
 Restore the four files from git.

@@ -76,10 +76,10 @@ STAGE_GUARDS = {
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
     "review-again": {"stages": ("stopped",),
                      "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "tool-fault", "critical-blocker",
-                                     "setup-fault"),
+                                     "setup-fault", "check-unverified"),
                      "message": "review-again ran with no unreadable review packet, capped review, crashed review "
-                                "call, unmarked review gate, critical blocker, setup fault or silent review-loop "
-                                "pending."},
+                                "call, unmarked review gate, critical blocker, setup fault, a full check that showed "
+                                "no test run or silent review-loop pending."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
     "skill-done": {"stages": ("skill",), "message": "skill-done ran with no closing-phase skill pending."},
     "verify": {"stages": ("stopped",), "stopReasons": PLAN_EDIT_STOP_REASONS,
@@ -681,6 +681,8 @@ def ask_lines(packet):
 
 def stop_on_review_status(repo_dir, state, module, packet):
     # True after the stop or question a packet status that ends the run prints.
+    # Imported here: review/ joins sys.path when code_step_core loads, which sorted top-level imports would precede.
+    import full_check
     status = packet["status"]
     if status == "plan-impact":
         state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
@@ -715,6 +717,33 @@ def stop_on_review_status(repo_dir, state, module, packet):
         stop_with_question(
             repo_dir, question, [line[2:] for line in blocker_lines], blocker_stop_next_step(state), instruction,
             *blocker_lines, questions=ask_lines(packet))
+        return True
+    if status in ("converged", "deferred") and full_check.is_unverified(packet["full_check"]):
+        # A check that exited 0 printed no test-runner summary, so the check did not show that any test ran: the phase
+        # is not verified, so it does not finish.
+        state.update({"stage": "stopped", "stopReason": "check-unverified"})
+        save_state(repo_dir, state)
+        check_command = packet["full_check_command"] or "(not named)"
+        configured = full_check.configured_check_command(repo_dir)
+        if configured:
+            # The repo already names its check, so a Quality check line would change nothing: the runner's output
+            # is what the toolkit does not recognize.
+            why = ("the full check exited 0 and printed no test-runner summary this toolkit recognizes, so the check "
+                   "did not show that any test ran.")
+            fix = (f"make the configured check (`{configured}`) print its test runner's summary, or add the "
+                   "runner's summary format to SUMMARY_LINES in ~/.claude/scripts/lib/test_run_output.py")
+        else:
+            why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
+                   "test ran.")
+            fix = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
+        why_sentence = why[0].upper() + why[1:]
+        fix_sentence = fix[0].upper() + fix[1:]
+        stop_with_question(
+            repo_dir, why, [check_command],
+            f"{fix}, then run `{script_command('review-again')}` to review the same diff again.",
+            f"{why_sentence} The check ran: `{check_command}`. {fix_sentence}, then run "
+            "review-again. Do not mark the phase done.",
+            questions=ask_lines(packet))
         return True
     if status == "cap-reached":
         # The first cap of a phase sends the open findings to one more review-loop pass with a fresh round budget.

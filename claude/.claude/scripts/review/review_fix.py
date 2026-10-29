@@ -39,7 +39,6 @@ override the nvim-jump and gh commands; HANDBACK_STORE_DIR overrides the hand-ba
 CLAUDE_CODE_SESSION_ID names the session."""
 import argparse
 import datetime
-import hashlib
 import json
 import os
 import pathlib
@@ -49,11 +48,11 @@ import time
 
 SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
-import code_step_core
 import handback
 import plan_format
 import script_utils
 from handback import PacketError, is_plan_impact_ask, item_text
+from saved_handback import LoopWaitingError, NoHandbackError, dispatched_with_ruling, read_message
 from script_utils import one_line, run_command, split_location
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -80,21 +79,6 @@ WAIT_EXIT_CODE = 3
 
 class UsageError(Exception):
     pass
-
-
-class NoHandbackError(Exception):
-    """The review-loop was dispatched and ended without calling SubagentHandback."""
-    def __init__(self, last_hand_back_id):
-        super().__init__("dispatched, no hand-back since " + last_hand_back_id)
-        self.last_hand_back_id = last_hand_back_id
-
-
-class LoopWaitingError(Exception):
-    """The review-loop stopped its turn while an agent or shell it started in the background still runs. `stop_ts` is
-    the time of the stop row that showed it."""
-    def __init__(self, stop_ts):
-        super().__init__(f"waiting since {stop_ts}")
-        self.stop_ts = stop_ts
 
 
 # ---------- shell helpers ----------
@@ -307,8 +291,7 @@ def present_plan_impact(packet, state):
     state.update({"stage": "plan-impact", "plan_impact": packet["plan_impact"],
                   "carried_findings": handback.carried_findings(packet)})
     if not plan_format.changes_acceptance_criteria(packet["plan_impact"]):
-        print("The plan impact changes no acceptance criterion, so the plan follows the code. No question to the user.")
-        return record_plan_ruling(state, "adopt", "session", plan_format.BELOW_CRITERIA_RULING, None)
+        return adopt_code_side_for_review(state)
 
     save_fix_state(state)
     print_action(
@@ -486,108 +469,6 @@ def post_aikido_replies(packet, targets, state):
 
 # ---------- the packet ----------
 
-def code_run_at_review(session_id):
-    """(state, events) of a /code run of this session at a stage that owns review hand-backs, else None. A run pinned
-    to a different session does not count."""
-    try:
-        code_step = code_step_core.load_state(".")
-    except code_step_core.StateFileError:
-        return None
-    if code_step is None or code_step.get("stage") not in code_step_core.REVIEW_HANDBACK_STAGES:
-        return None
-    if code_step.get("sessionId") != session_id:
-        return None
-    events = code_step_core.read_events(".", code_step.get("runId")) if code_step.get("runId") else []
-    return code_step, events
-
-
-def code_step_owner(code_step):
-    return code_step_core.state_dir(".") / "state.json", code_step["stage"]
-
-
-def active_code_step(session_id, hand_back_agent_id):
-    """(state path, stage) of a /code run that owns this session's review hand-backs, else None. The run owns only
-    the hand-back of an agent it launched, so a hand-back from another review-loop agent (a standalone /review while
-    the run is paused or before its launch is logged) is not the run's."""
-    code_run = code_run_at_review(session_id)
-    if code_run is None:
-        return None
-
-    code_step, events = code_run
-    launched_agent_ids = {event.get("agent_id") for event in events if event.get("event") == "launch"}
-    if not hand_back_agent_id or hand_back_agent_id not in launched_agent_ids:
-        return None
-    return code_step_owner(code_step)
-
-
-def code_step_pending_review(session_id, stored_row):
-    """(state path, stage) of a /code run that dispatched a review-loop after the stored hand-back (or at all, when
-    there is none), else None: the pending dispatch is the run's, so its retry goes through the run."""
-    code_run = code_run_at_review(session_id)
-    if code_run is None:
-        return None
-
-    code_step, events = code_run
-    since = stored_row.get("ts", 0) if stored_row else 0
-    run_review_dispatches = [event for event in events if event.get("event") == "dispatch"
-                             and event.get("agent_type") == "review-loop" and event.get("ts", 0) > since]
-    if not run_review_dispatches:
-        return None
-    return code_step_owner(code_step)
-
-
-def hand_back_id(stored_row, session_id):
-    """The run id of a stored hand-back row; `none:<session>` when the session has no hand-back yet, so sessions in
-    one repo never share a miss count."""
-    if stored_row is None:
-        return f"none:{session_id}"
-    return f"handback:{stored_row.get('agent_id')}:{stored_row.get('ts')}"
-
-
-def saved_hand_back(session_id):
-    """The latest review-loop hand-back row of this session. Raises NoHandbackError when the loop was dispatched and
-    never handed back, and LoopWaitingError when it stopped to wait on a background agent or shell."""
-    if not session_id:
-        raise PacketError(["the packet on stdin is empty and CLAUDE_CODE_SESSION_ID is not set, so no saved "
-                           "hand-back can be looked up"])
-    seen = handback.latest(session_id)
-    gap = handback.hand_back_gap(seen)
-    stored_row = seen["handback"] or {}
-    # A pending dispatch (waiting, never handed back, or re-dispatched) is newer than any stored hand-back, so the
-    # stored hand-back's owner is not the answer: the run owns it only when the run dispatched it.
-    if gap in (handback.LOOP_WAITING, handback.NO_HANDBACK, handback.REDISPATCHED):
-        code_step = code_step_pending_review(session_id, seen["handback"])
-    else:
-        code_step = active_code_step(session_id, stored_row.get("agent_id"))
-    if code_step:
-        raise PacketError([f"a /code run owns this session's review hand-backs (code-step state {code_step[0]}, stage "
-                           f"{code_step[1]}): its packet goes through code_step.py resume, not `packet`"])
-
-    if gap == handback.LOOP_WAITING:
-        raise LoopWaitingError(seen["stop"]["ts"])
-    if gap in (handback.NO_HANDBACK, handback.REDISPATCHED):
-        raise NoHandbackError(hand_back_id(seen["handback"], session_id))
-    if gap == handback.NO_DISPATCH:
-        raise PacketError([f"this session has no review-loop dispatch on record (session {session_id}): a hand-back "
-                           "from another session or an older run is never taken as current"])
-    return seen["handback"]
-
-
-def read_message():
-    """(packet text, run id, how many hand-backs in a row ended clean with no reviewer run, this one included,
-    whether a coder ran after the loop's last reviewer). A saved hand-back is one run per stored row (agent id and
-    time), so two dispatches that return the same text are two runs. A packet on stdin has no row: its text hash is
-    the run id."""
-    stdin_text = "" if sys.stdin.isatty() else sys.stdin.read()
-    if stdin_text.strip():
-        return stdin_text, "stdin:" + hashlib.sha1(stdin_text.encode("utf-8")).hexdigest(), 0, False
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    stored_row = saved_hand_back(session_id)
-    unreviewed_in_a_row = handback.unreviewed_streak(session_id)
-    unreviewed_fix = handback.ended_on_unreviewed_fix(session_id, stored_row.get("agent_id"))
-    return stored_row["message"], hand_back_id(stored_row, session_id), unreviewed_in_a_row, unreviewed_fix
-
-
 def new_state(options, packet, packet_id):
     previous = read_state() or {}
     same_run = previous.get("packet_id") == packet_id
@@ -612,6 +493,11 @@ def new_state(options, packet, packet_id):
                 state[key] = previous[key]
     if waiting_packets:
         state["waiting_packets"] = waiting_packets
+
+    # Only the run that the adoption's re-dispatch started shows the deviations: any other dispatch drops them.
+    carries_ruling = same_run or (previous.get("stage") == "redispatch" and dispatched_with_ruling())
+    if carries_ruling and previous.get("adopted_deviations"):
+        state["adopted_deviations"] = previous["adopted_deviations"]
     return state
 
 
@@ -751,7 +637,7 @@ def command_packet(argv):
         present_packet_asks(packet, state)
     else:
         print_action("render-and-finish", gate_mark_line())
-    sections = packet_sections(packet, replies, unreviewed_fix)
+    sections = packet_sections(packet, state, replies, unreviewed_fix)
     print_user_block(handback.render(packet, options.skill, sections))
     print_logged(notes)
     if options.skill == "review" and not is_outstanding(packet):
@@ -759,8 +645,11 @@ def command_packet(argv):
     print("MODEL STILL DOES: " + model_duties(packet, options))
 
 
-def packet_sections(packet, replies, unreviewed_fix):
+def packet_sections(packet, state, replies, unreviewed_fix):
     sections = [("Aikido replies", replies)] if replies else []
+    if state.get("adopted_deviations"):
+        deviation_lines = [f"- {deviation_summary}" for deviation_summary in state["adopted_deviations"]]
+        sections.append(("Plan deviations adopted (the code won; no acceptance criterion changed)", deviation_lines))
     if unreviewed_fix:
         sections.append(handback.unreviewed_fix_section(packet))
     ledger_warning = script_utils.missing_ledger_warning()
@@ -974,9 +863,13 @@ def command_decide(argv):
     record_plan_ruling(state, options.decision, options.by, options.ruling, plan_path)
 
 
-def record_plan_ruling(state, decision, by, ruling, plan_path):
+NO_PLAN_LINE = "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
+ADOPT_NO_PLAN_LINE = "Add these lines under ## Plan Deviations in the plan yourself, then continue:"
+
+
+def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no_plan_line=NO_PLAN_LINE):
     """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds) and print the
-    re-dispatch."""
+    re-dispatch. `user_lines` go first, for the main session to show the user."""
     choice = DECISION_WORDS[decision]
     owner = plan_format.ruling_owner(".", by)
     ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -999,16 +892,23 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
     save_fix_state(state)
     print_action(
         "redispatch",
-        (
-            f"Recorded in {plan_path} under ## Plan Deviations."
-            if plan_path is not None
-            else "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
-        ),
+        *user_lines,
+        f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else no_plan_line,
         *entry,
         'Re-dispatch review-loop (same Agent call, model: "sonnet") with the same arguments as the first dispatch '
         "and these lines added, both counters kept:",
         *lines,
     )
+
+
+def adopt_code_side_for_review(state):
+    """A plan change that changes no acceptance criterion: the code wins with no question, and the user sees the
+    deviation now and again in the closing block."""
+    ruling = plan_format.below_criteria_ruling(state["plan_impact"])
+    summary = plan_format.below_criteria_summary(state["plan_impact"])
+    state["adopted_deviations"] = [*state.get("adopted_deviations", []), summary]
+    user_line = f"Show the user this line, and ask nothing: Plan deviation adopted: {ruling}"
+    return record_plan_ruling(state, "adopt", "session", ruling, None, (user_line,), ADOPT_NO_PLAN_LINE)
 
 
 def main():

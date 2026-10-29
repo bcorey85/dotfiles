@@ -3,7 +3,7 @@ type: "Change"
 title: "The review-loop transcript reader moves to lib"
 description: "LoopTranscript and the checks that read only the transcript move from review_loop_gate.py to lib/loop_transcript.py, so handback.py no longer imports the SubagentStop hook that imports it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T12:14:43-05:00"}
-seq: 262
+seq: 264
 kind: "fix"
 components: ["script/handback", "script/review-loop-gate", "script/open-child-gate"]
 evidence: ["judgment"]

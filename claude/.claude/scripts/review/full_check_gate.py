@@ -14,6 +14,7 @@ import code_step_core
 import format_files
 import full_check
 import script_utils
+from finding_record import parse_finding
 from worktree_snapshot import CHANGE_KINDS
 
 CHECK_TIMEOUT_SECONDS = 900
@@ -80,8 +81,9 @@ class FullCheckSteps:
             self.stop("critical-blocker", gate_findings)
             return
 
-        _report, _diffs, gate_changed = self.repair("coder-gate", gate_findings)
-        self.mark_repaired(gate_findings, gate_changed)
+        gate_records = [parse_finding(text) for text in gate_findings]
+        _report, _diffs, gate_changed = self.repair("coder-gate", gate_records)
+        self.mark_repaired(gate_records, gate_changed)
         self.recheck_full_check(check_command, "full check still failing after one repair")
 
     def run_check(self, check_command):

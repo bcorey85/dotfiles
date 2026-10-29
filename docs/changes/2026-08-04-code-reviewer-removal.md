@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "`code-reviewer` removal"
 description: "`code-reviewer` removal."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["VOID round"]
 watches: []

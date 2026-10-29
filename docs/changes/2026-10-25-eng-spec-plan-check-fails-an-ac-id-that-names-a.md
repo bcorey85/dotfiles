@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "eng-spec plan check fails an AC id that names a different criterion"
 description: "The spec is written before the criteria file, so its bare AC numbers carried the ticket's numbering while the criteria file numbered its own. plan check now fails a bare AC reference in spec.md that is not that criterion's id."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T23:34:50-05:00"}

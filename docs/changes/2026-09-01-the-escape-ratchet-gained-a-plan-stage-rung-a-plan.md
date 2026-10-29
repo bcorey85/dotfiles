@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The escape ratchet gained a plan-stage rung: a plan defect closes with one command added where spec"
 description: "The escape ratchet gained a plan-stage rung: a plan defect closes with one command added where spec finalization already runs commands, or with a rule in the criteria lint when the shape is mechanically detectable — and that rung is to be tried before \"nothing worth guarding\"."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 10
+kind: "behavior"
 components: ["shared/escape-ratchet"]
 evidence: ["census"]
 watches: []

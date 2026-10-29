@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code_step start reads task text from a file"
 description: "`code_step.py start --task-file <path>` reads the task text verbatim from any path, the code skill passes it through, and a positional non-plan file outside the repo is refused with the --task-file command."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:50:59-05:00"}

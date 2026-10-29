@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "New planning-lane logger writing one row per finalized or abandoned plan (phases, criteria, decisions"
 description: "New planning-lane logger writing one row per finalized or abandoned plan (phases, criteria, decisions, research questions, self-caught gaps, falsified claims), wired into the spec finalization phase, with an audit step that reports plan defects per plan and per criterion."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 18
+kind: "behavior"
 components: ["script/log-spec-run"]
 evidence: ["census"]
 watches: []

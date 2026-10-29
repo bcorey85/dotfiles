@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`/code` runs as a forked Sonnet subagent (`context: fork`, `model: sonnet`)"
 description: "`/code` runs as a forked Sonnet subagent (`context: fork`, `model: sonnet`)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-19T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["skill/code", "script/code-step"]
 evidence: ["bench run", "judgment"]
 watches: ["code-forked-sonnet-router"]

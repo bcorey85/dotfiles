@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The implement skill now builds the handoff block at the head of the review dispatch step"
 description: "The implement skill now builds the handoff block at the head of the review dispatch step, not at the tail of the summary step, and the step says never to dispatch without it."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["shared/handoff-block"]
 evidence: ["census"]
 watches: []

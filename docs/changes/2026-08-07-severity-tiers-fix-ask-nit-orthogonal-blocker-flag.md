@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Severity tiers → `fix` / `ask` / `nit` + orthogonal `blocker` flag"
 description: "Severity tiers → `fix` / `ask` / `nit` + orthogonal `blocker` flag."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-07T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["skill/fix"]
 evidence: ["629-run log"]
 watches: []

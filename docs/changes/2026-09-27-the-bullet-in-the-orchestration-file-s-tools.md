@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The bullet in the orchestration file's Tools section that told the main session to search past sessions"
 description: "The bullet in the orchestration file's Tools section that told the main session to search past sessions before asking the user to recall past work was deleted."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["rule/orchestration"]
 evidence: ["removal round"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The backend architect's list of what a complete plan specifies lost its data-models bullet (14 words"
 description: "The backend architect's list of what a complete plan specifies lost its data-models bullet (14 words, 559 remain in the agent file)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 12
+kind: "behavior"
 components: ["agent/backend-architect"]
 evidence: ["removal round"]
 watches: []

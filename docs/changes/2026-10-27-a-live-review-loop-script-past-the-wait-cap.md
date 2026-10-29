@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A live review loop script past the wait cap keeps the wait going"
 description: "/code counts a running review loop script's wait cap from its last calls.jsonl or full-check.log write, and its cap stop says the script is still running, not that it died."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:59:00-05:00"}

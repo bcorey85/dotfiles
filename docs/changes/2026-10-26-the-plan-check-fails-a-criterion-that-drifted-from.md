@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The plan check fails a criterion that drifted from the ticket"
 description: "The eng-spec plan check fails a ticket Acceptance line whose text no AC in the criteria file carries and no sign-off names; a ticket with no Acceptance or Requirements heading is skipped."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T11:07:39-05:00"}

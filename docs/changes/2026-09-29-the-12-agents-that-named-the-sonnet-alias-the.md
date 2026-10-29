@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The 12 agents that named the `sonnet` alias, the coder among them, now name `claude-sonnet-5-5` in full"
 description: "The 12 agents that named the `sonnet` alias, the coder among them, now name `claude-sonnet-5-5` in full."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["agent/coder"]
 evidence: ["census"]
 watches: []

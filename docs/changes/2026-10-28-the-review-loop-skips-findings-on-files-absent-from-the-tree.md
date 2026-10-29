@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review loop skips findings on files absent from the tree"
 description: "A reviewer finding whose file:line names a file neither on disk nor listed by git goes to skipped_fp and never reaches the coder; a plan-change ask still stops the loop."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T09:00:00-05:00"}

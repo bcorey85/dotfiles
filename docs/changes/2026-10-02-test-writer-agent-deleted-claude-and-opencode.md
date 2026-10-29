@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Test-writer agent deleted (Claude and opencode copies)"
 description: "Test-writer agent deleted (Claude and opencode copies)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 14
+kind: "behavior"
 components: ["agent/test-writer", "skill/test-audit", "agent/test-intent-reviewer", "skill/fix", "skill/branch-recap", "shared/closing-phases"]
 evidence: ["judgment", "bench smoke"]
 watches: []

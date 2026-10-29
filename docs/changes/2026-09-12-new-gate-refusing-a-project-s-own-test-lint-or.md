@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "New gate refusing a project's own test, lint or type-check command when it is run a second time with no file"
 description: "New gate refusing a project's own test, lint or type-check command when it is run a second time with no file edit in between, telling the caller to send the failing run to a log, read the whole log, fix every failure at once, and run again."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["script/quality-check-cap"]
 evidence: ["judgment"]
 watches: []

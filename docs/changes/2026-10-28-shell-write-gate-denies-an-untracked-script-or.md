@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "shell-write-gate denies an untracked script or inline code that writes a tracked file"
 description: "After the gate denied a sed -i, a coder redid the edit with a Python script, which skips the Write/Edit hooks just the same. The gate now denies an interpreter run whose inline code or untracked script opens a file for writing and names a git-tracked file, and the coder and review-loop prompts say a blocked file write is redone with Edit or Write only."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T03:45:06-05:00"}

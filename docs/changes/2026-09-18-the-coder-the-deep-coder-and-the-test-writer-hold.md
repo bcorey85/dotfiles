@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The coder, the deep coder, and the test writer hold an explicit tool list (`Bash, Read, Edit, Write"
 description: "The coder, the deep coder, and the test writer hold an explicit tool list (`Bash, Read, Edit, Write, LSP`) in place of every tool but Agent."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 8
+kind: "behavior"
 components: ["agent/test-writer"]
 evidence: ["census", "live check"]
 watches: []

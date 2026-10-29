@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "Per-finding gate log (silent runs included)"
 description: "Per-finding gate log (silent runs included)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-07T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["script/log-review-finding", "skill/review"]
 evidence: ["metric audit"]
 watches: []

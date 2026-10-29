@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The /code question for the user outlives the Stop hook, and resume takes the user's answer"
 description: "code_step.py writes every ask-user question to question.md, which the Stop say-hook never empties, and `resume <answer>` at a stopped coder puts the answer in that question instead of refusing it, so a /code run that stops for the user no longer hands back an empty question."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T20:42:28-05:00"}

@@ -1,9 +1,12 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The hook that forces a nested agent dispatch into the foreground now tests the caller-identity field that the"
 description: "The hook that forces a nested agent dispatch into the foreground now tests the caller-identity field that the harness sends."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 16
+kind: "fix"
+regression: "2026-09-15-a-hook-on-every-agent-dispatch-made-from-inside-a"
 components: ["script/agent-foreground"]
 evidence: ["census"]
 watches: []

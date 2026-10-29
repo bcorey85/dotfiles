@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The delegation block in the main-session orchestration file was trimmed from 283 to 111 words"
 description: "The delegation block in the main-session orchestration file was trimmed from 283 to 111 words."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["rule/orchestration", "skill/code", "script/review-commit-gate", "script/agent-model-guard"]
 evidence: ["removal round", "judgment"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A plain bullet under Automated Verification is read as an open check"
 description: "A top-level list item under `#### Automated Verification` that is not a checkbox is read as an open `- [ ]` item, and plan check prints a file:line warning for it, instead of the item being skipped unrun."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T03:00:00-05:00"}

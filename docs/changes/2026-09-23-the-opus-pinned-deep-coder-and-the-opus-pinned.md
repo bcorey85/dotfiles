@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The Opus-pinned deep coder and the Opus-pinned deep code reviewer are deleted"
 description: "The Opus-pinned deep coder and the Opus-pinned deep code reviewer are deleted."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-23T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["agent/code-reviewer", "agent/review-loop", "skill/peer-review"]
 evidence: ["judgment"]
 watches: []

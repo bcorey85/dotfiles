@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review loop stated its two-round budget two ways, and its exit at the round cap left before the closing"
 description: "The review loop stated its two-round budget two ways, and its exit at the round cap left before the closing checks."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-22T00:00:00-05:00"}
 seq: 1
+kind: "fix"
 components: ["agent/review-loop", "skill/fix"]
 evidence: ["census", "judgment"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The phase-boundary decision list in the dispatch skill is repaired, and its forced first-phase stop"
 description: "The phase-boundary decision list in the dispatch skill is repaired, and its forced first-phase stop, its fix-round cap, and its branch-end reconciliation rule all state their reasons."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 13
+kind: "fix"
 components: ["skill/code"]
 evidence: ["census"]
 watches: []

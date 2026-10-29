@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The spec criteria lint now also sweeps phase bodies and change lists for test paths"
 description: "The spec criteria lint now also sweeps phase bodies and change lists for test paths, files and directories both, not only file-target lines."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["agent/spec-criteria", "script/spec-criteria-lint"]
 evidence: ["census"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Test audit log row: adds `tests_added`, taken from a new tests-added header line in the test-intent"
 description: "Test audit log row: adds `tests_added`, taken from a new tests-added header line in the test-intent reviewer's cull report."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 16
+kind: "behavior"
 components: ["skill/test-audit", "agent/test-intent-reviewer"]
 evidence: ["judgment"]
 watches: []

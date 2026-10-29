@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The review telemetry's comment-noise count is retired: the review loop still writes the field as 0 on every"
 description: "The review telemetry's comment-noise count is retired: the review loop still writes the field as 0 on every row for schema stability, and the audit skill no longer computes or reads it."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-14T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["census"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Remove the hook that forced agents to run in the foreground"
 description: "The PreToolUse hook that set run_in_background to false on every Agent dispatch is gone. It did not hold, and the reason for it no longer exists: a subagent now gets the finish notice of its own background agents."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T08:03:30-05:00"}
 seq: 6
+kind: "behavior"
 components: ["script/agent-foreground"]
 evidence: ["census", "transcript read"]
 watches: []

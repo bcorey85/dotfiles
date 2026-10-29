@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`orchestration.md` Delegation: when an agent's completion notice says it still runs background work"
 description: "`orchestration.md` Delegation: when an agent's completion notice says it still runs background work, the main session reads the report."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-19T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["rule/orchestration"]
 evidence: ["judgment"]
 watches: []

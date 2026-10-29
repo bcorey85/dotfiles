@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A repo whose full suite runs in CI gets only the changed-file tests in review"
 description: "A repo whose CLAUDE.md holds the line `Full suite: CI` skips the review loop's full check and runs the changed files' tests, and a full check past its time limit reports `not run (timeout)` with its process group killed, never a critical blocker."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T20:39:42-05:00"}

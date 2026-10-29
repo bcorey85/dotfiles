@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Retire the spec criteria lint"
 description: "The eng-spec finalization step no longer runs spec-criteria-lint.sh, and the script is deleted. Its one check, verification paths that no phase creates, was wrong on every report it made."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T22:28:55-05:00"}
 seq: 24
+kind: "behavior"
 components: ["script/spec-criteria-lint", "skill/eng-spec", "shared/escape-ratchet"]
 evidence: ["work incident", "census"]
 watches: []

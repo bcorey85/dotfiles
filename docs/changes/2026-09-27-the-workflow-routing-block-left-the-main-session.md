@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The workflow routing block left the main-session orchestration file"
 description: "The workflow routing block left the main-session orchestration file."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["rule/orchestration"]
 evidence: ["removal round", "census", "judgment"]
 watches: []

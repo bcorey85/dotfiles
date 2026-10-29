@@ -1,9 +1,12 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "`architect-core` Output Format and the spec template: the `Reuse:` line on every implementation step is"
 description: "`architect-core` Output Format and the spec template: the `Reuse:` line on every implementation step is removed."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-17T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
+reverts: "2026-10-17-architect-core-output-format-each-implementation"
 components: ["skill/architect-core"]
 evidence: ["seeded round"]
 watches: []

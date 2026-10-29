@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The pass that reads a fix diff before the review loop exits is now bounded by the diffs it has not read"
 description: "The pass that reads a fix diff before the review loop exits is now bounded by the diffs it has not read rather than by a fixed count, so a repair ordered by a specialist reviewer is read as well and no loop ends on an unreviewed code change."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 12
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["census"]
 watches: []

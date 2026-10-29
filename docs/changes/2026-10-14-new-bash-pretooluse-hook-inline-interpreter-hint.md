@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "New Bash PreToolUse hook `inline-interpreter-hint.py`: denies exactly the inline interpreter runs the"
 description: "New Bash PreToolUse hook `inline-interpreter-hint.py`: denies exactly the inline interpreter runs the generated safety gate blocks, with text naming the way around (write a scratchpad file and run it; run the interpreter step as its own call when no inline code runs)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-14T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["script/inline-interpreter-hint"]
 evidence: ["census"]
 watches: ["inline-interpreter-hint-hook"]

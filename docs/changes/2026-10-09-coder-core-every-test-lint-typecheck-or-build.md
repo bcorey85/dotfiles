@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "coder-core: every test, lint, typecheck or build command runs with its full output in a `/tmp/` log"
 description: "coder-core: every test, lint, typecheck or build command runs with its full output in a `/tmp/` log, read with Read or `rg`, and is never piped into `head`, `tail` or `grep`."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["skill/coder-core"]
 evidence: ["judgment"]
 watches: []

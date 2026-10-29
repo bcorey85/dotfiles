@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "plan-reviewer: a new finding class, phase shape"
 description: "plan-reviewer: a new finding class, phase shape."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["agent/plan-reviewer"]
 evidence: ["seeded round", "census"]
 watches: ["plan-review-phase-shape"]

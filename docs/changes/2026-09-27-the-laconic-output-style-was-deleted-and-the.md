@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The Laconic output style was deleted, and the settings no longer name an output style"
 description: "The Laconic output style was deleted, and the settings no longer name an output style."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["rule/laconic-output-style", "rule/global-claude-md"]
 evidence: ["removal round", "judgment"]
 watches: []

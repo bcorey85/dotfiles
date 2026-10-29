@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "New agents `plan-fanout-window` (Opus, pinned) and `plan-window-view` (Sonnet"
 description: "New agents `plan-fanout-window` (Opus, pinned) and `plan-window-view` (Sonnet, pinned): the same fan-out plan review, but each Sonnet agent reads a three-phase window (overlapping by one phase) and never the full plan, 7 agents instead of 15."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 10
+kind: "behavior"
 components: ["agent/plan-fanout-window", "agent/plan-window-view"]
 evidence: ["judgment", "token breakdown", "replacement bench"]
 watches: []

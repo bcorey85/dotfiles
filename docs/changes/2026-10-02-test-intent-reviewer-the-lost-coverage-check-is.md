@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Test-intent reviewer: the lost-coverage check is cut"
 description: "Test-intent reviewer: the lost-coverage check is cut."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 15
+kind: "behavior"
 components: ["agent/test-intent-reviewer", "skill/test-audit"]
 evidence: ["census"]
 watches: []

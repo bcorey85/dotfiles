@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A CI repo runs its declared check with no tests"
 description: "In a repo whose CLAUDE.md holds `Full suite: CI`, full_check.py runs the `Quality check:` command, and an exit 0 with no runner summary passes as a check-only result, so the /code gate runs there instead of reporting `not run (CI)`."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T13:00:06-05:00"}

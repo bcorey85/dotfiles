@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review commit gate sees a commit behind a git option joined to a substitution"
 description: "is_commit_command also reads the command with each substitution span shrunk, so `git -p\"\"$(cat <<'EOF' ...)\"\" commit` and `git -C$(echo a b) commit` count as commits and a dirty session is denied."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T11:00:00-05:00"}

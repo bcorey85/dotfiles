@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Scope boxes diff recorded commits, not a branch name"
 description: "A plan box that diffs main...HEAD reads nothing once the branch merges, so a box ticked after merge passed with nothing checked. plan check now fails such a box and the closing-phase text names the form that survives merge and fails when empty."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T23:35:30-05:00"}

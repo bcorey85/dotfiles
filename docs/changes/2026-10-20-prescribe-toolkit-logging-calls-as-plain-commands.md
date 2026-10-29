@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Prescribe toolkit logging calls as plain commands by path"
 description: "The review-scope, log-review-finding and log-escape calls in the review loop and eight skills are now one plain command by the script path, with no `bash \"$HOME/...\"`, variable, array or `$(...)`, because a worktree-isolated session refuses those forms."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T19:14:31-05:00"}
 seq: 11
+kind: "behavior"
 components: ["agent/review-loop", "skill/review", "skill/fix", "skill/cc", "skill/escape", "skill/refactor", "skill/commit", "skill/pr-comments", "skill/verify-branch", "skill/test-audit", "skill/eng-spec"]
 evidence: ["transcript read", "docs"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The smell reviewer's prompt is now its rules only: the calibration read"
 description: "The smell reviewer's prompt is now its rules only: the calibration read, the five scope items with the prior-art search and the shared-decision rule, the defensive-scaffolding test, the dead-export reference search, disposition by consequence, the anti-churn line, the bound paragraph."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-16T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["agent/smell-reviewer"]
 evidence: ["removal round"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The backend architect lost five bullets (104 words, 455 remain in the agent file)"
 description: "The backend architect lost five bullets (104 words, 455 remain in the agent file)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-19T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/backend-architect"]
 evidence: ["removal round"]
 watches: []

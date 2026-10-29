@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`load_bearing_clean` excluded from the `nit` telemetry count"
 description: "`load_bearing_clean` excluded from the `nit` telemetry count."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["script/log-review-metrics"]
 evidence: ["field audit"]
 watches: []

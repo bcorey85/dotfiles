@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "test-reviewer: a new step reads every expected value a test pins against the acceptance criteria"
 description: "test-reviewer: a new step reads every expected value a test pins against the acceptance criteria, ticket and plan, with the criteria outranking the ticket and plan."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["agent/test-reviewer", "skill/fix"]
 evidence: ["reviewer replay"]
 watches: []

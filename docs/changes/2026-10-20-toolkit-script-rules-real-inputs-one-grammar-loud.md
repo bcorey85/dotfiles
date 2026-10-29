@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "Toolkit script rules: real inputs, one grammar, loud failures"
 description: "One rules file for every toolkit script and draft, loaded by the dotfiles and agent-evals project rules: read the real inputs first, one grammar per format with loud failures, check callers and real hook events, handle changes during a run, and test the draft and the installed copy."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T18:46:31-05:00"}
 seq: 6
+kind: "behavior"
 components: ["rule/toolkit-scripts"]
 evidence: ["census", "judgment"]
 watches: []

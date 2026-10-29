@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The finalization phase now dry-runs each phase's verification criteria before any coder is dispatched"
 description: "The finalization phase now dry-runs each phase's verification criteria before any coder is dispatched: a static lint plus running the read-only commands against the pre-implementation tree."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-13T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["skill/eng-spec", "script/spec-criteria-lint"]
 evidence: ["census"]
 watches: []

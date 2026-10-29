@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The two architect descriptions no longer restate the test for skipping design work"
 description: "The two architect descriptions no longer restate the test for skipping design work, and name where the whole test lives."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 22
+kind: "behavior"
 components: ["agent/backend-architect", "agent/frontend-architect"]
 evidence: ["census"]
 watches: []

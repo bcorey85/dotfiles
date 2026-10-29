@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step termination test holds one repo copy on disk at a time"
 description: "The termination walk kept an unpacked repo copy per visited node under /tmp and left them behind when it stopped. Each node now keeps a compressed snapshot and its saved state in memory; a copy is unpacked only to step a child or check its commands, and is removed when that step ends."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T21:42:03-05:00"}

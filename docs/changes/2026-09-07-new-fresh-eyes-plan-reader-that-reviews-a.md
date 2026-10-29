@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "New fresh-eyes plan reader that reviews a finalized plan before any coder runs — given the plan"
 description: "New fresh-eyes plan reader that reviews a finalized plan before any coder runs — given the plan, ticket and acceptance criteria by path and nothing from the conversation that produced them — reporting dangling dependencies, contracts that disagree between phases, ticket requirements no phase owns."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-07T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/plan-reviewer"]
 evidence: ["escape ranking + judgment"]
 watches: []

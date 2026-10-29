@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "/code continue resumes the saved plan"
 description: "`/code continue` (or `/code` with no text) now runs `code-step.py start` with no argument, which resumes the saved plan. Before, the skill passed the word to `start` as task text, and code-step began a planless run that dropped the plan, left the phase unticked and cut files from the commit."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-23T16:19:29-05:00"}

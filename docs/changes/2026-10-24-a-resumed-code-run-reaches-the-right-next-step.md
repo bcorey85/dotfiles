@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A resumed /code run reaches the right next step"
 description: "Five code-step defects that sent a stopped or resumed /code run to the wrong step: a resumed coder at the wait cap, `start after-review` over an open run, a phase given inside task text, a plan-edit coder at the cap, and a review-loop hand-back from an agent the run did not launch."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T00:02:50-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The `/fix` wrapper's prompt is now its contract only: the one-line role, the modifier pass-through"
 description: "The `/fix` wrapper's prompt is now its contract only: the one-line role, the modifier pass-through, the dispatch step with its four pass-through items and the bare-invocation route, the five status routes with every STOP and do-NOT rule, the escape-log step with its four conditions and command."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["skill/fix", "skill/cc", "skill/branch-recap", "skill/audit"]
 evidence: ["removal round"]
 watches: []

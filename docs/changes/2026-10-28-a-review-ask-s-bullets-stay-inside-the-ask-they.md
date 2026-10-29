@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A review ask's bullets stay inside the ask they follow"
 description: "A multi-line ask (a mapping lead, then plain-text bullets at the same indent) parsed as one ask per bullet, so asks-done wanted an outcome for each; the bullets now join the lead ask's question, and the /code asks-done refusal names how many outcomes it expects."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:54:45-05:00"}

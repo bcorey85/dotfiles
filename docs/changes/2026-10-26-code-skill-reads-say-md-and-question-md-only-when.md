@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code skill reads say.md and question.md only when present"
 description: "The code skill's hand-back step reads say.md and question.md only when each exists and is not empty."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T23:05:53-05:00"}

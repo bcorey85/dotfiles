@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review-audit lane now joins deferred correctness findings to the escape log to price the one-round loop"
 description: "The review-audit lane now joins deferred correctness findings to the escape log to price the one-round loop cap."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-13T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["skill/audit"]
 evidence: ["escape join"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "coder-core, `/code`, test-ownership-gate, spec-criteria-lint, plan-format"
 description: "coder-core, `/code`, test-ownership-gate, spec-criteria-lint, plan-format, eng-spec finalize: the coder writes the tests for the behavior it implements, asserting what the plan and acceptance criteria state, and fixes the code, never the assertion, when a supported test is red."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["skill/coder-core", "skill/code", "agent/spec-criteria", "script/spec-criteria-lint", "shared/plan-format", "skill/eng-spec", "agent/test-writer", "agent/review-loop", "agent/test-reviewer", "agent/code-reviewer"]
 evidence: ["sealed round", "reviewer replay"]
 watches: ["coder-writes-own-tests"]

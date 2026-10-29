@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "test-ownership-gate: the script is deleted"
 description: "test-ownership-gate: the script is deleted."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 8
+kind: "behavior"
 components: ["script/shell-write-gate"]
 evidence: ["judgment"]
 watches: []

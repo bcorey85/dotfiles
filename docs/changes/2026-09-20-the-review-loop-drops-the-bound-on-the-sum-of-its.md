@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review loop drops the bound on the sum of its two round counters"
 description: "The review loop drops the bound on the sum of its two round counters."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 13
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["census"]
 watches: []

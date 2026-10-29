@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "matches_no_test leaves a runner piped into another command unjudged"
 description: "A test runner whose output feeds a later pipe stage (`cargo test <filter> 2>&1 | rg -q ...`) is no longer judged as matching no test; the last stage owns the output and the exit code."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:43:01-05:00"}

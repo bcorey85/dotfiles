@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A review-loop's cap-exit coder no longer marks its hand-back unreviewed"
 description: "The hand-back hook demanded a reviewer after a review-loop's last coder, but the loop's own cap exit dispatches none after its round-2 coder, so every loop whose second review filed a fix ended stop-no-reviewer; from round 2 on, one reviewer dispatch by the loop now suffices."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T06:51:31-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "A new PostToolUse hook on Bash, Read, Grep and Glob"
 description: "A new PostToolUse hook on Bash, Read, Grep and Glob."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-23T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["script/batch-reads-nudge"]
 evidence: ["census", "judgment"]
 watches: []

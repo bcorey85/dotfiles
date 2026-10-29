@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "dead-symbol, clone-block, and drifted-copy scans retired — firing site, scripts"
 description: "dead-symbol, clone-block, and drifted-copy scans retired — firing site, scripts, and log-scan validator entries all removed."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-13T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["script/log-scan"]
 evidence: ["removal round"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "New agents `plan-fanout` (Opus, pinned) and `plan-coder-view` (Sonnet"
 description: "New agents `plan-fanout` (Opus, pinned) and `plan-coder-view` (Sonnet, pinned): a plan review that sends one Sonnet agent per phase, each reading its phase as the coder who builds it next, then has Opus verify, dedupe and merge their issues."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["agent/plan-fanout", "agent/plan-coder-view"]
 evidence: ["judgment", "replacement bench"]
 watches: []

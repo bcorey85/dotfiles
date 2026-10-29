@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Script rules: cap edge-case code and script size"
 description: "The toolkit script rules no longer ask for a route and a test for every change that can happen during a run. Only reported changes get a route, and the rest go to one fallback stop. A new Size section asks for a sighting before new code, reuse of shared helpers, a split before features in a script over 1000 lines, and a stop when a diff is more than twice its design estimate."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-23T23:15:01-05:00"}

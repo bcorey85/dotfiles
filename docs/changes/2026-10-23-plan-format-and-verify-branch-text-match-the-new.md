@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Plan-format and verify-branch text match the new gate, moved-phase and verdict-row rules"
 description: "The shared plan format says that /code stops at an open gated phase and documents the `[-]` moved-phase mark. The verify-branch skill says that verify-log exits 2 when a criterion id has no row."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-23T07:28:51-05:00"}
 seq: 1
+kind: "behavior"
 components: ["skill/plan-format", "skill/verify-branch"]
 evidence: ["judgment"]
 watches: []

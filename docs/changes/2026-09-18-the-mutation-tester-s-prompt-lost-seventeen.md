@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The mutation tester's prompt lost seventeen sentences and clauses that explained why a rule exists (1,169"
 description: "The mutation tester's prompt lost seventeen sentences and clauses that explained why a rule exists (1,169 words, was 1,418): the authorized-agent framing, the invented-mutation, global-lock, red-baseline, diff-hash, and SessionStart-guard reasons, the reasons behind the verdict order."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["agent/mutation-tester"]
 evidence: ["removal round"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The quality cap's cut-output deny no longer rebuilds the command"
 description: "The deny after a check whose output went through tail, head or grep rebuilt the command from its split steps and could cut it inside a $( ) substitution; it now names the redirect form with a <check> placeholder."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T18:57:40-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The global CLAUDE.md lost its pointer to the orchestration file and its Ansible Vault rule"
 description: "The global CLAUDE.md lost its pointer to the orchestration file and its Ansible Vault rule."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 10
+kind: "behavior"
 components: ["rule/global-claude-md", "rule/orchestration"]
 evidence: ["removal round", "judgment"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "review_fix plan-impact ask falls back to plain text when AskUserQuestion is missing"
 description: "The plan-impact action told the session to call AskUserQuestion with no fallback when the tool is missing; it now says to ask in plain text with numbered options and decide on the answer."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T01:41:49-05:00"}

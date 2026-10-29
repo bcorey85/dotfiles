@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code_step start --restart drops the old run before any check that can stop it"
 description: "`start --restart` drops the old run before the gate and phase checks, so a start they stop leaves no open run for the next `start` to refuse."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:50:59-05:00"}

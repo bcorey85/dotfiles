@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The escape skill gained a batch mode that converts an over-engineering review's tagged finding list into"
 description: "The escape skill gained a batch mode that converts an over-engineering review's tagged finding list into escape rows, behind a filter for loop-produced code."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["skill/escape"]
 evidence: ["judgment"]
 watches: []

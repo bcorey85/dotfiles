@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Review commit gate credits merges, user-ordered commits, reviewed trees and the repo a commit runs in"
 description: "A dirty session now commits a merge, a commit the user ordered with a [no-review] prompt, a tree a converged review covered, and judges git -C commits by the target repo."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T23:56:35-05:00"}

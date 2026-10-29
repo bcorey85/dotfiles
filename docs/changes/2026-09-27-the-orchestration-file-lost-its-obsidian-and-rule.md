@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The orchestration file lost its Obsidian and rule-maintenance sections and two of its three judgment items"
 description: "The orchestration file lost its Obsidian and rule-maintenance sections and two of its three judgment items: state the approach before non-trivial work, and push back only on material trade-offs."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["rule/orchestration", "rule/global-claude-md"]
 evidence: ["removal round"]
 watches: []

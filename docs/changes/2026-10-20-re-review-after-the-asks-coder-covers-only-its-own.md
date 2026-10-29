@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Re-review after the asks coder covers only its own diff"
 description: "After the user rules on review asks and a coder applies them, the next review reads only the files that coder changed. A docs-only asks diff ends the phase with no review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T17:51:16-05:00"}
 seq: 4
+kind: "behavior"
 components: ["script/code-step"]
 evidence: ["judgment", "census"]
 watches: ["asks-coder-own-diff-review"]

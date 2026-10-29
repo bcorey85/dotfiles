@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The memory paragraph left the diff reviewer and the shared calibration file (150 words in each"
 description: "The memory paragraph left the diff reviewer and the shared calibration file (150 words in each, 523 remain in the diff reviewer)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-19T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["agent/code-reviewer", "agent/review-loop"]
 evidence: ["census", "judgment"]
 watches: []

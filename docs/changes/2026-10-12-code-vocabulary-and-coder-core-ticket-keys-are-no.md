@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code-vocabulary and coder-core: ticket keys are no longer banned from committed code"
 description: "code-vocabulary and coder-core: ticket keys are no longer banned from committed code."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["shared/code-vocabulary", "skill/coder-core"]
 evidence: ["judgment"]
 watches: []

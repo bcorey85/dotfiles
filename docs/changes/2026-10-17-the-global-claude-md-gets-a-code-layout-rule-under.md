@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The global CLAUDE.md gets a code-layout rule under Engineering Judgment"
 description: "The global CLAUDE.md gets a code-layout rule under Engineering Judgment."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-17T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["judgment"]
 watches: []

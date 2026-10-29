@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A blocker left over at the review cap still blocks the commit"
 description: "The review hand-back hook refuses a converged or deferred packet whose leftovers hold a blocker, or whose full check failed or hit a setup fault, so neither can clear the commit gate."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T10:33:12-05:00"}

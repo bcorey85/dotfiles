@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Global rule: tell the user about a toolkit bug or inefficiency, then queue it in agent-evals"
 description: "The global CLAUDE.md gains a section: a session that notices a toolkit bug or inefficiency tells the user first, then adds an agent-evals queue item, with no work content on the work machine."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T22:18:10-05:00"}

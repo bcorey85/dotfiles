@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Format hook skips formatting while a git merge, cherry-pick, revert or rebase is unfinished"
 description: "The Stop step of format-changed.py formats nothing while the git dir holds MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, rebase-merge, rebase-apply, SQUASH_MSG or MERGE_MSG. Files that a merge brings in are no longer reformatted before the merge commit."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T14:48:04-05:00"}
 seq: 17
+kind: "fix"
 components: ["script/format-changed"]
 evidence: ["work incident", "tests"]
 watches: []

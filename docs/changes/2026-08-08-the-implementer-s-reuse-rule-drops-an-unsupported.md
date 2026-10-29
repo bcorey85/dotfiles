@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The implementer's reuse rule drops an unsupported superlative, its no-self-audit rule gains a reason"
 description: "The implementer's reuse rule drops an unsupported superlative, its no-self-audit rule gains a reason, and one duplicated instruction is cut."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 12
+kind: "behavior"
 components: ["agent/coder"]
 evidence: ["census"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Auto-`-deep`-on-high-risk cut"
 description: "Auto-`-deep`-on-high-risk cut."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["cost profile"]
 watches: []

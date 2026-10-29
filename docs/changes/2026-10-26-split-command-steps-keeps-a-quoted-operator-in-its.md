@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Split command steps keeps a quoted operator in its step"
 description: "A quoted |, &&, || or ; stays inside its step, so a search pattern that names a check tool is no longer read as a run of it."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T00:19:18-05:00"}

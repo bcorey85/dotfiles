@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The per-finding logger now rejects a gate verdict outside its three legal values"
 description: "The per-finding logger now rejects a gate verdict outside its three legal values, and the telemetry report folds the historical bad ones into a single no-verdict-recorded bucket."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 12
+kind: "behavior"
 components: ["script/log-review-finding", "skill/audit"]
 evidence: ["census"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The termination walk runs staged scripts in-process"
 description: "The termination walk ran `coder_gate.py` and `coder_packet.py` as python3 processes on most nodes; it now runs them in-process, and its no-row-yet wait is ten times shorter, so the file runs in about half the time with the same visited nodes."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T09:59:31-05:00"}

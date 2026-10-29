@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The comment-bloat gate reads only comment lines in JSON files"
 description: "The comment-bloat gate no longer reads JSON values as comments. It blocked writes of JSON fixtures and test files that held long string values."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T08:03:31-05:00"}
 seq: 7
+kind: "fix"
 components: ["script/comment-bloat-gate"]
 evidence: ["work incident", "tests"]
 watches: []

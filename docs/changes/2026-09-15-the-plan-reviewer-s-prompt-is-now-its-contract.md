@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The plan reviewer's prompt is now its contract only: the boxed question, the inputs"
 description: "The plan reviewer's prompt is now its contract only: the boxed question, the inputs, one paragraph per finding class (tree claims with citation resolution and settle-every-check-in-one-turn, dangling dependencies, contract disagreement, uncovered ticket requirements, two-reading instructions."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-15T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["agent/plan-reviewer"]
 evidence: ["removal round"]
 watches: []

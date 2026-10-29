@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Code-step stop state lives in one record"
 description: "The /code step keeps every stop fact in state['stop'] and its baselines in state['snapshot'], an old state file migrates on read, and the unread packet key and duplicate asksApplied are gone."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T12:56:12-05:00"}

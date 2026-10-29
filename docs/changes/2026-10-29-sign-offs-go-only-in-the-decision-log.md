@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Sign-offs go only in the decision log"
 description: "The global AC rule now names where a sign-off is recorded: the plan's decision log, never code, comments, fixtures or commit messages. coder-core bans the user's name and sign-offs from every file a coder writes."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T16:00:00-05:00"}

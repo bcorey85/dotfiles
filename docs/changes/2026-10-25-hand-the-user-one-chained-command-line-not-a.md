@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Hand the user one chained command line, not a series"
 description: "The global CLAUDE.md now tells the session to give the user one `!` line that chains every command with &&, in place of a series of lines."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T09:28:38-05:00"}

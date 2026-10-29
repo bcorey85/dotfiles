@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The branch-wide closing review now logs its findings with the branch-exit scope"
 description: "The branch-wide closing review now logs its findings with the branch-exit scope, so the finding log separates it from the per-phase reviews by scope instead of by agent name."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-23T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["shared/finding-log"]
 evidence: ["judgment"]
 watches: []

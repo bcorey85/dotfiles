@@ -3,7 +3,7 @@ type: "Change"
 title: "The full check refuses a command whose scope cannot be read"
 description: "full_check.py refuses a command check_scope reads as unresolved with the result not run (unresolved command), and review-loop.md routes that result."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T00:00:00-05:00"}
-seq: 261
+seq: 266
 kind: "fix"
 components: ["script/full-check", "agent/review-loop"]
 evidence: ["judgment"]

@@ -27,7 +27,6 @@ from code_step_core import (
     CLAUDE_DIR,
     PLAN_EDIT_STOP_REASONS,
     RESUME_VERB,
-    REVIEW_AGAIN_INVOKE,
     REVIEW_LOOP,
     REVIEW_LOOP_SCRIPT,
     REVIEW_SAME_DIFF_AGAIN_LINE,
@@ -51,7 +50,6 @@ from code_step_core import (
     prompt_with_gate_env,
     record_dispatch,
     record_ruled_asks,
-    restart_instruction,
     ruled_asks_lines,
     run_session_id,
     runs_review_script,
@@ -61,15 +59,15 @@ from code_step_core import (
     session_pin,
     state_dir,
     stop_review_script,
-    stop_with_question,
     take_handback,
     timed_command,
     wait_for_handback,
     wait_for_loop_stop,
 )
 from code_step_report import change_line, coder_message_without_gate_stamp
+from code_step_review_stops import is_capped_review, left_findings_open, stop_on_review_status
 from code_step_usage import DECIDE_COMMAND
-from script_utils import ask_text, git_output, run_command
+from script_utils import git_output, run_command
 from source_paths import is_counted_source
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
@@ -344,7 +342,7 @@ def emit_plan_edit_dispatch(repo_dir, state):
         headline = (f"The plan change was adopted by {ruling['by']}. Dispatch a coder to rewrite the branch's plan "
                     "docs it contradicts.")
         prompt = planless_plan_edit_prompt(state)
-        return emit_dispatch(repo_dir, state, RESUME_VERB, headline, prompt=prompt, agent="coder")
+        return emit_dispatch(repo_dir, state, headline, prompt=prompt, agent="coder")
 
     prompt = plan_edit_prompt(state, criteria_path)
     if ruling["byUser"]:
@@ -355,7 +353,7 @@ def emit_plan_edit_dispatch(repo_dir, state):
         unchanged_clause = " The acceptance criteria do not change." if criteria_path else ""
         headline = (f"The plan change was adopted by {ruling['by']}. Dispatch a coder to rewrite the plan steps it "
                     f"contradicts.{unchanged_clause}")
-    emit_dispatch(repo_dir, state, RESUME_VERB, headline, prompt=prompt, agent="coder")
+    emit_dispatch(repo_dir, state, headline, prompt=prompt, agent="coder")
 
 
 def command_review_again(repo_dir, state, args):
@@ -572,7 +570,7 @@ def emit_review_dispatch(repo_dir, state):
     say(repo_dir, "\n".join(summary), replaces_blocks_starting="Implemented: ")
     if runs_review_script():
         return launch_review_script(repo_dir, state, prompt)
-    emit_dispatch(repo_dir, state, RESUME_VERB, prompt=prompt, agent="review-loop", model="sonnet")
+    emit_dispatch(repo_dir, state, prompt=prompt, agent="review-loop", model="sonnet")
 
 
 def launch_review_script(repo_dir, state, prompt):
@@ -583,7 +581,7 @@ def launch_review_script(repo_dir, state, prompt):
         return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
 
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
-    marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, RESUME_VERB, REVIEW_LOOP, "script", prompt)
+    marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, REVIEW_LOOP, "script", prompt)
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
     session_id = run_session_id(state)
@@ -607,7 +605,7 @@ def launch_review_script(repo_dir, state, prompt):
     state["reviewScriptLog"] = str(log_path)
     save_state(repo_dir, state)
     emit("wait", f"The review loop runs as a script; its log is {log_path}. Do not dispatch an agent. Run "
-         f"{timed_command(RESUME_VERB)} to wait for its hand-back.")
+         f"{timed_command()} to wait for its hand-back.")
 
 
 def load_review_packet(repo_dir, state, message):
@@ -616,7 +614,7 @@ def load_review_packet(repo_dir, state, message):
     if module is None:
         return emit("stop", f"Cannot read the review-loop packet: {import_error}. Tell the user.")
     try:
-        return module, module.load(message)
+        packet = module.load(message)
     except module.PacketError as error:
         state.update({"stage": "stopped", "stopReason": "invalid-packet"})
         save_state(repo_dir, state)
@@ -624,139 +622,8 @@ def load_review_packet(repo_dir, state, message):
                     + "; ".join(error.problems), message,
                     REVIEW_SAME_DIFF_AGAIN_LINE)
 
-
-def is_capped_review(state):
-    return state.get("reviewStatus") == "cap-reached"
-
-
-def left_findings_open(state):
-    # The review ended with findings open (a cap, or a critical blocker with asks): its rulings go to one more review
-    # of the whole phase, and the review gate stays dirty until that review ends clean.
-    return state.get("reviewStatus") in ("cap-reached", "critical-blocker")
-
-
-def review_stop_next_step(state):
-    # The command after a review stop: the phase started over, once the user has ruled on the findings.
-    return f"after the user rules on the findings, {restart_instruction(state)} to start the phase over."
-
-
-# The statuses that stop on the packet's blockers: (the question, the instruction to the caller).
-BLOCKER_STOP_TEXT = {
-    "critical-blocker": ("the review found a critical blocker.",
-                         "Review found a critical blocker. Present these to the user. Do not mark the phase done."),
-    "setup-fault": ("the review's full check could not run here.",
-                    "The full check could not run here. This is a toolkit or environment fault, not a code failure. "
-                    "Present these to the user. Do not mark the phase done."),
-}
-
-
-def blocker_stop_next_step(state):
-    # A critical blocker the user can clear without a code change (a missing tool, a broken environment) goes on with
-    # one command: the review runs again on the same diff.
-    review_again_command = script_command("review-again")
-    return (f"if the blocker is a fault of the environment and the user has fixed it, run `{review_again_command}` to "
-            f"review the same diff again. Otherwise {review_stop_next_step(state)}")
-
-
-def ask_lines(packet):
-    # The reviewer's questions for the user, one line each, with the file and line they concern.
-    return [f"{script_utils.one_line(ask_text(item), 800)} ({item.get('file_line', '-')})"
-            for item in packet.get("ask", [])]
-
-
-def stop_on_review_status(repo_dir, state, module, packet):
-    # True after the stop or question a packet status that ends the run prints.
-    # Imported here: review/ joins sys.path when code_step_core loads, which sorted top-level imports would precede.
-    import full_check
-    status = packet["status"]
-    if status == "plan-impact":
-        state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
-        save_state(repo_dir, state)
-        state["carriedFindings"] = module.carried_findings(packet)
-        save_state(repo_dir, state)
-        emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
-        return True
-    if packet["tool_fault"]:
-        state.update({"stage": "stopped", "stopReason": "tool-fault"})
-        save_state(repo_dir, state)
-        stop_with_question(
-            repo_dir, "a review call failed, so the review did not finish; it found nothing.",
-            [packet["tool_fault"]], f"to run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.",
-            "The review did not run to the end: a tool fault, not a finding. Do not mark the phase done.",
-            "Tool fault: " + packet["tool_fault"],
-            f"To run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.")
-        return True
-    if status == "critical-blocker" and packet["ask"] and not state.get("blockerCarried"):
-        # With asks, the asks route takes the rulings first, as after a cap: the blockers go to the review after it.
-        # Only the first blocker stop of a phase takes it, so a preset ruling cannot loop with no human.
-        state["blockerCarried"] = True
-        state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
-        return False
-    if status in BLOCKER_STOP_TEXT:
-        question, instruction = BLOCKER_STOP_TEXT[status]
-        state.update({"stage": "stopped", "stopReason": status})
-        save_state(repo_dir, state)
-
-        blocker_lines = ["- " + script_utils.one_line(module.item_text(item, "finding", "file_line"), 800)
-                         for item in packet["blockers"]]
-        stop_with_question(
-            repo_dir, question, [line[2:] for line in blocker_lines], blocker_stop_next_step(state), instruction,
-            *blocker_lines, questions=ask_lines(packet))
-        return True
-    if status in ("converged", "deferred") and full_check.is_unverified(packet["full_check"]):
-        # A check that exited 0 printed no test-runner summary, so the check did not show that any test ran: the phase
-        # is not verified, so it does not finish.
-        state.update({"stage": "stopped", "stopReason": "check-unverified"})
-        save_state(repo_dir, state)
-        check_command = packet["full_check_command"] or "(not named)"
-        configured = full_check.configured_check_command(repo_dir)
-        if configured:
-            # The repo already names its check, so a Quality check line would change nothing: the runner's output
-            # is what the toolkit does not recognize.
-            why = ("the full check exited 0 and printed no test-runner summary this toolkit recognizes, so the check "
-                   "did not show that any test ran.")
-            fix = (f"make the configured check (`{configured}`) print its test runner's summary, or add the "
-                   "runner's summary format to SUMMARY_LINES in ~/.claude/scripts/lib/test_run_output.py")
-        else:
-            why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
-                   "test ran.")
-            fix = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
-        why_sentence = why[0].upper() + why[1:]
-        fix_sentence = fix[0].upper() + fix[1:]
-        stop_with_question(
-            repo_dir, why, [check_command],
-            f"{fix}, then run `{script_command('review-again')}` to review the same diff again.",
-            f"{why_sentence} The check ran: `{check_command}`. {fix_sentence}, then run "
-            "review-again. Do not mark the phase done.",
-            questions=ask_lines(packet))
-        return True
-    if status == "cap-reached":
-        # The first cap of a phase sends the open findings to one more review-loop pass with a fresh round budget.
-        # With asks, the asks route takes the rulings first. A cap after that pass stops for a restart.
-        # The packet's iter stays on the state: the ask rows of this round log it. The next review dispatch resets it.
-        is_second_cap = state.get("capCarried", False)
-        state["capCarried"] = True
-        if packet["ask"] and not is_second_cap:
-            state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
-            return False
-
-        state["stage"] = "stopped"
-        next_step = review_stop_next_step(state)
-        if not is_second_cap:
-            state.update({"carriedFindings": module.carried_findings(packet), "stopReason": "cap-reached"})
-            next_step = (f"for one more review-loop pass on the same diff, {REVIEW_AGAIN_INVOKE}. "
-                         f"Or, {next_step}")
-        save_state(repo_dir, state)
-        remaining_lines = ["- " + module.item_text(item, "finding", "file_line")
-                           for item in packet["findings_remaining"]]
-        stop_with_question(
-            repo_dir, "the review cap was reached with findings still open.", [line[2:] for line in remaining_lines],
-            next_step,
-            "The review cap was reached. Report these findings to the user. Do not mark the phase "
-            "done. The session stays dirty, so git commit stays blocked.", *remaining_lines,
-            questions=ask_lines(packet))
-        return True
-    return False
+    module.print_dropped_asks(packet)
+    return module, packet
 
 
 def command_after_review(repo_dir, state, args):
@@ -790,6 +657,13 @@ def command_after_review(repo_dir, state, args):
     state["checkChanged"] = sorted(changed - coder_edited)
     state["checkRewroteEdited"] = sorted(rewrote_edited)
     state["reviewStatus"] = packet["status"]
+    if packet["status"] == "plan-impact":
+        state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
+        save_state(repo_dir, state)
+        state["carriedFindings"] = module.carried_findings(packet)
+        save_state(repo_dir, state)
+        emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
+        return
     if stop_on_review_status(repo_dir, state, module, packet):
         return
 
@@ -953,7 +827,7 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
     else:
         review_sentence = ("A review of that coder's diff runs after it (none when the diff is docs only) before the "
                            "phase can finish.")
-    emit_dispatch(repo_dir, state, RESUME_VERB, "The user accepted review asks. Dispatch a coder to apply them. "
+    emit_dispatch(repo_dir, state, "The user accepted review asks. Dispatch a coder to apply them. "
                   + review_sentence, prompt=asks_coder_prompt(accepted_asks, also_text), agent="coder", model=model)
 
 

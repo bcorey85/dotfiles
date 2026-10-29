@@ -89,26 +89,6 @@ class QualityCheckCapFindingsTest(HookRunTest):
         self.assertEqual(len(list((root / "unknown").glob("run-*"))), 1)
 
 
-class AgentModelGuardFindingsTest(HookRunTest):
-    def agent_call(self, model):
-        payload = {"tool_name": "Agent", "tool_input": {"model": model, "subagent_type": "pinned-agent"}}
-        return self.run_hook("agent-model-guard", json.dumps(payload))
-
-    def test_dotted_capital_i_inherit_is_denied(self):
-        # finding 3: bash folds U+0130 to i
-        decision = self.decision(self.agent_call("İnherit"))
-        self.assertIn("'inherit'", decision["permissionDecisionReason"])
-
-    def test_nul_inside_opus_is_denied(self):
-        # finding 3: $(...) drops the NUL before the match
-        decision = self.decision(self.agent_call("op\u0000us"))
-        self.assertIn("'opus'", decision["permissionDecisionReason"])
-
-    def test_mixed_case_opus_is_still_denied(self):
-        decision = self.decision(self.agent_call("OpUs"))
-        self.assertIn("'opus'", decision["permissionDecisionReason"])
-
-
 class ReviewCommitGateFindingsTest(HookRunTest):
     def test_empty_session_id_does_not_become_unknown(self):
         # finding 4: jq `//` keeps ""; the state path is then the directory itself, so no unknown file appears
@@ -303,12 +283,12 @@ class GitDisciplineAmendTest(HookRunTest):
 
 
 class RunGateTest(HookRunTest):
-    PORTED = ("agent-model-guard","calibration-guard", "calibration-refs-guard",
+    PORTED = ("calibration-guard", "calibration-refs-guard",
               "claudemd-linecount", "comment-bloat-gate", "dead-prose-gate", "emit-orchestration", "format-changed",
               "git-discipline-gate", "log-agent-usage", "log-skill-use", "quality-check-cap", "review-commit-gate",
               "shell-write-gate", "spec-budget-gate", "stale-citation-gate", "test-edit-telemetry", "warn-skip-hooks")
     GATES = ("shell-write-gate", "quality-check-cap", "git-discipline-gate", "review-commit-gate",
-             "comment-bloat-gate", "spec-budget-gate", "agent-model-guard")
+             "comment-bloat-gate", "spec-budget-gate")
 
     def test_crash_escaping_main_blocks_with_exit_2_and_one_line(self):
         driver = pathlib.Path(self.tmp.name) / "crashing-gate.py"

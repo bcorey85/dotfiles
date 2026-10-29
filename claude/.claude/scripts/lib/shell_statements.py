@@ -45,7 +45,7 @@ def strip_heredocs(command):
             if shell_body:
                 kept += ["(", *body, ")"]
             elif not quoted:
-                kept += [piece for span in code_spans("\n".join(body)) for piece in ("(", span, ")")]
+                kept += [piece for _start, _end, span in code_spans("\n".join(body)) for piece in ("(", span, ")")]
         index += sum(len(body) + 1 for body in bodies)
     return "\n".join(kept)
 
@@ -68,8 +68,8 @@ def heredoc_bodies(lines, start, delimiters):
 
 
 def code_spans(body):
-    # The text of each `$(...)` and backtick span in an unquoted heredoc body: the shell runs them. A `\$` and a
-    # `\`` are plain text.
+    # (start offset, end offset, text) of each outermost `$(...)` and backtick span in body: the shell runs them.
+    # The text is body[start:end]. A `\$` and a `\`` are plain text.
     spans = []
     index = 0
     while index < len(body):
@@ -83,13 +83,13 @@ def code_spans(body):
                 depth += {"(": 1, ")": -1}.get(body[end], 0)
                 if depth == 0:
                     break
-            spans.append(body[index + 2:end])
+            spans.append((index + 2, end, body[index + 2:end]))
             index = end
         elif character == "`":
             end = body.find("`", index + 1)
             if end == -1:
                 end = len(body)
-            spans.append(body[index + 1:end])
+            spans.append((index + 1, end, body[index + 1:end]))
             index = end
         index += 1
     return spans

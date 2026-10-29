@@ -241,6 +241,22 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
         self.assertFalse(marker.exists())
 
+    def test_the_declared_check_of_a_repo_whose_full_suite_runs_in_ci_runs_as_a_check_with_no_tests(self):
+        marker = self.repo / "ran"
+        declared = f"touch {marker}"
+
+        completed = self.check(declared, claude_md=f"- Full suite: CI\n- Quality check: `{declared}`\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(["full check: passed (check only; CI runs the full suite)"], completed.stdout.splitlines())
+        self.assertTrue(marker.exists())
+
+    def test_a_failing_declared_check_of_a_repo_whose_full_suite_runs_in_ci_fails(self):
+        completed = self.check("exit 3", claude_md="- Full suite: CI\n- Quality check: `exit 3`\n")
+
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 3)")
+
     def test_a_command_scoped_to_files_or_tests_is_not_run_and_a_whole_suite_command_is(self):
         marker = self.repo / "ran"
 
@@ -257,6 +273,47 @@ class FullCheckTest(unittest.TestCase):
         with self.subTest(command="pytest tests/test_a.py", repo="CI"):
             in_ci = self.check("pytest tests/test_a.py", claude_md="# Repo\n\n- Full suite: CI\n")
             self.assertEqual(in_ci.stdout.splitlines()[0], "full check: not run (CI)")
+
+    def test_a_runner_that_check_scope_reads_by_its_flags_is_not_run_on_named_files_or_tests(self):
+        marker = self.repo / "ran"
+
+        for command in ("cargo test tests/foo.rs",
+                        "cargo test --manifest-path /r/a/Cargo.toml -- --exact parser::tests::empty",
+                        "cargo test -p core",
+                        "cargo test --test=integration",
+                        "cargo test --bin=app",
+                        "cargo test --examples",
+                        "go test -run TestX ./...",
+                        "go test ./pkg/...",
+                        "bats -p test/login.bats",
+                        "bundle exec rspec spec/models/user_spec.rb",
+                        "phpunit --filter testLogin"):
+            with self.subTest(command=command):
+                completed = self.check(f"touch {marker}; {command}")
+
+                self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
+                self.assertFalse(marker.exists())
+
+    def test_a_make_target_whose_recipe_runs_a_scoped_runner_is_not_run(self):
+        marker = self.repo / "ran"
+        (self.repo / "Makefile").write_text("test:\n\tgo test -run TestX ./...\n")
+
+        completed = self.check(f"touch {marker}; make test")
+
+        self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
+        self.assertFalse(marker.exists())
+
+    def test_a_command_whose_scope_check_scope_cannot_read_is_not_run(self):
+        marker = self.repo / "ran"
+        (self.repo / "Makefile").write_text("test:\n\tpytest\n")
+
+        for command in ("make test TESTS=tests/a.py", "make missing"):
+            with self.subTest(command=command):
+                completed = self.check(f"touch {marker}; {command}")
+
+                self.assertTrue(completed.stdout.startswith("full check: not run (unresolved command"),
+                                completed.stdout)
+                self.assertFalse(marker.exists())
 
     def test_the_command_the_claude_md_declares_runs_even_when_it_names_a_tests_folder(self):
         marker = self.repo / "ran"

@@ -3,9 +3,10 @@
 
   SubagentStop (review-loop), the backstop: blocks once when no full check ran after the last code
       change: a shell call of review/full_check.py whose tool_result holds the line
-      `full check: passed`. A failed, unverified, setup-fault or not-run result, and a checker run by hand, never
-      count; full_check.py itself refuses a command scoped to files or tests, unless its text equals the CLAUDE.md
-      `Quality check:` command. The last coder step — a
+      `full check: passed`; a shell call of several full_check.py calls counts only when each printed that line. A
+      failed, unverified, setup-fault or not-run result, and a checker run by hand, never count; full_check.py itself
+      refuses a command scoped to files or tests, or one whose scope cannot be read, unless its text equals the
+      CLAUDE.md `Quality check:` command. The last coder step — a
       dispatch, or a SendMessage to a coder it dispatched — is the last code change; with none, the loop start
       is, since the phase changed code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
       `status: plan-impact` owes no check, and neither does a loop in a repo whose CLAUDE.md holds the line

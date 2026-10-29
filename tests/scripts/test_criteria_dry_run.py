@@ -88,6 +88,41 @@ class CriteriaDryRunTest(unittest.TestCase):
         self.assertEqual(self.run_result.returncode, 1)
 
 
+SEARCH_PLAN = """# Plan
+
+## Phase 1: Search
+
+#### Automated Verification:
+
+- [ ] `grep foo src.txt` finds no match
+- [ ] `grep foo src.txt | wc -l` prints 0
+- [ ] `grep foo src.txt` finds the handler, present in the file
+"""
+
+
+class SearchItemVerdictTest(unittest.TestCase):
+    """The dry run judges a search item as /code's verification does."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = pathlib.Path(temp.name)
+        (repo / "src.txt").write_text("foo\n")
+        (repo / "plan.md").write_text(SEARCH_PLAN)
+        finished = subprocess.run([sys.executable, str(SCRIPT), str(repo / "plan.md"), "--repo", str(repo)],
+                                  capture_output=True, text=True)
+        self.checks = [line for line in finished.stdout.splitlines() if line.startswith("CHECK")]
+
+    def test_a_plain_search_with_ban_wording_that_hits_is_red(self):
+        self.assertIn(" RED ", self.checks[0])
+
+    def test_a_pipe_search_that_prints_a_count_is_red_though_the_pipe_exits_0(self):
+        self.assertIn(" RED ", self.checks[1])
+
+    def test_a_plain_search_with_presence_wording_that_hits_is_green(self):
+        self.assertIn(" GREEN ", self.checks[2])
+
+
 class SkipTest(unittest.TestCase):
     def test_skip_leaves_a_numbered_check_unrun(self):
         with tempfile.TemporaryDirectory() as temp:

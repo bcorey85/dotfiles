@@ -257,6 +257,29 @@ class TestAuditRowTest(LoggerRepoCase):
         self.assertIn("'CHANGES' is not key=value", done.stderr)
         self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
 
+    def test_an_empty_or_non_numeric_int_field_is_refused_and_no_row_is_sent(self):
+        int_cases = (
+            [*FINDING_ARGS, "file=src/app.ts", "line="],
+            [*FINDING_ARGS, "file=src/app.ts", "line=$4"],
+            [*RUN_ARGS, "iter="],
+            [*RUN_ARGS, "diff_loc=many"],
+        )
+        for args in int_cases:
+            with self.subTest(args=args):
+                done = self.log(args, expected_exit=1)
+
+                self.assertIn("is not a whole number", done.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
+    def test_whole_number_int_fields_and_a_null_n_findings_are_sent(self):
+        self.log([*FINDING_ARGS, "file=src/app.ts", "line=12", "iter=2"])
+        self.log([*RUN_ARGS, "n_findings=null", "diff_loc=40"])
+
+        (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
+        (run_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_run")
+        self.assertEqual((finding_row["line"], finding_row["iter"]), ("12", "2"))
+        self.assertEqual((run_row["n_findings"], run_row["diff_loc"]), (None, "40"))
+
     def test_a_result_outside_the_verdicts_is_refused_and_no_row_is_sent(self):
         done = self.log([*RUN_ARGS, "result=plan-impact"], expected_exit=1)
 

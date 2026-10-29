@@ -7,9 +7,9 @@ seq: 12
 kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["census"]
-watches: []
+watches: ["prose-claims-docs-findings"]
 test: ""
-unmeasured: "Until this date the escape skills never offered the docs class, so the logged class has no before period for false or stale prose. From this date they file it as docs. Read it once about 40 new review escapes have landed: the docs share of review escapes against the census share of 13 percent."
+unmeasured: ""
 ---
 
 ## Change

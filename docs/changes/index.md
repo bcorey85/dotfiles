@@ -8,20 +8,17 @@ okf_version: "0.2"
 
 # Unmeasured behavior changes
 
-* [code_step.py is split by concern into seven modules](2026-10-26-code-step-py-is-split-by-concern-into-seven.md) - A move with no behavior change; the edit watches ship with the change that wires in the scripted review loop.
 * [Toolkit edits need a bench proof sized by task class](2026-10-24-toolkit-edits-need-a-bench-proof-sized-by-task.md) - it gates the ledger and dotfiles commits on this machine, which no work intake reads; the ledger itself shows whether change files carry proof
 * [The metrics switch reads only the environment variable](2026-10-24-the-metrics-switch-reads-only-the-environment.md) - The change decides only whether metrics rows are written, not what any agent does. The intake's toolkit-telemetry line reads the switch on each pull.
 * [Escape loggers file false or stale prose as docs](2026-10-24-escape-loggers-file-false-or-stale-prose-as-docs.md) - The before period has almost no docs escapes because the skills never offered the class, so a before-and-after watch on the class reads a false rise. Read it as a share: once about 40 new review escapes have landed, count the docs share of review escapes and compare it with the census share of false or stale prose.
-* [The code reviewer checks every prose claim against the code](2026-10-24-the-code-reviewer-checks-every-prose-claim-against.md) - Until this date the escape skills never offered the docs class, so the logged class has no before period for false or stale prose. From this date they file it as docs. Read it once about 40 new review escapes have landed: the docs share of review escapes against the census share of 13 percent.
 * [Toolkit scripts sorted into code, review, gates, telemetry, lib and tools folders](2026-10-24-toolkit-scripts-sorted-into-code-review-gates.md) - A pure move. Every hook command, import and printed text keeps its behavior, so no intake number moves. The gain is finding a script by concern, which no stream counts.
 * [Build the design now covers module splits and folder layout](2026-10-24-build-the-design-now-covers-module-splits-and.md) - No intake stream records a deferred structure choice. The user reads it in session reports.
-* [Split code_step into four modules; hand-backs read from the event log](2026-10-24-split-code-step-into-four-modules-hand-backs-read.md) - The change keeps every verb, route and printed ACTION text. The cut branches had no sighting in any session, so no intake number reads them. The gain it aims at is fewer code-step fix lanes, which no intake stream counts.
 * [Toolkit Python follows PEP 8 names and a full ruff rule set](2026-10-24-toolkit-python-follows-pep-8-names-and-a-full-ruff.md) - A rename and lint sweep changes no number that the intake reads. Hook ids in stderr and log rows keep the kebab-case form.
-* [The user never waits on tests or lint](2026-10-24-the-user-never-waits-on-tests-or-lint.md) - No work-log field records how long the user waited on a test or lint run that the agent handed over.
 * [The worktree rule names tuios beside herdr](2026-10-24-the-worktree-rule-names-tuios-beside-herdr.md) - No work-log field records which route opened a worktree.
 * [Review asks carry the finding id the logger printed](2026-10-24-review-asks-carry-the-finding-id-the-logger.md) - No work-log field counts ask outcome rows that found their ask row against the ones that did not.
 * [The /code skill passes a closing skill only with no open finding](2026-10-24-the-code-skill-passes-a-closing-skill-only-with-no.md) - No work-log field records a closing skill's open findings next to the skill-done verdict.
-* [One resume verb for every /code run that stopped](2026-10-24-one-resume-verb-for-every-code-run-that-stopped.md) - No work-log field records which code-step verb a /code run used, or a run that went to the wrong step after a stop.
+* [The test suite lints the toolkit Python](2026-10-23-the-test-suite-lints-the-toolkit-python.md) - no reason recorded
+* [Script rules: cap edge-case code and script size](2026-10-23-script-rules-cap-edge-case-code-and-script-size.md) - no reason recorded
 
 # 2026-10-28
 

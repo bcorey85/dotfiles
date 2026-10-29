@@ -62,10 +62,9 @@ code_step_boundary (criteria guard, verification runner, phase boundary), code_s
 commands), code_step_start (the start verb), code_step_report (reading a coder report), code_step_review
 (plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_asks (the asks route's
 words: ask listing, pre-set outcome, asks-done arguments, asks coder prompt, prior issues; ask ids and outcome rows
-come from review/review_asks.py), code_step_usage (usage text and the `resume` argument parser) and this file."""
+come from review/review_asks.py), code_step_usage (usage text and the leading-dash check of `resume`) and this file."""
 import contextlib
 import fcntl
-import functools
 import json
 import os
 import pathlib
@@ -89,7 +88,6 @@ from code_step_core import (
     CODER,
     CODER_STAGES,
     HOOK_STAGES,
-    RESUME_ALIASES,
     RESUME_VERB,
     REVIEW_AGAIN_INVOKE,
     SCRIPTS_DIR,
@@ -300,7 +298,7 @@ def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
                 f"{state['phase']}`; do that only on the user's word." if state.get("plan") and state.get("phase")
                 else "")
     resume_text = (" If the user answers the coder's blocker, resume that coder with SendMessage, then run "
-                  f"{timed_command(RESUME_VERB)}.")
+                  f"{timed_command()}.")
     cause_text = ("recommended /eng-spec" if outcome == "recommended-eng-spec"
                   else "produced no reviewable change")
     report_lines = [line for line in report.splitlines() if line.strip()][:CODER_REPORT_STOP_LINES]
@@ -455,20 +453,18 @@ def stopped_route(repo_dir, state):
     return "review-again" if state.get("stopReason") == "false-clean" else "ask-unknown"
 
 
-def resume_route(repo_dir, state, is_continuation=False):
+def resume_route(repo_dir, state):
     # The step that comes next for the saved run, by its stage and stop reason. Pure: it reads and changes nothing.
-    # A continuation (`after-coder`, `after-review`, `after-plan-edit`) carries on a live run, so it never asks about
-    # a plan edited under it: only a return to the run (`resume`) does.
     if state is None:
         return "start"
 
     route = saved_run_route(repo_dir, state)
     # The run's own coder or review-loop is back: taking its hand-back reads the plan again, so the plan edits it made
     # do not make the run stale. Only when that read adopts the phase: otherwise the stale check decides now.
-    is_own_handback = (not is_continuation and route in ("after-coder", "after-review")
+    is_own_handback = (route in ("after-coder", "after-review")
                        and awaited_handback(repo_dir, state) is not None
                        and own_phase_text(repo_dir, state) is not None)
-    if not is_continuation and not is_own_handback and stale_phase_reason(repo_dir, state):
+    if not is_own_handback and stale_phase_reason(repo_dir, state):
         return "ask-stale-phase"
     return route
 
@@ -577,11 +573,11 @@ RESUME_HANDLERS = {
 }
 
 
-def command_resume(args, is_continuation=False):
+def command_resume(args):
     repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     state = load_state(repo_dir)
-    route = resume_route(repo_dir, state, is_continuation)
+    route = resume_route(repo_dir, state)
     # With no run open, the arguments are new work: a task file or task text that came with no verb.
     if args and route in ("start", "done"):
         return command_start(args)
@@ -759,14 +755,12 @@ def main():
     verb = sys.argv[1] if len(sys.argv) > 1 else ""
     args = sys.argv[2:]
     # `start` prints its own usage. Every other verb prints its here, before any state is read.
-    usage_verb = RESUME_VERB if verb in RESUME_ALIASES else verb
-    if print_usage_if_asked(usage_verb, args, is_hook=verb in HOOK_VERBS):
+    if print_usage_if_asked(verb, args, is_hook=verb in HOOK_VERBS):
         return
-    check_verb_arguments(usage_verb, args)
+    check_verb_arguments(verb, args)
     verbs = {"start": command_start, RESUME_VERB: command_resume, "decide": command_decide,
              "asks-done": command_asks_done, "skill-done": command_skill_done_with_question, "verify": command_verify,
              "tick": command_tick, "review-again": command_review_again, "abort": command_abort}
-    verbs.update(dict.fromkeys(RESUME_ALIASES, functools.partial(command_resume, is_continuation=True)))
     if verb in HOOK_VERBS:
         return HOOK_VERBS[verb]()
     if verb == "plan":

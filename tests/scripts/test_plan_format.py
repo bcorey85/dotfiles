@@ -187,6 +187,54 @@ class PhaseSectionsTest(unittest.TestCase):
         spans, _ = self.spans(f"## Phase {self.ONE}: a", "```", f"## Phase {self.TWO}: fake", "```", "x")
         self.assertEqual([(self.ONE, 0, 5)], [(i, s["start"], s["end"]) for i, s in spans])
 
+    def test_a_tilde_fence_and_an_indented_fence_hide_headings_too(self):
+        lines = [
+            "## Phase Status",
+            "- [ ] Phase 1: A",
+            "## Phase 1: A",
+            "~~~",
+            "## Not a section",
+            "~~~",
+            "  - step",
+            "    ```sh",
+            "    # comment",
+            "    ```",
+            "tail",
+            "",
+        ]
+        plan = plan_format.parse_plan_with_closing_phases(lines)
+        self.assertEqual(len(lines), plan["sections"]["1"]["end"])
+        self.assertEqual([], plan["failures"])
+
+    def test_phase_status_line_formats_a_real_plan_can_use(self):
+        lines = ["## Phase Status", "",
+                 "- [ ] Phase 6C2: Deep id (risk: low).",
+                 "- [X] Phase 7 — capital X and em dash (risk: high)",
+                 "- [ ] Phase 8. Period after number (risk: Low)",
+                 "-  [ ]  Phase  9:  Extra spaces (risk: low)",
+                 "* [ ] Phase 10 – En dash and star bullet",
+                 "- [ ] Phase 11: No risk tag"]
+        entries = plan_format.parse_plan_with_closing_phases(lines)["entries"]
+        self.assertEqual(["6C2", "7", "8", "9", "10", "11"], [e["number"] for e in entries])
+        self.assertEqual(["low", "high", "low", "low", "high", "high"], [e["risk"] for e in entries])
+        self.assertEqual([False, True, False, False, False, False], [e["done"] for e in entries])
+
+    def test_logged_phase_id_shapes_parse_look_up_and_mark_done(self):
+        ids = ["10.5", "8.6b", "4.6", "7.5", "8.6", "P4", "P9", "1-2", "6A-6D", "P9-slice-1"]
+        status_lines = [f"- [ ] Phase {i}: Title {i} (risk: low)" for i in ids]
+        sections = [f"## Phase {i}: Title {i}\nbody {i}" for i in ids]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        plan_path = pathlib.Path(tmp.name) / "ids.md"
+        plan_path.write_text("\n".join(["## Phase Status", "", *status_lines, "", *sections, ""]))
+        plan_lines = plan_path.read_text().splitlines()
+        self.assertEqual(ids, [e["number"] for e in plan_format.parse_plan_with_closing_phases(plan_lines)["entries"]])
+        for i in ids:
+            self.assertEqual(f"## Phase {i}: Title {i}\nbody {i}", plan_format.phase_text(plan_lines, i))
+            plan_format.mark_phase_done(plan_path, i)
+        self.assertEqual([True] * len(ids), [e["done"] for e in plan_format.parse_plan_with_closing_phases(
+            plan_path.read_text().splitlines())["entries"]])
+
     def test_parse_plan_fails_a_status_entry_with_no_section_unless_it_is_a_closing_phase(self):
         lines = ["## Phase Status", f"- [ ] Phase {self.ONE}: build", f"- [ ] Phase {self.TWO}: Recap", ""]
         def closing(title):
@@ -209,30 +257,27 @@ class PhaseGateClauseTest(unittest.TestCase):
         self.assertEqual([], failures)
         return [entry["gate"] for entry in entries]
 
-    def test_a_status_title_with_a_gate_clause_carries_the_condition_text(self):
-        self.assertEqual(["LED-5 merged"], self.gates("- [ ] Phase 8: Review family — gate: LED-5 merged"))
-
-    def test_a_status_title_with_no_gate_clause_has_no_gate(self):
-        self.assertEqual([None], self.gates("- [ ] Phase 8: Review family (risk: low)"))
-
-    def test_the_risk_mark_after_a_gate_clause_is_not_part_of_the_condition(self):
-        self.assertEqual(["LED-5 merged"], self.gates("- [ ] Phase 8: Family - gate: LED-5 merged (risk: low)"))
-
-    def test_a_gate_clause_with_no_text_is_still_a_gate(self):
-        self.assertEqual([plan_format.UNSTATED_GATE], self.gates("- [ ] Phase 8: Family — gate:"))
-
-    def test_the_word_gate_inside_a_title_without_a_colon_is_not_a_clause(self):
-        self.assertEqual([None, None], self.gates("- [ ] Phase 8: Tighten the gate checks",
-                                                  "- [ ] Phase 9: Slicegate: x"))
-
-    def test_gate_with_a_colon_in_plain_title_text_is_not_a_clause(self):
-        self.assertEqual([None, None], self.gates("- [ ] Phase 8: Add the review gate: deny drafts",
-                                                  "- [ ] Phase 9: Fix the gate:keeper flow"))
-
-    def test_a_dash_joined_gate_clause_after_title_text_is_a_clause(self):
-        self.assertEqual(["LED-5 merged", "LED-6 merged"],
-                         self.gates("- [ ] Phase 8: Add the review gate - gate: LED-5 merged",
-                                    "- [ ] Phase 9: Fix the flow – gate: LED-6 merged"))
+    def test_a_gate_clause_carries_its_condition_text_and_plain_title_words_are_no_clause(self):
+        cases = [
+            ("clause carries the condition", ["- [ ] Phase 8: Review family — gate: LED-5 merged"],
+             ["LED-5 merged"]),
+            ("no clause has no gate", ["- [ ] Phase 8: Review family (risk: low)"], [None]),
+            ("risk mark after the clause is not the condition",
+             ["- [ ] Phase 8: Family - gate: LED-5 merged (risk: low)"], ["LED-5 merged"]),
+            ("clause with no text is still a gate", ["- [ ] Phase 8: Family — gate:"],
+             [plan_format.UNSTATED_GATE]),
+            ("the word gate without a colon is no clause",
+             ["- [ ] Phase 8: Tighten the gate checks", "- [ ] Phase 9: Slicegate: x"], [None, None]),
+            ("gate with a colon in plain title text is no clause",
+             ["- [ ] Phase 8: Add the review gate: deny drafts", "- [ ] Phase 9: Fix the gate:keeper flow"],
+             [None, None]),
+            ("dash-joined clause after title text is a clause",
+             ["- [ ] Phase 8: Add the review gate - gate: LED-5 merged",
+              "- [ ] Phase 9: Fix the flow – gate: LED-6 merged"], ["LED-5 merged", "LED-6 merged"]),
+        ]
+        for name, status_lines, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(expected, self.gates(*status_lines))
 
 
 REAL_MOVED_LINE = ("- [-] Phase 11: Work Mac runs (risk: high) — moved to LED-16 "
@@ -292,24 +337,22 @@ class MovedPhaseTest(unittest.TestCase):
         plan = plan_format.parse_plan(lines)
         self.assertEqual(["missing-section"], self.kinds(plan))
 
-    def test_a_tick_entry_that_names_the_phase_does_not_record_the_move(self):
+    def test_an_entry_that_does_not_name_the_phase_and_the_moved_to_key_in_one_line_does_not_record_the_move(self):
         tick_entry = ("- 2026-10-21 (Phase 11): marked done with `tick`, outside the coder, review and verification "
                      "steps of /code.")
-        plan = self.plan(deviations=("## Plan Deviations", "", tick_entry))
-        self.assertEqual(["moved-without-deviation"], self.kinds(plan))
-        self.assertIn("LED-16", plan["failures"][0]["detail"])
-
-    def test_the_phase_and_the_ticket_key_must_be_named_in_one_line(self):
-        plan = self.plan(deviations=("## Plan Deviations", "", "- 2026-10-20: Phase 11 is deferred.",
-                                     "- 2026-10-20: the rollout goes to LED-16."))
-        self.assertEqual(["moved-without-deviation"], self.kinds(plan))
-
-    def test_the_key_in_the_entry_must_stand_alone_and_be_the_key_the_line_moves_to(self):
-        for entry in ("- 2026-10-20: Phase 11 moves to LED-160.", "- 2026-10-20: Phase 11 moves to LED-17.",
-                      "- 2026-10-20: Phase 11 moves to XLED-16."):
-            with self.subTest(entry=entry):
-                plan = self.plan(deviations=("## Plan Deviations", "", entry))
+        cases = [
+            ("a tick entry that names the phase", [tick_entry]),
+            ("phase and key on two lines", ["- 2026-10-20: Phase 11 is deferred.",
+                                            "- 2026-10-20: the rollout goes to LED-16."]),
+            ("a longer key", ["- 2026-10-20: Phase 11 moves to LED-160."]),
+            ("another key", ["- 2026-10-20: Phase 11 moves to LED-17."]),
+            ("a key with a prefix", ["- 2026-10-20: Phase 11 moves to XLED-16."]),
+        ]
+        for name, entries in cases:
+            with self.subTest(name):
+                plan = self.plan(deviations=("## Plan Deviations", "", *entries))
                 self.assertEqual(["moved-without-deviation"], self.kinds(plan))
+                self.assertIn("LED-16", plan["failures"][0]["detail"])
 
     def test_a_phase_id_that_starts_with_p_is_named_by_the_id_or_by_phase_and_the_id(self):
         lines = ["## Phase Status", "", "- [x] Phase P3: Runs", "- [-] Phase P4: Mac runs — moved to LED-16", "",
@@ -892,6 +935,12 @@ class PlanFileEditTest(unittest.TestCase):
         self.plan_path.write_text("## Plan Deviations\n\n- first\n\n## References\n")
         plan_format.append_deviation(self.plan_path, ["- second"])
         self.assertEqual("## Plan Deviations\n\n- first\n\n- second\n\n## References\n", self.plan_path.read_text())
+
+    def test_a_section_heading_inside_a_code_fence_does_not_end_the_deviations_section(self):
+        self.plan_path.write_text("## Plan Deviations\n\n- first\n\n```\n## sample\n```\n\n## References\n")
+        plan_format.append_deviation(self.plan_path, ["- second"])
+        self.assertEqual("## Plan Deviations\n\n- first\n\n```\n## sample\n```\n\n- second\n\n## References\n",
+                         self.plan_path.read_text())
 
     def test_a_deviation_goes_to_the_end_when_the_plan_has_no_references(self):
         self.plan_path.write_text("## Phase 1: a\n\ntext\n")

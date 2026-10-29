@@ -511,35 +511,34 @@ class ReviewFixScriptTest(unittest.TestCase):
     def stored_stage(self):
         return json.loads((self.repo / ".git" / "review-fix" / "state.json").read_text())["stage"]
 
-    def test_decide_without_by_stops_with_the_usage_line_and_leaves_the_state(self):
-        self.packet(PLAN_IMPACT)
-        stage_before = self.stored_stage()
+    def test_decide_with_a_missing_or_bad_by_stops_with_the_usage_line_and_leaves_the_state(self):
         plan_file = self.temp_root / "plan.md"
-        plan_file.write_text("# Plan\n")
-        code, output = self.run_script(["decide", "adopt", "--ruling", "my call", "--plan", str(plan_file)])
-        self.assertEqual(code, 2)
-        self.assertIn("ACTION: stop-usage", output)
-        self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"', output)
-        self.assertEqual(stage_before, self.stored_stage())
-        self.assertEqual("# Plan\n", plan_file.read_text())
+        cases = {
+            "no by": (
+                ["decide", "adopt", "--ruling", "my call", "--plan", str(plan_file)],
+                ["ACTION: stop-usage",
+                 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"']),
+            "a bad by value": (
+                ["decide", "keep", "--by", "maybe", "--ruling", "my call"],
+                ["ACTION: stop-usage", "--by <user|session>", "needs --by user or --by session"]),
+            "by with no value": (
+                ["decide", "keep", "--by", "--ruling", "my call"],
+                ["--by <user|session>"]),
+        }
 
-    def test_decide_with_a_bad_by_value_stops_with_the_usage_line(self):
-        self.packet(PLAN_IMPACT)
-        stage_before = self.stored_stage()
-        code, output = self.run_script(["decide", "keep", "--by", "maybe", "--ruling", "my call"])
-        self.assertEqual(code, 2)
-        self.assertIn("ACTION: stop-usage", output)
-        self.assertIn("--by <user|session>", output)
-        self.assertIn("needs --by user or --by session", output)
-        self.assertEqual(stage_before, self.stored_stage())
+        for name, (argv, expected) in cases.items():
+            with self.subTest(name):
+                self.packet(PLAN_IMPACT)
+                stage_before = self.stored_stage()
+                plan_file.write_text("# Plan\n")
 
-    def test_decide_by_with_no_value_stops_with_the_usage_line(self):
-        self.packet(PLAN_IMPACT)
-        stage_before = self.stored_stage()
-        code, output = self.run_script(["decide", "keep", "--by", "--ruling", "my call"])
-        self.assertEqual(code, 2)
-        self.assertIn("--by <user|session>", output)
-        self.assertEqual(stage_before, self.stored_stage())
+                code, output = self.run_script(argv)
+
+                self.assertEqual(code, 2)
+                for text in expected:
+                    self.assertIn(text, output)
+                self.assertEqual(stage_before, self.stored_stage())
+                self.assertEqual("# Plan\n", plan_file.read_text())
 
     def test_decide_by_session_signs_as_the_session_not_the_user(self):
         self.packet(PLAN_IMPACT)
@@ -917,29 +916,46 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("render-and-finish", output)
         self.assertEqual(self.ledger_writes(), [])
 
-    def test_empty_stdin_is_a_parse_failure(self):
-        self.assert_parse_failure("", "no review-loop dispatch on record")
+    def test_a_malformed_packet_is_a_parse_failure(self):
+        without_fixed = "\n".join(line for line in CLEAN_EMPTY.splitlines() if not line.startswith("fixed"))
+        cases = {
+            "empty stdin": ("", "no review-loop dispatch on record"),
+            "prose with no packet": ("I reviewed the diff and it looks fine.", "status is 'missing'"),
+            "unknown status": (CONVERGED.replace("status: converged", "status: done"), "status is 'done'"),
+            "missing iter": (CONVERGED.replace("iter: 1\n", ""), "iter is missing"),
+            "iter without a number": (CONVERGED.replace("iter: 1", "iter: two"), "iter is missing"),
+            "converged without fixed": (without_fixed, "fixed is missing"),
+            "fixed entry without a finding": (
+                CONVERGED.replace('finding: "orders query lacked a tenant filter", ', ""), "no finding"),
+            "ask entry without a file line": (
+                WITH_ASK.replace("file_line: src/db.ts:5, ", ""), "no file_line"),
+            "plan impact with an empty block": (
+                "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact:\n", "plan_impact is empty"),
+            "critical blocker without blockers": (
+                "status: critical-blocker\niter: 1\nblockers: []\n", "blockers is empty"),
+            "cap reached without findings remaining": (
+                "status: cap-reached\niter: 2\n", "findings_remaining is missing"),
+            "deferred with empty findings remaining": (
+                "status: deferred\niter: 1\nfixed: []\nfindings_remaining: []\n",
+                "findings_remaining is missing or empty"),
+            "spec iter without a number": (
+                PLAN_IMPACT.replace("spec_iter: 2", "spec_iter: many"), "spec_iter has no number"),
+            "a real pending report": (
+                "status: pending. This is not a convergence packet. The verification pass has not reported.\n\n"
+                "Done so far:\n- fixed\n",
+                "status is"),
+            "deferred with asks but no findings remaining": (
+                "status: deferred\niter: 1\nfixed: []\nskipped_fp: []\nblockers: []\nfindings_remaining: []\nask:\n- "
+                "{finding: x, file_line: a.ts:1, question: y?}\n",
+                "findings_remaining"),
+            "cap reached with an empty findings remaining": (
+                "status: cap-reached\niter: 2\nfixed: []\nblockers: []\nfindings_remaining: [] (none open)\n",
+                "findings_remaining"),
+        }
 
-    def test_prose_with_no_packet_is_a_parse_failure(self):
-        self.assert_parse_failure("I reviewed the diff and it looks fine.", "status is 'missing'")
-
-    def test_unknown_status_is_a_parse_failure(self):
-        self.assert_parse_failure(CONVERGED.replace("status: converged", "status: done"), "status is 'done'")
-
-    def test_missing_iter_is_a_parse_failure(self):
-        self.assert_parse_failure(CONVERGED.replace("iter: 1\n", ""), "iter is missing")
-
-    def test_iter_without_a_number_is_a_parse_failure(self):
-        self.assert_parse_failure(CONVERGED.replace("iter: 1", "iter: two"), "iter is missing")
-
-    def test_converged_without_fixed_is_a_parse_failure(self):
-        text = "\n".join(line for line in CLEAN_EMPTY.splitlines() if not line.startswith("fixed"))
-        self.assert_parse_failure(text, "fixed is missing")
-
-    def test_fixed_entry_without_a_finding_is_a_parse_failure(self):
-        self.assert_parse_failure(
-            CONVERGED.replace('finding: "orders query lacked a tenant filter", ', ""), "no finding"
-        )
+        for name, (text, expected) in cases.items():
+            with self.subTest(name):
+                self.assert_parse_failure(text, expected)
 
     def test_ask_entry_without_a_question_or_a_change_is_dropped_and_the_other_ask_is_presented(self):
         code, output = self.packet(
@@ -952,9 +968,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("Should retries be capped at 3 or configurable?", output)
         self.assertIn("DROPPED ASKS (tell the user; the review went on without them):\n"
                       "- ask entry has no question, finding or change, so it was dropped", output)
-
-    def test_ask_entry_without_a_file_line_is_a_parse_failure(self):
-        self.assert_parse_failure(WITH_ASK.replace("file_line: src/db.ts:5, ", ""), "no file_line")
 
     def test_ask_with_keys_but_no_finding_or_question_is_dropped_and_the_review_finishes(self):
         text = CLEAN_EMPTY.replace("ask: []", "ask:\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}")
@@ -970,22 +983,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("see the thread above", output)
 
-    def test_plan_impact_with_an_empty_block_is_a_parse_failure(self):
-        self.assert_parse_failure("status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact:\n", "plan_impact is empty")
-
-    def test_critical_blocker_without_blockers_is_a_parse_failure(self):
-        self.assert_parse_failure("status: critical-blocker\niter: 1\nblockers: []\n", "blockers is empty")
-
-    def test_cap_reached_without_findings_remaining_is_a_parse_failure(self):
-        self.assert_parse_failure("status: cap-reached\niter: 2\n", "findings_remaining is missing")
-
-    def test_deferred_with_empty_findings_remaining_is_a_parse_failure(self):
-        self.assert_parse_failure("status: deferred\niter: 1\nfixed: []\nfindings_remaining: []\n",
-                                  "findings_remaining is missing or empty")
-
-    def test_spec_iter_without_a_number_is_a_parse_failure(self):
-        self.assert_parse_failure(PLAN_IMPACT.replace("spec_iter: 2", "spec_iter: many"), "spec_iter has no number")
-
     # ---------- whitespace and format tolerance ----------
 
     def test_extra_whitespace_and_a_code_fence_around_the_packet_still_parse(self):
@@ -998,14 +995,13 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("Fixed 2, nits 1, skipped 1", output)
 
-    def test_status_with_trailing_words_and_extra_spaces_parses(self):
-        code, output = self.packet(CLEAN_EMPTY.replace("status: converged", "status:    converged   (all clear)"))
-        self.assertEqual(code, 0, output)
-        self.assertIn("render-and-finish", output)
+    def test_a_status_with_trailing_words_extra_spaces_backticks_or_upper_case_parses(self):
+        for status in ("status:    converged   (all clear)", "status: `CONVERGED`"):
+            with self.subTest(status):
+                code, output = self.packet(CLEAN_EMPTY.replace("status: converged", status))
 
-    def test_status_in_backticks_and_upper_case_parses(self):
-        code, output = self.packet(CLEAN_EMPTY.replace("status: converged", "status: `CONVERGED`"))
-        self.assertEqual(code, 0, output)
+                self.assertEqual(code, 0, output)
+                self.assertIn("render-and-finish", output)
 
     def test_closing_prose_after_the_packet_is_kept_as_a_trailer_not_a_field(self):
         code, output = self.packet(CLEAN_EMPTY + "\nThe second pass found nothing more.\n")
@@ -1061,26 +1057,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         )
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
-
-    def test_a_real_pending_report_is_a_parse_failure(self):
-        self.assert_parse_failure(
-            "status: pending. This is not a convergence packet. The verification pass has not reported.\n\nDone so "
-            "far:\n- fixed\n",
-            "status is",
-        )
-
-    def test_a_deferred_packet_with_asks_but_no_findings_remaining_is_a_parse_failure(self):
-        text = (
-            "status: deferred\niter: 1\nfixed: []\nskipped_fp: []\nblockers: []\nfindings_remaining: []\nask:\n- "
-            "{finding: x, file_line: a.ts:1, question: y?}\n"
-        )
-        self.assert_parse_failure(text, "findings_remaining")
-
-    def test_a_cap_reached_packet_with_an_empty_findings_remaining_is_a_parse_failure(self):
-        self.assert_parse_failure(
-            "status: cap-reached\niter: 2\nfixed: []\nblockers: []\nfindings_remaining: [] (none open)\n",
-            "findings_remaining",
-        )
 
     # ---------- no-paste: saved hand-back ----------
 
@@ -1261,7 +1237,9 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_loop_that_hands_back_before_its_background_reviewer_reports_gets_wait_for_loop(self):
         full_check = {"type": "assistant", "message": {"role": "assistant", "content": [
             {"type": "tool_use", "id": "t_full", "name": "Bash",
-             "input": {"command": "npm test > /tmp/review-gate.log 2>&1"}}]}}
+             "input": {"command": "python3 ~/.claude/scripts/review/full_check.py /r --log /tmp/g.log -- 'npm test'"}},
+            {"type": "tool_result", "tool_use_id": "t_full",
+             "content": [{"type": "text", "text": "full check: passed\nsummary: 3 passed"}]}]}}
         launch = {"type": "assistant", "message": {"role": "assistant", "content": [
             {"type": "tool_use", "id": "t_rev", "name": "Agent",
              "input": {"subagent_type": "code-reviewer", "prompt": "review"}}]}}

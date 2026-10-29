@@ -48,28 +48,53 @@ class HandBackTest(base.CodeStepTest):
         self.assertIn(f"`{self.own_command('resume')}`", question_text)
         self.assertIn("start --restart", question_text)
 
-    def test_a_critical_blocker_stop_writes_question_md_with_each_blocker(self):
+    def stop_after_review(self, packet):
         self.coder_round()
-        self.hook("review-loop", BLOCKER_PACKET)
+        self.hook("review-loop", packet)
+        return self.step("after-review")
 
-        out = self.step("after-review")
+    def stop_on_the_coder_wait_cap(self):
+        self.start_phase_one()
+        self.set_state(dispatchAt=time.time() - 100)
+        self.wait_env(1, "0.2")
+        return self.step("resume")
 
-        self.assertIn("ACTION: stop", out)
-        question_text = self.assert_stop_question("the review found a critical blocker", "b - backend/src/orders.ts:1")
-        self.assertIn("start --restart", question_text)
-        self.assertIn("review-again", question_text)
+    def stop_on_a_failed_closing_check(self, *findings):
+        self.mark_phases_done(1, 2, 3)
+        self.step("start", self.plan)
+        finding_options = [option for finding in findings for option in ("--finding", finding)]
+        return self.step("skill-done", "fail", *finding_options)
 
-    def test_a_setup_fault_stop_writes_question_md_with_each_blocker_and_says_it_is_not_a_code_failure(self):
-        self.coder_round()
-        self.hook("review-loop", SETUP_FAULT_PACKET)
+    def test_a_stop_writes_question_md_with_why_each_open_item_and_the_command_that_goes_on(self):
+        stops = [
+            ("critical blocker", lambda: self.stop_after_review(BLOCKER_PACKET),
+             "the review found a critical blocker", ["b - backend/src/orders.ts:1"],
+             ["start --restart", "review-again"], []),
+            ("setup fault", lambda: self.stop_after_review(SETUP_FAULT_PACKET),
+             "the review's full check could not run here", ["no package.json"], ["review-again"],
+             ["toolkit or environment fault, not a code failure"]),
+            ("review cap", lambda: self.stop_after_review(CAP_PACKET),
+             "the review cap was reached with findings still open", [], ["a.ts:1"], []),
+            ("coder wait cap", self.stop_on_the_coder_wait_cap, "The coder has not handed back in", [],
+             ["start --restart"], []),
+            ("closing check with findings",
+             lambda: self.stop_on_a_failed_closing_check("stale mutant count", "no follow-up line"),
+             "the closing phase's check failed", ["stale mutant count", "no follow-up line"], [], []),
+            ("closing check with no finding", self.stop_on_a_failed_closing_check,
+             "the closing phase's check failed", [], [], []),
+        ]
+        for label, stop, why, items, question_texts, out_texts in stops:
+            with self.subTest(label):
+                self.setUp()
+                out = stop()
 
-        out = self.step("after-review")
-
-        self.assertIn("ACTION: stop", out)
-        self.assertEqual(1, out.count("toolkit or environment fault, not a code failure"))
-        question_text = self.assert_stop_question("the review's full check could not run here", "no package.json")
-        self.assertIn("review-again", question_text)
-        self.assertEqual("setup-fault", self.state()["stopReason"])
+                self.assertIn("ACTION: stop", out)
+                self.assertEqual("stopped", self.state()["stage"])
+                question_text = self.assert_stop_question(why, *items)
+                for expected in question_texts:
+                    self.assertIn(expected, question_text)
+                for expected in out_texts:
+                    self.assertEqual(1, out.count(expected))
 
     def test_a_converged_review_whose_full_check_ran_no_tests_stops_the_phase_and_asks_for_a_quality_check_line(self):
         self.coder_round()
@@ -103,55 +128,29 @@ class HandBackTest(base.CodeStepTest):
         self.assertNotIn("add a Quality check", question_text)
         self.assertNotIn("add a Quality check", out)
 
-    def test_review_again_is_accepted_after_a_check_unverified_stop(self):
-        self.coder_round()
-        self.hook("review-loop", UNVERIFIED_PACKET)
-        self.step("after-review")
+    def test_a_stop_lists_the_reviewers_questions_apart_from_the_open_items_and_names_review_again(self):
+        stops = [
+            ("critical blocker", {"blockerCarried": True}, BLOCKER_PACKET,
+             "`" + self.own_command("review-again") + "`"),
+            ("review cap", {"capCarried": True}, CAP_PACKET, "start --restart"),
+        ]
+        for label, carried, packet, next_command in stops:
+            with self.subTest(label):
+                self.setUp()
+                self.coder_round()
+                self.set_state(**carried)
+                self.hook("review-loop", packet + f"\nfixed: []\nask: [{CACHE_ASK}]")
 
-        again = self.step("review-again")
+                out = self.step("after-review")
 
-        self.assertIn("AGENT: review-loop", again)
-
-    def test_a_critical_blocker_stop_lists_the_reviewers_questions_apart_from_the_blockers_and_names_review_again(self):
-        self.coder_round()
-        self.set_state(blockerCarried=True)
-        packet = BLOCKER_PACKET + f"\nfixed: []\nask: [{CACHE_ASK}]"
-        self.hook("review-loop", packet)
-
-        out = self.step("after-review")
-
-        question_text = self.question()
-        self.assertIn("Open questions:", question_text, out)
-        open_items, _, open_questions = question_text.partition("Open questions:")
-        self.assertIn("keep the cache?", open_questions)
-        self.assertNotIn("keep the cache?", open_items)
-        self.assertIn("Open questions:", out)
-        self.assertIn("keep the cache?", out)
-        self.assertIn(f"`{self.own_command('review-again')}`", question_text)
-
-    def test_a_review_cap_stop_writes_question_md_with_each_open_finding(self):
-        self.coder_round()
-        self.hook("review-loop", CAP_PACKET)
-
-        out = self.step("after-review")
-
-        self.assertIn("ACTION: stop", out)
-        question_text = self.assert_stop_question("the review cap was reached with findings still open")
-        self.assertIn("a.ts:1", question_text)
-
-    def test_a_review_cap_stop_lists_the_reviewers_questions_apart_from_the_findings(self):
-        self.coder_round()
-        self.set_state(capCarried=True)
-        self.hook("review-loop", CAP_PACKET + f"\nfixed: []\nask: [{CACHE_ASK}]")
-
-        out = self.step("after-review")
-
-        question_text = self.question()
-        self.assertIn("Open questions:", question_text, out)
-        open_items, _, open_questions = question_text.partition("Open questions:")
-        self.assertIn("keep the cache?", open_questions)
-        self.assertNotIn("keep the cache?", open_items)
-        self.assertIn("keep the cache?", out)
+                question_text = self.question()
+                self.assertIn("Open questions:", question_text, out)
+                open_items, _, open_questions = question_text.partition("Open questions:")
+                self.assertIn("keep the cache?", open_questions)
+                self.assertNotIn("keep the cache?", open_items)
+                self.assertIn("Open questions:", out)
+                self.assertIn("keep the cache?", out)
+                self.assertIn(next_command, question_text)
 
     def test_the_review_wait_cap_stop_writes_question_md_with_the_resume_command(self):
         out = self.stop_the_review_at_the_wait_cap()
@@ -160,36 +159,9 @@ class HandBackTest(base.CodeStepTest):
         question_text = self.assert_stop_question("The review-loop has not handed back in")
         self.assertIn("review-again", question_text)
 
-    def test_the_coder_wait_cap_stop_writes_question_md_with_the_restart(self):
-        self.start_phase_one()
-        self.set_state(dispatchAt=time.time() - 100)
-        self.wait_env(1, "0.2")
-
-        out = self.step("resume")
-
-        self.assertIn("ACTION: stop", out)
-        question_text = self.assert_stop_question("The coder has not handed back in")
-        self.assertIn("start --restart", question_text)
-
-    def test_a_failed_closing_check_writes_question_md_with_each_finding(self):
-        self.mark_phases_done(1, 2, 3)
-        self.step("start", self.plan)
-
-        out = self.step("skill-done", "fail", "--finding", "stale mutant count", "--finding", "no follow-up line")
-
-        self.assertIn("ACTION: stop", out)
-        self.assertEqual("stopped", self.state()["stage"])
-        self.assert_stop_question("the closing phase's check failed", "stale mutant count", "no follow-up line")
-
-    def test_a_failed_closing_check_with_no_finding_names_the_open_success_criteria(self):
-        self.mark_phases_done(1, 2, 3)
-        self.step("start", self.plan)
-
-        self.step("skill-done", "fail")
-
-        self.assert_stop_question("the closing phase's check failed")
-
-    def assert_resume_takes_the_late_hand_back(self):
+    def test_a_review_loop_messaged_before_the_wait_cap_that_hands_back_after_it_is_recorded_on_resume(self):
+        # The incident shape: the fork's SendMessage was queued before the stop, and none came after it.
+        self.stop_the_review_at_the_wait_cap(queued_message=True)
         self.hook("review-loop", self.LOOP_OK, agent_id="r1")
 
         out = self.step("resume")
@@ -200,18 +172,6 @@ class HandBackTest(base.CodeStepTest):
         self.assertIn("marked done", out)
         self.assertNotEqual("stopped", self.state()["stage"])
         self.assertNotIn("resumableReview", self.state())
-
-    def test_a_review_loop_that_hands_back_after_the_wait_cap_is_routed_on_its_report(self):
-        self.stop_the_review_at_the_wait_cap()
-        self.assertIn("has not handed back in", self.question())
-
-        self.assert_resume_takes_the_late_hand_back()
-
-    def test_a_review_loop_messaged_before_the_wait_cap_that_hands_back_after_it_is_recorded_on_resume(self):
-        # The incident shape: the fork's SendMessage was queued before the stop, and none came after it.
-        self.stop_the_review_at_the_wait_cap(queued_message=True)
-
-        self.assert_resume_takes_the_late_hand_back()
 
     def test_the_plan_edit_coders_open_choice_reaches_the_hand_back_and_the_prompt_says_where_it_goes(self):
         self.coder_round(self.IMPACT_REPORT)

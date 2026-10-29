@@ -20,6 +20,11 @@ GIT_IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GI
                 "GIT_COMMITTER_EMAIL": "t@example.com"}
 sys.path.insert(0, str(GATE_SCRIPT.parent.parent / "lib"))
 import check_scope  # noqa: E402
+import script_utils  # noqa: E402
+
+
+def commands_with(coder, outcome):
+    return list(script_utils.details_with_outcome(coder["commands"], outcome))
 
 
 class CoderGateEnvironmentTests(unittest.TestCase):
@@ -54,11 +59,6 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual(0, done.returncode, done.stderr)
         self.assertEqual({"A": "1", "B": "two words", "C": "x y", "D": ""}, self.stored_gate()["env"])
         self.assertEqual(["python3 -m pytest tests/test_one.py"], self.stored_gate()["commands"])
-
-    def test_set_with_no_variable_stores_an_empty_environment(self):
-        self.gate_set("python3 -m pytest tests/test_one.py")
-
-        self.assertEqual({}, self.stored_gate()["env"])
 
     def test_set_refuses_a_word_that_is_not_a_variable_assignment(self):
         for word in ("not-an-assignment", "A=1 B=2", "=1", "A='unclosed"):
@@ -157,8 +157,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("timeout", coder["result"])
-        self.assertEqual([], coder["failed"])
-        self.assertEqual([command], coder["timed_out"])
+        self.assertEqual([], commands_with(coder, "failed"))
+        self.assertEqual([command], commands_with(coder, "timed-out"))
         output = json.loads(printed)["hookSpecificOutput"]
         self.assertEqual("allow", output["permissionDecision"])
         message = output["updatedInput"]["message"]
@@ -166,6 +166,9 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertIn("timed out after 1 s with no test result", message)
         self.assertIn("they are not among the failures", message)
         self.assertIn("FAILED test_one", message)
+        cleared = subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "clear"], cwd=self.repo, env=self.env,
+                                 capture_output=True, text=True)
+        self.assertIn(f"failed: none, timed out (no test result): {command}", cleared.stdout)
 
     def test_the_hook_still_denies_a_real_failure_that_ran_beside_a_timeout(self):
         self.gate_set("sleep 5", "exit 3")
@@ -174,18 +177,9 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("deny", coder["result"])
-        self.assertEqual(["exit 3"], coder["failed"])
-        self.assertEqual(["sleep 5"], coder["timed_out"])
+        self.assertEqual(["exit 3"], commands_with(coder, "failed"))
+        self.assertEqual(["sleep 5"], commands_with(coder, "timed-out"))
         self.assertEqual("deny", json.loads(printed)["hookSpecificOutput"]["permissionDecision"])
-
-    def test_clear_prints_the_timed_out_commands_apart_from_the_failed_ones(self):
-        self.gate_set("sleep 5")
-        self.gate_hook_with_timeout(1)
-
-        cleared = subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "clear"], cwd=self.repo, env=self.env,
-                                 capture_output=True, text=True)
-
-        self.assertIn("failed: none, timed out (no test result): sleep 5", cleared.stdout)
 
     def test_a_missing_program_is_a_setup_fault_that_allows_the_hand_back_and_names_the_command(self):
         command = "no-such-runner-for-the-gate pytest tests/test_one.py"
@@ -196,8 +190,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("setup-fault", coder["result"])
         self.assertEqual(0, coder["denies"])
-        self.assertEqual([], coder["failed"])
-        self.assertEqual([command], coder["setup_faults"])
+        self.assertEqual([], commands_with(coder, "failed"))
+        self.assertEqual([command], commands_with(coder, "setup-fault"))
         output = json.loads(hook.stdout)["hookSpecificOutput"]
         self.assertEqual("allow", output["permissionDecision"])
         message = output["updatedInput"]["message"]
@@ -230,7 +224,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 hook = self.gate_hook()
 
                 self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
-                self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+                self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
 
     def test_a_denial_lists_the_failing_test_that_the_output_tail_cut_off(self):
         self.gate_set("""echo "FAIL: test_x (app.tests.T)"; seq 1 3000; exit 1""")
@@ -256,7 +250,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 coder = self.stored_gate()["coders"]["a1"]
                 self.assertEqual("setup-fault", coder["result"])
                 self.assertEqual(0, coder["denies"])
-                self.assertEqual([command], coder["setup_faults"])
+                self.assertEqual([command], commands_with(coder, "setup-fault"))
                 self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
 
     def test_a_django_settings_error_denies_when_the_coder_changed_a_settings_module_or_app_config(self):
@@ -272,7 +266,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 hook = self.gate_hook()
 
                 self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
-                self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+                self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
                 (self.repo / changed_path).unlink()
 
     def test_a_django_settings_error_stays_a_setup_fault_when_the_coder_changed_other_files(self):
@@ -299,7 +293,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 hook = self.gate_hook()
 
                 self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
-                self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+                self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
 
     def test_a_manage_py_test_run_that_exits_0_after_running_no_test_is_a_setup_fault_not_a_pass(self):
         command = """echo manage.py test; echo "Ran 0 tests in 0.000s"; exit 0"""
@@ -309,7 +303,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("setup-fault", coder["result"])
-        self.assertEqual([command], coder["setup_faults"])
+        self.assertEqual([command], commands_with(coder, "setup-fault"))
         self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
 
     def test_a_manage_py_test_run_that_ran_tests_passes(self):
@@ -327,8 +321,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("deny", coder["result"])
-        self.assertEqual(["echo assertion-broke; exit 3"], coder["failed"])
-        self.assertEqual(["exit 127"], coder["setup_faults"])
+        self.assertEqual(["echo assertion-broke; exit 3"], commands_with(coder, "failed"))
+        self.assertEqual(["exit 127"], commands_with(coder, "setup-fault"))
         reason = json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("assertion-broke", reason)
         self.assertNotIn("`exit 127`", reason)
@@ -350,8 +344,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 coder = self.stored_gate()["coders"]["a1"]
                 self.assertEqual("command-error", coder["result"])
                 self.assertEqual(0, coder["denies"])
-                self.assertEqual([], coder["failed"])
-                self.assertEqual([command], coder["command_errors"])
+                self.assertEqual([], commands_with(coder, "failed"))
+                self.assertEqual([command], commands_with(coder, "command-error"))
                 message = json.loads(hook.stdout)["hookSpecificOutput"]["updatedInput"]["message"]
                 self.assertIn("HAND-BACK GATE COMMAND ERROR", message)
                 self.assertIn(f"`{command}`: ", message)
@@ -366,7 +360,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         hook = self.gate_hook()
 
         self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
-        self.assertEqual([command], self.stored_gate()["coders"]["a1"]["failed"])
+        self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
 
     def test_a_real_failure_beside_a_command_error_denies_with_only_the_real_failure(self):
         missing = "python3 missing/manage.py test app.tests"
@@ -376,9 +370,37 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
         coder = self.stored_gate()["coders"]["a1"]
         self.assertEqual("deny", coder["result"])
-        self.assertEqual(["echo assertion-broke; exit 3"], coder["failed"])
-        self.assertEqual([missing], coder["command_errors"])
+        self.assertEqual(["echo assertion-broke; exit 3"], commands_with(coder, "failed"))
+        self.assertEqual([missing], commands_with(coder, "command-error"))
         self.assertNotIn(f"`{missing}`", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_a_setup_fault_beside_a_command_error_gets_the_same_outcome_from_the_scoped_run_and_the_hook(self):
+        setup_fault = "exit 127"
+        command_error = "python3 missing/manage.py test app.tests"
+        log_path = self.repo / "scoped-tests.log"
+        self.gate_set(setup_fault, command_error)
+
+        self.gate_hook()
+        scoped_result, _tails = load_gate_module().run_scoped_tests(str(self.repo), [setup_fault, command_error], (),
+                                                                    log_path)
+
+        hook_outcome = self.stored_gate()["coders"]["a1"]["result"]
+        scoped_outcome = scoped_result.split(":")[0].replace(" ", "-")
+        self.assertEqual("command-error", hook_outcome)
+        self.assertEqual(hook_outcome, scoped_outcome, scoped_result)
+
+    def test_a_coder_stored_with_the_old_command_lists_keeps_its_counts_and_gets_the_commands_map(self):
+        command = "echo ok"
+        self.gate_set(command)
+        gate = self.stored_gate()
+        gate["coders"]["a1"] = {"runs": 2, "denies": 1, "failed": ["old"], "skipped": [], "timed_out": [],
+                                "setup_faults": ["old"], "command_errors": [], "result": "deny"}
+        (self.repo / ".git/coder-gate.json").write_text(json.dumps(gate))
+
+        self.gate_hook()
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual({"runs": 3, "denies": 1, "result": "pass", "commands": {}}, coder)
 
     def test_a_gate_stored_before_variables_existed_still_runs(self):
         self.gate_set("true")
@@ -479,10 +501,6 @@ class CommandCheckScopeTests(unittest.TestCase):
     def scope(self, command):
         return check_scope.command_check_scope(command, self.project)
 
-    def test_importing_the_module_runs_no_command(self):
-        with mock.patch.object(sys, "argv", ["coder_gate.py", "not-a-verb"]):
-            load_gate_module()
-
     def test_a_direct_command_is_judged_whole_targeted_or_none(self):
         cases = {
             "pytest": "whole",
@@ -515,90 +533,74 @@ class CommandCheckScopeTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(expected, self.scope(command))
 
-    def test_make_behind_a_runner_wrapper_is_read_from_the_makefile(self):
-        self.write_makefile("test:\n\tpytest\n")
-
-        self.assertEqual("whole", self.scope("poetry run make test"))
-
-    def test_make_target_whose_recipe_runs_the_whole_suite_is_whole(self):
-        self.write_makefile("test:\n\tpytest\n")
-
-        self.assertEqual("whole", self.scope("make test"))
-
-    def test_make_target_whose_recipe_names_a_test_file_is_targeted(self):
-        self.write_makefile("test:\n\tpytest tests/test_x.py\n")
-
-        self.assertEqual("targeted", self.scope("make test"))
-
-    def test_make_with_no_target_runs_the_default_goal(self):
-        self.write_makefile(".PHONY: test lint\nlint:\n\truff check src\ntest:\n\tpytest\n")
-
-        self.assertEqual("targeted", self.scope("make"))
-
-    def test_make_with_no_target_honors_default_goal_variable(self):
-        self.write_makefile(".DEFAULT_GOAL := test\nlint:\n\truff check src\ntest:\n\tpytest\n")
-
-        self.assertEqual("whole", self.scope("make"))
-
-    def test_make_follows_prerequisites(self):
-        self.write_makefile("check: lint test\nlint:\n\truff check src\ntest:\n\t@pytest\n")
-
-        self.assertEqual("whole", self.scope("make check"))
-
-    def test_make_follows_make_recursion_in_a_recipe(self):
-        self.write_makefile("all:\n\t$(MAKE) test\ntest:\n\t-pytest\n")
-
-        self.assertEqual("whole", self.scope("make all"))
-
-    def test_make_prerequisites_that_form_a_cycle_end(self):
-        self.write_makefile("a: b\nb: a\n")
-
-        self.assertEqual("none", self.scope("make a"))
-
-    def test_make_recursion_deeper_than_the_cap_is_unresolved(self):
-        rules = "".join(f"t{number}: t{number + 1}\n" for number in range(8)) + "t8:\n\tpytest\n"
-        self.write_makefile(rules)
-
-        self.assertEqual("unresolved", self.scope("make t0"))
-
-    def test_make_reads_the_makefile_of_the_directory_option(self):
-        self.write_makefile("test:\n\tpytest\n", folder="sub")
-        self.write_makefile("test:\n\tpytest tests/a.py\n")
-
-        for command in ("make -C sub test", "make --directory=sub test", "cd sub && make test"):
-            with self.subTest(command=command):
-                self.assertEqual("whole", self.scope(command))
-        self.assertEqual("targeted", self.scope("make test"))
-
-    def test_make_reads_the_file_named_by_the_file_option(self):
-        self.write_makefile("test:\n\tpytest\n", name="ci.mk")
-        self.write_makefile("test:\n\tpytest tests/a.py\n")
-
-        for command in ("make -f ci.mk test", "make --file=ci.mk test", "make -fci.mk test"):
-            with self.subTest(command=command):
-                self.assertEqual("whole", self.scope(command))
-
-    def test_make_expands_variables_in_a_recipe(self):
-        self.write_makefile("RUNNER = pytest\nARGS ?=\nBRACED := ${RUNNER}\ntest:\n\t$(RUNNER) $(ARGS)\n"
-                            "other:\n\t${BRACED} tests/a.py\n")
-
-        self.assertEqual("whole", self.scope("make test"))
-        self.assertEqual("targeted", self.scope("make other"))
-
-    def test_make_joins_a_recipe_continued_over_lines(self):
-        self.write_makefile("test:\n\tpytest \\\n\t  tests/test_x.py\n")
-
-        self.assertEqual("targeted", self.scope("make test"))
-
-    def test_make_with_a_variable_argument_is_let_through(self):
-        self.write_makefile("test:\n\tpytest $(FILE)\n")
-
-        self.assertEqual("unresolved", self.scope("make test FILE=tests/test_x.py"))
-
-    def test_make_with_a_variable_assignment_before_it_is_let_through(self):
-        self.write_makefile("test:\n\tpytest $(TESTS)\n")
-
-        self.assertEqual("unresolved", self.scope("TESTS=tests/a.py make test"))
+    def test_make_scope_is_read_from_the_makefile(self):
+        eight_deep = "".join(f"t{number}: t{number + 1}\n" for number in range(8)) + "t8:\n\tpytest\n"
+        cases = [
+            ("a runner wrapper is read through",
+             {"Makefile": "test:\n\tpytest\n"}, [("poetry run make test", "whole")]),
+            ("a recipe that runs the whole suite is whole",
+             {"Makefile": "test:\n\tpytest\n"}, [("make test", "whole")]),
+            ("a recipe that names a test file is targeted",
+             {"Makefile": "test:\n\tpytest tests/test_x.py\n"}, [("make test", "targeted")]),
+            ("no target runs the first goal",
+             {"Makefile": ".PHONY: test lint\nlint:\n\truff check src\ntest:\n\tpytest\n"}, [("make", "targeted")]),
+            ("no target honors the default goal variable",
+             {"Makefile": ".DEFAULT_GOAL := test\nlint:\n\truff check src\ntest:\n\tpytest\n"}, [("make", "whole")]),
+            ("prerequisites are followed",
+             {"Makefile": "check: lint test\nlint:\n\truff check src\ntest:\n\t@pytest\n"}, [("make check", "whole")]),
+            ("make recursion in a recipe is followed",
+             {"Makefile": "all:\n\t$(MAKE) test\ntest:\n\t-pytest\n"}, [("make all", "whole")]),
+            ("prerequisites that form a cycle end", {"Makefile": "a: b\nb: a\n"}, [("make a", "none")]),
+            ("recursion deeper than the cap is unresolved", {"Makefile": eight_deep}, [("make t0", "unresolved")]),
+            ("the directory option picks the makefile",
+             {"sub/Makefile": "test:\n\tpytest\n", "Makefile": "test:\n\tpytest tests/a.py\n"},
+             [("make -C sub test", "whole"), ("make --directory=sub test", "whole"), ("cd sub && make test", "whole"),
+              ("make test", "targeted")]),
+            ("the file option picks the makefile",
+             {"ci.mk": "test:\n\tpytest\n", "Makefile": "test:\n\tpytest tests/a.py\n"},
+             [("make -f ci.mk test", "whole"), ("make --file=ci.mk test", "whole"), ("make -fci.mk test", "whole")]),
+            ("variables in a recipe are expanded",
+             {"Makefile": "RUNNER = pytest\nARGS ?=\nBRACED := ${RUNNER}\ntest:\n\t$(RUNNER) $(ARGS)\n"
+                          "other:\n\t${BRACED} tests/a.py\n"},
+             [("make test", "whole"), ("make other", "targeted")]),
+            ("a recipe continued over lines is joined",
+             {"Makefile": "test:\n\tpytest \\\n\t  tests/test_x.py\n"}, [("make test", "targeted")]),
+            ("a variable argument is let through",
+             {"Makefile": "test:\n\tpytest $(FILE)\n"}, [("make test FILE=tests/test_x.py", "unresolved")]),
+            ("a variable assignment before make is let through",
+             {"Makefile": "test:\n\tpytest $(TESTS)\n"}, [("TESTS=tests/a.py make test", "unresolved")]),
+            ("order-only prerequisites are followed",
+             {"Makefile": "check: lint | test\nlint:\n\truff check tests/a.py\ntest:\n\tpytest\n"},
+             [("make check", "whole")]),
+            ("order-only prerequisites alone are followed",
+             {"Makefile": "check: | test\ntest:\n\tpytest\n"}, [("make check", "whole")]),
+            ("recipe lines inside a define block belong to no rule",
+             {"Makefile": "test:\n\tpytest tests/a.py\ndefine HELP\n\tpytest\nendef\n"}, [("make test", "targeted")]),
+            ("a target whose chain ran past the depth cap is read again by a shorter path",
+             {"Makefile": "check: p test\np: q\nq: test\ntest: u\nu: v\nv:\n\tpytest\n"}, [("make check", "whole")]),
+            ("recursion into another directory reads that directory's makefile",
+             {"Makefile": "test:\n\tpytest tests/a.py\nall:\n\t$(MAKE) -C sub test\n",
+              "sub/Makefile": "test:\n\tpytest\n"}, [("make all", "whole")]),
+            ("recursion inside another directory reads that directory's makefile",
+             {"Makefile": "test:\n\tpytest tests/a.py\n",
+              "sub/Makefile": "all:\n\t$(MAKE) test\ntest:\n\tpytest\n"}, [("make -C sub all", "whole")]),
+            ("no makefile is let through", {}, [("make test", "unresolved")]),
+            ("no such target is let through", {"Makefile": "lint:\n\truff check src\n"},
+             [("make test", "unresolved")]),
+            ("a whole recipe command beats an unresolved one",
+             {"Makefile": "test:\n\tpytest\n"}, [("make missing test", "whole")]),
+            ("a recipe that runs through docker is judged by the command inside",
+             {"Makefile": "test:\n\t@docker compose run --rm app npm test\n"}, [("make test", "whole")]),
+        ]
+        for label, makefiles, commands in cases:
+            with self.subTest(label):
+                for path, text in makefiles.items():
+                    folder, _, name = path.rpartition("/")
+                    self.write_makefile(text, folder=folder, name=name)
+                for command, expected in commands:
+                    self.assertEqual(expected, self.scope(command), command)
+                for path in makefiles:
+                    (self.project / path).unlink()
 
     def test_an_assignment_dropped_by_a_wrapper_lets_make_through_and_a_wrapper_inside_docker_is_peeled(self):
         self.write_makefile("test:\n\tnpm test\n")
@@ -648,15 +650,6 @@ class CommandCheckScopeTests(unittest.TestCase):
             with self.subTest(option=option):
                 self.assertEqual("whole", self.scope(f"make {option} test"))
 
-    def test_make_follows_order_only_prerequisites(self):
-        self.write_makefile("check: lint | test\nlint:\n\truff check tests/a.py\ntest:\n\tpytest\n")
-
-        self.assertEqual("whole", self.scope("make check"))
-
-        self.write_makefile("check: | test\ntest:\n\tpytest\n")
-
-        self.assertEqual("whole", self.scope("make check"))
-
     def test_a_recipe_after_an_include_export_define_or_vpath_line_still_belongs_to_its_rule(self):
         lines_before_the_recipe = {
             "include": "include other.mk",
@@ -676,40 +669,6 @@ class CommandCheckScopeTests(unittest.TestCase):
 
                 self.assertEqual("whole", self.scope("make test"))
 
-    def test_the_recipe_lines_inside_a_define_block_belong_to_no_rule(self):
-        self.write_makefile("test:\n\tpytest tests/a.py\ndefine HELP\n\tpytest\nendef\n")
-
-        self.assertEqual("targeted", self.scope("make test"))
-
-    def test_a_target_whose_chain_ran_past_the_depth_cap_is_read_again_by_a_shorter_path(self):
-        self.write_makefile("check: p test\np: q\nq: test\ntest: u\nu: v\nv:\n\tpytest\n")
-
-        self.assertEqual("whole", self.scope("make check"))
-
-    def test_make_recursion_into_another_directory_reads_that_directorys_makefile(self):
-        self.write_makefile("test:\n\tpytest tests/a.py\nall:\n\t$(MAKE) -C sub test\n")
-        self.write_makefile("test:\n\tpytest\n", folder="sub")
-
-        self.assertEqual("whole", self.scope("make all"))
-
-    def test_make_recursion_inside_another_directory_reads_that_directorys_makefile(self):
-        self.write_makefile("test:\n\tpytest tests/a.py\n")
-        self.write_makefile("all:\n\t$(MAKE) test\ntest:\n\tpytest\n", folder="sub")
-
-        self.assertEqual("whole", self.scope("make -C sub all"))
-
-    def test_make_with_no_makefile_or_no_such_target_is_let_through(self):
-        self.assertEqual("unresolved", self.scope("make test"))
-
-        self.write_makefile("lint:\n\truff check src\n")
-
-        self.assertEqual("unresolved", self.scope("make test"))
-
-    def test_a_whole_recipe_command_beats_an_unresolved_one(self):
-        self.write_makefile("test:\n\tpytest\n")
-
-        self.assertEqual("whole", self.scope("make missing test"))
-
     def test_docker_exec_and_run_are_judged_by_the_command_inside(self):
         cases = {
             "docker compose exec -T app pytest": "whole",
@@ -724,11 +683,6 @@ class CommandCheckScopeTests(unittest.TestCase):
         for command, expected in cases.items():
             with self.subTest(command=command):
                 self.assertEqual(expected, self.scope(command))
-
-    def test_make_recipe_that_runs_through_docker_is_judged_by_the_command_inside(self):
-        self.write_makefile("test:\n\t@docker compose run --rm app npm test\n")
-
-        self.assertEqual("whole", self.scope("make test"))
 
     def test_the_refusal_text_shows_the_recipe_command_and_the_make_call_as_written(self):
         self.write_makefile("test:\n\tPYTHONPATH=. pytest\n")

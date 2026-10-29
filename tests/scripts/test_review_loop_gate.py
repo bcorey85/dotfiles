@@ -1,4 +1,3 @@
-import importlib.util
 import json
 import os
 import pathlib
@@ -48,6 +47,15 @@ def bash(command, tool_use_id="toolu_bash"):
     return {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
 
 
+FULL_CHECK_CALL = "python3 ~/.claude/scripts/review/full_check.py /r/app --log /tmp/review-gate-feat.log -- 'npm test'"
+FULL_CHECK_PASSED = "full check: passed\nsummary: 3 passed in 0.1s"
+
+
+def full_check_run(output=FULL_CHECK_PASSED, command=FULL_CHECK_CALL, tool_use_id="toolu_full"):
+    """A full_check.py shell call and the tool_result it printed."""
+    return [bash(command, tool_use_id), result(tool_use_id, output)]
+
+
 def send_message(to):
     block = {"type": "tool_use", "id": "toolu_send", "name": "SendMessage", "input": {"to": to, "message": "go on"}}
     return {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
@@ -79,7 +87,7 @@ def resume_background_coder():
             result("toolu_resume", resumed)]
 
 
-class ReviewLoopGateTest(unittest.TestCase):
+class StopHookMixin:
     def stop(self, records, **extra):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -94,23 +102,22 @@ class ReviewLoopGateTest(unittest.TestCase):
         self.assertEqual(proc.stderr, "")
         return proc.stdout
 
-    def test_open_background_dispatch_passes(self):
-        self.assertEqual(self.stop(coder_and_background_reviewer()), "")
 
+class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
     def test_reported_background_dispatch_blocks_without_full_check(self):
         out = self.stop([*coder_and_background_reviewer(), notification("toolu_rev")])
-        self.assertIn("No full check ran", json.loads(out)["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(out)["reason"])
 
     def test_agent_message_counts_as_reported(self):
         message = user('<agent-message from="a7bf12f9c51bc4875">findings</agent-message>')
         out = self.stop([*coder_and_background_reviewer(), message])
-        self.assertIn("No full check ran", json.loads(out)["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(out)["reason"])
 
     def test_foreground_dispatch_blocks(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "agentId: a7bf12f9c51bc4875")]
-        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
 
     def test_a_delivered_hand_back_ends_the_full_check_block_but_a_stop_without_one_keeps_it(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
@@ -118,7 +125,7 @@ class ReviewLoopGateTest(unittest.TestCase):
                         "input": {"message": "status: converged"}}
         delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
                      result("toolu_hb", "delivered")]
-        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
         self.assertEqual(self.stop([*records, *delivered]), "")
 
     def test_a_denied_hand_back_does_not_end_the_full_check_block(self):
@@ -128,19 +135,62 @@ class ReviewLoopGateTest(unittest.TestCase):
         denied = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
                   {"type": "user", "message": {"role": "user", "content": [
                       {"type": "tool_result", "tool_use_id": "toolu_hb", "content": "denied", "is_error": True}]}}]
-        self.assertIn("No full check ran", json.loads(self.stop([*records, *denied]))["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(self.stop([*records, *denied]))["reason"])
 
     def test_a_plan_impact_report_owes_no_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
         out = self.stop(records, last_assistant_message="status: plan-impact\niter: 1\nplan_impact: a, b\n")
-        self.assertNotIn("No full check ran", out)
+        self.assertNotIn("No passed full_check.py result", out)
 
     def test_full_check_after_reviewed_coder_passes(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
-                   bash("npm test > /tmp/review-gate.log 2>&1")]
+                   *full_check_run()]
+        self.assertEqual(self.stop(records), "")
+
+    def test_a_full_check_script_call_whose_result_is_not_passed_is_blocked(self):
+        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        results = ("full check: failed (exit 1)\nFAILED tests/test_a.py::test_x",
+                   "full check: unverified (exit 0, no runner summary)\nsummary: not found",
+                   "full check: setup fault (exit 127)\nnpm: command not found",
+                   "full check: not run (timeout)",
+                   "full check: not run (check-command error: no such file tests/x)",
+                   "full check: not run (environment gap: No module named 'x')",
+                   "full check: pre-existing failure (the check fails the same way without this diff)",
+                   "full check: passed-ish",
+                   "the output quotes full check: passed mid-line",
+                   "full check: failed (exit 1)\nfull check: passed",
+                   "")
+        for output in results:
+            with self.subTest(output=output):
+                records = [*coder, *full_check_run(output)]
+                reason = json.loads(self.stop(records))["reason"]
+                self.assertIn("No passed full_check.py result", reason)
+                self.assertIn("If a full_check.py result already follows the last code change and was not passed, "
+                              "do not run it again: follow Step 6's route for that result and return the packet. "
+                              "Otherwise run the Step 6 execution gate now.", reason)
+
+    def test_a_bare_checker_command_with_a_passing_looking_output_is_blocked(self):
+        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        for command in ("npm test", "npm test > /tmp/review-gate.log 2>&1", "pytest -q"):
+            with self.subTest(command=command):
+                records = [*coder, bash(command, "toolu_bare"), result("toolu_bare", FULL_CHECK_PASSED)]
+                self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
+
+    def test_a_passed_line_with_no_result_for_the_call_or_for_another_call_is_blocked(self):
+        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        unanswered = [bash(FULL_CHECK_CALL, "toolu_full")]
+        elsewhere = [bash(FULL_CHECK_CALL, "toolu_full"), result("toolu_other", FULL_CHECK_PASSED)]
+        for run in (unanswered, elsewhere):
+            with self.subTest(run=run):
+                self.assertIn("No passed full_check.py result", json.loads(self.stop([*coder, *run]))["reason"])
+
+    def test_a_full_check_result_is_read_from_its_own_call_when_other_shell_calls_come_between(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
+                   bash(FULL_CHECK_CALL, "toolu_full"), bash("git status", "toolu_git"),
+                   result("toolu_git", "clean"), result("toolu_full", FULL_CHECK_PASSED)]
         self.assertEqual(self.stop(records), "")
 
     def test_a_fix_coder_after_the_last_review_needs_only_the_full_check(self):
@@ -148,17 +198,17 @@ class ReviewLoopGateTest(unittest.TestCase):
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
                    dispatch("toolu_fix", "coder"), result("toolu_fix", "done")]
-        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
-        self.assertEqual(self.stop([*records, bash("npm test > /tmp/review-gate.log 2>&1")]), "")
+        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
+        self.assertEqual(self.stop([*records, *full_check_run()]), "")
 
     def test_a_message_to_a_coder_after_the_full_check_counts_as_a_code_change(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "agentId: acoder1"),
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
-                   bash("npm test > /tmp/review-gate.log 2>&1")]
+                   *full_check_run()]
         self.assertEqual(self.stop(records), "")
         out = self.stop([*records, send_message("acoder1")])
-        self.assertIn("No full check ran", json.loads(out)["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(out)["reason"])
 
     def test_stop_hook_active_passes(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
@@ -191,7 +241,7 @@ class ReviewLoopGateTest(unittest.TestCase):
         records = [user(f"review loop\nrepo: {reviewed}"), dispatch("toolu_coder", "coder"),
                    result("toolu_coder", "done")]
 
-        self.assertIn("No full check ran", json.loads(self.stop(records, cwd=other))["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(self.stop(records, cwd=other))["reason"])
 
     def test_a_repo_without_the_exact_full_suite_line_still_owes_a_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
@@ -199,13 +249,13 @@ class ReviewLoopGateTest(unittest.TestCase):
             with self.subTest(claude_md=claude_md):
                 repo = self.repo_with_claude_md(claude_md)
 
-                self.assertIn("No full check ran", json.loads(self.stop(records, cwd=repo))["reason"])
+                self.assertIn("No passed full_check.py result", json.loads(self.stop(records, cwd=repo))["reason"])
 
     def test_a_foreground_report_that_quotes_the_launch_text_is_not_an_open_dispatch(self):
         report = "Reviewed the gate. It counts `Async agent launched` results as open dispatches.\nagentId: arev1"
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", report)]
-        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
 
 
 class StopRowTest(unittest.TestCase):
@@ -243,7 +293,7 @@ class StopRowTest(unittest.TestCase):
         waiting = self.stop_in_session(coder_and_background_reviewer(), store.name)
         self.assertEqual(waiting.stdout, "")
         finished = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                    bash("npm test > /tmp/review-gate.log 2>&1")]
+                    *full_check_run()]
         self.stop_in_session(finished, store.name)
         stops = self.stored_stops(store.name)
         self.assertEqual([(row["agent_id"], row["open_dispatches"]) for row in stops],
@@ -300,7 +350,7 @@ class StopRowTest(unittest.TestCase):
     def test_a_stop_the_gate_blocked_is_stored_as_blocked_and_a_passing_stop_is_not(self):
         store = self.new_store()
         unchecked = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        checked = [*unchecked, bash("npm test > /tmp/review-gate.log 2>&1")]
+        checked = [*unchecked, *full_check_run()]
         blocked_out = self.stop_in_session(unchecked, store)
         self.stop_in_session(checked, store)
         self.assertIn("block", blocked_out.stdout)
@@ -325,24 +375,18 @@ class StopRowTest(unittest.TestCase):
         half_written = [*coder_and_background_reviewer(), '{"type": "user", "mess']
         torn = self.stop_in_session(half_written, store)
         missing = self.stop_in_session([], store, transcript_path=os.path.join(store, "no-such-loop.jsonl"))
-        self.assertEqual((torn.stdout, missing.stdout), ("", ""))
+        not_an_object = self.stop_in_session([*coder_and_background_reviewer(), "[]"], store)
+        self.assertEqual((torn.stdout, missing.stdout, not_an_object.stdout), ("", "", ""))
         self.assertIn("skipped", torn.stderr)
         self.assertIn("skipped", missing.stderr)
-        self.assertEqual(self.open_counts(store), [1, 0, 0])
+        self.assertIn("skipped", not_an_object.stderr)
+        self.assertEqual(self.open_counts(store), [1, 0, 0, 0])
 
     def test_a_resume_result_with_only_the_short_id_matches_the_launched_agent_by_prefix(self):
         store = self.new_store()
         short_only = [*resume_background_coder()[:-1], result("toolu_resume", "Resuming agent a5bc2eb")]
         self.stop_in_session(short_only, store)
         self.stop_in_session([*short_only, notification("toolu_resume")], store)
-        self.assertEqual(self.open_counts(store), [1, 0])
-
-    def test_a_non_object_transcript_line_writes_a_zero_row_and_still_fails_open(self):
-        store = self.new_store()
-        self.stop_in_session(coder_and_background_reviewer(), store)
-        done = self.stop_in_session([*coder_and_background_reviewer(), "[]"], store)
-        self.assertEqual(done.stdout, "")
-        self.assertIn("skipped", done.stderr)
         self.assertEqual(self.open_counts(store), [1, 0])
 
     def test_a_background_resume_is_open_until_a_later_notification_or_agent_message(self):
@@ -391,90 +435,6 @@ class StopRowTest(unittest.TestCase):
         self.stop_in_session([*resumed, notified], store)
 
         self.assertEqual(self.open_counts(store), [1, 0])
-
-
-class FullCheckTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        spec = importlib.util.spec_from_file_location("review_loop_gate_under_test", SCRIPT)
-        cls.gate = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cls.gate)
-
-    def assert_full(self, command):
-        self.assertTrue(self.gate.full_check(command), command)
-
-    def assert_scoped(self, command):
-        self.assertFalse(self.gate.full_check(command), command)
-
-    def test_the_commands_two_loops_ran_as_their_full_check_count(self):
-        self.assert_full("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-12/Cargo.toml"
-                        " > /tmp/review-gate.log 2>&1; echo exit=$?")
-        self.assert_full("cargo test --manifest-path /home/brandon/dev/agent-ledger-LED-2/Cargo.toml"
-                        " > /tmp/review-gate.log 2>&1; echo exit=$?; tail -4 /tmp/review-gate.log")
-
-    def test_the_value_of_a_package_or_project_flag_does_not_scope_a_run(self):
-        for command in ("cargo test --manifest-path=/r/a/Cargo.toml",
-                        "cargo test --manifest-path /r/a/Cargo.toml --release",
-                        "cargo test -p core",
-                        "cargo test -p crates/core",
-                        "cargo test --package ledger-core --release",
-                        "cargo test --package crates/core",
-                        "cargo test --workspace",
-                        "cargo clippy --workspace -- -D warnings",
-                        "npx tsc --project packages/web/tsconfig.json",
-                        "npx tsc --project=packages/web/tsconfig.json --noEmit",
-                        "cargo test --manifest-path '/r/my app/Cargo.toml'"):
-            with self.subTest(command=command):
-                self.assert_full(command)
-
-    def test_each_checker_ignores_the_value_of_the_flags_that_name_its_package_or_project(self):
-        for command in ("pytest -p plugins/x",
-                        "go vet -p pkg/x",
-                        "mypy -p ledger/core",
-                        "pyright -p packages/web",
-                        "npx tsc -p packages/web",
-                        "npx vitest --project packages/web",
-                        "dotnet test --project src/App"):
-            with self.subTest(command=command):
-                self.assert_full(command)
-
-    def test_a_test_name_filter_or_a_trailing_test_target_still_scopes_a_run(self):
-        for command in ("pytest -k login",
-                        "pytest -p xdist tests/a.py",
-                        "pytest -p xdist -k login",
-                        "npx jest --grep slow",
-                        "go test -run TestX ./...",
-                        "cargo test --manifest-path /r/a/Cargo.toml tests/foo.rs",
-                        "cargo test --manifest-path /r/a/Cargo.toml -- --exact parser::tests::empty",
-                        "cargo test -p core parser::tests",
-                        "cargo test --package core -- --exact a::b",
-                        "npm test --workspace packages/web"):
-            with self.subTest(command=command):
-                self.assert_scoped(command)
-
-    def test_a_flag_that_names_a_package_for_one_checker_can_name_a_test_file_for_another(self):
-        for command in ("bats -p test/login.bats",
-                        "rspec -p spec/models/user_spec.rb",
-                        "bundle exec rspec -p spec/models/user_spec.rb",
-                        "cargo test --project foo/bar",
-                        "pytest --project a/b",
-                        "npx vitest -p a/b"):
-            with self.subTest(command=command):
-                self.assert_scoped(command)
-
-    def test_a_flag_value_in_one_command_does_not_hide_a_scope_in_the_next(self):
-        self.assert_scoped("cargo test -p core && cargo test tests/foo.rs")
-
-    def test_a_flag_at_the_end_of_its_command_takes_no_value_from_the_next_one(self):
-        self.assert_scoped("cargo test -p; pytest tests/a.py")
-
-    def test_a_full_check_script_call_counts_unless_its_command_is_scoped(self):
-        call = "python3 ~/.claude/scripts/review/full_check.py /r/app --log /tmp/review-gate-feat.log -- "
-
-        self.assert_full(call + "'npm test'")
-        self.assert_full(call + "make check")
-        self.assert_scoped(call + "'pytest tests/test_a.py'")
-        self.assert_scoped(call + "npx jest src/a.test.ts")
 
 
 def indented(report):
@@ -569,8 +529,7 @@ class RunRowTest(unittest.TestCase):
         return fake_ledger.recorded_rows(self.env, "review_run")
 
     def loop(self, *steps):
-        return [user("review loop\nlane: code\nphase: 2")] + [rec for step in steps for rec in step] + [
-            bash("npm test > /tmp/review-gate.log 2>&1")]
+        return [user("review loop\nlane: code\nphase: 2")] + [rec for step in steps for rec in step] + full_check_run()
 
     def test_foreground_reports_each_write_a_row_with_their_own_count(self):
         records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", indented(SMELL_REPORT))],
@@ -586,7 +545,7 @@ class RunRowTest(unittest.TestCase):
 
     def test_a_fix_loop_dispatched_from_a_test_audit_writes_its_run_rows_under_the_test_audit_lane(self):
         records = [user("review loop\nlane: test-audit"), dispatch("t_code", "code-reviewer"),
-                   result("t_code", indented(CODE_REPORT)), bash("npm test > /tmp/review-gate.log 2>&1")]
+                   result("t_code", indented(CODE_REPORT)), *full_check_run()]
         self.assertEqual(self.stop(records), "")
 
         (code,) = self.rows()
@@ -698,7 +657,7 @@ class RunRowTest(unittest.TestCase):
     def test_a_review_of_a_worktree_outside_the_cwd_logs_that_worktrees_repo_and_branch(self):
         worktree = self.reviewed_worktree()
         review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT)),
-                  bash("npm test > /tmp/review-gate.log 2>&1")]
+                  *full_check_run()]
         scope_call = [bash(f"~/.claude/skills/review/review-scope caller=review root={worktree}", "t_scope"),
                       result("t_scope", f"ROOT={worktree}\nMODE=worktree\n")]
         cases = {"the review-scope ROOT= line": ([user("review loop\nlane: code")], scope_call),
@@ -716,7 +675,7 @@ class RunRowTest(unittest.TestCase):
 
     def test_a_prompt_repo_that_does_not_exist_writes_the_row_quietly(self):
         review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT)),
-                  bash("npm test > /tmp/review-gate.log 2>&1")]
+                  *full_check_run()]
         missing = os.path.join(self.tmp.name, "no-such-repo")
 
         self.assertEqual(self.stop([user(f"review loop\nlane: code\nrepo: {missing}"), *review]), "")
@@ -733,7 +692,7 @@ class RunRowTest(unittest.TestCase):
         scope_call = [bash(f"~/.claude/skills/review/review-scope caller=review root={worktree}", "t_scope"),
                       result("t_scope", f"ROOT={worktree}\nMODE=worktree\n")]
         review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT)),
-                  bash("npm test > /tmp/review-gate.log 2>&1")]
+                  *full_check_run()]
 
         self.assertEqual(self.stop([user(f"review loop\nlane: code\nrepo: {other_repo}"), *scope_call, *review]), "")
 
@@ -788,7 +747,7 @@ class RunRowTest(unittest.TestCase):
     def test_a_blocked_stop_writes_nothing(self):
         records = [user("review loop"), dispatch("t_coder", "coder"), result("t_coder", "done"),
                    dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]
-        self.assertIn("No full check ran", json.loads(self.stop(records))["reason"])
+        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
         self.assertEqual([], self.rows())
 
     def test_a_report_that_cannot_be_counted_still_writes_its_row_with_null(self):
@@ -811,56 +770,23 @@ class RunRowTest(unittest.TestCase):
         self.stop(self.loop([dispatch(tool_use_id, gate), result(tool_use_id, indented(report))]))
         return self.rows()[-1]["n_findings"]
 
-    def test_lines_inside_code_fences_are_not_findings_or_headings(self):
-        report = """## Code Review Summary
+    def test_findings_are_counted_by_section_shape_not_by_lines_that_look_like_findings(self):
+        header = "## Code Review Summary\n\n**Overall Assessment**: NEEDS CHANGES\n\n"
+        cases = {
+            "lines inside code fences are not findings or headings": (
+                header + "### Fix\n- a.py:1 — real\n```\n- b.py:2 — quoted in a fence\n### Ask\n```\n"
+                "- c.py:3 — also real\n\n### Ask\nNone.", "2"),
+            "a deeper heading stays inside the findings section": (
+                header + "### Fix\n#### Correctness\n- a.py:1 — one\n#### Tests\n- b.py:2 — two", "2"),
+            "bold and plural section headings are findings sections": (
+                header + "### **Fix**\n- a.py:1 — one\n\n### Fixes\n- b.py:2 — two", "2"),
+            "a none marker counts only when it is the whole line": (
+                header + "### Ask\nNone of the above is a blocker, but this is:\n- a.py:1 — real", "1"),
+        }
 
-**Overall Assessment**: NEEDS CHANGES
-
-### Fix
-- a.py:1 — real
-```
-- b.py:2 — quoted in a fence
-### Ask
-```
-- c.py:3 — also real
-
-### Ask
-None."""
-        self.assertEqual("2", self.counted(report))
-
-    def test_a_deeper_heading_stays_inside_the_findings_section(self):
-        report = """## Code Review Summary
-
-**Overall Assessment**: NEEDS CHANGES
-
-### Fix
-#### Correctness
-- a.py:1 — one
-#### Tests
-- b.py:2 — two"""
-        self.assertEqual("2", self.counted(report))
-
-    def test_bold_and_plural_section_headings_are_findings_sections(self):
-        report = """## Code Review Summary
-
-**Overall Assessment**: NEEDS CHANGES
-
-### **Fix**
-- a.py:1 — one
-
-### Fixes
-- b.py:2 — two"""
-        self.assertEqual("2", self.counted(report))
-
-    def test_a_none_marker_counts_only_when_it_is_the_whole_line(self):
-        report = """## Code Review Summary
-
-**Overall Assessment**: NEEDS CHANGES
-
-### Ask
-None of the above is a blocker, but this is:
-- a.py:1 — real"""
-        self.assertEqual("1", self.counted(report))
+        for name, (report, expected) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(expected, self.counted(report))
 
     def test_zero_entries_under_a_failing_assessment_is_uncounted(self):
         needs = "## Code Review Summary\n\n**Overall Assessment**: NEEDS CHANGES\n\n### Fix\nNone.\n\n### Nit\n- a nit"
@@ -1062,9 +988,9 @@ FINDING_ROW = ("~/.claude/skills/review/log-review-finding kind=finding lane=cod
 METRICS_ROW = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=1 ask=0 nit=0 fixed=1 result=PASS"
 
 
-class LedgerRowsTest(ReviewLoopGateTest):
+class LedgerRowsTest(StopHookMixin, unittest.TestCase):
     def loop(self, *rows, plan="spec.md"):
-        return [user(f"review loop\nlane: code\nplan: {plan}"), bash("npm test > /tmp/review-gate.log 2>&1"),
+        return [user(f"review loop\nlane: code\nplan: {plan}"), *full_check_run(),
                 *[bash(row) for row in rows]]
 
     def stop_with_packet(self, records, touched="spec.md"):
@@ -1086,7 +1012,7 @@ class LedgerRowsTest(ReviewLoopGateTest):
     def test_a_metrics_line_logged_before_the_last_reviewer_round_is_blocked(self):
         records = [user("review loop\nlane: code\nplan: other.md"), bash(METRICS_ROW),
                    dispatch("t_verify", "code-reviewer"), result("t_verify", "ok"),
-                   bash("npm test > /tmp/review-gate.log 2>&1"), bash(FINDING_ROW)]
+                   *full_check_run(), bash(FINDING_ROW)]
 
         reason = json.loads(self.stop_with_packet(records, "b.py"))["reason"]
 
@@ -1176,14 +1102,14 @@ class LedgerRowsTest(ReviewLoopGateTest):
         reason = json.loads(self.stop(blocked, last_assistant_message=packet))["reason"]
         self.assertIn("1 nit(s) but only 0 `disposition=nit` row(s)", reason)
 
-        logged = [user("review loop\nlane: code\nplan: other.md"), bash("npm test > /tmp/review-gate.log 2>&1"),
+        logged = [user("review loop\nlane: code\nplan: other.md"), *full_check_run(),
                   bash(FINDING_ROW, "t_fix"), bash(nit_row, "t_nit"), bash(METRICS_ROW, "t_metrics")]
         self.assertEqual(self.stop(logged, last_assistant_message=packet), "")
 
     def test_a_nit_row_whose_disposition_is_a_shell_variable_leaves_the_nit_count_unclaimed(self):
         packet = (PACKET % "b.py").replace("nit: []", 'nit: ["b.py:4 rename x - applied"]')
         variable_row = FINDING_ROW.replace("disposition=fix", "disposition=$D")
-        records = [user("review loop\nlane: code\nplan: other.md"), bash("npm test > /tmp/review-gate.log 2>&1"),
+        records = [user("review loop\nlane: code\nplan: other.md"), *full_check_run(),
                    bash(FINDING_ROW, "t_fix"), bash(variable_row, "t_variable"), bash(METRICS_ROW, "t_metrics")]
 
         self.assertEqual(self.stop(records, last_assistant_message=packet), "")

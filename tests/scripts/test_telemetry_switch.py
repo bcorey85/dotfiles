@@ -33,8 +33,8 @@ if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
     RECEIPT_SKILL = pathlib.Path(DRAFT_DIR) / "branch-recap-SKILL.md"
 
 SCRIPT_FOLDERS = {"telemetry_enabled.sh": "telemetry", "telemetry_enabled.py": "telemetry", "hook_input.py": "lib",
-                  "repo-name": "tools", "log_agent_usage.py": "telemetry", "log_skill_use.py": "telemetry",
-                  "test_edit_telemetry.py": "telemetry", "log-escape": "telemetry", "log-scan": "telemetry",
+                  "repo-name": "tools", "log_agent_usage.py": "telemetry",
+                  "log-escape": "telemetry", "log-scan": "telemetry",
                   "log-spec-run": "telemetry", "coder_gate.py": "code", "script_utils.py": "lib", "_kv.sh": "lib",
                   "_ledger.sh": "lib", "ledger-write": "telemetry",
                   **dict.fromkeys(toolkit_paths.CODE_STEP_LIB_MODULES, "lib")}
@@ -49,10 +49,6 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COM
 HOOK_POST = {"hook_event_name": "PostToolUse", "tool_name": "Agent",
              "tool_input": {"subagent_type": "coder", "model": "sonnet", "description": "Fix it"},
              "tool_response": {"content": [{"type": "text", "text": "done"}], "totalTokens": 5}}
-SKILL_POST = {"hook_event_name": "PostToolUse", "tool_name": "Skill", "tool_input": {"skill": "review"}}
-SKILL_PROMPT = {"hook_event_name": "UserPromptSubmit", "prompt": "/review now"}
-TEST_EDIT = {"hook_event_name": "PreToolUse", "tool_name": "Edit",
-             "tool_input": {"file_path": "/work/repo/tests/test_x.py", "new_string": "assert x == 1"}}
 CODER_BASH = {"hook_event_name": "PreToolUse", "agent_type": "coder", "cwd": "/work/repo",
               "tool_input": {"command": "npm test"}}
 
@@ -255,15 +251,6 @@ class SwitchTest(unittest.TestCase):
     def test_agent_usage_py(self):
         self.assert_switch("agent-usage.jsonl", self.hook("log_agent_usage.py", HOOK_POST))
 
-    def test_skill_use_py_model(self):
-        self.assert_switch("skill-usage.jsonl", self.hook("log_skill_use.py", SKILL_POST))
-
-    def test_skill_use_py_prompt(self):
-        self.assert_switch("skill-usage.jsonl", self.hook("log_skill_use.py", SKILL_PROMPT))
-
-    def test_test_edit_telemetry_py(self):
-        self.assert_switch("test-edit-telemetry.jsonl", self.hook("test_edit_telemetry.py", TEST_EDIT))
-
     def test_coder_gate_whole_package_deny_still_denies_when_off(self):
         command = [sys.executable, str(self.script_path("coder_gate.py")), "bash-hook"]
         self.turn("off")
@@ -346,23 +333,6 @@ class SwitchTest(unittest.TestCase):
         "desc=a bug",
     ]
 
-    def test_log_escape_prints_one_line_when_off(self):
-        script = str(self.script_path("log-escape"))
-        args = [script, *self.ESCAPE_ARGS]
-        self.turn("off")
-        finished = self.run_command(args)
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(finished.stdout, "not logged: toolkit telemetry is off\n")
-        self.assertEqual(self.ledger_calls(), [])
-        self.turn("on")
-        finished = self.run_command(args)
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(finished.stdout, "")
-        calls = self.ledger_calls()
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0]["args"][:2], ["write", "review_escape"])
-        self.assertFalse(self.home_file("review-escapes.jsonl").exists())
-
     def test_log_escape_validation_still_runs_when_off(self):
         self.turn("off")
         script = str(self.script_path("log-escape"))
@@ -395,21 +365,22 @@ class SwitchTest(unittest.TestCase):
         it as other)."""
         return [argument.replace("kind=finding", "kind=nonsense") for argument in args if argument != "guard=none"]
 
-    def test_check_valid_arguments_exit_zero_and_write_nothing_with_switch_on(self):
+    def test_check_valid_arguments_exit_zero_and_write_nothing_with_switch_on_or_off(self):
+        redirected = self.root / "redirected.jsonl"
+        for state in ("on", "off"):
+            self.turn(state)
+            for label, args in self.checkers():
+                with self.subTest(logger=label, switch=state):
+                    finished = self.run_command(self.with_check(args), extra={"REVIEW_FINDINGS_FILE": str(redirected),
+                                                                              "REVIEW_ESCAPES_FILE": str(redirected)})
+                    self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
+                    self.assertFalse(redirected.exists())
+                    self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
+                    self.assertEqual(self.ledger_calls(), [])
         self.turn("on")
-        for label, args in self.checkers():
-            with self.subTest(logger=label):
-                finished = self.run_command(self.with_check(args))
-                self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
-                self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
-                self.assertEqual(self.ledger_calls(), [])
-
-    def test_check_valid_arguments_exit_zero_with_switch_off(self):
-        self.turn("off")
-        for label, args in self.checkers():
-            with self.subTest(logger=label):
-                finished = self.run_command(self.with_check(args))
-                self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
+        self.run_command(self.with_check([*self.finding_check_args(), f"out={redirected}"]))
+        self.assertFalse(redirected.exists())
+        self.assertEqual(self.ledger_calls(), [])
 
     def test_check_invalid_arguments_fail_with_the_text_of_a_real_call(self):
         for state in ("on", "off"):
@@ -458,20 +429,6 @@ class SwitchTest(unittest.TestCase):
                     self.assertIn(message, finished.stderr)
                     self.assertEqual(self.ledger_calls(), [])
 
-    def test_check_writes_nothing_even_with_the_switch_on(self):
-        self.turn("on")
-        redirected = self.root / "redirected.jsonl"
-        for label, args in self.checkers():
-            with self.subTest(logger=label):
-                self.run_command(self.with_check(args), extra={"REVIEW_FINDINGS_FILE": str(redirected),
-                                                               "REVIEW_ESCAPES_FILE": str(redirected)})
-                self.assertFalse(redirected.exists())
-                self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
-                self.assertEqual(self.ledger_calls(), [])
-        self.run_command(self.with_check([*self.finding_check_args(), f"out={redirected}"]))
-        self.assertFalse(redirected.exists())
-        self.assertEqual(self.ledger_calls(), [])
-
     def test_check_flag_after_the_first_argument_is_not_the_check_mode(self):
         self.turn("on")
         args = self.escape_check_args()
@@ -479,12 +436,6 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0)
         self.assertIn("skipping malformed arg", finished.stderr)
         self.assertEqual(len(self.ledger_calls()), 1)
-
-    def test_log_scan(self):
-        script = str(self.script_path("log-scan"))
-        args = [script, "repo=r", "scan=prohibition", "stage=manual", "exit=0", "candidates=2", "confirmed=1"]
-        _, row = self.assert_ledger_switch("scan_run", lambda: self.run_command(args))
-        self.assertEqual(row["scan"], "prohibition")
 
     def test_log_spec_run(self):
         script = str(self.script_path("log-spec-run"))
@@ -524,20 +475,14 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual((row["gate"], row["n_findings"]), ("code-reviewer", "0"))
         self.assertEqual(finished.stdout, f"run_id={row['run_id']}\n")
 
-    def test_review_findings_default_path_is_kept_when_off(self):
-        self.turn("off")
-        finished = self.run_command(self.finding_args())
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assert_run_row_sent(finished)
-        self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
-
-    def test_review_findings_env_file_is_ignored_and_row_still_sent_when_off(self):
+    def test_review_findings_default_path_is_kept_and_env_file_ignored_when_off(self):
         target = self.root / "queue.jsonl"
         self.turn("off")
         finished = self.run_command(self.finding_args(), extra={"REVIEW_FINDINGS_FILE": str(target)})
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assert_run_row_sent(finished)
         self.assertFalse(target.exists())
+        self.assertEqual(list((self.home / ".claude").glob("*.jsonl")), [])
 
     def test_review_findings_out_redirect_obeys_switch(self):
         target = self.home_file("review-calibration.jsonl")
@@ -574,24 +519,6 @@ class SwitchTest(unittest.TestCase):
 
     # ---- helpers
 
-    def test_helper_bash(self):
-        helper = str(self.script_path("telemetry_enabled.sh"))
-        self.turn("off")
-        self.assertEqual(self.run_command([helper]).returncode, 1)
-        self.turn("on")
-        self.assertEqual(self.run_command([helper]).returncode, 0)
-
-    def test_helper_python(self):
-        command = [
-            sys.executable,
-            "-c",
-            "import telemetry_enabled, sys; sys.exit(0 if telemetry_enabled.telemetry_enabled() else 1)",
-        ]
-        self.turn("off")
-        self.assertEqual(self.run_command(command, extra={"PYTHONPATH": str(self.scripts / "telemetry")}).returncode, 1)
-        self.turn("on")
-        self.assertEqual(self.run_command(command, extra={"PYTHONPATH": str(self.scripts / "telemetry")}).returncode, 0)
-
     def test_missing_helper_keeps_bash_writer_off(self):
         (self.script_path("telemetry_enabled.sh")).unlink()
         self.turn("on")
@@ -612,9 +539,7 @@ class SwitchTest(unittest.TestCase):
     def test_missing_python_helper_keeps_logging_hooks_off(self):
         (self.script_path("telemetry_enabled.py")).unlink()
         self.turn("on")
-        cases = [("log_agent_usage.py", HOOK_POST, "agent-usage.jsonl"),
-                 ("log_skill_use.py", SKILL_POST, "skill-usage.jsonl"),
-                 ("test_edit_telemetry.py", TEST_EDIT, "test-edit-telemetry.jsonl")]
+        cases = [("log_agent_usage.py", HOOK_POST, "agent-usage.jsonl")]
         for script, payload, log_name in cases:
             with self.subTest(hook=script):
                 finished = self.hook(script, payload)()

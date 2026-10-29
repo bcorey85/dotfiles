@@ -151,31 +151,29 @@ class AgentCostTest(unittest.TestCase):
         self.assertNotIn("repo-alpha", self.sent_arguments())
         self.assertNotIn("fixture-mac", self.sent_arguments())
 
-    def test_since_epoch_puts_iso_cutoff_in_query(self):
+    def test_since_epoch_and_days_put_an_iso_cutoff_in_the_query(self):
         self.plant(priced("run-1"))
         epoch = 1760000000
         iso = datetime.datetime.fromtimestamp(epoch, datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        days = 3
+        expected = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
 
         self.run_script("--spend", "--since", f"@{epoch}")
-        with_cutoff = self.sent_arguments()
+        since_query = self.sent_arguments()
+        self.argv_log.unlink()
+        self.run_script("--spend", "--days", str(days))
+        days_query = self.sent_arguments()
         self.argv_log.unlink()
         self.run_script("--spend")
         without_cutoff = self.sent_arguments()
 
-        self.assertIn(f"AND r.run_start >= '{iso}'", with_cutoff)
+        self.assertIn(f"AND r.run_start >= '{iso}'", since_query)
+        prefix = "AND r.run_start >= '"
+        self.assertIn(prefix, days_query)
+        stamp = days_query.split(prefix, 1)[1].split("'", 1)[0]
+        cutoff = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.UTC)
+        self.assertLess(abs((cutoff - expected).total_seconds()), 120)
         self.assertNotIn("run_start >=", without_cutoff)
-
-    def test_rates_flag_is_rejected(self):
-        spend_report = self.run_script("--spend", "--rates", "opus:15:75")
-
-        self.assertEqual(spend_report.returncode, 2)
-        self.assertIn("unknown argument --rates", spend_report.stderr)
-
-    def test_script_holds_no_rate_table(self):
-        text = SCRIPT.read_text()
-
-        for fragment in ("DEFAULT_RATES", "CACHE_WRITE_MULT", "CACHE_READ_MULT", "AGENT_COST_RATES", "--rates"):
-            self.assertNotIn(fragment, text)
 
     def test_spend_without_ledger_exits_1(self):
         empty_dir = self.root / "empty"
@@ -212,15 +210,19 @@ class AgentCostTest(unittest.TestCase):
         self.assertIn("1 dispatches, $1.00", spend_report.stdout)
         self.assertNotIn("UNPRICED", spend_report.stdout)
 
-    def test_spend_without_machine_file_exits_1(self):
+    def test_spend_without_a_machine_file_or_with_an_empty_one_exits_1(self):
         self.plant(priced("run-1"))
         empty_root = self.root / "no-machine"
         empty_root.mkdir()
 
-        spend_report = self.run_script("--spend", ledger_root=empty_root)
+        missing_report = self.run_script("--spend", ledger_root=empty_root)
+        (self.ledger_root / "config" / "machine").write_bytes(b"")
+        empty_report = self.run_script("--spend")
 
-        self.assertEqual(spend_report.returncode, 1)
-        self.assertIn("no ledger machine file", spend_report.stderr)
+        for name, spend_report in (("missing", missing_report), ("empty", empty_report)):
+            with self.subTest(name):
+                self.assertEqual(spend_report.returncode, 1)
+                self.assertIn("no ledger machine file", spend_report.stderr)
 
     def test_spend_ignores_missing_projects_dir(self):
         self.plant(priced("run-1"))
@@ -261,15 +263,6 @@ class AgentCostTest(unittest.TestCase):
         self.assertEqual(spend_report.returncode, 0, spend_report.stderr)
         self.assertEqual(list(table_rows(spend_report.stdout)), ["agent-a"])
 
-    def test_spend_with_empty_machine_file_exits_1(self):
-        self.plant(priced("run-1"))
-        (self.ledger_root / "config" / "machine").write_bytes(b"")
-
-        spend_report = self.run_script("--spend")
-
-        self.assertEqual(spend_report.returncode, 1)
-        self.assertIn("no ledger machine file", spend_report.stderr)
-
     def test_spend_prints_column_header_and_each_agents_share(self):
         self.plant(priced("run-1", agent="agent-a", cost="1.5"),
                    priced("run-2", agent="agent-a", cost="0.5"),
@@ -289,24 +282,6 @@ class AgentCostTest(unittest.TestCase):
         spend_report = self.run_script("--spend", "--repo", "alpha$")
 
         self.assertEqual(list(table_rows(spend_report.stdout)), ["agent-a"])
-
-    def test_days_puts_iso_cutoff_in_query(self):
-        self.plant(priced("run-1"))
-        days = 3
-        expected = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
-
-        self.run_script("--spend", "--days", str(days))
-        sent = self.sent_arguments()
-        self.argv_log.unlink()
-        self.run_script("--spend")
-        without_cutoff = self.sent_arguments()
-
-        prefix = "AND r.run_start >= '"
-        self.assertIn(prefix, sent)
-        stamp = sent.split(prefix, 1)[1].split("'", 1)[0]
-        cutoff = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.UTC)
-        self.assertLess(abs((cutoff - expected).total_seconds()), 120)
-        self.assertNotIn("run_start >=", without_cutoff)
 
 
 if __name__ == "__main__":

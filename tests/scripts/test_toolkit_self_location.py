@@ -46,7 +46,6 @@ DATA_FILE = "data file under the home folder"
 LEDGER_DIR = "makes the folder that holds the ledger files"
 ALLOWED_HITS = [
     ("scripts/code/code_step_core.py", "INSTALLED_COMMAND = ", PRINTED),
-    ("scripts/code/code_step_core.py", "RESUME_LINE = ", PRINTED),
     ("scripts/code/code_step_review.py", "SUMMARY_LINES in ~/.claude/scripts/lib/test_run_output.py", PRINTED),
     ("scripts/gates/calibration_refs_guard.py", "calibration_path = ", LIVE_AGENTS),
     ("scripts/gates/calibration_refs_guard.py", "agents_dir = ", LIVE_AGENTS),
@@ -63,7 +62,6 @@ ALLOWED_HITS = [
     ("scripts/telemetry/log-escape", "Run the ratchet (", PRINTED),
     ("scripts/telemetry/log-escape-check", 'mkdir -p "$HOME/.claude"', LEDGER_DIR),
     ("scripts/telemetry/log_agent_usage.py", "os.path.join(os.environ.get", DATA_FILE + ", name on the next line"),
-    ("scripts/telemetry/log_skill_use.py", "os.path.join(os.environ.get", DATA_FILE + ", name on the next line"),
     ("scripts/tools/claude-doctor.sh", "CLAUDE.md is newer than opencode", PRINTED),
     ("scripts/tools/claude-doctor.sh", "shellcheck reported issues", PRINTED),
     ("scripts/tools/rule-anchors.sh", 'rel="${rel#"$HOME"/.claude/}"', "strips the home prefix to print a path"),

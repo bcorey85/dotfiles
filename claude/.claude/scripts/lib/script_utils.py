@@ -117,6 +117,13 @@ def heading_section_indexes(lines, heading_text):
     return indexes
 
 
+def top_level_sections(lines):
+    """0-based indexes of the lines that start a `## ` section, in order. A `## ` line inside a fenced code block is
+    not a heading."""
+    fenced = fenced_line_indexes(lines)
+    return [index for index, line in enumerate(lines) if line.startswith("## ") and index not in fenced]
+
+
 def _comparable_line(line):
     return CHECKBOX.sub("[ ]", " ".join(line.split()))
 
@@ -196,9 +203,22 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+def git_path(cwd, name):
+    """The absolute path git keeps `name` at for the repo of cwd (inside its git dir), or None when git cannot say."""
+    found = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", name)
+    if found is None:
+        return None
+    return pathlib.Path(found)
+
+
 def text_before_marker(text, marker):
     # The text up to the first marker, or all of it when the marker is absent.
     return text.split(marker, 1)[0]
+
+
+def details_with_outcome(outcomes, outcome):
+    # {key: detail} for each entry of an {key: {"outcome": ..., "detail": ...}} map that has this outcome, in map order.
+    return {key: entry["detail"] for key, entry in outcomes.items() if entry["outcome"] == outcome}
 
 
 def run_command(command, cwd=None, stdin=None, timeout=None):
@@ -508,18 +528,6 @@ def pop_repeated_option(arguments, flag):
     return rest, values
 
 
-def strip_flag_values(command, flags):
-    """`command` with every `flag value` and `flag=value` pair of the named flags replaced by one space. A flag
-    matches as a whole word. Its value is the next word, or the next quoted text, unless that word starts with a dash:
-    a flag followed by another flag, or by nothing, is left as it is."""
-    if not flags:
-        return command
-    names = "|".join(re.escape(flag) for flag in sorted(flags, key=len, reverse=True))
-    quoted_or_word = r"""(?:"[^"]*"|'[^']*'|\S+)"""
-    pair = re.compile(rf"(?<!\S)(?:{names})(?:={quoted_or_word}?|\s+(?!-){quoted_or_word})")
-    return pair.sub(" ", command)
-
-
 def leading_env_assignments(command_lines):
     """The `NAME=value` words that the command lines start with, as written (quotes kept), one per variable name: the
     first line to set a name decides its value. Order is first seen. A line that is only an assignment, with no command
@@ -559,13 +567,18 @@ def pre_tool_use_deny(reason):
                                              "permissionDecisionReason": reason}}))
 
 
+def subagent_transcript_path(session_transcript, agent_id):
+    """Where Claude Code keeps the transcript of a subagent of the session: `<session transcript without
+    .jsonl>/subagents/agent-<id>.jsonl`."""
+    return os.path.join(os.path.splitext(session_transcript)[0], "subagents", f"agent-{agent_id}.jsonl")
+
+
 def agent_transcript_path(hook):
     """The calling subagent's transcript: the path the hook event names, else the one under the session transcript."""
     named = hook.get("agent_transcript_path")
     if named:
         return named
-    session_transcript = hook["transcript_path"]
-    return os.path.join(session_transcript[:-len(".jsonl")], "subagents", f"agent-{hook['agent_id']}.jsonl")
+    return subagent_transcript_path(hook["transcript_path"], hook["agent_id"])
 
 
 def telemetry_switch_on():

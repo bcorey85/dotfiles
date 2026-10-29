@@ -11,7 +11,13 @@ import plan_format
 import script_utils
 from code_step_core import TICKET_ID, script_command
 
+# Every flag `start` reads besides --help. --task makes the rest of the words task text; a value
+# flag takes the next word as its value.
+TASK_FLAG = "--task"
+VALUE_FLAGS = ("--task-file", "--phase", "--repo")
+SWITCH_FLAGS = ("--restart", "--headless", "--coder-stopped")
 START_MODIFIERS = ("+fast", "+deep")
+START_FLAGS = (TASK_FLAG, *VALUE_FLAGS, *SWITCH_FLAGS, *START_MODIFIERS)
 
 
 def looks_like_plan_argument(word):
@@ -43,9 +49,9 @@ def flag_words_end(args):
     position = 0
     while position < len(args):
         word = args[position]
-        if word == "--task":
+        if word == TASK_FLAG:
             return position
-        if word in ("--task-file", "--phase", "--repo"):
+        if word in VALUE_FLAGS:
             position += 2
             continue
         if starts_task_text(word):
@@ -79,14 +85,13 @@ def read_task_file(args, flag_position):
     return task_text
 
 
-LEADING_FLAG_WORDS = ("--task", "--phase", "--repo", "--restart", "--coder-stopped", "+fast", "+deep")
 TASK_FILE_REPO_LINE = re.compile(r"^Repo(?: root)?:[ \t]*(\S.*?)[ \t]*$")
 
 
 def split_quoted_flags(args):
     # The args /code receives as one string, `--task "<text>"` or `+deep --task <text>`, as the words the shell would
     # have given. Any other args come back as they were.
-    if len(args) != 1 or not args[0].startswith(LEADING_FLAG_WORDS) or not script_utils.has_whitespace(args[0]):
+    if len(args) != 1 or not args[0].startswith(START_FLAGS) or not script_utils.has_whitespace(args[0]):
         return args
 
     try:

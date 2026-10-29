@@ -5,12 +5,18 @@ The fixtures are those of test_code_step.py; its own tests run there, not here.
 
 run: python3 -m unittest test_code_step_start_input
 """
+import pathlib
 import shlex
 import shutil
+import tempfile
 import time
 import unittest
 
 import test_code_step as base
+
+# isort: split
+import code_step_start
+import code_step_start_args
 
 HOOK_SENSITIVE_TASK = "decide: wrap `sudo -u deploy` and a '-c' flag; each case's new rule stays \"quoted\""
 COMPOUND_LINE = "- [ ] **Check**: totals - `TMP=$(mktemp -d) && npx vitest run \"$TMP\"`"
@@ -105,15 +111,6 @@ class StartInputTest(base.CodeStepTest):
         self.assertIn("AGENT: coder", out)
         self.assertIn("Run notes from the user.", out)
         self.assertIn("only touch totals; no console.log", out)
-        self.assertEqual("2", self.state()["phase"])
-
-    def test_text_after_a_plan_and_the_words_phase_and_an_id_reaches_the_coder_as_run_notes(self):
-        self.finish_phase_one()
-
-        out = self.step("start", self.plan, "Phase", "2", "only", "touch", "totals")
-
-        self.assertIn("AGENT: coder", out)
-        self.assertIn("only touch totals", out)
         self.assertEqual("2", self.state()["phase"])
 
     def test_a_phase_run_with_no_trailing_text_has_no_run_notes_in_the_brief(self):
@@ -266,15 +263,6 @@ class StartInputTest(base.CodeStepTest):
         self.assertEqual("2", self.state()["phase"])
         self.assertEqual(self.plan, self.state()["plan"])
 
-    def test_restart_with_a_phase_and_notes_and_no_plan_path_restarts_that_phase_with_the_notes(self):
-        self.coder_round()
-
-        out = self.step("start", "--phase", "1", "--restart", "keep", "it", "short")
-
-        self.assertIn("AGENT: coder", out)
-        self.assertIn("keep it short", out)
-        self.assertEqual("1", self.state()["phase"])
-
     # ---------- --repo ----------
 
     def other_repo(self):
@@ -423,10 +411,76 @@ class StartInputTest(base.CodeStepTest):
         self.assertNotIn(SHELL_WRAPPER, out)
 
 
+class StartArgsTest(unittest.TestCase):
+    """The phase id, plan and run notes that the start arguments read as, before any run state is touched."""
+
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.plan = str(pathlib.Path(temp_dir.name) / "spec.md")
+        pathlib.Path(self.plan).write_text("## Phase 1: First\n")
+
+    def parse(self, args, saved_plan=None):
+        args = code_step_start_args.split_quoted_flags(args)
+        args = code_step_start.phase_words_as_flag(args)
+        parsed = code_step_start.parse_start_args(args)
+        return code_step_start_args.carry_run_notes(parsed, saved_plan)
+
+    def test_the_phase_id_the_plan_and_the_run_notes_are_read_from_the_arguments(self):
+        plan = self.plan
+        cases = [
+            ("plan then --phase then notes", [plan, "--phase", "2", "only", "touch", "totals; no console.log"],
+             None, [plan], "2", "only touch totals; no console.log", False),
+            ("plan then the words Phase and an id then notes", [plan, "Phase", "2", "only", "touch", "totals"],
+             None, [plan], "2", "only touch totals", False),
+            ("plan then the words Phase and an id", [plan, "Phase", "2"], None, [plan], "2", None, False),
+            ("plan and a bare id in one quoted argument", [f"{plan} 2"], None, [plan], "2", None, False),
+            ("--phase and notes with no plan takes the saved plan", ["--phase", "2", "only", "touch", "totals"],
+             plan, [plan], "2", "only touch totals", False),
+            ("--restart then --phase then notes", ["--restart", "--phase", "2", "split", "it", "by", "file"],
+             plan, [plan], "2", "split it by file", True),
+            ("--phase then --restart then notes", ["--phase", "1", "--restart", "keep", "it", "short"],
+             plan, [plan], "1", "keep it short", True),
+            ("flags, phase id and notes in one quoted argument", ["--restart --phase 2 split it by file"],
+             plan, [plan], "2", "split it by file", True),
+        ]
+        for label, args, saved_plan, plan_args, phase_id, run_notes, restart in cases:
+            with self.subTest(label):
+                parsed = self.parse(args, saved_plan)
+
+                self.assertEqual(plan_args, parsed.plan_args)
+                self.assertEqual(phase_id, parsed.phase_id)
+                self.assertEqual(run_notes, parsed.run_notes)
+                self.assertEqual(restart, parsed.restart)
+                self.assertIsNone(parsed.task_text)
+
+    def test_each_switch_and_task_file_in_one_quoted_argument_splits_into_its_words(self):
+        cases = [
+            ("--headless first", ["--headless --task fix the totals"], "headless"),
+            ("--coder-stopped first", ["--coder-stopped --task fix the totals"], "coder_stopped"),
+            ("--restart first", ["--restart --task fix the totals"], "restart"),
+        ]
+        for label, args, switch in cases:
+            with self.subTest(label):
+                parsed = self.parse(args)
+
+                self.assertEqual("fix the totals", parsed.task_text)
+                self.assertTrue(getattr(parsed, switch))
+
+        task_file = pathlib.Path(self.plan).parent / "task.txt"
+        task_file.write_text("fix the totals\n")
+
+        parsed = self.parse([f"--task-file {task_file}"])
+
+        self.assertEqual("fix the totals\n", parsed.task_text)
+
+
 def load_tests(loader, tests, pattern):
     # The tests of CodeStepTest run in test_code_step.py: this file runs its own.
     own_names = [name for name in loader.getTestCaseNames(StartInputTest) if name in StartInputTest.__dict__]
-    return unittest.TestSuite(StartInputTest(name) for name in own_names)
+    own_tests = unittest.TestSuite(StartInputTest(name) for name in own_names)
+    own_tests.addTests(loader.loadTestsFromTestCase(StartArgsTest))
+    return own_tests
 
 
 if __name__ == "__main__":

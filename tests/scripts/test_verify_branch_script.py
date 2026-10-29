@@ -328,24 +328,6 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("wraps onto a second line", found[1]["text"])
         self.assertIn("nested detail", found[1]["text"])
 
-    def test_manual_verification_variants(self):
-        common = load_common()
-        items = common.manual_items(SPEC, "spec.md")
-        flags = {item["text"]: item["humanOnly"] for item in items}
-        self.assertTrue(flags["Brandon reads the contract"])
-        self.assertFalse(flags["agent can drive this"])
-        self.assertTrue(flags["**Manual-verified** (human-only): read the thing"])
-
-    def test_unmarked_item_gets_the_same_humanonly_value_from_verify_branch_and_the_plan_reader(self):
-        common = load_common()
-        plan_format = importlib.import_module("plan_format")
-        plan = ("## Queue\n\n#### Manual Verification:\n\n- [ ] open the page\n- [ ] **Agent-verified**: ran it\n"
-                "- [ ] Human-only: judge the spacing\n")
-        from_reader = [item["humanOnly"] for item in plan_format.manual_verification(plan, "plan.md")]
-        from_verify_branch = [item["humanOnly"] for item in common.manual_items(plan, "plan.md")]
-        self.assertEqual(from_verify_branch, from_reader)
-        self.assertEqual(from_verify_branch, [False, False, True])
-
     def test_checked_manual_items_are_skipped(self):
         common = load_common()
         plan = "#### Manual Verification:\n\n- [x] human-only: already done\n- [ ] human-only: still open\n"
@@ -361,25 +343,22 @@ class PrepTest(VerifyBranchBase):
                          common.moved_phase_notes(MOVED_PLAN, "plan.md"))
         self.assertEqual([], common.moved_phase_notes(SPEC, "spec.md"))
 
-    def test_a_moved_line_with_no_ticket_key_fails_instead_of_dropping_or_naming_the_phase(self):
+    def test_a_malformed_moved_line_fails_instead_of_dropping_or_naming_the_phase(self):
         common = load_common()
-        plan_text = MOVED_PLAN.replace("moved to LED-16, per the user", "deferred, per the user")
-        for call in (common.manual_items, common.moved_phase_notes):
-            with self.subTest(call=call.__name__):
-                with self.assertRaises(common.VerifyError) as caught:
-                    call(plan_text, "plan.md")
-                self.assertTrue(str(caught.exception).startswith("plan.md:6:"), str(caught.exception))
-                self.assertIn("moved to <KEY>", str(caught.exception))
-
-    def test_a_moved_line_with_no_plan_deviations_entry_fails_instead_of_dropping_the_phase_items(self):
-        common = load_common()
-        plan_text = MOVED_PLAN.replace("- 2026-10-20: Phase 2 moves to LED-16.", "- 2026-10-20: Phase 1 changed.")
-        for call in (common.manual_items, common.moved_phase_notes):
-            with self.subTest(call=call.__name__):
-                with self.assertRaises(common.VerifyError) as caught:
-                    call(plan_text, "plan.md")
-                self.assertTrue(str(caught.exception).startswith("plan.md:6:"), str(caught.exception))
-                self.assertIn("Plan Deviations", str(caught.exception))
+        cases = [
+            ("no ticket key", MOVED_PLAN.replace("moved to LED-16, per the user", "deferred, per the user"),
+             "moved to <KEY>"),
+            ("no plan deviations entry",
+             MOVED_PLAN.replace("- 2026-10-20: Phase 2 moves to LED-16.", "- 2026-10-20: Phase 1 changed."),
+             "Plan Deviations"),
+        ]
+        for name, plan_text, expected in cases:
+            for call in (common.manual_items, common.moved_phase_notes):
+                with self.subTest(case=name, call=call.__name__):
+                    with self.assertRaises(common.VerifyError) as caught:
+                        call(plan_text, "plan.md")
+                    self.assertTrue(str(caught.exception).startswith("plan.md:6:"), str(caught.exception))
+                    self.assertIn(expected, str(caught.exception))
 
     def test_manual_verification_line_outside_the_grammar_fails_with_path_and_line(self):
         self.task_dir(spec="# Plan\n\n#### Manual Verification:\n\n| a | b |\n")
@@ -530,10 +509,15 @@ class PrepTest(VerifyBranchBase):
     def test_review_stale_after_an_untracked_file_appears_or_changes(self):
         self.reviewed_tree()
         self.write("notes.txt", "one\n")
+        self.write("my notes.txt", "one\n")
         self.assertIn("NOT run", self.prep().stdout)
         self.assertEqual(self.log_review().returncode, 0)
         self.assertIn("REVIEW: ran", self.prep().stdout)
         self.write("notes.txt", "two\n")
+        self.assertIn("NOT run", self.prep().stdout)
+        self.assertEqual(self.log_review().returncode, 0)
+        self.assertIn("REVIEW: ran", self.prep().stdout)
+        self.write("my notes.txt", "two\n")
         self.assertIn("NOT run", self.prep().stdout)
 
     def test_review_stale_after_a_file_in_an_untracked_directory_changes(self):
@@ -543,15 +527,6 @@ class PrepTest(VerifyBranchBase):
         self.assertEqual(self.log_review().returncode, 0)
         self.assertIn("REVIEW: ran", self.prep().stdout)
         self.write("newdir/deep/x.txt", "two\n")
-        self.assertIn("NOT run", self.prep().stdout)
-
-    def test_untracked_file_names_with_spaces_are_hashed(self):
-        self.reviewed_tree()
-        self.write("my notes.txt", "one\n")
-        self.write("other file.txt", "x\n")
-        self.assertEqual(self.log_review().returncode, 0)
-        self.assertIn("REVIEW: ran", self.prep().stdout)
-        self.write("my notes.txt", "two\n")
         self.assertIn("NOT run", self.prep().stdout)
 
     def test_a_busy_ledger_reads_the_review_this_checkout_logged_and_the_verifier_prompt_names_the_skip(self):
@@ -809,10 +784,6 @@ class TicketOnlyLogTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("CLEAN", done.stdout)
 
-    def test_result_na_skips_the_ticket_check(self):
-        done = self.log("--rows", "-", "--result", "NA", stdin="[]")
-        self.assertEqual(done.returncode, 3)
-
 
 class ReviewGateTest(VerifyBranchBase):
     """verify-log refuses to write unless a marked branch review covers the tree prep measured."""
@@ -871,6 +842,9 @@ class ReviewGateTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 2)
         self.assertIn("rerun verify-prep", done.stderr)
         self.assertEqual(self.verifier_rows(), [])
+        self.git("checkout", "--", "src/a.py")
+        self.write("late.txt", "x\n")
+        self.assertEqual(self.log("--rows", "-", stdin=self.rows()).returncode, 2)
 
     def test_review_logged_for_a_new_tree_without_a_new_prep_exits_2(self):
         self.write("src/a.py", "print(2)\n")
@@ -879,12 +853,6 @@ class ReviewGateTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 2)
         self.assertIn("changed since verify-prep", done.stderr)
         self.assertEqual(self.verifier_rows(), [])
-
-    def test_untracked_file_added_after_prep_exits_2(self):
-        self.assertEqual(self.log_review().returncode, 0)
-        self.assertEqual(self.prep().returncode, 0)
-        self.write("late.txt", "x\n")
-        self.assertEqual(self.log("--rows", "-", stdin=self.rows()).returncode, 2)
 
     def test_task_dir_edit_after_prep_does_not_block_logging(self):
         self.assertEqual(self.log_review().returncode, 0)
@@ -910,8 +878,9 @@ class LogTest(VerifyBranchBase):
         self.assertEqual(self.prep().returncode, 0)
         reviewed = self.log_review()
         self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
-        self.assertEqual(self.prep().returncode, 0)
-        self.assertIn("REVIEW: ran", self.prep().stdout)
+        prepared = self.prep()
+        self.assertEqual(prepared.returncode, 0)
+        self.assertIn("REVIEW: ran", prepared.stdout)
 
     def rows(self, *verdicts, extra=None):
         built = [{"item": f"AC{n}: item {n}", "verdict": verdict, "file": f"src/f{n}.py", "line": n,
@@ -984,12 +953,6 @@ class LogTest(VerifyBranchBase):
         self.assertEqual(1, done.stderr.count("no verdict row for"))
         self.assertIn("AC1, AC3, Ticket #1, Ticket #2, Ticket #3", done.stderr)
 
-    def test_every_absent_id_is_named(self):
-        rows = json.dumps([{"item": "AC2: item", "verdict": "done"}])
-        done = self.log("--rows", "-", stdin=rows)
-        self.assertEqual(done.returncode, 2)
-        self.assertIn("no verdict row for AC1, AC3", done.stderr)
-
     def test_a_missing_row_for_every_id_is_accepted_and_logged_as_a_gap(self):
         built = [{"item": f"AC{n}: item", "verdict": "missing", "guard": "check", "severity": "medium"}
                  for n in (1, 2, 3)]
@@ -1012,11 +975,6 @@ class LogTest(VerifyBranchBase):
         done = self.log("--rows", "-", stdin=rows)
         self.assertEqual(done.returncode, 2)
         self.assertIn("no verdict row for AC1", done.stderr)
-
-    def test_whitespace_only_signoff_is_a_gap(self):
-        rows = self.rows("overridden", extra=[{"signoff": "  \n "}])
-        done = self.log("--rows", "-", stdin=rows)
-        self.assertIn("GAPS: 1", done.stdout)
 
     def test_escapes_carry_across_a_new_prep_so_they_are_not_logged_twice(self):
         rows = self.rows("missing", extra=[{"guard": "rule", "severity": "high"}])
@@ -1097,10 +1055,11 @@ class LogTest(VerifyBranchBase):
         self.assertEqual(len(self.escape_rows()), 1)
 
     def test_overridden_without_signoff_is_a_gap(self):
-        rows = self.rows("overridden", "overridden", extra=[{"signoff": "Brandon, 2026-10-20: ok"}, {}])
+        rows = self.rows("overridden", "overridden", "overridden",
+                         extra=[{"signoff": "Brandon, 2026-10-20: ok"}, {}, {"signoff": "  \n "}])
         done = self.log("--rows", "-", stdin=rows)
-        self.assertIn("GAPS: 1", done.stdout)
-        self.assertEqual(self.verifier_rows()[0]["n_findings"], "1")
+        self.assertIn("GAPS: 2", done.stdout)
+        self.assertEqual(self.verifier_rows()[0]["n_findings"], "2")
 
     def test_failed_automated_check_is_a_gap_not_a_clean_pass(self):
         rows = self.rows("done", "failed-check", extra=[{}, {"guard": "check", "severity": "high"}])

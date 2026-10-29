@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -783,7 +784,7 @@ class HookTest(HandbackTestBase):
         kind = {"Agent": "dispatch", "SubagentHandback": "handback"}[event["tool_name"]]
         return self.run_cli(["hook", *(arguments or [kind])], json.dumps(event))
 
-    def test_review_loop_dispatch_and_good_hand_back_are_stored_without_output(self):
+    def test_review_loop_dispatch_and_good_hand_back_are_stored_without_output_and_other_agents_are_not(self):
         self.assertEqual(self.fire(self.event("Agent"))[:2], (0, ""))
         reviewer = {"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": "a1",
                     "tool_input": {"subagent_type": "code-reviewer"}}
@@ -793,10 +794,9 @@ class HookTest(HandbackTestBase):
         self.assertEqual(seen["handback"]["status"], "converged")
         self.assertFalse(seen["pending"])
 
-    def test_other_agents_are_not_stored(self):
         self.fire(self.event("Agent", agent="coder"))
         self.fire(self.event("SubagentHandback", agent="coder"))
-        self.assertFalse(self.store.exists())
+        self.assertEqual(handback.latest(SESSION), seen)
 
     def test_bad_packet_is_denied_once_per_agent_then_stored_as_invalid(self):
         bad = self.event("SubagentHandback", message="status: pending")
@@ -943,6 +943,29 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertTrue(handback.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
+    def test_a_nit_fixed_at_the_cap_exit_commits_and_a_blocker_left_over_does_not(self):
+        self.two_rounds_ending_on_the_cap_exit_coder()
+        blocker_left = ("status: deferred\niter: 2\nfixed: []\n"
+                        "findings_remaining:\n- {finding: x, file_line: a.ts:1, blocker: yes}\n")
+        nit_fixed = ("status: converged\niter: 2\nfixed:\n- {finding: reword the error, file_line: a.ts:1, "
+                     "blocker: no}\nfindings_remaining: []\n")
+
+        self.assert_denied(self.hand_back(message=blocker_left))
+        self.assertEqual(self.hand_back(message=nit_fixed), (0, ""))
+
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_a_clean_status_with_a_failed_full_check_is_refused(self):
+        leftover = "findings_remaining:\n- {finding: x, file_line: a.ts:1, blocker: false}\n"
+        for status in handback.CLEAN_STATUSES:
+            for full_check in ("failed (3 tests)", "setup fault (exit 2)"):
+                with (
+                    self.subTest(status=status, full_check=full_check),
+                    self.assertRaisesRegex(handback.PacketError, "full_check is"),
+                ):
+                    handback.load(CONVERGED.replace("status: converged", f"status: {status}")
+                                  + leftover + f"full_check: {full_check}\n")
+
     def test_unreviewed_streak_counts_the_latest_flagged_hand_backs_and_a_reviewed_one_ends_it(self):
         self.dispatch("review-loop")
         self.dispatch("coder", "a1")
@@ -977,8 +1000,12 @@ def coder_step(tool_use_id):
 
 
 def full_check_run(tool_use_id):
-    return transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Bash",
-                            "input": {"command": "npm test > /tmp/review-gate.log 2>&1"}})
+    """A passed full_check.py call: one record holds the shell call and the result it printed."""
+    call = {"type": "tool_use", "id": tool_use_id, "name": "Bash",
+            "input": {"command": "python3 ~/.claude/scripts/review/full_check.py /r --log /tmp/gate.log -- 'npm test'"}}
+    printed = {"type": "tool_result", "tool_use_id": tool_use_id,
+               "content": [{"type": "text", "text": "full check: passed\nsummary: 3 passed"}]}
+    return {"type": "assistant", "message": {"role": "assistant", "content": [call, printed]}}
 
 
 def background_reviewer_launch(tool_use_id, agent_id):
@@ -1001,6 +1028,9 @@ class OneCheckedHandBackTest(HandbackTestBase):
     def setUp(self):
         super().setUp()
         self.transcript = self.tmp / "loop.jsonl"
+        self.dispatch_loop_agents()
+
+    def dispatch_loop_agents(self):
         for agent_type in ("review-loop", "coder", "code-reviewer"):
             self.dispatch(agent_type, None if agent_type == "review-loop" else "a1")
 
@@ -1020,19 +1050,20 @@ class OneCheckedHandBackTest(HandbackTestBase):
         rows = [json.loads(line) for line in lines]
         return [row for row in rows if row["kind"] == "handback"]
 
-    def test_a_clean_hand_back_with_a_code_change_after_the_last_full_check_is_denied(self):
-        out = self.hand_back([full_check_run("t1"), coder_step("t2")])
-        decision = json.loads(out)["hookSpecificOutput"]
-        self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn("Step 6 execution gate", decision["permissionDecisionReason"])
-        self.assertEqual(self.handback_rows(), [])
+    def test_a_clean_or_cap_reached_hand_back_with_a_code_change_after_the_last_full_check_is_denied(self):
+        cap_reached = "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n"
 
-    def test_a_cap_reached_hand_back_with_a_code_change_after_the_last_full_check_is_denied(self):
-        message = ("status: cap-reached\niter: 2\n"
-                   "findings_remaining:\n- {finding: x, file_line: a.ts:1}\n")
-        out = self.hand_back([full_check_run("t1"), coder_step("t2")], message=message)
-        self.assertIn("Step 6 execution gate", json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"])
-        self.assertEqual(self.handback_rows(), [])
+        for status, message in (("converged", CONVERGED), ("cap-reached", cap_reached)):
+            with self.subTest(status):
+                shutil.rmtree(self.store, ignore_errors=True)
+                self.dispatch_loop_agents()
+                steps = [full_check_run("t1"), coder_step("t2")]
+                out = self.hand_back(steps, message=message)
+
+                decision = json.loads(out)["hookSpecificOutput"]
+                self.assertEqual(decision["permissionDecision"], "deny")
+                self.assertIn("Step 6 execution gate", decision["permissionDecisionReason"])
+                self.assertEqual(self.handback_rows(), [])
 
     def test_a_plan_impact_hand_back_with_a_code_change_after_the_last_full_check_passes(self):
         message = "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n"

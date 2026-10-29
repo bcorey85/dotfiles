@@ -43,6 +43,10 @@ class CapReachedTest(base.CodeStepTest):
         self.assertIn("finding: the rounding stays open", prompt)
         self.assertIn("f - keep? (backend/src/orders.ts:2): rejected", prompt)
         self.assertIn("iter: 0", prompt)
+        self.assertNotIn("ask: ", prompt.split("carried-findings:", 1)[1].split("ruled-asks", 1)[0])
+        self.assertEqual(self.state()["iter"], 0)
+        [outcome_line] = self.finding_log_lines()
+        self.assertIn("iter=2", outcome_line)
 
         out = self.converge()
 
@@ -70,43 +74,42 @@ class CapReachedTest(base.CodeStepTest):
         self.assertIn("finding: the rounding stays open", prompt)
         self.assertIn("iter: 0", prompt)
 
-    def test_the_prompt_after_a_cap_with_an_ask_carries_no_ask_line_and_the_capped_round_logs_its_own_iter(self):
-        self.cap_round(CAP_WITH_ASK)
+    def test_a_docs_only_asks_coder_after_a_stop_with_an_ask_still_gets_one_more_review_with_the_carried_item(self):
+        stops = [
+            ("cap", CAP_WITH_ASK, "finding: the rounding stays open"),
+            ("critical blocker", BLOCKER_WITH_ASK, "the rounding is broken"),
+        ]
+        for label, packet, carried_text in stops:
+            with self.subTest(label):
+                self.setUp()
+                self.cap_round(packet)
+                self.step("asks-done", "accepted")
+                (self.repo / "docs").mkdir(exist_ok=True)
+                (self.repo / "docs/notes.md").write_text("a note\n")
+                self.hook("coder", "BEHAVIOR: a note", agent_id="c2")
 
-        out = self.step("asks-done", "rejected")
+                out = self.step("after-coder")
 
-        prompt = self.printed_prompt(out)
-        self.assertIn("finding: the rounding stays open", prompt)
-        self.assertNotIn("ask: ", prompt.split("carried-findings:", 1)[1].split("ruled-asks", 1)[0])
-        self.assertEqual(self.state()["iter"], 0)
-        [outcome_line] = self.finding_log_lines()
-        self.assertIn("iter=2", outcome_line)
+                prompt = self.printed_prompt(out)
+                self.assertIn("AGENT: review-loop", out)
+                self.assertIn(carried_text, prompt)
 
-    def test_a_docs_only_asks_coder_after_a_cap_still_gets_one_more_review_with_the_open_findings(self):
-        self.cap_round(CAP_WITH_ASK)
-        self.step("asks-done", "accepted")
-        (self.repo / "docs").mkdir(exist_ok=True)
-        (self.repo / "docs/notes.md").write_text("a note\n")
-        self.hook("coder", "BEHAVIOR: a note", agent_id="c2")
+    def test_the_review_after_an_asks_coder_that_touched_other_files_still_covers_the_carried_item_file(self):
+        stops = [("cap", CAP_WITH_ASK), ("critical blocker", BLOCKER_WITH_ASK)]
+        for label, packet in stops:
+            with self.subTest(label):
+                self.setUp()
+                self.cap_round(packet)
+                self.step("asks-done", "accepted")
+                (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
+                self.hook("coder", "BEHAVIOR: x is a const", agent_id="c2")
 
-        out = self.step("after-coder")
+                out = self.step("after-coder")
 
-        prompt = self.printed_prompt(out)
-        self.assertIn("AGENT: review-loop", out)
-        self.assertIn("finding: the rounding stays open", prompt)
-
-    def test_the_review_after_an_asks_coder_that_touched_other_files_still_covers_the_carried_finding_file(self):
-        self.cap_round(CAP_WITH_ASK)
-        self.step("asks-done", "accepted")
-        (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
-        self.hook("coder", "BEHAVIOR: x is a const", agent_id="c2")
-
-        out = self.step("after-coder")
-
-        prompt = self.printed_prompt(out)
-        self.assertIn("AGENT: review-loop", out)
-        self.assertIn("- path: backend/src/orders.ts", prompt)
-        self.assertIn("- path: backend/src/other.ts", prompt)
+                prompt = self.printed_prompt(out)
+                self.assertIn("AGENT: review-loop", out)
+                self.assertIn("- path: backend/src/orders.ts", prompt)
+                self.assertIn("- path: backend/src/other.ts", prompt)
 
     def test_a_cap_reached_stop_without_asks_takes_review_again_for_one_more_review_that_converges(self):
         out = self.cap_round(CAP)
@@ -171,31 +174,6 @@ class CapReachedTest(base.CodeStepTest):
         self.assertIn("AGENT: review-loop", out)
         self.assertIn("the rounding is broken", prompt)
         self.assertIn("f - keep? (backend/src/orders.ts:2): rejected", prompt)
-
-    def test_a_docs_only_asks_coder_after_a_critical_blocker_still_gets_one_more_review_with_the_blocker(self):
-        self.cap_round(BLOCKER_WITH_ASK)
-        self.step("asks-done", "accepted")
-        (self.repo / "docs").mkdir(exist_ok=True)
-        (self.repo / "docs/notes.md").write_text("a note\n")
-        self.hook("coder", "BEHAVIOR: a note", agent_id="c2")
-
-        out = self.step("after-coder")
-
-        prompt = self.printed_prompt(out)
-        self.assertIn("AGENT: review-loop", out)
-        self.assertIn("the rounding is broken", prompt)
-
-    def test_the_review_after_an_asks_coder_that_touched_other_files_still_covers_the_blocker_file(self):
-        self.cap_round(BLOCKER_WITH_ASK)
-        self.step("asks-done", "accepted")
-        (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
-        self.hook("coder", "BEHAVIOR: x is a const", agent_id="c2")
-
-        out = self.step("after-coder")
-
-        prompt = self.printed_prompt(out)
-        self.assertIn("AGENT: review-loop", out)
-        self.assertIn("- path: backend/src/orders.ts", prompt)
 
     def test_a_second_critical_blocker_with_an_ask_after_a_preset_rejection_stops_with_no_human_loop(self):
         self.env["CODE_STEP_ASKS_OUTCOME"] = "rejected"

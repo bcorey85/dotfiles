@@ -79,12 +79,13 @@ import reviewed_tree
 import script_utils
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
-    command_after_wrappers,
+    LINE_CONTINUATION,
     git_options,
     git_subcommand,
     parse_simple_commands,
     quoted_positions,
     redirection_writes_file,
+    resolved_command_words,
     split_command_steps,
     split_simple_commands,
     substitution_spans,
@@ -102,7 +103,6 @@ FOLDER_COMMAND_WORDS = ("cd", "pushd", "popd", "eval", "source", ".")
 QUOTED_SPAN = re.compile(r"\"(?:\\.|[^\"\\])*\"|\\.|'[^']*'|(?:^|(?<=[\s;&|()]))#[^\n]*", re.DOTALL | re.MULTILINE)
 # `(?!-)`: `git commit-tree` and `git commit-graph` write objects and move no branch.
 COMMIT = re.compile(r"\bgit[ \t\r\f\v]+commit\b(?!-)")
-LINE_CONTINUATION = re.compile(r"\\\r?\n")
 # A closing quote, `+`, an opening quote: two string literals joined in a script's source.
 QUOTED_STRING_JOIN = re.compile(r"""\\?["']\s*\+\s*\\?["']""")
 # Quotes and backslashes, which the shell drops from `git 'commit'` before git runs.
@@ -523,17 +523,6 @@ def user_ordered_no_review(root):
     except OSError:
         return False
     return latest_prompt is not None and latest_prompt.lstrip().startswith(NO_REVIEW_MARKER)
-
-
-def resolved_command_words(command):
-    """The words of each simple command, quotes and escapes resolved and wrapper words (`builtin`, `command`, `{`)
-    dropped; empty when shlex cannot read the command."""
-    try:
-        simple_commands = split_simple_commands(LINE_CONTINUATION.sub("", command))
-    except ValueError:
-        return []
-    unwrapped = (command_after_wrappers(words) for words in simple_commands)
-    return [words for words in unwrapped if words]
 
 
 def readable_command(command):

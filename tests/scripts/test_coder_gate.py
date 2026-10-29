@@ -432,6 +432,30 @@ class RunCommandsTests(unittest.TestCase):
         time.sleep(3)
         self.assertFalse(marker.exists())
 
+    def test_a_timed_out_scoped_test_names_the_log_that_keeps_its_output(self):
+        log_path = self.repo / "scoped-tests.log"
+        command = "echo partial-marker && sleep 30"
+
+        with mock.patch.object(self.gate, "COMMAND_TIMEOUT_SECONDS", 1):
+            result, tails = self.gate.run_scoped_tests(str(self.repo), [command], (), log_path)
+
+        self.assertEqual(f"not run (timeout): {command}; full output: {log_path}", result)
+        self.assertEqual([], tails)
+        log_text = log_path.read_text()
+        self.assertIn(f"$ {command}\ntimeout\n", log_text)
+        self.assertIn("partial-marker", log_text)
+
+    def test_a_scoped_test_that_names_a_missing_path_is_a_command_error_with_the_log(self):
+        log_path = self.repo / "scoped-tests.log"
+        message = "ERROR: file or directory not found: missing/test_x.py"
+        command = f'echo "{message}"; exit 1'
+
+        result, tails = self.gate.run_scoped_tests(str(self.repo), [command], (), log_path)
+
+        self.assertEqual(f"command error: {command} ({message}); full output: {log_path}", result)
+        self.assertEqual([], tails)
+        self.assertIn(message, log_path.read_text())
+
 
 def load_gate_module():
     spec = importlib.util.spec_from_file_location("coder_gate_under_test", GATE_SCRIPT)

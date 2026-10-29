@@ -185,6 +185,27 @@ class CheckOutputTest(unittest.TestCase):
         self.assertIn("test orders_total ... FAILED", quote)
         self.assertIn("thread 'orders_total' (77) panicked at tests/orders.rs:9:5:\nexpected 3, got 4", quote)
 
+    def test_the_failing_test_quote_of_real_cargo_and_nextest_output_holds_the_assertion_values(self):
+        fixtures = pathlib.Path(__file__).resolve().parent / "fixtures"
+        expected_quotes = {
+            "cargo_test_failed_assertion.txt": (
+                "\nFailing tests:\nthread 'tests::x_total' (2268265) panicked at src/lib.rs:8:9:\n"
+                "assertion `left == right` failed\n  left: 3\n right: 4\ntest tests::x_total ... FAILED"),
+            "nextest_failed_assertion.txt": (
+                "\nFailing tests:\nthread 'tests::x_total' (2268333) panicked at src/lib.rs:8:9:\n"
+                "    assertion `left == right` failed\n      left: 3\n     right: 4\n"
+                "FAIL [   0.004s] (3/3) crate tests::x_total\ntest tests::x_total ... FAILED"),
+        }
+        for name, expected_quote in expected_quotes.items():
+            with self.subTest(name=name):
+                output = (fixtures / name).read_text()
+
+                quote = check_output.failing_test_quote(output, "TAIL FALLBACK")
+
+                self.assertEqual(expected_quote, quote)
+                self.assertNotIn("running 1 test", quote)
+                self.assertNotIn("Cancelling due to test failure", quote)
+
     def test_a_panic_line_compares_equal_across_runs_whatever_its_thread_id_line_and_column(self):
         first_run = "thread 'worker_exits' (2641884) panicked at tests/worker.rs:936:5:"
         second_run = "thread 'worker_exits' (311) panicked at tests/worker.rs:951:9:"
@@ -195,6 +216,32 @@ class CheckOutputTest(unittest.TestCase):
         self.assertEqual(normalized, check_output.normalized_log_line(second_run))
         self.assertEqual("thread 'worker_exits' panicked at tests/worker.rs:", normalized)
         self.assertNotEqual(normalized, check_output.normalized_log_line(other_file))
+
+    def test_a_panic_line_with_no_thread_id_is_a_failing_test_line_and_its_values_are_quoted(self):
+        output = ("thread 'tests::x_total' panicked at src/lib.rs:8:9:\n"
+                  "assertion `left == right` failed\n  left: 3\n right: 4")
+
+        quote = check_output.failing_test_quote(output, "TAIL FALLBACK")
+
+        self.assertEqual(["thread 'tests::x_total' panicked at src/lib.rs:8:9:"],
+                         check_output.failing_test_lines(output))
+        self.assertIn("left: 3", quote)
+        self.assertNotIn("TAIL FALLBACK", quote)
+        self.assertEqual("thread 'tests::x_total' panicked at src/lib.rs:",
+                         check_output.normalized_log_line("thread 'tests::x_total' panicked at src/lib.rs:8:9:"))
+
+    def test_a_bare_word_traceback_line_in_a_unittest_failure_is_kept(self):
+        output = "\n".join([
+            "FAIL: test_totals (orders.tests.OrderTest)",
+            "Traceback (most recent call last):",
+            '  File "orders/tests.py", line 9, in test_totals',
+            "    raise",
+            "AssertionError: 1 != 2",
+        ])
+
+        quoted = check_output.failing_test_errors(output)
+
+        self.assertIn("    raise", quoted)
 
     def test_failing_test_lines_cover_pytest_unittest_vitest_and_jest_and_repeat_nothing(self):
         output = "\n".join([

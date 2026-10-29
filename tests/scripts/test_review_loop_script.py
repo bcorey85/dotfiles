@@ -264,23 +264,23 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
-        self.assertTrue(packet["scoped_tests"].startswith("failed: grep -q 'limit = 99' app.py; full output: "))
+        log_path = self.state_dir / "loop-script" / AGENT_ID / "scoped-tests.log"
+        self.assertEqual(packet["scoped_tests"], f"failed: grep -q 'limit = 99' app.py; full output: {log_path}")
         self.assertIn("grep -q 'limit = 99' app.py", packet["blockers"][0])
 
     def test_a_red_scoped_test_names_the_failing_test_and_its_panic_text_and_keeps_the_full_output(self):
-        failing_run = ("printf 'early line\\ntest orders_total ... FAILED\\n\\nfailures:\\n"
-                       "---- orders_total stdout ----\\n"
-                       "thread '\\''orders_total'\\'' (77) panicked at tests/orders.rs:9:5:\\nexpected 3, got 4\\n' "
-                       "&& seq 1 3000 && false")
+        fixture = pathlib.Path(__file__).resolve().parent / "fixtures" / "cargo_test_failed_assertion.txt"
+        failing_run = f"echo 'early line' && seq 1 3000 && cat {fixture} && false"
         completed = self.run_with_scoped_tests([failing_run], FIX_THEN_CLEAN)
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
         log_path = self.state_dir / "loop-script" / AGENT_ID / "scoped-tests.log"
         self.assertIn("early line", log_path.read_text())
-        self.assertIn(f"full output: {log_path}", packet["scoped_tests"])
-        self.assertIn("failing tests: test orders_total ... FAILED", packet["scoped_tests"])
-        self.assertIn("expected 3, got 4", packet["blockers"][0])
+        self.assertEqual(f"failed: {failing_run}; failing tests: test tests::x_total ... FAILED | "
+                         f"thread 'tests::x_total' (2268265) panicked at src/lib.rs:8:9:; full output: {log_path}",
+                         packet["scoped_tests"])
+        self.assertIn("  left: 3\n right: 4", packet["blockers"][0])
         self.assertIn(str(log_path), packet["blockers"][0])
 
     def test_a_scoped_test_that_cannot_run_names_the_log_that_keeps_its_output(self):

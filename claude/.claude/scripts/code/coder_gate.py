@@ -279,7 +279,8 @@ def sort_failures(failures, repo_root):
 
 def run_scoped_tests(repo_root, commands, gate_env, log_path):
     # (one-line result, the failing commands' tails). The scoped commands, run as the gate runs them, outside a hook.
-    # A failing or timed-out command's whole output goes to log_path, and every result that is not a pass names it.
+    # A failing or timed-out command's whole output goes to log_path, and a failed, setup-fault, command-error or
+    # timeout result names it.
     if not commands:
         return "not run (no scoped test commands)", []
 

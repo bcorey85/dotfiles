@@ -40,11 +40,11 @@ CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "files_touched",
                "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean", "tool_fault",
-               "blocked_agents"]
+               "blocked_agents", "scoped_tests"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
              "check_rewrote_edited", "check_created", "blocked_agents"]
 SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "full_check_command", "full_check_summary",
-               "load_bearing_clean", "tool_fault")
+               "load_bearing_clean", "tool_fault", "scoped_tests")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
 # The free-text fields of an ask that a continuation mapping joins to the lead ask's;
@@ -435,6 +435,7 @@ def read_header(raw):
               "full_check_summary": raw.get("full_check_summary", "").strip(),
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "tool_fault": raw.get("tool_fault", "").strip(),
+              "scoped_tests": raw.get("scoped_tests", "").strip(),
               "plan_impact": raw.get("plan_impact", "").strip()}
     return header, problems
 
@@ -609,15 +610,18 @@ def unreviewed_fix_section(packet):
     """The (heading, lines) section for a clean hand-back whose last step was a coder: no reviewer read that fix."""
     named_paths = ", ".join(fixed_paths(packet)) or "none named in fixed[]"
     return ("Last fix not reviewed",
-            [f"- No reviewer ran after the loop's last fix. Its files are among: {named_paths}"])
+            [f"- No reviewer read the loop's last fixes. Their files are among: {named_paths}",
+             "- Review-again is not advised: it ends on an unreviewed fix the same way. Read that diff yourself."])
 
 
 def full_check_lines(packet):
-    """The full check's lines for the user: a check that did not run or ran unverified, and the files it changed or
-    created."""
+    """The full check's lines for the user: a check that did not run, ran unverified or failed as it does without the
+    diff (`pre-existing`), and the files it changed or created."""
     lines = []
-    if packet["full_check"].startswith(("not run", "unverified")):
+    if packet["full_check"].startswith(("not run", "unverified", "pre-existing")):
         lines.append("Full check: " + packet["full_check"])
+    if packet["scoped_tests"]:
+        lines.append("Scoped tests after the last fix: " + packet["scoped_tests"])
     if packet["check_changed"]:
         lines.append("Changed by the full check, not by the coder (restore with `git checkout --` or keep): "
                      + ", ".join(packet["check_changed"]))

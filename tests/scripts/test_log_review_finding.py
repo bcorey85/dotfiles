@@ -48,7 +48,7 @@ class LoggerRepoCase(unittest.TestCase):
         done = subprocess.run(["git", *args], cwd=self.repo, env=git_env, check=True, capture_output=True, text=True)
         return done.stdout.strip()
 
-    def log(self, args, extra_env=None, expected_exit=0):
+    def log(self, args, extra_env=None, expected_exit=0, cwd=None):
         caller_env = {key: value for key, value in os.environ.items() if not key.startswith(("CLAUDE_", "REVIEW_"))}
         env = {
             **caller_env,
@@ -59,7 +59,7 @@ class LoggerRepoCase(unittest.TestCase):
             **(extra_env or {}),
         }
         command = ["bash", str(LOG_REVIEW_FINDING), *args]
-        done = subprocess.run(command, cwd=self.repo, env=env, capture_output=True, text=True)
+        done = subprocess.run(command, cwd=cwd or self.repo, env=env, capture_output=True, text=True)
         self.assertEqual(done.returncode, expected_exit, done.stderr)
         return done
 
@@ -197,7 +197,30 @@ class TestAuditRowTest(LoggerRepoCase):
         done = self.log([*TEST_AUDIT_RUN_ARGS, "diff_base=planted-missing-ref"], expected_exit=1)
 
         self.assertIn("cannot measure", done.stderr)
+        self.assertIn(f"names no commit in {self.repo}", done.stderr)
         self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_run"), [])
+
+    def test_root_logs_a_run_on_a_dirty_tree_from_another_folder_with_a_base_of_the_form_ref_tilde_n(self):
+        (self.repo / "kept.txt").write_text("one\ntwo\n")
+        self.git("commit", "-q", "-am", "integration work")
+        self.git("checkout", "-q", "-b", "integration-base", "main~1")
+        self.make_branch_with_uncommitted_fixes()
+        outside = self.temp_root / "outside"
+        outside.mkdir()
+
+        self.log([*TEST_AUDIT_RUN_ARGS, f"root={self.repo}", "diff_base=main~1"], cwd=outside)
+
+        (run_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_run")
+        self.assertEqual((run_row["diff_loc"], run_row["head"]), ("7", self.git("rev-parse", "HEAD")))
+        self.assertEqual(run_row["_cwd"], str(self.repo))
+        self.assertNotIn("root", run_row)
+        self.assertEqual(self.git("rev-parse", f"refs/review-snapshots/{run_row['run_id']}"), run_row["snapshot"])
+
+    def test_a_root_that_cannot_be_entered_is_refused_and_no_row_is_sent(self):
+        done = self.log([*TEST_AUDIT_RUN_ARGS, f"root={self.temp_root / 'planted-missing'}"], expected_exit=1)
+
+        self.assertIn("cannot enter root=", done.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
 
     def test_an_unlocated_finding_is_sent_with_no_file_and_no_line(self):
         self.log([*TEST_AUDIT_FINDING_ARGS, "file=unlocated"])
@@ -206,10 +229,13 @@ class TestAuditRowTest(LoggerRepoCase):
         self.assertNotIn("path_key", finding_row)
         self.assertNotIn("line", finding_row)
 
-    def test_an_unlocated_finding_with_a_line_is_refused(self):
-        self.log([*TEST_AUDIT_FINDING_ARGS, "file=unlocated", "line=4"], expected_exit=1)
+    def test_an_unlocated_finding_with_a_line_is_sent_without_the_line_and_warns(self):
+        done = self.log([*TEST_AUDIT_FINDING_ARGS, "file=unlocated", "line=4"])
 
-        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_finding"), [])
+        (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
+        self.assertNotIn("path_key", finding_row)
+        self.assertNotIn("line", finding_row)
+        self.assertIn("line=4 dropped", done.stderr)
 
     def test_a_test_intent_finding_with_line_0_or_no_file_is_refused(self):
         for location_args in (["file=src/app.test.ts", "line=0"], ["line=12"]):

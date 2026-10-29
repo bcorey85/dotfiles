@@ -22,6 +22,8 @@
 # usage: log-review-finding kind=run|finding key=value [key=value ...]
 #
 #   COMMON
+#     root=<path>                 the reviewed repo or worktree: the script runs there, so a
+#       call from another folder reads that repo's HEAD, tree and refs. Never stored.
 #     repo=<basename>
 #     branch=<git branch>
 #     lane=eng-spec|code|verify|stage|test-audit|other|none
@@ -76,7 +78,7 @@
 #       mostly `other` has told the analysis nothing about what the gate catches.
 #     file=<path>                 repo-relative
 #       file=unlocated: the finding names no file (a plan promise with no test).
-#       The row is sent with no file and no line; refused with a line=.
+#       The row is sent with no file and no line; a line= is dropped with a warning.
 #     line=<n>                    0 when the finding names no line
 #       gate=test-intent-reviewer refuses a finding row with no file, or a file
 #       and no line above 0: each of its findings names a test file:line, or is
@@ -91,9 +93,10 @@
 #     fix_induced=yes|no|bug      (optional) the finding names code a previous
 #       fix in this loop introduced, not code the coder originally wrote.
 #       `bug` sets blocker=yes.
-#     source=round|class|gate   (review-loop `fix` rows) where the finding came
-#       from: a full review, an open class member at the round cap, or the
-#       execution gate. Only class may defer. A code-reviewer `fix` row with
+#     source=round|class|gate|scoped   (review-loop `fix` rows) where the finding came
+#       from: a full review, an open class member at the round cap, the
+#       execution gate, or the one reviewer scoped to the files a coder changed
+#       after the cap. Only class and scoped may defer. A code-reviewer `fix` row with
 #       actioned=deferred at scope phase or standalone is refused without one.
 #     ask_decided_by=user|session  (optional, ask outcome rows) who ruled on the ask:
 #       the user, or the session itself when the repo hands ask decisions to it.
@@ -121,10 +124,12 @@
 # gets the row without it, and the ref is deleted.
 set -euo pipefail
 
-script_dir=$(dirname -- "${BASH_SOURCE[0]}")
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../../scripts/lib/_kv.sh
 source "$script_dir/../../scripts/lib/_kv.sh"
 kv_help_exit "${BASH_SOURCE[0]}" "$@"
+kv_enter_root "$@"
+set -- ${kv_args[@]+"${kv_args[@]}"}
 
 # --check as the first argument runs every validation below, writes nothing, ignores the
 # telemetry switch and exits 0 when the arguments would be logged.
@@ -165,9 +170,21 @@ working_tree_tree() {
 
 # Prints insertions + deletions from the merge-base of $1 and HEAD to the working tree.
 measure_diff_loc() {
-  local merge_base tree
-  merge_base=$(git merge-base "$1" HEAD 2>/dev/null) || return 1
-  tree=$(working_tree_tree) || return 1
+  local merge_base tree checkout
+  if ! git rev-parse --verify -q "$1^{commit}" >/dev/null; then
+    checkout=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+    echo "refusing to log: cannot measure diff_loc: diff_base=$1 names no commit in $checkout." >&2
+    echo "Pass root=<the reviewed repo> when the logger runs from another folder." >&2
+    return 1
+  fi
+  merge_base=$(git merge-base "$1" HEAD 2>/dev/null) || {
+    echo "refusing to log: cannot measure diff_loc from diff_base=$1 (no merge-base with HEAD)." >&2
+    return 1
+  }
+  tree=$(working_tree_tree) || {
+    echo "refusing to log: cannot measure diff_loc: the working tree could not be read." >&2
+    return 1
+  }
 
   git diff --numstat "$merge_base" "$tree" | awk '$1 != "-" { lines += $1 + $2 } END { print lines + 0 }'
 }
@@ -251,7 +268,8 @@ if [ "$kind" = finding ]; then
   [ "$fi_val" != bug ] || json=$(jq -c '.blocker = "yes"' <<< "$json")
 
   # The review loop sends every `fix` finding to a coder but an open class
-  # member at the round cap. A deferred row goes to a branch-exit queue that most
+  # member at the round cap and a finding of the one reviewer scoped to the files a
+  # coder changed after the cap. A deferred row goes to a branch-exit queue that most
   # branches never read, so a wrong deferral drops the finding.
   source=$(jq -r '.source // ""' <<< "$json")
   disposition=$(jq -r '.disposition // ""' <<< "$json")
@@ -260,10 +278,11 @@ if [ "$kind" = finding ]; then
   if [ "$disposition" = fix ] && [ "$actioned" = deferred ]; then
     loop_row=no
     [ "$gate" = code-reviewer ] && { [ "$scope" = phase ] || [ "$scope" = standalone ]; } && loop_row=yes
-    if [ -n "$source" ] && [ "$source" != class ] \
+    if [ -n "$source" ] && [ "$source" != class ] && [ "$source" != scoped ] \
       || { [ -z "$source" ] && [ "$loop_row" = yes ]; }; then
       echo "refusing to log: a review-loop fix finding defers only as an open class member at the" >&2
-      echo "round cap (source=class). A full review's and the execution gate's fix findings get a" >&2
+      echo "round cap (source=class) or a finding of the scoped reviewer after the cap (source=scoped)." >&2
+      echo "A full review's and the execution gate's fix findings get a" >&2
       echo "coder at any iter. Dispatch one, then log the row with actioned=fixed." >&2
       exit 1
     fi
@@ -286,7 +305,6 @@ if [ -n "$diff_base" ]; then
     exit 1
   fi
   if ! diff_loc=$(measure_diff_loc "$diff_base"); then
-    echo "refusing to log: cannot measure diff_loc from diff_base=$diff_base (no merge-base with HEAD)." >&2
     exit 1
   fi
   json=$(jq -c --arg n "$diff_loc" 'del(.diff_base) | .diff_loc = $n' <<< "$json")
@@ -297,8 +315,8 @@ if [ "$kind" = finding ]; then
   file=$(jq -r '.file // ""' <<< "$json")
   line=$(jq -r '.line // ""' <<< "$json")
   if [ "$file" = unlocated ]; then
-    [ -z "$line" ] || { echo "refusing to log: file=unlocated takes no line=." >&2; exit 1; }
-    json=$(jq -c 'del(.file)' <<< "$json")
+    [ -z "$line" ] || echo "log-review-finding: file=unlocated takes no line=; line=$line dropped." >&2
+    json=$(jq -c 'del(.file, .line)' <<< "$json")
   elif [ "$gate" = test-intent-reviewer ] && { [ -z "$file" ] || ! [[ $line =~ ^[1-9][0-9]*$ ]]; }; then
     echo "refusing to log: a test-intent-reviewer finding names its test file= and line= (above 0), or is file=unlocated." >&2
     exit 1

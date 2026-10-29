@@ -16,17 +16,13 @@ Snapshots live in ~/.claude/state/format-changed and snapshots older than 2 days
 import contextlib
 import locale
 import os
-import shutil
-import subprocess
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import format_files
 import hook_input
 import script_utils
 
-LINT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".vue")
-FORMAT_ONLY_SUFFIXES = (".json", ".css", ".scss", ".md")
-PLANS_DIR = "docs/plans/"
 OPERATION_MARKERS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply",
                      "SQUASH_MSG", "MERGE_MSG")
 
@@ -67,18 +63,6 @@ def dirty_hashes():
         name = existing[position] if position < len(existing) else ""
         lines.append(f"{digest} {name}")
     return lines
-
-
-def run_quiet(command):
-    with contextlib.suppress(OSError):
-        subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def tool_available(name):
-    if shutil.which(name):
-        return True
-    local = os.path.join("node_modules", ".bin", name)
-    return os.path.exists(local) and os.access(local, os.X_OK)
 
 
 def operation_in_progress(git_dir):
@@ -157,29 +141,7 @@ def main():
     if snapshot_lines and snapshot_lines[-1] == "":
         snapshot_lines.pop()
 
-    format_files = []
-    lint_files = []
-    for path in snapshot_difference(snapshot_lines):
-        if path.startswith(PLANS_DIR):
-            continue
-        if path.endswith(LINT_SUFFIXES):
-            format_files.append(path)
-            lint_files.append(path)
-        elif path.endswith(FORMAT_ONLY_SUFFIXES):
-            format_files.append(path)
-    if not format_files:
-        return 0
-
-    if lint_files:
-        if tool_available("oxlint"):
-            run_quiet(["npx", "oxlint", "--fix", *lint_files])
-        elif os.path.exists("node_modules/.bin/eslint") and os.access("node_modules/.bin/eslint", os.X_OK):
-            run_quiet(["npx", "eslint", "--fix", "--no-warn-ignored", "--max-warnings=0", *lint_files])
-
-    if tool_available("oxfmt"):
-        run_quiet(["npx", "oxfmt", *format_files])
-    else:
-        run_quiet(["npx", "--yes", "prettier", "--write", *format_files])
+    format_files.run_formatters(".", snapshot_difference(snapshot_lines))
     return 0
 
 

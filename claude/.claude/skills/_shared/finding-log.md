@@ -9,6 +9,7 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 ```bash
 # Each row is its own plain Bash call by this path: no $HOME, variable, array or $(...).
 # Repeat lane/scope/phase/iter on every call; omit phase when there is none. The script adds repo and branch itself.
+# When the reviewed repo is not your cwd, add root=<its absolute path> to every call; the script runs there.
 
 # ONE run row per gate dispatched — INCLUDING gates that returned nothing.
 ~/.claude/skills/review/log-review-finding kind=run lane=<lane> scope=<phase|branch-exit|standalone> [phase=<index>] iter=<N> \
@@ -18,7 +19,7 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 ~/.claude/skills/review/log-review-finding kind=finding lane=<lane> scope=<phase|branch-exit|standalone> [phase=<index>] iter=<N> \
   gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
   class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other> \
-  <file=<path> line=<n>|file=unlocated> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|class|gate>]
+  <file=<path> line=<n>|file=unlocated> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|class|gate|scoped>]
 # Prints finding_id=<id>.
 ```
 
@@ -35,7 +36,8 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 - **`fix_induced=yes`** for code an earlier fix in this loop introduced.
 - **`fix_induced=bug`** — the tool sets `blocker=yes`; a loop-introduced bug cannot defer. Set `actioned=fixed`.
 - **`source=`** — review-loop only, on every `fix` row: `round` (a full review), `class` (an open class member at
-  the cap), `gate` (the execution gate). A `code-reviewer` `fix` row with `actioned=deferred` needs `source=class`.
+  the cap), `gate` (the execution gate), `scoped` (the one reviewer scoped to the files a coder changed after the
+  cap). A `code-reviewer` `fix` row with `actioned=deferred` needs `source=class` or `source=scoped`.
   The tool refuses any other: that finding gets a coder.
 - `class=` uses the escape vocabulary so the caught and escaped sides
   cross-tabulate. Do not invent values — unknown ones store as `other` and are counted in the yield header.

@@ -33,8 +33,8 @@ if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
     RECEIPT_SKILL = pathlib.Path(DRAFT_DIR) / "branch-recap-SKILL.md"
 
 SCRIPT_FOLDERS = {"telemetry_enabled.sh": "telemetry", "telemetry_enabled.py": "telemetry", "hook_input.py": "lib",
-                  "repo-name": "tools", "log_agent_usage.py": "telemetry", "log_skill_use.py": "telemetry",
-                  "test_edit_telemetry.py": "telemetry", "log-escape": "telemetry", "log-scan": "telemetry",
+                  "repo-name": "tools", "log_agent_usage.py": "telemetry",
+                  "log-escape": "telemetry", "log-scan": "telemetry",
                   "log-spec-run": "telemetry", "coder_gate.py": "code", "script_utils.py": "lib", "_kv.sh": "lib",
                   "_ledger.sh": "lib", "ledger-write": "telemetry",
                   **dict.fromkeys(toolkit_paths.CODE_STEP_LIB_MODULES, "lib")}
@@ -49,10 +49,6 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COM
 HOOK_POST = {"hook_event_name": "PostToolUse", "tool_name": "Agent",
              "tool_input": {"subagent_type": "coder", "model": "sonnet", "description": "Fix it"},
              "tool_response": {"content": [{"type": "text", "text": "done"}], "totalTokens": 5}}
-SKILL_POST = {"hook_event_name": "PostToolUse", "tool_name": "Skill", "tool_input": {"skill": "review"}}
-SKILL_PROMPT = {"hook_event_name": "UserPromptSubmit", "prompt": "/review now"}
-TEST_EDIT = {"hook_event_name": "PreToolUse", "tool_name": "Edit",
-             "tool_input": {"file_path": "/work/repo/tests/test_x.py", "new_string": "assert x == 1"}}
 CODER_BASH = {"hook_event_name": "PreToolUse", "agent_type": "coder", "cwd": "/work/repo",
               "tool_input": {"command": "npm test"}}
 
@@ -254,12 +250,6 @@ class SwitchTest(unittest.TestCase):
 
     def test_agent_usage_py(self):
         self.assert_switch("agent-usage.jsonl", self.hook("log_agent_usage.py", HOOK_POST))
-
-    def test_skill_use_py_model(self):
-        self.assert_switch("skill-usage.jsonl", self.hook("log_skill_use.py", SKILL_POST))
-
-    def test_skill_use_py_prompt(self):
-        self.assert_switch("skill-usage.jsonl", self.hook("log_skill_use.py", SKILL_PROMPT))
 
     def test_coder_gate_whole_package_deny_still_denies_when_off(self):
         command = [sys.executable, str(self.script_path("coder_gate.py")), "bash-hook"]
@@ -549,9 +539,7 @@ class SwitchTest(unittest.TestCase):
     def test_missing_python_helper_keeps_logging_hooks_off(self):
         (self.script_path("telemetry_enabled.py")).unlink()
         self.turn("on")
-        cases = [("log_agent_usage.py", HOOK_POST, "agent-usage.jsonl"),
-                 ("log_skill_use.py", SKILL_POST, "skill-usage.jsonl"),
-                 ("test_edit_telemetry.py", TEST_EDIT, "test-edit-telemetry.jsonl")]
+        cases = [("log_agent_usage.py", HOOK_POST, "agent-usage.jsonl")]
         for script, payload, log_name in cases:
             with self.subTest(hook=script):
                 finished = self.hook(script, payload)()

@@ -942,31 +942,13 @@ class AdrFlowTest(unittest.TestCase):
         result = self.run_flow("finish", str(adr), "--task-dir", self.absolute(task_dir), "--keep-task-dir")
 
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn(self.absolute(task_dir), result.stdout)
+        self.assertIn(f"task dir kept: {self.absolute(task_dir)}", result.stdout)
         self.assertTrue((self.repo / task_dir / "spec.md").exists())
 
-    def test_keep_task_dir_prints_the_kept_absolute_path(self):
-        task_dir = self.make_task_dir()
-        adr = self.write(f"{DECISIONS}/LED-5-yield-view.md", GOOD_ADR)
-
-        result = self.run_flow("finish", str(adr), "--task-dir", self.absolute(task_dir), "--keep-task-dir")
-
-        self.assertIn(f"task dir kept: {self.absolute(task_dir)}", result.stdout)
-
-    def test_keep_task_dir_does_not_claim_a_missing_dir_was_kept(self):
-        adr = self.write(f"{DECISIONS}/a.md", GOOD_ADR)
-        gone = self.absolute(f"{PLANS}/LED-5-gone")
-
-        result = self.run_flow("finish", str(adr), "--task-dir", gone, "--keep-task-dir")
-
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertNotRegex(result.stdout, r"(?<!no )task dir kept")
-        self.assertIn(f"no task dir kept: {gone} is not a task dir", result.stdout)
-
-    def test_keep_task_dir_does_not_claim_a_relative_or_non_task_dir_path_was_kept(self):
+    def test_keep_task_dir_does_not_claim_a_missing_relative_or_non_task_dir_path_was_kept(self):
         task_dir = self.make_task_dir()
         adr = self.write(f"{DECISIONS}/a.md", GOOD_ADR)
-        for argument in (task_dir, self.absolute(PLANS)):
+        for argument in (self.absolute(f"{PLANS}/LED-5-gone"), task_dir, self.absolute(PLANS)):
             with self.subTest(argument=argument):
                 result = self.run_flow("finish", str(adr), "--task-dir", argument, "--keep-task-dir")
 
@@ -993,22 +975,16 @@ class AdrFlowTest(unittest.TestCase):
         self.assertIn("FAIL the draft lives inside the task dir; move it to the prep target", result.stdout)
         self.assertNotIn("task dir kept", result.stdout)
 
-    def test_keep_task_dir_with_a_dir_that_holds_the_draft_but_is_not_a_task_dir_keeps_nothing(self):
+    def test_keep_task_dir_with_a_non_task_dir_or_an_empty_value_keeps_nothing(self):
         self.make_task_dir()
         adr = self.write(f"{DECISIONS}/a.md", GOOD_ADR)
+        cases = [(self.absolute("docs"), "no task dir kept"), ("", "no task dir kept: --task-dir is empty")]
+        for argument, expected in cases:
+            with self.subTest(argument=argument):
+                result = self.run_flow("finish", str(adr), "--task-dir", argument, "--keep-task-dir")
 
-        result = self.run_flow("finish", str(adr), "--task-dir", self.absolute("docs"), "--keep-task-dir")
-
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("no task dir kept", result.stdout)
-
-    def test_keep_task_dir_with_an_empty_task_dir_says_so(self):
-        adr = self.write(f"{DECISIONS}/a.md", GOOD_ADR)
-
-        result = self.run_flow("finish", str(adr), "--task-dir", "", "--keep-task-dir")
-
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("no task dir kept: --task-dir is empty", result.stdout)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertIn(expected, result.stdout)
 
     def test_a_draft_inside_the_task_dir_is_refused_without_offering_the_keep_flag(self):
         task_dir = self.make_task_dir()
@@ -1185,17 +1161,13 @@ class AdrFlowTest(unittest.TestCase):
             self.assertIn(expected_text, result.stdout)
         self.assertTrue(adr.exists())
 
-    def test_refuses_relative_task_dir(self):
+    def test_refuses_a_relative_or_empty_task_dir(self):
         task_dir = self.make_task_dir()
 
-        self.assert_refused(task_dir, "is relative", absolute=False)
-        self.assertTrue((self.repo / task_dir / "spec.md").exists())
-
-    def test_refuses_empty_task_dir_value(self):
-        task_dir = self.make_task_dir()
-
-        self.assert_refused("", "--task-dir is empty", absolute=False)
-        self.assertTrue((self.repo / task_dir / "spec.md").exists())
+        for argument, expected in ((task_dir, "is relative"), ("", "--task-dir is empty")):
+            with self.subTest(argument=argument):
+                self.assert_refused(argument, expected, absolute=False)
+                self.assertTrue((self.repo / task_dir / "spec.md").exists())
 
     def test_refuses_task_dir_of_another_checkout_when_draft_is_elsewhere(self):
         other_repo = self.temp_root / "other"
@@ -1216,20 +1188,13 @@ class AdrFlowTest(unittest.TestCase):
         self.make_task_dir()
         self.write(f"{DECISIONS}/keep.md", "keep\n")
 
-        self.assert_refused(DECISIONS, "not exactly one slug")
-        self.assert_refused(f"{PLANS}/LED-5-yield-view/sub", "not exactly one slug")
-        self.assert_refused(PLANS, "not exactly one slug")
-        self.assert_refused(".", "not exactly one slug")
-        self.assert_refused("docs", "not exactly one slug")
+        paths = (DECISIONS, f"{PLANS}/LED-5-yield-view/sub", PLANS, ".", "docs", f"{PLANS}/../decisions",
+                 f"{PLANS}/LED-5-yield-view/..")
+        for path in paths:
+            with self.subTest(path=path):
+                self.assert_refused(path, "not exactly one slug")
         self.assertTrue((self.repo / DECISIONS / "keep.md").exists())
         self.assertTrue((self.repo / PLANS / "LED-5-yield-view" / "spec.md").exists())
-
-    def test_refuses_dotdot_escape(self):
-        self.make_task_dir()
-
-        self.assert_refused(f"{PLANS}/../decisions", "not exactly one slug")
-        self.assert_refused(f"{PLANS}/LED-5-yield-view/..", "not exactly one slug")
-        self.assertTrue((self.repo / PLANS / "LED-5-yield-view").exists())
 
     def test_refuses_path_outside_repo(self):
         outside = self.temp_root / "outside" / "x"
@@ -1357,7 +1322,7 @@ class AdrFlowTest(unittest.TestCase):
         self.assertIn("belongs to the git repository", result.stdout)
         self.assertTrue((self.repo / PLANS / "LED-5-x" / "spec.md").exists())
 
-    def test_refuses_skip_worktree_file_with_hidden_edits(self):
+    def test_refuses_skip_worktree_and_assume_unchanged_files_hidden_from_git_status(self):
         task_dir = self.make_task_dir()
         self.git("update-index", "--skip-worktree", f"{task_dir}/spec.md")
         self.write(f"{task_dir}/spec.md", "edits git status cannot see\n")
@@ -1365,26 +1330,27 @@ class AdrFlowTest(unittest.TestCase):
         self.assert_refused(task_dir, "hidden from git status")
         self.assertEqual((self.repo / task_dir / "spec.md").read_text(), "edits git status cannot see\n")
 
-    def test_refuses_assume_unchanged_file(self):
-        task_dir = self.make_task_dir()
-        self.git("update-index", "--assume-unchanged", f"{task_dir}/spec.md")
+        self.git("update-index", "--no-skip-worktree", f"{task_dir}/spec.md")
+        self.git("checkout", "--", f"{task_dir}/spec.md")
+        self.git("update-index", "--assume-unchanged", f"{task_dir}/01-questions.md")
 
         self.assert_refused(task_dir, "hidden from git status")
 
-    def test_refuses_staged_new_plan_file_and_leaves_it_staged(self):
+    def test_refuses_a_staged_new_file_or_rename_and_names_the_new_path(self):
         task_dir = self.make_task_dir()
+        staged = f"STOP: staged entries in the task dir: {task_dir}/04-exploration.md"
         self.write(f"{task_dir}/04-exploration.md", "new\n")
         self.git("add", f"{task_dir}/04-exploration.md")
 
-        self.assert_refused(task_dir, f"STOP: staged entries in the task dir: {task_dir}/04-exploration.md")
+        self.assert_refused(task_dir, staged)
         self.assertEqual(self.git("diff", "--cached", "--name-only").split(), [f"{task_dir}/04-exploration.md"])
         self.assertTrue((self.repo / task_dir / "04-exploration.md").exists())
 
-    def test_refuses_staged_rename_and_names_the_new_path(self):
-        task_dir = self.make_task_dir()
+        self.git("rm", "-q", "--cached", f"{task_dir}/04-exploration.md")
+        (self.repo / task_dir / "04-exploration.md").unlink()
         self.git("mv", f"{task_dir}/02-research.md", f"{task_dir}/04-exploration.md")
 
-        self.assert_refused(task_dir, f"STOP: staged entries in the task dir: {task_dir}/04-exploration.md")
+        self.assert_refused(task_dir, staged)
         self.assertTrue((self.repo / task_dir / "04-exploration.md").exists())
 
     def test_an_intent_to_add_rename_is_not_reported_as_a_staged_entry(self):
@@ -1400,15 +1366,6 @@ class AdrFlowTest(unittest.TestCase):
 
     def test_refuses_missing_dir(self):
         self.assert_refused(f"{PLANS}/LED-5-gone", "not a directory")
-
-    def test_refuses_when_draft_is_inside_task_dir(self):
-        task_dir = self.make_task_dir()
-        adr = self.write(f"{task_dir}/05-adr.md", GOOD_ADR)
-
-        result = self.run_flow("finish", str(adr), "--task-dir", self.absolute(task_dir))
-
-        self.assertEqual(result.returncode, 2)
-        self.assertTrue((self.repo / task_dir / "spec.md").exists())
 
     def test_failed_check_keeps_task_dir(self):
         task_dir = self.make_task_dir()

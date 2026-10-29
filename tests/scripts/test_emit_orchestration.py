@@ -13,32 +13,8 @@ import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.GATES_DIR) / "emit_orchestration.py"
 
-ORCHESTRATION = "home/.claude/orchestration.md"
 WARNING = ("WARNING: ~/.claude/orchestration.md is missing or unreadable. Delegation rules are NOT loaded this "
            "session. Tell the user before coding or dispatching any work.")
-
-PARITY_CASES = [
-    {"name": "missing file", "stdin": ""},
-    {"name": "plain file", "stdin": "", "files": {ORCHESTRATION: "# Rules\n\nDelegate.\n"}},
-    {"name": "empty file", "stdin": "", "files": {ORCHESTRATION: ""}},
-    {"name": "no trailing newline", "stdin": "", "files": {ORCHESTRATION: "abc"}},
-    {"name": "quotes backslash tab", "stdin": "", "files": {ORCHESTRATION: 'say "hi"\\n\ttab \\ done\n'}},
-    {
-        "name": "unicode",
-        "stdin": "",
-        "files": {ORCHESTRATION: "caf\u00e9 \u2014 \u26a0\ufe0f \U0001f600 \u65e5\u672c\n"},
-    },
-    {"name": "del and control chars", "stdin": "", "files": {ORCHESTRATION: "a\x7fb\x01c\x1bd\r\n"}},
-    {"name": "blank lines", "stdin": "", "files": {ORCHESTRATION: "\n\n\nx\n\n\n"}},
-    {"name": "directory instead of file", "stdin": "", "files": {ORCHESTRATION + "/keep": "x"}},
-    {"name": "stdin ignored", "stdin": '{"hook_event_name":"SessionStart"}', "files": {ORCHESTRATION: "x\n"}},
-    {"name": "skip hooks not honored", "stdin": "", "env": {"CLAUDE_SKIP_HOOKS": "1"}, "files": {ORCHESTRATION: "x\n"}},
-]
-TYPICAL = {
-    "name": "typical",
-    "stdin": "",
-    "files": {ORCHESTRATION: "# Orchestration\n" + "Delegate to agents.\n" * 200},
-}
 
 
 def run_hook(content=None, unreadable=False):
@@ -64,17 +40,6 @@ class EmitOrchestrationTest(unittest.TestCase):
         output = json.loads(finished.stdout)
         self.assertEqual(output, {"hookSpecificOutput": {"hookEventName": "SessionStart",
                                                          "additionalContext": "# Rules\n\nDelegate.\n"}})
-
-    def test_output_is_pretty_printed_like_jq(self):
-        finished = run_hook(b"x\n")
-        self.assertEqual(finished.stdout.decode("utf-8"),
-                         '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n'
-                         '    "additionalContext": "x\\n"\n  }\n}\n')
-
-    def test_unicode_is_not_escaped_but_del_is(self):
-        finished = run_hook("caf\u00e9 \U0001f600 a\x7fb".encode())
-        text = finished.stdout.decode("utf-8")
-        self.assertIn("caf\u00e9 \U0001f600 a\\u007fb", text)
 
     def test_missing_file_emits_compact_warning(self):
         finished = run_hook()

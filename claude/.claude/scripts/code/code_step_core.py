@@ -16,6 +16,7 @@ import shutil
 import signal
 import sys
 import time
+import typing
 
 SIBLING_FOLDERS = ("code", "lib", "review", "telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in SIBLING_FOLDERS]
@@ -1348,11 +1349,22 @@ def script_command(verb_words):
     return f"{INSTALLED_COMMAND} {verb_words}".rstrip()
 
 
-def refuse(reason, *commands, notes=()):
+class Refusal(typing.NamedTuple):
+    # Why a verb does not run and what to run instead. A builder that returns a plain (reason, commands, notes) tuple
+    # reads as one with stop False.
+    reason: str
+    commands: list
+    notes: tuple = ()
+    stop: bool = False
+
+
+def refuse(reason, *commands, notes=(), stop=False):
     # The one shape of a refusal: `Refused: <reason>` first. One command to run instead prints `ACTION: rerun` with it;
-    # a choice between commands prints `ACTION: stop` and lists them. Nothing was changed.
+    # a choice between commands, or any refusal with stop, prints `ACTION: stop` and lists them. A refusal whose
+    # refused text must reach the user passes stop, since the skill runs a rerun's command at once. Nothing was
+    # changed.
     print("Refused: " + own_path(reason))
-    if len(commands) == 1:
+    if len(commands) == 1 and not stop:
         return emit("rerun", "COMMAND: " + commands[0], *notes)
     command_lines = [f"- `{command}`" for command in commands]
     choices = ["Run one of these on the user's word:", *command_lines]

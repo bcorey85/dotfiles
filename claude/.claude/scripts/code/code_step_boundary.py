@@ -16,7 +16,7 @@ import plan_format
 import reviewed_tree
 import script_utils
 import shell_command
-from check_output import tail_with_failing_tests
+from check_output import failing_test_quote
 from code_step_concentration import (
     concentration_gate_position,
     manual_gate_item_end,
@@ -35,6 +35,7 @@ from code_step_core import (
     load_handback,
     load_state,
     repo_root_or_exit,
+    run_file_path,
     run_session_id,
     save_state,
     say,
@@ -47,6 +48,7 @@ from script_utils import git_output, run_command
 from test_run_output import matches_no_test
 
 VERIFY_TIMEOUT_SECONDS = 600
+VERIFICATION_OUTPUT_NAME = "verification-output.txt"
 # A filtered test run that exits 0 but reports no passed test did not run the phase's test: it fails the box.
 NO_TEST_MATCHED_EXIT_CODE = 1
 NO_TEST_MATCHED_NOTE = "\nthe test filter matched no test: the run exits 0 but reports no passed test\n"
@@ -694,12 +696,28 @@ def stop_for_unparsed_items(repo_dir, state, unparsed, ran_text):
          VERIFICATION_ITEM_SHAPE + tick_text + " " + RESUME_LINE.format(noun="section", verb="verify"))
 
 
+def save_verification_output(repo_dir, state, failed):
+    # The full output of every failed command, in the run's folder. The path comes back.
+    if not state.get("runId"):
+        state["runId"] = script_utils.sortable_unique_id()
+    output_file = run_file_path(repo_dir, state["runId"], VERIFICATION_OUTPUT_NAME)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    sections = [f"$ {command}\nexit {code}\n{output}" for command, code, output in failed]
+    output_file.write_text("\n\n".join(sections))
+    return output_file
+
+
 def stop_for_failed_commands(repo_dir, state, failed):
+    output_file = save_verification_output(repo_dir, state, failed)
     state.update({"stage": "stopped", "stopReason": "verification"})
     save_state(repo_dir, state)
-    failure_lines = [f"- `{command}` exit {code}: {tail_with_failing_tests(output, output[-400:])}"
-                     for command, code, output in failed]
+    failure_lines = []
+    for command, code, output in failed:
+        quote = failing_test_quote(output, output[-400:], "\n(full output in the output file)")
+        failure_lines.append(f"- `{command}` exit {code}: {quote}")
+
     emit("stop", "Automated Verification failed. Do not mark the phase done. Report to the user:", *failure_lines,
+         f"The full output of each failed command is in {output_file}; give that path to /debug.",
          RESUME_LINE.format(noun="failure", verb="verify"))
 
 

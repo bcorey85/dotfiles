@@ -99,6 +99,9 @@ AGENT_MESSAGE = re.compile(r"<agent-message\s+from=\"([\w-]+)\">(.*?)(?=</agent-
 # A task notification's tool_use_id, and its result when it carries one: a killed dispatch reports with none.
 NOTIFICATION = re.compile(r"<tool-use-id>\s*([\w-]+)\s*</tool-use-id>(?:(?:(?!</task-notification>).)*?"
                           r"<result>((?:(?!</task-notification>).)*?)</result>)?", re.S)
+# A task notification's task id. For an agent it is the agent id, and a notification for an agent that died (killed,
+# rate-limited or errored) can carry it with no tool_use_id.
+NOTIFIED_TASK = re.compile(r"<task-notification>\s*<task-id>\s*([\w-]+)\s*</task-id>")
 NIT_SECTION = re.compile(r"(?mi)^\s*#{2,4}\s*[*_`]*Nits?\b")
 FENCE =re.compile(r"^(```|~~~)")
 HEADING_MARKUP = re.compile(r"[*_`:]")
@@ -229,6 +232,7 @@ class LoopTranscript:
         self.notifications = {}  # tool_use_id -> the results its task notifications carried, [] for none
         self.agent_messages = {}  # agent id -> the texts of its agent messages
         self.notified_at = {}  # tool_use_id -> the transcript lines of its task notifications
+        self.task_notified_at = {}  # task id (an agent id for an agent) -> the transcript lines of its notifications
         self.messaged_at = {}  # agent id -> the transcript lines of its agent messages
         self.messages_sent = []  # (transcript line, SendMessage recipient)
         self.send_lines = {}  # SendMessage tool_use_id -> (transcript line, recipient)
@@ -271,6 +275,8 @@ class LoopTranscript:
             self.notified_at.setdefault(notification.group(1), []).append(n)
             if notification.group(2) is not None:
                 reports.append(notification.group(2))
+        for task_id in NOTIFIED_TASK.findall(carrier):
+            self.task_notified_at.setdefault(task_id, []).append(n)
         for agent_id, report in AGENT_MESSAGE.findall(carrier):
             self.agent_messages.setdefault(agent_id, []).append(report)
             self.messaged_at.setdefault(agent_id, []).append(n)
@@ -386,20 +392,23 @@ class LoopTranscript:
         return self.dispatch_lines(kinds) + [n for n, recipient in self.messages_sent if recipient in agents]
 
     def open_launches(self):
-        """The tool_use_ids of background launches that have not reported back, by task notification or agent
-        message. Only a result that starts with the launch text is a launch: a foreground report may quote it."""
+        """The tool_use_ids of background launches that have not reported back, by task notification (keyed by the
+        launch's tool_use_id or by the launched agent's id) or agent message. Only a result that starts with the
+        launch text is a launch: a foreground report may quote it."""
         return [tool_use_id for tool_use_id, text in self.results.items()
                 if text.lstrip().startswith(ASYNC_LAUNCH) and tool_use_id not in self.notifications
-                and self.launched_agent(tool_use_id) not in self.agent_messages]
+                and self.launched_agent(tool_use_id) not in self.agent_messages
+                and self.launched_agent(tool_use_id) not in self.task_notified_at]
 
     def resume_is_open(self, line, agent_id, send_id, open_launches):
         """True when a SendMessage that resumed `agent_id` has had no agent message from it and no task notification
-        on a later transcript line, keyed by the SendMessage's id (the harness's key for a resumed agent) or by its
-        launch's. A launch that is itself still open already counts."""
+        on a later transcript line, keyed by the SendMessage's id (the harness's key for a resumed agent), by its
+        launch's, or by the agent's task id. A launch that is itself still open already counts."""
         launch_ids = [tool_use_id for tool_use_id in self.results if self.launched_agent(tool_use_id) == agent_id]
         if any(tool_use_id in open_launches for tool_use_id in launch_ids):
             return False
-        later_reports = [*self.messaged_at.get(agent_id, []), *self.notified_at.get(send_id, []),
+        later_reports = [*self.messaged_at.get(agent_id, []), *self.task_notified_at.get(agent_id, []),
+                         *self.notified_at.get(send_id, []),
                          *(at for tool_use_id in launch_ids for at in self.notified_at.get(tool_use_id, []))]
         return not any(at > line for at in later_reports)
 

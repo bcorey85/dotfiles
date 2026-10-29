@@ -3,7 +3,7 @@ type: "Change"
 title: "A plan conflict that changes no acceptance criterion is adopted without asking"
 description: "A PLAN-IMPACT block now ends with an acceptance_criteria line. When every block says none, /review, /fix and /code adopt the plan change by rule, log it under Plan Deviations as the session's ruling, and re-dispatch with no question to the user. Any other value, or no line at all, still asks."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T23:45:38-05:00"}
-seq: 219
+seq: 222
 kind: "user-rule"
 components: ["script/review-fix", "script/code-step", "script/plan-format", "skill/coder-core", "agent/code-reviewer", "agent/review-loop", "skill/review", "skill/fix"]
 evidence: ["judgment"]

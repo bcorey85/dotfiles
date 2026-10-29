@@ -379,9 +379,9 @@ def ask_listing_lines(asks):
     for number, item in enumerate(asks, 1):
         ask_class = item["class"] + (f" (was {item['class_raw']})" if item.get("class_raw") else "")
         lines.append(f"{number}. {item.get('file_line') or 'no file:line'}  [{item['gate']}/{ask_class}]")
-        lines.append(f"   {item['question']}")
+        lines += script_utils.hanging_indent_lines("   ", item["question"])
         if item.get("change"):
-            lines.append(f"   Proposed change: {item['change']}")
+            lines += script_utils.hanging_indent_lines("   Proposed change: ", item["change"])
     return lines
 
 

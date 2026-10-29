@@ -464,6 +464,18 @@ class JoinedDistinctTest(unittest.TestCase):
         self.assertEqual("a | b", script_utils.joined_distinct(["a", "b"], " | "))
 
 
+class HangingIndentLinesTest(unittest.TestCase):
+    def test_the_first_line_takes_the_lead_and_later_lines_the_indent(self):
+        self.assertEqual(["1. a", "   b", "   c"], script_utils.hanging_indent_lines("1. ", "a\nb\nc"))
+        self.assertEqual(["- a", "  b"], script_utils.hanging_indent_lines("- ", "a\nb", indent="  "))
+
+    def test_empty_text_gives_no_lines(self):
+        self.assertEqual([], script_utils.hanging_indent_lines("1. ", ""))
+
+    def test_a_value_that_is_not_text_prints_as_text(self):
+        self.assertEqual(["- 5"], script_utils.hanging_indent_lines("- ", 5))
+
+
 class ContainsIgnoringWhitespaceTest(unittest.TestCase):
     def test_a_part_that_differs_only_in_line_breaks_and_indentation_is_contained(self):
         self.assertTrue(script_utils.contains_ignoring_whitespace("intro\n\n  a   b\nc\n", "a b\n   c"))

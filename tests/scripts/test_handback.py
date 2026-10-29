@@ -945,8 +945,12 @@ def coder_step(tool_use_id):
 
 
 def full_check_run(tool_use_id):
-    return transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Bash",
-                            "input": {"command": "npm test > /tmp/review-gate.log 2>&1"}})
+    """A passed full_check.py call: one record holds the shell call and the result it printed."""
+    call = {"type": "tool_use", "id": tool_use_id, "name": "Bash",
+            "input": {"command": "python3 ~/.claude/scripts/review/full_check.py /r --log /tmp/gate.log -- 'npm test'"}}
+    printed = {"type": "tool_result", "tool_use_id": tool_use_id,
+               "content": [{"type": "text", "text": "full check: passed\nsummary: 3 passed"}]}
+    return {"type": "assistant", "message": {"role": "assistant", "content": [call, printed]}}
 
 
 def background_reviewer_launch(tool_use_id, agent_id):

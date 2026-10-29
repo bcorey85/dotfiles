@@ -500,18 +500,6 @@ def pop_repeated_option(arguments, flag):
     return rest, values
 
 
-def strip_flag_values(command, flags):
-    """`command` with every `flag value` and `flag=value` pair of the named flags replaced by one space. A flag
-    matches as a whole word. Its value is the next word, or the next quoted text, unless that word starts with a dash:
-    a flag followed by another flag, or by nothing, is left as it is."""
-    if not flags:
-        return command
-    names = "|".join(re.escape(flag) for flag in sorted(flags, key=len, reverse=True))
-    quoted_or_word = r"""(?:"[^"]*"|'[^']*'|\S+)"""
-    pair = re.compile(rf"(?<!\S)(?:{names})(?:={quoted_or_word}?|\s+(?!-){quoted_or_word})")
-    return pair.sub(" ", command)
-
-
 def leading_env_assignments(command_lines):
     """The `NAME=value` words that the command lines start with, as written (quotes kept), one per variable name: the
     first line to set a name decides its value. Order is first seen. A line that is only an assignment, with no command

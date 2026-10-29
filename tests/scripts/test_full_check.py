@@ -239,6 +239,32 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
         self.assertFalse(marker.exists())
 
+    def test_a_command_scoped_to_files_or_tests_is_not_run_and_a_whole_suite_command_is(self):
+        marker = self.repo / "ran"
+
+        for command in ("pytest tests/test_a.py", "npx jest src/a.test.ts", "npm test -- -t login",
+                        "python manage.py test app.tests.TestA"):
+            with self.subTest(command=command):
+                completed = self.check(f"touch {marker}; {command}")
+                self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
+                self.assertFalse(marker.exists())
+
+        unscoped = self.check(PASSING_SUITE)
+        self.assertEqual(unscoped.stdout.splitlines()[0], "full check: passed")
+
+        with self.subTest(command="pytest tests/test_a.py", repo="CI"):
+            in_ci = self.check("pytest tests/test_a.py", claude_md="# Repo\n\n- Full suite: CI\n")
+            self.assertEqual(in_ci.stdout.splitlines()[0], "full check: not run (CI)")
+
+    def test_the_command_the_claude_md_declares_runs_even_when_it_names_a_tests_folder(self):
+        marker = self.repo / "ran"
+        declared = f"touch {marker}; pytest tests/"
+
+        completed = self.check(declared, claude_md=f"Quality check: `{declared}`\n")
+
+        self.assertFalse(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
+        self.assertTrue(marker.exists())
+
     def test_the_check_runs_when_claude_md_has_no_full_suite_line(self):
         completed = self.check(PASSING_SUITE, claude_md="Quality check: `make test`\n")
 

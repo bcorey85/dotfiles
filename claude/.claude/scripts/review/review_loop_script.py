@@ -67,14 +67,13 @@ import handback
 import plan_format
 import script_utils
 import source_paths
+from finding_record import parse_finding
 from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check
 from review_loop_findings import (
     PLAN_CHANGE_YES,
     UNLOCATED,
     absent_file_split,
-    finding_class,
-    finding_file,
-    finding_title,
+    finding_records,
     last_json_object,
     merge_findings,
     near_title,
@@ -276,7 +275,7 @@ def second_round_plan(round_fix, changed, skipped_findings, coder_diffs):
     for agent, fixes in round_fix:
         if not fixes:
             continue
-        skipped_paths = [finding_file(fix)[0] for fix in fixes if any(fix in item for item in skipped_findings)]
+        skipped_paths = [fix.path for fix in fixes if any(fix.text in item.text for item in skipped_findings)]
         owned = [path for path in dict.fromkeys(changed + skipped_paths)
                  if path and source_paths.is_test_path(path) == (agent == "test-reviewer")]
         if agent == "smell-reviewer" and not smell_runs:
@@ -334,7 +333,8 @@ def disposition_call(text, repo, out):
     parsed = last_json_object(reply, ("fix", "ask", "nit"))
     if parsed is None:
         raise ValueError(f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}')
-    return {"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []), "assessment": ""}
+    return finding_records({"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []),
+                            "assessment": ""})
 
 
 def coder_prompt(repo, findings, small_items, files, gate_env=()):
@@ -530,18 +530,18 @@ def telemetry(repo, session, lane, scope_fields, iter_count, tallies, run_rows):
                         f"gate={row['gate']}", f"n_findings={len(row['findings'])}", f"diff_loc={row['loc']}",
                         f"result={row['result']}"])
         for finding in row["findings"]:
-            path, line = finding_file(finding["text"])
+            path, line = finding["finding"].path, finding["finding"].line
             location = [f"file={path}", f"line={line}"] if path else [f"file={UNLOCATED}"]
             finding_id = stable_finding_id(session, lane, scope_fields, row["gate"], finding["spot"])
             command = [logger, "kind=finding", f"finding_id={finding_id}", f"lane={lane}", *scope_fields,
                        f"iter={row['iter']}", f"gate={row['gate']}", f"disposition={finding['disposition']}",
-                       f"class={finding_class(finding['text'])}", *location, f"actioned={finding['actioned']}"]
+                       f"class={finding['finding'].finding_class}", *location, f"actioned={finding['actioned']}"]
             if finding["disposition"] == "fix":
                 command.append(f"source={finding['source']}")
             code, output = log_call(repo, command)
             printed_ids = handback.PRINTED_FINDING_ID.findall(output)
             if finding["disposition"] == "ask" and code == 0 and printed_ids:
-                ask_ids.setdefault(finding["text"], printed_ids[0])
+                ask_ids.setdefault(finding["finding"], printed_ids[0])
                 ask_rows.append({"file": path or UNLOCATED, "line": line, "finding_id": printed_ids[0]})
     return ask_ids, ask_rows
 
@@ -549,14 +549,14 @@ def telemetry(repo, session, lane, scope_fields, iter_count, tallies, run_rows):
 # ---------- the loop ----------
 
 def tally_review(tallies, findings, assessment):
-    """Adds one review's new findings ({disposition: [texts]}) to the metrics tallies, so a finding refiled in a later
-    round counts once."""
+    """Adds one review's new findings ({disposition: [finding records]}) to the metrics tallies, so a finding refiled
+    in a later round counts once."""
     tallies["fix"] += len(findings["fix"])
     tallies["ask"] += len(findings["ask"])
     tallies["nit"] += len(findings["nit"])
-    tallies["blocker"] += sum("[blocker]" in item.lower() for item in findings["fix"])
+    tallies["blocker"] += sum("[blocker]" in item.text.lower() for item in findings["fix"])
     every_finding = findings["fix"] + findings["ask"] + findings["nit"]
-    tallies["smells"] += sum(finding_class(item) == "smell" for item in every_finding)
+    tallies["smells"] += sum(item.finding_class == "smell" for item in every_finding)
     if assessment == "NEEDS CHANGES":
         tallies["result"] = "NEEDS CHANGES"
     elif assessment and tallies["result"] == "PASS":
@@ -567,8 +567,8 @@ def prior_issue_entries(round_findings, skips):
     """The round's findings as the next reviewers' prior issues: fixed, or skipped with the coder's reason."""
     entries = []
     for number, item in enumerate(round_findings, 1):
-        entry = {"issue": item, "status": "skipped" if number in skips else "fixed",
-                 "file": finding_file(item)[0] or "unknown"}
+        entry = {"issue": item.text, "status": "skipped" if number in skips else "fixed",
+                 "file": item.path or "unknown"}
         if number in skips:
             entry["reason"] = skips[number]
         entries.append(entry)
@@ -615,7 +615,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
     def review_one(self, dispatch):
         agent, owned = dispatch
         prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
-                                 tuple(self.asks), self.brief)
+                                 tuple(ask.text for ask in self.asks), self.brief)
         text = claude_call(f"review{self.iter_count}-{agent}", prompt, self.repo, self.out, agent=agent)
         return parse_review(text) or disposition_call(text, self.repo, self.out)
 
@@ -626,33 +626,34 @@ class LoopRun(full_check_gate.FullCheckSteps):
                      and entry["disposition"] == finding["disposition"]
                      and near_title(entry["title"], finding["title"])), None)
 
-    def ask_already_filed(self, text):
+    def ask_already_filed(self, ask):
         """Whether another reviewer already asked this text, so it stays one ask and files no second finding."""
-        return text in self.asks or any(entry["disposition"] == "ask" and entry["text"] == text
-                                        for entries in self.filed.values() for entry in entries)
+        return ask in self.asks or any(entry["disposition"] == "ask" and entry["finding"] == ask
+                                       for entries in self.filed.values() for entry in entries)
 
     def filing_row(self, agent, owned, parsed, fixes, design):
         """The run row of one review. A fix starts `actioned: none`; fix_round sets it once the coder returns. A
         finding this reviewer filed in an earlier round, in the same file with the same disposition and the same or
         near title, updates that round's entry and stays off this row, wherever its line moved."""
-        reported = [{"text": item, "disposition": "fix", "actioned": "none", "source": "round"} for item in fixes]
-        reported += [{"text": item, "disposition": "ask", "actioned": "ask", "source": ""}
+        reported = [{"finding": item, "disposition": "fix", "actioned": "none", "source": "round"} for item in fixes]
+        reported += [{"finding": item, "disposition": "ask", "actioned": "ask", "source": ""}
                      for item in parsed["ask"] + design]
-        reported += [{"text": item, "disposition": "nit", "actioned": "none", "source": ""} for item in parsed["nit"]]
+        reported += [{"finding": item, "disposition": "nit", "actioned": "none", "source": ""}
+                     for item in parsed["nit"]]
 
         findings = []
         for finding in reported:
-            path = finding_file(finding["text"])[0] or UNLOCATED
-            finding["title"] = finding_title(finding["text"])
+            path = finding["finding"].path or UNLOCATED
+            finding["title"] = finding["finding"].title
             entries = self.filed.setdefault((agent, path), [])
             earlier = self.earlier_filing(entries, finding)
             if earlier:
                 finding["spot"] = earlier["spot"]
                 if finding["disposition"] == "ask":
-                    finding["text"] = earlier["text"]
+                    finding["finding"] = earlier["finding"]
                 earlier.update(finding)
                 finding = earlier
-            elif finding["disposition"] == "ask" and self.ask_already_filed(finding["text"]):
+            elif finding["disposition"] == "ask" and self.ask_already_filed(finding["finding"]):
                 continue
             else:
                 finding["spot"] = new_spot(path, finding["title"], entries)
@@ -669,7 +670,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
     def record_review(self, agent, owned, parsed, fixes, design):
         """Files one review's row, tallies its new findings and returns them by disposition."""
         row = self.filing_row(agent, owned, parsed, fixes, design)
-        new_findings = {disposition: [finding["text"] for finding in row["findings"]
+        new_findings = {disposition: [finding["finding"] for finding in row["findings"]
                                       if finding["disposition"] == disposition]
                         for disposition in ("fix", "ask", "nit")}
         tally_review(self.tallies, new_findings, parsed["assessment"])
@@ -680,7 +681,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         """(the review without its absent-file findings, its fixes, its [design-decision] fixes, its absent-file
         findings). The fixes a plan ruling covers move to the review's asks."""
         parsed, absent = absent_file_split(self.repo, tree_paths, review)
-        design = [item for item in parsed["fix"] if "[design-decision]" in item.lower()]
+        design = [item for item in parsed["fix"] if "[design-decision]" in item.text.lower()]
         fixes = [item for item in parsed["fix"] if item not in design]
         fixes, ruled = ruled_plan_split(self.repo, self.plan, fixes)
         parsed["ask"] += ruled
@@ -702,8 +703,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
             open_asks += [(later_agent, item) for item in later_new["ask"]]
             plan_changes += plan_change_items(later_parsed["ask"] + later_design)
 
-        ask_texts = [item for _agent, item in open_asks]
-        plan_change_asks = set(plan_change_items(ask_texts))
+        open_ask_findings = [item for _agent, item in open_asks]
+        plan_change_asks = set(plan_change_items(open_ask_findings))
         for ask_agent, item in open_asks:
             if item not in plan_change_asks:
                 self.add_ask(ask_agent, item)
@@ -711,12 +712,12 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.open_fixes = merge_findings(open_fixes)
         for row in self.run_rows:
             for finding in row["findings"]:
-                if finding["actioned"] == "fixed" and reported_again(finding["text"], self.open_fixes):
+                if finding["actioned"] == "fixed" and reported_again(finding["finding"], self.open_fixes):
                     finding["actioned"] = "none"
         self.fixed[:] = still_fixed(self.fixed, self.open_fixes)
 
         unique_changes = list(dict.fromkeys(plan_changes))
-        self.stop("plan-change", unique_changes)
+        self.stop("plan-change", [item.text for item in unique_changes])
 
     def add_ask(self, agent, item):
         """Adds one ask with its reviewer as its gate. The same text from a second reviewer stays one ask, under the
@@ -757,7 +758,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
     def repair(self, call_name, findings, nits=()):
         """One coder pass on the findings. Returns (report, diffs, changed files)."""
         before = scope(self.repo)
-        prompt = coder_prompt(self.repo, findings, list(nits), list(before), self.gate_env)
+        prompt = coder_prompt(self.repo, [finding.text for finding in findings], [nit.text for nit in nits],
+                              list(before), self.gate_env)
         self.last_pass = "coder"
         self.untested_fix = True
         try:
@@ -773,7 +775,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         applied = [item for number, item in enumerate(round_findings, 1) if changed and number not in skips]
         self.fixed += applied
         for finding in self.round_fixes:
-            if any(finding["text"] in item for item in applied):
+            if any(finding["finding"].text in item.text for item in applied):
                 finding["actioned"] = "fixed"
 
         self.open_fixes = [item for item in round_findings if item not in applied]
@@ -802,7 +804,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in unchanged]
             skipped_findings += unchanged
         for finding in self.round_fixes:
-            skipped = any(finding["text"] in item for item in skipped_findings)
+            skipped = any(finding["finding"].text in item.text for item in skipped_findings)
             finding["actioned"] = "skipped_fp" if skipped else "fixed"
         self.fixed += [item for item in round_findings if item not in skipped_findings]
         self.prior_issues = prior_issue_entries(round_findings, skips)
@@ -826,13 +828,14 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open."""
-        closure = closure_check(self.repo, self.out, self.fixed, claude_call)
+        closure = closure_check(self.repo, self.out, [finding.text for finding in self.fixed], claude_call)
         self.class_closure = closure["receipt"]
         if not closure["open"]:
             return
 
-        _report, _diffs, class_changed = self.repair("coder-class", closure["open"])
-        self.mark_repaired(closure["open"], class_changed)
+        open_findings = [parse_finding(text) for text in closure["open"]]
+        _report, _diffs, class_changed = self.repair("coder-class", open_findings)
+        self.mark_repaired(open_findings, class_changed)
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")
 

@@ -14,22 +14,22 @@ import handback
 import review_loop_gate
 import reviewed_tree
 import script_utils
-from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED, finding_class, finding_file
+from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED
 
 
-def located(text):
-    """The packet's file_line for a finding text: the `path:line` the driver parses, or UNLOCATED."""
-    path, line = finding_file(text)
-    return f"{path}:{line}" if path else UNLOCATED
+def located(finding):
+    """The packet's file_line for a finding: the `path:line` the driver parses, or UNLOCATED."""
+    return f"{finding.path}:{finding.line}" if finding.path else UNLOCATED
 
 
-def finding_entry(text):
-    return {"finding": text, "file_line": located(text)}
+def finding_entry(finding):
+    return {"finding": finding.text, "file_line": located(finding)}
 
 
-def ask_entry(text, gate, finding_id):
+def ask_entry(ask, gate, finding_id):
     # The text before the last `change:` marker is the question; the text after it is the edit an accepted answer
     # makes. An ask with no marker carries its own recommended edit, so its whole text is both.
+    text = ask.text
     question, change = text, text
     change_marks = list(ASK_CHANGE_MARK.finditer(text))
     if change_marks:
@@ -37,8 +37,8 @@ def ask_entry(text, gate, finding_id):
         question = text[:last_mark.start()].rstrip(" —-")
         change = text[last_mark.end():].strip()
 
-    entry = {"question": question, "file_line": located(text), "change": change, "gate": gate,
-             "class": finding_class(text)}
+    entry = {"question": question, "file_line": located(ask), "change": change, "gate": gate,
+             "class": ask.finding_class}
     if finding_id:
         entry["finding_id"] = finding_id
     return entry
@@ -47,20 +47,21 @@ def ask_entry(text, gate, finding_id):
 def packet_message(outcome):
     """The outcome in the packet grammar handback.py reads: one `key: value` line per field, list fields as JSON."""
     status = "plan-impact" if outcome["status"] == "plan-change" else outcome["status"]
-    asks = [ask_entry(text, outcome["ask_gates"].get(text, handback.DEFAULT_GATE), outcome["ask_ids"].get(text))
-            for text in outcome["asks"]]
+    asks = [ask_entry(ask, outcome["ask_gates"].get(ask, handback.DEFAULT_GATE), outcome["ask_ids"].get(ask))
+            for ask in outcome["asks"]]
     fields = {
         "status": status,
         "iter": outcome["iter"],
-        "fixed": [finding_entry(text) for text in outcome["fixed"]],
-        "skipped_fp": [{"item": entry["item"], "reason": entry["reason"], "file_line": located(entry["item"])}
+        "fixed": [finding_entry(finding) for finding in outcome["fixed"]],
+        "skipped_fp": [{"item": entry["item"].text, "reason": entry["reason"], "file_line": located(entry["item"])}
                        for entry in outcome["skipped_fp"]],
         "blockers": outcome["blockers"],
-        "findings_remaining": [{"disposition": "fix", **finding_entry(text)} for text in outcome["open_fixes"]],
+        "findings_remaining": [{"disposition": "fix", **finding_entry(finding)}
+                               for finding in outcome["open_fixes"]],
         "ask": asks,
         "class_closure": script_utils.one_line(outcome["class_closure"], limit=None),
         "files_touched": outcome["files_touched"],
-        "nit": [finding_entry(text) for text in outcome["nits"]],
+        "nit": [finding_entry(finding) for finding in outcome["nits"]],
     }
     if outcome["full_check"]:
         fields["full_check"] = outcome["full_check"]
@@ -84,7 +85,7 @@ def packet_message(outcome):
 
 def crash_outcome(progress, reason):
     # A crash is a tool fault, not a finding: tool_fault tells code_step to offer review-again.
-    fixed = [item for item in progress["fixed"] if isinstance(item, str) and item.strip()]
+    fixed = [item for item in progress["fixed"] if item.text.strip()]
     return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
             "skipped_fp": [], "blockers": [reason], "plan_change": [], "open_fixes": [], "asks": [],
             "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",

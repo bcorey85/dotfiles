@@ -8,8 +8,6 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import shell_command
 
 PROTECTED_BRANCHES = {"main", "master"}
-# Options of `git` that take the next word as their value.
-GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 UNPARSED_PUSH = re.compile(r"git\s+push\b", re.IGNORECASE)
 UNPARSED_BRANCH = re.compile(r"\b(main|master)\b", re.IGNORECASE)
 
@@ -20,9 +18,7 @@ def push_arguments(words):
     if not words or os.path.basename(words[0]) != "git":
         return None
 
-    index = 1
-    while index < len(words) and words[index].startswith("-"):
-        index += 2 if words[index] in GIT_VALUE_OPTIONS else 1
+    _options, index = shell_command.git_options(words)
     if index >= len(words) or words[index] != "push":
         return None
     return words[index + 1:]

@@ -121,12 +121,13 @@ def prior_issues(accepted_asks):
 
 
 def numbered_ask_lines(asks):
-    # Each ask with the one change an accepted answer makes.
+    # Each ask with the one change an accepted answer makes. A multi-line ask's later lines sit indented under its
+    # number.
     lines = []
     for number, item in enumerate(asks, 1):
-        lines.append(f"{number}. {ask_text(item)}")
+        lines += script_utils.hanging_indent_lines(f"{number}. ", ask_text(item))
         if item.get("change"):
-            lines.append(f"   Proposed change: {item['change']}")
+            lines += script_utils.hanging_indent_lines("   Proposed change: ", item["change"])
     return lines
 
 
@@ -885,9 +886,12 @@ def ask_the_user(repo_dir, state, asks):
         repo_dir,
         f"ask the user about each review ask below in plain text and wait for the answers. Each answer is accepted "
         f"(make the proposed change), rejected (leave the code as it stands) or modified (make the user's change "
-        f"instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. After "
-        "a modified outcome, add `--change \"<the user's change text>\"`. If the repo's CLAUDE.md hands ask "
-        "decisions to the session, decide each ask yourself instead of asking, and add `--by session` to asks-done.",
+        f"instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. Put "
+        "`--change \"<the user's change text>\"` right after each `modified` word, one per modified ask, as in "
+        "`asks-done accepted modified --change \"<text>\" modified --change \"<text>\"` (the example only shows the "
+        "shape of the arguments, not how many words). If the repo's CLAUDE.md "
+        "hands ask decisions to the session, decide each ask yourself instead of asking, and add `--by session` to "
+        "asks-done.",
         *numbered_ask_lines(asks),
         *open_findings_lines,
     )

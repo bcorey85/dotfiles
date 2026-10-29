@@ -863,6 +863,29 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual("cd pkg && npx jest src/__tests__/foo.jsx src/foo.spec.js", filled_command)
 
+    def test_an_npm_test_script_that_wraps_jest_also_runs_the_script_files_the_coder_creates_under_tests(self):
+        (self.repo / "pkg").mkdir()
+        scripts = {"react-scripts": "react-scripts test", "jest": "jest --ci", "other": "mocha"}
+        expected = {
+            "react-scripts": "cd pkg && npm test -- src/__tests__/foo.js src/foo.spec.js",
+            "jest": "cd pkg && npm test -- src/__tests__/foo.js src/foo.spec.js",
+            "other": "cd pkg && npm test -- src/foo.spec.js",
+        }
+        for name in ("src/a.js", "src/foo.spec.js", "src/__tests__/foo.js"):
+            (self.repo / "pkg" / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / "pkg" / name).write_text("export {}\n")
+        phase = "**File**: `pkg/src/a.js`\n"
+
+        for case, test_script in scripts.items():
+            with self.subTest(case=case):
+                (self.repo / "pkg/package.json").write_text(json.dumps({"scripts": {"test": test_script}}))
+
+                commands = code_step_gates.derive_gate_commands(self.repo, phase)
+                test_command = next(command for command in commands if "npm test" in command)
+                filled_command = coder_gate.fill_files(test_command, str(self.repo))
+
+                self.assertEqual(expected[case], filled_command)
+
     def test_a_python_phase_naming_no_test_file_runs_every_test_file_the_coder_creates(self):
         (self.repo / "pyproject.toml").write_text("")
         phase = "**File**: `app/models.py`\n"

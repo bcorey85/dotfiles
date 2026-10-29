@@ -22,6 +22,7 @@ okf_version: "0.2"
 
 # 2026-10-29
 
+* [Coder gate runs __tests__ files when npm test wraps jest](2026-10-29-coder-gate-runs-tests-files-when-npm-test-wraps.md) - A package with no jest or vitest dependency whose test script names jest or react-scripts now gets the jest test-file rule, so a coder-created __tests__ file is in the derived npm test command.
 * [One table of start flags, so a quoted --headless start splits](2026-10-29-one-table-of-start-flags-so-a-quoted-headless.md) - The /code start flags now come from one table in code_step_start_args.py; a start string that opens with --headless is split into words instead of exiting on an unknown flag.
 * [The coder gate ranks its outcomes in one place](2026-10-29-the-coder-gate-ranks-its-outcomes-in-one-place.md) - The scoped test run and the hand-back hook rank a mixed result with one gate_outcome(), so a setup fault beside a command error reports a command error in both, and each coder's gate record holds one per-command outcome map.
 * [Review loop uses the shared test and lockfile path rules](2026-10-29-review-loop-uses-the-shared-test-and-lockfile-path.md) - The scripted review loop routes tests to the test reviewer and sizes a change by the same test and lockfile rules as the other scripts, so __tests__/, test_*.py, *_test.* and nested tests/ files and every lockfile are recognised. Generated, dist/, snapshot and .min.js files also no longer count toward the size bar.

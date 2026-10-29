@@ -207,29 +207,45 @@ def read_ruled_asks(cwd):
 
 def record_ruled_asks(cwd, state, outcomes, change_texts):
     # The outcome of every ask the user (or a pre-set outcome) ruled on. It outlives the phase: a later review, plan
-    # impact or refactor pass of the same plan reads it so that it does not raise the same ask again.
+    # impact or refactor pass of the same plan reads it so that it does not raise the same ask again. `change` holds
+    # the change the ruling names: the ask's proposal for an accepted or rejected ask, the user's change for a modified
+    # one. An ask with no proposed change of its own carries its question as its change, so that copy is no proposal.
     ruled = read_ruled_asks(cwd)
     for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=True):
+        question = str(item.get("question") or "")
+        proposed = str(item.get("change") or "")
+        if proposed.strip() == question.strip():
+            proposed = ""
+
+        named_change = (change_text or "") if outcome == "modified" else proposed
         ruled.append({"plan": state.get("plan"), "phase": state.get("phase"), "file_line": item.get("file_line", ""),
-                      "ask": script_utils.joined_distinct([str(item.get("finding") or ""),
-                                                           str(item.get("question") or "")]),
-                      "outcome": outcome, "change": change_text or ""})
+                      "ask": script_utils.ask_text(item), "outcome": outcome, "change": named_change})
     state_dir(cwd).mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(ruled_asks_path(cwd), json.dumps(ruled, indent=1))
 
 
+RULED_ASK_OUTCOMES = {"accepted": "accepted, so the ask's proposed change is made",
+                      "rejected": "rejected, so the ask's proposed change is not made",
+                      "modified": "modified, so the user's change is made in place of the ask's proposal"}
+
+
 def ruled_asks_lines(cwd, plan):
     # One line per ask already ruled in this plan's run, for a prompt. Empty when none was ruled. A multi-line ask or
-    # change folds onto its one line, so every line of it stays inside the list entry that carries its outcome.
+    # change folds onto its one line, so every line of it stays inside the list entry that carries its outcome. The
+    # outcome says what it did to the code and names the change when the record holds one, and the phase comes last, so
+    # an ask that offers phases never reads as answered by the phase it was ruled in.
     lines = []
     for ruled in read_ruled_asks(cwd):
         if ruled["plan"] != plan:
             continue
+
         ask = script_utils.one_line(ruled["ask"], limit=None)
         where = f" ({ruled['file_line']})" if ruled["file_line"] else ""
+        outcome = RULED_ASK_OUTCOMES[ruled["outcome"]]
         change_text = script_utils.one_line(ruled["change"], limit=None)
-        change = f" - the user's change: {change_text}" if change_text else ""
-        lines.append(f"{ask}{where}: {ruled['outcome']}, Phase {ruled['phase']}{change}")
+        change = f": {change_text}" if change_text else ""
+        phase = f" (ruled in Phase {ruled['phase']})" if ruled["phase"] is not None else ""
+        lines.append(f"{ask}{where}: {outcome}{change}{phase}")
     return lines
 
 

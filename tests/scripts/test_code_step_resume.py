@@ -261,7 +261,8 @@ class ResumeTest(base.CodeStepTest):
 
         out = self.step("start", "--task", "x")
 
-        self.assert_refused_with_choices(out, "resume", "start --restart --task x")
+        self.assert_refused_with_choices(out, "resume", "start --restart --task x", "abort")
+        self.assertIn("The task was not started.", out)
         self.assertEqual(before, self.state_bytes())
 
     def test_start_over_an_unfinished_run_with_no_arguments_is_refused_with_resume(self):
@@ -291,15 +292,37 @@ class ResumeTest(base.CodeStepTest):
         self.assert_refused_with_rerun(at_review, "resume")
         self.assertEqual(before, self.state_bytes())
 
-    def test_resume_with_an_argument_is_refused_and_names_task(self):
+    def test_resume_with_task_text_over_an_open_run_stops_on_the_users_word_and_runs_neither_task(self):
         self.start_phase_one()
         before = self.state_bytes()
 
-        out = self.step("resume", "x")
+        out = self.step("resume", "fix the typo")
 
-        self.assert_refused_with_rerun(out, "resume")
-        self.assertIn("start --task", out)
+        self.assertNotIn("ACTION: rerun", out)
+        self.assert_refused_with_choices(out, "resume", "start --restart --task 'fix the typo'", "abort")
+        self.assertIn("Phase 1 of docs/plans/orders/spec.md at stage coder", out)
+        self.assertIn("The text was not run.", out)
         self.assertEqual(before, self.state_bytes())
+
+    def test_resume_with_a_modifier_over_an_open_run_keeps_it_out_of_the_restart_task_text(self):
+        self.start_phase_one()
+
+        out = self.step("resume", "+fast fix the typo")
+
+        self.assert_refused_with_choices(out, "start --restart +fast --task 'fix the typo'")
+
+    def test_resume_with_task_text_over_a_run_of_another_session_offers_no_drop_of_it(self):
+        self.start_phase_one()
+        self.env["CLAUDE_CODE_SESSION_ID"] = "sess-2"
+
+        out = self.step("resume", "fix the typo")
+
+        self.assertNotIn("ACTION: rerun", out)
+        self.assert_refused_with_choices(out, "status")
+        self.assertIn("The text was not run.", out)
+        self.assertNotIn("code_step.py start --restart", out)
+        self.assertNotIn("code_step.py abort", out)
+        self.assertIn("another session", out)
 
     def test_resume_with_text_that_names_a_task_file_and_no_open_run_starts_a_run_with_it(self):
         task_file = self.tmp / "scratchpad" / "brief.md"

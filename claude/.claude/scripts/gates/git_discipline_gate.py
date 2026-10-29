@@ -6,12 +6,18 @@
   2. git commit --amend
   3. attribution or session trailers in commit and PR text
   4. git commit or push on a branch that still carries the auto-generated `worktree-` prefix
-  5. git commit on main or master, unless ./CLAUDE.md declares a "direct-edit repo"
+  5. git commit on main or master, unless the repo's CLAUDE.md declares a "direct-edit repo"
+
+Rules 4 and 5 read the branch of the repo each call runs in: its `-C` directory, taken relative to the target of an
+earlier `cd` in the same command, else to the cwd. A command with a `cd` after a `(` not preceded by `$` follows no
+`cd`, and a quoted, variable or substituted target is not read: those calls run from the directory the earlier calls
+resolved to (the cwd when none did), with the `-C` directory joined to it. SUBSHELL_CD matches such a `(` before a
+`cd`, quoted or not.
 
 Rules 1, 2, 4 and 5 read git calls in command position, after git's own options (`-C <dir>`, `-c <key=value>`,
-`--no-pager`) and wrapper words (env, timeout), and inside `$(...)` and backticks. Heredoc bodies, quoted strings and
-comments are text, not calls. A command that names a code runner (`bash -c`, eval, xargs, ssh) is read as text: every
-`git` word in it starts a call.
+`--no-pager`) and wrapper words (env, timeout), and inside `$(...)` and backticks. Heredoc bodies, comments and quoted
+strings are text, not calls, except that a `$(...)` or backtick span inside single quotes is still read as a call. A
+command that names a code runner (`bash -c`, eval, xargs, ssh) is read as text: every `git` word in it starts a call.
 
 Denies with PreToolUse decision JSON. Fails closed on internal error.
 """
@@ -33,60 +39,115 @@ COMMIT_OR_PR = re.compile(r"\bgit" + S + r"commit\b|\bgh" + S + r"pr" + S + r"(c
 ATTRIBUTION = re.compile(r"Claude-Session:|claude\.ai/code/session_|Co-Authored-By:[ \t\r\f\v]*Claude", re.I)
 # The text of one git call inside code the gate cannot parse: from the `git` word to a separator or a quote.
 GIT_CALL_TEXT = re.compile(r"\bgit\b[^\n;&|'\"`()]*", re.I)
+SUBSHELL_CD = re.compile(r"(?<!\$)\(.*\bcd\b", re.S)
 LINE_CONTINUATION = re.compile(r"\\\n")
-# git's own options that take the next word as their value.
-GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix"}
 STASH_READS = {"list", "show"}
 AUTOSTASH_COMMANDS = {"pull", "rebase", "merge"}
 AUTOSTASH_KEYS = {"rebase.autostash", "merge.autostash"}
 FALSE_VALUES = {"false", "no", "off", "0"}
+# A path word holding one of these is a quoted string, a variable, a substitution or a glob the gate cannot read.
+CD_OPTIONS = ("-L", "-P", "-e", "-@", "--")
+UNREAD_PATH_MARKS = ('"', "'", "$", "`", "*", "?")
 
 
 class GitCall(NamedTuple):
     subcommand: str
     arguments: list
     config: dict
+    directory: str
 
 
 class DenyError(Exception):
     pass
 
 
-def git_call(words):
-    """The GitCall the words run, once wrapper words and git's own options are dropped; None when they run no git
-    subcommand."""
+def joined_directory(directory, target):
+    """The directory `cd <target>` or `git -C <target>` moves to from `directory`; `directory` when the gate cannot
+    read the target or the target is an option (`cd -`, `cd -P <dir>`)."""
+    if not target or target.startswith("-") or any(mark in target for mark in UNREAD_PATH_MARKS):
+        return directory
+    expanded_target = os.path.expanduser(target)
+    return os.path.join(directory, expanded_target)
+
+
+def git_call(words, directory="."):
+    """The GitCall the words run from `directory`, once wrapper words and git's own options are dropped; None when
+    they run no git subcommand."""
     words = shell_command.command_after_wrappers(words)
     if not words or os.path.basename(words[0]).lower() != "git":
         return None
 
     config = {}
-    index = 1
-    while index < len(words) and words[index].startswith("-"):
-        option = words[index]
-        takes_value = option in GIT_VALUE_OPTIONS and index + 1 < len(words)
-        if option == "-c" and takes_value:
-            key, _equals, value = words[index + 1].partition("=")
-            config[key.lower()] = value.lower()
-        index += 2 if takes_value else 1
+    options, index = shell_command.git_options(words)
+    for option, value in options:
+        if option == "-c" and value is not None:
+            key, _equals, config_value = value.partition("=")
+            config[key.lower()] = config_value.lower()
+        if option == "-C" and value is not None:
+            directory = joined_directory(directory, value)
     if index == len(words):
         return None
-    return GitCall(words[index].lower(), words[index + 1:], config)
+    return GitCall(words[index].lower(), words[index + 1:], config, directory)
 
 
-def git_calls(command):
-    """Every GitCall the command makes in command position, those inside `$(...)` and backticks included. In code
-    that names a code runner, each `git` word starts a call, quoted or not."""
+def git_calls(command, directory="."):
+    """Every GitCall the command makes in command position, those inside `$(...)` and backticks included. A call
+    runs in the directory an earlier `cd` of the command moved to, else in `directory`. In code that names a code
+    runner, each `git` word starts a call, quoted or not."""
     without_heredocs = shell_statements.strip_heredocs(command)
     joined = LINE_CONTINUATION.sub(" ", without_heredocs)
     code = shell_statements.strip_comments(joined)
-    if shell_command.names_code_runner(code):
-        texts = [found.group() for found in GIT_CALL_TEXT.finditer(code)]
-        return [call for call in map(git_call, (text.split() for text in texts)) if call]
+    # A `cd` after a `(` may run in a subshell, whose directory does not carry on, so none is followed.
+    follows_cds = SUBSHELL_CD.search(code) is None
 
-    calls = [call for call in map(git_call, shell_statements.statements(code)) if call]
-    for span in shell_statements.code_spans(code):
-        calls += git_calls(span)
+    def directory_at(offset):
+        if not follows_cds:
+            return directory
+        return resolved_directory(code[:offset], directory)
+
+    if shell_command.names_code_runner(code):
+        text_calls = [git_call(found.group().split(), directory_at(found.start()))
+                      for found in GIT_CALL_TEXT.finditer(code)]
+        return [call for call in text_calls if call]
+
+    spans = shell_statements.code_spans(code)
+    outer_code = code
+    for span_start, span_end, _span in reversed(spans):
+        outer_code = outer_code[:span_start] + outer_code[span_end:]
+
+    calls = []
+    statement_directory = directory
+    for words in shell_statements.statements(outer_code):
+        if words[0] == "cd":
+            if follows_cds:
+                statement_directory = cd_directory(words, statement_directory)
+            continue
+        call = git_call(words, statement_directory)
+        if call:
+            calls.append(call)
+
+    for span_start, _span_end, span in spans:
+        calls += git_calls(span, directory_at(span_start))
     return calls
+
+
+def resolved_directory(code, directory):
+    """The directory the `cd` statements of `code` leave a command in, starting from `directory`."""
+    for words in shell_statements.statements(code):
+        if words[0] == "cd":
+            directory = cd_directory(words, directory)
+    return directory
+
+
+def cd_directory(words, directory):
+    """The directory the `cd` statement `words` moves to from `directory`: `cd -L|-P|-e|-@|-- <dir>` follows `<dir>`,
+    a bare `cd` goes home and `cd -` stays (OLDPWD is not known)."""
+    arguments = words[1:]
+    while arguments and arguments[0] in CD_OPTIONS:
+        arguments = arguments[1:]
+    if not arguments:
+        return joined_directory(directory, os.path.expanduser("~"))
+    return joined_directory(directory, arguments[0])
 
 
 def is_stash(call):
@@ -127,9 +188,12 @@ def command_of(raw):
     return jq_str(jq_get(payload, "tool_input", "command"))
 
 
-def is_direct_edit_repo():
+def is_direct_edit_repo(directory):
+    root = script_utils.repo_root(directory)
+    if root is None:
+        return False
     try:
-        with open("CLAUDE.md", "rb") as handle:
+        with open(root / "CLAUDE.md", "rb") as handle:
             return b"direct-edit repo" in handle.read().lower()
     except OSError:
         return False
@@ -145,9 +209,7 @@ def run(raw):
     if not command:
         return
 
-    branch = script_utils.current_branch(".") or ""
     calls = git_calls(command)
-    subcommands = {call.subcommand for call in calls}
 
     if any(is_stash(call) for call in calls):
         raise DenyError("[git-discipline-gate] git stash is blocked in every form, a tagged `git stash push -m <tag>` "
@@ -168,11 +230,21 @@ def run(raw):
         raise DenyError("[git-discipline-gate] Commit and PR text must carry no attribution or session trailer. Remove "
                    "it and retry.")
 
-    if subcommands & {"commit", "push"} and branch.startswith("worktree-"):
+    for call in calls:
+        check_branch(call)
+
+
+def check_branch(call):
+    """Rules 4 and 5 for one commit or push call, on the branch of the repo it runs in."""
+    if call.subcommand not in ("commit", "push"):
+        return
+    branch = script_utils.current_branch(call.directory) or ""
+
+    if branch.startswith("worktree-"):
         raise DenyError("[git-discipline-gate] branch '" + branch + "' still carries the auto-generated worktree- "
                    "prefix. Rename it to the plain TICKET-NUM-desc form and push it with -u first, then retry.")
 
-    if "commit" in subcommands and branch in ("main", "master") and not is_direct_edit_repo():
+    if call.subcommand == "commit" and branch in ("main", "master") and not is_direct_edit_repo(call.directory):
         raise DenyError("[git-discipline-gate] git commit on " + branch + " is blocked: create a feature branch "
                    "first (global rule). If committing here is genuinely intended, the user can run it "
                    "themselves.")

@@ -773,6 +773,25 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_denied(self.pre("prettier --check . && cargo clippy"))
         self.assert_denied(self.pre("ruff format --check . && cargo clippy"))
 
+    def test_a_git_call_that_rewrites_the_tree_counts_as_an_edit(self):
+        self.post("ruff check .")
+        for command in ("git merge --ff-only topic && ruff check .", "git pull && ruff check .",
+                        "git checkout topic && ruff check .", "git reset HEAD~1 && ruff check .",
+                        "git -C . merge --ff-only topic && ruff check .", "git switch topic && ruff check .",
+                        "git rebase main && ruff check .", "git -c rebase.autostash=true pull && ruff check .",
+                        "git --git-dir /x merge topic && ruff check .", "git restore . && ruff check .",
+                        "git cherry-pick abc && ruff check .", "git revert abc && ruff check .",
+                        "git am p.patch && ruff check .", "git apply p.diff && ruff check .",
+                        "git clean -fd && ruff check .", "git rm f && ruff check .",
+                        "git mv a b && ruff check ."):
+            with self.subTest(command=command):
+                self.assert_allowed(self.pre(command))
+        self.post("git merge --ff-only topic")
+        self.assert_allowed(self.pre("ruff check ."))
+        self.post("ruff check .")
+        self.assert_denied(self.pre("git status && ruff check ."))
+        self.assert_denied(self.pre("git log --merges && ruff check ."))
+
     def test_formatter_run_resets_the_cap_for_other_checks_but_not_its_own_checks(self):
         self.post("pytest")
         self.post("cargo fmt && cargo clippy")

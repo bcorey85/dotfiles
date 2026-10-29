@@ -23,6 +23,7 @@ import sys
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent / "lib"))
 import script_utils
+import shell_command
 from shell_statements import statements
 
 DEFAULT_FINDINGS_FILE = pathlib.Path.home() / ".claude" / "review-findings.jsonl"
@@ -31,28 +32,15 @@ MAX_FINDINGS = 20
 WINDOW = 5
 GIT_TIMEOUT_SECONDS = 10
 DESC_LIMIT = 160
-GIT_OPTIONS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 FALSY_DIRTY = {"", "0", "false", "False"}
 
 CLOSING_LINE = ("Before this push opens a PR, fix each one with /fix, or name it in your report as carried with its "
                 "reason. This check never blocks.")
 
 
-def git_subcommand(words):
-    # Returns the git subcommand, skipping global options such as `-C dir`; None when words are not a git call.
-    if not words or words[0] != "git":
-        return None
-    index = 1
-    while index < len(words) and words[index].startswith("-"):
-        index += 2 if words[index] in GIT_OPTIONS_WITH_VALUE else 1
-    if index >= len(words):
-        return None
-    return words[index]
-
-
 def is_trigger(command):
     for words in statements(command):
-        if git_subcommand(words) == "push":
+        if words[0] == "git" and shell_command.git_subcommand(words) == "push":
             return True
         if words[:3] == ["gh", "pr", "create"]:
             return True

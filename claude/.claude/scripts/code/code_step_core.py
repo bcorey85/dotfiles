@@ -125,6 +125,37 @@ def read_state_file(directory):
         raise StateFileError(f"{path} is not readable JSON") from None
 
 
+def load_aborted_plan_state(cwd):
+    # The newest archived state of an aborted run, or None when it is unreadable, names no plan, or a run started after
+    # the abort. `abort` archives the state under a UTC timestamp name, so the last name in sort order is the latest.
+    directory = state_dir(cwd)
+    if directory is None:
+        return None
+
+    archives = sorted(directory.glob("aborted-*.json"), reverse=True)
+    if not archives:
+        return None
+
+    try:
+        archived = json.loads(archives[0].read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(archived, dict) or not archived.get("plan"):
+        return None
+    if started_after_abort(directory, archived.get("runId")):
+        return None
+    return archived
+
+
+def started_after_abort(directory, archived_run_id):
+    # `start` clears the run folders of older runs before it logs its own, so a run folder other than the archived
+    # run's means a later start.
+    folder = directory / RUNS_DIR_NAME
+    if not folder.is_dir():
+        return False
+    return any(run_folder.name != archived_run_id for run_folder in folder.iterdir())
+
+
 def branch_label(cwd):
     # The branch name for a log row: "-" on a detached HEAD or when git fails.
     return script_utils.current_branch(cwd) or "-"

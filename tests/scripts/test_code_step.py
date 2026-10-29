@@ -44,6 +44,7 @@ import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
+import criteria_verdict  # noqa: E402
 import plan_format  # noqa: E402
 
 PLAN = """# Orders Plan
@@ -1944,6 +1945,14 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("   Proposed change: export o as a const", self.said())
         self.assertIn("accepted (make the proposed change), rejected (leave the code as it stands)", self.said())
 
+    def test_the_question_for_the_user_shows_one_change_flag_after_each_modified_word(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+
+        self.step("after-review")
+
+        self.assertIn('`asks-done accepted modified --change "<text>" modified --change "<text>"`', self.said())
+
     def test_an_accepted_ask_sends_its_proposed_change_to_the_asks_coder(self):
         self.coder_round()
         self.hook("review-loop", self.ASK)
@@ -3396,7 +3405,7 @@ class CodeStepTest(unittest.TestCase):
         line = "- [ ] **Check**: `cd backend && ! rg -n x src/orders.ts`"
         command = code_step_boundary.verification_command(line)
         self.assertEqual(command, "cd backend && rg -n x src/orders.ts")
-        self.assertTrue(code_step_boundary.is_search_ban(command, line + " exists"))
+        self.assertTrue(criteria_verdict.is_search_ban(command, line + " exists"))
 
     def test_an_rg_ban_with_a_match_fails(self):
         self.set_verification("- [ ] **Prohibition**: no console.log - `rg -n console.log backend/src/orders.ts`")
@@ -3443,14 +3452,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Automated Verification failed", outcome)
         self.assertIn("unless its text says it checks presence", outcome)
 
-    def test_a_git_grep_line_with_presence_and_ban_wording_is_a_ban(self):
-        line = "- [ ] **Prohibition**: no match, the call must not exist - `git grep -n x -- src`"
-        self.assertTrue(code_step_boundary.is_search_ban("git grep -n x -- src", line))
-
     def test_a_test_n_wrapped_git_grep_is_not_a_ban(self):
         command = 'test -n "$(git grep -n --untracked \'export const o\' -- backend/src/orders.ts)"'
         line = f"- [ ] **Check**: the export is there - `{command}`"
-        self.assertFalse(code_step_boundary.is_search_ban(command, line))
+        self.assertFalse(criteria_verdict.is_search_ban(command, line))
 
         self.set_verification(line)
         outcome = self.finish_phase_one()

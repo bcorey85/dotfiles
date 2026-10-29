@@ -2,7 +2,7 @@
 
 These rules apply to every script under `claude/.claude/scripts/` and `claude/.claude/skills/*/scripts/`, and to every draft of one.
 
-`claude/.claude/scripts/` holds one folder per concern: `code/` (code-step and coder gate), `review/` (review loop, hand-back, verify), `telemetry/` (log writers and the telemetry switch), `lib/` (shared modules: `script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`, `check_output.py`, `check_scope.py`, `test_run_output.py`, `reviewed_tree.py`, `shell_statements.py`, `source_text.py`, `format_files.py`, `linked_installs.py`, `worktree_snapshot.py`, `_kv.sh`, `_ledger.sh`), `tools/` (small commands), `gates/` (hook gates). The three security hooks stay at the top. A script finds its siblings through `sys.path` lines computed from `pathlib.Path(__file__).resolve()`; imports stay bare module names.
+`claude/.claude/scripts/` holds one folder per concern: `code/` (code-step and coder gate), `review/` (review loop, hand-back, verify), `telemetry/` (log writers and the telemetry switch), `lib/` (shared modules: `script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`, `check_output.py`, `check_scope.py`, `criteria_verdict.py`, `test_run_output.py`, `reviewed_tree.py`, `shell_statements.py`, `source_text.py`, `format_files.py`, `linked_installs.py`, `worktree_snapshot.py`, `_kv.sh`, `_ledger.sh`), `tools/` (small commands), `gates/` (hook gates). The three security hooks stay at the top. A script finds its siblings through `sys.path` lines computed from `pathlib.Path(__file__).resolve()`; imports stay bare module names.
 
 ## Names
 
@@ -41,7 +41,7 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 ## Size
 
 - Add code for a defect only when a session hit it, or when it fires on every run. A case that only a reviewer or a designer thought of gets the fallback stop, not new code.
-- Before you write a helper, search `lib/` (`script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`, `check_output.py`, `check_scope.py`, `test_run_output.py`, `reviewed_tree.py`, `shell_statements.py`, `source_text.py`, `format_files.py`, `linked_installs.py`, `worktree_snapshot.py`, `_ledger.sh`) and the other scripts for one that does the job. Use it, or move it into a shared module and make both callers use it.
+- Before you write a helper, search `lib/` (`script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`, `check_output.py`, `check_scope.py`, `criteria_verdict.py`, `test_run_output.py`, `reviewed_tree.py`, `shell_statements.py`, `source_text.py`, `format_files.py`, `linked_installs.py`, `worktree_snapshot.py`, `_ledger.sh`) and the other scripts for one that does the job. Use it, or move it into a shared module and make both callers use it.
 - Do not add a verb, a route or a state field to a script over 1000 lines. First split it by concern, or cut it.
 - When a design gives a size estimate, report the real diff size at hand-over. If the diff is more than twice the estimate, stop and report to the orchestrator before review.
 

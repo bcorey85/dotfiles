@@ -212,14 +212,17 @@ def record_ruled_asks(cwd, state, outcomes, change_texts):
 
 
 def ruled_asks_lines(cwd, plan):
-    # One line per ask already ruled in this plan's run, for a prompt. Empty when none was ruled.
+    # One line per ask already ruled in this plan's run, for a prompt. Empty when none was ruled. A multi-line ask or
+    # change folds onto its one line, so every line of it stays inside the list entry that carries its outcome.
     lines = []
     for ruled in read_ruled_asks(cwd):
         if ruled["plan"] != plan:
             continue
+        ask = script_utils.one_line(ruled["ask"], limit=None)
         where = f" ({ruled['file_line']})" if ruled["file_line"] else ""
-        change = f" - the user's change: {ruled['change']}" if ruled["change"] else ""
-        lines.append(f"{ruled['ask']}{where}: {ruled['outcome']}, Phase {ruled['phase']}{change}")
+        change_text = script_utils.one_line(ruled["change"], limit=None)
+        change = f" - the user's change: {change_text}" if change_text else ""
+        lines.append(f"{ask}{where}: {ruled['outcome']}, Phase {ruled['phase']}{change}")
     return lines
 
 

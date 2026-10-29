@@ -65,8 +65,8 @@ from source_paths import is_counted_source
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or modified. Each modified ask needs the "
-                   "user's change after it as `--change \"<text>\"`. `--by user` or `--by session` says who ruled. `--also \"<text>\"` "
-                   "carries any other work the user named alongside the outcomes.")
+                   "user's change after it as `--change \"<text>\"`. `--by user` or `--by session` says who ruled. "
+                   "`--also \"<text>\"` carries any other work the user named alongside the outcomes.")
 # The state each guarded verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped",
 # and the refusal text when the state is anything else. `start`, `tick` and `resume` run at any stage and are not in
 # the table. A review-loop resumed after the wait cap also counts for review-again, and a converged review of the
@@ -934,7 +934,8 @@ def log_ask_outcomes(repo_dir, state, outcomes, decided_by="user"):
 def asks_coder_prompt(accepted_asks, also_text=""):
     lines = []
     if accepted_asks:
-        lines += ["Apply these review asks. The user accepted them. Make the change each one names and nothing else.", ""]
+        lines += ["Apply these review asks. The user accepted them. Make the change each one names and nothing else.",
+                  ""]
     for number, (item, outcome, change_text) in enumerate(accepted_asks, 1):
         location = item.get("file_line", "")
         lines.append(f"{number}. [{outcome}] {ask_text(item)}"

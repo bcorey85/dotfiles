@@ -47,7 +47,6 @@ LEDGER_DIR = "makes the folder that holds the ledger files"
 ALLOWED_HITS = [
     ("scripts/code/code_step_core.py", "INSTALLED_COMMAND = ", PRINTED),
     ("scripts/code/code_step_core.py", "RESUME_LINE = ", PRINTED),
-    ("scripts/gates/agent_model_guard.py", "home_file = ", LIVE_AGENTS),
     ("scripts/gates/calibration_refs_guard.py", "calibration_path = ", LIVE_AGENTS),
     ("scripts/gates/calibration_refs_guard.py", "agents_dir = ", LIVE_AGENTS),
     ("scripts/gates/emit_orchestration.py", "SessionStart hook: inject", "docstring text"),

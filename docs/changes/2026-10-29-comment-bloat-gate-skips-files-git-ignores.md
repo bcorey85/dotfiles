@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "comment-bloat gate skips files git ignores"
 description: "The write-time comment-bloat gate no longer checks files git ignores, so a scratch probe script that names a plan path in a string is not blocked."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T16:33:39-05:00"}
-seq: 279
+seq: 286
 kind: "fix"
 components: ["script/comment-bloat-gate"]
 evidence: ["judgment"]

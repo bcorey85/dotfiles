@@ -14,6 +14,7 @@ SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from shell_command import (
+    and_steps,
     command_after_wrappers,
     docker_forwarded_variables,
     docker_set_variables,
@@ -32,6 +33,16 @@ from shell_command import (
     unwrap_docker,
     without_assignments,
 )
+
+
+class AndStepsTest(unittest.TestCase):
+    def test_a_command_joined_only_by_and_gives_its_stripped_steps(self):
+        self.assertEqual(["ruff check .", "pytest -q"], and_steps("ruff check . && pytest -q"))
+
+    def test_any_other_operator_gives_none(self):
+        for command in ("a || b", "a | b", "a && b; c", "a & b"):
+            with self.subTest(command):
+                self.assertIsNone(and_steps(command))
 
 
 class SplitSimpleCommandsTest(unittest.TestCase):

@@ -23,6 +23,9 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 log the answer to each ask[] entry, then run the phase gates;
                                                 --by session when the session ruled itself, default user;
                                                 --also: other work for the coder, kept even if every ask is rejected
+  code_step.py correct-ruling [--by <user|session>] [--also "<text>"] <outcome>...
+                                                while the asks coder runs: save corrected rulings; a correction coder
+                                                applies them when the asks coder reports, before the review
   code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...
                                                 a closing phase's skill returned: mark it done (pass) or stop (fail);
                                                 at pass, give one --evidence per open Success Criteria item and the
@@ -35,6 +38,9 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py abort                            end the open run on purpose: settle its criteria copy, clear its gate
                                                 and texts, archive state.json as aborted-<UTC time>.json; the working
                                                 tree stays as it is
+  code_step.py guide "<text>"                   record the main session's guidance in the open run; every later coder
+                                                and review dispatch carries it (code_guidance). It changes neither the
+                                                task nor the plan
   code_step.py hook                             PreToolUse hook on SubagentHandback: deny the fork's hand-back while a
                                                 dispatched agent is still out
   code_step.py log-hook                         PostToolUse hook on Agent|SubagentHandback|SendMessage: log launch,
@@ -76,6 +82,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import coder_gate
 import plan_format
 import script_utils
+from code_guidance import record_guidance
 from code_step_asks import prior_issues
 from code_step_boundary import (
     command_tick,
@@ -100,9 +107,10 @@ from code_step_core import (
     awaits_resumed_review,
     branch_label,
     carried_start_words,
+    changed_since_baseline,
     clear_question,
     clear_say,
-    committed_since,
+    coder_changed_files,
     dispatch_since,
     emit,
     file_hashes,
@@ -139,6 +147,7 @@ from code_step_hooks import (
     command_plan_hook,
     command_say_hook,
     command_stop_hook,
+    expected_red_failure,
 )
 from code_step_report import (
     behavior_lines,
@@ -158,8 +167,10 @@ from code_step_review import (
     command_after_plan_edit,
     command_after_review,
     command_asks_done,
+    command_correct_ruling,
     command_decide,
     command_review_again,
+    dispatch_correction_coder,
     emit_plan_impact_modal,
     emit_review_dispatch,
     guarded_verb_runs,
@@ -179,6 +190,8 @@ from script_utils import run_command
 WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")
 # These verbs open a new /code run after the user answered. The last run's say.md text was already handed back.
 VERBS_THAT_CLEAR_SAY = ("decide", "asks-done", "verify", "review-again")
+# A correction or guidance arrives while a run may sit stopped on a coder's report: question.md still names that stop.
+VERBS_THAT_KEEP_QUESTION = ("correct-ruling", "guide")
 # The saved stage of a run and the step that comes next for it. `stopped` and an unknown stage are routed by code.
 STAGE_ROUTES = {
     "coder": "after-coder", "asks-coder": "after-coder", "review": "after-review", "plan-coder": "after-plan-edit",
@@ -207,9 +220,15 @@ def command_plan(args):
     manual_failure = plan_format.manual_format_failure(plan_lines, plan_path)
     if manual_failure:
         print(manual_failure)
-    verification_failure = verification_format_failure(plan_lines, plan_path, pathlib.Path.cwd(), plan["entries"])
+    # From a repo subdirectory the checks resolve against the repo root; outside a repo against the current directory.
+    repo_dir = script_utils.repo_root(os.getcwd()) or pathlib.Path.cwd()
+    verification_failure = verification_format_failure(plan_lines, plan_path, repo_dir, plan["entries"])
     if verification_failure:
         print(verification_failure)
+
+    red_failure = expected_red_failure(plan_lines, plan_path, repo_dir)
+    if red_failure:
+        print(red_failure)
     for row in plan_format.plain_verification_item_warnings(plan_lines, plan_path):
         print(row)
     ac_failures = plan_format.spec_ac_failures(pathlib.Path(plan_path))
@@ -218,7 +237,9 @@ def command_plan(args):
     criteria_failure = plan_format.missing_criteria_failure(pathlib.Path(plan_path)) if final else None
     if criteria_failure:
         print(criteria_failure)
-    sys.exit(1 if plan["failures"] or manual_failure or verification_failure or ac_failures or criteria_failure else 0)
+    failed = (plan["failures"] or manual_failure or verification_failure or red_failure or ac_failures
+              or criteria_failure)
+    sys.exit(1 if failed else 0)
 
 
 # ---------- coder hand-back ----------
@@ -236,6 +257,7 @@ def asks_coder_changed_files(changed_now, asks_baseline):
 def finish_without_review(repo_dir, state, changed_files, coder_stage, say_text):
     # No review has anything to cover: run the phase's verification commands and tick, as after a clean review.
     state.update({"files": changed_files, "coderStage": coder_stage, "stage": "review"})
+    state.pop("correctionCoder", None)
     save_state(repo_dir, state)
     say(repo_dir, say_text)
     return finish_phase(repo_dir, state)
@@ -258,22 +280,10 @@ def coder_flagged(state, gate, report, is_ask_fix):
     return flagged + coder_flags(report)
 
 
-def changed_since_baseline(state, changed_now):
-    # The files of the working tree that differ from the run's baseline.
-    baseline = state["baseline"]
-    return [name for name, digest in changed_now.items() if name not in baseline or baseline[name] != digest]
-
-
-def coder_changed_files(repo_dir, state, changed_now):
-    # The files the phase changed since its baseline, and the files the coder committed itself.
-    changed_files = changed_since_baseline(state, changed_now)
-    committed = committed_since(repo_dir, state.get("baseHead"))
-    return changed_files + [name for name in committed if name not in changed_files]
-
-
 def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     # "converged" when the asks coder changed nothing and named, for each confirmed ask, the file:line that already
     # does it or the check that passed; "recommended-eng-spec" for a report whose marker line recommends /eng-spec;
+    # "undone" when a correction coder put the tree back where the asks round began and no ask stays accepted;
     # "no-change" for a report with no reviewable change (a failed edit, a blocked hook, a question); else None.
     is_ask_fix = state["stage"] == "asks-coder"
     asks_coder_changed_nothing = is_ask_fix and changed_now == snapshot_part(state, "asks")
@@ -282,6 +292,11 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     if asks_coder_changed_nothing and not report_raises_blocker and every_accepted_ask_already_done(
             repo_dir, state, report):
         return "converged"
+
+    nothing_left_to_apply = not state.get("acceptedAsks") and not state.get("asksAlso")
+    if asks_coder_changed_nothing and not report_raises_blocker and state.get("correctionCoder") \
+            and nothing_left_to_apply:
+        return "undone"
     if escalates:
         return "recommended-eng-spec"
     if not changed_files or asks_coder_changed_nothing:
@@ -305,6 +320,9 @@ def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
     cause_text = ("recommended /eng-spec" if outcome == "recommended-eng-spec"
                   else "produced no reviewable change")
     report_lines = [line for line in report.splitlines() if line.strip()][:CODER_REPORT_STOP_LINES]
+    if "pendingCorrection" in state:
+        report_lines.append("A corrected ruling is saved; a correction coder applies it when the asks coder's work "
+                            "goes on.")
     next_step = (f"if the user answers the coder's blocker, resume that coder with SendMessage, then run "
                  f"`{script_command(RESUME_VERB)}`. To dispatch a new coder for the phase, "
                  f"{restart_instruction(state)}.")
@@ -318,7 +336,8 @@ def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
 def record_coder_report(repo_dir, state, report, gate, changed_files, asks_changed_files=None):
     # Saves what the review needs from a reviewable report: behavior, why notes, tests run and files. The summary
     # replaces the earlier notes of asks_changed_files (the files the asks coder changed; the files it wrote notes
-    # for when no asks snapshot exists), while changed_files is the review scope.
+    # for when no asks snapshot exists), while changed_files is the review scope. A correction coder replaces only
+    # the paths in its own why_groups.
     coder_stage = state["stage"]
     is_ask_fix = coder_stage == "asks-coder"
     behavior = behavior_lines(report)
@@ -331,7 +350,8 @@ def record_coder_report(repo_dir, state, report, gate, changed_files, asks_chang
         # The summary shows the asks coder's notes for the files it changed and the earlier notes for the rest. The
         # reviewer's notes (state["why"]) keep the phase coder's notes for a changed file ahead of the asks coder's.
         earlier_summary_why = state["summaryWhy"] if "summaryWhy" in state else state["why"]
-        replaced_paths = why_groups if asks_changed_files is None else asks_changed_files
+        is_correction = state.pop("correctionCoder", False)
+        replaced_paths = why_groups if is_correction or asks_changed_files is None else asks_changed_files
         kept_earlier_why = {path: notes for path, notes in earlier_summary_why.items() if path not in replaced_paths}
         state["summaryWhy"] = {**kept_earlier_why, **why_groups}
         for path, notes in state["why"].items():
@@ -368,12 +388,18 @@ def review_coder_report(repo_dir, state, handback):
     changed_files = coder_changed_files(repo_dir, state, changed_now)
     outcome = unreviewable_outcome(repo_dir, state, report, changed_files, changed_now)
     is_open = left_findings_open(state)
-    if outcome == "converged" and not is_open:
+    has_pending_correction = is_ask_fix and "pendingCorrection" in state
+    if outcome == "converged" and not is_open and not has_pending_correction:
         return finish_without_review(
             repo_dir, state, changed_files, coder_stage,
             "The asks coder changed nothing, and named where each confirmed ask is already in the code or the passing "
             "check that confirms it. No review "
             "runs. The coder reported:\n" + report)
+    if outcome == "undone" and not is_open and not has_pending_correction:
+        return finish_without_review(
+            repo_dir, state, changed_files, coder_stage,
+            "After the correction no ask stays accepted and the tree is back where the asks round began, so no "
+            "review runs. The coder reported:\n" + report)
     if outcome in ("no-change", "recommended-eng-spec"):
         return stop_on_coder_report(repo_dir, state, report, handback.get("agent_id"), outcome)
 
@@ -381,6 +407,10 @@ def review_coder_report(repo_dir, state, handback):
     asks_changed_files = None
     if is_ask_fix and asks_baseline is not None:
         asks_changed_files = asks_coder_changed_files(changed_now, asks_baseline)
+    if has_pending_correction:
+        record_coder_report(repo_dir, state, report, gate, changed_files, asks_changed_files)
+        return dispatch_correction_coder(repo_dir, state)
+
     if asks_changed_files is not None and not is_open:
         # The review after an asks-coder covers only what the asks-coder changed. A state from before the asks snapshot
         # existed keeps the whole-phase scope, and so does a review that left findings open (a cap, or a critical
@@ -423,6 +453,9 @@ def run_guarded_verb(verb, handler, args):
     os.chdir(repo_dir)
     state = load_state(repo_dir)
     if not guarded_verb_runs(verb, state):
+        if guard.get("goOnRefusal"):
+            return emit("go-on", guard["message"])
+
         return refuse(guard["message"], script_command(RESUME_VERB))
     handler(repo_dir, state, args)
 
@@ -672,6 +705,22 @@ def command_abort(args):
     emit("stop", *lines)
 
 
+def command_guide(args):
+    # The guidance of the main session for the open run. It never stops the run: every outcome is `go-on`.
+    repo_dir = repo_root_or_exit()
+    text = " ".join(args).strip()
+    if not text:
+        return emit("go-on", "The guidance was not recorded: no text was given to guide.")
+
+    state = load_state(repo_dir)
+    if state is None or state.get("stage") in (None, "done"):
+        return emit("go-on", "The guidance was not recorded: no /code run is open here.")
+
+    record_guidance(state, text)
+    save_state(repo_dir, state)
+    emit("go-on", "Guidance recorded. Every later coder and review dispatch of this run carries it.")
+
+
 def command_status():
     state = load_state(repo_root_or_exit())
     print(json.dumps(state, indent=1) if state else "no code-step state")
@@ -716,8 +765,8 @@ HOOK_VERBS = {
     "plan-hook": command_plan_hook, "stop-hook": command_stop_hook, "say-hook": command_say_hook,
     "launch-hook": command_launch_hook,
 }
-VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|verify|review-again|tick|abort|hook"
-              "|log-hook|dispatch-hook|launch-hook|stop-hook|say-hook|status|plan|plan-hook")
+VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|correct-ruling|skill-done|verify|review-again|tick"
+              "|abort|guide|hook|log-hook|dispatch-hook|launch-hook|stop-hook|say-hook|status|plan|plan-hook")
 
 
 @contextlib.contextmanager
@@ -756,7 +805,8 @@ def run_verb(verb, handler, args):
             if not holds_lock:
                 return
 
-            clear_question(repo)
+            if verb not in VERBS_THAT_KEEP_QUESTION:
+                clear_question(repo)
             if verb in VERBS_THAT_CLEAR_SAY:
                 clear_say(repo)
 
@@ -776,8 +826,10 @@ def main():
         return
     check_verb_arguments(verb, args)
     verbs = {"start": command_start, RESUME_VERB: command_resume, "decide": command_decide,
-             "asks-done": command_asks_done, "skill-done": command_skill_done_with_question, "verify": command_verify,
-             "tick": command_tick, "review-again": command_review_again, "abort": command_abort}
+             "asks-done": command_asks_done, "correct-ruling": command_correct_ruling,
+             "skill-done": command_skill_done_with_question, "verify": command_verify,
+             "tick": command_tick, "review-again": command_review_again, "abort": command_abort,
+             "guide": command_guide}
     if verb in HOOK_VERBS:
         return HOOK_VERBS[verb]()
     if verb == "plan":

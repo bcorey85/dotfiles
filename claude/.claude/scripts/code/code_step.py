@@ -35,6 +35,9 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py abort                            end the open run on purpose: settle its criteria copy, clear its gate
                                                 and texts, archive state.json as aborted-<UTC time>.json; the working
                                                 tree stays as it is
+  code_step.py guide "<text>"                   record the main session's guidance in the open run; every later coder
+                                                and review dispatch carries it (code_guidance). It changes neither the
+                                                task nor the plan
   code_step.py hook                             PreToolUse hook on SubagentHandback: deny the fork's hand-back while a
                                                 dispatched agent is still out
   code_step.py log-hook                         PostToolUse hook on Agent|SubagentHandback|SendMessage: log launch,
@@ -76,6 +79,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import coder_gate
 import plan_format
 import script_utils
+from code_guidance import record_guidance
 from code_step_asks import prior_issues
 from code_step_boundary import (
     command_tick,
@@ -100,9 +104,10 @@ from code_step_core import (
     awaits_resumed_review,
     branch_label,
     carried_start_words,
+    changed_since_baseline,
     clear_question,
     clear_say,
-    committed_since,
+    coder_changed_files,
     dispatch_since,
     emit,
     file_hashes,
@@ -139,6 +144,7 @@ from code_step_hooks import (
     command_plan_hook,
     command_say_hook,
     command_stop_hook,
+    expected_red_failure,
 )
 from code_step_report import (
     behavior_lines,
@@ -207,9 +213,15 @@ def command_plan(args):
     manual_failure = plan_format.manual_format_failure(plan_lines, plan_path)
     if manual_failure:
         print(manual_failure)
-    verification_failure = verification_format_failure(plan_lines, plan_path, pathlib.Path.cwd(), plan["entries"])
+    # From a repo subdirectory the checks resolve against the repo root; outside a repo against the current directory.
+    repo_dir = script_utils.repo_root(os.getcwd()) or pathlib.Path.cwd()
+    verification_failure = verification_format_failure(plan_lines, plan_path, repo_dir, plan["entries"])
     if verification_failure:
         print(verification_failure)
+
+    red_failure = expected_red_failure(plan_lines, plan_path, repo_dir)
+    if red_failure:
+        print(red_failure)
     for row in plan_format.plain_verification_item_warnings(plan_lines, plan_path):
         print(row)
     ac_failures = plan_format.spec_ac_failures(pathlib.Path(plan_path))
@@ -218,7 +230,9 @@ def command_plan(args):
     criteria_failure = plan_format.missing_criteria_failure(pathlib.Path(plan_path)) if final else None
     if criteria_failure:
         print(criteria_failure)
-    sys.exit(1 if plan["failures"] or manual_failure or verification_failure or ac_failures or criteria_failure else 0)
+    failed = (plan["failures"] or manual_failure or verification_failure or red_failure or ac_failures
+              or criteria_failure)
+    sys.exit(1 if failed else 0)
 
 
 # ---------- coder hand-back ----------
@@ -256,19 +270,6 @@ def coder_flagged(state, gate, report, is_ask_fix):
             flagged.append(f"hand-back gate command error, not a code failure: `{command}` names a missing path "
                            f"({line})")
     return flagged + coder_flags(report)
-
-
-def changed_since_baseline(state, changed_now):
-    # The files of the working tree that differ from the run's baseline.
-    baseline = state["baseline"]
-    return [name for name, digest in changed_now.items() if name not in baseline or baseline[name] != digest]
-
-
-def coder_changed_files(repo_dir, state, changed_now):
-    # The files the phase changed since its baseline, and the files the coder committed itself.
-    changed_files = changed_since_baseline(state, changed_now)
-    committed = committed_since(repo_dir, state.get("baseHead"))
-    return changed_files + [name for name in committed if name not in changed_files]
 
 
 def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
@@ -672,6 +673,22 @@ def command_abort(args):
     emit("stop", *lines)
 
 
+def command_guide(args):
+    # The guidance of the main session for the open run. It never stops the run: every outcome is `go-on`.
+    repo_dir = repo_root_or_exit()
+    text = " ".join(args).strip()
+    if not text:
+        return emit("go-on", "The guidance was not recorded: no text was given to guide.")
+
+    state = load_state(repo_dir)
+    if state is None or state.get("stage") in (None, "done"):
+        return emit("go-on", "The guidance was not recorded: no /code run is open here.")
+
+    record_guidance(state, text)
+    save_state(repo_dir, state)
+    emit("go-on", "Guidance recorded. Every later coder and review dispatch of this run carries it.")
+
+
 def command_status():
     state = load_state(repo_root_or_exit())
     print(json.dumps(state, indent=1) if state else "no code-step state")
@@ -716,7 +733,7 @@ HOOK_VERBS = {
     "plan-hook": command_plan_hook, "stop-hook": command_stop_hook, "say-hook": command_say_hook,
     "launch-hook": command_launch_hook,
 }
-VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|verify|review-again|tick|abort|hook"
+VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|verify|review-again|tick|abort|guide|hook"
               "|log-hook|dispatch-hook|launch-hook|stop-hook|say-hook|status|plan|plan-hook")
 
 
@@ -756,7 +773,8 @@ def run_verb(verb, handler, args):
             if not holds_lock:
                 return
 
-            clear_question(repo)
+            if verb != "guide":
+                clear_question(repo)
             if verb in VERBS_THAT_CLEAR_SAY:
                 clear_say(repo)
 
@@ -777,7 +795,8 @@ def main():
     check_verb_arguments(verb, args)
     verbs = {"start": command_start, RESUME_VERB: command_resume, "decide": command_decide,
              "asks-done": command_asks_done, "skill-done": command_skill_done_with_question, "verify": command_verify,
-             "tick": command_tick, "review-again": command_review_again, "abort": command_abort}
+             "tick": command_tick, "review-again": command_review_again, "abort": command_abort,
+             "guide": command_guide}
     if verb in HOOK_VERBS:
         return HOOK_VERBS[verb]()
     if verb == "plan":

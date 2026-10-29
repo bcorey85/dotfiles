@@ -388,6 +388,14 @@ def split_command_steps(command):
     return steps
 
 
+def and_steps(command):
+    """The stripped steps of a command joined only by &&, or None when it joins its steps with any other operator."""
+    steps = split_command_steps(command)
+    if any(operator not in ("", "&&") for operator, _step in steps):
+        return None
+    return [step.strip() for _operator, step in steps]
+
+
 def quoted_positions(command, unclosed_is_quoted=True):
     # The indexes of the characters that sit inside quotes, inside a comment (after its `#`, up to the newline) or
     # right after a backslash outside single quotes. A quote that never closes covers the rest of the command, unless

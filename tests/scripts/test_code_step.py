@@ -1,5 +1,7 @@
+import contextlib
 import datetime
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -10,12 +12,14 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import unittest
 import unittest.mock
 from typing import ClassVar
 
 import fake_ledger
 import toolkit_paths
+from in_process import process_exit_code
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or REPO_ROOT / "claude" / ".claude")
@@ -96,8 +100,61 @@ Tests.
 
 
 def run(cwd, env, *args, stdin=None, interpreter=sys.executable):
+    # A python3 start and the code-step imports cost about half of each call, so the main thread runs the script
+    # in-process. Any call off the main thread (a timer thread's hand-back, for one), and a run under another
+    # Python, start a process.
+    is_in_process = interpreter == sys.executable and threading.current_thread() is threading.main_thread()
+    if is_in_process:
+        return run_in_process(cwd, env, args, stdin)
     return subprocess.run([interpreter, str(SCRIPT), *args], cwd=cwd, env=env, input=stdin,
                           capture_output=True, text=True)
+
+
+def run_in_process(cwd, env, args, stdin):
+    # Runs code_step.main() as `python3 code_step.py <args>` would, and returns what its process returns: the script
+    # reads the toolkit folder once, at import, so the call points every module's copy at the test's own folder.
+    script_out = io.StringIO()
+    script_err = io.StringIO()
+    claude_dir = pathlib.Path(env["CODE_STEP_CLAUDE_DIR"])
+    previous_argv, previous_path, previous_stdin = sys.argv, list(sys.path), sys.stdin
+    script_argv = [str(SCRIPT), *args]
+    sys.argv = script_argv
+    sys.stdin = io.StringIO(stdin or "")
+    exit_code = 0
+    try:
+        with contextlib.ExitStack() as patches:
+            patches.enter_context(unittest.mock.patch.dict(os.environ, env, clear=True))
+            patches.enter_context(unittest.mock.patch.dict(code_step_core.STATE_DIRS, clear=True))
+            toolkit_names = (
+                ("CLAUDE_DIR", claude_dir),
+                ("SCRIPTS_DIR", claude_dir / "scripts"),
+                ("REVIEW_LOOP_SCRIPT", claude_dir / "scripts" / "review" / "review_loop_script.py"),
+            )
+            for module in in_process_modules():
+                for name, folder in toolkit_names:
+                    if hasattr(module, name):
+                        patches.enter_context(unittest.mock.patch.object(module, name, folder))
+            patches.enter_context(contextlib.chdir(cwd))
+            patches.enter_context(contextlib.redirect_stdout(script_out))
+            patches.enter_context(contextlib.redirect_stderr(script_err))
+            try:
+                code_step.main()
+            except SystemExit as stopped:
+                exit_code = process_exit_code(stopped, script_err)
+            except Exception:
+                # A crash ends the process with its traceback on stderr and exit code 1.
+                traceback.print_exc(file=script_err)
+                exit_code = 1
+    finally:
+        sys.argv, sys.path[:], sys.stdin = previous_argv, previous_path, previous_stdin
+    return subprocess.CompletedProcess(script_argv,exit_code, script_out.getvalue(), script_err.getvalue())
+
+
+def in_process_modules():
+    # The script and every code-step module it imported: each holds its own copy of the toolkit folder.
+    module_names = [pathlib.Path(name).stem for name in toolkit_paths.CODE_STEP_MODULES]
+    imported_modules = [sys.modules[name] for name in module_names if name in sys.modules]
+    return [code_step, *imported_modules]
 
 
 class CodeStepTest(unittest.TestCase):
@@ -3476,6 +3533,7 @@ class CodeStepTest(unittest.TestCase):
         self.set_state(acceptedAsks=None)
         self.hook("coder", "Nothing to report.")
         result = run(self.repo, self.env, "after-coder")
+        self.assertNotIn("Traceback", result.stderr)
         self.assertNotIn("marked done", result.stdout)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
@@ -3773,7 +3831,8 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("after-review")
         self.assertIn("ACTION: wait", out)
         self.assertIn(f"`{self.own_command('resume')}`", out)
-        self.wait_env(20)
+        # The test writes no stop row, so the reader waits out the whole limit for one after the hand-back.
+        self.wait_env(5)
         self.late_hook(1, "review-loop", self.LOOP_OK)
         self.assertIn("ACTION: stop-block-B", self.step("after-review"))
 
@@ -3781,6 +3840,18 @@ class CodeStepTest(unittest.TestCase):
         self.begin_coder()
         out = self.step("after-coder")
         self.assertIn("No coder report was saved", out)
+
+    def test_the_script_run_in_process_gives_what_its_process_gives(self):
+        self.begin_coder()
+        calls = [("status",), ("no-such-verb",), ("start", "--help")]
+
+        for call in calls:
+            process_result = subprocess.run([sys.executable, str(SCRIPT), *call], cwd=self.repo, env=self.env,
+                                            capture_output=True, text=True)
+            in_process_result = run_in_process(self.repo, self.env, call, None)
+
+            self.assertEqual((process_result.returncode, process_result.stdout, process_result.stderr),
+                             (in_process_result.returncode, in_process_result.stdout, in_process_result.stderr))
 
     # ---------- the fork's own hand-back ----------
 

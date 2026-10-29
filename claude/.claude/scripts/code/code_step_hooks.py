@@ -204,7 +204,7 @@ def relaunch_denial(call, standing):
     if dispatch.get("agent_type") != CODER or not carries_marker:
         return None
     return (f"This dispatch was already launched (agent {standing['launched'].get('agent_id')}). Do not dispatch it "
-            f"again. Run {own_path(timed_command(dispatch['verb']))}: it waits for the hand-back and prints the next "
+            f"again. Run {own_path(timed_command())}: it waits for the hand-back and prints the next "
             "action.")
 
 

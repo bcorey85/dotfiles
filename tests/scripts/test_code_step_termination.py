@@ -62,8 +62,7 @@ PLAN_EDIT_NODE_BUDGET = 1500
 SCRIPT_NODE_BUDGET = 1500
 HAND_BACK_ACTIONS = ("ask-user", "stop", "rerun", "judgment", "stop-block-B", "stop-block-C")
 # The verbs a hand-back may name for the user to run.
-NAMEABLE_VERBS = ("start", "resume", "decide", "asks-done", "skill-done", "review-again", "tick", "verify",
-                  "after-coder", "after-review", "after-plan-edit")
+NAMEABLE_VERBS = ("start", "resume", "decide", "asks-done", "skill-done", "review-again", "tick", "verify")
 BACKTICKED_TEXT = re.compile(r"`([^`\n]+)`")
 
 TMP_DIR_NAME = re.compile(r"termination-(\d+)-")
@@ -622,6 +621,7 @@ def user_answers(state):
         ("start", ["start"], None),
         ("start --restart", ["start", "--restart"], None),
         ("start after-review", ["start", "after-review"], None),
+        ("start after-plan-edit", ["start", "after-plan-edit"], None),
     ]
     if stage in ("impact-coder", "impact-review"):
         ruling = ["--by", "user", "--ruling", "the user's words"]
@@ -1014,6 +1014,7 @@ def entry_verbs():
         ["start", "docs/missing.md"],
         ["start", "continue"],
         ["start", "after-review"],
+        ["start", "after-plan-edit"],
         ["start", PLAN_A, "--phase", "2", "—", "brief"],
         ["start", f"{PLAN_A} --phase 2 — brief"],
         ["start", "fix", "a", "typo"],

@@ -93,6 +93,12 @@ class LogEscapeTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.escape_rows()[0]["branch_key"], "caller-branch")
 
+    def test_an_empty_line_is_refused_and_writes_no_row(self):
+        done = self.run_escape(*VALID_ARGS, "line=")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("refusing to log: line= is not a whole number.", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+
     def test_space_in_a_non_free_value_is_refused(self):
         done = self.run_escape(*VALID_ARGS, "lane=two words")
         self.assertEqual(done.returncode, 1)

@@ -223,6 +223,7 @@ fold_writer_special_values() {
 # is how repo= ends up holding branch, lane, scope, phase and iter, destroying every
 # join key /audit review needs. Fail loud.
 kv_fold "desc result file" fold_writer_special_values "$@"
+kv_require_whole_numbers "iter line n_findings diff_loc"
 redirected=$kv_out_seen
 
 kind=$(jq -r '.kind // ""' <<< "$json")

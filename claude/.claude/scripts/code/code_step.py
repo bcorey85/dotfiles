@@ -165,6 +165,7 @@ from code_step_start import (
     command_start,
     emit_closing_skill,
     phase_label,
+    resume_text_refusal,
     stopped_run_restart_instruction,
 )
 from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
@@ -588,8 +589,8 @@ def command_resume(args):
 
     # Only a coder that waits for the user's answer takes one: `resume <answer>`.
     if args and route != "ask-coder":
-        return refuse("resume takes no arguments here: no stopped coder waits for an answer.",
-                      script_command(RESUME_VERB), notes=("For new work, use `start --task \"<text>\"`.",))
+        reason, commands, notes, stop = resume_text_refusal(repo_dir, state, args)
+        return refuse(reason, *commands, notes=notes, stop=stop)
 
     if state is not None and (state["stage"] == "stopped" or state["stage"] in WAITING_STAGES):
         clear_say(repo_dir)

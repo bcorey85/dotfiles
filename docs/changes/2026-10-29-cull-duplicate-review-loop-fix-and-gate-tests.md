@@ -46,7 +46,9 @@ Tests only; no script changes. Every cut below is made; none is skipped.
 
 ## Result
 
-- Full suite before: 3928 tests, 261.5 s, 0 failed. After: AFTER_COUNT.
+- Full suite on the same base, before: 3928 tests, 261.5 s wall-clock, 0 failed. After: 3841 tests, 247.1 s, 0 failed
+  (87 fewer runs).
+- After merging the newer integration branch, which adds 15 tests: 3856 tests in 99 files, 223.2 s, 0 failed.
 - The named test ran twice before (once per class) and runs once after.
 
 ## Watch

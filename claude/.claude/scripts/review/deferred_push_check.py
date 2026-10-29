@@ -3,8 +3,10 @@
 findings.
 
 A finding counts when review deferred it (actioned "deferred"), its class is bug or correctness, it was logged on this
-repo and branch, and the code around its line has not changed since the finding. The hook adds the list to the model's
-context. It never denies, and it runs in the main session and in subagents.
+repo and branch, the code around its line has not changed since the finding, and no fixed row at the same session,
+file and line came from a later round (a later date, and a different iter when both rows have one). A row with no
+session never matches. The hook adds the list to the model's context. It never denies, and it runs in the main session
+and in subagents.
 
 The code is unchanged when `git log -L` over the lines line-5..line+5 shows no commit after the base. The base is the
 finding's own head commit when it was logged on committed code; for a finding on uncommitted code it is the first
@@ -85,25 +87,53 @@ def is_listed_row(row, repo, branch):
             and isinstance(line, int) and not isinstance(line, bool) and line >= 1)
 
 
+def row_date(row):
+    return str(row.get("date") or "")
+
+
 def place(row):
-    # The session, branch and normalized file and line a finding row points at; None when the row has no usable place.
+    # The session, normalized file and line a finding row points at; None when the row has no usable place.
     line = row.get("line")
     file = row.get("file")
     if not isinstance(file, str) or not file or not isinstance(line, int) or isinstance(line, bool):
         return None
-    return (row.get("session"), row.get("branch"), os.path.normpath(file), line)
+    session = row.get("session")
+    if not session:
+        return None
+    return (session, os.path.normpath(file), line)
 
 
-def last_fixed_dates(rows, repo, branch):
-    # Maps each place to the date of the last fixed row there, so a later round's fix hides an earlier deferral.
+def review_iter(row):
+    value = row.get("iter")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def is_later_round(fixed_round, deferred_row):
+    # fixed_round is an (iter, date) pair. The fix needs a strictly later date and, when both rows carry an iter, a
+    # different one, so a different finding fixed in the same pass does not count. A later review run restarts its
+    # iter at 1, so a smaller iter with a later date still counts.
+    fixed_iter, fixed_date = fixed_round
+    deferred_iter = review_iter(deferred_row)
+    if fixed_iter is not None and fixed_iter == deferred_iter:
+        return False
+
+    deferred_date = row_date(deferred_row)
+    return bool(deferred_date and fixed_date and fixed_date > deferred_date)
+
+
+def fixed_rounds_by_place(rows, repo, branch):
+    # Maps each place to the (iter, date) pairs of its fixed rows, so a later round's fix hides an earlier deferral.
     fixed = {}
     for row in rows:
-        if row.get("kind") != "finding" or row.get("actioned") != "fixed" or row.get("repo") != repo:
+        if (row.get("kind") != "finding" or row.get("actioned") != "fixed" or row.get("repo") != repo
+                or row.get("branch") != branch):
             continue
         where = place(row)
-        if where is None or where[1] != branch:
+        if where is None:
             continue
-        fixed[where] = max(fixed.get(where, ""), str(row.get("date") or ""))
+        fixed.setdefault(where, []).append((review_iter(row), row_date(row)))
     return fixed
 
 
@@ -111,10 +141,11 @@ def branch_findings(rows, repo, branch):
     # Newest first, one row per finding, at most MAX_FINDINGS. A finding fixed later at the same place is left out.
     chosen = []
     seen = set()
-    fixed = last_fixed_dates(rows, repo, branch)
+    fixed_rounds_of_place = fixed_rounds_by_place(rows, repo, branch)
     for row in sorted((row for row in rows if is_listed_row(row, repo, branch)),
-                      key=lambda row: str(row.get("date") or ""), reverse=True):
-        if fixed.get(place(row), "") >= str(row.get("date") or "") > "":
+                      key=row_date, reverse=True):
+        fixed_rounds = fixed_rounds_of_place.get(place(row), [])
+        if any(is_later_round(fixed_round, row) for fixed_round in fixed_rounds):
             continue
         key = row.get("finding_id") or (row["file"], row["line"], row.get("gate"))
         if key in seen:

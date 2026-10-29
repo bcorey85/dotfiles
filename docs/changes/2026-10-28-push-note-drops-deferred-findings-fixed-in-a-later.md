@@ -1,7 +1,7 @@
 ---
 type: "Change"
 title: "Push note drops deferred findings fixed in a later round"
-description: "The pre-push deferred-findings note leaves out a deferred bug finding when a later fixed row exists at the same session, branch, file and line."
+description: "The pre-push deferred-findings note leaves out a deferred bug finding when a later round fixed a row at the same session, branch, file and line."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T20:16:04-05:00"}
 seq: 212
 kind: "fix"
@@ -17,7 +17,8 @@ unmeasured: ""
 ## Change
 
 - `deferred_push_check.py`: the hook reads every fixed finding row on the repo and branch and drops a deferred row when
-  a fixed row has the same session, branch, normalized file and line, and a date at or after the deferred row's.
+  a fixed row has the same session, normalized file and line, a strictly later date, and a different iter when both
+  rows carry one. A fix of another finding in the same pass does not count, and rows with no session never match.
 
 ## Evidence
 

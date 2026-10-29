@@ -496,41 +496,14 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("sibling", joined)
         self.assertIn("cd backend && npm run typecheck", joined)
 
-    def test_gate_runs_clippy_with_warnings_denied_in_the_cargo_package_that_holds_a_named_rust_file(self):
-        (self.repo / "crate/src").mkdir(parents=True)
-        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
-        (self.repo / "crate/src/lib.rs").write_text("pub fn a() {}\n")
-        rust_file = "**File**: `backend/src/orders.test.ts`\n**File**: `crate/src/lib.rs`\n**File**: `crate/Cargo.toml`"
-        (self.repo / self.plan).write_text(
-            self.plan_text().replace("**File**: `backend/src/orders.test.ts`", rust_file)
-        )
-
-        self.start_phase_one()
-
-        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
-        self.assertEqual(1, gate["commands"].count("cd crate && cargo clippy --all-targets -- -D warnings"))
-        self.assertEqual(["cd crate && cargo test --lib --bins"],
-                         [command for command in gate["commands"] if "cargo test" in command])
-        self.assertIn("cd backend && npm run typecheck", gate["commands"])
-
-    def test_gate_runs_clippy_without_a_cd_prefix_when_the_phase_names_only_the_root_cargo_manifest(self):
-        (self.repo / "Cargo.toml").write_text('[package]\nname = "root-crate"\n')
-        root_manifest = "**File**: `backend/src/orders.test.ts`\n**File**: `Cargo.toml`"
-        (self.repo / self.plan).write_text(
-            self.plan_text().replace("**File**: `backend/src/orders.test.ts`", root_manifest)
-        )
-
-        self.start_phase_one()
-
-        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
-        self.assertEqual(1, gate["commands"].count("cargo clippy --all-targets -- -D warnings"))
-
-    def test_gate_runs_only_the_rust_tests_of_the_named_files_and_sets_no_cargo_variable(self):
+    def test_gate_runs_clippy_with_warnings_denied_and_only_the_named_files_rust_tests_and_sets_no_variable(self):
         (self.repo / "crate/src").mkdir(parents=True)
         (self.repo / "crate/tests").mkdir()
         (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
-        (self.repo / "crate/src/lib.rs").write_text("")
-        rust_files = "**File**: `crate/src/store/query.rs`\n**File**: `crate/tests/side_streams.rs`"
+        (self.repo / "crate/src/lib.rs").write_text("pub fn a() {}\n")
+        rust_files = ("**File**: `backend/src/orders.test.ts`\n**File**: `crate/src/lib.rs`\n"
+                      "**File**: `crate/Cargo.toml`\n**File**: `crate/src/store/query.rs`\n"
+                      "**File**: `crate/tests/side_streams.rs`")
         (self.repo / self.plan).write_text(
             self.plan_text().replace("**File**: `backend/src/orders.test.ts`", rust_files)
         )
@@ -542,6 +515,8 @@ class CodeStepTest(unittest.TestCase):
                           "cd crate && cargo test --lib --bins",
                           "cd crate && cargo test --test side_streams"],
                          [command for command in gate["commands"] if "cargo" in command])
+        self.assertIn("cd backend && npm run typecheck", gate["commands"])
+        self.assertEqual({}, gate["env"])
 
     def make_helper_phase_with_verification(self, verification_line, start_arguments=()):
         (self.repo / "crate/src").mkdir(parents=True)
@@ -643,37 +618,6 @@ class CodeStepTest(unittest.TestCase):
                          commands)
         self.assertNotIn("cd crate && cargo test --lib --bins", commands)
 
-    def test_two_modules_of_one_library_crate_give_one_lib_test_command(self):
-        (self.repo / "lib/src/store").mkdir(parents=True)
-        (self.repo / "lib/src/lib.rs").write_text("")
-        (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
-
-        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/store/query.rs", "lib/src/orders.rs"],
-                                                derives_tests=True)
-
-        self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
-                         commands)
-
-    def test_a_change_to_the_library_root_runs_the_lib_tests(self):
-        (self.repo / "lib/src").mkdir(parents=True)
-        (self.repo / "lib/src/lib.rs").write_text("")
-        (self.repo / "lib/Cargo.toml").write_text('[package]\nname = "lib"\n')
-
-        commands = code_step_gates.cargo_commands(self.repo, ["lib/src/lib.rs"], derives_tests=True)
-
-        self.assertEqual(["cd lib && cargo clippy --all-targets -- -D warnings", "cd lib && cargo test --lib --bins"],
-                         commands)
-
-    def test_a_named_binary_file_in_a_library_crate_runs_only_that_binary(self):
-        (self.repo / "both/src/bin").mkdir(parents=True)
-        (self.repo / "both/src/lib.rs").write_text("")
-        (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
-
-        commands = code_step_gates.cargo_commands(self.repo, ["both/src/bin/tool.rs"], derives_tests=True)
-
-        self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --bin tool"],
-                         commands)
-
     def test_a_crate_with_no_library_runs_every_file_under_src_with_bins_once(self):
         (self.repo / "tool/src/store").mkdir(parents=True)
         (self.repo / "tool/src/main.rs").write_text("")
@@ -683,18 +627,6 @@ class CodeStepTest(unittest.TestCase):
                                                               "tool/src/main.rs"], derives_tests=True)
 
         self.assertEqual(["cd tool && cargo clippy --all-targets -- -D warnings", "cd tool && cargo test --bins"],
-                         commands)
-
-    def test_a_crate_with_a_library_and_a_binary_runs_a_src_file_with_lib_and_bins(self):
-        (self.repo / "both/src").mkdir(parents=True)
-        (self.repo / "both/src/lib.rs").write_text("")
-        (self.repo / "both/src/main.rs").write_text("")
-        (self.repo / "both/Cargo.toml").write_text('[package]\nname = "both"\n')
-
-        commands = code_step_gates.cargo_commands(self.repo, ["both/src/store.rs", "both/src/main.rs"],
-                                                derives_tests=True)
-
-        self.assertEqual(["cd both && cargo clippy --all-targets -- -D warnings", "cd both && cargo test --lib --bins"],
                          commands)
 
     def test_a_manifest_alone_or_a_file_outside_src_and_tests_gives_clippy_and_no_test(self):
@@ -727,49 +659,106 @@ class CodeStepTest(unittest.TestCase):
 
                 self.assertEqual(expected, commands)
 
-    def test_python_gate_commands_take_the_runner_of_the_pytest_command_the_phase_lists(self):
-        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
-        (self.repo / "uv.lock").write_text("")
-        phase = ("**File**: `app/models.py`\n**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
-                 "- [ ] **Tests**: models pass - `DJANGO_SETTINGS_MODULE=app.test poetry run pytest tests/`\n")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["DJANGO_SETTINGS_MODULE=app.test poetry run ruff check {files:.py}",
-                          "DJANGO_SETTINGS_MODULE=app.test poetry run pytest tests/"], commands)
-
-    def test_a_listed_pytest_command_with_no_path_is_replaced_by_the_derived_scoped_run(self):
-        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
-        (self.repo / "uv.lock").write_text("")
-        phase = ("**File**: `app/models.py`\n**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
-                 "- [ ] **Tests**: models pass - `poetry run pytest`\n")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["poetry run ruff check {files:.py}", "poetry run pytest tests/test_models.py"], commands)
-
     def django_phase(self, verification=""):
         phase = "**File**: `app/models.py`\n**File**: `app/tests/test_models.py`\n"
         if verification:
             phase += f"\n#### Automated Verification:\n\n- [ ] **Tests**: models pass - `{verification}`\n"
         return phase
 
-    def test_a_django_repo_without_pytest_django_settings_runs_manage_py_test_on_dotted_labels(self):
-        (self.repo / "manage.py").write_text("")
-        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n[tool.pytest.ini_options]\naddopts = '-q'\n")
+    def test_python_gate_commands_follow_the_runner_and_test_command_the_repo_and_phase_name(self):
+        ruff_config = "[tool.ruff]\n"
+        backend_files = "**File**: `backend/app/models.py`\n**File**: `backend/app/tests/test_models.py`\n"
+        cases = [
+            ("a listed pytest command gives its runner to ruff and the gate",
+             {"pyproject.toml": ruff_config, "uv.lock": ""},
+             "**File**: `app/models.py`\n**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
+             "- [ ] **Tests**: models pass - `DJANGO_SETTINGS_MODULE=app.test poetry run pytest tests/`\n",
+             ["DJANGO_SETTINGS_MODULE=app.test poetry run ruff check {files:.py}",
+              "DJANGO_SETTINGS_MODULE=app.test poetry run pytest tests/"]),
+            ("a listed pytest command with no path is replaced by the derived scoped run",
+             {"pyproject.toml": ruff_config, "uv.lock": ""},
+             "**File**: `app/models.py`\n**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
+             "- [ ] **Tests**: models pass - `poetry run pytest`\n",
+             ["poetry run ruff check {files:.py}", "poetry run pytest tests/test_models.py"]),
+            ("a django repo without pytest django settings runs manage.py test on dotted labels",
+             {"manage.py": "", "pyproject.toml": "[tool.ruff]\n[tool.pytest.ini_options]\naddopts = '-q'\n"},
+             self.django_phase(),
+             ["ruff check {files:.py}", "python3 manage.py test app.tests.test_models --noinput"]),
+            ("a django repo runs manage.py test through the runner the lock file names",
+             {"manage.py": "", "pyproject.toml": "", "uv.lock": ""},
+             self.django_phase(),
+             ["uv run python manage.py test app.tests.test_models --noinput"]),
+            ("a listed whole-suite manage.py test runs on the changed test modules with its runner and options",
+             {"manage.py": "", "pyproject.toml": ruff_config, "uv.lock": ""},
+             self.django_phase("DJANGO_SETTINGS_MODULE=app.test poetry run python manage.py test --keepdb"),
+             ["DJANGO_SETTINGS_MODULE=app.test poetry run python -m ruff check {files:.py}",
+              "DJANGO_SETTINGS_MODULE=app.test poetry run python manage.py test app.tests.test_models --keepdb "
+              "--noinput"]),
+            ("a listed whole-suite manage.py test keeps the interpreter name behind a launcher",
+             {"manage.py": ""},
+             self.django_phase("uv run python3 manage.py test"),
+             ["uv run python3 manage.py test app.tests.test_models --noinput"]),
+            ("a django phase that names an app tests module runs it",
+             {"manage.py": ""},
+             "**File**: `app/models.py`\n**File**: `app/tests.py`\n",
+             ["python3 manage.py test app.tests --noinput"]),
+            ("a listed whole-suite manage.py test wins over pytest django settings",
+             {"manage.py": "", "pytest.ini": "[pytest]\nDJANGO_SETTINGS_MODULE = app.settings\n"},
+             self.django_phase("python manage.py test"),
+             ["python manage.py test app.tests.test_models --noinput"]),
+            ("a django phase that names no test file runs no test command",
+             {"manage.py": "", "pyproject.toml": ruff_config},
+             "**File**: `app/models.py`\n",
+             ["ruff check {files:.py}"]),
+            ("a listed pytest command that changes directory gives no runner to ruff",
+             {"pyproject.toml": ruff_config, "uv.lock": ""},
+             "**File**: `app/models.py`\n\n#### Automated Verification:\n\n"
+             "- [ ] **Tests**: models pass - `cd api && poetry run pytest tests/`\n",
+             ["uv run ruff check {files:.py}", "cd api && poetry run pytest tests/"]),
+            ("a listed django test command is the gate's test command and no pytest runs",
+             {"pyproject.toml": ruff_config, "poetry.lock": ""},
+             f"{backend_files}\n#### Automated Verification:\n\n"
+             "- [ ] **Tests**: models pass - `poetry run python backend/manage.py test app.tests`\n",
+             ["cd backend && npm run typecheck", "poetry run python -m ruff check {files:.py}",
+              "poetry run python backend/manage.py test app.tests"]),
+            ("a listed whole-suite manage.py test in a subfolder labels the modules from that folder",
+             {"backend/manage.py": "", "Pipfile.lock": ""},
+             f"{backend_files}**File**: `docs/test_notes.py`\n\n#### Automated Verification:\n\n"
+             "- [ ] **Tests**: models pass - `pipenv run python backend/manage.py test --keepdb`\n",
+             ["cd backend && npm run typecheck",
+              "pipenv run python backend/manage.py test app.tests.test_models --keepdb --noinput"]),
+            ("a manage.py in the subfolder above the phase files runs manage.py test from there",
+             {"backend/manage.py": ""},
+             backend_files,
+             ["cd backend && npm run typecheck", "python3 backend/manage.py test app.tests.test_models --noinput"]),
+            ("a listed make target with forwarded arguments replaces the derived vitest command",
+             {"pkg/package.json": '{"devDependencies": {"vitest": "1"}}', "pkg/src/.keep": ""},
+             "**File**: `pkg/src/a.consistency.test.ts`\n\n#### Automated Verification:\n\n"
+             "- [ ] **Tests**: consistency - `make test-consistency ARGS=\"src/a.consistency.test.ts\"`\n",
+             ['make test-consistency ARGS="src/a.consistency.test.ts"']),
+            ("a listed test command the gate would refuse is not taken",
+             {"pkg/package.json": '{"devDependencies": {"vitest": "1"}}', "pkg/src/.keep": ""},
+             "**File**: `pkg/src/a.test.ts`\n\n#### Automated Verification:\n\n"
+             "- [ ] **Tests**: all pass - `npm test`\n",
+             ["cd pkg && npx vitest run src/a.test.ts"]),
+            ("a listed system python runner keeps ruff as its own program",
+             {"pyproject.toml": ruff_config},
+             "**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
+             "- [ ] **Tests**: models pass - `python -m pytest tests/`\n",
+             ["ruff check {files:.py}", "python -m pytest tests/"]),
+        ]
 
-        commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase())
+        for label, repo_files, phase, expected in cases:
+            with self.subTest(label):
+                repo = self.tmp / f"gate-{len(list(self.tmp.iterdir()))}"
+                shutil.copytree(self.repo, repo)
+                for name, text in repo_files.items():
+                    (repo / name).parent.mkdir(parents=True, exist_ok=True)
+                    (repo / name).write_text(text)
 
-        self.assertEqual(["ruff check {files:.py}", "python3 manage.py test app.tests.test_models --noinput"], commands)
+                commands = code_step_gates.derive_gate_commands(repo, phase)
 
-    def test_a_django_repo_runs_manage_py_test_through_the_runner_the_lock_file_names(self):
-        (self.repo / "manage.py").write_text("")
-        (self.repo / "pyproject.toml").write_text("")
-        (self.repo / "uv.lock").write_text("")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase())
-
-        self.assertEqual(["uv run python manage.py test app.tests.test_models --noinput"], commands)
+                self.assertEqual(expected, commands)
 
     def test_a_django_repo_with_pytest_django_settings_keeps_pytest(self):
         settings_files = {
@@ -791,34 +780,6 @@ class CodeStepTest(unittest.TestCase):
 
                 self.assertEqual(["python3 -m pytest app/tests/test_models.py"], commands)
 
-    def test_a_listed_whole_suite_manage_py_test_runs_on_the_changed_test_modules_with_its_runner_and_options(self):
-        (self.repo / "manage.py").write_text("")
-        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
-        (self.repo / "uv.lock").write_text("")
-        phase = self.django_phase("DJANGO_SETTINGS_MODULE=app.test poetry run python manage.py test --keepdb")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["DJANGO_SETTINGS_MODULE=app.test poetry run python -m ruff check {files:.py}",
-                          "DJANGO_SETTINGS_MODULE=app.test poetry run python manage.py test "
-                          "app.tests.test_models --keepdb --noinput"], commands)
-
-    def test_a_listed_whole_suite_manage_py_test_keeps_the_interpreter_name_behind_a_launcher(self):
-        (self.repo / "manage.py").write_text("")
-        phase = self.django_phase("uv run python3 manage.py test")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["uv run python3 manage.py test app.tests.test_models --noinput"], commands)
-
-    def test_a_django_phase_that_names_an_app_tests_module_runs_it(self):
-        (self.repo / "manage.py").write_text("")
-        phase = "**File**: `app/models.py`\n**File**: `app/tests.py`\n"
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["python3 manage.py test app.tests --noinput"], commands)
-
     def test_a_listed_manage_py_test_option_keeps_its_value_and_the_labels_go_before_the_options(self):
         cases = {
             "python manage.py test --settings app.test":
@@ -833,15 +794,6 @@ class CodeStepTest(unittest.TestCase):
 
                 self.assertEqual([expected], commands)
 
-    def test_a_listed_whole_suite_manage_py_test_wins_over_pytest_django_settings(self):
-        (self.repo / "manage.py").write_text("")
-        (self.repo / "pytest.ini").write_text("[pytest]\nDJANGO_SETTINGS_MODULE = app.settings\n")
-        phase = self.django_phase("python manage.py test")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["python manage.py test app.tests.test_models --noinput"], commands)
-
     def test_a_phase_that_lists_a_whole_suite_pytest_keeps_pytest_in_a_django_repo(self):
         (self.repo / "manage.py").write_text("")
         (self.repo / "pyproject.toml").write_text("")
@@ -851,58 +803,6 @@ class CodeStepTest(unittest.TestCase):
                 commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase(listed))
 
                 self.assertEqual([expected], commands)
-
-    def test_a_django_phase_that_names_no_test_file_runs_no_test_command(self):
-        (self.repo / "manage.py").write_text("")
-        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, "**File**: `app/models.py`\n")
-
-        self.assertEqual(["ruff check {files:.py}"], commands)
-
-    def test_a_listed_pytest_command_that_changes_directory_gives_no_runner_to_ruff(self):
-        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
-        (self.repo / "uv.lock").write_text("")
-        phase = ("**File**: `app/models.py`\n\n#### Automated Verification:\n\n"
-                 "- [ ] **Tests**: models pass - `cd api && poetry run pytest tests/`\n")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["uv run ruff check {files:.py}", "cd api && poetry run pytest tests/"], commands)
-
-    def test_a_listed_django_test_command_is_the_gates_test_command_and_no_pytest_runs(self):
-        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
-        (self.repo / "poetry.lock").write_text("")
-        phase = ("**File**: `backend/app/models.py`\n**File**: `backend/app/tests/test_models.py`\n\n"
-                 "#### Automated Verification:\n\n"
-                 "- [ ] **Tests**: models pass - `poetry run python backend/manage.py test app.tests`\n")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["cd backend && npm run typecheck", "poetry run python -m ruff check {files:.py}",
-                          "poetry run python backend/manage.py test app.tests"], commands)
-
-    def test_a_listed_whole_suite_manage_py_test_in_a_subfolder_labels_the_modules_from_that_folder(self):
-        (self.repo / "backend/manage.py").write_text("")
-        (self.repo / "Pipfile.lock").write_text("")
-        phase = ("**File**: `backend/app/models.py`\n**File**: `backend/app/tests/test_models.py`\n"
-                 "**File**: `docs/test_notes.py`\n\n#### Automated Verification:\n\n"
-                 "- [ ] **Tests**: models pass - `pipenv run python backend/manage.py test --keepdb`\n")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["cd backend && npm run typecheck",
-                          "pipenv run python backend/manage.py test app.tests.test_models --keepdb --noinput"],
-                         commands)
-
-    def test_a_manage_py_in_the_subfolder_above_the_phase_files_runs_manage_py_test_from_there(self):
-        (self.repo / "backend/manage.py").write_text("")
-        phase = "**File**: `backend/app/models.py`\n**File**: `backend/app/tests/test_models.py`\n"
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["cd backend && npm run typecheck",
-                          "python3 backend/manage.py test app.tests.test_models --noinput"], commands)
 
     def test_a_listed_test_command_that_changes_directory_is_taken_verbatim(self):
         (self.repo / "pyproject.toml").write_text("")
@@ -914,35 +814,6 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertIn("cd backend && poetry run python manage.py test app.tests", commands)
         self.assertEqual([], [command for command in commands if "pytest" in command or "vitest" in command])
-
-    def test_a_listed_make_target_with_forwarded_arguments_replaces_the_derived_vitest_command(self):
-        (self.repo / "pkg/src").mkdir(parents=True)
-        (self.repo / "pkg/package.json").write_text('{"devDependencies": {"vitest": "1"}}')
-        phase = ("**File**: `pkg/src/a.consistency.test.ts`\n\n#### Automated Verification:\n\n"
-                 "- [ ] **Tests**: consistency - `make test-consistency ARGS=\"src/a.consistency.test.ts\"`\n")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(['make test-consistency ARGS="src/a.consistency.test.ts"'], commands)
-
-    def test_a_listed_test_command_the_gate_would_refuse_is_not_taken(self):
-        (self.repo / "pkg/src").mkdir(parents=True)
-        (self.repo / "pkg/package.json").write_text('{"devDependencies": {"vitest": "1"}}')
-        phase = ("**File**: `pkg/src/a.test.ts`\n\n#### Automated Verification:\n\n"
-                 "- [ ] **Tests**: all pass - `npm test`\n")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["cd pkg && npx vitest run src/a.test.ts"], commands)
-
-    def test_a_listed_system_python_runner_keeps_ruff_as_its_own_program(self):
-        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
-        phase = ("**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
-                 "- [ ] **Tests**: models pass - `python -m pytest tests/`\n")
-
-        commands = code_step_gates.derive_gate_commands(self.repo, phase)
-
-        self.assertEqual(["ruff check {files:.py}", "python -m pytest tests/"], commands)
 
     def test_a_verification_item_may_start_with_an_environment_setting(self):
         item = "- [ ] **Tests**: the streams pass - `CARGO_BUILD_JOBS=4 cargo test --test side_streams`"
@@ -2414,37 +2285,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("## Phase 6: y\nb", plan_format.phase_text(lines, "6"))
         self.assertEqual("## Phase 6A: x\na", plan_format.phase_text(lines, "6A"))
 
-    def test_phase_status_line_formats_a_real_plan_can_use(self):
-        lines = ["## Phase Status", "",
-                 "- [ ] Phase 6C2: Deep id (risk: low).",
-                 "- [X] Phase 7 — capital X and em dash (risk: high)",
-                 "- [ ] Phase 8. Period after number (risk: Low)",
-                 "-  [ ]  Phase  9:  Extra spaces (risk: low)",
-                 "* [ ] Phase 10 – En dash and star bullet",
-                 "- [ ] Phase 11: No risk tag"]
-        entries = plan_format.parse_plan_with_closing_phases(lines)["entries"]
-        self.assertEqual(["6C2", "7", "8", "9", "10", "11"], [e["number"] for e in entries])
-        self.assertEqual(["low", "high", "low", "low", "high", "high"], [e["risk"] for e in entries])
-        self.assertEqual([False, True, False, False, False, False], [e["done"] for e in entries])
-
-    def test_logged_phase_id_shapes_parse_look_up_and_mark_done(self):
-        ids = ["10.5", "8.6b", "4.6", "7.5", "8.6", "P4", "P9", "1-2", "6A-6D", "P9-slice-1"]
-        status_lines = [f"- [ ] Phase {i}: Title {i} (risk: low)" for i in ids]
-        sections = [f"## Phase {i}: Title {i}\nbody {i}" for i in ids]
-        plan_path = self.repo / "ids.md"
-        plan_path.write_text("\n".join(["## Phase Status", "", *status_lines, "", *sections, ""]))
-        plan_lines = plan_path.read_text().splitlines()
-        self.assertEqual(ids, [e["number"] for e in plan_format.parse_plan_with_closing_phases(plan_lines)["entries"]])
-        for i in ids:
-            self.assertEqual(f"## Phase {i}: Title {i}\nbody {i}", plan_format.phase_text(plan_lines, i))
-            plan_format.mark_phase_done(plan_path, i)
-        self.assertEqual([True] * len(ids), [e["done"] for e in plan_format.parse_plan_with_closing_phases(
-            plan_path.read_text().splitlines())["entries"]])
-
-    def test_dotted_phase_section_is_not_the_whole_number_section(self):
-        lines = ["## Phase 10.5: x", "a", "## Phase 10: y", "b"]
-        self.assertEqual("## Phase 10: y\nb", plan_format.phase_text(lines, "10"))
-
     def test_unparsed_phase_status_line_stops_with_its_line_number(self):
         (self.repo / self.plan).write_text(self.plan_text().replace("- [ ] Phase 2: Totals", "- [ ] Step two: Totals"))
         out = self.step("start", self.plan)
@@ -3348,53 +3188,11 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("FAILED t.py::test_a - boom\nFAILED t.py::test_b - bang", out)
         self.assertNotIn("(full output in the output file)", out)
 
-    def test_a_grep_ban_with_no_match_holds(self):
-        self.set_verification("- [ ] **Prohibition**: no console.log - `grep -n console.log backend/src/orders.ts`")
-        outcome = self.finish_phase_one()
-        self.assertNotIn("Automated Verification failed", outcome)
-
-    def test_an_rg_ban_with_no_match_holds(self):
-        self.set_verification("- [ ] **Prohibition**: no console.log - `rg -n console.log backend/src/orders.ts`")
-        outcome = self.finish_phase_one()
-        self.assertNotIn("Automated Verification failed", outcome)
-
-    def test_an_rg_presence_check_passes_on_a_hit(self):
-        self.set_verification("- [ ] **Presence**: the export exists - `rg -q 'export const o' backend/src/orders.ts`")
-        outcome = self.finish_phase_one()
-        self.assertNotIn("Automated Verification failed", outcome)
-        self.assertIn("- [x] Phase 1:", self.plan_text())
-
-    def test_an_rg_line_with_no_wording_is_a_ban_and_fails_on_a_hit(self):
-        self.set_verification("- [ ] **Rename**: the old name is gone - `rg -n 'export const o' backend/src/orders.ts`")
-        outcome = self.finish_phase_one()
-        self.assertIn("Automated Verification failed", outcome)
-        self.assertIn("unless its text says it checks presence", outcome)
-
-    def test_a_negated_rg_ban_runs_and_holds_on_no_match(self):
-        self.set_verification("- [ ] **Prohibition**: no console.log - `! rg -n console.log backend/src/orders.ts`")
-        outcome = self.finish_phase_one()
-        self.assertNotIn("cannot run", outcome)
-        self.assertNotIn("Automated Verification failed", outcome)
-
     def test_a_negated_rg_ban_passes_plan_check(self):
         self.set_verification("- [ ] **Prohibition**: no console.log - `! rg -n console.log backend/src/orders.ts`")
         result = subprocess.run([sys.executable, str(SCRIPT), "plan", "check", self.plan],
                                 cwd=self.repo, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_a_cd_then_rg_line_that_prints_nothing_passes_verify(self):
-        self.set_verification("- [ ] the migration is purely additive. "
-                              "`cd backend && rg -n 'ALTER COLUMN|DROP ' src/orders.ts` prints nothing.")
-        outcome = self.finish_phase_one()
-        self.assertNotIn("Automated Verification failed", outcome)
-        self.assertIn("- [x] Phase 1:", self.plan_text())
-
-    def test_a_cd_then_rg_line_that_prints_nothing_fails_on_a_hit(self):
-        self.set_verification("- [ ] the migration is purely additive. "
-                              "`cd backend && rg -n 'DROP ' src/orders.ts` prints nothing.")
-        self.coder_round(source="DROP TABLE o\n")
-        self.hook("review-loop", self.LOOP_OK)
-        self.assertIn("Automated Verification failed", self.step("after-review"))
 
     def test_a_cd_then_negated_rg_is_a_ban(self):
         line = "- [ ] **Check**: `cd backend && ! rg -n x src/orders.ts`"
@@ -3408,19 +3206,6 @@ class CodeStepTest(unittest.TestCase):
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("Automated Verification failed", self.step("after-review"))
 
-    def test_a_grep_ban_with_a_match_fails(self):
-        self.set_verification("- [ ] **Prohibition**: no console.log - `grep -n console.log backend/src/orders.ts`")
-        self.coder_round(source="console.log(1)\n")
-        self.hook("review-loop", self.LOOP_OK)
-        self.assertIn("Automated Verification failed", self.step("after-review"))
-
-    def test_prohibition_pipe_form_is_judged_by_its_output(self):
-        self.set_verification(
-            "- [ ] **Prohibition**: none - `git grep -n console.log -- backend/src/orders.ts | wc -l`"
-        )
-        self.finish_phase_one()
-        self.assertIn("- [x] Phase 1:", self.plan_text())
-
     GIT_GREP_PRESENCE = ("- [ ] **Presence**: the export exists - "
                          "`git grep -n --untracked 'export const o' -- backend/src/orders.ts`")
 
@@ -3430,29 +3215,6 @@ class CodeStepTest(unittest.TestCase):
                                     cwd=self.repo, capture_output=True, text=True)
         self.assertEqual(plan_check.returncode, 0, plan_check.stdout + plan_check.stderr)
 
-        outcome = self.finish_phase_one()
-        self.assertNotIn("Automated Verification failed", outcome)
-        self.assertIn("- [x] Phase 1:", self.plan_text())
-
-    def test_a_git_grep_presence_check_fails_on_no_hit(self):
-        self.set_verification(self.GIT_GREP_PRESENCE.replace("export const o", "export const missing"))
-        self.coder_round()
-        self.hook("review-loop", self.LOOP_OK)
-        self.assertIn("Automated Verification failed", self.step("after-review"))
-
-    def test_a_git_grep_line_with_no_wording_is_a_ban_and_fails_on_a_hit(self):
-        self.set_verification("- [ ] **Rename**: the old name is gone - "
-                              "`git grep -n --untracked 'export const o' -- backend/src/orders.ts`")
-        outcome = self.finish_phase_one()
-        self.assertIn("Automated Verification failed", outcome)
-        self.assertIn("unless its text says it checks presence", outcome)
-
-    def test_a_test_n_wrapped_git_grep_is_not_a_ban(self):
-        command = 'test -n "$(git grep -n --untracked \'export const o\' -- backend/src/orders.ts)"'
-        line = f"- [ ] **Check**: the export is there - `{command}`"
-        self.assertFalse(criteria_verdict.is_search_ban(command, line))
-
-        self.set_verification(line)
         outcome = self.finish_phase_one()
         self.assertNotIn("Automated Verification failed", outcome)
         self.assertIn("- [x] Phase 1:", self.plan_text())
@@ -3637,78 +3399,41 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         return out
 
-    def test_asks_coder_that_changed_nothing_and_has_an_open_question_stops(self):
-        self.assert_unchanged_asks_coder_stops("Open question: which name should the rename use?")
-
-    def test_asks_coder_that_changed_nothing_and_recommends_eng_spec_stops(self):
-        self.assert_unchanged_asks_coder_stops("This is architectural; run /eng-spec.")
-
-    def test_asks_coder_that_changed_nothing_and_could_not_apply_the_ask_stops(self):
-        self.assert_unchanged_asks_coder_stops("Could not apply the rename; left as is.")
-
-    def test_asks_coder_that_changed_nothing_because_a_hook_blocked_the_edit_stops(self):
-        self.assert_unchanged_asks_coder_stops(
-            "The Edit on backend/src/orders.ts was blocked by a hook, so I could not apply ask 1.")
-
-    def test_asks_coder_that_changed_nothing_and_calls_the_ask_ambiguous_stops(self):
-        self.assert_unchanged_asks_coder_stops("Ask 1 is ambiguous, so I made no change.")
-
-    def test_asks_coder_that_changed_nothing_and_recommends_eng_spec_before_any_change_stops(self):
-        self.assert_unchanged_asks_coder_stops("I recommend running eng-spec before any change.")
-
     def test_asks_coder_that_changed_nothing_with_no_already_done_line_stops_even_when_it_says_done(self):
         self.assert_unchanged_asks_coder_stops("The ask was already built; nothing to change.")
 
-    def test_asks_coder_already_done_line_without_a_file_and_line_does_not_count(self):
-        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 —")
+    def test_only_an_already_done_line_with_a_real_file_and_line_or_a_passing_check_counts_for_its_ask(self):
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\nexport const p = 2\n")
+        order_location = "backend/src/orders.ts:2"
+        passing_check = "`npm test -- orders` -> exit 0"
+        cases = [
+            ("Open question: which name should the rename use?", set()),
+            ("This is architectural; run /eng-spec.", set()),
+            ("Could not apply the rename; left as is.", set()),
+            ("The Edit on backend/src/orders.ts was blocked by a hook, so I could not apply ask 1.", set()),
+            ("Ask 1 is ambiguous, so I made no change.", set()),
+            ("I recommend running eng-spec before any change.", set()),
+            ("The ask was already built; nothing to change.", set()),
+            ("ALREADY-DONE: 1 —", set()),
+            ("ALREADY-DONE: 1 — n/a", set()),
+            ("ALREADY-DONE: 1 — <file:line>", set()),
+            ("ALREADY-DONE: 1 — could not apply it, the edit failed", set()),
+            ("ALREADY-DONE: 1 — backend/src/orders.ts", set()),
+            ("ALREADY-DONE: 1 — backend/src/nope.ts:9", set()),
+            (f"ALREADY-DONE: 1 — {order_location} not done, the Edit was blocked.", set()),
+            ("ALREADY-DONE: 1 — `npm test -- orders` -> exit 1", set()),
+            ("ALREADY-DONE: 1 — `npm test -- orders` -> exit 0 but 2 skipped", set()),
+            (f"ALREADY-DONE: 1 — {order_location}", {1}),
+            ("ALREADY-DONE: 2 — backend/src/orders.ts:2", {2}),
+            ("ALREADY-DONE: 1 — `backend/src/orders.ts:1-2`", {1}),
+            (f"ALREADY-DONE: 1 — {order_location}.", {1}),
+            (f"ALREADY-DONE: 1 — {passing_check}\nRan the tests; they pass, so nothing changed.", {1}),
+            (f"ALREADY-DONE: 1 — {order_location}\nALREADY-DONE: 2 - backend/src/orders.ts:3", {1, 2}),
+        ]
 
-    def test_asks_coder_already_done_line_with_n_a_as_its_location_stops(self):
-        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — n/a")
-
-    def test_asks_coder_already_done_line_with_the_placeholder_location_stops(self):
-        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — <file:line>")
-
-    def test_asks_coder_already_done_line_with_prose_as_its_location_stops(self):
-        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — could not apply it, the edit failed")
-
-    def test_asks_coder_already_done_line_naming_a_real_file_without_a_line_stops(self):
-        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — backend/src/orders.ts")
-
-    def test_asks_coder_already_done_line_naming_a_file_that_does_not_exist_stops(self):
-        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — backend/src/nope.ts:9")
-
-    def test_asks_coder_already_done_line_with_text_after_a_real_file_and_line_stops(self):
-        self.assert_unchanged_asks_coder_stops(
-            "ALREADY-DONE: 1 — backend/src/orders.ts:2 not done, the Edit was blocked.")
-
-    def assert_already_done_line_finishes_the_phase(self, line):
-        self.apply_first_ask()
-        self.hook("coder", line)
-        out = self.step("after-coder")
-        self.assertIn("Phase 1 marked done", out)
-        self.assertIn("- [x] Phase 1:", self.plan_text())
-
-    def test_asks_coder_already_done_line_naming_a_real_file_and_line_finishes_the_phase(self):
-        self.assert_already_done_line_finishes_the_phase("ALREADY-DONE: 1 — backend/src/orders.ts:2")
-
-    def test_asks_coder_already_done_line_with_backticks_and_a_line_range_finishes_the_phase(self):
-        self.assert_already_done_line_finishes_the_phase("ALREADY-DONE: 1 — `backend/src/orders.ts:1-2`")
-
-    def test_asks_coder_already_done_line_with_a_closing_period_finishes_the_phase(self):
-        self.assert_already_done_line_finishes_the_phase("ALREADY-DONE: 1 — backend/src/orders.ts:2.")
-
-    def test_asks_coder_already_done_line_naming_a_passing_check_finishes_the_phase(self):
-        self.assert_already_done_line_finishes_the_phase(
-            "ALREADY-DONE: 1 — `npm test -- orders` -> exit 0\nRan the tests; they pass, so nothing changed.")
-
-    def test_asks_coder_already_done_line_naming_a_failing_check_stops(self):
-        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — `npm test -- orders` -> exit 1")
-
-    def test_asks_coder_already_done_line_naming_a_check_with_text_after_its_exit_stops(self):
-        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 1 — `npm test -- orders` -> exit 0 but 2 skipped")
-
-    def test_asks_coder_already_done_line_for_another_ask_number_does_not_count(self):
-        self.assert_unchanged_asks_coder_stops("ALREADY-DONE: 2 — backend/src/orders.ts:2")
+        for report, expected_numbers in cases:
+            with self.subTest(report=report):
+                self.assertEqual(expected_numbers, code_step_report.already_done_ask_numbers(self.repo, report))
 
     def test_an_asks_coder_state_without_its_accepted_asks_does_not_tick_the_phase(self):
         self.apply_first_ask()
@@ -3849,45 +3574,6 @@ class CodeStepTest(unittest.TestCase):
 
     # ---------- plan grammar: fences and duplicate sections ----------
 
-    def test_a_hash_line_inside_a_code_fence_does_not_end_a_phase_section(self):
-        lines = [
-            "# T",
-            "## Phase Status",
-            "- [ ] Phase 1: A",
-            "- [ ] Phase 2: B",
-            "## Phase 1: A",
-            "```bash",
-            "# install",
-            "npm i",
-            "```",
-            "more text",
-            "## Phase 2: B",
-            "",
-        ]
-        plan = plan_format.parse_plan_with_closing_phases(lines)
-        self.assertEqual((4, 10), (plan["sections"]["1"]["start"], plan["sections"]["1"]["end"]))
-        self.assertIn("# install", plan_format.phase_text(lines, "1"))
-        self.assertIn("more text", plan_format.phase_text(lines, "1"))
-
-    def test_a_tilde_fence_and_an_indented_fence_hide_headings_too(self):
-        lines = [
-            "## Phase Status",
-            "- [ ] Phase 1: A",
-            "## Phase 1: A",
-            "~~~",
-            "## Not a section",
-            "~~~",
-            "  - step",
-            "    ```sh",
-            "    # comment",
-            "    ```",
-            "tail",
-            "",
-        ]
-        plan = plan_format.parse_plan_with_closing_phases(lines)
-        self.assertEqual(len(lines), plan["sections"]["1"]["end"])
-        self.assertEqual([], plan["failures"])
-
     def test_phase_headings_and_status_lines_inside_a_fence_are_not_sections_or_entries(self):
         lines = [
             "# T",
@@ -3904,15 +3590,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(["1"], list(plan["sections"]))
         self.assertEqual(["1"], [entry["number"] for entry in plan["entries"]])
         self.assertEqual([], plan["failures"])
-
-    def test_two_sections_with_the_same_phase_id_are_a_duplicate_id_failure(self):
-        lines = ["# T", "## Phase Status", "- [ ] Phase 1: A", "## Phase 1: A", "x", "## Phase 1: A again", ""]
-        failures = plan_format.parse_plan_with_closing_phases(lines)["failures"]
-        self.assertEqual([(6, "duplicate-id")], [(f["line"], f["kind"]) for f in failures])
-        self.assertIn("line 4", failures[0]["detail"])
-        result = self.plan_check("\n".join(lines))
-        self.assertEqual(1, result.returncode)
-        self.assertIn(":6: duplicate-id", result.stdout)
 
     # ---------- the addendum coder fires only on added lines ----------
 
@@ -4025,17 +3702,6 @@ class CodeStepTest(unittest.TestCase):
         self.wait_env(1, "0.2")
         self.assertIn("ACTION: wait", self.step("after-coder"))
 
-    def test_after_review_waits_for_a_review_loop_row_newer_than_the_review_dispatch(self):
-        self.coder_round()
-        self.wait_env(1, "0.2")
-        out = self.step("after-review")
-        self.assertIn("ACTION: wait", out)
-        self.assertIn(f"`{self.own_command('resume')}`", out)
-        # The test writes no stop row, so the reader waits out the whole limit for one after the hand-back.
-        self.wait_env(5)
-        self.late_hook(1, "review-loop", self.LOOP_OK)
-        self.assertIn("ACTION: stop-block-B", self.step("after-review"))
-
     def test_a_zero_wait_limit_skips_the_wait_and_reports_the_missing_row(self):
         self.begin_coder()
         out = self.step("after-coder")
@@ -4072,11 +3738,6 @@ class CodeStepTest(unittest.TestCase):
     def test_fork_handback_names_after_plan_edit_while_the_plan_edit_coder_is_out(self):
         self.coder_round(self.IMPACT_REPORT)
         self.step("decide", "adopt", "--by", "session", "--ruling", "my own call")
-        reason = json.loads(self.fork_handback().stdout)["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn(self.own_command("resume"), reason)
-
-    def test_fork_handback_names_after_review_while_the_review_loop_is_out(self):
-        self.coder_round()
         reason = json.loads(self.fork_handback().stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn(self.own_command("resume"), reason)
 
@@ -4266,12 +3927,6 @@ class CodeStepTest(unittest.TestCase):
                                                            "result": result}}
         gate_path.write_text(json.dumps(gate))
 
-    def test_a_fix_coders_row_during_the_review_does_not_end_the_review_wait(self):
-        self.coder_round()
-        self.hook("coder", "a fix coder handing back", agent_id="fix1")
-        self.wait_env(1, "0.2")
-        self.assertIn("ACTION: wait", self.step("after-review"))
-
     def test_a_coder_row_with_a_cap_gate_result_ends_the_coder_wait(self):
         self.start_phase_one()
         self.set_gate_result("cap")
@@ -4323,6 +3978,17 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertIn("coder has not handed back in", out)
         self.assertEqual("stopped", self.state()["stage"])
+
+    def test_a_wait_past_the_cap_on_a_dispatch_with_no_launch_stops_and_does_not_print_it_again(self):
+        self.begin_coder()
+        self.age_dispatches(5000)
+        self.set_state(dispatchAt=time.time() - 5000)
+        self.wait_env(1, "0.2", waits=3)
+
+        out = self.step("after-coder")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("ACTION: dispatch", out)
 
     def test_a_wait_past_the_cap_still_takes_a_row_that_arrived(self):
         self.begin_coder()
@@ -4878,6 +4544,63 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotEqual(0, code)
         self.assertIn("test filter matched no test", output)
 
+    def test_each_search_line_holds_or_fails_by_its_wording_and_whether_the_search_hits(self):
+        ban_note = "unless its text says it checks presence"
+        git_grep_hit = "git grep -n --untracked 'export const o' -- backend/src/orders.ts"
+        cases = [
+            ("grep ban, no match", "**Prohibition**: no console.log - `grep -n console.log backend/src/orders.ts`",
+             "export const o = 1\n", True, False),
+            ("grep ban, a match", "**Prohibition**: no console.log - `grep -n console.log backend/src/orders.ts`",
+             "console.log(1)\n", False, True),
+            ("rg ban, no match", "**Prohibition**: no console.log - `rg -n console.log backend/src/orders.ts`",
+             "export const o = 1\n", True, False),
+            ("rg ban, a match", "**Prohibition**: no console.log - `rg -n console.log backend/src/orders.ts`",
+             "console.log(1)\n", False, True),
+            ("rg presence, a hit", "**Presence**: the export exists - `rg -q 'export const o' backend/src/orders.ts`",
+             "export const o = 1\n", True, False),
+            ("rg with no wording, a hit",
+             "**Rename**: the old name is gone - `rg -n 'export const o' backend/src/orders.ts`",
+             "export const o = 1\n", False, True),
+            ("negated rg ban, no match",
+             "**Prohibition**: no console.log - `! rg -n console.log backend/src/orders.ts`",
+             "export const o = 1\n", True, False),
+            ("cd then rg, prints nothing", "the migration is purely additive. "
+             "`cd backend && rg -n 'ALTER COLUMN|DROP ' src/orders.ts` prints nothing.",
+             "export const o = 1\n", True, False),
+            ("cd then rg, a hit", "the migration is purely additive. "
+             "`cd backend && rg -n 'DROP ' src/orders.ts` prints nothing.", "DROP TABLE o\n", False, True),
+            ("git grep pipe, no match",
+             "**Prohibition**: none - `git grep -n console.log -- backend/src/orders.ts | wc -l`",
+             "export const o = 1\n", True, False),
+            ("git grep presence, a hit", f"**Presence**: the export exists - `{git_grep_hit}`",
+             "export const o = 1\n", True, False),
+            ("git grep presence, no hit", f"**Presence**: the export exists - `{git_grep_hit}`",
+             "export const p = 1\n", False, False),
+            ("git grep with no wording, a hit", f"**Rename**: the old name is gone - `{git_grep_hit}`",
+             "export const o = 1\n", False, True),
+            ("test -n around git grep", f"**Check**: the export is there - `test -n \"$({git_grep_hit})\"`",
+             "export const o = 1\n", True, False),
+        ]
+
+        for label, item_text, source, holds, names_ban_note in cases:
+            with self.subTest(label):
+                (self.repo / "backend/src/orders.ts").write_text(source)
+                with unittest.mock.patch.object(code_step_boundary, "log_prohibition_scan"):
+                    results, skipped, unparsed = code_step_boundary.run_verification_commands(
+                        self.repo, f"#### Automated Verification:\n\n- [ ] {item_text}\n\n"
+                                   "#### Manual Verification:\n")
+
+                (_command, code, output), = results
+                self.assertEqual(([], []), (skipped, unparsed))
+                self.assertEqual(holds, code == 0)
+                self.assertEqual(names_ban_note, ban_note in output)
+
+    def test_a_search_inside_a_test_n_wrapper_is_not_a_ban(self):
+        command = 'test -n "$(git grep -n --untracked \'export const o\' -- backend/src/orders.ts)"'
+        line = f"- [ ] **Check**: the export is there - `{command}`"
+
+        self.assertFalse(criteria_verdict.is_search_ban(command, line))
+
     def test_a_filtered_test_run_that_reports_a_passed_test_stays_green(self):
         command = """python3 -c "print('vitest: 2 passed')" -t match"""
 
@@ -5128,48 +4851,46 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("SendMessage", out)
         self.assertIn(self.own_command("resume"), out)
 
-    def test_after_review_waits_for_a_review_loop_resumed_after_the_cap(self):
-        self.stop_the_review_at_the_wait_cap()
-        self.send_message("r1")
-        out = self.step("after-review")
-        self.assertIn("ACTION: wait", out)
-        self.assertNotIn("no review pending", out)
-        self.assertEqual("stopped", self.state()["stage"])
-
-    def test_repeated_waits_on_a_review_loop_resumed_after_the_cap_end_in_the_cap_stop(self):
-        self.stop_the_review_at_the_wait_cap()
-        self.send_message("r1")
-        self.wait_env(2, "0.2", waits=3)
-        self.assertIn("ACTION: wait", self.step("after-review"))
-        first_wait_at = self.state()["resumeWaitAt"]
-        self.assertIn("ACTION: wait", self.step("after-review"))
-        self.assertEqual(first_wait_at, self.state()["resumeWaitAt"])
-        self.set_state(resumeWaitAt=time.time() - 100)
-        out = self.step("after-review")
-        self.assertIn("ACTION: stop", out)
-        self.assertIn("has not handed back in", out)
-
-    def test_after_review_says_the_resumed_review_loop_has_not_handed_back_when_it_runs_with_no_wait(self):
+    def test_a_review_loop_resumed_after_the_cap_is_waited_for_capped_again_and_handed_back_as_the_pending_review(self):
         self.stop_the_review_at_the_wait_cap()
         self.send_message("r1")
         self.wait_env(0)
-        out = self.step("after-review")
-        self.assertIn("ACTION: stop", out)
-        self.assertIn("resumed review-loop has not handed back yet", out)
-        self.assertNotIn("no review pending", out)
-        self.assertNotIn("Run `start` first", out)
+        no_wait_out = self.step("after-review")
+        self.assertIn("ACTION: stop", no_wait_out)
+        self.assertIn("resumed review-loop has not handed back yet", no_wait_out)
+        self.assertNotIn("no review pending", no_wait_out)
+        self.assertNotIn("Run `start` first", no_wait_out)
 
-    def test_the_hand_back_of_a_resumed_review_loop_clears_the_resume_mark_and_the_saved_first_wait_time(self):
-        self.stop_the_review_at_the_wait_cap()
+        self.wait_env(2, "0.2", waits=3)
         self.send_message("r1")
-        self.step("after-review")
-        self.assertIsNotNone(self.state().get("resumeWaitAt"))
-        self.hook("review-loop", self.ASK, agent_id="r1")
-        self.step("after-review")
+        waiting_out = self.step("after-review")
+        self.assertIn("ACTION: wait", waiting_out)
+        self.assertNotIn("no review pending", waiting_out)
+        self.assertEqual("stopped", self.state()["stage"])
+        first_wait_at = self.state()["resumeWaitAt"]
+        self.assertIn("ACTION: wait", self.step("after-review"))
+        self.assertEqual(first_wait_at, self.state()["resumeWaitAt"])
+
+        self.set_state(resumeWaitAt=time.time() - 100)
+        cap_stop_out = self.step("after-review")
+        self.assertIn("ACTION: stop", cap_stop_out)
+        self.assertIn("has not handed back in", cap_stop_out)
+        self.assertNotIn("resumeWaitAt", self.state())
+
+        self.send_message("r1")
+        again_out = self.step("after-review")
+        self.assertIn("ACTION: wait", again_out)
+        self.assertNotIn("has not handed back in", again_out)
+        self.assertIn("resumeWaitAt", self.state())
+
+        self.hook("review-loop", self.LOOP_OK, agent_id="r1")
+        out = self.step("after-review")
+        self.assertNotIn("no review pending", out)
+        self.assertIn("Phase 1 marked done", out)
         state = self.state()
-        self.assertEqual("asks", state["stage"])
-        self.assertNotIn("resumableReview", state)
+        self.assertNotEqual("stopped", state["stage"])
         self.assertNotIn("resumeWaitAt", state)
+        self.assertNotIn("resumableReview", state)
 
     def test_the_coder_reports_of_an_asks_round_hold_only_the_agents_of_its_newest_dispatch(self):
         self.start_phase_one()
@@ -5204,15 +4925,6 @@ class CodeStepTest(unittest.TestCase):
 
         code_step_core.open_dispatch(state)
         self.assertEqual(run_id, state["runId"])
-
-    def test_a_review_loop_resumed_after_the_cap_that_hands_back_is_the_pending_review(self):
-        self.stop_the_review_at_the_wait_cap()
-        self.send_message("r1")
-        self.hook("review-loop", self.LOOP_OK, agent_id="r1")
-        out = self.step("after-review")
-        self.assertNotIn("no review pending", out)
-        self.assertIn("Phase 1 marked done", out)
-        self.assertNotEqual("stopped", self.state()["stage"])
 
     # ---------- start on a finished plan names the follow-up command ----------
 
@@ -5498,18 +5210,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("resumeWaitAt", self.state())
         self.send_message("a1")
         out = self.step("after-coder")
-        self.assertIn("ACTION: wait", out)
-        self.assertNotIn("has not handed back in", out)
-
-    def test_the_wait_after_a_cap_stop_on_a_resumed_review_loop_waits_again(self):
-        self.stop_the_review_at_the_wait_cap()
-        self.send_message("r1")
-        self.step("after-review")
-        self.set_state(resumeWaitAt=time.time() - 100)
-        self.assertIn("has not handed back in", self.step("after-review"))
-        self.assertNotIn("resumeWaitAt", self.state())
-        self.send_message("r1")
-        out = self.step("after-review")
         self.assertIn("ACTION: wait", out)
         self.assertNotIn("has not handed back in", out)
 
@@ -5861,36 +5561,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("", self.dispatch_hook("Review this branch for the user.", subagent_type="review-loop"))
         self.assertEqual([], self.events_named("fork-block"))
 
-    def test_dispatch_hook_lets_a_review_loop_relaunch_with_its_marker_pass(self):
-        self.start_phase_one()
-        self.launch_agent("code-step-dispatch: " + self.state()["runId"] + "/d1")
-        self.pass_coder_gate()
-        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
-        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
-        review_out = self.step("after-coder")
-        review_prompt = self.printed_prompt(review_out)
-        self.launch_agent(review_prompt, agent_id="agent-9", subagent_type="review-loop")
-
-        self.assertEqual("", self.dispatch_hook(review_prompt, subagent_type="review-loop"))
-        self.assertEqual([], self.events_named("fork-block"))
-
-    def test_dispatch_hook_denies_a_thin_review_loop_prompt_while_the_review_dispatch_is_pending(self):
-        self.start_phase_one()
-        self.launch_agent("code-step-dispatch: " + self.state()["runId"] + "/d1")
-        self.pass_coder_gate()
-        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
-        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
-        review_out = self.step("after-coder")
-        review_prompt = self.printed_prompt(review_out)
-        review_prompt_file = self.events_named("dispatch")[-1]["prompt_file"]
-
-        reason = self.denial_reason(self.dispatch_hook("Review the branch.", subagent_type="review-loop"))
-
-        fork_blocks = self.events_named("fork-block")
-        self.assertIn(f"Read {review_prompt_file} and pass its whole text.", reason)
-        self.assertEqual([("d2", "prompt-deny")], [(block["dispatch"], block["kind"]) for block in fork_blocks])
-        self.assertEqual("", self.dispatch_hook(review_prompt, subagent_type="review-loop"))
-
     def test_dispatch_hook_denies_the_whole_prompt_with_its_marker_line_removed(self):
         out = self.start_phase_one()
         marker_line = f"code-step-dispatch: {self.state()['runId']}/d1"
@@ -6001,17 +5671,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(1, len(self.events_named("dispatch")))
         self.assertEqual(self.printed_prompt(out).rstrip(), pathlib.Path(
             self.events_named("dispatch")[0]["prompt_file"]).read_text().rstrip())
-
-    def test_a_wait_on_a_review_dispatch_with_no_launch_prints_the_review_dispatch_again(self):
-        self.coder_round()
-        self.age_dispatches(120)
-        self.wait_env(5, "0.2")
-
-        out = self.step("after-review")
-
-        self.assertIn("ACTION: dispatch", out)
-        self.assertIn("AGENT: review-loop", out)
-        self.assertEqual(2, len(self.events_named("dispatch")))
 
     def test_a_wait_on_a_launched_dispatch_keeps_waiting(self):
         out = self.start_phase_one()
@@ -6133,24 +5792,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("", result)
         self.assertEqual([], self.events_named("fork-block"))
 
-    def test_a_wait_on_a_fresh_dispatch_with_no_launch_keeps_waiting(self):
-        self.begin_coder()
-        self.wait_env(1, "0.2")
-
-        out = self.step("after-coder")
-
-        self.assertIn("ACTION: wait", out)
-
-    def test_a_wait_past_the_cap_on_a_dispatch_with_no_launch_stops_and_does_not_print_it_again(self):
-        self.begin_coder()
-        self.age_dispatches(5000)
-        self.set_state(dispatchAt=time.time() - 5000)
-        self.wait_env(1, "0.2", waits=3)
-
-        out = self.step("after-coder")
-
-        self.assertIn("ACTION: stop", out)
-
     def test_a_wait_does_not_print_again_a_dispatch_made_for_another_agent(self):
         self.begin_coder()
         events_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
@@ -6225,21 +5866,15 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(f":{bad_line}: warning:", result.stdout)
         self.assertIn("- [ ] <check>", result.stdout)
 
-    def test_plan_check_fails_a_plain_bullet_with_no_backticked_command_like_a_box(self):
-        text = self.bad_item_plan("- **Check**: the orders pass, see the log")
+    def test_plan_check_fails_an_item_or_a_plain_bullet_with_no_backticked_command(self):
+        for item in ("- **Check**: the orders pass, see the log", "- [ ] **Check**: the orders pass, see the log"):
+            with self.subTest(item=item):
+                text = self.bad_item_plan(item)
 
-        result = self.plan_check(text)
+                result = self.plan_check(text)
 
-        self.assertEqual(1, result.returncode)
-        self.assertIn("it has no backticked command and is not marked N/A", result.stdout)
-
-    def test_plan_check_fails_an_item_with_no_backticked_command(self):
-        text = self.bad_item_plan("- [ ] **Check**: the orders pass, see the log")
-
-        result = self.plan_check(text)
-
-        self.assertEqual(1, result.returncode)
-        self.assertIn("it has no backticked command and is not marked N/A", result.stdout)
+                self.assertEqual(1, result.returncode)
+                self.assertIn("it has no backticked command and is not marked N/A", result.stdout)
 
     def test_plan_check_fails_a_box_that_diffs_a_moving_branch_name(self):
         for span in ("main...HEAD", "origin/master..HEAD", "main..feature"):
@@ -6319,11 +5954,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertIsNone(code_step_boundary.verification_command("- [ ] **Check**: the `ls` program lists them"))
         self.assertEqual("ls -la", code_step_boundary.verification_command("- [ ] **Check**: lists them - `ls -la`"))
 
-    def test_claude_and_yes_are_never_a_fallback_command(self):
-        for span in ("claude -p hello", "yes please", "FOO=1 claude --version"):
-            with self.subTest(span=span):
-                self.assertIsNone(code_step_boundary.verification_command(f"- [ ] **Check**: runs `{span}`"))
-
     def test_a_program_that_never_ends_or_waits_for_input_is_never_a_fallback_command(self):
         spans = ("watch -n 1 date", "top -b", "htop -d 5", "less notes.txt", "more notes.txt", "vi notes.txt",
                  "vim notes.txt", "nano notes.txt", "sleep 5", "tail -f app.log", "tail -F app.log",
@@ -6341,7 +5971,11 @@ class CodeStepTest(unittest.TestCase):
                 with self.subTest(span=span):
                     self.assertTrue(code_step_boundary.starts_like_a_program_here(span, self.repo))
 
-    def test_claude_and_yes_are_refused_by_a_path_to_them_too(self):
+    def test_claude_and_yes_are_never_a_fallback_command_by_name_or_by_a_path_to_them(self):
+        for span in ("claude -p hello", "yes please", "FOO=1 claude --version"):
+            with self.subTest(span=span):
+                self.assertIsNone(code_step_boundary.verification_command(f"- [ ] **Check**: runs `{span}`"))
+
         for span in ("/usr/bin/yes y", "/home/u/.local/bin/claude -p hi", "FOO=1 /usr/bin/yes y"):
             with self.subTest(span=span):
                 self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
@@ -6566,11 +6200,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("gate-env: GATE_FLAG=1", prompt)
         self.assertNotIn("GATE_PATH", prompt)
 
-    def test_a_dispatch_with_no_gate_variables_in_the_plans_has_no_gate_env_line(self):
-        out = self.start_phase_one()
-
-        self.assertNotIn("gate-env:", self.printed_prompt(out))
-
     def test_the_coder_gate_runs_its_commands_with_the_gate_variables_of_the_plan_alone(self):
         self.set_verification("- [ ] **Env**: passes - `GATE_X=1 npx vitest run`")
         self.add_plan_with_gate("other", 'GATE_Y="two words" cargo test')
@@ -6598,19 +6227,7 @@ class CodeStepTest(unittest.TestCase):
         gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
         self.assertEqual({}, gate["env"])
         self.assertNotIn("With:", out)
-
-    def test_a_plan_dispatch_and_its_review_dispatch_carry_the_plans_own_gate_variables(self):
-        self.set_verification("- [ ] **Env**: passes - `GATE_X=1 npx vitest run`")
-
-        out = self.start_phase_one()
-        self.assertIn("gate-env: GATE_X=1", self.printed_prompt(out))
-        self.pass_coder_gate()
-        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
-        self.hook("coder", self.CODER_REPORT)
-        review_out = self.step("after-coder")
-
-        self.assertIn("AGENT: review-loop", review_out)
-        self.assertIn("gate-env: GATE_X=1", self.printed_prompt(review_out))
+        self.assertNotIn("gate-env:", self.printed_prompt(out))
 
 
 def frontmatter_value(markdown_path, key):

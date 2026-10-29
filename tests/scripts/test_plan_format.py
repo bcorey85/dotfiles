@@ -187,6 +187,54 @@ class PhaseSectionsTest(unittest.TestCase):
         spans, _ = self.spans(f"## Phase {self.ONE}: a", "```", f"## Phase {self.TWO}: fake", "```", "x")
         self.assertEqual([(self.ONE, 0, 5)], [(i, s["start"], s["end"]) for i, s in spans])
 
+    def test_a_tilde_fence_and_an_indented_fence_hide_headings_too(self):
+        lines = [
+            "## Phase Status",
+            "- [ ] Phase 1: A",
+            "## Phase 1: A",
+            "~~~",
+            "## Not a section",
+            "~~~",
+            "  - step",
+            "    ```sh",
+            "    # comment",
+            "    ```",
+            "tail",
+            "",
+        ]
+        plan = plan_format.parse_plan_with_closing_phases(lines)
+        self.assertEqual(len(lines), plan["sections"]["1"]["end"])
+        self.assertEqual([], plan["failures"])
+
+    def test_phase_status_line_formats_a_real_plan_can_use(self):
+        lines = ["## Phase Status", "",
+                 "- [ ] Phase 6C2: Deep id (risk: low).",
+                 "- [X] Phase 7 — capital X and em dash (risk: high)",
+                 "- [ ] Phase 8. Period after number (risk: Low)",
+                 "-  [ ]  Phase  9:  Extra spaces (risk: low)",
+                 "* [ ] Phase 10 – En dash and star bullet",
+                 "- [ ] Phase 11: No risk tag"]
+        entries = plan_format.parse_plan_with_closing_phases(lines)["entries"]
+        self.assertEqual(["6C2", "7", "8", "9", "10", "11"], [e["number"] for e in entries])
+        self.assertEqual(["low", "high", "low", "low", "high", "high"], [e["risk"] for e in entries])
+        self.assertEqual([False, True, False, False, False, False], [e["done"] for e in entries])
+
+    def test_logged_phase_id_shapes_parse_look_up_and_mark_done(self):
+        ids = ["10.5", "8.6b", "4.6", "7.5", "8.6", "P4", "P9", "1-2", "6A-6D", "P9-slice-1"]
+        status_lines = [f"- [ ] Phase {i}: Title {i} (risk: low)" for i in ids]
+        sections = [f"## Phase {i}: Title {i}\nbody {i}" for i in ids]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        plan_path = pathlib.Path(tmp.name) / "ids.md"
+        plan_path.write_text("\n".join(["## Phase Status", "", *status_lines, "", *sections, ""]))
+        plan_lines = plan_path.read_text().splitlines()
+        self.assertEqual(ids, [e["number"] for e in plan_format.parse_plan_with_closing_phases(plan_lines)["entries"]])
+        for i in ids:
+            self.assertEqual(f"## Phase {i}: Title {i}\nbody {i}", plan_format.phase_text(plan_lines, i))
+            plan_format.mark_phase_done(plan_path, i)
+        self.assertEqual([True] * len(ids), [e["done"] for e in plan_format.parse_plan_with_closing_phases(
+            plan_path.read_text().splitlines())["entries"]])
+
     def test_parse_plan_fails_a_status_entry_with_no_section_unless_it_is_a_closing_phase(self):
         lines = ["## Phase Status", f"- [ ] Phase {self.ONE}: build", f"- [ ] Phase {self.TWO}: Recap", ""]
         def closing(title):

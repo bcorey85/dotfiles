@@ -437,6 +437,18 @@ def last_json_object(reply, keys):
     return None
 
 
+def file_tail(path, max_lines, max_chars):
+    """The last `max_lines` lines of the file, cut to its last `max_chars` characters; a note in brackets when the
+    file cannot be read or is empty."""
+    try:
+        file_lines = pathlib.Path(path).read_text(errors="replace").splitlines()
+    except OSError as error:
+        return f"(log not readable: {error})"
+
+    tail = "\n".join(file_lines[-max_lines:])
+    return tail[-max_chars:] or "(log is empty)"
+
+
 def contains_ignoring_whitespace(text, part):
     """True when `part` occurs in `text` once every run of whitespace in both reads as one space. An empty part
     is never contained."""

@@ -988,7 +988,8 @@ def command_asks_done(repo_dir, state, args):
     if decided_by not in ("user", "session") or len(outcomes) != len(state["asks"]) \
             or any(outcome not in ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
             or len(given_changes) != outcomes.count("modified"):
-        return emit("stop", ASKS_DONE_USAGE)
+        ask_count = len(state["asks"])
+        return emit("stop", f"{ASKS_DONE_USAGE} {ask_count} ask(s) wait: give {ask_count} outcome(s), in order.")
 
     remaining_changes = iter(given_changes)
     change_texts = [next(remaining_changes) if outcome == "modified" else None for outcome in outcomes]

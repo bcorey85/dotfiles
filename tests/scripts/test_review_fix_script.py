@@ -593,6 +593,15 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("2 ask(s) waiting but 1 outcome(s) given", output)
         self.assertEqual(self.ledger_writes(), [])
 
+    def test_asks_done_logs_the_outcome_of_an_ask_that_names_no_file(self):
+        first_ask = WITH_ASK.split("  - {finding")[0].replace("src/retry.ts:10", "unlocated")
+        unlocated_ask = first_ask + "class_closure: n/a - fixed[] empty\n"
+        self.packet(unlocated_ask)
+        code, output = self.run_script(["asks-done", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("Failures", output)
+        self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()], ["accepted"])
+
     def test_asks_done_with_an_unknown_outcome_fails_loudly(self):
         self.packet(WITH_ASK)
         code, output = self.run_script(["asks-done", "accepted", "maybe"])

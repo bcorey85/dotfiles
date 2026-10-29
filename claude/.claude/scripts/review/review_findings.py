@@ -9,7 +9,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review")]
 import handback
 
-UNLOCATED = "unlocated"
+UNLOCATED = handback.UNLOCATED
 FINDING_CLASS_TAG = re.compile(r"\[(" + "|".join(map(re.escape, handback.CLASSES)) + r")\]", re.I)
 ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
 TAGGED_BULLET = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+`?(fix|ask|nit)`?\s*:\s*(.+)$", re.I)

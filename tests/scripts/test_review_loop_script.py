@@ -2033,8 +2033,18 @@ class ReviewLoopScriptTest(unittest.TestCase):
             os.kill(pid, 0)
         except ProcessLookupError:
             return False
-        stat = pathlib.Path(f"/proc/{pid}/stat")
-        return not (stat.exists() and stat.read_text().rpartition(")")[2].split()[0] == "Z")
+        try:
+            stat_text = pathlib.Path(f"/proc/{pid}/stat").read_text()
+        except (FileNotFoundError, ProcessLookupError):
+            return False
+        return stat_text.rpartition(")")[2].split()[0] != "Z"
+
+    def test_is_running_reports_a_pid_that_vanishes_after_the_signal_check_as_dead(self):
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+
+        with mock.patch.object(os, "kill", return_value=None):
+            self.assertFalse(self.is_running(gone.pid))
 
     @staticmethod
     def kill_quietly(pid):

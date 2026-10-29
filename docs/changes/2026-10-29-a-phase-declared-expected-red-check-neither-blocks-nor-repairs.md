@@ -1,9 +1,10 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A phase's declared expected-red check neither blocks nor repairs"
 description: "A plan phase can declare `Expected red: <command> until Phase <id>`; the review gate then leaves that step out of the full check, repairs never edit files only a later phase names, and `/code`'s new `guide` verb records the main session's guidance for every later dispatch of the run."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T18:00:00-05:00"}
-seq: 273
+seq: 277
 kind: "fix"
 components: ["script/full-check", "script/review-loop-script", "script/code-step", "agent/review-loop", "skill/code"]
 evidence: ["judgment"]

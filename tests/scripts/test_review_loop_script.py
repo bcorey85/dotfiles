@@ -1922,8 +1922,10 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertNotIn("check-finder", [call["key"] for call in self.fake_calls()])
 
-    def test_a_repo_whose_full_suite_runs_in_ci_converges_without_running_its_check(self):
-        for claude_md in ("Quality check: `false`\nFull suite: CI\n", "- Full suite: CI\n"):
+    def test_a_repo_whose_full_suite_runs_in_ci_converges_on_its_declared_check_with_no_tests(self):
+        repos = [("Quality check: `true`\nFull suite: CI\n", "passed (check only; CI runs the full suite)"),
+                 ("- Full suite: CI\n", "not run (CI)")]
+        for claude_md, full_check_result in repos:
             with self.subTest(claude_md=claude_md):
                 self.reset_fake_run()
 
@@ -1931,8 +1933,21 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 _, packet = self.stored_packet()
-                self.assertEqual((packet["status"], packet["full_check"]), ("converged", "not run (CI)"))
+                self.assertEqual((packet["status"], packet["full_check"]), ("converged", full_check_result))
                 self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
+
+    def test_a_check_only_pass_in_a_ci_repo_runs_the_scoped_tests(self):
+        self.state_dir.mkdir()
+        (self.state_dir / "state.json").write_text(json.dumps({"gateCommands": ["grep -q 'limit = 99' app.py"]}))
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="Quality check: `true`\nFull suite: CI\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["full_check"], "passed (check only; CI runs the full suite)")
+        scoped_tests = packet["scoped_tests"]
+        self.assertTrue(scoped_tests.startswith("failed: grep -q 'limit = 99' app.py"), scoped_tests)
 
     def test_a_full_check_that_exits_zero_with_no_runner_summary_is_unverified_and_gets_no_repair(self):
         check = "echo 496 tests registered"

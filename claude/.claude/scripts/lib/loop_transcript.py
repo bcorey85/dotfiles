@@ -115,9 +115,9 @@ class LoopTranscript:
         self.scope_root = None  # the ROOT= that the last review-scope call printed
         self.finding_calls = {}  # Bash tool_use_id -> the key=value fields of each `kind=finding` call, in order
         self.ask_rows = []  # {file, line, finding_id} of each `actioned=ask` row whose id the log helper printed
-        self.full_check_calls = {}  # Bash tool_use_id -> transcript line, of each full_check.py call
-        # the transcript lines of the full_check.py calls whose result is `full check: passed`, or the not-run result of
-        # a check the phase's Expected red lines leave out whole
+        self.full_check_calls = {}  # Bash tool_use_id -> (transcript line, full_check.py calls in it)
+        # the transcript lines of the full_check.py calls whose result is exactly `passed` (not `passed (check only;
+        # ...)`), or starts with `not run (expected red until Phase ` (a check the Expected red lines leave out whole)
         self.full_checks = []
         with open(path, encoding="utf-8") as fh:
             for n, line in enumerate(fh):
@@ -172,10 +172,12 @@ class LoopTranscript:
         """One Bash call can chain a finding row, a metrics row and a scope call, so each check reads the result."""
         tool_use_id = block.get("tool_use_id")
         if tool_use_id in self.full_check_calls:
-            first_result = FULL_CHECK_RESULT.search(text_of(block.get("content")))
-            result = first_result.group(1).strip() if first_result else ""
-            if result == "passed" or result.startswith(expected_red.NOT_RUN_PREFIX):
-                self.full_checks.append(self.full_check_calls[tool_use_id])
+            line, call_count = self.full_check_calls[tool_use_id]
+            full_check_results = [found.strip() for found in FULL_CHECK_RESULT.findall(text_of(block.get("content")))]
+            counted = [found for found in full_check_results
+                       if found == "passed" or found.startswith(expected_red.NOT_RUN_PREFIX)]
+            if len(full_check_results) >= call_count and len(counted) == len(full_check_results):
+                self.full_checks.append(line)
         if tool_use_id in self.finding_calls:
             self.read_printed_finding_ids(block)
         refused = block.get("is_error") or METRICS_REFUSAL in text_of(block.get("content"))
@@ -241,8 +243,9 @@ class LoopTranscript:
         self.metrics_calls += [(n, fields, tool_use_id) for fields in metrics_calls(command)]
         if SCOPE_CALL.search(command):
             self.scope_calls.add(tool_use_id)
-        if FULL_CHECK_SCRIPT.search(command):
-            self.full_check_calls[tool_use_id] = n
+        call_count = len(FULL_CHECK_SCRIPT.findall(command))
+        if call_count:
+            self.full_check_calls[tool_use_id] = (n, call_count)
 
     def reviewed_root(self):
         """The repo the loop reviewed: the ROOT= review-scope printed, else the prompt's `repo:` line, when it names a

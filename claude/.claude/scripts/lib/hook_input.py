@@ -271,8 +271,8 @@ def current_directory():
 
 
 def temp_roots():
-    """The real paths of the directories that count as temp: /tmp, the system temp dir and $TMPDIR."""
-    roots = {"/tmp", tempfile.gettempdir()}
+    """The real paths of the directories that count as temp: /tmp, /var/tmp, the system temp dir and $TMPDIR."""
+    roots = {"/tmp", "/var/tmp", tempfile.gettempdir()}
     if os.environ.get("TMPDIR"):
         roots.add(os.environ["TMPDIR"])
     return [os.path.realpath(root) for root in roots]

@@ -422,21 +422,6 @@ def one_line(text, limit=200):
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]
 
 
-def last_json_object(reply, keys):
-    """The last JSON object in a reply that holds any of `keys`, or None. Decodes from each "{" back to front, because
-    prose before the object can hold braces of its own ("{CUBE}")."""
-    decoder = json.JSONDecoder()
-    brace_positions = [match.start() for match in re.finditer(r"\{", reply)]
-    for position in reversed(brace_positions):
-        try:
-            parsed, _ = decoder.raw_decode(reply, position)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict) and any(key in parsed for key in keys):
-            return parsed
-    return None
-
-
 def file_tail(path, max_lines, max_chars):
     """The last `max_lines` lines of the file, cut to its last `max_chars` characters; a note in brackets when the
     file cannot be read or is empty."""

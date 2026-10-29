@@ -712,6 +712,20 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("  Ticket #1: Requirement alpha\n  Ticket #2: Requirement beta\n", payload)
         self.assertNotIn("Criterion gamma", payload)
 
+    def test_the_verifier_payload_carries_the_run_rules(self):
+        self.task_dir()
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        payload = done.stdout.split("subagent_type=plan-verifier", 1)[1]
+        self.assertIn("run rules:", payload)
+        self.assertIn("Run no other test and no suite sweep of your own", payload)
+        self.assertIn("Outside the plan's own commands, never run", payload)
+        self.assertIn("in the foreground", payload)
+        self.assertIn("needs a process left running", payload)
+        self.assertIn("Delete, move or kill nothing", payload)
+
     def test_the_flat_mode_verifier_payload_lists_the_ticket_labels_too(self):
         self.write("docs/plans/LED-9-flat.md", REQUIREMENTS_TICKET + "\n" + SPEC)
 

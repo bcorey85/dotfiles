@@ -178,6 +178,58 @@ class StartInputTest(base.CodeStepTest):
         self.assertIn("another session", out)
         self.assertIn("--repo", out)
 
+    def stop_a_reviewed_phase_on_a_counted_check(self):
+        # The first phase's code is reviewed and stopped on its one Automated Verification check, which fails while
+        # orders.ts holds console.log and adds a line to .git/av-runs each time it runs.
+        counted_check = ("import pathlib; open('.git/av-runs', 'a').write('run\\n'); "
+                         "raise SystemExit('console.log' in pathlib.Path('backend/src/orders.ts').read_text())")
+        self.set_verification(f'- [ ] **Prohibition**: no console.log - `python3 -c "{counted_check}"`')
+        self.coder_round(source="console.log(1)\n")
+        self.hook("review-loop", self.LOOP_OK)
+        self.assertIn("Automated Verification failed", self.step("after-review"))
+
+    def check_runs(self):
+        return (self.repo / ".git/av-runs").read_text().count("run\n")
+
+    def test_a_restart_over_a_reviewed_phase_whose_checks_pass_closes_it_without_a_coder(self):
+        self.stop_a_reviewed_phase_on_a_counted_check()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+
+        out = self.step("start", "--restart")
+
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn("Phase 1 marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+        self.assertEqual(2, self.check_runs())
+
+    def test_a_restart_over_a_reviewed_phase_whose_checks_fail_dispatches_a_coder(self):
+        self.stop_a_reviewed_phase_on_a_counted_check()
+
+        out = self.step("start", "--restart")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    # ---------- an open run whose phase may close ----------
+
+    def test_start_over_a_run_that_verify_may_close_offers_verify_first(self):
+        self.stop_a_reviewed_phase_on_a_counted_check()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+
+        refused = self.step("start", "--task", "the next phase")
+        out = self.step(*self.args_of_printed_command(refused, "verify"))
+
+        self.assertIn("Run `verify` first", refused)
+        self.assertIn("Phase 1 marked done", out)
+
+    def test_start_with_no_arguments_over_a_run_that_verify_may_close_reruns_verify(self):
+        self.stop_a_reviewed_phase_on_a_counted_check()
+
+        out = self.step("start")
+
+        self.assertIn("ACTION: rerun", out)
+        self.assertIn("code_step.py verify", out)
+
     # ---------- --task wins ----------
 
     def test_task_flag_always_starts_a_planless_run_however_the_arguments_arrive(self):

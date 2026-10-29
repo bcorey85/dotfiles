@@ -1217,11 +1217,15 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("decide adopt --by user --ruling", self.said())
         self.assertIn("pass `--by session`", self.said())
 
-    def test_decide_without_ruling_words_names_the_by_form(self):
+    def test_decide_without_ruling_words_names_the_by_form_and_changes_nothing(self):
         self.coder_round(self.IMPACT_REPORT)
+        before = self.state()
         out = self.step("decide", "keep", "--by", "user")
         self.assertIn("ACTION: stop", out)
         self.assertIn("decide keep --by user --ruling", out)
+        self.assertNotIn("AGENT:", out)
+        self.assertEqual(before, self.state())
+        self.assertNotIn("## Plan Deviations", self.plan_text())
 
     def test_user_adopt_signs_with_the_git_user_and_lets_the_coder_rewrite_the_criteria(self):
         self.set_git_user("Pat Signer")
@@ -1230,6 +1234,7 @@ class CodeStepTest(unittest.TestCase):
         ruling = self.state()["ruling"]
         self.assertTrue(ruling["byUser"])
         self.assertEqual("Pat Signer", ruling["by"])
+        self.assertEqual("drop the header", ruling["words"])
         self.assertIn(f"`Signed off by Pat Signer, {ruling['at']}: <the change in one line>`", out)
         self.assertIn(f"and its acceptance criteria file {self.CRITERIA}", out)
         self.assertIn("The user adopted the plan change. Dispatch a coder to rewrite the plan steps and acceptance "

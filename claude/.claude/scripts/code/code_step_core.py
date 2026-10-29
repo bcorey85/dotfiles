@@ -51,9 +51,9 @@ FULL_CHECK_LOG = "full-check.log"
 FULL_CHECK_BASE_LOG = "full-check-base.log"
 REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", FULL_CHECK_LOG, FULL_CHECK_BASE_LOG)
 RESUME_VERB = "resume"
-# The verbs that older printed commands still name. Each one now does what `resume` does.
-RESUME_ALIASES = ("after-coder", "after-review", "after-plan-edit")
-VERB_WORDS_REPLACED_BY_RESUME = ("continue", "resume", *RESUME_ALIASES)
+# The task words that mean `resume`: the code skill runs some as `resume`,
+# and `start` refuses the rest and names `resume`.
+VERB_WORDS_REPLACED_BY_RESUME = ("continue", "resume", "after-coder", "after-review", "after-plan-edit")
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
 SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
@@ -331,7 +331,7 @@ def newest_dispatch_standing(repo_dir, state):
     return dispatch_standing(read_events(repo_dir, state["runId"]))
 
 
-def record_dispatch(repo_dir, state, verb, agent_type, model, prompt):
+def record_dispatch(repo_dir, state, agent_type, model, prompt):
     # Saves the dispatch prompt in the run's folder, ending with the marker line that the launch hook reads back, and
     # logs the dispatch. Returns the prompt with its marker and the path of the saved file.
     run_id = state["runId"]
@@ -342,7 +342,7 @@ def record_dispatch(repo_dir, state, verb, agent_type, model, prompt):
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(marked_prompt + "\n")
     log_event(repo_dir, run_id, "dispatch", session_pin(), id=dispatch_id, agent_type=agent_type, stage=state["stage"],
-              verb=verb, model=model, prompt_file=str(prompt_file))
+              model=model, prompt_file=str(prompt_file))
     return marked_prompt, prompt_file
 
 
@@ -362,15 +362,16 @@ def checkout_line(repo_dir):
             "and run each Bash command from it. Name this checkout in the prompt of every agent you dispatch.")
 
 
-def emit_dispatch(repo_dir, state, verb, *lines, prompt, agent, model=None):
+def emit_dispatch(repo_dir, state, *lines, prompt, agent, model=None):
     # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
     # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt.
     prompt_in_checkout = f"{checkout_line(repo_dir)}\n\n{prompt}"
     prompt = prompt_with_gate_env(repo_dir, state, prompt_in_checkout)
 
-    marked_prompt, prompt_file = record_dispatch(repo_dir, state, verb, agent, model, prompt)
+    marked_prompt, prompt_file = record_dispatch(repo_dir, state, agent, model, prompt)
 
-    emit("dispatch", *lines, next_after(verb), prompt=marked_prompt, agent=agent, model=model, prompt_file=prompt_file)
+    emit("dispatch", *lines, next_after(), prompt=marked_prompt, agent=agent, model=model,
+         prompt_file=prompt_file)
 
 
 def open_dispatch(state):
@@ -531,7 +532,7 @@ def take_handback(repo_dir, state, agent_type, missing_text):
     handback = awaited_handback(repo_dir, state)
     if handback is None and newest_handback(repo_dir, state) is not None:
         return emit("wait", f"The {agent_type} handed back, but its stop was blocked, so it is still working. Do not "
-                    f"dispatch it again. Run {timed_command(RESUME_VERB)} to wait for its next stop.")
+                    f"dispatch it again. Run {timed_command()} to wait for its next stop.")
     if handback is None:
         return emit("stop", resumed_agent_pending_stop(agent_type) if is_resumed else missing_text)
 
@@ -628,7 +629,7 @@ def put_resumed_review_back(repo_dir, state):
 def resumed_agent_pending_stop(agent_type):
     # The stop text for a resume that ran while the agent the user resumed has not handed back yet.
     return (f"The resumed {agent_type} has not handed back yet. Do not dispatch again and do not run `start`. Once it "
-            f"has handed back, run {timed_command(RESUME_VERB)}.")
+            f"has handed back, run {timed_command()}.")
 
 
 PLAN_EDIT_OPEN_CHOICE = re.compile(r"^[ \t]*OPEN CHOICE:[ \t]*(\S.*)$", re.MULTILINE)
@@ -665,12 +666,12 @@ def phase_coder_reports(repo_dir, state):
     return reports
 
 
-def timed_command(verb):
-    return f"`{INSTALLED_COMMAND} {verb}` as a Bash call with timeout {BASH_TIMEOUT_MS}"
+def timed_command():
+    return f"`{INSTALLED_COMMAND} {RESUME_VERB}` as a Bash call with timeout {BASH_TIMEOUT_MS}"
 
 
-def next_after(verb):
-    return f"NEXT: right after the Agent call, run {timed_command(verb)}."
+def next_after():
+    return f"NEXT: right after the Agent call, run {timed_command()}."
 
 
 def expected_agent(state):
@@ -707,7 +708,7 @@ def emit_unlaunched_dispatch(dispatch):
     age = time.time() - dispatch["ts"]
     notice = (f"Dispatch {dispatch['id']} was logged {age:.0f} seconds ago and no Agent call for it was launched. "
               "Make the Agent call now with the prompt below; do not wait for it.")
-    next_verb = next_after(dispatch["verb"])
+    next_verb = next_after()
     agent = dispatch.get("agent_type")
     model = dispatch.get("model")
 
@@ -924,11 +925,11 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     if agent_type == REVIEW_LOOP and state.get("reviewScriptPid"):
         state["resumableReview"] = stopped_at
         resume_text = (f" The review loop runs as a script; its log is {state.get('reviewScriptLog', '')}. If the user "
-                       f"wants it to keep waiting, run {timed_command(RESUME_VERB)}. If the user wants it killed and a "
+                       f"wants it to keep waiting, run {timed_command()}. If the user wants it killed and a "
                        f"new loop started on the same diff, run `{INSTALLED_COMMAND} review-again`.")
     elif agent_type == REVIEW_LOOP:
         state["resumableReview"] = stopped_at
-        resume_text = (f" If the user resumes it with SendMessage, run {timed_command(RESUME_VERB)}. If it died, "
+        resume_text = (f" If the user resumes it with SendMessage, run {timed_command()}. If it died, "
                        f"the user's word to review the same diff again runs `{INSTALLED_COMMAND} review-again`.")
     else:
         resume_text = stop_a_silent_coder(repo_dir, state, stopped_at)
@@ -1045,7 +1046,7 @@ def stop_a_silent_coder(repo_dir, state, stopped_at):
     state["resumableCoderAt"] = stopped_at
     state["resumableCoderId"] = agent_id
     state.pop("dispatchAt", None)
-    return (f" If the user resumes coder {agent_id} with SendMessage, run {timed_command(RESUME_VERB)}. To dispatch a "
+    return (f" If the user resumes coder {agent_id} with SendMessage, run {timed_command()}. To dispatch a "
             f"new coder instead, {restart_instruction_text}.")
 
 

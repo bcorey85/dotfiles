@@ -305,6 +305,10 @@ def read_list(raw):
 
 # ---------- items ----------
 
+def is_blocker(item):
+    return isinstance(item, dict) and str(item.get("blocker", "")).strip().lower() in ("true", "yes")
+
+
 def item_text(item, *keys):
     if isinstance(item, dict):
         return " - ".join(str(item[key]) for key in keys if item.get(key))

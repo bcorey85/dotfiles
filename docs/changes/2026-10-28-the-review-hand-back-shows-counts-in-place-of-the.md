@@ -25,6 +25,7 @@ unmeasured: ""
 ## Result
 
 - Tests that asserted on listed text now assert the count line. The packet parse checks moved to `test_handback.ParseTest`, against `handback.load`.
+- `handback.is_blocker` stays: the one-ask-per-finding fold uses it to mark an ask a blocker.
 
 ## Watch
 

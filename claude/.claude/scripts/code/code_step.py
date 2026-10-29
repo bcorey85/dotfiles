@@ -213,10 +213,13 @@ def command_plan(args):
     manual_failure = plan_format.manual_format_failure(plan_lines, plan_path)
     if manual_failure:
         print(manual_failure)
-    verification_failure = verification_format_failure(plan_lines, plan_path, pathlib.Path.cwd(), plan["entries"])
+    # From a repo subdirectory the checks resolve against the repo root; outside a repo against the current directory.
+    repo_dir = script_utils.repo_root(os.getcwd()) or pathlib.Path.cwd()
+    verification_failure = verification_format_failure(plan_lines, plan_path, repo_dir, plan["entries"])
     if verification_failure:
         print(verification_failure)
-    red_failure = expected_red_failure(plan_lines, plan_path, pathlib.Path.cwd())
+
+    red_failure = expected_red_failure(plan_lines, plan_path, repo_dir)
     if red_failure:
         print(red_failure)
     for row in plan_format.plain_verification_item_warnings(plan_lines, plan_path):
@@ -675,7 +678,7 @@ def command_guide(args):
     repo_dir = repo_root_or_exit()
     text = " ".join(args).strip()
     if not text:
-        return emit("go-on", "The guidance was not recorded: the message held no text after `guidance:`.")
+        return emit("go-on", "The guidance was not recorded: no text was given to guide.")
 
     state = load_state(repo_dir)
     if state is None or state.get("stage") in (None, "done"):

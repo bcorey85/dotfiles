@@ -20,14 +20,6 @@ NOT_RUN_PREFIX = "not run (expected red until Phase "
 STEP_SEPARATOR = " && "
 
 
-def check_steps(check_command):
-    """The `&&` steps of a check command, stripped, or None when it joins its steps with any other operator."""
-    steps = shell_command.split_command_steps(check_command)
-    if any(operator not in ("", "&&") for operator, _step in steps):
-        return None
-    return [step.strip() for _operator, step in steps]
-
-
 def declared(plan_lines):
     """(every Expected red line of the plan as {"line", "phase", "command", "until"}, the failures for a line in another
     form or outside a phase section). `line` is 1-based."""
@@ -63,7 +55,7 @@ def plan_failures(plan_lines, quality_check):
     `Quality check:` command, None when it has none) or one of its `&&` steps."""
     entries, failures = declared(plan_lines)
     order = [entry["number"] for entry in plan_format.parse_plan_with_closing_phases(plan_lines)["entries"]]
-    steps = check_steps(quality_check) if quality_check else None
+    steps = shell_command.and_steps(quality_check) if quality_check else None
 
     for entry in entries:
         if entry["until"] not in order:
@@ -114,7 +106,7 @@ def check_for_phase(check_command, plan_lines, phase_id):
     if check_command.strip() in commands:
         return None, [entry for entry in entries if entry["command"] == check_command.strip()]
 
-    steps = check_steps(check_command) or [check_command.strip()]
+    steps = shell_command.and_steps(check_command) or [check_command.strip()]
     kept = [step for step in steps if step not in commands]
     left_out = [entry for entry in entries if entry["command"] in steps]
     if not kept:
@@ -133,8 +125,8 @@ def not_run_result(entries):
 
 
 def later_phase_paths(plan_lines, phase_id):
-    """The backticked file paths that open phases after this one in Phase Status name and this phase's section does
-    not, sorted. A path both name stays the phase's own."""
+    """The Changes Required file paths of the open phases after this one in Phase Status that this phase's section does
+    not name (plan_format.file_entry_paths), sorted. A path both name stays the phase's own."""
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
     order = [entry["number"] for entry in plan["entries"]]
     if str(phase_id) not in order:
@@ -144,7 +136,7 @@ def later_phase_paths(plan_lines, phase_id):
     own_paths = section_paths(plan_lines, plan["sections"].get(str(phase_id)))
     later_paths = set()
     for later_id in later_ids:
-        later_paths |= section_paths(plan_lines, plan["sections"].get(later_id))
+        later_paths |= plan_format.file_entry_paths(plan_lines, plan["sections"].get(later_id))
     return sorted(later_paths - own_paths)
 
 

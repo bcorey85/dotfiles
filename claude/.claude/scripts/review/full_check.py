@@ -6,7 +6,7 @@
 With --plan and --phase, the phase's `Expected red:` lines whose later phase is still open leave their `&&` steps out
 of the command (lib/expected_red.py), and each left-out line prints as `expected red: <command> until Phase <id>`
 after the result line. When they leave out the whole command, nothing runs and the result is
-`not run (expected red until Phase <id>)`.
+`not run (expected red until Phase <id>[, <id>...])`.
 
 Runs the command, given as one quoted word or as plain words, through the shell in the repo, output to the log, and
 prints `full check: <result>` first: `passed`, `unverified (exit 0, no runner summary)` when the command exited 0 but

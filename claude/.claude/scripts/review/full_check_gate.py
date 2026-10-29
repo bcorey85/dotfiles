@@ -55,8 +55,9 @@ def remove_live_base_trees():
 
 
 class FullCheckSteps:
-    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched and untested_fix,
-    and provides stop(status, remaining), repair(call_name, findings) and mark_repaired(findings, changed)."""
+    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix and
+    expected_red, and provides stop(status, remaining), repair(call_name, findings) and mark_repaired(findings,
+    changed)."""
 
     def init_full_check_state(self):
         self.full_check = ""
@@ -94,10 +95,11 @@ class FullCheckSteps:
         check leaves the files it rewrote or created in place, and a repair measures its changes as the text
         difference around its own call, so a changed or created file reaches files_touched only when the repair coder
         edits it itself. A rewrote_edited file holds coder work and always counts as touched. A check that the
-        Expected red entries leave out whole does not run, and leaves untested_fix as it is."""
+        Expected red entries leave out whole does not run, and sets untested_fix so the changed files' tests run."""
         self.full_check_command = check_command or ""
         if check_command is None and self.expected_red:
             self.full_check = expected_red.not_run_result(self.expected_red)
+            self.untested_fix = True
             return ""
 
         self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)

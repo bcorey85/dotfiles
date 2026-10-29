@@ -15,7 +15,7 @@ path is a check-command error. A check that fails on a missing module the repo d
 environment gap. None is a failure: the
 packet's `full_check` says `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
 `not run (check-command error: ...)`, `not run (environment gap: ...)` or, when the phase's Expected red lines leave out
-the whole check, `not run (expected red until Phase <id>)`. An exit 0 with no runner summary is no
+the whole check, `not run (expected red until Phase <id>[, <id>...])`. An exit 0 with no runner summary is no
 failure either: it says `unverified (exit 0, no runner summary)`. So is a failure that the check shows the same way
 on HEAD without the diff: it says `pre-existing failure (...)` and did not verify the diff. To tell, a failed check is
 rerun once per loop (the base run) in a detached worktree of HEAD, up to full_check_gate.CHECK_TIMEOUT_SECONDS. A
@@ -529,7 +529,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.round_fixes = []  # the fix entries this round's reviewers filed, for fix_round to mark
         self.check_fixed = 0  # findings the full check and the class closure fixed, which file no finding row
         self.last_pass = ""
-        self.untested_fix = False  # a coder pass that no passed full check ran after
+        # a change (a coder pass, or a whole expected-red not-run) that no passed full check ran after
+        self.untested_fix = False
         self.scoped_tests = ""
         self.later_phase_files = set()  # the plan's later-phase files, which no coder pass may edit
         self.guidance = ""

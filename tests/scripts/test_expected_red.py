@@ -97,6 +97,14 @@ class CheckForPhaseTest(unittest.TestCase):
         self.assertIsNone(command)
         self.assertEqual("not run (expected red until Phase 2)", expected_red.not_run_result(left_out))
 
+    def test_two_lines_that_name_every_step_of_the_check_leave_no_command_and_both_entries(self):
+        text = PLAN.replace("Expected red: `pytest -q` until Phase 2\n",
+                            "Expected red: `pytest -q` until Phase 2\nExpected red: `ruff check .` until Phase 2\n")
+        command, left_out = expected_red.check_for_phase(QUALITY_CHECK, plan_lines(text), "1")
+        self.assertIsNone(command)
+        self.assertEqual(["pytest -q", "ruff check ."], [entry["command"] for entry in left_out])
+        self.assertEqual("not run (expected red until Phase 2)", expected_red.not_run_result(left_out))
+
     def test_once_the_named_phase_is_done_the_check_runs_whole_again(self):
         text = PLAN.replace("- [ ] Phase 2:", "- [x] Phase 2:")
         self.assertEqual((QUALITY_CHECK, []), expected_red.check_for_phase(QUALITY_CHECK, plan_lines(text), "1"))
@@ -115,6 +123,21 @@ class LaterPhasePathsTest(unittest.TestCase):
     def test_a_done_later_phase_closes_no_file(self):
         text = PLAN.replace("- [ ] Phase 2:", "- [x] Phase 2:")
         self.assertEqual([], expected_red.later_phase_paths(plan_lines(text), "1"))
+
+    def test_a_path_a_later_phase_only_mentions_stays_open(self):
+        mention = "**File**: `app/audit.py`\n\nVerify `app/report.py` still loads."
+        text = PLAN.replace("**File**: `app/audit.py`", mention)
+        self.assertEqual(["app/audit.py"], expected_red.later_phase_paths(plan_lines(text), "1"))
+
+    def test_each_path_of_a_files_list_is_closed_and_a_path_inside_its_text_is_not(self):
+        files_list = ("**Files**:\n\n- `app/audit.py`: add the log, calling `app/report.py`.\n"
+                      "  - `app/nested.py`: a sub-bullet\n- New: `app/store.py`\n\nAfter `app/after.py`.")
+        text = PLAN.replace("**File**: `app/audit.py`", files_list)
+        self.assertEqual(["app/audit.py", "app/store.py"], expected_red.later_phase_paths(plan_lines(text), "1"))
+
+    def test_every_path_on_a_files_line_is_closed(self):
+        text = PLAN.replace("**File**: `app/audit.py`", "- **Files**: `app/audit.py`, `app/store.py`")
+        self.assertEqual(["app/audit.py", "app/store.py"], expected_red.later_phase_paths(plan_lines(text), "1"))
 
     def test_a_phase_not_in_phase_status_closes_no_file(self):
         self.assertEqual([], expected_red.later_phase_paths(plan_lines(), "9"))

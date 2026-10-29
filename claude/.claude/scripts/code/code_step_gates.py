@@ -13,9 +13,10 @@ import script_utils
 import test_run_output
 from code_step_boundary import verification_command
 from linked_installs import VENV_FOLDERS
+from shell_command import resolved_command_words
+from source_paths import SCRIPT_SUFFIXES, is_runnable_test_file
 
 CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
-RUNS_CARGO = re.compile(r"(?:^|&&\s*)cargo\s")
 UNKNOWN_FAMILY = "unknown"
 TEST_FAMILY_PATTERNS = {
     "js": re.compile(r"\b(?:vitest|jest|mocha)\b|\b(?:npm|pnpm|yarn|bun|npx)\b.*\btest\b"),
@@ -23,16 +24,12 @@ TEST_FAMILY_PATTERNS = {
     "cargo": re.compile(r"\bcargo\s+(?:test|nextest)\b"),
 }
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
-SCRIPT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs")
-TEST_SUFFIXES = ".test.ts,.test.tsx,.spec.ts,.spec.tsx,.test.js,.test.jsx"
-TEST_FILE = re.compile(r"\.(test|spec)\.|(^|/)test_[^/]*\.py$|_test\.py$")
 BARE_CARGO_MANIFEST = re.compile(r"`(Cargo\.toml)`")
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 PYTHON_RUNNERS = (("uv.lock", ["uv", "run"]), ("poetry.lock", ["poetry", "run"]), ("pdm.lock", ["pdm", "run"]),
                   ("Pipfile.lock", ["pipenv", "run"]))
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&"}
 ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-DJANGO_TEST_FILE = re.compile(r"(^|/)test[^/]*\.py$")
 # `manage.py test` asks before it deletes a test database a killed run left behind; the gate has no one to answer.
 NO_INPUT_OPTIONS = {"--noinput", "--no-input"}
 PYTEST_DJANGO_SETTINGS = re.compile(r"DJANGO_SETTINGS_MODULE|--ds\b", re.IGNORECASE)
@@ -61,9 +58,7 @@ def script_package_commands(repo_dir, package_dir, paths, derives_tests):
     elif (package_dir / "tsconfig.json").is_file():
         commands.append(in_directory("npx tsc --noEmit", package_rel))
 
-    source_suffixes = sorted({pathlib.Path(p).suffix for p in relative_paths
-                             if p.endswith(SCRIPT_SUFFIXES) and not TEST_FILE.search(p)}
-                            | {pathlib.Path(p).suffix for p in relative_paths if p.endswith(SCRIPT_SUFFIXES)})
+    source_suffixes = sorted({pathlib.Path(p).suffix for p in relative_paths if p.endswith(SCRIPT_SUFFIXES)})
     if ("eslint" in dependencies or "lint" in scripts) and source_suffixes:
         commands.append(in_directory("npx eslint {files:" + ",".join(source_suffixes) + "}", package_rel))
 
@@ -75,13 +70,16 @@ def script_package_commands(repo_dir, package_dir, paths, derives_tests):
     if not any(p.endswith(SCRIPT_SUFFIXES) for p in relative_paths):
         return commands
 
-    test_paths = [p for p in relative_paths if TEST_FILE.search(p)]
+    # With no test file named, the gate runs the test files the coder changed. Only jest runs a file under __tests__/
+    # that is not test-named.
     runner = "vitest run" if "vitest" in dependencies else "jest" if "jest" in dependencies else None
+    runs_jest = runner == "jest"
+    test_paths = [p for p in relative_paths if p.endswith(SCRIPT_SUFFIXES) and is_runnable_test_file(p, runs_jest)]
+    placeholder = "jest-tests" if runs_jest else "tests"
+    scope = " ".join(shlex.quote(p) for p in test_paths) or "{" + placeholder + ":" + ",".join(SCRIPT_SUFFIXES) + "}"
     if runner:
-        scope = " ".join(shlex.quote(p) for p in test_paths) or "{files:" + TEST_SUFFIXES + "}"
         commands.append(in_directory(f"npx {runner} {scope}", package_rel))
     elif "test" in scripts:
-        scope = " ".join(shlex.quote(p) for p in test_paths) or "{files:" + TEST_SUFFIXES + "}"
         commands.append(in_directory(f"npm test -- {scope}", package_rel))
     return commands
 
@@ -221,7 +219,7 @@ def python_test_command(runner, test_paths, django_options, manage_script="manag
     # of the ones under the manage script's folder, labels before options. A Django phase that names no test file
     # there gives no test command: `manage.py test` with no label runs the whole suite, which the gate refuses.
     if django_options is None:
-        scope = " ".join(shlex.quote(p) for p in test_paths) or "{files:_test.py}"
+        scope = " ".join(shlex.quote(p) for p in test_paths) or "{tests:.py}"
         return f"{shlex.join([*runner, 'pytest'])} {scope}"
 
     manage_dir = pathlib.PurePosixPath(manage_script).parent
@@ -272,8 +270,11 @@ def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, pha
     if not derives_tests:
         return commands
 
-    test_file = DJANGO_TEST_FILE if django_options is not None else TEST_FILE
-    test_paths = [p for p in python_paths if test_file.search(p)]
+    # `manage.py test` finds tests only in modules that match its default pattern, test*.py.
+    if django_options is not None:
+        test_paths = [p for p in python_paths if p.rsplit("/", 1)[-1].startswith("test")]
+    else:
+        test_paths = [p for p in python_paths if is_runnable_test_file(p)]
     test_command = python_test_command(runner, test_paths, django_options, manage_script)
     if test_command:
         commands.append(test_command)
@@ -352,6 +353,13 @@ def takes_listed_test_command(command, repo_dir):
     return test_run_output.runs_tests(command) and not check_scope.runs_whole_check(command, str(repo_dir))
 
 
+def runs_cargo(command):
+    # True when a step of the command runs cargo once its wrappers are peeled: `cd crate && cargo test`,
+    # `CARGO_BUILD_JOBS=4 cargo check`, `nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run`. False for text the
+    # shell splitter cannot read.
+    return any(pathlib.PurePosixPath(words[0]).name == "cargo" for words in resolved_command_words(command))
+
+
 def test_command_families(command):
     # The runner families a listed test command runs: "js", "python" or "cargo", read from its text. A command that
     # names none of them, such as `make test-consistency` or `just test`, is the UNKNOWN_FAMILY.
@@ -384,8 +392,7 @@ def derive_gate_commands(repo_dir, phase_section):
     for package_dir, package_paths in by_package.items():
         commands += script_package_commands(repo_dir, package_dir, package_paths, derives_js_tests)
     root_manifests = BARE_CARGO_MANIFEST.findall(phase_section)
-    listed_cargo = [command for command in listed
-                    if RUNS_CARGO.search(script_utils.without_leading_env_assignments(command))]
+    listed_cargo = [command for command in listed if runs_cargo(command)]
     commands += listed_cargo or cargo_commands(repo_dir, paths + root_manifests, derives_cargo_tests)
     listed_runner = listed_python_runner(listed)
     listed_django = listed_django_test(listed)

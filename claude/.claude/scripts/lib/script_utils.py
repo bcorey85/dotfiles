@@ -450,6 +450,14 @@ def file_tail(path, max_lines, max_chars):
     return tail[-max_chars:] or "(log is empty)"
 
 
+def write_command_outputs(output_file, command_outputs):
+    """Write each (command, outcome, output) to the file as `$ <command>`, the outcome line and the whole output, one
+    section per command, making the file's folder."""
+    sections = [f"$ {command}\n{outcome}\n{output}" for command, outcome, output in command_outputs]
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text("\n\n".join(sections))
+
+
 def contains_ignoring_whitespace(text, part):
     """True when `part` occurs in `text` once every run of whitespace in both reads as one space. An empty part
     is never contained."""

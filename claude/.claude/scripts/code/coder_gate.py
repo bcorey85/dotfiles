@@ -7,9 +7,11 @@
   coder_gate.py hook              PreToolUse hook on SubagentHandback
   coder_gate.py bash-hook         PreToolUse hook on Bash: refuses a coder's whole-package check
 
-A command may hold {files}, or {files:.ts,.tsx} to keep only those suffixes. At every hand-back the gate fills it
-with the files the coder changed: tracked changes against HEAD plus untracked files, relative to the directory of a
-leading `cd <dir> &&`, else the repo root. A command whose list is empty is skipped, never passed or failed.
+A command may hold {files}, or {files:.ts,.tsx} to keep only those suffixes, and {tests} or {tests:.ts,.tsx} to keep
+only test-named files; {jest-tests} also keeps the script files under __tests__/, which jest runs. At every hand-back
+the gate fills it with the files the coder changed: tracked changes against HEAD plus untracked files, relative to the
+directory of a leading `cd <dir> &&`, else the repo root. A command whose list is empty is skipped, never passed or
+failed.
 
 set and bash-hook refuse a command that runs a whole test suite, lints a whole package or runs a build, also when
 a make target or a docker exec or run call runs it (make is read from the Makefile text; a NAME=value argument, a
@@ -46,8 +48,16 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
 import script_utils
-from check_output import is_django_settings_fault, is_setup_fault, missing_path, tail_with_failing_tests
+from check_output import (
+    failing_test_lines,
+    failing_test_quote,
+    is_django_settings_fault,
+    is_setup_fault,
+    missing_path,
+    tail_with_failing_tests,
+)
 from check_scope import scanned_command
+from source_paths import is_runnable_test_file
 
 MAX_DENIES = 3
 MAX_GATE_AGE_SECONDS = 6 * 3600
@@ -59,7 +69,7 @@ GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
 WHOLE_PACKAGE_REASON = ("This command runs a whole test suite, lints a whole package or runs a build. Run the "
                         "typecheck, and lint and tests for only the files you changed. The review loop runs the full "
                         "check once, at its end.")
-FILES_PLACEHOLDER = re.compile(r"\{files(?::([^{}]*))?\}")
+FILES_PLACEHOLDER = re.compile(r"\{(files|tests|jest-tests)(?::([^{}]*))?\}")
 # manage.py test exits 0 when its labels hold no Django tests, as pytest-style tests do: that run gave no test result.
 DJANGO_TEST_COMMAND = re.compile(r"\bmanage\.py\s+test\b")
 DJANGO_RAN_NO_TESTS = re.compile(r"^Ran 0 tests\b", re.MULTILINE)
@@ -140,7 +150,7 @@ def set_gate(commands, gate_assignments=()):
     if refused_lines:
         sys.exit("coder-gate: refused. These commands run a whole test suite, lint a whole package or run a build:\n"
                  + "\n".join(refused_lines) + "\nName the test files, test names or lint paths that the phase "
-                 "changes, or use {files}. The review loop runs the full check command once, at its end.")
+                 "changes, or use {files} or {tests}. The review loop runs the full check command once, at its end.")
 
     try:
         environment = script_utils.environment_from_assignments(gate_assignments)
@@ -174,7 +184,7 @@ def clear_gate():
 
 
 def command_directory(command, repo_root):
-    # A leading `cd <dir> &&` or `cd <dir> ;` sets the directory that {files} is relative to.
+    # A leading `cd <dir> &&` or `cd <dir> ;` sets the directory that {files} or {tests} is relative to.
     try:
         words = shlex.split(command)
     except ValueError:
@@ -194,7 +204,7 @@ def changed_files(directory):
 
 
 def fill_files(command, repo_root):
-    # Returns the command with each {files} filled, or None when a placeholder keeps no file.
+    # Returns the command with each {files}, {tests} or {jest-tests} filled, or None when a placeholder keeps no file.
     if not FILES_PLACEHOLDER.search(command):
         return command
 
@@ -203,8 +213,12 @@ def fill_files(command, repo_root):
 
     filled_command = command
     for match in FILES_PLACEHOLDER.finditer(command):
-        suffixes = tuple(suffix for suffix in (match.group(1) or "").split(",") if suffix)
-        kept_files = [name for name in changed_file_list if not suffixes or name.endswith(suffixes)]
+        keeps_only_tests = match.group(1) != "files"
+        counts_jest_tests_folder = match.group(1) == "jest-tests"
+        suffixes = tuple(suffix for suffix in (match.group(2) or "").split(",") if suffix)
+        kept_files = [name for name in changed_file_list
+                      if (not suffixes or name.endswith(suffixes))
+                      and (not keeps_only_tests or is_runnable_test_file(name, counts_jest_tests_folder))]
         if not kept_files:
             return None
         quoted_files = " ".join(shlex.quote(name) for name in kept_files)
@@ -270,29 +284,50 @@ def sort_failures(failures, repo_root):
     return real_failures, setup_faults, command_errors
 
 
-def run_scoped_tests(repo_root, commands, gate_env=()):
+def run_scoped_tests(repo_root, commands, gate_env, log_path):
     # (one-line result, the failing commands' tails). The scoped commands, run as the gate runs them, outside a hook.
+    # A failing or timed-out command's whole output goes to log_path, and a failed, setup-fault, command-error or
+    # timeout result names it.
     if not commands:
         return "not run (no scoped test commands)", []
 
     gate = {"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_env)}
     failures, skipped, timed_out = run_commands(gate)
+    if failures or timed_out:
+        timed_out_outputs = [(command, "timeout", output) for command, output in timed_out]
+        script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
+    log_note = f"; full output: {log_path}"
     failures, setup_faults, command_errors = sort_failures(failures, repo_root)
 
     if failures:
-        tails = [f"`{command}` ({outcome}):\n{tail_with_failing_tests(output, output[-TAIL_CHARS:])}"
-                 for command, outcome, output in failures]
-        return "failed: " + "; ".join(command for command, _outcome, _output in failures), tails
+        return scoped_test_failure(failures, log_path)
     if setup_faults:
-        return "setup fault: " + "; ".join(command for command, _output in setup_faults), []
+        return "setup fault: " + "; ".join(command for command, _output in setup_faults) + log_note, []
     if command_errors:
-        return "command error: " + "; ".join(f"{command} ({line})" for command, line in command_errors), []
+        command_error_text = "; ".join(f"{command} ({line})" for command, line in command_errors)
+        return "command error: " + command_error_text + log_note, []
     if timed_out:
-        return "not run (timeout): " + "; ".join(command for command, _output in timed_out), []
+        return "not run (timeout): " + "; ".join(command for command, _output in timed_out) + log_note, []
     if len(skipped) == len(commands):
         return "not run (no changed file matches)", []
     return "passed", []
+
+
+def scoped_test_failure(failures, log_path):
+    # (one-line result, tails) for real scoped-test failures: the result names the commands, each failing test and the
+    # log; each tail quotes the failing tests' error text, or the output tail when a test has none.
+    tails = []
+    failing_tests = []
+    for command, outcome, output in failures:
+        quote = failing_test_quote(output, output[-TAIL_CHARS:])
+        tails.append(f"`{command}` ({outcome}):\n{quote}\nFull output: {log_path}")
+        failing_tests += failing_test_lines(output)
+
+    result = "failed: " + "; ".join(command for command, _outcome, _output in failures)
+    if failing_tests:
+        result += "; failing tests: " + " | ".join(failing_tests)
+    return f"{result}; full output: {log_path}", tails
 
 
 def denial(failures):

@@ -702,7 +702,7 @@ class CodeStepTest(unittest.TestCase):
 
         commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase())
 
-        self.assertEqual(["ruff check {files:.py}", "python3 manage.py test app.tests.test_models"], commands)
+        self.assertEqual(["ruff check {files:.py}", "python3 manage.py test app.tests.test_models --noinput"], commands)
 
     def test_a_django_repo_runs_manage_py_test_through_the_runner_the_lock_file_names(self):
         (self.repo / "manage.py").write_text("")
@@ -711,7 +711,7 @@ class CodeStepTest(unittest.TestCase):
 
         commands = code_step_gates.derive_gate_commands(self.repo, self.django_phase())
 
-        self.assertEqual(["uv run python manage.py test app.tests.test_models"], commands)
+        self.assertEqual(["uv run python manage.py test app.tests.test_models --noinput"], commands)
 
     def test_a_django_repo_with_pytest_django_settings_keeps_pytest(self):
         settings_files = {
@@ -743,7 +743,7 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual(["DJANGO_SETTINGS_MODULE=app.test poetry run python -m ruff check {files:.py}",
                           "DJANGO_SETTINGS_MODULE=app.test poetry run python manage.py test "
-                          "app.tests.test_models --keepdb"], commands)
+                          "app.tests.test_models --keepdb --noinput"], commands)
 
     def test_a_listed_whole_suite_manage_py_test_keeps_the_interpreter_name_behind_a_launcher(self):
         (self.repo / "manage.py").write_text("")
@@ -751,7 +751,7 @@ class CodeStepTest(unittest.TestCase):
 
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
-        self.assertEqual(["uv run python3 manage.py test app.tests.test_models"], commands)
+        self.assertEqual(["uv run python3 manage.py test app.tests.test_models --noinput"], commands)
 
     def test_a_django_phase_that_names_an_app_tests_module_runs_it(self):
         (self.repo / "manage.py").write_text("")
@@ -759,13 +759,14 @@ class CodeStepTest(unittest.TestCase):
 
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
-        self.assertEqual(["python3 manage.py test app.tests"], commands)
+        self.assertEqual(["python3 manage.py test app.tests --noinput"], commands)
 
     def test_a_listed_manage_py_test_option_keeps_its_value_and_the_labels_go_before_the_options(self):
         cases = {
             "python manage.py test --settings app.test":
-                "python manage.py test app.tests.test_models --settings app.test",
-            "python manage.py test --parallel": "python manage.py test app.tests.test_models --parallel",
+                "python manage.py test app.tests.test_models --settings app.test --noinput",
+            "python manage.py test --parallel": "python manage.py test app.tests.test_models --parallel --noinput",
+            "python manage.py test --no-input": "python manage.py test app.tests.test_models --no-input",
         }
         (self.repo / "manage.py").write_text("")
         for listed, expected in cases.items():
@@ -781,7 +782,7 @@ class CodeStepTest(unittest.TestCase):
 
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
-        self.assertEqual(["python manage.py test app.tests.test_models"], commands)
+        self.assertEqual(["python manage.py test app.tests.test_models --noinput"], commands)
 
     def test_a_phase_that_lists_a_whole_suite_pytest_keeps_pytest_in_a_django_repo(self):
         (self.repo / "manage.py").write_text("")
@@ -833,7 +834,8 @@ class CodeStepTest(unittest.TestCase):
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
         self.assertEqual(["cd backend && npm run typecheck",
-                          "pipenv run python backend/manage.py test app.tests.test_models --keepdb"], commands)
+                          "pipenv run python backend/manage.py test app.tests.test_models --keepdb --noinput"],
+                         commands)
 
     def test_a_manage_py_in_the_subfolder_above_the_phase_files_runs_manage_py_test_from_there(self):
         (self.repo / "backend/manage.py").write_text("")
@@ -841,8 +843,8 @@ class CodeStepTest(unittest.TestCase):
 
         commands = code_step_gates.derive_gate_commands(self.repo, phase)
 
-        self.assertEqual(["cd backend && npm run typecheck", "python3 backend/manage.py test app.tests.test_models"],
-                         commands)
+        self.assertEqual(["cd backend && npm run typecheck",
+                          "python3 backend/manage.py test app.tests.test_models --noinput"], commands)
 
     def test_a_listed_test_command_that_changes_directory_is_taken_verbatim(self):
         (self.repo / "pyproject.toml").write_text("")

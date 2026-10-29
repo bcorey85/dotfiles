@@ -24,7 +24,7 @@
       timeout) with no task notification for it. A shell whose result comes before the loop's last delivered
       SubagentHandback is no open work: the caller already holds the packet.
     Every review-loop SubagentStop appends a `kind=stop` row to the session's hand-back store (agent_id and
-      the count of open background dispatches), through handback.record. A count of one or more means the loop
+      the count of open background dispatches), through handback_store.record. A count of one or more means the loop
       is waiting: `review_fix.py packet` prints `ACTION: wait-for-loop`, not stop-no-handback. A row with 0 ends
       the wait. A stop whose transcript cannot be read writes a 0 row, then fails open as before. A store write
       error is reported on stderr and never blocks the stop.
@@ -55,6 +55,7 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
+import handback_store
 import script_utils
 from loop_transcript import GATE_REASON, LoopTranscript, plan_edit_reason, prompt_field, scan
 
@@ -379,8 +380,9 @@ def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
     try:
         session_id = hook.get("session_id")
         if session_id:
-            handback.record(session_id, "stop", agent_id=hook.get("agent_id") or "unknown",
-                            open_dispatches=open_dispatches, ask_rows=list(ask_rows), blocked=blocked)
+            handback_store.record(session_id, "stop", agent_id=hook.get("agent_id") or "unknown",
+                                  open_dispatches=open_dispatches, ask_rows=list(ask_rows),
+                                  blocked=blocked)
     except Exception as e:
         print(f"review-loop-gate: stop row skipped, {type(e).__name__}: {e}", file=sys.stderr)
 

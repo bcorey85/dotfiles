@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """handback_store.py: the per-session store of review-loop rows (dispatch, hand-back, stop, step) and the reads of it
-that decide whether a hand-back is current. handback.py re-exports the names its callers use, so they keep
-using handback.X. The store is one append-only JSON-lines file per session under $HANDBACK_STORE_DIR (default
-~/.claude/state/handback)."""
+that decide whether a hand-back is current. Callers import these names from handback_store directly; handback.py
+imports only the ones it uses itself. The store is one append-only JSON-lines file per session under
+$HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
 import os
 import pathlib
 import re
@@ -36,6 +36,11 @@ def session_rows(session_id, kind=None, agent_id=ANY_AGENT):
     return [row for row in script_utils.read_jsonl(session_file(session_id))
             if (kind is None or row.get("kind") == kind)
             and (agent_id is ANY_AGENT or row.get("agent_id") == agent_id)]
+
+
+def was_recorded(session_id, agent_id, kind):
+    """True when the session's file holds a row of this kind from this agent."""
+    return bool(session_rows(session_id, kind, agent_id))
 
 
 def prune_stale():

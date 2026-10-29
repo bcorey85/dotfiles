@@ -324,6 +324,63 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("  The ruling: yes, add the table", plan_text)
         self.assertIn("  The disagreement:", plan_text)
 
+    def test_plan_impact_that_changes_no_acceptance_criterion_is_adopted_without_asking(self):
+        below_criteria = PLAN_IMPACT + "    acceptance_criteria: none\n"
+        code, output = self.packet(below_criteria)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("ask-user-plan-impact", output)
+        self.assertIn("ACTION: redispatch", output)
+        self.assertIn("plan_impact: RESOLVED - Adopt plan change. The session ruled, not the user.", output)
+        self.assertIn("add these lines under ## Plan Deviations", output)
+        self.assertIn("iter=1", output)
+        self.assertIn("spec_iter=2", output)
+
+    def test_plan_impact_that_changes_an_acceptance_criterion_still_asks_the_user(self):
+        code, output = self.packet(PLAN_IMPACT + "    acceptance_criteria: AC-2 drops the retry\n")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: ask-user-plan-impact", output)
+        self.assertNotIn("ACTION: redispatch", output)
+
+    def test_a_loosely_marked_plan_change_with_no_criteria_line_still_asks_the_user(self):
+        two_changes = (PLAN_IMPACT + "    acceptance_criteria: none\n"
+                       "  plan impact: the retry window is a day, not an hour\n")
+        code, output = self.packet(two_changes)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: ask-user-plan-impact", output)
+        self.assertNotIn("ACTION: redispatch", output)
+
+    def test_plan_impact_redispatch_carries_the_round_s_open_findings(self):
+        with_open_findings = PLAN_IMPACT + (
+            "findings_remaining:\n"
+            '  - {finding: "parity script compares the wrong column", file_line: bin/parity.py:40, '
+            "disposition: fix}\n"
+            "ask:\n"
+            '  - {finding: "no index", file_line: src/db.ts:5, question: "Add an index on tenant_id?", '
+            'change: "add the index"}\n'
+            '  - {finding: "PLAN-IMPACT: the queue is at-most-once", file_line: src/queue.ts:1, '
+            'change: "add a dedupe table"}\n'
+        )
+        code, output = self.packet(with_open_findings)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
+        self.assertEqual(code, 0, output)
+        carried = output.split("carried-findings:", 1)[1]
+        self.assertIn("  - finding: parity script compares the wrong column - bin/parity.py:40", carried)
+        self.assertIn("  - ask: no index", carried)
+        self.assertNotIn("the queue is at-most-once", carried)
+
+    def test_a_located_plan_impact_ask_is_not_carried_after_the_ruling(self):
+        located_impact = PLAN_IMPACT + (
+            "ask:\n"
+            '  - {finding: "`src/queue.ts:1` [correctness] plan impact: the queue is at-most-once", '
+            'file_line: src/queue.ts:1, change: "add a dedupe table"}\n'
+        )
+        code, output = self.packet(located_impact)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("the queue is at-most-once", output.split("RESOLVED", 1)[1])
+
     def test_decide_appends_to_an_existing_plan_deviations_section_before_the_next_heading(self):
         self.packet(PLAN_IMPACT)
         plan_file = self.temp_root / "plan.md"

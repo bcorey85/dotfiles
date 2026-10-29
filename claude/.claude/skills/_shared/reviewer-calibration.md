@@ -89,6 +89,9 @@ write one of two things — never a bare question:
   `PLAN-IMPACT:` and name both sides (`file:line` and the clause it contradicts).
   That prefix is what gets scanned for, and it stops the loop before a coder runs.
   "PLAN-IMPACT candidate", "owner call needed", or a question mark do not scan.
+  End the finding with `acceptance_criteria: none` when every acceptance criterion
+  holds either way: the code then wins and the plan follows it with no question to
+  the user. Otherwise end it with `acceptance_criteria: <the criteria it changes>`.
 
 If you genuinely cannot tell which side is wrong, that itself is what the finding says,
 prefixed `PLAN-IMPACT:` — the plan's authority is the thing in doubt. A plan

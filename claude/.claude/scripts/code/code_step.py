@@ -522,7 +522,7 @@ def resume_closing_skill(repo_dir, state):
     plan_lines = (repo_dir / state["plan"]).read_text().split("\n")
     section = plan_format.phase_text(plan_lines, state["phase"])
     skill = plan_format.closing_skill(state["title"])
-    emit_closing_skill(repo_dir, state["plan"], state["phase"], state["title"], skill, section)
+    emit_closing_skill(repo_dir, state["plan"], state["phase"], state["title"], skill, section, state.get("runNotes"))
 
 
 def ask_about_review_cap(repo_dir, state):

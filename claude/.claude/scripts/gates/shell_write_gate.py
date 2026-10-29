@@ -239,10 +239,6 @@ def is_git_tracked(path):
     return git_path_check(path, "ls-files", "--error-unmatch")
 
 
-def is_git_ignored(path):
-    return git_path_check(path, "check-ignore", "-q")
-
-
 def run(raw):
     if raw.strip() == "":
         return
@@ -377,7 +373,12 @@ def interpreter_code(segment, cwd, written_paths, command):
         script = resolve_target(word, cwd)
         if script in written_paths:
             return command, arguments[index:]
-        if script is None or not os.path.isfile(script) or is_git_tracked(script) or is_git_ignored(script):
+        if (
+            script is None
+            or not os.path.isfile(script)
+            or is_git_tracked(script)
+            or script_utils.is_git_ignored(script)
+        ):
             return None
         try:
             if os.path.getsize(script) > MAX_SCRIPT_BYTES:

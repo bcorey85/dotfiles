@@ -475,6 +475,80 @@ class ShellWriteGateTest(unittest.TestCase):
         self.assertIn("Edit tool", reason)
         self.assertNotIn(HINT, reason)
 
+    def test_untracked_script_that_writes_a_tracked_file_through_a_name_is_denied(self):
+        (self.repo / "sub").mkdir()
+        (self.repo / "sub" / "nested.txt").write_text("x\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "sub/nested.txt"], check=True)
+        scripts = {
+            "variable": "import pathlib\np = pathlib.Path('tracked.txt')\ntext = p.read_text()\n"
+                        "p.write_text(text.replace('x', 'y'))\n",
+            "edit list": "import pathlib\nEDITS = [\n    ('tracked.txt', 'x', 'y'),\n]\n"
+                         "for path, old, new in EDITS:\n    p = pathlib.Path(path)\n"
+                         "    p.write_text(p.read_text().replace(old, new))\n",
+            "helper": "from pathlib import Path\ndef edit(path, old, new):\n    p = Path(path)\n"
+                      "    p.write_text(p.read_text().replace(old, new))\n\nedit('tracked.txt', 'x', 'y')\n",
+            "joined path": "import pathlib\nROOT = pathlib.Path.cwd()\ntarget = ROOT / 'sub' / 'nested.txt'\n"
+                           "with open(target, 'w') as f:\n    f.write('y')\n",
+            "method open": "import pathlib\np = pathlib.Path('tracked.txt')\n"
+                           "with p.open('w') as f:\n    f.write('y')\n",
+            "edit dict": "from pathlib import Path\nEDITS = {'tracked.txt': 'y'}\n"
+                         "for path, text in EDITS.items():\n    Path(path).write_text(text)\n",
+            "edit dict with comment": "from pathlib import Path\nEDITS = {\n    # the format: path, then text's body\n"
+                                      "    'tracked.txt': 'y',\n}\n"
+                                      "for path, text in EDITS.items():\n    Path(path).write_text(text)\n",
+            "dict value": "from pathlib import Path\nMAP = {'out.txt': 'tracked.txt'}\n"
+                          "for src, dst in MAP.items():\n    Path(dst).write_text('y')\n",
+            "shutil destination": "import shutil\ndst = 'tracked.txt'\nshutil.copy('/tmp/x', dst)\n",
+            "os.replace destination": "import os\ndst = 'tracked.txt'\nos.replace('/tmp/x', dst)\n",
+            "perl open": "my $p = 'tracked.txt';\nopen(my $f, '>', $p);\n",
+        }
+        for shape, code in scripts.items():
+            with self.subTest(shape=shape):
+                script = self.repo / "edit_script.py"
+                script.write_text(code)
+                reason = self.assert_denied(f"python3 {script}", agent="coder")
+                self.assertIn("scratchpad", reason)
+
+    def test_untracked_node_script_that_writes_a_tracked_file_through_a_name_is_denied(self):
+        scripts = {
+            "const": "const fs = require('fs');\nconst p = 'tracked.txt';\nfs.writeFileSync(p, 'y');\n",
+            "for of": "const fs = require('fs');\nfor (const p of ['tracked.txt']) {\n  fs.writeFileSync(p, 'y');\n}\n",
+        }
+        for shape, code in scripts.items():
+            with self.subTest(shape=shape):
+                script = self.repo / "edit_script.js"
+                script.write_text(code)
+                self.assert_denied(f"node {script}", agent="coder")
+
+    def test_inline_code_assigning_after_an_import_on_one_line_is_denied(self):
+        self.assert_denied("python3 -c \"import os; p = 'tracked.txt'; open(p,'w').write('x')\"")
+        self.assert_denied("node -e \"function f() { const p = 'tracked.txt'; fs.writeFileSync(p,'y') }\"")
+
+    def test_inline_code_whose_name_is_bound_before_a_tracked_read_on_one_line_passes(self):
+        out = f"{self.tmp}/out"
+        self.assert_allowed(f"node -e \"const p = '{out}'; fs.readFileSync('tracked.txt'); fs.writeFileSync(p, 'y')\"")
+
+    def test_untracked_script_that_reads_a_tracked_file_into_a_name_and_writes_elsewhere_passes(self):
+        out = f"{self.tmp}/out"
+        scripts = {
+            "name": f"import pathlib\ndata = open('tracked.txt').read()\nout = '{out}'\n"
+                    "open(out, 'w').write(data)\npathlib.Path(out).write_text(data)\n",
+            "helper": "from pathlib import Path\ndef copy(src, dst):\n    Path(dst).write_text(Path(src).read_text())\n"
+                      f"\ncopy('tracked.txt', '{out}')\n",
+            "loop": f"from pathlib import Path\nPAIRS = [('tracked.txt', '{out}')]\nfor src, dst in PAIRS:\n"
+                    "    Path(dst).write_text(Path(src).read_text())\n",
+            "assigned write": f"from pathlib import Path\nsrc = 'tracked.txt'\n"
+                              f"n = Path('{out}').write_text(open(src).read())\n",
+            "zip": f"from pathlib import Path\nfor src, dst in zip(['tracked.txt'], ['{out}']):\n"
+                   "    Path(dst).write_text(Path(src).read_text())\n",
+            "shutil source": f"import shutil\nsrc = 'tracked.txt'\nshutil.copy(src, '{out}')\n",
+        }
+        for shape, code in scripts.items():
+            with self.subTest(shape=shape):
+                script = self.tmp / "copy.py"
+                script.write_text(code)
+                self.assert_allowed(f"python3 {script}", agent="coder")
+
     def test_untracked_script_given_a_tracked_file_as_argument_is_denied(self):
         script = self.tmp / "rewrite.py"
         script.write_text("import sys\nwith open(sys.argv[1], 'w') as f:\n    f.write('y')\n")

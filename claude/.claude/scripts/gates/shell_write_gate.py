@@ -7,7 +7,8 @@
      outside a temp dir, or whose target still holds a `$` after `$TMPDIR` and `$HOME` are expanded.
   4. An interpreter (python, pypy, node, tsx, ts-node, bun, deno, ruby, perl; also behind npx or pnpm exec) run whose
      inline code (`-c`, `-e`, `-p`, `--print`, `--eval`, `deno eval`) or untracked, not git-ignored script file opens
-     a file for writing and names a git-tracked file, as a string literal or as an argument.
+     a file for writing and names a git-tracked file: as a string literal, through a name bound to one, or as an
+     argument.
 Only a `>` outside quotes is a redirect (a `>` inside a double-quoted `$(...)` is code and is read as one), and the
 body of a heredoc is not read as commands unless it feeds a shell interpreter (`bash <<EOF`); the `$(...)` and
 backtick spans of an unquoted heredoc body are. A command that names a program running code the parser does not read
@@ -30,12 +31,12 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import hook_input
 import script_utils
 import shell_command
+from code_text import SP, receiver_text, split_arguments, tuple_fields
 from hook_input import JqError, expand_env_names, is_under_temp_dir, jq_get, jq_str
 from hook_input import bash_basename as shell_basename
 from hook_input import bash_dirname as shell_dirname
 from shell_statements import SKIP_WORDS, strip_comments, strip_heredocs
 
-SP =" \t\n\r\f\v"
 SPC = r"[ \t\r\f\v]"
 TARGET = r"[^ \t\r\f\v|&;<>()]+"
 REDIRECT = re.compile(r">[>|&]?" + SPC + "*" + TARGET)
@@ -67,6 +68,14 @@ FILE_WRITE = re.compile(r"""open\s*\([^)]*['"][rbt]*[wax+][rbt+]*['"]|\.write_(t
                         r"""|\bfileinput\.input\s*\([^)]*inplace\s*=\s*True"""
                         r"""|\bopen\s*\(?\s*(my\s+)?[$\w]+\s*,\s*['"]\+?>""")
 STRING_LITERAL = re.compile(r"""(['"])([^'"\n]{1,512})\1""")
+# A write whose target is its call's last argument: a copy, move or rename, or perl's `open(my $f, '>', $path)`.
+LAST_ARGUMENT_WRITE = re.compile(r"""\bshutil\.|\bos\.|\bopen\s*\(?\s*(my\s+)?[$\w]+\s*,\s*['"]\+?>""")
+FUNCTION_DEFINITION = re.compile(r"\b(?:def|function)\s+(\w+)\s*\(([^)]*)\)")
+# A name the code uses, not an attribute after a `.`.
+CODE_NAME = re.compile(r"(?<![\w.$])\$?[A-Za-z_]\w*")
+MAX_NAME_HOPS = 4
+# The other names a for loop's target list may hold beside the traced one (`for path, old, new in EDITS`).
+LOOP_TARGETS = r"[\w\s,()\[\]]*?"
 MAX_SCRIPT_BYTES = 1_000_000
 DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
 DIRECTORY_COMMAND_TEXT = re.compile(r"(^|[\s;&|(){`])(cd|pushd|popd)(\s|$|[;&|)])")
@@ -268,7 +277,8 @@ def run(raw):
     for segment in segments:
         target = interpreter_written_target(segment, cwd, written_paths, command)
         if target:
-            raise DenyError(deny_text("a script that writes " + target + " bypasses the Write/Edit hook pipeline.",
+            raise DenyError(deny_text("a script that writes " + target + " bypasses the Write/Edit hook pipeline. "
+                                      "Keep any scratch script in the scratchpad, never in the repo tree.",
                                       cannot_skip))
 
     if not PRECHECK.search(command):
@@ -380,9 +390,10 @@ def interpreter_code(segment, cwd, written_paths, command):
 
 
 def write_statements(code):
-    """The text of each statement that holds a file write: the `;`-separated part of the write's line, so a tracked
-    file the code only reads elsewhere does not count."""
-    statements = []
+    """(statement, target) for each file write. The statement is the `;`-separated part of the write's line, so a
+    tracked file the code only reads elsewhere does not count. The target is the part of it that names the written
+    file."""
+    writes = []
     for match in FILE_WRITE.finditer(code):
         line_start = code.rfind("\n", 0, match.start()) + 1
         line_end = code.find("\n", match.end())
@@ -390,25 +401,114 @@ def write_statements(code):
         statement_start = code.rfind(";", line_start, match.start()) + 1 or line_start
         statement_end = code.find(";", match.end(), line_end)
         statement_end = line_end if statement_end == -1 else statement_end
-        statements.append(code[statement_start:statement_end])
-    return statements
+        statement = code[statement_start:statement_end]
+        writes.append((statement, write_target_text(statement, match.start() - statement_start)))
+    return writes
+
+
+def write_target_text(statement, write_start):
+    """The receiver of `.write_text(` or `.write_bytes(`; the receiver and first argument of a method `.open(`; the
+    last argument of a copy, move, rename or perl open; else the first argument of the write call."""
+    if statement.startswith(".write_", write_start):
+        return receiver_text(statement[:write_start])
+
+    open_paren = statement.find("(", write_start)
+    if open_paren == -1:
+        write_word = statement[write_start:].split(None, 1)[0]
+        arguments_start = write_start + len(write_word)
+    else:
+        arguments_start = open_paren + 1
+    arguments = split_arguments(statement, arguments_start)
+    if LAST_ARGUMENT_WRITE.match(statement, write_start):
+        return arguments[-1]
+    if statement.startswith("open", write_start) and statement[write_start - 1:write_start] == ".":
+        # `p.open('w')` writes its receiver; `io.open(path, 'w')` and `codecs.open(...)` write their first argument.
+        return receiver_text(statement[:write_start - 1]) + "," + arguments[0]
+    return arguments[0]
+
+
+def binding_texts(code, name):
+    """The text that binds `name`: an assignment's right side, a for loop's iterable (the element at the name's
+    position in a multi-name target), and for a function parameter, the argument at its position in each call."""
+    word = re.escape(name.lstrip("$"))
+    parameter = re.compile(rf"(?<![\w$]){word}\b")
+    texts = assigned_texts(code, word)
+    loop = re.compile(rf"\bfor\s*\(?\s*(?:(?:const|let|var|my)\s+)?(?P<targets>{LOOP_TARGETS}\b{word}\b{LOOP_TARGETS})"
+                      r"\s(?:in|of)\s")
+    for match in loop.finditer(code):
+        iterable = ",".join(split_arguments(code, match.end()))
+        targets = [target.strip(" \t\n()[]$") for target in match.group("targets").split(",")]
+        position = targets.index(name.lstrip("$")) if name.lstrip("$") in targets else None
+        if len(targets) == 1 or position is None:
+            texts.append(iterable)
+            continue
+        if iterable.lstrip().startswith("zip("):
+            zip_arguments = split_arguments(iterable, iterable.index("(") + 1)
+            texts.append(zip_arguments[position] if position < len(zip_arguments) else iterable)
+            continue
+        iterable_name = trim(iterable).rstrip(":{").strip(SP)
+        sources = assigned_texts(code, re.escape(iterable_name)) if iterable_name.isidentifier() else []
+        fields = [field for source in sources or [iterable] for field in tuple_fields(source, position)]
+        texts += [field for field in fields if field.strip()] or [iterable]
+    for function in FUNCTION_DEFINITION.finditer(code):
+        parameters = [part.strip(SP) for part in function.group(2).split(",")]
+        positions = [index for index, part in enumerate(parameters) if parameter.match(part)]
+        if not positions:
+            continue
+        calls = re.finditer(rf"(?<![\w.]){re.escape(function.group(1))}\s*\(", code)
+        for call in calls:
+            if call.start() == function.start(1):
+                continue
+            arguments = split_arguments(code, call.end())
+            texts.append(arguments[positions[0]] if positions[0] < len(arguments) else ",".join(arguments))
+    return texts
+
+
+def assigned_texts(code, word):
+    """The right side of each assignment to the (regex-escaped) name `word`."""
+    assignment = re.compile(rf"(?:^|[;{{:])[ \t]*(?:(?:const|let|var|my|our)\s+)?\$?{word}\s*(?::[^=\n]*)?=(?![=>])",
+                            re.M)
+    return [",".join(split_arguments(code, match.end())) for match in assignment.finditer(code)]
+
+
+def named_texts(code, text):
+    """`text` plus the text that binds each name it uses, followed through MAX_NAME_HOPS bindings."""
+    texts = [text]
+    frontier = [text]
+    seen = set()
+    for _hop in range(MAX_NAME_HOPS):
+        names = {name for part in frontier for name in CODE_NAME.findall(part)} - seen
+        seen |= names
+        frontier = [bound for name in sorted(names) for bound in binding_texts(code, name)]
+        texts += frontier
+    return texts
+
+
+def path_candidates(text):
+    """Each string literal in text, and all of them joined with `/` (`ROOT / "docs" / "a.md"`)."""
+    literals = [match.group(2) for match in STRING_LITERAL.finditer(text)]
+    joined = ["/".join(literals)] if len(literals) > 1 else []
+    return literals + joined
 
 
 def interpreter_written_target(segment, cwd, written_paths, command):
     """The git-tracked file an interpreter step opens for writing, else None: code with a file write whose statement
-    names a tracked file as a string literal, or a tracked file passed as an argument. A path the code builds at run
-    time, or holds in a variable set elsewhere, is not seen."""
+    names a tracked file as a string literal, whose target is a name bound (through assignments, for loops and
+    function calls) to a tracked file's literal or to literals that join into one, or a tracked file passed as an
+    argument. A path the code builds any other way is not seen."""
     found = interpreter_code(segment, cwd, written_paths, command)
     if found is None:
         return None
 
     code, arguments = found
-    statements = write_statements(code)
-    if not statements:
+    writes = write_statements(code)
+    if not writes:
         return None
 
-    literals = [match.group(2) for statement in statements for match in STRING_LITERAL.finditer(statement)]
-    for candidate in literals + arguments:
+    literals = [match.group(2) for statement, _target in writes for match in STRING_LITERAL.finditer(statement)]
+    named = [candidate for _statement, target in writes for text in named_texts(code, target)
+             for candidate in path_candidates(text)]
+    for candidate in literals + named + arguments:
         path = resolve_target(candidate, cwd)
         if path and os.path.isfile(path) and is_git_tracked(path):
             return path

@@ -201,6 +201,11 @@ def text_before_marker(text, marker):
     return text.split(marker, 1)[0]
 
 
+def details_with_outcome(outcomes, outcome):
+    # {key: detail} for each entry of an {key: {"outcome": ..., "detail": ...}} map that has this outcome, in map order.
+    return {key: entry["detail"] for key, entry in outcomes.items() if entry["outcome"] == outcome}
+
+
 def run_command(command, cwd=None, stdin=None, timeout=None):
     """Run a command as run_process does and return (exit code, stdout and stderr joined and stripped). A program that
     is not found exits COMMAND_NOT_FOUND_EXIT_CODE; a run past `timeout` seconds exits TIMEOUT_EXIT_CODE with a note

@@ -28,6 +28,17 @@ class TextBeforeMarkerTest(unittest.TestCase):
         self.assertEqual("", script_utils.text_before_marker("--stamp only", "--stamp"))
 
 
+class DetailsWithOutcomeTest(unittest.TestCase):
+    def test_only_the_entries_with_the_outcome_are_kept_in_map_order(self):
+        outcomes = {"b": {"outcome": "x", "detail": "one"}, "a": {"outcome": "y", "detail": "two"},
+                    "c": {"outcome": "x", "detail": "three"}}
+
+        self.assertEqual(["b", "c"], list(script_utils.details_with_outcome(outcomes, "x")))
+        self.assertEqual({"b": "one", "c": "three"}, script_utils.details_with_outcome(outcomes, "x"))
+        self.assertEqual({}, script_utils.details_with_outcome(outcomes, "z"))
+        self.assertEqual({}, script_utils.details_with_outcome({}, "x"))
+
+
 class SubagentTypeTest(unittest.TestCase):
     def test_coder_types_match_each_coder_and_its_deep_variant_only(self):
         for name in ("coder", "coder-deep", "backend-coder", "frontend-coder-deep"):

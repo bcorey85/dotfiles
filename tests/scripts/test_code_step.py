@@ -351,7 +351,7 @@ class CodeStepTest(unittest.TestCase):
         gate_path = self.repo / ".git/coder-gate.json"
         if gate_path.exists():
             gate = json.loads(gate_path.read_text())
-            gate["coders"]["a1"] = {"runs": 1, "denies": 0, "failed": [], "skipped": [], "result": "pass"}
+            gate["coders"]["a1"] = {"runs": 1, "denies": 0, "commands": {}, "result": "pass"}
             gate_path.write_text(json.dumps(gate))
 
     def begin_coder(self, source="export const o = 1\n", start_options=()):
@@ -1104,8 +1104,8 @@ class CodeStepTest(unittest.TestCase):
         gate_path = self.repo / ".git/coder-gate.json"
         gate = json.loads(gate_path.read_text())
         timed_out_command = gate["commands"][0]
-        gate["coders"]["a1"] = {"runs": 1, "denies": 0, "failed": [], "skipped": [],
-                                "timed_out": [timed_out_command], "result": "timeout"}
+        gate["coders"]["a1"] = {"runs": 1, "denies": 0, "result": "timeout",
+                                "commands": {timed_out_command: {"outcome": "timed-out", "detail": ""}}}
         gate_path.write_text(json.dumps(gate))
 
         out = self.step("after-coder")
@@ -1119,8 +1119,8 @@ class CodeStepTest(unittest.TestCase):
         gate_path = self.repo / ".git/coder-gate.json"
         gate = json.loads(gate_path.read_text())
         setup_fault_command = gate["commands"][0]
-        gate["coders"]["a1"] = {"runs": 1, "denies": 0, "failed": [], "skipped": [], "timed_out": [],
-                                "setup_faults": [setup_fault_command], "result": "setup-fault"}
+        gate["coders"]["a1"] = {"runs": 1, "denies": 0, "result": "setup-fault",
+                                "commands": {setup_fault_command: {"outcome": "setup-fault", "detail": ""}}}
         gate_path.write_text(json.dumps(gate))
 
         out = self.step("after-coder")
@@ -4338,7 +4338,7 @@ class CodeStepTest(unittest.TestCase):
     def set_gate_result(self, result):
         gate_path = self.repo / ".git/coder-gate.json"
         gate = json.loads(gate_path.read_text())
-        gate["coders"] = {} if result is None else {"a1": {"runs": 1, "denies": 0, "failed": [], "skipped": [],
+        gate["coders"] = {} if result is None else {"a1": {"runs": 1, "denies": 0, "commands": {},
                                                            "result": result}}
         gate_path.write_text(json.dumps(gate))
 
@@ -4804,7 +4804,7 @@ class CodeStepTest(unittest.TestCase):
     def allow_coder_at_the_gate(self, agent_id):
         gate_path = self.repo / ".git/coder-gate.json"
         gate = json.loads(gate_path.read_text())
-        gate["coders"][agent_id] = {"runs": 1, "denies": 0, "failed": [], "skipped": [], "result": "pass"}
+        gate["coders"][agent_id] = {"runs": 1, "denies": 0, "commands": {}, "result": "pass"}
         gate_path.write_text(json.dumps(gate))
 
     def add_a_line_to_phase_one(self):

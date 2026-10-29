@@ -72,6 +72,7 @@ import sys
 import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import coder_gate
 import plan_format
 import script_utils
 from code_step_boundary import (
@@ -241,10 +242,12 @@ def coder_flagged(state, gate, report, is_ask_fix):
     flagged = list(state.get("flagged", [])) if is_ask_fix else []
     coders = (gate or {"coders": {}})["coders"].values()
     for coder in coders:
+        coder_commands = coder.get("commands", {})
         if coder["result"] == "cap":
-            flagged.append("hand-back gate cap: " + ", ".join(coder["failed"]) + " still failing after 3 denials")
+            failed_commands = script_utils.details_with_outcome(coder_commands, coder_gate.FAILED)
+            flagged.append("hand-back gate cap: " + ", ".join(failed_commands) + " still failing after 3 denials")
 
-        for command, line in coder.get("command_error_lines", {}).items():
+        for command, line in script_utils.details_with_outcome(coder_commands, coder_gate.COMMAND_ERROR).items():
             flagged.append(f"hand-back gate command error, not a code failure: `{command}` names a missing path "
                            f"({line})")
     return flagged + coder_flags(report)

@@ -288,10 +288,11 @@ def apply_coder_outcome(repo, name, unique_text):
             gate["coders"] = {}
         elif gate_result == "cap":
             gate["coders"] = {
-                "a1": {"runs": 4, "denies": 3, "failed": gate["commands"][:1], "skipped": [], "result": "cap"}
+                "a1": {"runs": 4, "denies": 3, "result": "cap",
+                       "commands": {gate["commands"][0]: {"outcome": "failed", "detail": ""}}}
             }
         else:
-            gate["coders"] = {"a1": {"runs": 1, "denies": 0, "failed": [], "skipped": [], "result": "pass"}}
+            gate["coders"] = {"a1": {"runs": 1, "denies": 0, "commands": {}, "result": "pass"}}
         gate_path.write_text(json.dumps(gate))
     return report
 

@@ -44,12 +44,8 @@ import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
-<<<<<<< HEAD
 import coder_gate  # noqa: E402
-||||||| 0f219e7e
-=======
 import criteria_verdict  # noqa: E402
->>>>>>> origin/integrate/restart-bugs
 import plan_format  # noqa: E402
 
 PLAN = """# Orders Plan

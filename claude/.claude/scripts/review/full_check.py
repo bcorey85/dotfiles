@@ -25,7 +25,9 @@ runs tests or lint on named files or tests, or with a changed-files flag, and it
 `Quality check:` command (it does not run then), or `not run (unresolved command: ...)` when lib/check_scope cannot
 read what it runs, such as a make call with a NAME=value argument or a target no Makefile names, under the same
 exception. A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">`
-or `summary: not found`. `run` with no command returns `not run (no check found; ...)`.
+or `summary: not found`. `run` with no command returns `not run (no check found; ...)`. `run`, which the review loop
+calls, refuses a scoped or unresolved command the same way; there a command that is && steps of the `Quality check:`
+command counts as that command.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
 (`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
@@ -322,18 +324,27 @@ def empty_details():
     return {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
 
 
-def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD"):
+def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD", declared=None):
     """Run the full check once. Returns (result, the log's last lines, details). The details hold `summaries` (the
     runner's own summary lines), `changed` (tracked files the command rewrote) and `created` (files it created), all
     lists; both kinds of file are left in place. On a lint failure the lines are the failing step's lines, not the
     log's last lines. `on_start`, when given, is called with the pid of the process group
-    the check leads."""
+    the check leads. A scoped or unresolved command is not run unless `declared`: True when the command, before its
+    Expected red steps were left out, equals the `Quality check:` command; None counts the command when it equals that
+    command or is && steps of it."""
     details = empty_details()
+    configured = configured_check_command(repo)
     in_ci = full_suite_runs_in_ci(repo)
-    if in_ci and (check_command is None or not is_configured_check(check_command, configured_check_command(repo))):
+    if in_ci and (check_command is None or not is_configured_check(check_command, configured)):
         return NOT_RUN_CI, "", details
     if check_command is None:
         return NOT_RUN_NO_CHECK, "", details
+
+    if declared is None:
+        declared = is_configured_check(check_command, configured)
+    refusal = None if declared else scope_refusal(check_command, repo)
+    if refusal:
+        return refusal, "", details
 
     env = pinned_interpreter_env(repo, env)
     before = take(repo)
@@ -604,16 +615,12 @@ def main(argv):
     except OSError as error:
         parser.error(f"--plan {args.plan}: {error.strerror}")
 
-    configured = configured_check_command(args.repo)
-    in_ci = full_suite_runs_in_ci(args.repo)
-    declared = check_command == configured
-    refusal = scope_refusal(check_command, args.repo)
+    declared = check_command == configured_check_command(args.repo)
     if phase_command is None:
         result, tail, details = expected_red.not_run_result(left_out), "", empty_details()
-    elif not declared and refusal and (not in_ci or is_configured_check(check_command, configured)):
-        result, tail, details = refusal, "", empty_details()
     else:
-        result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base)
+        result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base,
+                                    declared=declared)
     print_result(result, details, left_out)
 
     if is_failure(result) or is_setup_fault_result(result):

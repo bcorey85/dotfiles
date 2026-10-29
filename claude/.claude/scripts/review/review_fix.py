@@ -618,6 +618,7 @@ def command_packet(argv):
     except LoopWaitingError as error:
         return wait_for_loop(options.skill, error.stop_ts)
     packet = handback.load(message)
+    handback.print_dropped_asks(packet)
     if unreviewed_in_a_row:
         return stop_for_unreviewed(options.skill, packet, unreviewed_in_a_row)
     state = new_state(options, packet, packet_id)

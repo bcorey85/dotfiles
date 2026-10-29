@@ -484,6 +484,15 @@
         ]
       },
       {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py launch-hook"
+          }
+        ]
+      },
+      {
         "matcher": "AskUserQuestion",
         "hooks": [
           {

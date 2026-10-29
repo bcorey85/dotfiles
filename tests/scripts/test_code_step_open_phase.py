@@ -148,7 +148,7 @@ class AskOutcomesReachLaterPasses(TempRepo):
         self.rule("rejected")
 
         _result, out = self.run_quietly(code_step_start.emit_closing_skill, self.repo, PLAN, "4", "Refactor",
-                                        "refactor", "")
+                                        "refactor", "", None)
 
         self.assertIn("Asks already ruled in this run", out)
         self.assertIn("the retry loop has no cap", out)
@@ -156,7 +156,7 @@ class AskOutcomesReachLaterPasses(TempRepo):
     def test_a_run_with_no_ruled_ask_prints_no_ruled_asks_section(self):
         self.assertNotIn("ruled-asks", self.handoff())
         _result, out = self.run_quietly(code_step_start.emit_closing_skill, self.repo, PLAN, "4", "Refactor",
-                                        "refactor", "")
+                                        "refactor", "", None)
         self.assertNotIn("already ruled", out)
 
     def test_another_plan_does_not_see_the_ruling(self):

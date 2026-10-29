@@ -47,7 +47,9 @@ REVIEW_LOOP_SCRIPT = SCRIPTS_DIR / "review" / "review_loop_script.py"
 REVIEW_SCRIPT_AGENT_PREFIX = "loop-script-"
 FINISHED_REVIEW_SCRIPT_KEYS = ("reviewScriptPid", "resumableReview", "resumeWaitAt")
 # The files beside the review loop script's log that it writes as it works: a write to one restarts the wait cap.
-REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", "full-check.log")
+FULL_CHECK_LOG = "full-check.log"
+FULL_CHECK_BASE_LOG = "full-check-base.log"
+REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", FULL_CHECK_LOG, FULL_CHECK_BASE_LOG)
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
@@ -57,8 +59,7 @@ HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
 # their saved hand-back.
 REVIEW_HANDBACK_STAGES = ("coder", "review", "asks-coder")
 CODER_STAGES = ("coder", "asks-coder")
-# The agent the /code skill forks into (its `agent:` line). It has no Edit or Write tool.
-FORK_AGENT_TYPE = "code-fork"
+FORK_AGENT_TYPE = script_utils.FORK_AGENT_TYPE
 SAY_MAX_AGE_SECONDS = 6 * 3600
 STATE_DIRS = {}  # resolved folder -> the code-step state folder git named for it
 
@@ -517,12 +518,45 @@ def take_handback(repo_dir, state, agent_type, missing_text):
         return emit("stop", resumed_agent_pending_stop(agent_type) if is_resumed else missing_text)
 
     pin_session(repo_dir, state)
+    refresh_phase_text(repo_dir, state)
     state.pop("reviewScriptPid", None)
     if awaits_resumed_coder(state):
         put_resumed_coder_back(repo_dir, state)
     elif awaits_resumed_review(state):
         put_resumed_review_back(repo_dir, state)
     return handback
+
+
+def own_phase_text(repo_dir, state):
+    # The plan's current section for the run's phase when the run's own agent may have left it: the plan reads, the
+    # phase exists and its heading is the saved one. Otherwise None, and the stale check decides.
+    if state.get("phaseText") is None or not state.get("plan") or state.get("phase") is None:
+        return None
+
+    try:
+        plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+    except OSError:
+        return None
+
+    current_text = plan_format.phase_text(plan_lines, state["phase"])
+    if current_text is None:
+        return None
+
+    # Any heading change, including one the agent made, is treated as an outside edit (a phase inserted or reordered
+    # leaves another phase under this number) and is left for the stale check.
+    saved_heading = state["phaseText"].split("\n", 1)[0].strip()
+    if current_text.split("\n", 1)[0].strip() != saved_heading:
+        return None
+    return current_text
+
+
+def refresh_phase_text(repo_dir, state):
+    # The run's own agent handed back: the phase text it left in the plan is the run's from here on, so the agent's
+    # own edits to the phase's body do not make the run stale; a changed heading is left for the stale check. The
+    # caller saves the state.
+    current_text = own_phase_text(repo_dir, state)
+    if current_text is not None:
+        state["phaseText"] = current_text
 
 
 def is_dispatch_open(cwd, state):
@@ -827,14 +861,24 @@ def wait_for_loop_stop(state, module, handback):
               "may be missed, so an ask it logged may get a second ask row.", file=sys.stderr)
 
 
+SCRIPT_LOG_TAIL_LINES = 8
+SCRIPT_LOG_TAIL_CHARS = 800
+
+
 def stop_on_gone_review_script(repo_dir, state):
     log_path = state.get("reviewScriptLog", "")
+    script_pid = state.get("reviewScriptPid")
     # A wait-cap stop before this one left the review resumable; a gone script has nothing left to resume.
     for finished_key in FINISHED_REVIEW_SCRIPT_KEYS:
         state.pop(finished_key, None)
     state.update({"stage": "stopped", "stopReason": "invalid-packet"})
     save_state(repo_dir, state)
-    emit("stop", f"The review loop script exited with no hand-back. Show the user its log: {log_path}",
+    agent_id = awaited_agent_id(repo_dir, state) or "(none logged)"
+    log_tail = script_utils.file_tail(log_path, SCRIPT_LOG_TAIL_LINES, SCRIPT_LOG_TAIL_CHARS)
+    emit("stop", f"The review loop script exited with no hand-back (pid {script_pid} is not running and the run's "
+         f"event log holds no hand-back from agent {agent_id} after the dispatch). "
+         f"Show the user its log: {log_path}",
+         "End of the log:", log_tail,
          "To review the same diff again, invoke Skill code with `review-again`.")
     return False
 
@@ -908,27 +952,55 @@ def restart_instruction(state, restart_command="start --restart"):
 def stale_phase_reason(repo_dir, state):
     # Why the saved run's phase no longer matches the plan file, or None when it still does (or the run keeps no phase
     # text to compare: a finished run, a planless run, a closing phase). A phase the run's own gates ticked is not
-    # stale.
+    # stale. It also returns None while a review script is still running, and at a plan-fix stop whose phase was
+    # edited or whose plan cannot be read.
     saved_text = state.get("phaseText")
     if state["stage"] == "done" or not state.get("plan") or state.get("phase") is None or saved_text is None:
         return None
 
-    # These stages are the ones where the plan is edited on purpose: a plan-edit coder, a ruling on a plan change, a
-    # fix of the plan's verification lines. The run reads the plan again when it leaves them.
-    if state["stage"] in PLAN_EDIT_STAGES or state.get("stopReason") in PLAN_EDIT_STOP_REASONS:
+    # These stages are the ones where the plan is edited on purpose: a plan-edit coder, a ruling on a plan change.
+    # The run reads the plan again when it leaves them.
+    if state["stage"] in PLAN_EDIT_STAGES:
         return None
+
+    # A review script still running is waited on, not dropped: a restart would kill it.
+    if review_script_running(state):
+        return None
+
+    # A stop for a plan fix still goes on when the phase is edited, but not when the phase id is gone: a split or a
+    # renumber leaves nothing to verify. An unreadable plan goes on to the stop.
+    is_plan_fix_stop = state.get("stopReason") in PLAN_EDIT_STOP_REASONS
 
     try:
         plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
     except OSError:
-        return f"{state['plan']} cannot be read"
+        return None if is_plan_fix_stop else f"{state['plan']} cannot be read"
 
     current_text = plan_format.phase_text(plan_lines, state["phase"])
     if current_text is None:
         return f"Phase {state['phase']} is no longer in {state['plan']}"
-    if plan_format.phase_wording(current_text) != plan_format.phase_wording(saved_text):
-        return f"the text of Phase {state['phase']} in {state['plan']} changed since the run started"
-    return None
+    if is_plan_fix_stop:
+        return None
+
+    current_wording = plan_format.phase_wording(current_text)
+    saved_wording = plan_format.phase_wording(saved_text)
+    if current_wording == saved_wording:
+        return None
+
+    changed_lines = changed_wording_lines(saved_wording, current_wording)
+    changed_lines_note = f" ({changed_lines})" if changed_lines else ""
+    return f"the text of Phase {state['phase']} in {state['plan']} changed since the run started{changed_lines_note}"
+
+
+def changed_wording_lines(saved_wording, current_wording):
+    # The lines the run started with that are gone, and the lines now in their place, each cut to 120 characters.
+    saved_lines = saved_wording.split("\n")
+    current_lines = current_wording.split("\n")
+    removed = script_utils.lines_added(current_lines, saved_lines)[:3]
+    added = script_utils.lines_added(saved_lines, current_lines)[:3]
+    removed_text = "; ".join(f"was: {line.strip()[:120]}" for line in removed)
+    added_text = "; ".join(f"now: {line.strip()[:120]}" for line in added)
+    return "; ".join(part for part in (removed_text, added_text) if part)
 
 
 def stop_a_silent_coder(repo_dir, state, stopped_at):

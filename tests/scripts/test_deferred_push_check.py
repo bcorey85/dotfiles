@@ -116,6 +116,65 @@ class DeferredPushCheckTest(unittest.TestCase):
         self.write_findings(self.finding(head=head), self.finding(head=head))
         self.assertEqual(self.assert_listed().count("app.py:30"), 1)
 
+    def test_finding_fixed_later_at_same_place_is_hidden(self):
+        head = self.commit("2026-01-01T00:00:00Z")
+        deferred = self.finding(head=head, session="s1", finding_id="f1")
+        fixed = self.finding(head=head, session="s1", finding_id="f2", actioned="fixed",
+                             date="2026-01-02T00:05:00Z", file="./app.py")
+        self.write_findings(deferred, fixed)
+        self.assert_silent()
+
+    def test_finding_fixed_in_a_later_iter_is_hidden(self):
+        head = self.commit("2026-01-01T00:00:00Z")
+        later = "2026-01-02T00:05:00Z"
+        deferred = self.finding(head=head, session="s1", iter=1)
+        fixed = self.finding(head=head, session="s1", finding_id="f2", actioned="fixed", iter=2, date=later)
+        self.write_findings(deferred, fixed)
+        self.assert_silent()
+
+    def test_finding_fixed_in_a_later_review_run_with_a_smaller_iter_is_hidden(self):
+        head = self.commit("2026-01-01T00:00:00Z")
+        later = "2026-01-02T00:05:00Z"
+        deferred = self.finding(head=head, session="s1", iter=3)
+        fixed = self.finding(head=head, session="s1", finding_id="f2", actioned="fixed", iter=1, date=later)
+        self.write_findings(deferred, fixed)
+        self.assert_silent()
+
+    def test_different_finding_fixed_in_the_same_pass_keeps_the_deferral(self):
+        head = self.commit("2026-01-01T00:00:00Z")
+        deferred = self.finding(head=head, session="s1", iter=1)
+        same_pass = self.finding(head=head, session="s1", finding_id="f2", actioned="fixed", iter=1,
+                                 date="2026-01-02T00:00:30Z")
+        self.write_findings(deferred, same_pass)
+        self.assertIn("app.py:30", self.assert_listed())
+
+    def test_different_finding_fixed_with_the_same_date_keeps_the_deferral(self):
+        head = self.commit("2026-01-01T00:00:00Z")
+        deferred = self.finding(head=head, session="s1", iter=1)
+        same_date = self.finding(head=head, session="s1", finding_id="f3", actioned="fixed")
+        self.write_findings(deferred, same_date)
+        self.assertIn("app.py:30", self.assert_listed())
+
+    def test_rows_without_a_session_never_match(self):
+        head = self.commit("2026-01-01T00:00:00Z")
+        deferred = self.finding(head=head)
+        fixed = self.finding(head=head, finding_id="f2", actioned="fixed", date="2026-01-02T00:05:00Z")
+        self.write_findings(deferred, fixed)
+        self.assertIn("app.py:30", self.assert_listed())
+
+    def test_fixed_row_that_is_not_a_later_match_keeps_the_finding(self):
+        head = self.commit("2026-01-01T00:00:00Z")
+        deferred = self.finding(head=head, session="s1")
+        later = "2026-01-02T00:05:00Z"
+        others = [
+            self.finding(head=head, session="s2", finding_id="f2", actioned="fixed", date=later),
+            self.finding(head=head, session="s1", finding_id="f3", actioned="fixed", date=later, line=31),
+            self.finding(head=head, session="s1", finding_id="f4", actioned="fixed", date=later, file="other.py"),
+            self.finding(head=head, session="s1", finding_id="f5", actioned="fixed", date="2026-01-01T23:00:00Z"),
+        ]
+        self.write_findings(deferred, *others)
+        self.assert_listed()
+
     def test_later_commit_on_the_lines_hides_the_finding(self):
         head = self.commit("2026-01-01T00:00:00Z")
         self.commit("2026-01-03T00:00:00Z", {32: "fixed line"})

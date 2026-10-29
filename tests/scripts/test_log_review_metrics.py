@@ -64,10 +64,11 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
         env = {**os.environ, **GIT_ENV}
         return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout
 
-    def run_metrics(self, *args, telemetry="1"):
+    def run_metrics(self, *args, telemetry="1", cwd=None):
         env = {**os.environ, **GIT_ENV, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": telemetry,
                **self.ledger_env}
-        return subprocess.run([str(self.script), *args], env=env, cwd=self.worktree, capture_output=True, text=True)
+        return subprocess.run([str(self.script), *args], env=env, cwd=cwd or self.worktree, capture_output=True,
+                              text=True)
 
     def logged_metrics_row_at(self, out_value, expected_log_path, *args):
         metrics_run = self.run_metrics(f"out={out_value}", "iter=7", *args)
@@ -91,6 +92,14 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
         row = self.ledger_row()
         self.assertEqual(row["_cwd"], str(self.worktree.resolve()))
         self.assertNotIn("repo", row)
+
+    def test_root_runs_the_writer_in_that_checkout_from_another_folder(self):
+        metrics_run = self.run_metrics("iter=7", "result=PASS", f"root={self.worktree}", cwd=self.root)
+        self.assertEqual(metrics_run.returncode, 0, metrics_run.stderr)
+
+        (row,) = fake_ledger.recorded_rows(self.ledger_env, "review_metrics")
+        self.assertEqual((row["_cwd"], row["branch_key"]), (str(self.worktree.resolve()), "some-branch"))
+        self.assertNotIn("root", row)
 
     def test_a_caller_repo_is_never_sent(self):
         self.assertNotIn("repo", self.ledger_row("repo=wt-some-branch"))

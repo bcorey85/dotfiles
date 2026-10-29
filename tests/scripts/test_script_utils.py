@@ -230,6 +230,21 @@ class AttemptsWithinTest(unittest.TestCase):
                 self.assertEqual(expected, script_utils.attempts_within(wait, backoff))
 
 
+class FileTailTest(unittest.TestCase):
+    def test_the_tail_is_the_last_lines_cut_to_the_last_characters_with_a_note_for_an_unreadable_or_empty_file(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        path = pathlib.Path(temp_dir.name) / "file.log"
+        empty = pathlib.Path(temp_dir.name) / "empty.log"
+        empty.write_text("")
+        path.write_text("one\ntwo\nthree\nfour\n")
+
+        self.assertEqual("three\nfour", script_utils.file_tail(path, 2, 100))
+        self.assertEqual("ree\nfour", script_utils.file_tail(path, 2, 8))
+        self.assertEqual("(log is empty)", script_utils.file_tail(empty, 2, 100))
+        self.assertIn("log not readable", script_utils.file_tail(pathlib.Path(temp_dir.name) / "none.log", 2, 100))
+
+
 class LedgerFailureReasonTest(unittest.TestCase):
     def test_the_reason_is_the_last_stderr_line_or_the_exit_code(self):
         cases = [("first\nlast\n", "last"), ("", "exited 3"), ("\n  \n", "exited 3")]

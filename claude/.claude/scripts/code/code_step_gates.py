@@ -12,6 +12,7 @@ import plan_format
 import script_utils
 import test_run_output
 from code_step_boundary import verification_command
+from linked_installs import VENV_FOLDERS
 
 CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
 RUNS_CARGO = re.compile(r"(?:^|&&\s*)cargo\s")
@@ -29,10 +30,11 @@ BARE_CARGO_MANIFEST = re.compile(r"`(Cargo\.toml)`")
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 PYTHON_RUNNERS = (("uv.lock", ["uv", "run"]), ("poetry.lock", ["poetry", "run"]), ("pdm.lock", ["pdm", "run"]),
                   ("Pipfile.lock", ["pipenv", "run"]))
-VENV_DIRECTORIES = (".venv", "venv")
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&"}
 ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 DJANGO_TEST_FILE = re.compile(r"(^|/)test[^/]*\.py$")
+# `manage.py test` asks before it deletes a test database a killed run left behind; the gate has no one to answer.
+NO_INPUT_OPTIONS = {"--noinput", "--no-input"}
 PYTEST_DJANGO_SETTINGS = re.compile(r"DJANGO_SETTINGS_MODULE|--ds\b", re.IGNORECASE)
 
 
@@ -202,7 +204,7 @@ def project_python_runner(repo_dir):
         if (repo_dir / lock_file).is_file():
             return runner
 
-    for venv in VENV_DIRECTORIES:
+    for venv in VENV_FOLDERS:
         if (repo_dir / venv / "bin/python").is_file():
             return [f"{venv}/bin/python", "-m"]
     return None
@@ -229,7 +231,8 @@ def python_test_command(runner, test_paths, django_options, manage_script="manag
 
     python_words = runner[:-1] if runner[-1:] == ["-m"] else [*runner, "python"]
     labels = [django_test_label(path, manage_dir) for path in labeled_paths]
-    return shlex.join([*python_words, manage_script, "test", *labels, *django_options])
+    prompt_options = [] if NO_INPUT_OPTIONS & set(django_options) else ["--noinput"]
+    return shlex.join([*python_words, manage_script, "test", *labels, *django_options, *prompt_options])
 
 
 def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, phase_lists_pytest=False, *,

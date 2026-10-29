@@ -3,17 +3,22 @@
 Set FULL_CHECK_SCRIPT to run against another copy, such as a staged one."""
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("FULL_CHECK_SCRIPT") or toolkit_paths.REVIEW_DIR / "full_check.py")
 sys.path.insert(0, str(SCRIPT.parent))
 import full_check  # noqa: E402
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import linked_installs  # noqa: E402
 
 # A command that prints a test runner's own summary line.
 PASSING_SUITE = "echo '3 passed in 0.1s'"
@@ -359,6 +364,410 @@ class FullCheckSideEffectsTest(unittest.TestCase):
         completed = self.check(PASSING_SUITE)
 
         self.assertEqual(completed.stdout.splitlines(), ["full check: passed", "summary: 3 passed in 0.1s"])
+
+
+class BaseComparisonTest(unittest.TestCase):
+    """The check run on HEAD without the diff, and the comparison of its failing lines with the diff's."""
+
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.scratch = pathlib.Path(scratch.name)
+        self.repo = self.scratch / "shop-api"
+        self.repo.mkdir()
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "T")
+        (self.repo / "app.py").write_text("limit = 1\n")
+        self.git("add", "app.py")
+        self.git("commit", "-q", "-m", "files")
+        self.base_log = self.scratch / "full-check-base.log"
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.repo, capture_output=True, text=True, check=True).stdout
+
+    def base_lines(self, command):
+        return full_check.base_run(str(self.repo), command, self.base_log, 60)
+
+    def test_a_check_that_fails_on_head_returns_its_failing_lines_and_leaves_the_work_tree_alone(self):
+        (self.repo / "app.py").write_text("limit = 2\n")
+
+        base = self.base_lines("echo 'FAIL: test_old (5.2 s)'; exit 1")
+
+        self.assertEqual((base.result, base.failing_lines), ("failed (exit 1)", {"FAIL: test_old"}))
+        self.assertEqual((self.repo / "app.py").read_text(), "limit = 2\n")
+        self.assertEqual(self.git("status", "--porcelain"), " M app.py\n")
+        self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
+
+    def test_the_base_tree_is_registered_in_live_trees_while_the_check_runs_and_dropped_after(self):
+        trees = set()
+        seen = []
+
+        def check_run(base_repo, *args, **kwargs):
+            seen.append((set(trees), pathlib.Path(base_repo).is_dir()))
+            return "passed", set(), {}
+
+        with mock.patch.object(full_check, "run", side_effect=check_run):
+            full_check.base_run(str(self.repo), "exit 1", self.base_log, 60, live_trees=trees)
+
+        self.assertEqual(len(seen), 1)
+        registered, tree_existed = seen[0]
+        self.assertEqual(len(registered), 1)
+        (root, tree), = registered
+        self.assertEqual(pathlib.Path(root).resolve(), self.repo.resolve())
+        self.assertTrue(tree_existed)
+        self.assertTrue(str(tree).endswith("base"))
+        self.assertEqual(trees, set())
+
+    def test_a_check_that_fails_only_with_the_diff_has_no_base_failure(self):
+        (self.repo / "app.py").write_text("limit = 2\n")
+        check = "grep -q 'limit = 1' app.py || { echo 'FAIL: test_new'; exit 1; }"
+
+        self.assertIsNone(self.base_lines(check))
+
+    def test_a_base_run_that_hits_a_setup_fault_has_no_base_failure(self):
+        self.assertIsNone(self.base_lines("echo 'ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND'; exit 1"))
+
+    def test_the_base_run_sees_the_untracked_dependency_folders_of_the_repo(self):
+        (self.repo / "node_modules").mkdir()
+        (self.repo / "node_modules" / "dep.txt").write_text("dep\n")
+        (self.repo / ".venv").mkdir()
+        check = "test -f node_modules/dep.txt && test -d .venv && echo 'FAIL: deps linked'; exit 1"
+
+        self.assertEqual(self.base_lines(check).failing_lines, {"FAIL: deps linked"})
+        self.assertTrue((self.repo / "node_modules" / "dep.txt").is_file())
+
+    def test_the_worktree_is_removed_when_the_base_run_raises(self):
+        with mock.patch.object(full_check, "run", side_effect=RuntimeError("boom")), \
+                self.assertRaises(RuntimeError):
+            self.base_lines("exit 1")
+
+        self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
+
+    def add_base_child(self, name, age_seconds):
+        """A leftover base worktree under the base folder, last modified `age_seconds` ago."""
+        base_parent = self.repo / ".git" / full_check.BASE_TREE_FOLDER
+        child = base_parent / name
+        child.mkdir(parents=True)
+        self.git("worktree", "add", "-q", "--detach", str(child / "base"), "HEAD")
+        modified = time.time() - age_seconds
+        os.utime(child, (modified, modified))
+        return child
+
+    def test_a_base_run_removes_a_leftover_tree_older_than_twice_the_timeout_and_keeps_a_fresh_one(self):
+        old_child = self.add_base_child("old", 200)
+        fresh_child = self.add_base_child("fresh", 10)
+
+        self.base_lines("echo 'FAIL: test_old'; exit 1")
+
+        self.assertFalse(old_child.exists())
+        self.assertTrue(fresh_child.exists())
+        worktrees = self.git("worktree", "list", "--porcelain")
+        self.assertNotIn(str(old_child), worktrees)
+        self.assertIn(str(fresh_child), worktrees)
+
+    def test_a_base_run_keeps_the_record_of_a_user_worktree_whose_folder_is_missing(self):
+        user_tree = self.scratch / "user-tree"
+        self.git("worktree", "add", "-q", "--detach", str(user_tree), "HEAD")
+        shutil.rmtree(user_tree)
+        self.add_base_child("old", 200)
+
+        self.base_lines("echo 'FAIL: test_old'; exit 1")
+
+        self.assertIn(str(user_tree), self.git("worktree", "list", "--porcelain"))
+
+    def base_of(self, text, result="failed (exit 1)"):
+        self.base_log.write_text(text)
+        return full_check.BaseRun(result, *full_check.log_comparison(text.splitlines()))
+
+    def test_head_failing_lines_are_pre_existing_only_when_every_one_fails_on_base(self):
+        head_log = self.scratch / "full-check.log"
+        old = "FAIL: test_a\nFAIL: test_b\nFAIL: test_c\n"
+        cases = {
+            "same lines, durations differ":
+                ("FAIL: test_a (12ms)\nFAIL: test_b (5.2 s)\n", old, "failed (exit 1)", True),
+            "one new failing line on top of an old one":
+                ("FAIL: test_a\nFAIL: test_new\n", old, "failed (exit 1)", False),
+            "no failing lines on head": ("1 test crashed\n", old, "failed (exit 1)", False),
+            "base failure with no lines": ("FAIL: test_a\n", "nothing useful\n", "failed (exit 1)", False),
+            "another exit code": ("FAIL: test_a\n", old, "failed (exit 2)", False),
+            "a trailing ms timing differs": ("FAIL  a.test.ts > t1 15ms\n", "FAIL  a.test.ts > t1 12ms\n",
+                                             "failed (exit 1)", False),
+            "a pytest clock suffix on a run over a minute differs":
+                ("FAIL: test_a\n1 failed in 65.12s (0:01:05)\n", old + "1 failed in 61.5s (0:01:01)\n",
+                 "failed (exit 1)", True),
+            "an assertion message with different numbers":
+                ("FAILED t.py::test_a - assert expected 5000ms, got 2000ms\n",
+                 "FAILED t.py::test_a - assert expected 5000ms, got 3000ms\n", "failed (exit 1)", False),
+            "a detail line under a failing test with different millisecond values in its message":
+                ("FAIL: test_a\n    AssertionError: expected 5000ms, got 2000ms\n",
+                 "FAIL: test_a\n    AssertionError: expected 5000ms, got 3000ms\n", "failed (exit 1)", False),
+            "a detail line under a failing test with different passed counts":
+                ("FAIL: test_a\n    AssertionError: expected 3 passed\n",
+                 "FAIL: test_a\n    AssertionError: expected 5 passed\n", "failed (exit 1)", False),
+            "a pytest reason with different warning counts":
+                ("FAILED t.py::test_a - expected 3 warnings, got 0\n",
+                 "FAILED t.py::test_a - expected 5 warnings, got 0\n", "failed (exit 1)", False),
+            "the same test fails with a different assertion":
+                ("FAIL: test_a\n    assert 1 == 2\n\nFAIL: test_b\n",
+                 "FAIL: test_a\n    assert 1 == 3\n\nFAIL: test_b\n", "failed (exit 1)", False),
+            "a jest file fails on a new detail line":
+                ("FAIL src/a.test.ts\n  old failure\n  new failure\n", "FAIL src/a.test.ts\n  old failure\n",
+                 "failed (exit 1)", False),
+            "a jest file gains a second failing test after a blank line":
+                ("FAIL src/a.test.js\n  ● suite > old\n\n    Expected: 3\n\n  ● suite > new\n\n    Expected: 5\n",
+                 "FAIL src/a.test.js\n  ● suite > old\n\n    Expected: 3\n", "failed (exit 1)", False),
+            "a jest run time differs between base and head":
+                ("FAIL src/a.test.js\n  ● suite > old\n\n    Expected: 3\n\nTime:        1.5 s\n",
+                 "FAIL src/a.test.js\n  ● suite > old\n\n    Expected: 3\n\nTime:        1.2 s\n",
+                 "failed (exit 1)", True),
+            "a vitest duration and start time differ between base and head":
+                ("FAIL  src/a.test.ts > suite > case\nDuration  1.23s (transform 10ms)\nStart at  10:00:05\n",
+                 "FAIL  src/a.test.ts > suite > case\nDuration  1.56s (transform 12ms)\nStart at  10:00:00\n",
+                 "failed (exit 1)", True),
+            "a jest file passes on head beside the failing file it had on base":
+                ("FAIL src/a.test.js\n  ● suite > old\n    Expected: 3\n\nPASS a.test.js\nPASS new.test.js\n",
+                 "FAIL src/a.test.js\n  ● suite > old\n    Expected: 3\n\nPASS a.test.js\n", "failed (exit 1)", True),
+            "a vitest summary whose total in parentheses changes":
+                ("FAIL: test_a\nTests  1 failed | 11 passed (13)\n", "FAIL: test_a\nTests  1 failed | 10 passed (12)\n",
+                 "failed (exit 1)", True),
+            "an xfail test added to a suite that already fails":
+                ("FAIL: test_a\n1 failed, 10 passed, 1 xfailed\n", "FAIL: test_a\n1 failed, 10 passed\n",
+                 "failed (exit 1)", True),
+            "an identical failing block":
+                ("FAIL: test_a\n    assert 1 == 2 (5ms)\n\nFAIL: test_b\n",
+                 "FAIL: test_a\n    assert 1 == 2 (9ms)\n\nFAIL: test_b\n", "failed (exit 1)", True),
+            "a new passing test changes only the passed count":
+                ("FAIL: test_a\n1 failed, 11 passed in 1.5s\n", old + "1 failed, 10 passed in 1.2s\n",
+                 "failed (exit 1)", True),
+            "a new skipped test beside a changed passed count":
+                ("FAIL: test_a\n1 failed, 11 passed, 2 skipped\n", old + "1 failed, 10 passed\n",
+                 "failed (exit 1)", True),
+            "a new compiler error beside an old failure":
+                ("FAIL: test_a\nsrc/a.ts(3,1): error TS2322 type mismatch\n", old, "failed (exit 1)", False),
+            "a changed total that counts a failure":
+                ("FAIL: test_a\n2 failed, 8 passed\n", old + "1 failed, 9 passed\n", "failed (exit 1)", False),
+            "a lint error at a new location":
+                ("E501 x\n  --> new.py:9:1\nFAILED: lint\n", "E501 x\n  --> old.py:3:1\nFAILED: lint\n",
+                 "failed (exit 1)", False),
+            "an identical lint error":
+                ("E501 x\n  --> old.py:3:1\nFAILED: lint\n", "E501 x\n  --> old.py:3:1\nFAILED: lint\n",
+                 "failed (exit 1)", True),
+            "a failed-steps summary with a new non-error line":
+                ("FAILED: lint duplicate-check\nduplicate code: src/b.py\n", "FAILED: lint duplicate-check\n",
+                 "failed (exit 1)", False),
+            "identical logs that hold only a failed-steps summary":
+                ("FAILED: lint duplicate-check\n", "FAILED: lint duplicate-check\n", "failed (exit 1)", True),
+            "a changed timing is not a new line":
+                ("FAIL: test_a\nran 10 tests in 1.5s\n", old + "ran 10 tests in 2.5s\n", "failed (exit 1)", True),
+        }
+        for name, (head_text, base_text, head_result, expected) in cases.items():
+            with self.subTest(name):
+                base = self.base_of(base_text)
+                head_log.write_text(head_text)
+
+                self.assertEqual(full_check.is_pre_existing(head_log, head_result, base), expected)
+
+        head_log.write_text("FAIL: test_a\n")
+        self.assertFalse(full_check.is_pre_existing(head_log, "failed (exit 1)", None))
+
+    def test_a_repo_with_an_editable_install_in_its_venv_is_an_editable_install(self):
+        site = self.repo / ".venv" / "lib" / "python3.12" / "site-packages"
+        site.mkdir(parents=True)
+        (site / "__editable__.shop-0.1.pth").write_text("/somewhere\n")
+
+        self.assertIsNone(self.base_lines("echo 'FAIL: test_old'; exit 1"))
+        self.assertFalse(self.base_log.exists())
+
+    def test_a_dist_info_without_the_editable_mark_and_a_pth_with_no_path_get_a_base_run(self):
+        site = self.repo / ".venv" / "lib" / "python3.12" / "site-packages"
+        dist_info = site / "shop-0.1.dist-info"
+        dist_info.mkdir(parents=True)
+        (dist_info / "direct_url.json").write_text('{"url": "file:///x", "dir_info": {}}')
+        (site / "distutils-precedence.pth").write_text("import os\n")
+
+        base = full_check.base_run(str(self.repo), "echo 'FAIL: test_old'; exit 1", self.base_log, 60)
+
+        self.assertFalse(linked_installs.holds_editable_install(self.repo))
+        self.assertIsInstance(base, full_check.BaseRun)
+
+    def test_a_virtualenv_outside_the_repo_skips_the_base_run_only_when_it_links_into_the_repo(self):
+        site = self.scratch / "elsewhere-env" / "lib" / "python3.12" / "site-packages"
+        site.mkdir(parents=True)
+        env = {**os.environ, "VIRTUAL_ENV": str(self.scratch / "elsewhere-env")}
+        links = {
+            "a .pth line": ("shop.pth", f"{self.repo}\n", True),
+            "an egg-link": ("shop.egg-link", f"{self.repo}\n.\n", True),
+            "an editable finder module": ("__editable___shop_finder.py", f"MAPPING = {{'shop': '{self.repo}/shop'}}\n",
+                                          True),
+            "a .pth line to another project": ("other.pth", f"{self.scratch}/other-project\n", False),
+            "a sibling folder named like the repo": ("sibling.pth", f"{self.repo}-copy\n", False),
+            "an egg-link to another project": ("other.egg-link", f"{self.scratch}/other-project\n.\n", False),
+            "an editable finder module for another project": (
+                "__editable___other_finder.py", f"MAPPING = {{'other': '{self.scratch}/other-project/other'}}\n",
+                False),
+        }
+        for name, (file_name, text, expected) in links.items():
+            with self.subTest(name):
+                for stale in site.iterdir():
+                    stale.unlink()
+                (site / file_name).write_text(text)
+
+                base = full_check.base_run(str(self.repo), "echo 'FAIL: test_old'; exit 1", self.base_log, 60, env=env)
+
+                self.assertEqual(base is None, expected)
+                self.assertEqual(self.base_log.exists(), not expected)
+                self.base_log.unlink(missing_ok=True)
+
+    def test_a_check_command_or_env_value_naming_the_repo_path_gets_no_base_run(self):
+        cases = {
+            "the command": (f"cd {self.repo} && echo 'FAIL: test_old'; exit 1", None),
+            "a gate-env value": ("echo 'FAIL: test_old'; exit 1", {"APP_DIR": f"{self.repo}/src"}),
+        }
+        for name, (command, gate_env) in cases.items():
+            with self.subTest(name):
+                base = full_check.base_run(str(self.repo), command, self.base_log, 60,
+                                           env={**os.environ, **(gate_env or {})}, gate_env=gate_env)
+
+                self.assertIsNone(base)
+                self.assertFalse(self.base_log.exists())
+
+    def test_an_inherited_pwd_in_the_repo_does_not_block_the_base_run(self):
+        env = {**os.environ, "PWD": str(self.repo)}
+
+        base = full_check.base_run(str(self.repo), "echo 'FAIL: test_old'; exit 1", self.base_log, 60, env=env)
+
+        self.assertIsInstance(base, full_check.BaseRun)
+
+    def test_the_base_tree_is_made_under_the_repos_git_common_dir_and_removed_afterwards(self):
+        seen = []
+
+        def check_run(base_repo, *args, **kwargs):
+            seen.append(pathlib.Path(base_repo))
+            return "passed", set(), {}
+
+        with mock.patch.object(full_check, "run", side_effect=check_run):
+            full_check.base_run(str(self.repo), "exit 1", self.base_log, 60)
+
+        base_folder = (self.repo / ".git" / full_check.BASE_TREE_FOLDER).resolve()
+        self.assertIn(base_folder, seen[0].resolve().parents)
+        self.assertFalse(seen[0].exists())
+
+    def test_an_inherited_import_path_inside_the_repo_blocks_the_base_run(self):
+        (self.repo / "src").mkdir()
+        outside = self.scratch / "elsewhere"
+        cases = {"PYTHONPATH in the repo": ("PYTHONPATH", f"{outside}{os.pathsep}{self.repo}/src", True),
+                 "NODE_PATH in the repo": ("NODE_PATH", f"{self.repo}/node_modules", True),
+                 "a relative entry in the repo": ("PYTHONPATH", "src", True),
+                 "PYTHONPATH outside the repo": ("PYTHONPATH", str(outside), False),
+                 "a sibling named like the repo": ("PYTHONPATH", f"{self.repo}-v2/src", False)}
+        for name, (variable, value, blocked) in cases.items():
+            with self.subTest(name):
+                base = full_check.base_run(str(self.repo), "echo 'FAIL: test_old'; exit 1", self.base_log, 60,
+                                           env={**os.environ, variable: value})
+
+                self.assertEqual(base is None, blocked)
+
+    def test_a_sibling_path_named_like_the_repo_does_not_block_the_base_run(self):
+        command = f"echo 'FAIL: test_old'; exit 1 # {self.repo}-v2/run"
+
+        base = full_check.base_run(str(self.repo), command, self.base_log, 60,
+                                   gate_env={"APP_DIR": f"{self.repo}-v2"})
+
+        self.assertIsInstance(base, full_check.BaseRun)
+
+    def test_a_repo_in_a_subfolder_runs_its_check_in_the_same_subfolder_of_the_base_tree(self):
+        (self.repo / "pkg").mkdir()
+        (self.repo / "pkg" / "app.py").write_text("limit = 1\n")
+        self.git("add", "pkg/app.py")
+        self.git("commit", "-q", "-m", "pkg")
+
+        base = full_check.base_run(str(self.repo / "pkg"), "test -f app.py && echo 'FAIL: in pkg'; exit 1",
+                                   self.base_log, 60)
+
+        self.assertEqual(base.failing_lines, {"FAIL: in pkg"})
+
+    def test_an_untracked_subfolder_with_its_own_dependencies_gets_no_base_run(self):
+        (self.repo / "newpkg" / "node_modules").mkdir(parents=True)
+
+        base = full_check.base_run(str(self.repo / "newpkg"), "echo 'FAIL: test_old'; exit 1", self.base_log, 60)
+
+        self.assertIsNone(base)
+        self.assertFalse(self.base_log.exists())
+
+    def test_a_django_traceback_in_the_base_run_matches_the_head_run_once_the_temp_paths_are_mapped_back(self):
+        traceback = ("FAIL: test_old (shop.tests.OldTest)\n"
+                     "Traceback (most recent call last):\n"
+                     '  File "{root}/shop/tests.py", line 9, in test_old\n'
+                     "    self.assertEqual(1, 2)\n"
+                     "AssertionError: 1 != 2\n")
+        command = ('printf "FAIL: test_old (shop.tests.OldTest)\\nTraceback (most recent call last):\\n'
+                   '  File \\"$PWD/shop/tests.py\\", line 9, in test_old\\n    self.assertEqual(1, 2)\\n'
+                   'AssertionError: 1 != 2\\n"; exit 1')
+        head_log = self.scratch / "full-check.log"
+        head_log.write_text(traceback.format(root=self.repo.resolve()))
+
+        base = full_check.base_run(str(self.repo), command, self.base_log, 60)
+
+        self.assertIn(f'File "{self.repo.resolve()}/shop/tests.py", line 9, in test_old',
+                      self.base_log.read_text())
+        self.assertTrue(full_check.is_pre_existing(head_log, "failed (exit 1)", base))
+
+
+class LinkedInstallsTest(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.scratch = pathlib.Path(scratch.name)
+        self.repo = self.scratch / "repo"
+        self.repo.mkdir()
+
+    def test_a_dist_info_with_a_direct_url_marked_editable_is_an_editable_install(self):
+        dist_info = self.repo / "venv" / "lib" / "python3.12" / "site-packages" / "shop-0.1.dist-info"
+        dist_info.mkdir(parents=True)
+        (dist_info / "direct_url.json").write_text('{"url": "file:///x", "dir_info": {"editable": true}}')
+
+        self.assertTrue(linked_installs.holds_editable_install(self.repo))
+
+    def test_a_node_modules_symlink_into_the_repo_is_an_editable_install_but_one_into_itself_is_not(self):
+        (self.repo / "packages" / "shared").mkdir(parents=True)
+        modules = self.repo / "node_modules"
+        modules.mkdir()
+        (modules / "real").mkdir()
+        (modules / "alias").symlink_to(modules / "real", target_is_directory=True)
+        self.assertFalse(linked_installs.holds_editable_install(self.repo))
+
+        (modules / "shared").symlink_to(self.repo / "packages" / "shared", target_is_directory=True)
+
+        self.assertTrue(linked_installs.holds_editable_install(self.repo))
+
+    def test_a_scoped_node_modules_symlink_into_the_repo_is_an_editable_install(self):
+        (self.repo / "packages" / "shared").mkdir(parents=True)
+        scope = self.repo / "node_modules" / "@org"
+        scope.mkdir(parents=True)
+        (scope / "shared").symlink_to(self.repo / "packages" / "shared", target_is_directory=True)
+
+        self.assertTrue(linked_installs.holds_editable_install(self.repo))
+
+    def test_a_virtualenv_dist_info_marked_editable_is_an_editable_install_only_when_its_url_is_in_the_repo(self):
+        dist_info = self.scratch / "elsewhere-env" / "lib" / "python3.12" / "site-packages" / "shop-0.1.dist-info"
+        dist_info.mkdir(parents=True)
+        env = {"VIRTUAL_ENV": str(self.scratch / "elsewhere-env")}
+        urls = {f"file://{self.repo}": True, f"file://{self.scratch}/other-project": False}
+        for url, expected in urls.items():
+            with self.subTest(url):
+                (dist_info / "direct_url.json").write_text(f'{{"url": "{url}", "dir_info": {{"editable": true}}}}')
+
+                self.assertEqual(linked_installs.holds_editable_install(self.repo, env), expected)
+
+    def test_a_conda_environment_that_links_into_the_repo_is_an_editable_install(self):
+        site = self.scratch / "conda" / "lib" / "python3.12" / "site-packages"
+        site.mkdir(parents=True)
+        (site / "shop.egg-link").write_text(f"{self.repo}\n.\n")
+
+        env = {"CONDA_PREFIX": str(self.scratch / "conda")}
+
+        self.assertTrue(linked_installs.holds_editable_install(self.repo, env))
 
 
 if __name__ == "__main__":

@@ -101,6 +101,7 @@ from code_step_core import (
     file_hashes,
     holds_open_run,
     load_state,
+    own_phase_text,
     phase_coder_reports,
     refuse,
     repo_root_or_exit,
@@ -454,9 +455,19 @@ def resume_route(repo_dir, state, is_continuation=False):
     if state is None:
         return "start"
 
-    if not is_continuation and stale_phase_reason(repo_dir, state):
+    route = saved_run_route(repo_dir, state)
+    # The run's own coder or review-loop is back: taking its hand-back reads the plan again, so the plan edits it made
+    # do not make the run stale. Only when that read adopts the phase: otherwise the stale check decides now.
+    is_own_handback = (not is_continuation and route in ("after-coder", "after-review")
+                       and awaited_handback(repo_dir, state) is not None
+                       and own_phase_text(repo_dir, state) is not None)
+    if not is_continuation and not is_own_handback and stale_phase_reason(repo_dir, state):
         return "ask-stale-phase"
+    return route
 
+
+def saved_run_route(repo_dir, state):
+    # The step that comes next for the saved run by its stage and stop reason alone; it does not check the plan.
     stage = state["stage"]
     if stage in HOOK_STAGES and dispatch_since(state) is None:
         return "ask-unknown"
@@ -511,7 +522,7 @@ def resume_closing_skill(repo_dir, state):
     plan_lines = (repo_dir / state["plan"]).read_text().split("\n")
     section = plan_format.phase_text(plan_lines, state["phase"])
     skill = plan_format.closing_skill(state["title"])
-    emit_closing_skill(repo_dir, state["plan"], state["phase"], state["title"], skill, section)
+    emit_closing_skill(repo_dir, state["plan"], state["phase"], state["title"], skill, section, state.get("runNotes"))
 
 
 def ask_about_review_cap(repo_dir, state):

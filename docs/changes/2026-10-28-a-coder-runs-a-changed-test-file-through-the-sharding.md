@@ -3,7 +3,7 @@ type: "Change"
 title: "A coder runs a changed test file through the sharding runner"
 description: "The toolkit script rules now tell a coder to run a changed test file through tests/parallel_tests.py, which splits test_code_step.py into four processes, so the file finishes inside one 600 s tool call."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T20:05:00-05:00"}
-seq: 198
+seq: 215
 kind: "fix"
 components: ["rule/toolkit-script-rules"]
 evidence: ["judgment"]

@@ -11,7 +11,7 @@ import handback
 import plan_format
 import script_utils
 
-UNLOCATED = "unlocated"
+UNLOCATED = handback.UNLOCATED
 
 # A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its
 # bracketed tags, in either order.

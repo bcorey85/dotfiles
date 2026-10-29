@@ -9,13 +9,17 @@ scope, first-round reviewers (code, plus smell and test reviewers on a large dif
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
-calls run the changed files' tests, none in a repo where no check is found, and a check past CHECK_TIMEOUT_SECONDS is
-killed with its process group, and a check whose step stops on a missing path is a check-command error. A check
-that fails on a missing module the repo declares as a dependency is an environment gap. None is a failure: the
+calls run the changed files' tests, none in a repo where no check is found, and a check past
+full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process group, and a check whose step stops on a missing
+path is a check-command error. A check that fails on a missing module the repo declares as a dependency is an
+environment gap. None is a failure: the
 packet's `full_check` says `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
 `not run (check-command error: ...)` or `not run (environment gap: ...)`. An exit 0 with no runner summary is no
-failure either: it says `unverified (exit 0, no runner summary)`. A failed check's blocker holds the failing step's
-lines.
+failure either: it says `unverified (exit 0, no runner summary)`. So is a failure that the check shows the same way
+on HEAD without the diff: it says `pre-existing failure (...)` and did not verify the diff. To tell, a failed check is
+rerun once per loop (the base run) in a detached worktree of HEAD, up to full_check_gate.CHECK_TIMEOUT_SECONDS. A
+failed check's blocker holds the failing step's lines; after a repair coder, before recheck_full_check stops as a
+blocker, the autofix formatters run on the touched files and the check reruns once if one changed a file.
 
 Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
@@ -56,6 +60,7 @@ sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "c
 import code_step_core
 import coder_gate
 import full_check
+import full_check_gate
 import handback
 import plan_format
 import script_utils
@@ -74,7 +79,6 @@ from review_loop_findings import (
     ruled_plan_split,
 )
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
-from worktree_snapshot import CHANGE_KINDS
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
@@ -84,7 +88,6 @@ SPLIT_FILES = 5
 SPLIT_LINES = 300
 DIFF_CONTEXT = 12
 CALL_TIMEOUT_SECONDS = 1800
-CHECK_TIMEOUT_SECONDS = 900
 LOG_TIMEOUT_SECONDS = 60
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 ABSENT_FILE_REASON = "the file is not in the tree"
@@ -104,6 +107,11 @@ FENCE = (
     '\n'
     'If a listed issue turns out to be a false positive on inspection, skip it and report why. Do not '
     '"fix" issues that aren\'t actually broken just because the reviewer flagged them.'
+)
+
+SCOPED_TESTS = (
+    "Run only the tests for the files you changed. Do not run lint suites, the full test suite or other repo-wide "
+    "checks: the loop runs the full check after your pass."
 )
 
 SMALL_ITEMS = (
@@ -131,9 +139,7 @@ CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, ri
 
 CALLS = []
 CALLS_LOCK = threading.Lock()
-# Process-group leaders of the claude calls now running: each call starts its own session, so the group kill that
-# stops this script does not reach them.
-LIVE_CHILDREN = set()
+LIVE_CHILDREN = full_check_gate.LIVE_CHILDREN
 
 
 def now():
@@ -331,7 +337,7 @@ def coder_prompt(repo, findings, small_items, files, gate_env=()):
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
     body += [f"{index}. {finding}" for index, finding in enumerate(findings, 1)]
     body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
-                 "where n is the issue number above."]
+                 "where n is the issue number above.", "", SCOPED_TESTS]
     if small_items:
         body += ["", "## Small items", "", SMALL_ITEMS, ""] + [f"- {item}" for item in small_items]
     body += ["", "Files in scope: " + ", ".join(files)]
@@ -365,24 +371,6 @@ def check_command_for(repo, out):
               f"{parsed.get('reason') or 'the check finder named none'}", file=sys.stderr)
         return None
     raise ValueError(f'the check-finder reply holds no {{"command": ..}} object: {reply!r}')
-
-
-def run_full_check(repo, out, check_command, gate_env=()):
-    """(the full_check result, the log's last lines with the failing tests above them, the run's details: runner
-    summaries and the files the check changed or created). A SIGTERM kills the check's process group with the claude
-    calls."""
-    assignments = script_utils.environment_from_assignments(gate_env)
-    check_pids = []
-
-    def check_started(pid):
-        check_pids.append(pid)
-        LIVE_CHILDREN.add(pid)
-
-    try:
-        return full_check.run(repo, check_command, out / "full-check.log", CHECK_TIMEOUT_SECONDS,
-                              env={**os.environ, **assignments}, on_start=check_started)
-    finally:
-        LIVE_CHILDREN.difference_update(check_pids)
 
 
 def file_texts(repo):
@@ -584,7 +572,7 @@ def prior_issue_entries(round_findings, skips):
     return entries
 
 
-class LoopRun:
+class LoopRun(full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -600,9 +588,7 @@ class LoopRun:
         self.prior_issues = []
         self.status = "converged"
         self.class_closure = NO_CLOSURE
-        self.full_check = ""
-        self.full_check_command = ""
-        self.check_details = {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
+        self.init_full_check_state()
         self.round_two_fix_diff_path = ""
         self.files = {}
         self.dispatches = []
@@ -754,27 +740,6 @@ class LoopRun:
             self.dispatches = second_round_plan(round_fix, changed, skipped_findings, coder_diffs)
         return not (changed and all(path.endswith(".md") for path in changed))
 
-    def full_check_pass(self, check_command):
-        """The full check, with one coder repair when it fails outside a spec file. A check that did not run, in CI
-        or past its time limit, and one that exited 0 with no runner summary, is no failure and gets no repair; one the
-        environment could not run stops as `setup-fault`."""
-        tail = self.run_check(check_command)
-        if full_check.is_setup_fault_result(self.full_check):
-            self.stop_on_setup_fault(check_command, tail)
-            return
-
-        if not full_check.is_failure(self.full_check):
-            return
-
-        gate_findings = [f"full check failed (`{check_command}`), failing lines:\n{tail}"]
-        if re.search(r"\.spec\.", tail):
-            self.stop("critical-blocker", gate_findings)
-            return
-
-        _report, _diffs, gate_changed = self.repair("coder-gate", gate_findings)
-        self.mark_repaired(gate_findings, gate_changed)
-        self.recheck_full_check(check_command, "full check still failing after one repair")
-
     def mark_repaired(self, findings, changed):
         """A repair's findings go to fixed when it changed a file, else to skipped_fp."""
         if not changed:
@@ -783,42 +748,6 @@ class LoopRun:
         self.fixed += findings
         self.check_fixed += len(findings)
         self.files_touched.update(changed)
-
-    def run_check(self, check_command):
-        """Run the full check, keep its result, command and details for the packet. Returns the log's tail.
-        The changed, rewrote_edited and created paths add up across runs; the summaries are the latest run's. The
-        check leaves the files it rewrote or created in place, and a repair measures its changes as the text
-        difference around its own call, so a changed or created file reaches files_touched only when the repair coder
-        edits it itself. A rewrote_edited file holds coder work and always counts as touched."""
-        self.full_check_command = check_command or ""
-        self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if self.full_check == full_check.PASSED:
-            self.untested_fix = False
-        check_wrote = set(self.check_details["changed"]) | set(self.check_details["created"])
-        details["rewrote_edited"] = [path for path in details["rewrote_edited"]
-                                     if path not in check_wrote or path in self.files_touched]
-        for key in CHANGE_KINDS:
-            details[key] = sorted(set(self.check_details[key]) | set(details[key]))
-        details["rewrote_edited"] = sorted(set(details["rewrote_edited"])
-                                           | ((set(details["changed"]) | set(details["created"])) & self.files_touched))
-        for key in ("changed", "created"):
-            details[key] = [path for path in details[key] if path not in details["rewrote_edited"]]
-        self.check_details = details
-        return tail
-
-    def recheck_full_check(self, check_command, failure_heading):
-        """The full check after a coder repair: a setup fault stops as `setup-fault`, any other failure as
-        `critical-blocker`."""
-        tail = self.run_check(check_command)
-        if full_check.is_setup_fault_result(self.full_check):
-            self.stop_on_setup_fault(check_command, tail)
-        elif full_check.is_failure(self.full_check):
-            self.stop("critical-blocker", [f"{failure_heading}:\n{tail}"])
-
-    def stop_on_setup_fault(self, check_command, tail):
-        """The full check could not run here, which no coder repair changes: stop for the user."""
-        self.stop("setup-fault", [f"the full check could not run in this environment (`{check_command}`), full "
-                                  f"log {self.out / 'full-check.log'}, last lines:\n{tail}"])
 
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open."""
@@ -905,10 +834,11 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
 
 def stop_on_sigterm(_signal_number, _frame):
     """The stop signal of an abort, a review-again or a start --restart: kill the process group of every claude call
-    that is running, then exit without a packet."""
+    that is running and remove the base run's worktree, then exit without a packet."""
     for pid in list(LIVE_CHILDREN):
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(pid, signal.SIGKILL)
+    full_check_gate.remove_live_base_trees()
     os._exit(128 + signal.SIGTERM)
 
 

@@ -123,13 +123,13 @@ class StartInputTest(base.CodeStepTest):
 
         self.assertNotIn("Run notes", out)
 
-    def test_run_notes_on_a_closing_phase_stop_and_say_they_were_not_passed_on(self):
+    def test_run_notes_on_a_closing_phase_reach_the_skill_it_invokes(self):
         self.finish_phase_one()
 
-        out = self.step("start", self.plan, "--phase", "4", "keep", "it", "short")
+        out = self.step("start", self.plan, "--phase", "4", "build", "with", "two", "jobs")
 
-        self.assertIn("ACTION: stop", out)
-        self.assertIn("takes no run notes", out)
+        self.assertIn("ACTION: invoke-skill", out)
+        self.assertIn("Run notes from the user. They bind this run; the plan stays the spec:\nbuild with two jobs", out)
 
     # ---------- restart ----------
 

@@ -985,14 +985,38 @@ The edited assertions match:
         self.assertEqual([], self.rows())
 
 
+def run_dispatch_hook(prompt, **caller):
+    """The gate's stdout for a review-loop Agent dispatch with this prompt, from the caller the fields name."""
+    hook = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "session-1", **caller,
+            "tool_input": {"subagent_type": "review-loop", "prompt": prompt}}
+    environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}
+    proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
+                          text=True, check=True, env=environment)
+    return proc.stdout
+
+
 class HandoffDispatchTest(unittest.TestCase):
     def test_a_review_loop_dispatch_from_code_without_a_handoff_is_refused(self):
-        hook = {"hook_event_name": "PreToolUse", "tool_name": "Agent",
-                "tool_input": {"subagent_type": "review-loop", "prompt": "caller: code\nno handoff"}}
-        environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}
-        proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
-                              text=True, check=True, env=environment)
-        self.assertIn("handoff", json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecisionReason"])
+        denial = json.loads(run_dispatch_hook("caller: code\nno handoff"))
+        self.assertIn("handoff", denial["hookSpecificOutput"]["permissionDecisionReason"])
+
+
+REVIEW_PROMPT = "mode: review-first\ncaller: review"
+
+
+class NestedDispatchTest(unittest.TestCase):
+    def test_a_review_loop_dispatch_from_a_lane_subagent_is_refused_with_the_main_session_route(self):
+        denial = json.loads(run_dispatch_hook(REVIEW_PROMPT, agent_id="lane-1", agent_type="general-purpose"))
+        reason = denial["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual("deny", denial["hookSpecificOutput"]["permissionDecision"])
+        self.assertIn("main session", reason)
+
+    def test_a_review_loop_dispatch_from_the_main_session_or_the_code_fork_passes(self):
+        cases = [("the main session", {}),
+                 ("the /code fork", {"agent_id": "fork-1", "agent_type": "code-fork"})]
+        for message, caller in cases:
+            with self.subTest(message):
+                self.assertEqual("", run_dispatch_hook(REVIEW_PROMPT, **caller))
 
 
 if __name__ == "__main__":

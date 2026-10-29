@@ -66,6 +66,7 @@ import full_check_gate
 import handback
 import plan_format
 import script_utils
+import source_paths
 from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check
 from review_loop_findings import (
     PLAN_CHANGE_YES,
@@ -236,19 +237,18 @@ def scope(repo):
     return files
 
 
-def is_test(path):
-    return ".test." in path or ".spec." in path or path.startswith("tests/")
-
-
 def counts_toward_size(path):
-    """Whether a changed file's added lines count toward the source-size bar: not a test, a lockfile or a doc."""
-    return not is_test(path) and not path.endswith(("package-lock.json", ".md"))
+    """Whether a changed file's added lines count toward the source-size bar.
+
+    Counted source by source_paths (not a test, lockfile, generated or built file) and not a doc.
+    """
+    return source_paths.is_counted_source(path) and not path.endswith(".md")
 
 
 def first_round_plan(files, structure_pass_skipped=False):
     """Which reviewers go out in the first round, and who owns which files."""
-    source = [path for path in files if not is_test(path)]
-    tests = [path for path in files if is_test(path)]
+    source = [path for path in files if not source_paths.is_test_path(path)]
+    tests = [path for path in files if source_paths.is_test_path(path)]
     added = sum(files[path][0] for path in files if counts_toward_size(path))
     new_source = any(files[path][1] in ("??", "A") for path in source)
     large = bool(source) and (added >= LARGE_ADDED_LINES or new_source)
@@ -278,7 +278,7 @@ def second_round_plan(round_fix, changed, skipped_findings, coder_diffs):
             continue
         skipped_paths = [finding_file(fix)[0] for fix in fixes if any(fix in item for item in skipped_findings)]
         owned = [path for path in dict.fromkeys(changed + skipped_paths)
-                 if path and is_test(path) == (agent == "test-reviewer")]
+                 if path and source_paths.is_test_path(path) == (agent == "test-reviewer")]
         if agent == "smell-reviewer" and not smell_runs:
             continue
         if not owned:
@@ -386,7 +386,7 @@ def file_texts(repo):
 
 
 def added_source_lines(diffs):
-    """Lines the given unified diffs add to non-test source files."""
+    """Lines the given unified diffs add to files that count toward the size bar (`counts_toward_size`)."""
     total, source = 0, False
     for diff in diffs:
         for line in diff.splitlines():

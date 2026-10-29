@@ -521,6 +521,22 @@ def phase_check(repo, check_command, plan, phase):
     return expected_red.check_for_phase(check_command, plan_lines, phase)
 
 
+def print_result(result, details, left_out):
+    """The result lines: the result, each Expected red entry left out, the summary and the files the check touched."""
+    print(f"full check: {result}")
+    for entry in left_out:
+        print("expected red: " + expected_red.entry_text(entry))
+    summary = summary_text(result, details["summaries"])
+    if summary is not None:
+        print("summary: " + summary)
+    if details["changed"]:
+        print("changed by the check: " + ", ".join(details["changed"]))
+    if details["rewrote_edited"]:
+        print("rewrote edited files: " + ", ".join(details["rewrote_edited"]))
+    if details["created"]:
+        print("created by the check: " + ", ".join(details["created"]))
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("repo")
@@ -557,18 +573,8 @@ def main(argv):
         result, tail, details = NOT_RUN_SCOPED, "", empty_details()
     else:
         result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base)
-    print(f"full check: {result}")
-    for entry in left_out:
-        print("expected red: " + expected_red.entry_text(entry))
-    summary = summary_text(result, details["summaries"])
-    if summary is not None:
-        print("summary: " + summary)
-    if details["changed"]:
-        print("changed by the check: " + ", ".join(details["changed"]))
-    if details["rewrote_edited"]:
-        print("rewrote edited files: " + ", ".join(details["rewrote_edited"]))
-    if details["created"]:
-        print("created by the check: " + ", ".join(details["created"]))
+    print_result(result, details, left_out)
+
     if is_failure(result) or is_setup_fault_result(result):
         print(tail)
         return 1

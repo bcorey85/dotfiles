@@ -1,5 +1,5 @@
-"""The review loop's reading of reviewer text: the Fix/Ask/Nit sections of a review, a finding's file:line, class
-tag and title, and the merge of findings that name the same code."""
+"""The review loop's reading of reviewer text: the Fix/Ask/Nit sections of a review as finding records, and the merge
+of findings that name the same code."""
 
 import json
 import pathlib
@@ -10,6 +10,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import handback
 import plan_format
 import script_utils
+from finding_record import combine, parse_finding
 from plan_format import PLAN_CHANGE_MARK
 
 UNLOCATED = handback.UNLOCATED
@@ -19,7 +20,6 @@ PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
 ASK_CHANGE_MARK = re.compile(r"\bchange(?:\s+if\s+accepted)?:", re.I)
 ITEM_MARKER = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
 ITEM_MARKER_STRIP = re.compile(r"^\s*(?:[-*]+|\d+[.)])\s+")
-FINDING_CLASS_TAG = re.compile(r"\[(" + "|".join(map(re.escape, handback.CLASSES)) + r")\]", re.I)
 ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
 
 
@@ -75,7 +75,7 @@ def parse_tagged_bullets(text):
     return {**found, "assessment": ""}
 
 
-def parse_review(text):
+def parse_review_texts(text):
     fix, ask, nit = section(text, "Fix"), section(text, "Ask"), section(text, "Nit")
     if fix is None and ask is None and nit is None:
         return parse_tagged_bullets(text)
@@ -83,6 +83,20 @@ def parse_review(text):
     return {"fix": review_section_findings(fix), "ask": review_section_findings(ask),
             "nit": review_section_findings(nit),
             "assessment": assessment.group(1).strip() if assessment else ""}
+
+
+def finding_records(review_texts):
+    """The review with each finding's text parsed into a record."""
+    return {**review_texts, **{disposition: [parse_finding(item) for item in review_texts[disposition]]
+                               for disposition in ("fix", "ask", "nit")}}
+
+
+def parse_review(text):
+    """The review's {fix, ask, nit: [finding records], assessment}, or None when the text has no findings layout."""
+    review_texts = parse_review_texts(text)
+    if review_texts is None:
+        return None
+    return finding_records(review_texts)
 
 
 def last_json_object(reply, keys):
@@ -100,20 +114,6 @@ def last_json_object(reply, keys):
     return None
 
 
-CODE_TOKEN = re.compile(r"`([^`]+)`")
-
-
-def identifiers(finding):
-    """Backticked names in a finding that are neither a file path nor a file:line pointer."""
-    names = set()
-    for token in CODE_TOKEN.findall(finding):
-        if "/" in token or re.search(r":\d", token) or (re.search(r"\.\w{1,4}$", token) and "(" not in token):
-            continue
-        names.add(token)
-    return names
-
-
-MERGED_SEPARATOR = " Also reported: "
 REFILE_SIMILARITY = 0.8
 
 
@@ -122,14 +122,12 @@ def merge_findings(findings):
     folded into it."""
     merged = []
     for finding in findings:
-        path = finding_file(finding)[0]
-        names = identifiers(finding)
         home = next((index for index, kept in enumerate(merged)
-                     if finding_file(kept)[0] == path and names & identifiers(kept) and path), None)
+                     if kept.path == finding.path and finding.identifiers & kept.identifiers and finding.path), None)
         if home is None:
             merged.append(finding)
         else:
-            merged[home] += f"{MERGED_SEPARATOR}{finding}"
+            merged[home] = combine([*merged[home].each_part, finding])
     return merged
 
 
@@ -138,28 +136,24 @@ def near_title(title, other_title):
     return script_utils.text_similarity(title, other_title) >= REFILE_SIMILARITY
 
 
-def same_finding(location, title, other_location, other_title):
+def same_finding(finding, other):
     """Whether two findings in the same file name the same issue: a near title when both have one, else the same
     line."""
-    if location[0] != other_location[0]:
+    if finding.path != other.path:
         return False
-    if title and other_title:
-        return near_title(other_title, title)
-    return location[1] == other_location[1]
+    if finding.title and other.title:
+        return near_title(other.title, finding.title)
+    return finding.line == other.line
 
 
 def unreported_parts(fixed_item, open_fixes):
     """The findings folded into a fixed entry that no open fix finding reports again. An open fix reports a part
     again when it names the same file and, when both have a title, the same or a near title, or else the same line.
     A part with no file is never reported again."""
-    open_parts = [part for item in open_fixes for part in item.split(MERGED_SEPARATOR)]
-    open_located = [(finding_file(part), finding_title(part)) for part in open_parts]
+    open_parts = [part for item in open_fixes for part in item.each_part]
     kept = []
-    for fixed_part in fixed_item.split(MERGED_SEPARATOR):
-        location = finding_file(fixed_part)
-        title = finding_title(fixed_part)
-        reported = bool(location[0]) and any(same_finding(location, title, open_location, open_title)
-                                             for open_location, open_title in open_located)
+    for fixed_part in fixed_item.each_part:
+        reported = bool(fixed_part.path) and any(same_finding(fixed_part, open_part) for open_part in open_parts)
         if not reported:
             kept.append(fixed_part)
     return kept
@@ -167,9 +161,8 @@ def unreported_parts(fixed_item, open_fixes):
 
 def reported_again(fixed_item, open_fixes):
     """Whether an open fix finding reports again any finding folded into a fixed entry."""
-    fixed_parts = fixed_item.split(MERGED_SEPARATOR)
     kept = unreported_parts(fixed_item, open_fixes)
-    return len(kept) < len(fixed_parts)
+    return len(kept) < len(fixed_item.each_part)
 
 
 def still_fixed(fixed_items, open_fixes):
@@ -179,21 +172,13 @@ def still_fixed(fixed_items, open_fixes):
     for item in fixed_items:
         parts = unreported_parts(item, open_fixes)
         if parts:
-            kept.append(MERGED_SEPARATOR.join(parts))
+            kept.append(combine(parts))
     return kept
-
-
-FINDING_FILE = re.compile(r"([\w./-]+\.\w+):(\d+)")
-
-
-def finding_file(line):
-    match = FINDING_FILE.search(line)
-    return (match.group(1), int(match.group(2))) if match else ("", 0)
 
 
 def names_absent_file(repo, tree_paths, finding):
     """True when the finding's file:line names a path that is not on disk and matches no path git lists."""
-    path = finding_file(finding)[0]
+    path = finding.path
     if not path or (pathlib.Path(repo) / path).exists():
         return False
     return not any(known == path or known.endswith("/" + path) for known in tree_paths)
@@ -201,7 +186,7 @@ def names_absent_file(repo, tree_paths, finding):
 
 def plan_change_items(items):
     """The items that say the fix would change the approved plan."""
-    return [item for item in items if PLAN_CHANGE_MARK.match(item)]
+    return [item for item in items if PLAN_CHANGE_MARK.match(item.text)]
 
 
 def absent_file_split(repo, tree_paths, review):
@@ -211,7 +196,7 @@ def absent_file_split(repo, tree_paths, review):
     for disposition in ("fix", "ask", "nit"):
         kept[disposition] = []
         for item in review[disposition]:
-            if names_absent_file(repo, tree_paths, item) and not PLAN_CHANGE_MARK.match(item):
+            if names_absent_file(repo, tree_paths, item) and not PLAN_CHANGE_MARK.match(item.text):
                 absent.append(item)
             else:
                 kept[disposition].append(item)
@@ -246,25 +231,8 @@ def ruled_plan_split(repo, plan, fixes):
     plan_lines = plan_path.read_text().splitlines()
     kept, ruled = [], []
     for item in fixes:
-        path, line = finding_file(item)
-        if path == plan and ruled_plan_line(plan_lines, line):
-            ruled.append(item + RULED_PLAN_NOTE)
+        if item.path == plan and ruled_plan_line(plan_lines, item.line):
+            ruled.append(parse_finding(item.text + RULED_PLAN_NOTE))
         else:
             kept.append(item)
     return kept, ruled
-
-
-def finding_class(line):
-    """The class the reviewer tagged the finding with, which the tag rule puts right after the file:line; `other` when
-    it tagged none."""
-    located = FINDING_FILE.search(line)
-    match = FINDING_CLASS_TAG.search(line, located.end() if located else 0) or FINDING_CLASS_TAG.search(line)
-    return match.group(1).lower() if match else "other"
-
-
-def finding_title(line):
-    """The finding's text with its file:line and bracketed tags taken out, lowercased, punctuation folded to spaces.
-    A refile keeps it when the coder's edit moves the line."""
-    title = re.sub(r"`?" + FINDING_FILE.pattern + r"`?", " ", line)
-    title = re.sub(r"\[[\w-]+\]", " ", title)
-    return re.sub(r"\W+", " ", title).strip().lower()

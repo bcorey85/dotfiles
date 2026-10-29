@@ -46,7 +46,13 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
 import script_utils
-from check_output import is_django_settings_fault, is_setup_fault, missing_path, tail_with_failing_tests
+from check_output import (
+    failing_test_lines,
+    is_django_settings_fault,
+    is_setup_fault,
+    missing_path,
+    tail_with_failing_tests,
+)
 from check_scope import scanned_command
 
 MAX_DENIES = 3
@@ -270,20 +276,39 @@ def sort_failures(failures, repo_root):
     return real_failures, setup_faults, command_errors
 
 
-def run_scoped_tests(repo_root, commands, gate_env=()):
+def write_scoped_test_log(log_path, failures, timed_out):
+    # The whole output of each failing and timed-out command, under a header that names the command.
+    sections = [f"=== `{command}` ({outcome}) ===\n{output}" for command, outcome, output in failures]
+    sections += [f"=== `{command}` (timeout) ===\n{output}" for command, output in timed_out]
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("\n\n".join(sections))
+
+
+def run_scoped_tests(repo_root, commands, gate_env=(), log_path=None):
     # (one-line result, the failing commands' tails). The scoped commands, run as the gate runs them, outside a hook.
+    # With log_path, a failing or timed-out command's whole output goes to that file, and a failed result names the
+    # failing tests and the file.
     if not commands:
         return "not run (no scoped test commands)", []
 
     gate = {"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_env)}
     failures, skipped, timed_out = run_commands(gate)
+    if log_path and (failures or timed_out):
+        write_scoped_test_log(log_path, failures, timed_out)
     failures, setup_faults, command_errors = sort_failures(failures, repo_root)
 
     if failures:
-        tails = [f"`{command}` ({outcome}):\n{tail_with_failing_tests(output, output[-TAIL_CHARS:])}"
+        log_note = f"\nFull output: {log_path}" if log_path else ""
+        tails = [f"`{command}` ({outcome}):\n{tail_with_failing_tests(output, output[-TAIL_CHARS:])}{log_note}"
                  for command, outcome, output in failures]
-        return "failed: " + "; ".join(command for command, _outcome, _output in failures), tails
+        result = "failed: " + "; ".join(command for command, _outcome, _output in failures)
+        failing_tests = [line for _command, _outcome, output in failures for line in failing_test_lines(output)]
+        if failing_tests:
+            result += "; failing tests: " + " | ".join(failing_tests)
+        if log_path:
+            result += f"; full output: {log_path}"
+        return result, tails
     if setup_faults:
         return "setup fault: " + "; ".join(command for command, _output in setup_faults), []
     if command_errors:

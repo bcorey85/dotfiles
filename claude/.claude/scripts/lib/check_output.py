@@ -24,8 +24,14 @@ PYTEST_NO_TESTS_CODE = 5
 RAN_NO_TESTS = re.compile(r"No test(?: file)?s found, exiting with code [1-9]|(?i:\bno tests ran\b)"
                           r"|(?m:^Ran 0 tests\b)")
 # The line a runner prints for one failed test: pytest `FAILED `/`ERROR ` summary lines, unittest and Django
-# `FAIL: `/`ERROR: ` lines, vitest and jest `FAIL ` lines and lines that start with the multiplication sign.
-FAILING_TEST_LINE = re.compile(r"^(?:FAILED |ERROR |FAIL: |ERROR: |\s*FAIL\s|\s*\xd7)")
+# `FAIL: `/`ERROR: ` lines, vitest, jest and nextest `FAIL ` lines, lines that start with the multiplication sign,
+# cargo's `test <name> ... FAILED` lines and a Rust test thread's panic line.
+PANIC_LINE = re.compile(r"^\s*thread '[^']*'(?P<thread_id> \(\d+\))? panicked at ")
+FAILING_TEST_LINE = re.compile(r"^(?:FAILED |ERROR |FAIL: |ERROR: |\s*FAIL\s|\s*\xd7|\s*test \S+ \.\.\. FAILED$)"
+                               rf"|{PANIC_LINE.pattern}")
+# Where a panic's message ends: a blank line, cargo's backtrace note or the next failing test line.
+PANIC_MESSAGE_END = re.compile(r"^\s*(?:$|note: |stack backtrace:)")
+MAX_PANIC_MESSAGE_LINES = 6
 # The text of an elapsed time (`1.5s`, `120 ms`) and of a clock time (`10:20:30`), which the timing patterns share.
 ELAPSED_TIME = r"\d+(?:\.\d+)?\s*m?s\b"
 CLOCK_TIME = r"\d+:\d{2}:\d{2}"
@@ -80,9 +86,27 @@ def is_repo_module(module_name, repo_root):
 
 
 def failing_test_lines(output):
-    """The lines of the output that name a failed test, without repeats, at most MAX_FAILING_TEST_LINES."""
-    names = [line.strip() for line in output.splitlines() if FAILING_TEST_LINE.match(line)]
+    """The lines of the output that name a failed test, without repeats, at most MAX_FAILING_TEST_LINES. A panic line
+    comes with its message lines below it, as one entry."""
+    output_lines = output.splitlines()
+    names = []
+    for index, line in enumerate(output_lines):
+        if not FAILING_TEST_LINE.match(line):
+            continue
+
+        message_lines = panic_message_lines(output_lines, index + 1) if PANIC_LINE.match(line) else []
+        names.append("\n".join([line.strip(), *message_lines]))
     return list(dict.fromkeys(names))[:MAX_FAILING_TEST_LINES]
+
+
+def panic_message_lines(output_lines, start):
+    """The stripped message lines of the panic whose message starts at `start`, at most MAX_PANIC_MESSAGE_LINES."""
+    message_lines = []
+    for line in output_lines[start:start + MAX_PANIC_MESSAGE_LINES]:
+        if PANIC_MESSAGE_END.match(line) or FAILING_TEST_LINE.match(line):
+            break
+        message_lines.append(line.strip())
+    return message_lines
 
 
 def tail_with_failing_tests(output, tail):
@@ -102,6 +126,10 @@ def normalized_log_line(line):
     in an assertion message is not a runner summary."""
     # A per-run clock line keeps its label and loses only its time, so it compares equal across runs.
     line = RUN_CLOCK_LINE.sub(r"\g<label>", line)
+    # A panic line's thread id differs per run.
+    panic = PANIC_LINE.match(line)
+    if panic and panic.group("thread_id"):
+        line = line[:panic.start("thread_id")] + line[panic.end("thread_id"):]
     # A failing test's reason keeps its numbers: `expected 5000ms, got 2000ms` is an assertion, not a timing.
     if FAILING_TEST_LINE.match(line) and FAILURE_REASON_SEPARATOR in line:
         name, separator, reason = line.partition(FAILURE_REASON_SEPARATOR)

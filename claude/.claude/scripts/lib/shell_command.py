@@ -56,7 +56,11 @@ WRAPPER_VALUE_OPTIONS = {
     "setsid": set(),
     "ionice": {"-c", "-n", "-p"},
     "unbuffer": set(),
+    "taskset": set(),
 }
+# The wrappers whose first word after their options is a value, not the command: timeout's duration, taskset's CPU
+# mask or list.
+WRAPPERS_WITH_A_LEADING_VALUE = {"timeout", "taskset"}
 # `uv run`, `poetry run` and `pipenv run` run the command after their options.
 RUNNER_WRAPPERS = {
     "uv": {"--with", "--with-requirements", "--python", "-p", "--directory", "--project", "--env-file", "--group",
@@ -245,9 +249,10 @@ def without_assignments(words):
 
 def command_after_wrappers(words, peel_containers=True):
     """The words of the command that a simple command finally runs, with the wrapper words, their flags and their
-    values dropped: env (flags, NAME=value), sudo, doas, timeout (flags, duration), nice, nohup, time, command, exec,
-    builtin, uv/poetry/pipenv run, a leading `{` or `!` and, unless peel_containers is False, a docker exec or run
-    call. Words that name no wrapper come back as they are; an empty list when the wrappers name no command."""
+    values dropped: env (flags, NAME=value), sudo, doas, timeout (flags, duration), taskset (flags, CPU list), nice,
+    nohup, time, command, exec, builtin, uv/poetry/pipenv run, a leading `{` or `!` and, unless peel_containers is
+    False, a docker exec or run call. Words that name no wrapper come back as they are; an empty list when the
+    wrappers name no command."""
     while True:
         words = without_assignments(words)
         if not words:
@@ -267,7 +272,7 @@ def command_after_wrappers(words, peel_containers=True):
             if name == "command" and words[1:2] in (["-v"], ["-V"]):
                 return words
             rest = words[skip_options(words, 1, WRAPPER_VALUE_OPTIONS[name]):]
-            words = rest[1:] if name == "timeout" else rest
+            words = rest[1:] if name in WRAPPERS_WITH_A_LEADING_VALUE else rest
         else:
             return words
 

@@ -109,7 +109,8 @@ class MatchesNoTestTest(unittest.TestCase):
         for command in ("npm run test:unit", "go test ./pkg/...", "FOO=1 vitest run a.test.ts", "npx mocha a.js",
                         "npm run typecheck && npm test", "cd pkg && npm test", "(cd pkg && pytest)", "a&&pytest",
                         "pipenv run python backend/manage.py test app.tests", "make test-consistency ARGS=a.test.ts",
-                        "pnpm --filter api test"):
+                        "pnpm --filter api test",
+                        "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(widget_sorts)'"):
             with self.subTest(command=command):
                 self.assertTrue(test_run_output.runs_tests(command))
 

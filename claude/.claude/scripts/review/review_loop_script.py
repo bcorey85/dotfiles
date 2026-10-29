@@ -8,12 +8,12 @@ optional `structure-pass: skip`), a blank line, then the handoff block. The scri
 scope, first-round reviewers (code, plus smell and test reviewers on a large diff), disposition routing, one fix coder,
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
-The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
-calls run the changed files' tests, none in a repo where no check is found, and a check past
-full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process group, and a check whose step stops on a missing
-path is a check-command error. A check that fails on a missing module the repo declares as a dependency is an
-environment gap. None is a failure: the
-packet's `full_check` says `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
+The full check runs through full_check.py. In a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
+calls run the changed files' tests, it runs only the `Quality check:` command, as a check with no tests; it runs none
+in a repo where no check is found. A check past full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process
+group, and a check whose step stops on a missing path is a check-command error. A check that fails on a missing
+module the repo declares as a dependency is an environment gap. None is a failure: the packet's `full_check` says
+`not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
 `not run (check-command error: ...)` or `not run (environment gap: ...)`. An exit 0 with no runner summary is no
 failure either: it says `unverified (exit 0, no runner summary)`. So is a failure that the check shows the same way
 on HEAD without the diff: it says `pre-existing failure (...)` and did not verify the diff. To tell, a failed check is
@@ -356,10 +356,10 @@ def coder_prompt(repo, findings, small_items, files, gate_env=()):
 
 def check_command_for(repo, out):
     """The repo's full check: a CLAUDE.md `Quality check: \\`<command>\\`` line, else what a haiku call reads from the
-    repo's docs, task runners and CI config. None when CI runs the repo's full suite or the finder names no check:
-    full_check.run then runs nothing."""
+    repo's docs, task runners and CI config. When CI runs the repo's full suite, only the `Quality check:` line counts.
+    None when there is no such line in that repo or the finder names no check: full_check.run then runs nothing."""
     if full_check.full_suite_runs_in_ci(repo):
-        return None
+        return full_check.configured_check_command(repo)
 
     configured = full_check.configured_check_command(repo)
     if configured:

@@ -685,7 +685,7 @@ class RenderTest(HandbackTestBase):
         for full_check in ("not run (CI)", "not run (timeout)", "not run (environment gap: No module named 'ruff')",
                            "not run (check-command error: fatal: ambiguous argument 'web/schema.json')",
                            "pre-existing failure (the check fails the same way without this diff, so it did not "
-                           "verify this diff)"):
+                           "verify this diff)", "passed (check only; CI runs the full suite)"):
             with self.subTest(full_check=full_check):
                 packet = handback.load(CONVERGED + f"full_check: {full_check}\n")
 

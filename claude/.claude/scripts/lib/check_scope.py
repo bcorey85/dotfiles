@@ -1,8 +1,9 @@
 """Reads a shell command line and says how wide a check it runs: a whole test suite, lint or build, a targeted run, or
-none. A make target or a docker exec or run call is judged by the commands it runs (make is read from the Makefile
-text; a NAME=value argument, a missing Makefile or a missing target lets the call through, and make -n, -q, -t or -h
-runs no recipe line except one marked `+` or one that names `$(MAKE)`, which is not judged). Runner wrappers (poetry,
-pipenv or uv run, env, timeout and the like) are peeled first, so the command they run is the one judged."""
+none. A whole run of a runner in RUNNER_VALUE_FLAGS reads none, not whole. A make target or a docker exec or run call
+is judged by the commands it runs (make is read from the Makefile text; a NAME=value argument, a missing Makefile or a
+missing target lets the call through, and make -n, -q, -t or -h runs no recipe line except one marked `+` or one that
+names `$(MAKE)`, which is not judged). Runner wrappers (poetry, pipenv or uv run, env, timeout and the like) are peeled
+first, so the command they run is the one judged."""
 import os
 import pathlib
 import re
@@ -16,6 +17,7 @@ from shell_command import (
     split_simple_commands,
     unwrap_docker,
     without_assignments,
+    without_flag_values,
 )
 
 PYTHON_PROGRAM = re.compile(r"python(3(\.\d+)?)?")
@@ -24,9 +26,24 @@ MANAGE_TEST_VALUE_OPTIONS = {
     "-v", "--verbosity", "--settings", "--pythonpath", "--parallel", "--testrunner", "-t", "--top-level-directory",
     "-p", "--pattern", "--tag", "--exclude-tag",
 }
+# By runner: the flags that leave files or tests out of a `manage.py test` or CHECK_RUN_PREFIXES run. For the
+# CHECK_RUN_PREFIXES runners their space form already reads its value as a scope word; this list reads the `=` form.
+# ruff's --ignore takes rule codes, so it is no leave-out flag there. A script run through npm, yarn, pnpm or bun reads
+# the flags of every runner but ruff.
+LEAVES_OUT_FLAGS = {
+    "manage.py": {"--exclude-tag"},
+    "pytest": {"--ignore", "--ignore-glob", "--deselect"},
+    "vitest": {"--exclude"},
+    "jest": {"--testPathIgnorePatterns"},
+    "eslint": {"--ignore-pattern", "--ignore-path"},
+    "ruff": {"--exclude", "--extend-exclude"},
+}
+# The leave-out flags read for every CHECK_RUN_PREFIXES run but `ruff check`.
+NON_RUFF_LEAVE_OUT_FLAG_SETS = [flags for runner, flags in LEAVES_OUT_FLAGS.items() if runner != "ruff"]
+CHECK_RUN_LEAVES_OUT_FLAGS = set().union(*NON_RUFF_LEAVE_OUT_FLAG_SETS)
 
-# A simple command that starts with one of these runs tests or lint. With no path, test name or changed-files flag
-# after it, it covers the whole package. "test" and "lint" also match script names such as "test:unit".
+# A simple command that starts with one of these runs tests or lint. With no path, test name, changed-files flag or
+# exclude flag after it, it covers the whole package. "test" and "lint" also match script names such as "test:unit".
 CHECK_RUN_PREFIXES = [
     ["npm", "test"], ["npm", "t"], ["npm", "run", "test"], ["yarn", "test"], ["yarn", "run", "test"],
     ["pnpm", "test"], ["pnpm", "run", "test"], ["bun", "test"], ["npx", "vitest"], ["npx", "jest"],
@@ -39,6 +56,64 @@ BUILD_PREFIXES = [
     ["npm", "run", "build"], ["yarn", "build"], ["yarn", "run", "build"], ["pnpm", "build"], ["pnpm", "run", "build"],
     ["bun", "run", "build"],
 ]
+# Runners read by their own flags, not by CHECK_RUN_PREFIXES. One runs on part of its suite when given a positional
+# word (a file, a directory, a package or a test name) or a selector flag. By runner: the flags that take a value
+# word, which is no scope. tsc's and dotnet's project flags name the build file, and a whole run with them reads none.
+RUNNER_VALUE_FLAGS = {
+    "cargo": {"--manifest-path", "--target-dir", "--target", "-j", "--jobs", "--features", "-F", "--profile", "-D",
+              "-A", "-W", "--test-threads", "--color", "--message-format", "--config", "-Z", "--retries",
+              "--failure-output", "--success-output", "--status-level", "--final-status-level",
+              "--max-fail", "--cargo-profile", "--archive-file", "--format", "--logfile", "-P", "--run-ignored"},
+    "go": {"-p", "-coverprofile", "-o", "-count", "-timeout", "-parallel", "-tags", "-cpu", "-covermode",
+           "-shuffle", "-mod", "-vet", "-gcflags", "-ldflags", "-asmflags", "-exec", "-modfile", "-overlay",
+           "-coverpkg", "-bench", "-benchtime", "-blockprofile", "-blockprofilerate", "-cpuprofile", "-memprofile",
+           "-memprofilerate", "-mutexprofile", "-mutexprofilefraction", "-trace", "-outputdir", "-testlogfile",
+           "-fuzztime", "-fuzzminimizetime", "-pgo", "-buildmode", "-buildvcs", "-toolexec", "-compiler",
+           "-installsuffix", "-list"},
+    "mypy": {"--python-version", "--config-file", "--cache-dir", "--python-executable", "--platform",
+             "--follow-imports", "--disable-error-code", "--enable-error-code", "--junit-xml", "--html-report",
+             "--cobertura-xml-report", "--linecount-report", "--custom-typeshed-dir", "--always-true"},
+    "pyright": {"-p", "--project", "--pythonversion", "--pythonpath", "--venvpath", "--level", "--typeshedpath",
+                "--pythonplatform", "--createstub", "--verifytypes"},
+    "tsc": {"-p", "--project", "-t", "--target", "-m", "--module", "--outDir", "--lib"},
+    "dotnet": {"--project", "-c", "--configuration", "-f", "--framework", "--logger", "-v", "--verbosity", "-r",
+               "--runtime", "-o", "--output", "--settings", "--collect", "-s", "--arch", "-a", "--os",
+               "--test-adapter-path", "--diag", "--results-directory", "-e", "--environment",
+               "--blame-hang-timeout"},
+    # bats' -p is --pretty, a switch that takes no value and names no tests.
+    "bats": {"-j", "--jobs", "-F", "--formatter", "-o", "--output", "--report-formatter"},
+    "rspec": {"-f", "--format", "-r", "--require", "-I", "--seed", "--order", "--out", "--default-path",
+              "--failure-exit-code", "--deprecation-out", "-O", "--options"},
+    "phpunit": {"-c", "--configuration", "--log-junit", "--bootstrap", "-d", "--coverage-clover",
+                "--coverage-html", "--coverage-xml", "--testdox-html", "--cache-result-file", "--order-by",
+                "--random-order-seed", "--printer", "--test-suffix", "--extensions", "--cache-directory",
+                "--processes", "--log-tap"},
+}
+# By runner: the flags that pick part of the suite, or leave part of it out, and take a value, as `--flag value` or
+# `--flag=value`.
+RUNNER_SELECTOR_VALUE_FLAGS = {
+    "cargo": {"-p", "--package", "--test", "--bench", "--bin", "--example", "-E", "--filterset", "--filter-expr",
+              "--skip", "--partition", "--exclude"},
+    "go": {"-run", "-skip", "-fuzz"},
+    "mypy": {"-p", "--package", "-m", "--module", "--exclude"},
+    "dotnet": {"--filter"},
+    "rspec": {"-e", "--example", "-t", "--tag", "-P", "--pattern", "--exclude-pattern"},
+    "phpunit": {"--filter", "--testsuite", "--group", "--exclude-group", "--exclude-filter", "--exclude-testsuite"},
+    "bats": {"--filter", "-f", "--filter-tags", "--negative-filter"},
+}
+# By runner: the switches that pick part of the suite.
+RUNNER_SELECTOR_SWITCHES = {
+    "cargo": {"--lib", "--doc", "--bins", "--tests", "--benches", "--examples",
+              "--ignored"},
+    "rspec": {"--only-failures", "--next-failure"},
+}
+# nextest's --run-ignored runs only the ignored tests with one of these values; `all` and `default` stay whole.
+NEXTEST_IGNORED_ONLY_VALUES = {"only", "ignored-only"}
+# These runners take a subcommand first (cargo test, go vet, cargo nextest run), which is no scope.
+SUBCOMMAND_RUNNERS = ("cargo", "go", "dotnet")
+NEXTEST_SUBCOMMAND = ["nextest", "run"]
+RUNNER_LAUNCHERS = (["npx"], ["bunx"], ["bundle", "exec"])
+WHOLE_GO_MODULE = "./..."
 SCRIPT_VARIANT_WORDS = ("test", "lint", "build")
 SCOPE_RANK = {"none": 0, "targeted": 1, "unresolved": 2, "whole": 3}
 MAKE_PROGRAMS = ("make", "gmake")
@@ -58,8 +133,8 @@ def matches_prefix(words, prefix):
 
 
 def direct_check_scope(words):
-    # "whole" for a build or a test or lint run with no path, test name or changed-files flag, "targeted" for one
-    # with, "none" for any other command.
+    # "whole" for a build or a test or lint run with no path, test name, changed-files flag or exclude flag,
+    # "targeted" for one with, "none" for any other command and for a whole run of a runner in RUNNER_VALUE_FLAGS.
     # The caller has peeled the runner wrappers. A python program is judged by its basename.
     if words and PYTHON_PROGRAM.fullmatch(os.path.basename(words[0])):
         words = ["python", *words[1:]]
@@ -71,25 +146,73 @@ def direct_check_scope(words):
 
     if len(words) >= 3 and words[0] == "python" and os.path.basename(words[1]) == "manage.py" \
             and words[2] == "test":
-        labels = []
-        skip_value = False
-        for word in words[3:]:
-            if skip_value:
-                skip_value = False
-            elif word in MANAGE_TEST_VALUE_OPTIONS:
-                skip_value = True
-            elif not word.startswith("-"):
-                labels.append(word)
-        return "targeted" if labels else "whole"
+        leave_out_words = [word for word in words[3:] if word.split("=", 1)[0] in LEAVES_OUT_FLAGS["manage.py"]]
+        labels = [word for word in without_flag_values(words[3:], MANAGE_TEST_VALUE_OPTIONS)
+                  if not word.startswith("-")]
+        return "targeted" if labels or leave_out_words else "whole"
 
     for prefix in CHECK_RUN_PREFIXES:
         if not matches_prefix(words, prefix):
             continue
+        leave_out_flags = LEAVES_OUT_FLAGS["ruff"] if prefix == ["ruff", "check"] else CHECK_RUN_LEAVES_OUT_FLAGS
         scope_words = [word for word in words[len(prefix):]
-                      if word.startswith(CHANGED_FILES_FLAGS)
+                      if word.startswith(CHANGED_FILES_FLAGS) or word.split("=", 1)[0] in leave_out_flags
                       or not (word.startswith("-") or word == "run" or word in WHOLE_PACKAGE_PATHS)]
         return "targeted" if scope_words else "whole"
-    return "none"
+    return "targeted" if runner_names_part_of_suite(words) else "none"
+
+
+def launched_runner(words):
+    # The words of the runner that a launcher such as npx or bundle exec runs, else the words as they are.
+    for launcher in RUNNER_LAUNCHERS:
+        if words[:len(launcher)] == launcher:
+            return words[len(launcher):]
+    return words
+
+
+def runner_names_part_of_suite(words):
+    # True when a runner of RUNNER_VALUE_FLAGS runs on part of its suite: a positional word or a selector flag. Its
+    # whole run stays "none", so a caller that acts on "whole" reads these runners as before. A nextest
+    # `--run-ignored only` and a libtest `--ignored` run only the ignored tests, so they count as part of the suite.
+    runner_words = launched_runner(words)
+    program = os.path.basename(runner_words[0]) if runner_words else ""
+    if program not in RUNNER_VALUE_FLAGS:
+        return False
+
+    selector_value_flags = RUNNER_SELECTOR_VALUE_FLAGS.get(program, set())
+    selector_flags = selector_value_flags | RUNNER_SELECTOR_SWITCHES.get(program, set())
+    if program == "cargo" and runs_only_ignored_tests(runner_words[1:]):
+        return True
+
+    run_words = without_flag_values(runner_words[1:], RUNNER_VALUE_FLAGS[program] | selector_value_flags)
+    # A +toolchain word is cargo's, not a scope. A bare "." names the whole package for every runner but go, where
+    # `go test .` runs one package.
+    whole_package_words = set() if program == "go" else WHOLE_PACKAGE_PATHS
+    positional_words = [word for word in run_words
+                        if not word.startswith(("-", "+")) and word != WHOLE_GO_MODULE
+                        and word not in whole_package_words]
+    if program in SUBCOMMAND_RUNNERS:
+        subcommand_length = len(NEXTEST_SUBCOMMAND) if positional_words[:2] == NEXTEST_SUBCOMMAND else 1
+        positional_words = positional_words[subcommand_length:]
+
+    flag_names = {word.split("=", 1)[0] for word in run_words if word.startswith("-")}
+    return bool(flag_names & selector_flags or positional_words)
+
+
+def runs_only_ignored_tests(cargo_words):
+    # True when a nextest --run-ignored flag, as `--run-ignored only` or `--run-ignored=only`, runs only the ignored
+    # tests.
+    for index, word in enumerate(cargo_words):
+        if word.startswith("--run-ignored="):
+            ignored_value = word.split("=", 1)[1]
+        elif word == "--run-ignored" and index + 1 < len(cargo_words):
+            ignored_value = cargo_words[index + 1]
+        else:
+            continue
+
+        if ignored_value in NEXTEST_IGNORED_ONLY_VALUES:
+            return True
+    return False
 
 
 class CheckScan:

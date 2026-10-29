@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "Per-phase bug-pinning audit retired"
-description: "Per-phase bug-pinning audit retired."
+title: "Each phase no longer runs a bug-pinning test audit"
+description: "A phase skips the bug-pinning test audit, which was redundant once the coder/test-writer split was enforced by a hook; this saved about $26-53 per run."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 9
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-Per-phase bug-pinning audit retired
+Each phase no longer runs a bug-pinning test audit. Before, every phase ran one.
 
 ## Evidence
 

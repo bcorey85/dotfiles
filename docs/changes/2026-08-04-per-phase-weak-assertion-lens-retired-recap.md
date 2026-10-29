@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "Per-phase weak-assertion lens retired → recap boundary"
-description: "Per-phase weak-assertion lens retired → recap boundary."
+title: "Weak assertions are now checked once at the branch recap, not after every phase"
+description: "The weak-assertion check runs at the recap boundary, because a single phase cannot see assertions that are absent."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 10
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-Per-phase weak-assertion lens retired → recap boundary
+The weak-assertion check now runs at the recap boundary. Before, it ran after every phase.
 
 ## Evidence
 

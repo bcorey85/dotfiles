@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "review-loop and code-reviewer: the security and query-cost reviewers no longer run in the loop"
-description: "review-loop and code-reviewer: the security and query-cost reviewers no longer run in the loop."
+title: "The code reviewer now covers security and query cost on every pass"
+description: "The code reviewer owns security and query cost on every pass, beside correctness and structure, so the review loop no longer runs separate reviewers for them."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 8
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-review-loop and code-reviewer: the security and query-cost reviewers no longer run in the loop. The code reviewer owns security and query cost on every pass, beside correctness and structure
+The code reviewer now owns security and query cost on every pass, beside correctness and structure. Before, the review loop also ran separate security and query-cost reviewers.
 
 ## Evidence
 

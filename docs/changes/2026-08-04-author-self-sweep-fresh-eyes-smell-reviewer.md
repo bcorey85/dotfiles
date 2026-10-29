@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "Author self-sweep → fresh-eyes `smell-reviewer`"
-description: "Author self-sweep → fresh-eyes `smell-reviewer`."
+title: "A fresh-eyes `smell-reviewer` now checks structure in place of the author's self-sweep"
+description: "A fresh-eyes `smell-reviewer` now checks a change for duplication and structure problems that its author cannot see."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 2
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-Author self-sweep → fresh-eyes `smell-reviewer`
+A fresh-eyes `smell-reviewer` now checks the change for structure problems. Before, the author swept their own change.
 
 ## Evidence
 

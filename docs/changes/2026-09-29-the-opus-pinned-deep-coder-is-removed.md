@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "The Opus-pinned deep coder is removed"
-description: "The Opus-pinned deep coder is removed."
+title: "The deep modifier now dispatches the plain Sonnet coder"
+description: "On the deep modifier, the code skill, the review loop and the shared modifier rules dispatch the plain Sonnet coder."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 5
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The Opus-pinned deep coder is removed. On the deep modifier, the code skill, the review loop and the shared modifier rules dispatch the plain Sonnet coder
+The deep modifier now dispatches the plain Sonnet coder. The Opus-pinned deep coder is removed. On the deep modifier, the code skill, the review loop and the shared modifier rules dispatch the plain Sonnet coder
 
 ## Evidence
 

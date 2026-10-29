@@ -3,7 +3,7 @@ type: "Change"
 title: "Callers read the review store from handback_store, not through handback"
 description: "handback.py drops its re-export block; every caller imports the hand-back store names from handback_store and the finding-id constants from loop_transcript."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T14:49:53-05:00"}
-seq: 273
+seq: 278
 kind: "fix"
 components: ["script/review"]
 evidence: ["judgment"]

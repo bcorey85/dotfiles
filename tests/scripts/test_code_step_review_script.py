@@ -216,7 +216,7 @@ class ReviewScriptTest(base.CodeStepTest):
             "## Phase 2", "Adopted step: drop the header.\n\n## Phase 2", 1))
         self.wait_env(5, "0.05")
         self.hook("coder", "docs/plans/orders/spec.md:3: Add orders.")
-        out = self.step("after-plan-edit")
+        out = self.step("resume")
 
         self.assertIn("ACTION: wait", out)
         self.assertNotIn("exited with no hand-back", out)
@@ -235,7 +235,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
 
-        out = self.step("after-review")
+        out = self.step("resume")
 
         self.assertIn("ACTION: stop", out)
         self.assertIn(self.state()["reviewScriptLog"], out)
@@ -258,7 +258,7 @@ class ReviewScriptTest(base.CodeStepTest):
                 self.set_state(dispatchAt=time.time() - 100)
                 (script_dir / progress_name).write_text("{}\n")
 
-                out = self.step("after-review")
+                out = self.step("resume")
 
                 self.assertIn("ACTION: wait", out)
                 self.assertNotIn("died", out)
@@ -277,7 +277,7 @@ class ReviewScriptTest(base.CodeStepTest):
         full_check_log.write_text("running\n")
         os.utime(full_check_log, (time.time() - 100, time.time() - 100))
 
-        out = self.step("after-review")
+        out = self.step("resume")
 
         self.assertIn("ACTION: stop", out)
         self.assertIn("still running", out)
@@ -300,7 +300,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.age_script_output(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
-        self.assertIn("ACTION: stop", self.step("after-review"))
+        self.assertIn("ACTION: stop", self.step("resume"))
         self.assertTrue(self.state()["resumableReview"])
         dispatch = self.events_named("dispatch")[-1]
         agent_id = f"loop-script-{self.state()['runId']}-{dispatch['id']}"
@@ -323,7 +323,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.age_script_output(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
-        self.assertIn("ACTION: stop", self.step("after-review"))
+        self.assertIn("ACTION: stop", self.step("resume"))
         os.kill(script_pid, signal.SIGTERM)
         self.wait_for_script_exit(script_pid)
         self.wait_env(5, "0.05")
@@ -345,7 +345,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.age_script_output(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
-        self.assertIn("ACTION: stop", self.step("after-review"))
+        self.assertIn("ACTION: stop", self.step("resume"))
 
         self.step("start", "--restart")
 
@@ -359,7 +359,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.age_script_output(100)
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
-        self.assertIn("ACTION: stop", self.step("after-review"))
+        self.assertIn("ACTION: stop", self.step("resume"))
 
         self.step("start", "--restart", "missing.md")
         self.step("resume")

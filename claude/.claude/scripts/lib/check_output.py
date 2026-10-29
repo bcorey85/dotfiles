@@ -27,9 +27,13 @@ PYTEST_NO_TESTS_CODE = 5
 RAN_NO_TESTS = re.compile(r"No test(?: file)?s found, exiting with code [1-9]|(?i:\bno tests ran\b)"
                           r"|(?m:^Ran 0 tests\b)")
 # The line a runner prints for one failed test: pytest `FAILED `/`ERROR ` summary lines, unittest and Django
-# `FAIL: `/`ERROR: ` lines, vitest and jest `FAIL ` lines and lines that start with the multiplication sign.
-# unittest's final `FAILED (failures=1)` result line is not a test.
-FAILING_TEST_LINE = re.compile(r"^(?:FAILED (?!\()|ERROR |FAIL: |ERROR: |\s*FAIL\s|\s*\xd7)")
+# `FAIL: `/`ERROR: ` lines, vitest, jest and nextest `FAIL ` lines, lines that start with the multiplication sign,
+# cargo's `test <name> ... FAILED` lines and a Rust test thread's panic line. unittest's final `FAILED (failures=1)`
+# result line is not a test.
+PANIC_LINE = re.compile(r"^\s*thread '[^']*'(?P<thread_id> \(\d+\))? panicked at "
+                        r"(?P<path>[^\s:]+)(?P<position>:\d+:\d+)?")
+FAILING_TEST_LINE = re.compile(r"^(?:FAILED (?!\()|ERROR |FAIL: |ERROR: |\s*FAIL\s|\s*\xd7|\s*test \S+ \.\.\. FAILED$)"
+                               rf"|{PANIC_LINE.pattern}")
 FAILING_TESTS_HEADER = "Failing tests:\n"
 # Lines of a failing block that are not error text: a vitest passing-test line and a `⎯⎯⎯`, `---` or `===` rule.
 PASSING_TEST_LINE = re.compile(r"^\s*✓")
@@ -70,7 +74,20 @@ SUMMARY_TOTAL = re.compile(r"\(\d+\)")
 RUNNER_SUMMARY_LINE = re.compile(
     rf"^[\s=]*(?:(?:Test Files|Tests|Test Suites)\s*:?\s*)?{SUMMARY_COUNT}(?:\s*[,|]\s*{SUMMARY_COUNT})*"
     rf"(?:\s*\(\d+\))?(?:\s+in {ELAPSED_TIME}(?: \({CLOCK_TIME}\))?)?[\s=]*$")
-# The summary, clock, passing-test, rule and unittest run lines of a failing block, which are not error text.
+# The frame lines cargo test and cargo nextest print around a failed test's panic message: passing and ignored test
+# lines, the `failures:` headings and the indented test-name list under the second one, a `---- name stdout ----`
+# heading, the backtrace note, the `test result:` and `error: test failed` lines, and nextest's PASS lines, `─` rules,
+# `stdout ───`/`stderr ───` headings and Summary line, and the `running N tests` and `Cancelling due to test failure`
+# lines.
+RUST_FRAME_LINE = re.compile(
+    r"^\s*test \S+ \.\.\. (?:ok|ignored)$|^\s*failures:$|^ {4,}[A-Za-z_][\w:]*$|^---- \S+ stdout ----$"
+    r"|^\s*note: run with .RUST_BACKTRACE|^\s*test result: |^error: test (?:run )?failed"
+    r"|^\s*PASS \[|^\s*─+$|^─+ STD(?:OUT|ERR):|^\s*std(?:out|err) ─+$|^\s*Summary \["
+    r"|^\s*running \d+ tests?$|^\s*Cancelling due to test failure")
+# The line that heads a failed Rust test, which holds no error text itself: the panic line after it does.
+RUST_FAILED_TEST_HEADER = re.compile(r"^(?:test \S+ \.\.\. FAILED|FAIL \[.*)$")
+# The summary, clock, passing-test, rule and unittest run lines of a failing block, which are not error text. The Rust
+# frame lines are left out only in a Rust block (see failing_test_errors).
 NOT_ERROR_TEXT_LINES = (RUNNER_SUMMARY_LINE, RUN_CLOCK_LINE, PASSING_TEST_LINE, RULE_LINE, UNITTEST_RUN_LINE)
 # A Django settings error under pytest, the pytest command that raises it, and the files whose change can raise it
 # themselves: a settings module or an app config.
@@ -111,31 +128,35 @@ def tail_with_failing_tests(output, tail):
 
 
 def failing_test_quote(output, tail, errors_suffix=""):
-    """The error text of each failing test, capped at MAX_ERROR_LINES_TOTAL lines, then the names of the tests the cap
-    cut (among the first MAX_FAILING_TEST_LINES failing tests), then `errors_suffix`, when each of those tests has
-    some error text; else the tail with the failing-test lines above it."""
+    """The error text of each failing test, capped at MAX_ERROR_LINES_TOTAL lines, then the failing-test lines the
+    quoted errors lack (headers and tests the cap cut, among the first MAX_FAILING_TEST_LINES), then `errors_suffix`,
+    when each of those tests has some error text, except that a Rust `... FAILED` or `FAIL [` header with no error text
+    of its own passes the check; else the tail with the failing-test lines above it."""
     errors = failing_test_errors(output)
     names = failing_test_lines(output)
-    if errors and all(name in errors for name in names):
+    if errors and all(name in errors or RUST_FAILED_TEST_HEADER.match(name) for name in names):
         capped_errors = errors[:MAX_ERROR_LINES_TOTAL]
-        cut_names = [name for name in names if name not in capped_errors]
-        return "\n" + FAILING_TESTS_HEADER + "\n".join(capped_errors + cut_names) + errors_suffix
+        unquoted_names = [name for name in names if name not in capped_errors]
+        return "\n" + FAILING_TESTS_HEADER + "\n".join(capped_errors + unquoted_names) + errors_suffix
     return tail_with_failing_tests(output, tail)
 
 
 def failing_test_errors(output, lines_per_test=MAX_ERROR_LINES_PER_TEST):
     """The error text of each failing test in the output: its failing line and the non-blank error-text lines after it
-    up to the next failing line, with the runner summary, clock, passing-test, rule and unittest run lines left out,
-    each line cut at MAX_ERROR_LINE_CHARS. Each jest `●` test in a file block is its own sub-block, and any other block
-    is one sub-block. A sub-block with more lines than `lines_per_test` keeps its first line and its last
-    `lines_per_test - 1`, so a traceback keeps its final error message. Empty when no failing line has any error text
-    after it."""
+    up to the next failing line, with the runner summary, clock, passing-test, rule and unittest run lines and Rust
+    frame lines (Rust blocks only) left out, each line cut at MAX_ERROR_LINE_CHARS. Each jest `●` test in a file
+    block is its own sub-block, and any other block is one sub-block. A sub-block with more lines than `lines_per_test`
+    keeps its first line and its last `lines_per_test - 1`, so a traceback keeps its final error message. Empty when no
+    failing line has any error text after it."""
     quoted = []
     for failing_line, *detail_lines in failing_blocks(output.splitlines()):
         details = []
+        is_rust_block = bool(PANIC_LINE.match(failing_line.strip())
+                             or RUST_FAILED_TEST_HEADER.match(failing_line.strip()))
+        not_error_text = NOT_ERROR_TEXT_LINES + ((RUST_FRAME_LINE,) if is_rust_block else ())
         for sub_block in split_at_test_headings(detail_lines):
             kept = [line.rstrip()[:MAX_ERROR_LINE_CHARS] for line in sub_block
-                    if not any(pattern.match(line) for pattern in NOT_ERROR_TEXT_LINES)]
+                    if not any(pattern.match(line) for pattern in not_error_text)]
             if len(kept) > lines_per_test:
                 kept = [kept[0], *kept[len(kept) - (lines_per_test - 1):]]
             details += kept
@@ -178,6 +199,8 @@ def normalized_log_line(line):
     in an assertion message is not a runner summary."""
     # A per-run clock line keeps its label and loses only its time, so it compares equal across runs.
     line = RUN_CLOCK_LINE.sub(r"\g<label>", line)
+    # A panic line's thread id differs per run, and its line and column move when a diff shifts the file.
+    line = without_panic_run_details(line)
     # A failing test's reason keeps its numbers: `expected 5000ms, got 2000ms` is an assertion, not a timing.
     if FAILING_TEST_LINE.match(line) and FAILURE_REASON_SEPARATOR in line:
         name, separator, reason = line.partition(FAILURE_REASON_SEPARATOR)
@@ -190,6 +213,18 @@ def normalized_log_line(line):
         without_totals = SUMMARY_TOTAL.sub(" ", without_timing)
         without_counts = NON_FAILURE_COUNT.sub(" ", without_totals)
     return " ".join(without_counts.split()).rstrip(",|").rstrip()
+
+
+def without_panic_run_details(line):
+    """A Rust panic line without its thread id and its `:LINE:COL`, keeping the file path; any other line as it is."""
+    panic = PANIC_LINE.match(line)
+    if not panic:
+        return line
+
+    for group in ("position", "thread_id"):
+        if panic.group(group):
+            line = line[:panic.start(group)] + line[panic.end(group):]
+    return line
 
 
 def failing_block_details(log_lines):

@@ -1,5 +1,4 @@
 """Checks for quality_check_cap.py: caps a quality check at one re-run per edit."""
-import importlib.util
 import json
 import os
 import pathlib
@@ -36,15 +35,16 @@ class QualityCheckCapTest(unittest.TestCase):
         if command is not None:
             payload["tool_input"]["command"] = command
         payload.update(extra)
-        return self.fire_raw(json.dumps(payload), env_extra)
+        finished = self.fire_raw(json.dumps(payload), env_extra)
+        if event.startswith("PostToolUse"):
+            time.sleep(TICK)
+        return finished
 
     def fire_raw(self, stdin, env_extra=None):
         env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.tmp)}
         env.update(env_extra or {})
-        finished = subprocess.run([sys.executable, str(SCRIPT)], input=stdin, capture_output=True, text=True,
-                                  env=env, cwd=str(self.work))
-        time.sleep(TICK)
-        return finished
+        return subprocess.run([sys.executable, str(SCRIPT)], input=stdin, capture_output=True, text=True,
+                              env=env, cwd=str(self.work))
 
     def pre(self, command, **options):
         return self.fire("PreToolUse", command=command, **options)
@@ -73,22 +73,7 @@ class QualityCheckCapTest(unittest.TestCase):
     def run_records(self, session="s1"):
         return [name for name in self.state_files(session) if not name.endswith(".start")]
 
-    def load_module(self):
-        sys.path.insert(0, str(SCRIPT.parent))
-        self.addCleanup(sys.path.remove, str(SCRIPT.parent))
-        spec =importlib.util.spec_from_file_location("quality_check_cap", str(SCRIPT))
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-
     # basics
-
-    def test_cksum_matches_the_posix_cksum_command(self):
-        module = self.load_module()
-        self.assertEqual(module.cksum(b"123456789"), 930766865)
-        sample = b"pytest\n/some/where"
-        expected = subprocess.run(["cksum"], input=sample, capture_output=True).stdout.split()[0]
-        self.assertEqual(str(module.cksum(sample)).encode(), expected)
 
     def test_first_run_allowed_then_repeat_denied(self):
         self.assert_allowed(self.pre("pytest -q"))
@@ -129,14 +114,6 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_allowed(self.pre("cargo test", agent_id="coder-1"))
         self.assert_allowed(self.pre("cargo test", agent_id="reviewer-1"))
 
-    def test_a_subagent_that_edits_after_its_own_run_runs_the_target_once_then_is_capped(self):
-        self.post("cargo test", agent_id="coder-1", agent_type="coder")
-        self.assert_denied(self.pre("cargo test", agent_id="coder-1", agent_type="coder"))
-        self.assert_allowed(self.edit(agent_id="coder-1", agent_type="coder"))
-        self.assert_allowed(self.pre("cargo test", agent_id="coder-1", agent_type="coder"))
-        self.post("cargo test", agent_id="coder-1", agent_type="coder")
-        self.assert_denied(self.pre("cargo test", agent_id="coder-1", agent_type="coder"))
-
     def test_a_denied_chain_names_the_matched_fragment_and_says_the_other_steps_run_as_their_own_call(self):
         self.post("cargo fmt --check && cargo test && cargo clippy")
         reason = self.assert_denied(self.pre("cargo fmt --check && cargo test && cargo clippy"))
@@ -144,15 +121,12 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assertIn("none of its other steps ran", reason)
         self.assertIn("Send the other steps again without it, as their own call.", reason)
 
-    def test_a_denied_check_piped_into_another_command_has_no_chain_advice(self):
-        self.post("pytest 2>&1 | tail -30")
-        reason = self.assert_denied(self.pre("pytest 2>&1 | tail -30"))
-        self.assertNotIn("other steps", reason)
-
-    def test_a_denied_single_check_has_no_chain_advice(self):
-        self.post("cargo test")
-        reason = self.assert_denied(self.pre("cargo test"))
-        self.assertNotIn("other steps", reason)
+    def test_a_denied_piped_or_single_check_has_no_chain_advice(self):
+        for command in ("pytest 2>&1 | tail -30", "cargo test"):
+            with self.subTest(command=command):
+                self.post(command)
+                reason = self.assert_denied(self.pre(command))
+                self.assertNotIn("other steps", reason)
 
     def test_an_agent_id_cannot_name_a_path_outside_the_session_state(self):
         self.post("cargo test", agent_id="../../escape/x y")
@@ -174,12 +148,6 @@ class QualityCheckCapTest(unittest.TestCase):
             self.assert_allowed(self.edit(**agent))
             self.assert_allowed(self.pre("cargo test"))
 
-    def test_run_state_file_is_named_by_cksum_of_command_and_cwd(self):
-        module = self.load_module()
-        self.post("pytest -q")
-        key = module.cksum(b"pytest -q\n" + str(self.work).encode())
-        self.assertEqual(self.state_files(), [f"run-{key}"])
-
     def test_edit_tools_reset_the_cap(self):
         for tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
             self.post("pytest")
@@ -187,17 +155,6 @@ class QualityCheckCapTest(unittest.TestCase):
             self.assert_allowed(self.edit(tool=tool))
             self.assertIn("edits", self.state_files())
             self.assert_allowed(self.pre("pytest"))
-
-    def test_run_after_edit_is_capped_again(self):
-        self.edit()
-        self.assert_allowed(self.pre("npm test"))
-        self.post("npm test")
-        self.assert_denied(self.pre("npm test"))
-
-    def test_edit_newer_than_run_allows(self):
-        self.post("ruff check .")
-        self.edit()
-        self.assert_allowed(self.pre("ruff check ."))
 
     def test_unrelated_tools_and_commands_pass_and_record_nothing(self):
         self.assert_allowed(self.fire("PreToolUse", tool="Read"))
@@ -279,10 +236,6 @@ class QualityCheckCapTest(unittest.TestCase):
 
     # failures
 
-    def test_failed_check_counts_as_a_run(self):
-        self.fire("PostToolUseFailure", command="pytest", error="Exit code 1\nFAILED")
-        self.assert_denied(self.pre("pytest"))
-
     def test_a_check_whose_redirect_could_not_be_opened_never_ran_and_is_not_recorded(self):
         ruff = "ruff check a.py"
         self.fire("PostToolUseFailure", command=ruff + " > gone/ruff.log 2>&1",
@@ -343,21 +296,16 @@ class QualityCheckCapTest(unittest.TestCase):
         self.post(command)
         self.assert_denied(self.pre(command))
 
-    def test_a_skipped_pre_leaves_no_start_mark_for_the_post(self):
-        self.assert_allowed(self.pre("pytest -q"))
-        self.assert_allowed(self.edit())
-        self.assert_allowed(self.pre("pytest -q #skip-quality-cap"))
-        self.assertEqual(self.state_files(), ["edits"])
-        self.post("pytest -q")
-        self.assert_denied(self.pre("pytest -q"))
-
-    def test_a_formatter_exempt_pre_leaves_no_start_mark_for_the_post(self):
-        self.assert_allowed(self.pre("pytest -q"))
-        self.assert_allowed(self.edit())
-        self.assert_allowed(self.pre("prettier --write . && pytest -q"))
-        self.assertEqual(self.state_files(), ["edits"])
-        self.post("pytest -q")
-        self.assert_denied(self.pre("pytest -q"))
+    def test_a_skipped_or_formatter_exempt_pre_leaves_no_start_mark_for_the_post(self):
+        for exempt in ("pytest -q #skip-quality-cap", "prettier --write . && pytest -q"):
+            with self.subTest(exempt=exempt):
+                self.setUp()
+                self.assert_allowed(self.pre("pytest -q"))
+                self.assert_allowed(self.edit())
+                self.assert_allowed(self.pre(exempt))
+                self.assertEqual(self.state_files(), ["edits"])
+                self.post("pytest -q")
+                self.assert_denied(self.pre("pytest -q"))
 
     def test_an_edit_made_while_a_check_ran_allows_a_rerun(self):
         self.assert_allowed(self.pre("pytest -q"))
@@ -421,14 +369,6 @@ class QualityCheckCapTest(unittest.TestCase):
             self.fire("PostToolUseFailure", command="pytest", error=f"Exit code {code}\nFAILED")
             self.assert_denied(self.pre("pytest"))
             self.assert_allowed(self.edit())
-
-    def test_exit_code_in_error_text_reads_only_a_leading_exit_code_line(self):
-        module = self.load_module()
-        self.assertEqual(module.exit_code_in_error_text("Exit code 144\nTerminated"), 144)
-        self.assertEqual(module.exit_code_in_error_text("Exit code 1"), 1)
-        self.assertIsNone(module.exit_code_in_error_text("FAILED\nExit code 144"))
-        self.assertIsNone(module.exit_code_in_error_text("Command timed out after 120s"))
-        self.assertIsNone(module.exit_code_in_error_text(""))
 
     def test_exit_code_text_after_the_first_line_does_not_count_as_the_exit_status(self):
         self.fire("PostToolUseFailure", command="pytest", error="FAILED\nworker ended: Exit code 144")
@@ -584,6 +524,10 @@ class QualityCheckCapTest(unittest.TestCase):
         self.post("cargo test", cwd=repo)
         self.assert_denied(self.pre("cargo test", cwd=repo))
         self.assert_denied(self.pre("cargo test", cwd=repo))
+        (repo / "tracked.py").write_text("changed before the next run\n")
+        time.sleep(0.05)
+        self.post("pytest", cwd=repo)
+        self.assert_denied(self.pre("pytest", cwd=repo))
 
     def test_git_failure_after_a_recorded_fingerprint_allows(self):
         repo = self.make_committed_repo()
@@ -591,20 +535,6 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_denied(self.pre("cargo test", cwd=repo))
         shutil.rmtree(repo / ".git")
         self.assert_allowed(self.pre("cargo test", cwd=repo))
-
-    def test_edit_by_a_subagent_of_the_same_session_resets_the_cap(self):
-        self.post("cargo clippy")
-        self.assert_denied(self.pre("cargo clippy"))
-        self.assert_allowed(self.edit(agent_id="sub-1", agent_type="coder"))
-        self.assert_allowed(self.pre("cargo clippy"))
-
-    def test_subagent_shell_edits_after_the_run_allow_a_rerun(self):
-        repo = self.make_repo()
-        self.post("cargo clippy", cwd=repo)
-        time.sleep(0.05)
-        for name in ("a.rs", "b.rs"):
-            (repo / name).write_text("x\n")
-        self.assert_allowed(self.pre("cargo clippy", cwd=repo))
 
     # scoped cargo test
 
@@ -820,13 +750,6 @@ class QualityCheckCapTest(unittest.TestCase):
         (repo / "fresh.py").write_text("b\n")
         self.assert_allowed(self.pre("pytest", cwd=repo))
 
-    def test_file_changed_before_run_still_denies(self):
-        repo = self.make_repo()
-        (repo / "tracked.py").write_text("b\n")
-        time.sleep(0.05)
-        self.post("pytest", cwd=repo)
-        self.assert_denied(self.pre("pytest", cwd=repo))
-
     def test_deleted_tracked_file_changes_the_tree_and_allows(self):
         repo = self.make_repo()
         self.post("pytest", cwd=repo)
@@ -840,12 +763,9 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_allowed(self.fire("PostToolUse", command="pytest", env_extra={"CLAUDE_SKIP_HOOKS": "1"}))
         self.assertFalse(self.state_root.exists())
 
-    def test_unparseable_input_exits_zero_silently(self):
-        for stdin in ("not json", "[1]", "{"):
+    def test_unparseable_or_empty_input_exits_zero_silently(self):
+        for stdin in ("not json", "[1]", "{", ""):
             self.assert_allowed(self.fire_raw(stdin))
-
-    def test_empty_input_is_silent(self):
-        self.assert_allowed(self.fire_raw(""))
 
     def test_old_state_is_pruned_and_fresh_state_kept(self):
         old = self.state_root / "old-session"

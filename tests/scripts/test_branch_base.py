@@ -82,29 +82,22 @@ class BranchBaseTest(unittest.TestCase):
         git(path, "checkout", "-q", "-b", "topic")
         self.assert_base(run_script(path), "origin/trunk origin-head")
 
-    def test_origin_main(self):
-        path = self.repo()
-        self.with_origin(path)
-        git(path, "checkout", "-q", "-b", "topic")
-        git(path, "remote", "set-head", "origin", "-d")
-        self.assert_base(run_script(path), "origin/main origin-main")
+    def test_origin_main_or_master(self):
+        rows = [("main", "origin/main origin-main"), ("master", "origin/master origin-master")]
+        for default, expected in rows:
+            with self.subTest(default=default):
+                path = self.repo(name=default, default=default)
+                self.with_origin(path, default)
+                git(path, "checkout", "-q", "-b", "topic")
+                git(path, "remote", "set-head", "origin", "-d")
+                self.assert_base(run_script(path), expected)
 
-    def test_origin_master(self):
-        path = self.repo(default="master")
-        self.with_origin(path, "master")
-        git(path, "checkout", "-q", "-b", "topic")
-        git(path, "remote", "set-head", "origin", "-d")
-        self.assert_base(run_script(path), "origin/master origin-master")
-
-    def test_local_main(self):
-        path = self.repo()
-        git(path, "checkout", "-q", "-b", "topic")
-        self.assert_base(run_script(path), "main main")
-
-    def test_local_master(self):
-        path = self.repo(default="master")
-        git(path, "checkout", "-q", "-b", "topic")
-        self.assert_base(run_script(path), "master master")
+    def test_local_main_or_master(self):
+        for default in ("main", "master"):
+            with self.subTest(default=default):
+                path = self.repo(name=default, default=default)
+                git(path, "checkout", "-q", "-b", "topic")
+                self.assert_base(run_script(path), f"{default} {default}")
 
     # --- upstream rules ---------------------------------------------------
 
@@ -302,16 +295,6 @@ class BranchBaseTest(unittest.TestCase):
         git(path, "checkout", "-q", "--detach")
         self.assert_base(run_script(path), "main main")
 
-    def test_detached_head_with_no_candidate_names_the_state(self):
-        path = self.repo(default="trunk")
-        git(path, "checkout", "-q", "--detach")
-        branch_base_run = run_script(path)
-        self.assertEqual(branch_base_run.returncode, 1)
-        self.assertEqual(
-            branch_base_run.stderr.strip(),
-            "STOP: no base found for detached HEAD; ask the user for a base branch",
-        )
-
     def test_branch_name_with_a_slash(self):
         path = self.repo()
         self.with_origin(path)
@@ -363,16 +346,22 @@ class BranchBaseTest(unittest.TestCase):
 
     # --- failure --------------------------------------------------------------
 
-    def test_no_candidate_stops(self):
-        path = self.repo(default="trunk")
-        git(path, "checkout", "-q", "-b", "topic")
-        branch_base_run = run_script(path)
-        self.assertEqual(branch_base_run.returncode, 1)
-        self.assertEqual(branch_base_run.stdout, "")
-        self.assertEqual(
-            branch_base_run.stderr.strip(),
-            "STOP: no base found for topic; ask the user for a base branch",
-        )
+    def test_no_candidate_stops_and_names_the_branch_or_the_detached_head(self):
+        rows = [
+            (["checkout", "-q", "-b", "topic"], "topic"),
+            (["checkout", "-q", "--detach"], "detached HEAD"),
+        ]
+        for checkout, state in rows:
+            with self.subTest(state=state):
+                path = self.repo(name=state.replace(" ", "-"), default="trunk")
+                git(path, *checkout)
+                branch_base_run = run_script(path)
+                self.assertEqual(branch_base_run.returncode, 1)
+                self.assertEqual(branch_base_run.stdout, "")
+                self.assertEqual(
+                    branch_base_run.stderr.strip(),
+                    f"STOP: no base found for {state}; ask the user for a base branch",
+                )
 
 
 if __name__ == "__main__":

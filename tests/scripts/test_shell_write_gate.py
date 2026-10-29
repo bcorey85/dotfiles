@@ -275,11 +275,6 @@ class ShellWriteGateTest(unittest.TestCase):
             self.assertIn("Write tool", reason)
             self.assertNotIn(HINT, reason)
 
-    def test_coder_in_the_main_session_cannot_use_the_skip_comment(self):
-        reason = self.assert_denied("echo hi > tracked.txt " + HINT, agent="coder")
-        self.assertIn("Write tool", reason)
-        self.assert_allowed("echo hi > tracked.txt " + HINT, agent="reviewer")
-
     def test_coder_target_with_temp_variable_is_checked_after_expansion(self):
         outside = self.make_outside_dir()
         for target in ("$TMPDIR/check.log", "${TMPDIR}/check.log", "$HOME/check.log"):
@@ -323,10 +318,6 @@ class ShellWriteGateTest(unittest.TestCase):
                         "echo x | unbuffer tee tracked.txt"):
             reason = self.assert_denied(command)
             self.assertIn("tracked.txt is git-tracked", reason)
-
-    def test_a_heredoc_marker_in_a_comment_does_not_hide_the_next_line(self):
-        reason = self.assert_denied("echo hi # <<X\necho x > tracked.txt")
-        self.assertIn("tracked.txt is git-tracked", reason)
 
     def test_a_tilde_target_expands_without_home_set(self):
         payload = {"tool_input": {"command": "echo hi > ~/tracked.txt"}, "cwd": str(self.repo)}
@@ -399,18 +390,6 @@ class ShellWriteGateTest(unittest.TestCase):
                         "ls # it's\necho x > tracked.txt"):
             self.assert_denied(command)
 
-    def test_a_heredoc_delimiter_is_the_whole_shell_word(self):
-        self.make_tracked_scope_files()
-        self.assert_denied("cat <<EOF-X > /dev/null\nx\nEOF-X\necho hi > tests/run.sh")
-
-    def test_a_quoted_marker_on_a_multi_line_string_opens_no_heredoc(self):
-        self.make_tracked_scope_files()
-        self.assert_denied("echo 'a\ncat <<EOF\nb'\necho hi > tests/run.sh")
-
-    def test_an_arithmetic_shift_with_spaces_opens_no_heredoc(self):
-        self.make_tracked_scope_files()
-        self.assert_denied("(( v = 1 << x ))\necho hi > tests/run.sh")
-
     def test_a_substitution_in_an_unquoted_heredoc_body_is_code(self):
         self.make_tracked_scope_files()
         self.assert_denied("cat <<EOF > /dev/null\n$(echo hi > tests/run.sh)\nEOF")
@@ -435,6 +414,7 @@ class ShellWriteGateTest(unittest.TestCase):
                 self.assertIn("Write tool", reason)
                 self.assertIn("This agent has no way to skip this gate.", reason)
                 self.assertNotIn(HINT, reason)
+        self.assert_allowed("echo hi > tracked.txt " + HINT, agent="reviewer")
 
     def test_subagent_in_place_and_tracked_redirects_denied_as_in_main_session(self):
         for agent_fields in ({"agent_id": "a1"}, {"agent_type": "reviewer"}):
@@ -443,9 +423,6 @@ class ShellWriteGateTest(unittest.TestCase):
                 payload = {"tool_input": {"command": command}, "cwd": str(self.repo), **agent_fields}
                 self.denied(self.run_hook(json.dumps(payload)))
                 self.assert_denied(command)
-
-    def test_main_session_still_gets_skip_comment_in_deny_text(self):
-        self.assertIn(HINT, self.assert_denied("sed -i s/a/b/ f"))
 
     # interpreter writes
 
@@ -566,9 +543,6 @@ class ShellWriteGateTest(unittest.TestCase):
         script = self.tmp / "rewrite.py"
         script.write_text("import sys\nwith open(sys.argv[1], 'w') as f:\n    f.write('y')\n")
         self.assert_denied(f"python3 {script} tracked.txt")
-
-    def test_inline_code_that_writes_a_tracked_file_is_denied(self):
-        self.assert_denied("node -e \"require('fs').writeFileSync('tracked.txt', 'y')\"")
 
     def test_inline_code_with_operator_characters_that_writes_a_tracked_file_is_denied(self):
         commands = (

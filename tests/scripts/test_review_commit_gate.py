@@ -137,6 +137,19 @@ class ReviewCommitGateTest(GateCase):
         for command in ("git status", "echo git commits", "ls"):
             self.assert_silent(self.bash(command))
 
+    def test_a_probe_that_splits_the_commit_words_is_denied(self):
+        self.dispatch()
+        for command in ("""printf '%s\\n' 'G = "gi" + "t com" + "mit"' > probe.py && python3 probe.py""",
+                        """python3 -c 'COMMIT = "git" + " " + "commit"'""",
+                        """node -e "const c = 'git ' + 'commit -m x'\"""",
+                        r'''python3 -c "x = \"gi\" + \"t commit\""'''):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_quoted_words_joined_by_a_plus_argument_are_not_a_commit(self):
+        self.dispatch()
+        self.assert_silent(self.bash("""printf '%s\\n' "git" "+" "commit\""""))
+
     def test_commit_tree_is_not_a_commit(self):
         self.dispatch()
         self.assert_silent(self.bash("git commit-tree abc"))

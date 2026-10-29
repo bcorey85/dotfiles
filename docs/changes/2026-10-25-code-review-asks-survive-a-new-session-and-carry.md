@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "/code review asks survive a new session and carry one proposed change"
 description: "A /code run now pins to the session that opens each dispatch, so open review asks and a review-again hand-back survive a new session; a resume at a closing phase re-invokes its skill; and every structured review ask carries one proposed change, so an accepted answer gives the asks coder an edit to make."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T16:14:13-05:00"}

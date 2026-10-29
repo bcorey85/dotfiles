@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "plan-reviewer: a new finding class, a class scoped as a list"
-description: "plan-reviewer: a new finding class, a class scoped as a list."
+change_type: "changed"
+title: "plan-reviewer now lists every site of a class a plan scopes as a list and reports the omitted ones"
+description: "plan-reviewer has a new finding class for a class scoped as a list: it lists every site with the shared property and reports the omitted ones."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["agent/plan-reviewer"]
 evidence: ["judgment"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-plan-reviewer: a new finding class, a class scoped as a list. The reviewer names the shared property, runs the command that lists every site with it, and reports the omitted sites on an `Enumerated:` line
+plan-reviewer has a new finding class for a class scoped as a list. The reviewer names the shared property, runs the command that lists every site with it, and reports the omitted sites on an `Enumerated:` line
 
 ## Evidence
 

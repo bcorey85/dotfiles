@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "verify-branch retries a busy ledger before it reads the review state"
 description: "verify_common.review_ran runs `ledger yield --review-trees` with a 60 s timeout and up to 4 tries when the ledger exits 75 (busy). If the ledger stays busy, it fails with a message that says to run the step again."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T09:51:55-05:00"}
 seq: 7
+kind: "fix"
 components: ["script/verify-common", "script/script-utils"]
 evidence: ["work incident"]
 watches: []

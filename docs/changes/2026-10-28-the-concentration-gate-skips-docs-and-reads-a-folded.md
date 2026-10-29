@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The concentration gate skips docs and reads a folded gate item"
 description: "The refactor phase's concentration gate no longer counts files under a docs/ folder, and skill-done writes the simplify record under a Manual Verification item that names the gate instead of asking for the exact criterion line."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T10:00:00-05:00"}

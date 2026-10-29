@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Refuse a non-numeric int field before the ledger"
 description: "log-review-finding and log-escape refuse an int field that is not a whole number, naming the pair, before any row is written. review-loop writes each logger call with literal key=value arguments, one call per row."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T20:00:00-05:00"}

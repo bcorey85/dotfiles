@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`/code` and `/review`: end the turn only at a STOP (or a wait, in `/review`)"
 description: "`/code` and `/review`: end the turn only at a STOP (or a wait, in `/review`)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["skill/code", "skill/review"]
 evidence: ["census"]
 watches: []

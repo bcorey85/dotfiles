@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Telemetry rows now record the repo rather than the checkout"
 description: "Telemetry rows now record the repo rather than the checkout, the finding-class vocabulary is validated and gains a `docs` value, and a gate's verdict is spelling-normalized instead of refused."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-07T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["script/log-review-finding", "script/log-escape"]
 evidence: ["log census"]
 watches: []

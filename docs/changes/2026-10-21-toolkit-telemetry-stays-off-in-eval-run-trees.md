@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Toolkit telemetry stays off in eval run trees unless a run turns it on"
 description: "The telemetry switch is off for a session whose project folder is inside ~/dev/evals/, unless CLAUDE_TOOLKIT_TELEMETRY=1. CLAUDE_TOOLKIT_TELEMETRY=0 turns it off everywhere, even when the switch file exists. Eval runs no longer write test rows into the live logs."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T12:17:11-05:00"}
 seq: 16
+kind: "behavior"
 components: ["script/telemetry-enabled"]
 evidence: ["census", "tests"]
 watches: []

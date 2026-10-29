@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "comment-bloat gate treats the opening line of a multi-line data string as data from the opening quote"
-description: "The gate searched the whole opening line of an assigned or passed multi-line string; it now searches only the text before the opening quote."
+description: "The gate now searches only the text before the opening quote of an assigned or passed multi-line string. Before, it searched the whole opening line."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-27T15:35:11-05:00"}
 seq: 116
 kind: "fix"

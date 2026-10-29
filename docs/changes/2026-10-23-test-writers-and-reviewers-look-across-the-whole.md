@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Test writers and reviewers look across the whole suite for a test that already catches the bug"
 description: "The coder, both test reviewers and the plan format treat any test in the suite, at any layer, as a sibling. A rule's case table is tested at one layer, with one wiring test per other entry point."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-23T08:16:59-05:00"}
 seq: 3
+kind: "behavior"
 components: ["skill/coder-core", "agent/test-reviewer", "agent/test-intent-reviewer", "skill/plan-format"]
 evidence: ["census"]
 watches: ["test-sibling-whole-suite"]

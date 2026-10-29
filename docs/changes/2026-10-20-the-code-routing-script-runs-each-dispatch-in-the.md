@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The /code routing script runs each dispatch in the background and keeps the run in one session"
 description: "code-step.py prints a background dispatch and the next verb waits for the agent's report. Hooks store the hand-backs, keep the fork alive while a dispatch is open and print say.md as the closing text. The run pins to one session."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-20T23:26:15-05:00"}
 seq: 19
+kind: "behavior"
 components: ["script/code-step", "skill/code"]
 evidence: ["tests", "judgment"]
 watches: []

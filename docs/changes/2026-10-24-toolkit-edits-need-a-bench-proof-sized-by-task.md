@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Toolkit edits need a bench proof sized by task class"
 description: "From 2026-10-25 a change file's kind is fix, user-rule, structured or open; structured and open must cite findings with 8 or 32 runs per arm, and a dotfiles pre-commit hook refuses a toolkit commit with no change file."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T17:48:13-05:00"}

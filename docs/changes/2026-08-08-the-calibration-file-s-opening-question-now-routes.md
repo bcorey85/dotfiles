@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The calibration file's opening question now routes a borderline finding to the same place its own self-check"
+change_type: "fixed"
+title: "The calibration file's opening question now routes a borderline finding like its own self-check"
 description: "The calibration file's opening question now routes a borderline finding to the same place its own self-check does, and stops colliding with the reserved label."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 15
+kind: "fix"
 components: ["shared/reviewer-calibration"]
 evidence: ["census"]
 watches: []

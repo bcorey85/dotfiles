@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Criteria dry-run leaves closing-phase items to their skill, as the plan check does"
 description: "criteria_dry_run.py skips the Automated Verification items of closing phases (Refactor pass, Test audit, Verify pass, Recap), which their skill checks from the session's evidence and never runs, so it no longer reports them UNPARSED while the plan check passes them."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T21:58:13-05:00"}

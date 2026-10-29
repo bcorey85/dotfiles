@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The coder gate ranks its outcomes in one place"
 description: "The scoped test run and the hand-back hook rank a mixed result with one gate_outcome(), so a setup fault beside a command error reports a command error in both, and each coder's gate record holds one per-command outcome map."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T09:43:24-05:00"}

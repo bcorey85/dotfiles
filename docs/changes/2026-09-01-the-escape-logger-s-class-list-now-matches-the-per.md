@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The escape logger's class list now matches the per-finding logger's"
 description: "The escape logger's class list now matches the per-finding logger's, and names the handful of retired values older rows carry as legacy never to be remapped."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 13
+kind: "behavior"
 components: ["script/log-escape", "script/log-review-finding"]
 evidence: ["census"]
 watches: []

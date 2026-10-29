@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A /code run's dispatches name its checkout, and later verbs follow the run from any cwd"
 description: "Every agent code_step.py dispatches is told the run's checkout as an absolute path and to work only there, and every verb after start goes on with the session's open run when the shell stands in another repo."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T16:46:46-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "review-scope stops when no base is found and the branch has commits of its own"
 description: "review-scope exits 3 with a clear message instead of printing a working-tree-only scope when no base ref exists and the branch holds commits no other ref has."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T17:02:50-05:00"}

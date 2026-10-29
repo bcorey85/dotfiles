@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review-and-fix loop now takes a plan path and a phase number as dispatch arguments"
 description: "The review-and-fix loop now takes a plan path and a phase number as dispatch arguments."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["agent/review-loop", "agent/code-reviewer"]
 evidence: ["census"]
 watches: []

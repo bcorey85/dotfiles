@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The security reviewer's prompt is its contract only (541 words"
+change_type: "changed"
+title: "The security reviewer's prompt is now 541 words, down from 732, holding its contract only"
 description: "The security reviewer's prompt is its contract only (541 words, was 732): each of the eight scope classes is one line with no example lists, and the \"two real findings beat twelve\", \"#1 false positive\", \"not a softener\", \"highest-stakes class\", owner-name, and routing-reason clauses are gone."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["agent/security-reviewer"]
 evidence: ["removal round"]
 watches: []

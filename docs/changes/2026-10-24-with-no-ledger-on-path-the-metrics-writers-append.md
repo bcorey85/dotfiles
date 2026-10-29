@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "With no ledger on PATH the metrics writers append to the old jsonl files"
-description: "ledger-write exited 0 silently when the ledger binary was missing, so a machine with no ledger lost every review finding, review run, review metrics row, escape, spec run and scan run. It now appends the completed row to the jsonl file each type used before the ledger switch and prints one stderr line."
+description: "On a machine with no ledger, ledger-write now appends each completed row to the jsonl file its type used before the ledger switch and prints one stderr line. Before, it exited 0 silently, so that machine lost every review finding, review run, review metrics row, escape, spec run and scan run."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T15:52:13-05:00"}
 seq: 14
 kind: "fix"

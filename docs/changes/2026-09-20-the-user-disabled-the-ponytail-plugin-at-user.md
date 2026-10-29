@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The user disabled the Ponytail plugin at user scope with the plugin command"
 description: "The user disabled the Ponytail plugin at user scope with the plugin command."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["rule/settings-json"]
 evidence: ["removal round", "seeded round", "census", "judgment"]
 watches: []

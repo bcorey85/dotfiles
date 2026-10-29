@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "`eng-spec` finalize phase: four escape citations are gone (ticket IDs, dates and what each escape broke)"
-description: "`eng-spec` finalize phase: four escape citations are gone (ticket IDs, dates and what each escape broke)."
+change_type: "removed"
+title: "The `eng-spec` finalize phase now states its rules without four escape citations"
+description: "The `eng-spec` finalize phase loads fewer words (1,561 to 1,482) because it no longer cites four escapes by ticket ID, date and what each one broke. Every rule stays word for word."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-17T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["judgment"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-`eng-spec` finalize phase: four escape citations are gone (ticket IDs, dates and what each escape broke). Every rule they followed stays word for word
+The `eng-spec` finalize phase now states its rules without four escape citations (ticket IDs, dates and what each escape broke). Every rule they followed stays word for word
 
 ## Evidence
 

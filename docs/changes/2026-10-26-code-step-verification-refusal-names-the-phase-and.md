@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code_step verification refusal names the phase and offers only a repo script"
 description: "The refusal for a compound Automated Verification line names the phase each bad line belongs to, says every open phase is checked at each start, and offers only an executable repo script whose comments name no ticket or plan path."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:50:59-05:00"}

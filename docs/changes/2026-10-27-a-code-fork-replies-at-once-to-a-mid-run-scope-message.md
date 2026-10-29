@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A /code fork replies at once to a mid-run scope message"
 description: "The /code skill says a run takes no scope change mid-run: the fork replies to the sender with SendMessage at once and never passes the message on."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:55:00-05:00"}

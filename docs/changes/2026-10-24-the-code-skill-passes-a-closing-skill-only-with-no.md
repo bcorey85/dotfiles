@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The /code skill passes a closing skill only with no open finding"
 description: "The /code skill's invoke-skill step now says which verdict to send: `skill-done pass` only when the closing skill reports no open finding, else `skill-done fail`. Before, it named both and gave no rule."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T00:11:34-05:00"}

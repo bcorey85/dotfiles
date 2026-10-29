@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "A PostToolUse hook on Write and Edit, `code_layout_gate.py`, blocked new Python"
-description: "A PostToolUse hook on Write and Edit, `code_layout_gate.py`, blocked new Python, TypeScript or JavaScript code that passed a call result straight into a call that was itself an argument, or that ran more than 8 statements in one block with no blank line."
+change_type: "added"
+title: "The code-layout rule stays prompt-only: the `code_layout_gate.py` hook was added and removed the same day"
+description: "The code-layout rule in CLAUDE.md stays as prompt text only. A PostToolUse hook, `code_layout_gate.py`, was added to block new code that passed a call result straight into a call that was itself an argument, or that ran more than 8 statements in one block with no blank line, and was removed the same day."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-17T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["rule/settings-json"]
 evidence: ["calibration", "judgment"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-A PostToolUse hook on Write and Edit, `code_layout_gate.py`, blocked new Python, TypeScript or JavaScript code that passed a call result straight into a call that was itself an argument, or that ran more than 8 statements in one block with no blank line. Added and removed the same day. The `settings.json` entry is gone. The script stays in `~/.claude/scripts/`, unused
+No hook enforces the code-layout rule; it stays as prompt text only. A PostToolUse hook on Write and Edit, `code_layout_gate.py`, blocked new Python, TypeScript or JavaScript code that passed a call result straight into a call that was itself an argument, or that ran more than 8 statements in one block with no blank line. Added and removed the same day. The `settings.json` entry is gone. The script stays in `~/.claude/scripts/`, unused
 
 ## Evidence
 

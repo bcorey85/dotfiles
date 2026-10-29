@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The metrics switch reads only the environment variable"
 description: "The metrics writers log only when CLAUDE_TOOLKIT_TELEMETRY=1. The file ~/.claude/toolkit-telemetry no longer turns logging on, and the ~/dev/evals/ folder check is gone because nothing else turns it on."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T17:16:55-05:00"}

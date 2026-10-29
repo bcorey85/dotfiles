@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The global naming rule was rewritten: take names from the ticket and the code's domain terms"
 description: "The global naming rule was rewritten: take names from the ticket and the code's domain terms, never name a value for its container or role alone, and keep every qualifier the domain needs (`compareDateRangeErrors`, not `compareErrors`)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 11
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["removal round", "judgment"]
 watches: []

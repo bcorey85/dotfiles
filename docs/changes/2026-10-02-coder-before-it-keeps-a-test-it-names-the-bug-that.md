@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Coder: before it keeps a test, it names the bug that test alone would catch"
 description: "Coder: before it keeps a test, it names the bug that test alone would catch, and deletes a duplicate or a test of a mock, the framework or a restated implementation."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 17
+kind: "behavior"
 components: ["agent/coder"]
 evidence: ["census", "judgment"]
 watches: []

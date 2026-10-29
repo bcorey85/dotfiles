@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The full check reads the dotfiles suite's total line as its summary"
 description: "runner_summaries reads the dotfiles suite runner's total line, so a passing dotfiles full check reads passed, not unverified, and a total with failed files reads failed."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T08:07:17-05:00"}

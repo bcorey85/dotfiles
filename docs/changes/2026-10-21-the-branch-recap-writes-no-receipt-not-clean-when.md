@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The branch recap writes no receipt, not clean, when the test audit left no receipt"
 description: "The recap sheet and the recap telemetry row now say \"no receipt\" when no /test-audit receipt is in context. Before, the recap wrote \"clean\" with no audit behind it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T07:41:25-05:00"}
 seq: 4
+kind: "fix"
 components: ["skill/branch-recap"]
 evidence: ["work incident"]
 watches: []

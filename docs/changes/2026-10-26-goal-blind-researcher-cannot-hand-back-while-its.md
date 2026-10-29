@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "added"
 title: "goal-blind researcher cannot hand back while its child still runs"
 description: "A new PreToolUse hook on SubagentHandback denies goal-blind-researcher's first hand-back while a child it dispatched is still open, once per agent, and fails open."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:53:23-05:00"}

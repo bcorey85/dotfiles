@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review loop sends every `fix` finding of a full review to a coder at any round"
 description: "The review loop sends every `fix` finding of a full review to a coder at any round, and the first fix-diff pass now routes like a full review: every `fix` finding it files gets a coder, blocker or not."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-19T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["agent/review-loop", "skill/fix", "agent/code-reviewer"]
 evidence: ["work-log reading", "bench reading"]
 watches: ["review-loop-fixes-first-pass-findings", "review-loop-fixes-first-pass-findings-escapes"]

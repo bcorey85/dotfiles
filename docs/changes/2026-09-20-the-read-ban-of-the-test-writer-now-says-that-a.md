@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The read ban of the test writer now says that a hook refuses the read"
 description: "The read ban of the test writer now says that a hook refuses the read, names the shell and search commands as the same read, and keeps declaration lines open by either route."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["agent/test-writer"]
 evidence: ["census"]
 watches: []

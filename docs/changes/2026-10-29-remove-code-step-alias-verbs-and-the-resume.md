@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Remove code_step alias verbs and the resume argparse"
 description: "code_step.py no longer accepts the verbs after-coder, after-review and after-plan-edit: each is refused as an unknown verb, and every route runs the stale-phase check except a real hand-back of the run's own agent. A resume answer that starts with a dash is still refused, by a plain check in place of an argument parser."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T11:27:45-05:00"}

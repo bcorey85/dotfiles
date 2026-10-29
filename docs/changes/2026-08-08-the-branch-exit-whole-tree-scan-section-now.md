@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The branch-exit whole-tree scan section now justifies all three scans it runs"
 description: "The branch-exit whole-tree scan section now justifies all three scans it runs, including the one that finds already-diverged copies."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 25
+kind: "behavior"
 components: ["skill/branch-recap"]
 evidence: ["census"]
 watches: []

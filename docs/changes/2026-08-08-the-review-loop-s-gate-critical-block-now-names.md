@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review loop's gate-critical block now names both exits that may mark the commit gate clean, not just one"
 description: "The review loop's gate-critical block now names both exits that may mark the commit gate clean, not just one, and says why the second qualifies."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 19
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["census"]
 watches: []

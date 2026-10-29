@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "spec-questions repairs whole questions, and a check holds one question per line"
 description: "A new questions_check.py fails a questions file with a clause cut short before `?`, two questions on one line, a wrapped question or a numbering gap; spec-questions runs it after every write, and goal-blind-researcher applies the leak check's own rewrites after two cycles instead of returning UNRESOLVED."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T20:00:00-05:00"}

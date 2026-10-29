@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "A new check verifies that every calibration section a reviewer names actually exists"
 description: "A new check verifies that every calibration section a reviewer names actually exists, firing when either side is edited."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 17
+kind: "behavior"
 components: ["script/calibration-refs-guard", "shared/reviewer-calibration"]
 evidence: ["judgment"]
 watches: []

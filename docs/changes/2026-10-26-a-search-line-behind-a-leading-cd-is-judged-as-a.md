@@ -1,7 +1,8 @@
 ---
 type: "Change"
-title: "A search line behind a leading cd is judged as a search ban"
-description: "A verification line whose rg or grep command starts with cd <dir> && is a search ban like a bare one, so exit 1 with no match passes."
+change_type: "fixed"
+title: "A search ban behind a leading cd now passes when the search finds nothing"
+description: "A verification line whose rg or grep command starts with cd <dir> && now counts as a search ban like a bare one, so exit 1 with no match passes."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T16:53:05-05:00"}
 seq: 61
 kind: "fix"

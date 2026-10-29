@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "coder-core review handoff trimmed to the line formats; the calibration clauses on BEHAVIOR, WHY"
-description: "coder-core review handoff trimmed to the line formats; the calibration clauses on BEHAVIOR, WHY, REFACTOR CANDIDATES, REVIEW and PLAN-IMPACT: yes removed, \"one line per note\" kept."
+change_type: "changed"
+title: "The coder-core review handoff is shorter: it keeps the line formats and \"one line per note\""
+description: "The coder-core review handoff now keeps only the line formats and \"one line per note\"; the calibration clauses on BEHAVIOR, WHY, REFACTOR CANDIDATES, REVIEW and PLAN-IMPACT: yes are gone."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 16
+kind: "behavior"
 components: ["skill/coder-core"]
 evidence: ["removal round"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-coder-core review handoff trimmed to the line formats; the calibration clauses on BEHAVIOR, WHY, REFACTOR CANDIDATES, REVIEW and PLAN-IMPACT: yes removed, "one line per note" kept
+The coder-core review handoff now keeps only the line formats and "one line per note"; the calibration clauses on BEHAVIOR, WHY, REFACTOR CANDIDATES, REVIEW and PLAN-IMPACT: yes are gone
 
 ## Evidence
 

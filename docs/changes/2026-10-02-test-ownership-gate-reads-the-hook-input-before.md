@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "test-ownership-gate: reads the hook input before any early exit, including the skip-flag and empty-list exits"
+change_type: "fixed"
+title: "test-ownership-gate now reads the hook input before any early exit, so piped shell-write checks no longer fail"
 description: "test-ownership-gate: reads the hook input before any early exit, including the skip-flag and empty-list exits."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 6
+kind: "fix"
 components: ["script/test-ownership-gate"]
 evidence: ["judgment"]
 watches: []

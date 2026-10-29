@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "gate env takes a run's values from its own plan alone"
 description: "`repo_gate_env` returns only the run's own plan's `NAME=value` words when that plan is readable; values other plans agree on now fill in only for a run with no plan."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:55:06-05:00"}

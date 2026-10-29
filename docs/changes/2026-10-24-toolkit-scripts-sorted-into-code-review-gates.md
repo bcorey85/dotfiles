@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Toolkit scripts sorted into code, review, gates, telemetry, lib and tools folders"
 description: "The 52 flat scripts in ~/.claude/scripts moved into six folders by concern. Hook commands, imports and logic are unchanged; only paths changed."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T15:09:38-05:00"}

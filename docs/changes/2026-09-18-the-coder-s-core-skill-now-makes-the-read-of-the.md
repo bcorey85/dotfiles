@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The coder's core skill now makes the read of the code that sets a field owe a report line (15 more words"
+change_type: "changed"
+title: "The coder's core skill now requires a report line for each read of the code that sets a field"
 description: "The coder's core skill now makes the read of the code that sets a field owe a report line (15 more words, 653 in all)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 14
+kind: "behavior"
 components: ["skill/coder-core"]
 evidence: ["seeded round"]
 watches: []

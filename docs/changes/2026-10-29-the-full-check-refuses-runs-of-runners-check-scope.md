@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "check_scope reads a scoped cargo, go, rspec or phpunit run as targeted, so the full check refuses it"
 description: "lib/check_scope reads a cargo, go, tsc, mypy, pyright, bats, rspec, phpunit or dotnet run that names a file, a directory, a package or a test, or sets a selector flag, as targeted; full_check.py refuses it as a scoped command, and a whole run stays none for the coder gate."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T00:00:00-05:00"}

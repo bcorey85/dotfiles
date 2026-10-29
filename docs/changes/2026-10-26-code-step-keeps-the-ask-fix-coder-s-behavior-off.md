@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code_step keeps the ask-fix coder's behavior off the phase Implemented line"
 description: "An ask-fix coder BEHAVIOR line shows as its own Ask-fix line in say.md, not on the phase Implemented line or Behavior delta."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T17:13:55-05:00"}

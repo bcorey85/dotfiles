@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "Per-finding gate log (silent runs included)"
-description: "Per-finding gate log (silent runs included)."
+change_type: "added"
+title: "Review gates now log every finding, including runs that find nothing"
+description: "Each review gate now logs one row per finding, silent runs included, so per-gate yield can be computed."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-07T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["script/log-review-finding", "skill/review"]
 evidence: ["metric audit"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-Per-finding gate log (silent runs included)
+Review gates now log one row per finding, including runs that find nothing. Before, aggregate rows carried no `file:line` and no denominator, so per-gate yield and marginal contribution were not computable.
 
 ## Evidence
 

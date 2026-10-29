@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review-loop agent file pins the sonnet model"
 description: "`agents/review-loop.md` frontmatter now holds `model: sonnet`, so a dispatch that names no model runs the loop on Sonnet and does not take the model of the session that dispatched it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T20:27:57-05:00"}
 seq: 13
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["judgment"]
 watches: []

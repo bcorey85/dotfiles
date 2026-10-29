@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A review fix on a plan line a recorded ruling covers becomes an ask"
 description: "The scripted review loop reads the plan's Plan Deviations and Constraints sections and turns a fix finding on a ruled plan line into an ask instead of sending it to the coder."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T12:00:00-05:00"}

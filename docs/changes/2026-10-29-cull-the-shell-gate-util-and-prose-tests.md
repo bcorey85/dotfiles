@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Cull the shell, gate, util and prose tests"
 description: "Deleted tests whose bug another test already catches, merged near-duplicates into tables, and sped up sleeps; no script behavior changed."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T08:16:45-05:00"}

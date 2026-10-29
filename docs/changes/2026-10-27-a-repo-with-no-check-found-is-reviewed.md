@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A repo with no check found is reviewed, and the hand-back says no full check ran"
 description: "When neither CLAUDE.md nor the check finder names a full check, the review loop runs its review with the coder's scoped tests standing as the check, and the packet's full_check says so, in place of a critical-blocker stop that a restart only repeats."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:59:00-05:00"}

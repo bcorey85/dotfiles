@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Coder hand-back gate lists stale comment and doc lines"
 description: "The coder's hand-back gate on every plan phase runs stale_prose.py, which lists the comment and doc lines that name a symbol the diff renamed, removed or changed, so the coder fixes stale prose before review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T16:25:49-05:00"}
@@ -9,6 +10,7 @@ components: ["agent/coder", "skill/code", "agent/code-reviewer"]
 evidence: ["gate ranking", "census"]
 watches: ["stale-prose-handback-docs-findings", "stale-prose-handback-severe-findings", "stale-prose-handback-coder-cache-read"]
 proof: ["2026-10-25-stale-prose-hand-back-check-with-a-value-only"]
+impact: {"metric": "quality", "before": 12.1, "after": 3.4, "unit": "stale doc lines left of 15", "finding": "2026-10-25-stale-prose-hand-back-check-with-a-value-only", "better": "lower"}
 overlap: "The review-findings watches read docs and bug/correctness classes only; the earlier open watches on that metric read all classes or test classes. The cache-read watch shares its metric with the earlier coder-gate and sibling-suite watches, whose readings land before this edit's after-window; read this one against its own before-window."
 ---
 

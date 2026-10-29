@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The test writer's prompt is now its contract only: the role line"
+change_type: "changed"
+title: "The test writer's prompt now holds its contract only"
 description: "The test writer's prompt is now its contract only: the role line, the implementation-blindness lists with a one-sentence vocabulary rule, acceptance criteria first, red tests reported red, the three fences, and the report block."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-14T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["agent/test-writer"]
 evidence: ["removal round"]
 watches: []

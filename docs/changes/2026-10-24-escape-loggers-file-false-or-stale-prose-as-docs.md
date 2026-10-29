@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Escape loggers file false or stale prose as docs"
 description: "The four skills that log escapes by hand name the `docs` class, and the two that log review comments say a false or stale comment, doc or description is `docs`, never `smell` or `other`. The logger already accepted `docs`; the skills never offered it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T15:51:15-05:00"}

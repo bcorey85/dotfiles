@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The explore phase of the spec skill names the two planner agent types in the step that launches them"
 description: "The explore phase of the spec skill names the two planner agent types in the step that launches them, the way the architecture skill already does."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 21
+kind: "behavior"
 components: ["skill/eng-spec", "skill/eng-arch"]
 evidence: ["census", "judgment"]
 watches: []

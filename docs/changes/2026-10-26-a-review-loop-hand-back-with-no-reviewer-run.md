@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A review-loop hand-back with no reviewer run cannot turn the review gate clean"
 description: "handback.py records the coder and reviewer dispatches each review-loop makes, and refuses a clean hand-back when no reviewer ran after the loop's last code change; +fast now only changes the reviewer model."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T17:30:48-05:00"}

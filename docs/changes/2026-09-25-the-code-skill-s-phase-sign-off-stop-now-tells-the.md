@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The code skill's phase sign-off stop now tells the user to run /clear and then /code to start the next phase"
 description: "The code skill's phase sign-off stop now tells the user to run /clear and then /code to start the next phase in a fresh context, and to confirm in place only to keep the current context."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-25T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["skill/code"]
 evidence: ["census", "judgment"]
 watches: ["signoff-stop-clear-context"]

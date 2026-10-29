@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A grep or rg ban holds when the search finds nothing"
-description: "A plan ban written as a bare rg or grep command exits 1 when it finds nothing, which code-step read as a failed command and stopped the run. Such bans are now judged by match, like a git grep ban."
+description: "A plan ban written as a bare rg or grep command is now judged by match, like a git grep ban, so it holds when the search finds nothing. Before, the command exited 1 on no match, which code-step read as a failed command and stopped the run."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T23:40:28-05:00"}
 seq: 34
 kind: "fix"

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Review a whole branch with review base=ref"
 description: "`/review base=<ref>` passes a `base: <ref>` input to the review loop, which hands it to review-scope, so one review covers every change since that ref, commits included."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T20:27:57-05:00"}
 seq: 14
+kind: "behavior"
 components: ["agent/review-loop", "skill/review"]
 evidence: ["judgment"]
 watches: []

@@ -1,9 +1,12 @@
 ---
 type: "Change"
-title: "settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` removed, the same day that it was added"
-description: "settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` removed, the same day that it was added."
+change_type: "removed"
+title: "settings.json: the general-purpose and catch-all agents inherit the main model again, with `CLAUDE_CODE_SUBAGENT_MODEL` removed"
+description: "settings.json: the general-purpose and catch-all agents inherit the main model again; `CLAUDE_CODE_SUBAGENT_MODEL` is removed the same day that it was added."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
+reverts: "2026-09-29-settings-json-claude-code-subagent-model-set-to"
 components: ["rule/settings-json", "agent/general-purpose"]
 evidence: ["judgment"]
 watches: []
@@ -11,7 +14,7 @@ watches: []
 
 ## Change
 
-settings.json: `CLAUDE_CODE_SUBAGENT_MODEL` removed, the same day that it was added. The general-purpose and catch-all agents again inherit the main model
+settings.json: the general-purpose and catch-all agents inherit the main model again; `CLAUDE_CODE_SUBAGENT_MODEL` is removed the same day that it was added
 
 ## Evidence
 

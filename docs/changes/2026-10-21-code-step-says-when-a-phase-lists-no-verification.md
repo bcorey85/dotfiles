@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step says when a phase lists no verification commands and drops (last phase) when gated phases remain"
 description: "When a phase lists no verification commands, the phase-done text says that none were run, not \"0 command(s) green\". The Phase N complete line leaves out \"(last phase)\" when only gated phases remain. after-review and the handback hook share one helper that puts a resumed review loop back."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T14:55:07-05:00"}
 seq: 19
+kind: "fix"
 components: ["script/code-step"]
 evidence: ["work incident", "tests"]
 watches: []

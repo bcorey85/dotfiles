@@ -63,19 +63,58 @@ def split_arguments(code, start):
     return parts
 
 
+def without_comments(code):
+    """code with each `#` comment cut from its line. A `#` starts a comment outside quotes, at the line's start or
+    after whitespace or one of `,([{:;`, so perl's `$#x`, a JS `.#x` and a `#` inside a string stay.
+    A `#` on a later line of a multi-line string is cut, since each line is read alone."""
+    return "\n".join(line_without_comment(line) for line in code.split("\n"))
+
+
+def line_without_comment(line):
+    quote = None
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if quote:
+            if char == "\\":
+                index += 1
+            elif char == quote:
+                quote = None
+        elif char in "'\"`":
+            quote = char
+        elif char == "#" and (index == 0 or line[index - 1] in SP + ",([{:;"):
+            return line[:index]
+        index += 1
+    return line
+
+
 def tuple_fields(source, position):
-    """The element at `position` of each tuple in a list or tuple literal; an element that is no tuple, or text with
-    no literal, stays whole."""
+    """The element at `position` of each tuple in a list or tuple literal, or of each `key: value` pair in a dict
+    literal; an element that is neither, or text with no literal, stays whole. A quote or bracket inside a comment
+    cuts the literal short, so strip comments from source first."""
     source = source.replace("\n", " ")
-    brackets = [at for at in (source.find("["), source.find("(")) if at != -1]
-    if not brackets:
+    opening = next((index for index, char in top_level_positions(source) if char in "([{"), None)
+    if opening is None:
         return [source]
+
+    is_dict = source[opening] == "{"
     fields = []
-    for element in split_arguments(source, min(brackets) + 1):
+    for element in split_arguments(source, opening + 1):
         element = element.strip(SP)
-        if not element or element[0] not in "([":
-            fields.append(element)
-            continue
-        parts = split_arguments(element, 1)
+        if is_dict:
+            parts = dict_entry(element)
+        elif element[:1] in ("(", "["):
+            parts = split_arguments(element, 1)
+        else:
+            parts = []
         fields.append(parts[position] if position < len(parts) else element)
     return fields
+
+
+def dict_entry(element):
+    """The key and the value of a `key: value` dict element, split at its first top-level colon; an empty list when
+    it has none."""
+    for index, char in top_level_positions(element):
+        if char == ":":
+            return [element[:index], element[index + 1:]]
+    return []

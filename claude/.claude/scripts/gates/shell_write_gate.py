@@ -31,7 +31,7 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import hook_input
 import script_utils
 import shell_command
-from code_text import SP, receiver_text, split_arguments, tuple_fields
+from code_text import SP, receiver_text, split_arguments, tuple_fields, without_comments
 from hook_input import JqError, expand_env_names, is_under_temp_dir, jq_get, jq_str
 from hook_input import bash_basename as shell_basename
 from hook_input import bash_dirname as shell_dirname
@@ -446,7 +446,7 @@ def binding_texts(code, name):
             zip_arguments = split_arguments(iterable, iterable.index("(") + 1)
             texts.append(zip_arguments[position] if position < len(zip_arguments) else iterable)
             continue
-        iterable_name = trim(iterable).rstrip(":{").strip(SP)
+        iterable_name = trim(iterable).rstrip(":{").strip(SP).removesuffix(".items()")
         sources = assigned_texts(code, re.escape(iterable_name)) if iterable_name.isidentifier() else []
         fields = [field for source in sources or [iterable] for field in tuple_fields(source, position)]
         texts += [field for field in fields if field.strip()] or [iterable]
@@ -491,6 +491,16 @@ def path_candidates(text):
     return literals + joined
 
 
+def written_candidates(code):
+    """The path texts code's file writes name: each literal in a write statement, and each literal its target is
+    bound to."""
+    writes = write_statements(code)
+    literals = [match.group(2) for statement, _target in writes for match in STRING_LITERAL.finditer(statement)]
+    named = [candidate for _statement, target in writes for text in named_texts(code, target)
+             for candidate in path_candidates(text)]
+    return literals + named
+
+
 def interpreter_written_target(segment, cwd, written_paths, command):
     """The git-tracked file an interpreter step opens for writing, else None: code with a file write whose statement
     names a tracked file as a string literal, whose target is a name bound (through assignments, for loops and
@@ -500,15 +510,16 @@ def interpreter_written_target(segment, cwd, written_paths, command):
     if found is None:
         return None
 
-    code, arguments = found
-    writes = write_statements(code)
-    if not writes:
+    raw_code, arguments = found
+    if not write_statements(raw_code):
         return None
 
-    literals = [match.group(2) for statement, _target in writes for match in STRING_LITERAL.finditer(statement)]
-    named = [candidate for _statement, target in writes for text in named_texts(code, target)
-             for candidate in path_candidates(text)]
-    for candidate in literals + named + arguments:
+    # A bracket or quote inside a comment cuts a literal, and a `#` that starts no comment (a JS regex, perl's
+    # `s/a #b/`) cuts real code, so trace the code both with and without comments.
+    candidates = []
+    for code in dict.fromkeys((raw_code, without_comments(raw_code))):
+        candidates += written_candidates(code)
+    for candidate in candidates + arguments:
         path = resolve_target(candidate, cwd)
         if path and os.path.isfile(path) and is_git_tracked(path):
             return path

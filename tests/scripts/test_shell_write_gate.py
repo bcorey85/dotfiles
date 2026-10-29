@@ -472,7 +472,9 @@ class ShellWriteGateTest(unittest.TestCase):
     def test_untracked_script_that_writes_a_tracked_file_through_a_name_is_denied(self):
         (self.repo / "sub").mkdir()
         (self.repo / "sub" / "nested.txt").write_text("x\n")
-        subprocess.run(["git", "-C", str(self.repo), "add", "sub/nested.txt"], check=True)
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "#notes.md").write_text("x\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "sub/nested.txt", "docs/#notes.md"], check=True)
         scripts = {
             "variable": "import pathlib\np = pathlib.Path('tracked.txt')\ntext = p.read_text()\n"
                         "p.write_text(text.replace('x', 'y'))\n",
@@ -492,6 +494,17 @@ class ShellWriteGateTest(unittest.TestCase):
                                       "for path, text in EDITS.items():\n    Path(path).write_text(text)\n",
             "dict value": "from pathlib import Path\nMAP = {'out.txt': 'tracked.txt'}\n"
                           "for src, dst in MAP.items():\n    Path(dst).write_text('y')\n",
+            "list, comment with paren": "from pathlib import Path\nEDITS = [\n    # step 1)\n"
+                                        "    ('tracked.txt', 'y'),\n]\n"
+                                        "for path, text in EDITS:\n    Path(path).write_text(text)\n",
+            "dict, comment with colon": "from pathlib import Path\nEDITS = {\n    # step 1: 'out.txt': 'z'\n"
+                                        "    'tracked.txt': 'y',\n}\n"
+                                        "for path, text in EDITS.items():\n    Path(path).write_text(text)\n",
+            "one-name list, comment with paren": "from pathlib import Path\nPATHS = [\n    # step 1)\n"
+                                                 "    'tracked.txt',\n]\nfor path in PATHS:\n"
+                                                 "    Path(path).write_text('y')\n",
+            "# inside a path": "from pathlib import Path\nPATHS = ['docs/#notes.md']\nfor path in PATHS:\n"
+                               "    Path(path).write_text('y')  # rewrite it\n",
             "shutil destination": "import shutil\ndst = 'tracked.txt'\nshutil.copy('/tmp/x', dst)\n",
             "os.replace destination": "import os\ndst = 'tracked.txt'\nos.replace('/tmp/x', dst)\n",
             "perl open": "my $p = 'tracked.txt';\nopen(my $f, '>', $p);\n",
@@ -536,6 +549,12 @@ class ShellWriteGateTest(unittest.TestCase):
             "zip": f"from pathlib import Path\nfor src, dst in zip(['tracked.txt'], ['{out}']):\n"
                    "    Path(dst).write_text(Path(src).read_text())\n",
             "shutil source": f"import shutil\nsrc = 'tracked.txt'\nshutil.copy(src, '{out}')\n",
+            "dict items": f"from pathlib import Path\nSOURCES = {{'{out}': 'tracked.txt'}}\n"
+                          "for dst, src in SOURCES.items():\n    Path(dst).write_text(Path(src).read_text())\n",
+            "dict items, comment with colon": f"from pathlib import Path\nSOURCES = {{\n    # out: 'tracked.txt'\n"
+                                              f"    '{out}': 'tracked.txt',\n}}\n"
+                                              "for dst, src in SOURCES.items():\n"
+                                              "    Path(dst).write_text(Path(src).read_text())\n",
         }
         for shape, code in scripts.items():
             with self.subTest(shape=shape):
@@ -569,6 +588,8 @@ class ShellWriteGateTest(unittest.TestCase):
             "npx -p tsx tsx -e \"require('fs').writeFileSync('tracked.txt', 'y')\"",
             "npx tsx -e \"require('fs').createWriteStream('tracked.txt')\"",
             "pypy3 -c \"open('tracked.txt','w')\"",
+            "node -e \"const s = \\`a #b\\`; fs.writeFileSync('tracked.txt', s)\"",
+            "node -e \"const s = 'a'.replace(/ #x/g, ''); fs.writeFileSync('tracked.txt', s)\"",
         )
         for command in commands:
             with self.subTest(command=command):

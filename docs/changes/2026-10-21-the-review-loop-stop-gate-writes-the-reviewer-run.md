@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review-loop stop gate writes the reviewer run rows"
 description: "The review-loop stop gate writes one kind=run row for each reviewer the loop dispatched, with the finding count read from the reviewer's report. Before, the loop agent wrote these rows from its own prose, and it skipped or mixed them up."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T08:03:31-05:00"}
 seq: 9
+kind: "behavior"
 components: ["script/review-loop-gate", "skill/review", "agent/review-loop"]
 evidence: ["census", "tests"]
 watches: []

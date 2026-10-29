@@ -18,7 +18,7 @@ import pathlib
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
-import handback
+import handback_store
 import loop_transcript
 import script_utils
 
@@ -44,10 +44,10 @@ def deny_reason_for(hook):
     # Once per agent: a child that never sends a notice must not trap the hand-back. Without a session id the denial
     # cannot be remembered, so the call passes.
     session_id, agent_id = hook.get("session_id"), hook.get("agent_id") or "unknown"
-    if not session_id or handback.was_recorded(session_id, agent_id, DENIED_KIND):
+    if not session_id or handback_store.was_recorded(session_id, agent_id, DENIED_KIND):
         return None
 
-    handback.record(session_id, DENIED_KIND, agent_id=agent_id, open_children=open_children)
+    handback_store.record(session_id, DENIED_KIND, agent_id=agent_id, open_children=open_children)
     return DENY_REASON.format(count=open_children)
 
 

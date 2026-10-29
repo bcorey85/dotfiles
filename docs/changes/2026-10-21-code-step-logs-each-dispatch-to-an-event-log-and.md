@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code-step logs each dispatch to an event log and denies a coder launch without its packet"
 description: "code-step writes each dispatch, launch, resume and hand-back to one event log per run, saves each dispatch prompt to a file that ends in a marker line, and a new PreToolUse hook denies a launch whose prompt does not hold the whole saved prompt."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T19:55:39-05:00"}
 seq: 23
+kind: "behavior"
 components: ["script/code-step", "script/script-utils"]
 evidence: ["work incident", "transcript read", "tests"]
 watches: []

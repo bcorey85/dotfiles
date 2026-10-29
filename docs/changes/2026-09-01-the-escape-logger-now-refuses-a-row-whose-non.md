@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The escape logger now refuses a row whose non-description value contains a space, instead of writing it"
 description: "The escape logger now refuses a row whose non-description value contains a space, instead of writing it."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["script/log-escape"]
 evidence: ["census"]
 watches: []

@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The criteria dry run judges each item as verify does"
-description: "The plan-criteria dry run read only a negated search (`! rg`, `! grep`, `! git grep`) as a ban, while /code's verification also reads a plain rg, grep or git grep line as a ban unless its text says presence, lets ban wording win, and judges a pipe form by its output. A plan item could read GREEN in the dry run and fail at verify. Both now take their verdict from one function in lib/criteria_verdict.py."
+description: "The plan-criteria dry run and /code's verification now take their verdict from one function in lib/criteria_verdict.py. Before, the dry run read only a negated search (`! rg`, `! grep`, `! git grep`) as a ban, while verification also read a plain rg, grep or git grep line as a ban unless its text says presence, let ban wording win, and judged a pipe form by its output, so a plan item could read GREEN in the dry run and fail at verify."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T07:20:59-05:00"}
 seq: 238
 kind: "fix"

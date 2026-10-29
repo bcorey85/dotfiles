@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "tick closes a stopped phase after its verification passes"
 description: "tick runs the phase's Automated Verification commands before it marks the phase done, and works on a run dropped by abort."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T12:44:13-05:00"}

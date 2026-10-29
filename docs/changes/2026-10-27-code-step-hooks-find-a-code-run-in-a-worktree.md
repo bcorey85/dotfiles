@@ -1,7 +1,8 @@
 ---
 type: "Change"
-title: "code-step hooks find a /code run in a worktree outside the session's cwd"
-description: "The code-step hooks read the run state from the hook event's cwd, which is the session's checkout. A /code run in a worktree never got its launch or hand-back logged, so resume asked for a second dispatch. Every code-step hook now also reads every repo the session pinned."
+change_type: "fixed"
+title: "code-step hooks now find a /code run in a worktree outside the session's cwd"
+description: "Every code-step hook now also reads every repo the session pinned, so a /code run in a worktree gets its launch and hand-back logged. Before, the hooks read only the session's checkout, and resume asked for a second dispatch."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T09:45:31-05:00"}
 seq: 110
 kind: "fix"

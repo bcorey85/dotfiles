@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The calibration examples now say they set the height of the bar rather than its subject"
 description: "The calibration examples now say they set the height of the bar rather than its subject."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 16
+kind: "behavior"
 components: ["shared/reviewer-calibration"]
 evidence: ["census"]
 watches: []

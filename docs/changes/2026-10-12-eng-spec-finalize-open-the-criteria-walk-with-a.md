@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "eng-spec finalize: open the criteria walk with a read-back of at most 15 lines"
 description: "eng-spec finalize: open the criteria walk with a read-back of at most 15 lines."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 8
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["census", "judgment"]
 watches: []

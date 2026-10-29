@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The Django gate test command runs with --noinput"
-description: "A derived `manage.py test` gate command asked before deleting a leftover test database, hit EOF and ran no tests, so the coder used up its gate denials on a green change; it now carries --noinput unless the listed command already has --noinput or --no-input."
+description: "A derived `manage.py test` gate command now carries --noinput unless the listed command already has --noinput or --no-input. Before, it asked before deleting a leftover test database, hit EOF and ran no tests, so the coder used up its gate denials on a green change."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:54:45-05:00"}
 seq: 205
 kind: "fix"

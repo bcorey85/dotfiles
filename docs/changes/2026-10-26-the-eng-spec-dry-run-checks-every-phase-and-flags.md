@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "added"
 title: "The eng-spec dry run checks every phase and flags broken count and pgrep criteria"
 description: "A new script runs every Automated Verification command of every phase and flags a self-matching pgrep -f and a count that differs from the plan's own code."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T00:20:30-05:00"}

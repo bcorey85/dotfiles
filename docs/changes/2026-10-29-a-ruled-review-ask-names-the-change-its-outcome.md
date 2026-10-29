@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A ruled review ask says what its outcome did and names the change"
 description: "The ruled-asks line that later reviews and the closing pass read now says what each outcome did to the code and names the change, and puts the phase it was ruled in last, so an ask that offers phases no longer reads as answered by that phase."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T10:49:41-05:00"}

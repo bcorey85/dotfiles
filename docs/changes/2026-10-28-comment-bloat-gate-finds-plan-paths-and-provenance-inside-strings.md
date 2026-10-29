@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The comment-bloat gate finds plan paths and provenance inside strings"
 description: "The `docs/plans/`, `per the <source>` and `written by the <author>` markers search the raw line again, so an error or log string that names one blocks; the phase, AC and other markers still skip string text."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T09:00:00-05:00"}

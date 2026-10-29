@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Toolkit Python follows PEP 8 names and a full ruff rule set"
 description: "The 28 kebab-case toolkit scripts get snake_case file names, camelCase identifiers become snake_case, and ruff lints E,W,F,I,N,B,UP,SIM,C4,RUF at 120 columns on every suite run."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T06:39:37-05:00"}

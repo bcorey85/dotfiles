@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The plan verifier's prompt is now its contract plus one rationale sentence"
 description: "The plan verifier's prompt is now its contract plus one rationale sentence: the branch-end line (\"after `/review` converged every phase — correctness is looked at already."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/plan-verifier", "skill/review", "shared/plan-reading", "skill/fix"]
 evidence: ["removal round"]
 watches: []

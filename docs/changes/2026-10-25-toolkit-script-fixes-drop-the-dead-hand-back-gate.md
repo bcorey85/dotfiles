@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Toolkit script fixes: drop the dead hand-back gate, kill a timed-out coder check's process group, one plan-deviation format"
 description: "A coder-gate check that times out now kills its whole process group and reports what it printed; the unregistered review-loop hand-back gate is gone; code_step and review_fix write plan-impact rulings in one format."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T19:17:35-05:00"}

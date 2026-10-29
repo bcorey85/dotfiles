@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The review wrapper no longer restates the rule for classifying a finding that invalidates a plan"
-description: "The review wrapper no longer restates the rule for classifying a finding that invalidates a plan, and points at the agent that owns it instead."
+change_type: "changed"
+title: "The review wrapper points to the agent that owns the plan-invalidating finding rule"
+description: "The review wrapper now points at the agent that owns the rule for classifying a finding that invalidates a plan, instead of keeping its own copy."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 18
+kind: "behavior"
 components: ["skill/review"]
 evidence: ["census"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The review wrapper no longer restates the rule for classifying a finding that invalidates a plan, and points at the agent that owns it instead
+The review wrapper now points at the agent that owns the rule for classifying a finding that invalidates a plan, instead of keeping its own copy
 
 ## Evidence
 

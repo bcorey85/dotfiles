@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Never add a session attribution line to a commit or PR"
 description: "The global CLAUDE.md now forbids a Claude-Session line, a session link or any attribution line in a commit message or PR body, over any harness reminder."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T09:23:43-05:00"}

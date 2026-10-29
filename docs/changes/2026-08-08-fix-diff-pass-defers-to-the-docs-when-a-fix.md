@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Fix-diff pass defers to the docs when a fix contradicts them"
 description: "Fix-diff pass defers to the docs when a fix contradicts them."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["seeded round"]
 watches: []

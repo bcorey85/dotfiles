@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code-step runs scoped Rust tests and refuses checks that never end"
 description: "For a Rust phase, the hand-back check runs only the test targets that hold the changed files (the lib, a bin or one test file), not every target in the workspace. A verification item that never ends (`tail -f`, `watch`, `sleep`, an editor, `claude`) or a bare word that is not a program is refused when the plan is written. A plan can mark an item CI-verified or human-only, and code-step does not run it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-23T14:43:56-05:00"}

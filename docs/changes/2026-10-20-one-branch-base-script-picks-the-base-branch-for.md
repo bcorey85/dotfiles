@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "One branch-base script picks the base branch for review-scope, test-reviewer and refactor"
 description: "scripts/branch-base prints the default base ref of a branch and where it came from. review-scope, the test-reviewer branch scope and refactor-flow all call it, so the three no longer choose a base each their own way."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-20T23:22:51-05:00"}
 seq: 16
+kind: "behavior"
 components: ["script/branch-base", "skill/review", "agent/test-reviewer", "skill/refactor"]
 evidence: ["tests", "judgment"]
 watches: []

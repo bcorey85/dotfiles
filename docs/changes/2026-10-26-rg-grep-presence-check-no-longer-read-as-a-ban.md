@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "rg/grep presence check no longer read as a ban"
 description: "An rg or grep Automated Verification line stays a ban unless its text says it checks presence; then exit 0 passes."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T11:00:34-05:00"}

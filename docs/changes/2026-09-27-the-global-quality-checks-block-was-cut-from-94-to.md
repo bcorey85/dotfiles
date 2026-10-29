@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The global quality-checks block was cut from 94 to about 30 words"
-description: "The global quality-checks block was cut from 94 to about 30 words: coders run only the tests for the files they changed, the full suite runs once at the end of review, and a failing approach gets three attempts before a stop."
+change_type: "changed"
+title: "The global quality-checks block is now about 30 words, down from 94"
+description: "The global quality-checks block is now about 30 words, down from 94: coders run only the tests for the files they changed, the full suite runs once at the end of review, and a failing approach gets three attempts before a stop."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 13
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["removal round"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The global quality-checks block was cut from 94 to about 30 words: coders run only the tests for the files they changed, the full suite runs once at the end of review, and a failing approach gets three attempts before a stop. The instruction to run the full suite once before declaring done outside a review loop was removed.
+The global quality-checks block is now about 30 words, down from 94: coders run only the tests for the files they changed, the full suite runs once at the end of review, and a failing approach gets three attempts before a stop. The instruction to run the full suite once before declaring done outside a review loop was removed.
 
 ## Evidence
 

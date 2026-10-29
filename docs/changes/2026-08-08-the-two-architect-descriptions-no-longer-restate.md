@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The two architect descriptions no longer restate the test for skipping design work"
-description: "The two architect descriptions no longer restate the test for skipping design work, and name where the whole test lives."
+change_type: "changed"
+title: "The two architect descriptions now name where the full test for skipping design work lives"
+description: "The two architect descriptions now name where the whole test for skipping design work lives, instead of carrying a partial copy of it."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 22
+kind: "behavior"
 components: ["agent/backend-architect", "agent/frontend-architect"]
 evidence: ["census"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The two architect descriptions no longer restate the test for skipping design work, and name where the whole test lives
+The two architect descriptions now name where the whole test for skipping design work lives, instead of carrying a partial copy of it
 
 ## Evidence
 

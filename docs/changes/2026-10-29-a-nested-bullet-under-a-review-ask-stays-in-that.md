@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A nested bullet under a review ask stays in that ask"
 description: "The review loop's Fix/Ask/Nit parser starts an item only at a marker as shallow as the section's first marker, so one ask with nested bullets reaches the user as one ask."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T10:10:44-05:00"}

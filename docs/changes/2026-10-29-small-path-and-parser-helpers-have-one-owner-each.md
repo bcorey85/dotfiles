@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Small path and parser helpers have one owner each"
 description: "Duplicated path builders, status and JSONL parsers, deny output and review-again text in the code and review scripts now call one owner each, and plan section scans skip code fences."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T11:19:02-05:00"}

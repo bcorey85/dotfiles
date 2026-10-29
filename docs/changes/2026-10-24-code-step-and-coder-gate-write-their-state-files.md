@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step and coder-gate write their state files atomically"
 description: "save_state and both coder-gate writers write a temp file in the same folder and then replace the target, so a reader that polls during a wait never sees a half-written file."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T06:39:37-05:00"}

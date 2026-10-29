@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Do not count a gate run that a signal or an interrupt ended"
 description: "quality-check-cap.py no longer records a failed Bash run that the user interrupted or that a signal ended (exit 129 to 192, timeout kills included), so the cap allows the rerun."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T07:36:55-05:00"}
 seq: 2
+kind: "fix"
 components: ["script/quality-check-cap", "script/hook-input"]
 evidence: ["work incident"]
 watches: []

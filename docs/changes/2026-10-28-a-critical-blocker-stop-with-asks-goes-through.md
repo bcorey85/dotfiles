@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A critical-blocker stop with asks goes through asks-done"
 description: "A /code run stopped by a critical blocker that carries asks now takes the user's rulings through asks-done and carries the blockers into one more review, as a cap-reached stop with asks already does."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T00:23:28-05:00"}

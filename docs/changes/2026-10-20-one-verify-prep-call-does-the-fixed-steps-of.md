@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "One verify-prep call does the fixed steps of verify-branch"
 description: "verify-prep resolves the task dir, reads the criteria, measures the diff, checks for a branch-wide review since the last change and prints the exact dispatches; verify-log writes the run and gap rows. The Verify pass in /code only invokes /verify-branch, which owns the branch-wide review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T18:56:02-05:00"}
 seq: 9
+kind: "behavior"
 components: ["skill/verify-branch", "script/code-step"]
 evidence: ["census", "judgment"]
 watches: ["verify-branch-one-call", "verify-branch-one-call-escapes"]

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "plan hook asks for a re-check after the last Edit while a renumber is in progress"
 description: "When every plan parse failure is a kind a renumber passes through (duplicate id, missing section, section without status), the plan hook says the plan may be mid-edit and asks the session to re-check after the last Edit, and to report and stop only if the error is still there. A list with any other kind keeps the report-and-stop message."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T13:52:44-05:00"}

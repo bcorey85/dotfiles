@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code_step carries a plan-impact round's other asks and pending findings"
 description: "After a plan-impact review round, its other asks and pending findings go to the user and into the next review handoff."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T17:13:55-05:00"}

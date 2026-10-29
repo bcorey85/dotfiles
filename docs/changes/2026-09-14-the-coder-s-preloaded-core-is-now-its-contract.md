@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The coder's preloaded core is now its contract only: the role line, the terminal-implementer fence"
+change_type: "changed"
+title: "The coder's preloaded core now holds its contract only"
 description: "The coder's preloaded core is now its contract only: the role line, the terminal-implementer fence, phase-scoped plan reading, the no-tests rule with a one-sentence vocabulary ban, one sentence to run the quality checks, the stop-and-ask list, the plan-impact block, and the handoff lines."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-14T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["shared/plan-reading", "skill/coder-core"]
 evidence: ["removal round"]
 watches: []

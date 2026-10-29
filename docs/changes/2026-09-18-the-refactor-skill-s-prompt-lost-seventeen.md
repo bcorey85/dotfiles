@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The `/refactor` skill's prompt lost seventeen sentences and clauses that explained why a rule exists (1,407"
-description: "The `/refactor` skill's prompt lost seventeen sentences and clauses that explained why a rule exists (1,407 words, was 1,578): the fresh-eyes and own-checklist notes, tests-are-the-contract, when to pick each modifier, the lean-context reasons in branch audit and simplify."
+change_type: "changed"
+title: "The `/refactor` skill's prompt is now 1,407 words, down from 1,578, with rule rationales cut"
+description: "The `/refactor` skill's prompt is now 1,407 words, down from 1,578, after seventeen sentences and clauses that explained why a rule exists were cut: the fresh-eyes and own-checklist notes, tests-are-the-contract, when to pick each modifier, the lean-context reasons in branch audit and simplify."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["skill/refactor"]
 evidence: ["removal round"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The `/refactor` skill's prompt lost seventeen sentences and clauses that explained why a rule exists (1,407 words, was 1,578): the fresh-eyes and own-checklist notes, tests-are-the-contract, when to pick each modifier, the lean-context reasons in branch audit and simplify, the sweep's cost note and pattern labels, the audit lane's trigger and detector-judge note, and the work-list and subtraction framings. Two clauses stay: "old debt is not an escape" in the escape-log step and "Fires on pre-existing code too. Non-blocking." in the finder-log step.
+The `/refactor` skill's prompt is now 1,407 words, down from 1,578, after seventeen sentences and clauses that explained why a rule exists were cut: the fresh-eyes and own-checklist notes, tests-are-the-contract, when to pick each modifier, the lean-context reasons in branch audit and simplify, the sweep's cost note and pattern labels, the audit lane's trigger and detector-judge note, and the work-list and subtraction framings. Two clauses stay: "old debt is not an escape" in the escape-log step and "Fires on pre-existing code too. Non-blocking." in the finder-log step.
 
 ## Evidence
 

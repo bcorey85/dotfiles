@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The test-writer agent now runs on Opus instead of Sonnet"
 description: "The test-writer agent now runs on Opus instead of Sonnet."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-25T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/test-writer"]
 evidence: ["seeded round"]
 watches: ["test-writer-on-opus"]

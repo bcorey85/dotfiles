@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "New gate refusing any shell command that writes to a tracked file by redirection or appending"
 description: "New gate refusing any shell command that writes to a tracked file by redirection or appending, and refusing in-place editing outright, on tracked and untracked paths alike."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["script/shell-write-gate"]
 evidence: ["judgment"]
 watches: []

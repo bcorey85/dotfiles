@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "quality-check-cap counts a tree-rewriting git call as an edit"
 description: "git merge, checkout, switch, reset, pull, rebase, restore, cherry-pick, revert, am, apply, clean, rm and mv now count as edits, like a writing formatter, so a check run after one is not denied as a repeat."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T21:30:00-05:00"}

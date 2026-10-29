@@ -1,6 +1,7 @@
 ---
 type: "Change"
-title: "A review hand-back whose stop the gate blocks no longer marks the phase done"
+change_type: "fixed"
+title: "A /code phase is marked done only after the review loop is allowed to stop"
 description: "code_step counts a review-loop agent's hand-back only once the review-loop gate lets the loop stop after it, so `resume` no longer marks a phase done on a hand-back the gate then sent back to work."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T21:30:22-05:00"}
 seq: 130

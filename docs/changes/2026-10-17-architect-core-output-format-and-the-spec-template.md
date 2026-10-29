@@ -1,9 +1,12 @@
 ---
 type: "Change"
-title: "`architect-core` Output Format and the spec template: the `Reuse:` line on every implementation step is"
-description: "`architect-core` Output Format and the spec template: the `Reuse:` line on every implementation step is removed."
+change_type: "removed"
+title: "`architect-core` and the spec template no longer ask for a `Reuse:` line on every implementation step"
+description: "Plans no longer end each implementation step with a `Reuse:` line. The line cost 20% more Opus architect output and 15% more plan words, and coders reused the existing helpers without it."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-17T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
+reverts: "2026-10-17-architect-core-output-format-each-implementation"
 components: ["skill/architect-core"]
 evidence: ["seeded round"]
 watches: []
@@ -11,7 +14,7 @@ watches: []
 
 ## Change
 
-`architect-core` Output Format and the spec template: the `Reuse:` line on every implementation step is removed. Both files match their text from before that edit. The edit watch for it is removed
+`architect-core` Output Format and the spec template no longer ask for a `Reuse:` line on every implementation step. Both files match their text from before that edit. The edit watch for it is removed
 
 ## Evidence
 

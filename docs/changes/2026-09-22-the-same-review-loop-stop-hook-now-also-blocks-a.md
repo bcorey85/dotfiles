@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The same review-loop stop hook now also blocks a loop that changed code and ran no check afterward"
 description: "The same review-loop stop hook now also blocks a loop that changed code and ran no check afterward."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-22T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["census", "judgment"]
 watches: []

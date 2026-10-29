@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The architect core's Refactor Candidates placeholder is one line now"
 description: "The architect core's Refactor Candidates placeholder is one line now: pre-existing areas worth a separate refactor, or none (8 words from 50, 306 remain in the core)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 13
+kind: "behavior"
 components: ["skill/architect-core"]
 evidence: ["removal round"]
 watches: []

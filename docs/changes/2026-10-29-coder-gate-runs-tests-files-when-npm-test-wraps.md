@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Coder gate runs __tests__ files when npm test wraps jest"
 description: "A package with no jest or vitest dependency whose test script names jest or react-scripts now gets the jest test-file rule, so a coder-created __tests__ file is in the derived npm test command."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T10:08:34-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A coder escalates to /eng-spec only through a marker line"
 description: "code_step stops a run for /eng-spec only on a `RECOMMEND: eng-spec` line, so a coder report that says no /eng-spec is needed goes on to review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:40:00-05:00"}

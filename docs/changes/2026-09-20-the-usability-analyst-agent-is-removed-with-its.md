@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The usability analyst agent is removed, with its opencode copy"
 description: "The usability analyst agent is removed, with its opencode copy."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 18
+kind: "behavior"
 components: ["agent/usability-analyst"]
 evidence: ["census"]
 watches: []

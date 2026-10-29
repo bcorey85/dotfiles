@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A closing phase passes run notes to the skill it invokes"
 description: "`code_step.py start <plan> --phase <closing phase> <text>` now hands the text to the closing skill as run notes, and a resume keeps them, where it used to stop and start nothing."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T20:01:40-05:00"}

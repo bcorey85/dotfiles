@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "A new hook script now enforces two review-loop rules that were prompt text alone"
 description: "A new hook script now enforces two review-loop rules that were prompt text alone."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-22T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/review-loop", "agent/code-reviewer"]
 evidence: ["census", "judgment"]
 watches: []

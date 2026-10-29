@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A verify-only ask whose checks pass with no edit finishes the phase"
 description: "An asks coder's ALREADY-DONE line may name a backticked command that exited 0, so a verify-only ask whose checks pass with no edit goes on to the end-of-review gate and commit; a report with no such line still stops."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:40:00-05:00"}

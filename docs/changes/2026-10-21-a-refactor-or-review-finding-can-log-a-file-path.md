@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A refactor or review finding can log a file path that holds spaces"
 description: "refactor-flow.py log, log-escape and log-review-finding accept a file= value with spaces. All three refuse a file= value that holds a line break, or whitespace followed by name=, which is the shape of a swallowed key=value pair."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T14:48:04-05:00"}
 seq: 18
+kind: "fix"
 components: ["script/refactor-flow", "script/log-escape", "script/log-review-finding"]
 evidence: ["work incident", "tests"]
 watches: []

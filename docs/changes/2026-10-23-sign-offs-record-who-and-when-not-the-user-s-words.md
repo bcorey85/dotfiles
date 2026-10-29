@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Sign-offs record who and when, not the user's words"
 description: "A sign-off that overrides a ticket criterion or moves a phase now records who signed off and when. It no longer quotes the user."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-23T08:16:58-05:00"}
 seq: 2
+kind: "behavior"
 components: ["rule/global-claude-md", "agent/plan-verifier", "skill/verify-branch", "skill/plan-format"]
 evidence: ["judgment"]
 watches: []

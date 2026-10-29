@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code-step abort verb ends an open /code run"
 description: "code_step.py abort drops the open /code run: it archives state.json, clears the say, question and coder-gate files, and prints what it dropped, so the next start begins a fresh run with no restart flag."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T09:26:26-05:00"}

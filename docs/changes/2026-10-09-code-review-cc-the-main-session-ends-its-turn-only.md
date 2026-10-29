@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`/code`, `/review`, `/cc`: the main session ends its turn only at the skill's own stops"
 description: "`/code`, `/review`, `/cc`: the main session ends its turn only at the skill's own stops; elsewhere it takes the next reversible in-scope step and reports after, asking only before an irreversible or outward step or a real fork."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["skill/code", "skill/review", "skill/cc"]
 evidence: ["census"]
 watches: []

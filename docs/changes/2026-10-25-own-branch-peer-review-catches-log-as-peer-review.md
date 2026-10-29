@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Own-branch /peer-review catches log as peer-review escapes; each run logs own-branch or teammate"
 description: "/escape gains a peer-review stage; /peer-review logs one row per run saying whether the PR is the user's own, and on an own-branch run hands each kept defect to /escape."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T15:45:37-05:00"}

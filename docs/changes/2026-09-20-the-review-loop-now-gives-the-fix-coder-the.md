@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review loop now gives the fix coder the advisory items of the same review pass"
 description: "The review loop now gives the fix coder the advisory items of the same review pass, in a `## Small items` section below the fix findings, under a fixed instruction text (64 words)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["agent/review-loop", "skill/branch-recap"]
 evidence: ["seeded round", "census", "judgment"]
 watches: []

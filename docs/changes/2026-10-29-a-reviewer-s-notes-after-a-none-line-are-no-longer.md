@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A reviewer's notes after a None line are no longer findings"
 description: "The review loop's Fix/Ask/Nit parser reads a section that opens with a none line, such as \"None.\", as empty, so the reviewer's notes below it no longer reach a coder as issues or the user as asks."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T13:28:30-05:00"}

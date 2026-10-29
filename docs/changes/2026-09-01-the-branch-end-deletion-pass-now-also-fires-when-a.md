@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The branch-end deletion pass now also fires when a branch's total added lines clear a threshold"
 description: "The branch-end deletion pass now also fires when a branch's total added lines clear a threshold, not only when one module does."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["skill/branch-recap"]
 evidence: ["judgment"]
 watches: []

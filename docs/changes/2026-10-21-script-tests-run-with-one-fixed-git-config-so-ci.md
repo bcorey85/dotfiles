@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Script tests run with one fixed git config so CI and local agree"
 description: "The script test runner gives every test process one fixed global git config, no system config, empty ignore and attributes files, and no git config from the environment. The CI workflow loses its own git setup step."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T19:46:07-05:00"}
 seq: 22
+kind: "behavior"
 components: ["script/parallel-tests"]
 evidence: ["work incident", "tests"]
 watches: []

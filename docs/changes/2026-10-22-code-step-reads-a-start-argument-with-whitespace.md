@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step reads a start argument with whitespace as task text"
 description: "`start` no longer treats a word with whitespace as a plan path, unless that word is an existing file. Task text that names a file path now starts a task run."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T09:51:55-05:00"}
 seq: 9
+kind: "fix"
 components: ["script/code-step", "script/script-utils"]
 evidence: ["work incident"]
 watches: []

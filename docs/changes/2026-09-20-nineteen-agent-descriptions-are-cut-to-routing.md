@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "Nineteen agent descriptions are cut to routing lines: what the agent is, who dispatches it"
+change_type: "changed"
+title: "Nineteen agent descriptions are now short routing lines"
 description: "Nineteen agent descriptions are cut to routing lines: what the agent is, who dispatches it, and any rule that the dispatcher needs."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 20
+kind: "behavior"
 components: []
 evidence: ["census", "judgment"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The audit lane gained a per-class recall step: the caught log joined to the escape log on their shared class"
 description: "The audit lane gained a per-class recall step: the caught log joined to the escape log on their shared class column, with rules for attributing a miss only to a gate that could have caught it, for treating zero escapes as unmeasured rather than perfect."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 14
+kind: "behavior"
 components: ["skill/audit"]
 evidence: ["census"]
 watches: []

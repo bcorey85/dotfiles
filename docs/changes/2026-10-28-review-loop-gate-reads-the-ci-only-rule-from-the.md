@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Review loop gate reads the CI-only rule from the reviewed repo"
 description: "The review-loop stop gate and hand-back gate look for the Full suite: CI line in the repo the loop reviewed, not only in the hook cwd."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T01:31:43-05:00"}

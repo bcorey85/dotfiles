@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Three reviewers repointed at the calibration section they were told to adopt"
 description: "Three reviewers repointed at the calibration section they were told to adopt, after it was renamed and they were not updated."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 14
+kind: "fix"
 components: ["agent/code-reviewer", "agent/smell-reviewer", "shared/reviewer-calibration"]
 evidence: ["census"]
 watches: []

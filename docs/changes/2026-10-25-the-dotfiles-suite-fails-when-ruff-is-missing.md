@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The dotfiles suite fails when ruff is missing"
 description: "tests/run.sh stops with exit 1 and an install line when ruff is not on PATH, where it used to print 'lint skipped' and pass, so a lint or complexity defect can no longer ship through a suite run on a machine without ruff."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T20:15:18-05:00"}

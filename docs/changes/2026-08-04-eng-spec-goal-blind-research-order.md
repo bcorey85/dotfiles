@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "`/eng-spec` goal-blind research order"
-description: "`/eng-spec` goal-blind research order."
+change_type: "changed"
+title: "`/eng-spec` researches the codebase without knowing the goal"
+description: "`/eng-spec` now runs its codebase research in an order that keeps the researchers blind to the ticket's goal."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 14
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["clean result"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-`/eng-spec` goal-blind research order
+`/eng-spec` now runs its codebase research in an order that keeps the researchers blind to the ticket's goal: questions are written from the source document, then answered by agents that read only the questions file.
 
 ## Evidence
 

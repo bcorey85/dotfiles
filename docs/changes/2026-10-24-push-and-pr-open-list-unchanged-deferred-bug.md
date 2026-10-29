@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "added"
 title: "Push and PR open list unchanged deferred bug findings"
 description: "A PreToolUse hook on Bash lists the branch's deferred bug and correctness findings whose code has not changed since review, each time Claude runs git push or gh pr create. It adds context and never denies."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T16:57:07-05:00"}

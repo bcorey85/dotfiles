@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The per-dispatch telemetry hook now records a mechanical yield proxy for agents that do not self-report"
 description: "The per-dispatch telemetry hook now records a mechanical yield proxy for agents that do not self-report findings — the length of the returned report and whether it matches a found-nothing signature."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-14T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["script/log-agent-usage"]
 evidence: ["census"]
 watches: []

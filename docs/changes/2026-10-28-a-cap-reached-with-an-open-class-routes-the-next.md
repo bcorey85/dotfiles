@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A cap-reached with an open class routes the next run to the last fix diff"
 description: "When a capped review run's class-closure receipt says a class is still open, review_fix.py prints a scoped review of the files the run's fixes touched as the next run and no longer offers a full rerun."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T20:16:54-05:00"}

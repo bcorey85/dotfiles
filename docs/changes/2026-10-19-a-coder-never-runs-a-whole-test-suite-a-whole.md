@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A coder never runs a whole test suite, a whole-package lint or a build"
 description: "A coder never runs a whole test suite, a whole-package lint or a build."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-19T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["skill/coder-core", "agent/review-loop", "script/coder-gate"]
 evidence: ["judgment"]
 watches: ["coder-whole-package-check-hook"]

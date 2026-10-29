@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A no-op asks coder ticks the phase when it names where each ask is done"
 description: "When the asks coder changes nothing, code-step now runs the phase's verification commands and ticks, if the report has one `ALREADY-DONE: <n> — <file:line>` line for every accepted ask and raises no blocker. Every other no-change report still stops."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T09:51:55-05:00"}
 seq: 8
+kind: "behavior"
 components: ["script/code-step"]
 evidence: ["work incident"]
 watches: []

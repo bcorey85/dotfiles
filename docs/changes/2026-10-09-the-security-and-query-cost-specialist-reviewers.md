@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The security and query-cost specialist reviewers are removed, with their Opus copies"
-description: "The security and query-cost specialist reviewers are removed, with their Opus copies."
+change_type: "removed"
+title: "`code-reviewer` covers security and query cost on every pass, with no specialist reviewers"
+description: "`code-reviewer` covers security and query cost on every pass; the specialist reviewers, their Opus copies, the phase `(reviewers: …)` tag and the specialist flags are gone."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["census"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The security and query-cost specialist reviewers are removed, with their Opus copies. Also removed: the `(reviewers: …)` tag on plan phase lines, the `+sec`, `+perf`, `+smell` and `no-specialist` flags, and the shared trigger file. `code-reviewer` covers security and query cost on every pass
+`code-reviewer` covers security and query cost on every pass, with no specialist reviewers. The security and query-cost specialist reviewers are removed, with their Opus copies. Also removed: the `(reviewers: …)` tag on plan phase lines, the `+sec`, `+perf`, `+smell` and `no-specialist` flags, and the shared trigger file. `code-reviewer` covers security and query cost on every pass
 
 ## Evidence
 

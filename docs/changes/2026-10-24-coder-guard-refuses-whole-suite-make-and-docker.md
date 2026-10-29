@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Coder guard refuses whole-suite make and docker checks"
 description: "The coder bash guard reads a make target's Makefile text and the command inside a docker exec or run call, and refuses the call when it runs a whole test suite, lint or build."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-24T16:11:34-05:00"}

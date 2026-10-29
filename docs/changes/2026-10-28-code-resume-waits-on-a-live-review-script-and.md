@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code resume waits on a live review script and names the changed phase text"
 description: "resume no longer calls a run stale while its review script is alive, and a stale question quotes the phase lines that changed."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T14:10:00-05:00"}

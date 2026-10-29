@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The branch-exit completeness gate's telemetry step moved ahead of its presentation and routing steps"
 description: "The branch-exit completeness gate's telemetry step moved ahead of its presentation and routing steps."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 17
+kind: "behavior"
 components: ["skill/branch-recap"]
 evidence: ["census"]
 watches: []

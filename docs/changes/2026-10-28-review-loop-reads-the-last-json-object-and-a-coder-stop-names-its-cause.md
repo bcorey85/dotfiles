@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Review loop reads the last JSON object and a coder stop names its cause"
 description: "The review loop script reads its disposition, check-finder and closure replies from the last JSON object that holds the wanted key, so braces in prose or a nested object no longer break the read. A coder stop names its cause: no reviewable change, or a recommendation of /eng-spec. The termination walk also covers the review loop run as a detached script."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T00:17:26-05:00"}

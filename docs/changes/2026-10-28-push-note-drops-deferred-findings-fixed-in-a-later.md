@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Push note drops deferred findings fixed in a later round"
 description: "The pre-push deferred-findings note leaves out a deferred bug finding when a later round fixed a row at the same session, branch, file and line."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T20:16:04-05:00"}

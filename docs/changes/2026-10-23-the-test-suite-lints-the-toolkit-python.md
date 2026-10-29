@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The test suite lints the toolkit Python"
 description: "`tests/run.sh` runs ruff over the toolkit scripts and their tests before the test run. An unused import, an unused variable or an undefined name fails the suite. A report of functions over complexity 10 prints but does not fail. Five files lose an unused import."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-23T23:21:28-05:00"}

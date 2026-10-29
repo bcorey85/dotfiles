@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A misworded Automated Verification heading stops the code step"
-description: "plan_format read a phase's verification commands only under the exact `#### Automated Verification` heading. A misworded heading counted as no commands, so the phase closed green with nothing run. A level 4 heading that holds automated and verif but is not the exact heading now raises with its file line, and the code step stops at start, at the plan check and at a plan edit during a /code run."
+description: "The code step now stops, with the file line, at a level 4 heading that holds automated and verif but is not the exact `#### Automated Verification` heading, at start, at the plan check and at a plan edit during a /code run. Before, plan_format read a phase's verification commands only under the exact heading, so a misworded one counted as no commands and the phase closed green with nothing run."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T23:35:22-05:00"}
 seq: 23
 kind: "fix"

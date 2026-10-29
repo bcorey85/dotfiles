@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Credential and review-commit blocks tell the agent to carry on"
 description: "The review commit gate and the credential-read blocks now tell the agent to continue the task, so a main-session turn no longer ends on the block."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-25T22:18:44-05:00"}

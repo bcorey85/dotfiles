@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The hand-back gate runs the cargo commands a phase lists"
 description: "When a plan phase lists cargo commands under Automated Verification, code_step.py start sets the hand-back gate to those commands in place of crate-wide clippy and the cargo test commands it derives from the phase's files."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T09:18:01-05:00"}

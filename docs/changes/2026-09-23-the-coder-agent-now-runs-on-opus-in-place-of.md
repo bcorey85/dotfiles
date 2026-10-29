@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The coder agent now runs on Opus in place of Sonnet, for every dispatch: builds from a plan"
 description: "The coder agent now runs on Opus in place of Sonnet, for every dispatch: builds from a plan, fix coders in the review loop, refactor and dependency work."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-23T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["model round"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The Automated Verification reader and skill-done evidence leave code_step_boundary"
 description: "The Automated Verification reader moves to code_step_verification.py and the skill-done evidence to code_step_closing.py, so code_step_boundary.py drops from 1021 to 706 lines."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T14:11:00-05:00"}

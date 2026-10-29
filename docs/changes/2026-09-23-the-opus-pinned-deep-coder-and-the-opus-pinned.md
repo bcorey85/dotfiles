@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The Opus-pinned deep coder and the Opus-pinned deep code reviewer are deleted"
-description: "The Opus-pinned deep coder and the Opus-pinned deep code reviewer are deleted."
+change_type: "removed"
+title: "The deep modifier now uses the plain coder and code reviewer, with no Opus pin"
+description: "On the deep modifier, the code skill, review loop and closing review dispatch the plain coder and plain code reviewer, and the deep modifier changes only the specialist reviewers."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-23T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["agent/code-reviewer", "agent/review-loop", "skill/peer-review"]
 evidence: ["judgment"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The Opus-pinned deep coder and the Opus-pinned deep code reviewer are deleted. On the deep modifier, the code skill, the review loop, the peer-review skill, the calibrate skill and the branch-wide closing review now dispatch the plain coder and the plain code reviewer with no model argument, and the deep modifier changes only the specialist reviewers.
+The deep modifier now uses the plain coder and code reviewer, with no Opus pin. The Opus-pinned deep coder and the Opus-pinned deep code reviewer are deleted. On the deep modifier, the code skill, the review loop, the peer-review skill, the calibrate skill and the branch-wide closing review now dispatch the plain coder and the plain code reviewer with no model argument, and the deep modifier changes only the specialist reviewers.
 
 ## Evidence
 

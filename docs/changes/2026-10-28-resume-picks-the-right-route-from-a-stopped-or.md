@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Resume picks the right route from a stopped or stale code run"
 description: "/code resume takes a launched coder's report, refuses --help and dash answers, offers review-again after a blocker or setup fault, lists the reviewer's asks apart from the coder's notes, and flags a phase the plan changed."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T01:09:23-05:00"}

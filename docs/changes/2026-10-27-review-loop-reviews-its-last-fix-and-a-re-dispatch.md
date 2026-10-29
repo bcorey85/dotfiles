@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A review-loop hand-back that ends on a fix passes and names the fix files, and a no-reviewer re-dispatch keeps the round count"
 description: "The hand-back hook and the review gate accept a clean hand-back whose last step is a coder after a reviewer, review_fix.py packet lists that fix's files in the user text, and a stop-no-reviewer re-dispatch carries iter= and stops on a second miss in a row."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T19:01:09-05:00"}

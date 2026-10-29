@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "verify-prep and verify-log go on when the ledger stays busy"
 description: "A ledger that stays busy or behind no longer stops /verify-branch: the retries wait about a minute, the message names the wait and the ledger's own line, and a review that verify-log logged from this checkout for the same tree stands in for the ledger's answer."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:32:31-05:00"}

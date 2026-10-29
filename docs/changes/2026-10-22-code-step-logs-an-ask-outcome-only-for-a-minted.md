@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step logs an ask outcome only for a minted finding id"
 description: "code-step's ask-outcome logger now uses handback.ask_finding_id, as review-fix does. It skips and names a placeholder id, and it names a logger failure on stderr."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T09:51:55-05:00"}
 seq: 10
+kind: "fix"
 components: ["script/code-step"]
 evidence: ["work incident"]
 watches: []

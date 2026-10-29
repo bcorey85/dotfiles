@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "eng-spec finalize, spec template and decision format: the spec states each fact once"
 description: "eng-spec finalize, spec template and decision format: the spec states each fact once."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["census", "judgment", "paired bench"]
 watches: ["spec-states-each-fact-once"]

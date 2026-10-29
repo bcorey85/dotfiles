@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The repeat-check cap counts each agent's own runs and trusts a formatter only before a sure check"
 description: "The repeat-check cap keeps a separate record for each subagent, so a reviewer or the review loop gets its own first run of a check. A formatter exempts a check only when the check surely runs after the formatter succeeds."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T08:49:36-05:00"}
 seq: 13
+kind: "fix"
 components: ["script/quality-check-cap", "script/shell-command"]
 evidence: ["transcript read", "tests"]
 watches: []

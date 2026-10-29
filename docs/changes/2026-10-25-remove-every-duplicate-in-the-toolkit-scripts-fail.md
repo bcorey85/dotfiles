@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Remove every duplicate in the toolkit scripts; fail on any repeat"
 description: "The duplicate check dropped its baseline and now fails on any repeated function name or jscpd clone; 29 repeated names and 14 clones moved into lib/script_utils.py and lib/hook_input.py or got names of their own."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T18:33:18-05:00"}

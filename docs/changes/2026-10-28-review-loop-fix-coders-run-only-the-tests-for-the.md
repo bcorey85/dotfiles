@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Review-loop fix coders run only the tests for the files they changed"
 description: "Every coder prompt the review loop builds tells the coder to run only the tests for its changed files, never lint suites, the full suite or repo-wide checks, since the loop runs the full check after the pass."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:43:40-05:00"}

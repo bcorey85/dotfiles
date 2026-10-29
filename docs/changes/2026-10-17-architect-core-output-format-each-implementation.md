@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`architect-core` Output Format: each implementation step ends with a `Reuse:` line"
 description: "`architect-core` Output Format: each implementation step ends with a `Reuse:` line."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-17T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["skill/architect-core", "shared/plan-format", "skill/eng-spec"]
 evidence: ["judgment"]
 watches: []

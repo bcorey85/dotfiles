@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code_step.py is split by concern into seven modules"
 description: "code_step.py drops from 2312 to 605 lines: the start, review, gate and report concerns move into their own modules with each function's text unchanged, so the scripted review loop can be wired in under the toolkit's 1000-line rule."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:41:24-05:00"}

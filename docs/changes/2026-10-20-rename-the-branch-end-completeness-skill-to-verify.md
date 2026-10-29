@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Rename the branch-end completeness skill to verify-branch"
 description: "Claude Code 2.1.304 ships its own skill named verify, and adds the line 'Always run /verify right before the commit command' to the Bash tool instructions when any skill has that name. With the user's skill also named verify, the line sent agents to the branch-end completeness check before each commit. The user's skill is now verify-branch, so the name verify means only Claude Code's skill."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T11:16:05-05:00"}
 seq: 3
+kind: "behavior"
 components: ["skill/verify", "skill/verify-branch", "script/code-step", "agent/review-loop", "agent/plan-verifier", "skill/branch-recap", "skill/escape"]
 evidence: ["judgment"]
 watches: []

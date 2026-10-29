@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "check_scope reads a run that excludes part of the suite as targeted"
 description: "lib/check_scope reads a test or lint run that leaves files, packages, groups or tags out (cargo --exclude, mypy --exclude, rspec --exclude-pattern, phpunit --exclude-group, bats --negative-filter, manage.py --exclude-tag, pytest --ignore and the like) as targeted, so full_check.py refuses it and the stop gate never counts it as a full check."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T15:36:18-05:00"}

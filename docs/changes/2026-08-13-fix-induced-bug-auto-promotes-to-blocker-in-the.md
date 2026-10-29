@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "fix_induced=bug auto-promotes to blocker in the review loop's finding log"
 description: "fix_induced=bug auto-promotes to blocker in the review loop's finding log."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-13T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/review-loop", "shared/finding-log"]
 evidence: ["judgment"]
 watches: []

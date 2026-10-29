@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Committing or pushing from a branch still carrying the auto-generated worktree prefix is refused"
 description: "Committing or pushing from a branch still carrying the auto-generated worktree prefix is refused, naming the branch and asking for the rename first."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["script/git-discipline-gate"]
 evidence: ["judgment"]
 watches: []

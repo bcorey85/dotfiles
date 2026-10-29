@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Review-loop stop hook blocks a packet with unlogged finding rows or a plan-file edit"
 description: "The review-loop stop check blocks once when the packet lists findings with no per-finding ledger rows or no metrics line, or names the plan file in files_touched."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T17:03:29-05:00"}

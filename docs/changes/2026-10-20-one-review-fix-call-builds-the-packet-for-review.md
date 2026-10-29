@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "One review-fix call builds the packet for review and fix"
 description: "A hook saves the review loop's hand-back and the commit gate refuses a false clean mark. One review-fix.py call parses it, routes on its status, renders the user text, opens the asks in the editor and logs the rows, so /review and /fix leave the model only the asks and the closing line."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T18:56:02-05:00"}
 seq: 10
+kind: "behavior"
 components: ["skill/review", "skill/fix", "script/review-fix", "script/handback", "script/review-commit-gate"]
 evidence: ["census", "judgment"]
 watches: ["review-fix-one-call"]

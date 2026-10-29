@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Deny bare rg with no path before it hangs on stdin"
 description: "A Bash call of rg with no path, alone or first in a pipeline, is denied with the same command plus a dot, so the search runs in a second instead of hanging until the timeout."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-25T22:55:20-05:00"}

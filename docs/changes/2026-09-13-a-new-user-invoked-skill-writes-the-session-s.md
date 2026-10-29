@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "A new user-invoked skill writes the session's state at a task boundary — what shipped, what was decided"
+change_type: "added"
+title: "A new skill saves the session's state to a handoff file so the next task can start from disk"
 description: "A new user-invoked skill writes the session's state at a task boundary — what shipped, what was decided, the numbers to keep, what is open, the rules that bind the next step, and the files to reopen — to a handoff file outside the repo."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-13T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["skill/handoff"]
 evidence: ["token census", "judgment"]
 watches: []

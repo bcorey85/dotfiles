@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The implement skill and the refactor skill now start the round counter of the review-and-fix loop at zero in"
+change_type: "changed"
+title: "The implement and refactor skills now start the review-and-fix loop's round counter at zero in a first handoff"
 description: "The implement skill and the refactor skill now start the round counter of the review-and-fix loop at zero in a first handoff."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-21T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["agent/review-loop", "skill/branch-recap"]
 evidence: ["census"]
 watches: []

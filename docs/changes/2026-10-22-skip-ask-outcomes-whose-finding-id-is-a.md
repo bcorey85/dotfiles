@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Skip ask outcomes whose finding id is a placeholder"
 description: "review-fix.py asks-done now logs an ask outcome only when its finding_id has the minted shape. A placeholder such as \"none logged\" is skipped and named, and the command no longer fails."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T07:25:39-05:00"}
 seq: 1
+kind: "fix"
 components: ["script/review-fix", "script/handback"]
 evidence: ["work incident"]
 watches: []

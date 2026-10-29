@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "Two text corrections in the test-intent reviewer: the ticket filename is `00-ticket.md`"
+change_type: "fixed"
+title: "The test-intent reviewer now names the ticket file correctly and marks its cull-only header lines"
 description: "Two text corrections in the test-intent reviewer: the ticket filename is `00-ticket.md`, the name the resolver writes, and the two cull-only header lines say \"cull half only\" so the bug-pinning half no longer owes them."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-15T00:00:00-05:00"}
 seq: 5
+kind: "fix"
 components: ["agent/test-intent-reviewer"]
 evidence: ["judgment"]
 watches: []

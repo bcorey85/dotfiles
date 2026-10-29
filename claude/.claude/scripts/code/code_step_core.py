@@ -35,10 +35,12 @@ DISPATCH_MARKER = "code-step-dispatch:"
 DISPATCH_MARKER_PATTERN = re.compile(re.escape(DISPATCH_MARKER) + r"\s+([^\s/]+)/(d\d+)\b")
 PROMPT_DENIAL_LIMIT = 3
 FORK_STOP_BLOCK_LIMIT = 2
-HANDBACK_WAIT_SECONDS = 570
+# Claude Code moves a subagent's Bash call to the background once it has run 180 seconds, and the fork then loses the
+# verb's output, so each wait ends well before that. Twelve waits make the cap about thirty minutes.
+HANDBACK_WAIT_SECONDS = 150
+HANDBACK_TOTAL_WAIT_MULTIPLE = 12
 HANDBACK_POLL_SECONDS = 2
 STOP_ROW_WAIT_SECONDS = 15
-HANDBACK_TOTAL_WAIT_MULTIPLE = 3
 LAUNCH_EXPECTED_SECONDS = 60
 PLAN_EDIT_STAGES = ("plan-coder", "impact-coder", "impact-review")
 PLAN_EDIT_STOP_REASONS = ("verification", "plan-format")

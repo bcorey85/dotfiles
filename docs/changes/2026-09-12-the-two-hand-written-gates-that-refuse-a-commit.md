@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The two hand-written gates that refuse a commit — the one requiring a review first"
+change_type: "changed"
+title: "The review-first and branch-rules commit gates now refuse safely, even when their own script fails"
 description: "The two hand-written gates that refuse a commit — the one requiring a review first, and the one enforcing branch and history rules — now refuse by emitting an explicit decision the harness understands rather than by exiting with an error code."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["script/review-commit-gate", "script/git-discipline-gate"]
 evidence: ["judgment"]
 watches: []

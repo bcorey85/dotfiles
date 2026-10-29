@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Phase commit uses the plan's named commit line, never a none summary"
 description: "code_step's phase commit takes its subject from the phase's Commit `...` line in the plan when there is one; otherwise from the coder's Implemented summary, unless that summary starts with none, when it takes the phase title."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:00:04-05:00"}

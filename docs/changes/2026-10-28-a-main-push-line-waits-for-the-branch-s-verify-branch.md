@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A main push line waits for the branch's verify-branch and non-negotiables results"
 description: "The orchestration file's Git section now says the orchestrator hands a push or merge line for main only after the branch reports /verify-branch done and, where the repo's CLAUDE.md names a non-negotiables check, that check passed; a green gate or CI run alone never produces that line."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T19:40:00-05:00"}

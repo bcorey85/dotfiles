@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Cull the flow, plan, logging and ledger tests, and delete two dead telemetry scripts"
 description: "Removed the skill-use and test-edit telemetry scripts, which no hook runs (the ledger hook writes those rows), and cut the tests that pinned them or that repeated a case another test already pins: 3693 tests become 3584, wall-clock 285s to 220s."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T09:04:21-05:00"}

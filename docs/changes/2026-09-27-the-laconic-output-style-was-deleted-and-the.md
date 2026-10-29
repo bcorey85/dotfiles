@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The Laconic output style was deleted, and the settings no longer name an output style"
-description: "The Laconic output style was deleted, and the settings no longer name an output style."
+change_type: "removed"
+title: "The main session now runs on the default coding instructions plus a one-line style rule"
+description: "The main session gets the default coding instructions plus the per-turn style line, with no output style named in the settings."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["rule/laconic-output-style", "rule/global-claude-md"]
 evidence: ["removal round", "judgment"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The Laconic output style was deleted, and the settings no longer name an output style. The global CLAUDE.md pointer to it was deleted. The per-turn style line from the user prompt hook stays: verdict first, under 100 words, plain words, short sentences. The main session now gets the default coding instructions plus that line.
+The main session now gets the default coding instructions plus the per-turn style line. The Laconic output style was deleted, and the settings no longer name an output style. The global CLAUDE.md pointer to it was deleted. The per-turn style line from the user prompt hook stays: verdict first, under 100 words, plain words, short sentences. The main session now gets the default coding instructions plus that line.
 
 ## Evidence
 

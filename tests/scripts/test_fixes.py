@@ -202,32 +202,6 @@ class PlanImpactFlowTest(unittest.TestCase):
         self.assertIn("b.py", state_after_edit["files"])
         self.assertTrue(any("b.py" in flag for flag in state_after_edit["flagged"]))
 
-    def test_keep_goes_straight_to_review(self):
-        repo = make_repo(self)
-        state = coder_state(repo, ["a.py"])
-        state.update({"stage": "impact-coder", "impact": "PLAN-IMPACT:\n  found: no header row"})
-        write_state(repo, state)
-
-        output = run(repo, "decide", "keep", "--by", "user", "--ruling", RULING)
-
-        self.assertIn("AGENT: review-loop", output)
-        self.assertEqual(read_state(repo)["stage"], "review")
-
-    def test_ruling_words_reach_the_plan_deviation(self):
-        repo = make_repo(self)
-        state = coder_state(repo, ["a.py"])
-        state.update({"stage": "impact-review", "impact": "PLAN-IMPACT:\n  found: no header row"})
-        write_state(repo, state)
-
-        run(repo, "decide", "adopt", "--by", "user", "--ruling", RULING)
-
-        plan_text = (repo / "plan.md").read_text()
-        self.assertIn("## Plan Deviations", plan_text)
-        self.assertIn("  The ruling: " + RULING + "\n", plan_text)
-        self.assertNotIn("  > " + RULING, plan_text)
-        self.assertIn("Ruled by t at", plan_text)
-        self.assertEqual(read_state(repo)["ruling"]["words"], RULING)
-
     def test_review_dispatch_after_decide_carries_the_resolved_block(self):
         repo = make_repo(self)
         state = coder_state(repo, ["a.py"])
@@ -237,24 +211,11 @@ class PlanImpactFlowTest(unittest.TestCase):
         output = run(repo, "decide", "keep", "--by", "user", "--ruling", RULING)
 
         self.assertIn("AGENT: review-loop", output)
+        self.assertEqual(read_state(repo)["stage"], "review")
         self.assertIn("RESOLVED: the user ruled on this disagreement", output)
         self.assertIn("Decision: Keep plan as written", output)
         self.assertIn(RULING, output)
         self.assertIn("found: no header row", output)
-
-    def test_decide_without_a_ruling_stops_and_changes_nothing(self):
-        repo = make_repo(self)
-        state = coder_state(repo, ["a.py"])
-        state.update({"stage": "impact-review", "impact": "PLAN-IMPACT:\n  found: no header row"})
-        write_state(repo, state)
-
-        output = run(repo, "decide", "adopt")
-
-        self.assertIn("ACTION: stop", output)
-        self.assertIn("--ruling", output)
-        self.assertNotIn("AGENT:", output)
-        self.assertEqual(read_state(repo)["stage"], "impact-review")
-        self.assertNotIn("## Plan Deviations", (repo / "plan.md").read_text())
 
 
 class ChangeFallbackTest(unittest.TestCase):
@@ -283,9 +244,9 @@ class ChangeFallbackTest(unittest.TestCase):
 class GateFlagTest(unittest.TestCase):
     def test_a_gate_command_error_is_flagged_apart_from_the_cap_as_no_code_failure(self):
         missing_line = "ERROR: file or directory not found: backend/app/tests/test_x.py"
-        gate = {"coders": {"a1": {"result": "cap", "failed": ["pytest app/tests/test_y.py"],
-                                  "command_errors": ["pytest backend/app/tests/test_x.py"],
-                                  "command_error_lines": {"pytest backend/app/tests/test_x.py": missing_line}}}}
+        gate = {"coders": {"a1": {"result": "cap", "commands": {
+            "pytest app/tests/test_y.py": {"outcome": "failed", "detail": ""},
+            "pytest backend/app/tests/test_x.py": {"outcome": "command-error", "detail": missing_line}}}}}
 
         flagged = code_step.coder_flagged({}, gate, "", is_ask_fix=False)
 

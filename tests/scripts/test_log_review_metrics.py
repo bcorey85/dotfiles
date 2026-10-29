@@ -137,23 +137,21 @@ class LogReviewMetricsRepoTest(unittest.TestCase):
                 self.assertIn("is not one of PASS", metrics_run.stderr)
                 self.assertEqual(fake_ledger.recorded_rows(self.ledger_env, "review_metrics"), [])
 
-    def test_leading_tilde_slash_expands_to_home(self):
-        home_log_path = self.home / "x"
-        self.logged_metrics_row_at("~/x", home_log_path)
-
-    def test_tilde_user_is_not_expanded(self):
+    def test_out_path_expands_only_a_leading_tilde_slash(self):
         tilde_user_dir = self.worktree / "~user"
         tilde_user_dir.mkdir()
-        tilde_user_log_path = tilde_user_dir / "x"
-        self.logged_metrics_row_at("~user/x", tilde_user_log_path)
-
-    def test_tilde_inside_a_path_is_literal(self):
         tilde_in_name_log_path = self.root / "a~b.jsonl"
-        self.logged_metrics_row_at(tilde_in_name_log_path, tilde_in_name_log_path)
-
-    def test_bare_tilde_expands_to_home_directory_and_exits_nonzero(self):
-        metrics_run = self.run_metrics("out=~", "iter=7")
-        self.assertNotEqual(metrics_run.returncode, 0)
+        cases = [
+            ("leading tilde slash expands to home", "~/x", self.home / "x"),
+            ("tilde user is not expanded", "~user/x", tilde_user_dir / "x"),
+            ("tilde inside a path is literal", tilde_in_name_log_path, tilde_in_name_log_path),
+        ]
+        for name, out_value, expected_log_path in cases:
+            with self.subTest(name):
+                self.logged_metrics_row_at(out_value, expected_log_path)
+        with self.subTest("bare tilde expands to the home directory and exits nonzero"):
+            metrics_run = self.run_metrics("out=~", "iter=7")
+            self.assertNotEqual(metrics_run.returncode, 0)
 
     def test_help_prints_usage_and_writes_nothing(self):
         for flag in ("--help", "-h"):

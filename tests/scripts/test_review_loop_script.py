@@ -20,6 +20,7 @@ import fake_ledger
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import finding_record
 import handback
 import review_loop_findings
 import review_loop_packet
@@ -187,6 +188,14 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def fake_calls(self):
         path = self.fake_dir / "calls.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.is_file() else []
+
+    def reset_fake_run(self):
+        """Forget the fake agent's calls, counters and stored hand-backs, so one test can run the script again."""
+        (self.fake_dir / "calls.jsonl").unlink(missing_ok=True)
+        (self.fake_dir / "counters.json").unlink(missing_ok=True)
+        (self.scratch / "handback").mkdir(exist_ok=True)
+        for stored in (self.scratch / "handback").iterdir():
+            stored.unlink()
 
     def store_rows(self):
         path = self.scratch / "handback" / f"{SESSION}.jsonl"
@@ -517,28 +526,27 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["full_check"], "not run (no check found; the coder's scoped tests stand)")
         self.assertIn("code-reviewer", [call["key"] for call in self.fake_calls()])
 
-    def test_plan_change_ask_maps_to_plan_impact(self):
-        ask_review = (f"## Fix\nNone\n\n## Ask\n- {PLAN_CHANGE_STATUS}: the fix needs a new column the plan "
-                      "rules out\n\n## Nit\nNone\n")
+    def test_a_plan_change_ask_maps_to_plan_impact_bare_tagged_or_opening_with_its_file_line(self):
+        asks = {
+            "bare": f"- {PLAN_CHANGE_STATUS}: the fix needs a new column the plan rules out",
+            "tagged": f"- `src/a.py:12` [plan-drift] — {PLAN_CHANGE_STATUS}: the fix needs a new column the plan "
+                      "rules out",
+            "opening with its file line": f"- `app.py:3` [plan-drift] {PLAN_CHANGE_STATUS}: the fix needs a new "
+                                          "column the plan rules out",
+        }
 
-        completed = self.run_script({"code-reviewer": [{"result": ask_review}]})
+        for name, ask in asks.items():
+            with self.subTest(name):
+                self.reset_fake_run()
+                ask_review = f"## Fix\nNone\n\n## Ask\n{ask}\n\n## Nit\nNone\n"
 
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertIn("needs a new column", packet["plan_impact"])
-        self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
+                completed = self.run_script({"code-reviewer": [{"result": ask_review}]})
 
-    def test_a_tagged_plan_change_ask_maps_to_plan_impact(self):
-        ask_review = (f"## Fix\nNone\n\n## Ask\n- `src/a.py:12` [plan-drift] — {PLAN_CHANGE_STATUS}: the fix needs "
-                      "a new column the plan rules out\n\n## Nit\nNone\n")
-
-        completed = self.run_script({"code-reviewer": [{"result": ask_review}]})
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                _, packet = self.stored_packet()
+                self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+                self.assertIn("needs a new column", packet["plan_impact"])
+                self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
 
     def test_full_check_failing_after_one_repair_maps_to_critical_blocker(self):
         completed = self.run_script({
@@ -1096,12 +1104,35 @@ class ReviewLoopScriptTest(unittest.TestCase):
         asks = module.parse_review(review)["ask"]
 
         self.assertEqual(len(asks), 2)
-        self.assertTrue(asks[1].startswith("`app.py:4` second"))
+        self.assertTrue(asks[1].text.startswith("`app.py:4` second"))
+
+    def test_an_ask_with_nested_bullets_and_a_trailing_paragraph_parses_as_one_ask(self):
+        module = self.load_script_module()
+        review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` the limit is fixed in two places:\n"
+                  "  - the list endpoint caps at 10\n  - the export caps at 10\n\n"
+                  "  Should both read one setting? Change if accepted: read both from settings\n\n## Nit\nNone\n")
+
+        asks = module.parse_review(review)["ask"]
+        entry = review_loop_packet.ask_entry(asks[0], "code-reviewer", None)
+
+        self.assertEqual(len(asks), 1)
+        self.assertEqual(entry["change"], "read both from settings")
+        self.assertIn("the export caps at 10", entry["question"])
+        self.assertTrue(entry["question"].endswith("Should both read one setting?"))
+
+    def test_asks_indented_alike_under_the_heading_stay_separate(self):
+        module = self.load_script_module()
+        review = ("## Fix\nNone\n\n## Ask\n  - `app.py:3` first question?\n  - `app.py:4` second question?\n\n"
+                  "## Nit\nNone\n")
+
+        asks = module.parse_review(review)["ask"]
+
+        self.assertEqual(len(asks), 2)
 
     def test_change_if_accepted_marker_splits_question_from_change(self):
         ask = "`app.py:3` should it be configurable? Change if accepted: read from settings"
 
-        entry = review_loop_packet.ask_entry(ask, "code-reviewer", None)
+        entry = review_loop_packet.ask_entry(finding_record.parse_finding(ask), "code-reviewer", None)
 
         self.assertEqual(entry["change"], "read from settings")
         self.assertEqual(entry["question"], "`app.py:3` should it be configurable?")
@@ -1109,9 +1140,31 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def test_an_ask_that_opens_with_its_change_marker_asks_its_change(self):
         for ask in ("Change if accepted: read from settings", "change: read from settings"):
             with self.subTest(ask=ask):
-                entry = review_loop_packet.ask_entry(ask, "code-reviewer", None)
+                entry = review_loop_packet.ask_entry(finding_record.parse_finding(ask), "code-reviewer", None)
 
                 self.assertEqual((entry["question"], entry["change"]), ("read from settings", "read from settings"))
+
+    def test_test_files_in_every_convention_go_to_the_test_reviewer(self):
+        module = self.load_script_module()
+        test_paths = ["web/__tests__/cart.js", "svc/test_cart.py", "svc/cart_test.go", "svc/tests/unit/helpers.py"]
+        files = {"svc/cart.py": [5, "M"]}
+        files.update({path: [5, "M"] for path in test_paths})
+        files["svc/big.py"] = [module.LARGE_ADDED_LINES, "M"]
+
+        dispatches = dict(module.first_round_plan(files))
+
+        self.assertEqual(sorted(dispatches["test-reviewer"]), sorted(test_paths))
+        self.assertEqual(sorted(dispatches["code-reviewer"]), ["svc/big.py", "svc/cart.py"])
+
+    def test_added_lines_of_tests_and_any_lockfile_stay_out_of_the_size_bar(self):
+        module = self.load_script_module()
+        uncounted = ["web/__tests__/cart.js", "svc/test_cart.py", "svc/cart_test.go", "svc/tests/unit/helpers.py",
+                     "yarn.lock", "svc/poetry.lock", "pnpm-lock.yaml"]
+
+        for path in uncounted:
+            with self.subTest(path=path):
+                files = {"svc/cart.py": [5, "M"], path: [module.LARGE_ADDED_LINES, "M"]}
+                self.assertEqual([agent for agent, _ in module.first_round_plan(files)], ["code-reviewer"])
 
     def test_the_finding_id_changes_with_the_gate(self):
         loader = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
@@ -1238,16 +1291,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([row["class"] for row in self.finding_rows()], ["duplication"])
         metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
         self.assertEqual(metrics[0]["smells"], "0")
-
-    def test_a_plan_change_ask_that_opens_with_its_file_line_stops_the_loop(self):
-        located_ask = (f"## Fix\nNone\n\n## Ask\n- `app.py:3` [plan-drift] {PLAN_CHANGE_STATUS}: the fix needs a new "
-                       "column the plan rules out\n\n## Nit\nNone\n")
-
-        completed = self.run_script({"code-reviewer": [{"result": located_ask}]})
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
 
     def test_two_distinct_findings_in_one_file_from_one_reviewer_are_two_rows(self):
         other_fix_review = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
@@ -1600,40 +1643,59 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
                          ["`app.py:3` `limit` has no upper bound check"])
 
-    def test_a_fix_with_no_title_is_not_reported_again_by_another_untitled_fix(self):
-        kept = review_loop_findings.unreported_parts("`app.py:2` [smell]", ["`app.py:9` [smell]"])
-        self.assertEqual(kept, ["`app.py:2` [smell]"])
-
-    def test_an_identical_untitled_fix_at_the_same_line_is_reported_again(self):
-        kept = review_loop_findings.unreported_parts("`app.py:2` [smell]", ["`app.py:2` [smell]"])
-        self.assertEqual(kept, [])
-
-    def test_an_untitled_fix_at_the_same_line_reopens_a_titled_fixed_part(self):
+    def test_a_fixed_part_stays_unreported_unless_a_fix_at_its_file_and_line_has_the_same_or_no_title(self):
         titled_fix = "`app.py:2` the limit is wrong for `limit`"
-        kept = review_loop_findings.unreported_parts(titled_fix, ["`app.py:2` [smell]"])
-        self.assertEqual(kept, [])
+        untitled_fix = "`app.py:2` [smell]"
+        cases = {
+            "an untitled fix is not reported again by another untitled fix at another line": (
+                untitled_fix, ["`app.py:9` [smell]"], [untitled_fix]),
+            "an identical untitled fix at the same line is reported again": (
+                untitled_fix, [untitled_fix], []),
+            "an untitled fix at the same line reopens a titled fixed part": (
+                titled_fix, [untitled_fix], []),
+            "an untitled fix at another line keeps a titled fixed part": (
+                titled_fix, ["`app.py:9` [smell]"], [titled_fix]),
+            "a titled fix is not reopened by a fix in another file": (
+                titled_fix, ["`other.py:2` [smell]"], [titled_fix]),
+            "a titled fix at the same line is not reopened by a differently titled fix": (
+                titled_fix, ["`app.py:2` cache eviction is unbounded"], [titled_fix]),
+            "a titled fix is not reopened by the same title in another file": (
+                titled_fix, ["`other.py:2` the limit is wrong for `limit`"], [titled_fix]),
+        }
 
-    def test_an_untitled_fix_at_another_line_keeps_a_titled_fixed_part(self):
-        titled_fix = "`app.py:2` the limit is wrong for `limit`"
-        kept = review_loop_findings.unreported_parts(titled_fix, ["`app.py:9` [smell]"])
-        self.assertEqual(kept, [titled_fix])
+        for name, (fixed_part, reported_fixes, expected) in cases.items():
+            with self.subTest(name):
+                reported = [finding_record.parse_finding(text) for text in reported_fixes]
+                kept = review_loop_findings.unreported_parts(finding_record.parse_finding(fixed_part), reported)
 
-    def test_a_titled_fix_is_not_reopened_by_a_fix_in_another_file(self):
-        titled_fix = "`app.py:2` the limit is wrong for `limit`"
-        kept = review_loop_findings.unreported_parts(titled_fix, ["`other.py:2` [smell]"])
-        self.assertEqual(kept, [titled_fix])
+                self.assertEqual([part.text for part in kept], expected)
 
-    def test_a_titled_fix_at_the_same_line_is_not_reopened_by_a_differently_titled_fix(self):
-        titled_fix = "`app.py:2` the limit is wrong for `limit`"
-        kept = review_loop_findings.unreported_parts(titled_fix, ["`app.py:2` cache eviction is unbounded"])
-        self.assertEqual(kept, [titled_fix])
+    def test_a_merged_finding_keeps_each_part_with_its_own_line(self):
+        first = finding_record.parse_finding("`app.py:2` the limit is wrong for `limit`")
+        second = finding_record.parse_finding("`app.py:9` `limit` has no upper bound")
+        third = finding_record.parse_finding("`app.py:14` `limit` is unchecked")
+        other_file = finding_record.parse_finding("`other.py:1` `limit` is read twice")
 
-    def test_a_titled_fix_is_not_reopened_by_the_same_title_in_another_file(self):
-        titled_fix = "`app.py:2` the limit is wrong for `limit`"
+        merged = review_loop_findings.merge_findings([first, second, other_file, third])
 
-        kept = review_loop_findings.unreported_parts(titled_fix, ["`other.py:2` the limit is wrong for `limit`"])
+        self.assertEqual(len(merged), 2)
+        self.assertEqual([(part.path, part.line) for part in merged[0].parts],
+                         [("app.py", 2), ("app.py", 9), ("app.py", 14)])
+        self.assertEqual([part.parts for part in merged[0].parts], [(), (), ()])
+        self.assertEqual(merged[0].text, f"{first.text} Also reported: {second.text} Also reported: {third.text}")
+        self.assertEqual(merged[1], other_file)
 
-        self.assertEqual(kept, [titled_fix])
+    def test_code_identifiers_skip_file_paths_and_file_line_pointers(self):
+        cases = {
+            "`src/app.py` and `limit`": {"limit"},
+            "`app.py:3`": set(),
+            "`config.json`": set(),
+            "`load(path.json)`": {"load(path.json)"},
+        }
+
+        for text, expected in cases.items():
+            with self.subTest(text):
+                self.assertEqual(finding_record.code_identifiers(text), frozenset(expected))
 
     def test_the_same_ask_from_two_reviewers_is_one_ask(self):
         same_ask = "- `app.py:1` should the limit be configurable? — change: read it from the config\n"
@@ -1672,6 +1734,17 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
                          ["`app.py:4` the fourth value has no test"])
         self.assertIn("app.py", packet["files_touched"])
+
+    def test_a_crash_after_a_fix_round_keeps_the_fixed_finding_in_the_crash_packet(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+        })
+
+        self.assertNotEqual(completed.returncode, 0)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual([entry["file_line"] for entry in packet["fixed"]], ["app.py:2"])
 
     def test_an_ask_with_an_empty_change_is_a_critical_blocker_that_keeps_the_ask_rows(self):
         ask_review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable? — change:\n\n"
@@ -1742,11 +1815,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def test_a_repo_whose_full_suite_runs_in_ci_converges_without_running_its_check(self):
         for claude_md in ("Quality check: `false`\nFull suite: CI\n", "- Full suite: CI\n"):
             with self.subTest(claude_md=claude_md):
-                (self.fake_dir / "calls.jsonl").unlink(missing_ok=True)
-                (self.fake_dir / "counters.json").unlink(missing_ok=True)
-                (self.scratch / "handback").mkdir(exist_ok=True)
-                for stored in (self.scratch / "handback").iterdir():
-                    stored.unlink()
+                self.reset_fake_run()
 
                 completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, claude_md=claude_md)
 

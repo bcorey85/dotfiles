@@ -134,6 +134,8 @@ class ReviewScriptTest(base.CodeStepTest):
 
         self.assert_first_phase_ticked()
         self.assert_marked_clean(out)
+        self.assertNotIn("Last fix not reviewed", self.said())
+        self.assertNotIn("reviewScriptPid", self.state())
 
     def test_a_hand_back_ending_on_an_unreviewed_fix_finishes_and_names_the_fix_files(self):
         self.env["FAKE_LOOP_MODE"] = "unreviewed-fix"
@@ -147,14 +149,6 @@ class ReviewScriptTest(base.CodeStepTest):
         self.assertIn("### Last fix not reviewed", self.said())
         self.assertIn("No reviewer read the loop's last fixes. Their files are among: src/orders.ts", self.said())
         self.assertIn("Review-again is not advised", self.said())
-
-    def test_a_converged_hand_back_ending_on_a_reviewer_names_no_unreviewed_fix(self):
-        self.coder_round()
-        self.wait_for_script_exit(self.state()["reviewScriptPid"])
-
-        self.step("resume")
-
-        self.assertNotIn("Last fix not reviewed", self.said())
 
     def test_a_script_that_exits_with_no_hand_back_stops_with_its_log_and_the_review_again_line(self):
         self.env["FAKE_LOOP_MODE"] = "silent"
@@ -406,13 +400,6 @@ class ReviewScriptTest(base.CodeStepTest):
         question = self.real_question_file().read_text()
         self.assertEqual({}, self.state())
         self.assertNotIn("SendMessage", question)
-
-    def test_the_taken_hand_back_forgets_the_finished_script(self):
-        self.coder_round()
-        self.wait_for_script_exit(self.state()["reviewScriptPid"])
-        self.step("resume")
-
-        self.assertNotIn("reviewScriptPid", self.state())
 
 # The tests inherited from the fixture class run in test_code_step.py: leave them out here.
 for inherited_test in [name for name in dir(base.CodeStepTest) if name.startswith("test_")]:

@@ -49,27 +49,21 @@ class SwitchCases:
         self.assertIn(finished.returncode, (0, 1))
         return finished.returncode == 0
 
-    def test_off_with_no_variable(self):
-        self.assertFalse(self.is_on())
-
-    def test_on_with_variable_one(self):
-        self.assertTrue(self.is_on(setting="1"))
-
-    def test_variable_zero_is_off(self):
-        self.assertFalse(self.is_on(setting="0"))
-
-    def test_file_no_longer_turns_it_on(self):
-        self.assertFalse(self.is_on(file_present=True))
-
-    def test_variable_zero_is_off_with_file(self):
-        self.assertFalse(self.is_on(setting="0", file_present=True))
-
-    def test_variable_one_is_on_inside_evals_folder(self):
-        self.assertTrue(self.is_on(setting="1", project_folder=self.round_folder))
-
-    def test_other_values_are_not_a_switch(self):
-        self.assertFalse(self.is_on(setting="true", file_present=True))
-        self.assertFalse(self.is_on(setting=""))
+    def test_only_the_variable_set_to_one_turns_it_on(self):
+        # The switch file is created last: it stays in the home for the cases after it, and never turns the switch on.
+        cases = [
+            ("no variable", {}, False),
+            ("variable one", {"setting": "1"}, True),
+            ("variable zero", {"setting": "0"}, False),
+            ("variable one inside the evals folder", {"setting": "1", "project_folder": self.round_folder}, True),
+            ("variable empty", {"setting": ""}, False),
+            ("file alone", {"file_present": True}, False),
+            ("variable zero with file", {"setting": "0", "file_present": True}, False),
+            ("variable true with file", {"setting": "true", "file_present": True}, False),
+        ]
+        for name, options, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(self.is_on(**options), expected)
 
 
 class ShellSwitchTest(SwitchCases, unittest.TestCase):

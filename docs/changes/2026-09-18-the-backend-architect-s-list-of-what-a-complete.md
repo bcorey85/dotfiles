@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The backend architect's list of what a complete plan specifies lost its data-models bullet (14 words"
-description: "The backend architect's list of what a complete plan specifies lost its data-models bullet (14 words, 559 remain in the agent file)."
+title: "The backend architect's complete-plan list leaves data models to the plan template"
+description: "The backend architect's list of what a complete plan specifies no longer has a data-models bullet, since the plan template names the same fields (14 words shorter, 559 remain in the agent file)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 12
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The backend architect's list of what a complete plan specifies lost its data-models bullet (14 words, 559 remain in the agent file). The Data Models placeholder of the plan template names the same fields. The other four bullets, the edge-case list, and the Reuse Map how-to stay.
+The backend architect's list of what a complete plan specifies no longer has a data-models bullet (14 words shorter, 559 remain in the agent file). The Data Models placeholder of the plan template names the same fields. The other four bullets, the edge-case list, and the Reuse Map how-to stay.
 
 ## Evidence
 

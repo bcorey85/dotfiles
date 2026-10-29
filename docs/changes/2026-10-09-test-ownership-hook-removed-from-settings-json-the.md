@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "Test-ownership hook removed from `settings.json`; the global hook list again omits coder test writes and"
+title: "The global hook list again tells the agent to redo a blocked shell write with Write or Edit; the test-ownership hook leaves `settings.json`"
 description: "Test-ownership hook removed from `settings.json`; the global hook list again omits coder test writes and again tells the agent to redo a blocked shell write with Write or Edit."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 4

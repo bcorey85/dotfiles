@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "The plan reviewer's instruction to batch its tree checks was removed"
-description: "The plan reviewer's instruction to batch its tree checks was removed."
+title: "The plan reviewer runs on about two fifths fewer tokens without the batch-your-tree-checks instruction"
+description: "The plan reviewer now runs without the instruction to batch its tree checks, and uses about two fifths fewer tokens per run."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-13T00:00:00-05:00"}
 seq: 1
 kind: "behavior"
@@ -15,7 +15,7 @@ watches: []
 
 ## Change
 
-The plan reviewer's instruction to batch its tree checks was removed.
+The plan reviewer now runs without the instruction to batch its tree checks, and uses about two fifths fewer tokens per run.
 
 ## Evidence
 

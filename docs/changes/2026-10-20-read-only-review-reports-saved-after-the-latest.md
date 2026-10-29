@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "Read only review reports saved after the latest review dispatch"
-description: "The /code step machine read an old plan-impact review report again when a later review saved no report. It then asked the plan-change question again, started another review and added another Plan Deviations entry, in a loop that ended only when a reviewer handed back. after-review now reads only reports saved after the latest review dispatch, so a report is acted on once."
+description: "after-review in the /code step machine now reads only reports saved after the latest review dispatch, so a report is acted on once. Before, it read an old plan-impact review report again when a later review saved no report, asked the plan-change question again, started another review and added another Plan Deviations entry, in a loop that ended only when a reviewer handed back."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T08:51:12-05:00"}
 seq: 2
 kind: "fix"

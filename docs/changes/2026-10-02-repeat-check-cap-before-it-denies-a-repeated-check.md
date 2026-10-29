@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "fixed"
-title: "Repeat-check cap: before it denies a repeated check, it allows the check if any changed or untracked file in"
+title: "The repeat-check cap now allows a repeated check when any changed or untracked file is newer than the last run"
 description: "Repeat-check cap: before it denies a repeated check, it allows the check if any changed or untracked file in the repo is newer than the last run, so writes through the shell or a script count as edits."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 12

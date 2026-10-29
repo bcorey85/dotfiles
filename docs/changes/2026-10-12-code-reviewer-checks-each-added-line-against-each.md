@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "`code-reviewer` checks each added line against each written rule in the conventions doc, the docs it names"
+title: "`code-reviewer` checks each added line against every written rule in the conventions doc, the docs it names and the loaded CLAUDE.md files"
 description: "`code-reviewer` checks each added line against each written rule in the conventions doc, the docs it names, and the loaded CLAUDE.md files."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 14

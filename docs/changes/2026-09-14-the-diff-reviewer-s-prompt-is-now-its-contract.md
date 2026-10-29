@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The diff reviewer's prompt is now its contract only: the one-line role, the project-memory paragraph"
+title: "The diff reviewer's prompt now holds its contract only"
 description: "The diff reviewer's prompt is now its contract only: the one-line role, the project-memory paragraph, the four specialist-ownership bullets, how it finds its scope, read every file in scope and the project conventions file, the report template, and two tool-use rules."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-14T00:00:00-05:00"}
 seq: 3

@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "`review-commit-gate` asks the user to confirm a `git commit` while coder work from the session has no"
+title: "`review-commit-gate` asks the user to confirm a `git commit`, instead of blocking it, while coder work has no converged review"
 description: "`review-commit-gate` asks the user to confirm a `git commit` while coder work from the session has no converged review, in place of a block."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-16T00:00:00-05:00"}
 seq: 3

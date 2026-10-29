@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The code skill's prompt is now its routing rules only: the task-input resolution, the modifier pointer"
+title: "The code skill's prompt now holds its routing rules only, loading about 1,570 words instead of about 2,990"
 description: "The code skill's prompt is now its routing rules only: the task-input resolution, the modifier pointer, phase-scoped plan reading, the acceptance-criteria stop, one coder then the test-writer per phase, the plan-impact modal, the handoff block, the review-loop dispatch and its status routing."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-15T00:00:00-05:00"}
 seq: 2

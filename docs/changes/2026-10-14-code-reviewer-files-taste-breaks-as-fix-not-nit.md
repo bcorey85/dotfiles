@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "`code-reviewer` files taste breaks as `fix`, not `nit`: dead code, a single-use pass-through"
+title: "`code-reviewer` files taste breaks such as dead code and single-use pass-throughs as `fix`, not `nit`"
 description: "`code-reviewer` files taste breaks as `fix`, not `nit`: dead code, a single-use pass-through, a dense nested expression, a comment that restates the code or narrates its history, a test that asserts only an absence, a hand-written copy of a helper the file already has."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-14T00:00:00-05:00"}
 seq: 3

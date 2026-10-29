@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "review-loop and code-reviewer: when the structure domain is eligible"
-description: "review-loop and code-reviewer: when the structure domain is eligible, the loop no longer dispatches the Opus structure reviewer."
+title: "The code reviewer now runs its own structure pass, so the review loop skips the separate Opus structure reviewer"
+description: "When the structure domain is eligible, the code reviewer runs its own structure pass and the review loop no longer dispatches the Opus structure reviewer."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 7
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-review-loop and code-reviewer: when the structure domain is eligible, the loop no longer dispatches the Opus structure reviewer. The code reviewer runs its own structure pass (`structure: on`) on the source files, and the test reviewer runs beside it on the diff's test files. Diffs with no test files keep the whole list on the code reviewer
+When the structure domain is eligible, the code reviewer runs its own structure pass (`structure: on`) on the source files, so the review loop no longer dispatches the Opus structure reviewer. And the test reviewer runs beside it on the diff's test files. Diffs with no test files keep the whole list on the code reviewer
 
 ## Evidence
 

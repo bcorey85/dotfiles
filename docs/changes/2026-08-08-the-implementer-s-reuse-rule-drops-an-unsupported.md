@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The implementer's reuse rule drops an unsupported superlative, its no-self-audit rule gains a reason"
-description: "The implementer's reuse rule drops an unsupported superlative, its no-self-audit rule gains a reason, and one duplicated instruction is cut."
+title: "The implementer's reuse rule now makes only supported claims and its no-self-audit rule gains a reason"
+description: "The implementer's reuse rule no longer makes an unsupported superlative claim, its no-self-audit rule gains a reason, and one duplicated instruction is gone."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 12
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The implementer's reuse rule drops an unsupported superlative, its no-self-audit rule gains a reason, and one duplicated instruction is cut
+The implementer's reuse rule no longer makes an unsupported superlative claim, its no-self-audit rule gains a reason, and one duplicated instruction is gone. The reuse rule keeps its full force.
 
 ## Evidence
 

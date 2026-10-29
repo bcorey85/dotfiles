@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The always-loaded instruction file now tells compaction what to keep — decisions with their reasons"
+title: "The always-loaded instruction file now tells compaction what to keep and what to drop"
 description: "The always-loaded instruction file now tells compaction what to keep — decisions with their reasons, every measured number, open items in order, commit hashes, file paths, and the rules that bind the next step — and what to drop: tool output and narrative."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-14T00:00:00-05:00"}
 seq: 1

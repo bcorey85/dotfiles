@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "Orchestration rules, delegation: the main session does not read a file only to hand it to a subagent that"
+title: "Orchestration rules: the main session sends a subagent the path and what to look for instead of reading the file first"
 description: "Orchestration rules, delegation: the main session does not read a file only to hand it to a subagent that will read it."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-14T00:00:00-05:00"}
 seq: 1

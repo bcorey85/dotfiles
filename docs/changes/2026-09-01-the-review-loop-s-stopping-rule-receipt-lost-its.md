@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The review loop's stopping-rule receipt lost its telemetry enum and gained teeth in the packet"
-description: "The review loop's stopping-rule receipt lost its telemetry enum and gained teeth in the packet: answering \"nothing I repaired was class-shaped\" now requires naming each repaired finding and why it fits neither shape, and the bare word alone is reported as an unrun check."
+title: "The review loop's stopping-rule receipt now requires naming each repaired finding"
+description: "The review loop's stopping-rule receipt is now enforced in the packet instead of through a telemetry enum: answering \"nothing I repaired was class-shaped\" now requires naming each repaired finding and why it fits neither shape, and the bare word alone is reported as an unrun check."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 6
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The review loop's stopping-rule receipt lost its telemetry enum and gained teeth in the packet: answering "nothing I repaired was class-shaped" now requires naming each repaired finding and why it fits neither shape, and the bare word alone is reported as an unrun check
+The review loop's stopping-rule receipt is now enforced in the packet instead of through a telemetry enum: answering "nothing I repaired was class-shaped" now requires naming each repaired finding and why it fits neither shape, and the bare word alone is reported as an unrun check
 
 ## Evidence
 

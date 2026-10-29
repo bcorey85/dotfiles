@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "test-reviewer: a new step reads every expected value a test pins against the ticket or plan"
+title: "test-reviewer now checks every expected value a test pins against the ticket or plan"
 description: "test-reviewer: a new step reads every expected value a test pins against the ticket or plan."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 3

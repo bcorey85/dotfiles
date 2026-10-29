@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The complexity reviewer's prompt is now its contract only: the role line and its one question"
+title: "The complexity reviewer's prompt now holds its contract only"
 description: "The complexity reviewer's prompt is now its contract only: the role line and its one question, the calibration inherit, the module bound with the diff-only refusal, the five deletable shapes with every example, the three oracle clauses, the magnitude floor."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 3

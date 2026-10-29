@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The review-and-fix loop now takes its changed-file list, its file sizes"
+title: "The review-and-fix loop now gets its changed files, file sizes and repo position from one script call"
 description: "The review-and-fix loop now takes its changed-file list, its file sizes, and its repo position from one script call at the start of a run."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 8

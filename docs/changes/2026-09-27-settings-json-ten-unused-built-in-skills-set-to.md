@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "settings.json: ten unused built-in skills set to `user-invocable-only`"
+title: "settings.json: the skill listing now carries names only, with ten unused built-in skills set to `user-invocable-only`"
 description: "settings.json: ten unused built-in skills set to `user-invocable-only`, and `skillListingBudgetFraction` set to 0.0001, so the skill listing carries names only."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 17

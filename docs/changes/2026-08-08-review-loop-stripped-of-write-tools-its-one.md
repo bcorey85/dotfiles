@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "Review loop stripped of write tools; its one permitted log now goes through a helper"
-description: "Review loop stripped of write tools; its one permitted log now goes through a helper."
+title: "The review loop can no longer edit files; its one permitted log goes through a helper"
+description: "The review loop no longer has write tools, so it cannot edit source, and its one permitted log now goes through a helper."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 6
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-Review loop stripped of write tools; its one permitted log now goes through a helper
+The review loop no longer has write tools, and its one permitted log now goes through a helper. Before, it held write access for a single sanctioned append.
 
 ## Evidence
 

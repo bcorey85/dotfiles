@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The plan reviewer's instruction to batch its tree checks is back"
-description: "The plan reviewer's instruction to batch its tree checks is back."
+title: "The plan reviewer is again told to batch its tree checks"
+description: "The plan reviewer is again told to batch its tree checks."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-13T00:00:00-05:00"}
 seq: 2
 kind: "behavior"
@@ -14,7 +14,7 @@ watches: []
 
 ## Change
 
-The plan reviewer's instruction to batch its tree checks is back.
+The plan reviewer is again told to batch its tree checks.
 
 ## Evidence
 

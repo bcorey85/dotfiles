@@ -1,6 +1,7 @@
 """What /code does with a plan's Expected red lines and later-phase files, and with the main session's guidance: the
 plan check refuses a wrong Expected red line, a coder may not hand back an edit to a file only a later phase names, the
-review dispatch carries the later-phase files, and `guide` records guidance that every later dispatch of the run carries.
+review dispatch carries the later-phase files, and `guide` records guidance that every later dispatch of the run
+carries.
 
 run: python3 -m unittest test_code_step_expected_red
 """

@@ -38,7 +38,7 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py guide "<text>"                   record the main session's guidance in the open run; every later coder
                                                 and review dispatch carries it (code_guidance). It changes neither the
                                                 task nor the plan
-  code_step.py hook                            PreToolUse hook on SubagentHandback: deny the fork's hand-back while a
+  code_step.py hook                             PreToolUse hook on SubagentHandback: deny the fork's hand-back while a
                                                 dispatched agent is still out
   code_step.py log-hook                         PostToolUse hook on Agent|SubagentHandback|SendMessage: log launch,
                                                 hand-back and resume events of the run

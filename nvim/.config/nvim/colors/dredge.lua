@@ -262,6 +262,10 @@ local groups = {
   ["@string.documentation"] = { fg = c.remark },
   ["@string.escape"] = { fg = c.const },
   ["@string.regexp"] = { fg = c.const },
+  -- The regex injection captures class characters, `.` and group names as code; they are literals.
+  ["@constant.regex"] = { fg = c.const },
+  ["@variable.builtin.regex"] = { fg = c.const },
+  ["@property.regex"] = { fg = c.const },
   ["@string.special"] = { fg = c.str },
   ["@string.special.symbol"] = { fg = c.const },
   ["@string.plain"] = { fg = c.str },

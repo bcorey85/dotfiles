@@ -18,15 +18,6 @@ EXPECTED = (
     'Code:\\n  unset CLAUDE_SKIP_HOOKS\\n\u26a0\ufe0f\u26a0\ufe0f\u26a0\ufe0f"}\n'
 )
 
-PARITY_CASES = [
-    {"name": "unset", "stdin": ""},
-    {"name": "empty", "stdin": "", "env": {"CLAUDE_SKIP_HOOKS": ""}},
-    {"name": "one", "stdin": "", "env": {"CLAUDE_SKIP_HOOKS": "1"}},
-    {"name": "word", "stdin": "", "env": {"CLAUDE_SKIP_HOOKS": "false"}},
-    {"name": "stdin ignored", "stdin": '{"hook_event_name":"SessionStart"}', "env": {"CLAUDE_SKIP_HOOKS": "x"}},
-]
-TYPICAL = {"name": "typical", "stdin": "", "env": {"CLAUDE_SKIP_HOOKS": "1"}}
-
 
 def run_hook(skip=None, stdin=""):
     environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}

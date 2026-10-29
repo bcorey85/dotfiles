@@ -11,6 +11,9 @@ import os
 import re
 import sys
 
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import script_utils
+
 TAIL = 512 * 1024
 RUN = 3
 TEXT = ("Your last three responses each made one read. If you already know other files or searches you need, "
@@ -110,7 +113,7 @@ def decide(payload):
         return None
     transcript = payload["transcript_path"]
     if agent_id:
-        transcript = os.path.join(transcript[:-len(".jsonl")], "subagents", f"agent-{agent_id}.jsonl")
+        transcript = script_utils.subagent_transcript_path(transcript, agent_id)
     return TEXT if run_length(responses(tail_records(transcript), subagent=bool(agent_id)), current) == RUN else None
 
 

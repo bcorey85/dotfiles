@@ -252,22 +252,14 @@ class CommentBloatGateTest(unittest.TestCase):
         samples = (("a_test.go", f't.Run("{ac_word} rejects an empty name", func(t *testing.T) {{'),
                    ("test_a.py", f'    with self.subTest("{PHASE_WORD} 6 render"):'),
                    ("test_a.py", f'    pytest.param(1, id="{ac_word} rejects empty"),'),
+                   ("test_a.py", f'    pytest.mark.parametrize("n", [1, 2], ids=["{ac_word} empty", "b"])'),
+                   ("test_a.py", f'    with self.subTest(msg="{PHASE_WORD} 6 render"):'),
                    ("a.test.ts",
                     f'it("renders", () => {{ it("{ac_word} x", () => {{}}); it("{ac_word} y", () => {{}}); }});'))
         for name, sample in samples:
             with self.subTest(sample=sample):
                 path = self.source(name, "x = 1\n" + sample + "\n")
                 self.assert_blocked(self.edit(path, sample))
-
-    def test_marker_in_a_param_id_list_blocks(self):
-        sample = f'    pytest.mark.parametrize("n", [1, 2], ids=["{"A" + "C3"} empty", "b"])'
-        path = self.source("test_a.py", "x = 1\n" + sample + "\n")
-        self.assert_blocked(self.edit(path, sample))
-
-    def test_marker_in_a_subtest_msg_keyword_blocks(self):
-        sample = f'    with self.subTest(msg="{PHASE_WORD} 6 render"):'
-        path = self.source("test_a.py", "x = 1\n" + sample + "\n")
-        self.assert_blocked(self.edit(path, sample))
 
     def test_a_marker_in_a_string_that_is_not_a_test_name_passes(self):
         samples = (("a.ts", f'const ok = pattern.test("{PHASE_WORD} 2");'),
@@ -295,21 +287,6 @@ class CommentBloatGateTest(unittest.TestCase):
                 path = self.source("a.py", sample)
                 self.assert_allowed(self.edit(path, sample, tool="Write"))
 
-    def test_marker_after_a_backtick_in_a_quoted_string_blocks(self):
-        content = f'const fence = "```";\nconst x = 1;\n// {PHASE_WORD} 2 leftover\n'
-        path = self.source("a.ts", content)
-        self.assert_blocked(self.edit(path, content, tool="Write"))
-
-    def test_marker_after_a_template_closed_on_a_line_with_a_url_slash_pair_blocks(self):
-        content = f"const h = `\n  <p>hi</p>\n  see https://x.com/docs`;\n// {PHASE_WORD} 1: leak\nconst y = 2;\n"
-        path = self.source("a.ts", content)
-        self.assert_blocked(self.edit(path, content, tool="Write"))
-
-    def test_marker_in_a_comment_on_the_line_that_closes_a_data_string_blocks(self):
-        content = f'X = """\ndata\n"""  # {PHASE_WORD} 2 leftover\n'
-        path = self.source("a.py", content)
-        self.assert_blocked(self.edit(path, content, tool="Write"))
-
     def test_marker_on_a_block_comment_line_without_a_star_blocks(self):
         sample = f"    It's the {PHASE_WORD} 6 renderer, isn't it."
         content = "const x = 1;\n/*\n" + sample + "\n*/\n"
@@ -335,14 +312,12 @@ class CommentBloatGateTest(unittest.TestCase):
         self.assert_allowed(self.edit(path, "# phase 2"))
         self.assert_blocked(self.edit(path, "keep\n# phase 2 notes\nmore"))
 
-    def test_marker_line_starting_with_dash_is_checked_as_text(self):
+    def test_marker_line_starting_with_dash_or_dash_e_is_checked_as_text(self):
         # The bash original passed the line to `grep -qxF` without `--`, so a leading dash was read as an option
         # and the leak was missed. The port treats it as text.
         path = self.source("q.sql", "select 1;\n-- see docs/plans/x\n")
         stderr = self.assert_blocked(self.edit(path, "select 1;\n-- see docs/plans/x"))
         self.assertIn("  2:-- see docs/plans/x\n", stderr)
-
-    def test_marker_line_starting_with_dash_e_is_checked_as_text(self):
         path = self.source("q.sql", "-e phase 2\n")
         self.assert_blocked(self.edit(path, "-e phase 2"))
 

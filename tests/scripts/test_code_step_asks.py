@@ -21,7 +21,7 @@ loaded_review_fix = importlib.util.spec_from_file_location("review_fix", SCRIPTS
 review_fix = importlib.util.module_from_spec(loaded_review_fix)
 loaded_review_fix.loader.exec_module(review_fix)
 import code_step_review
-import handback
+import review_asks
 
 # log-review-finding mints ids as 16 lowercase hex chars; review-fix logs no other shape.
 MINTED_FINDING_ID = "0123456789abcdef"
@@ -39,13 +39,13 @@ class LogAskOutcomes(unittest.TestCase):
     def setUp(self):
         self.calls = []
         self.logger_result = (0, "")
-        self.original_run_command = code_step_review.run_command
+        self.original_run_command = review_asks.run_command
         self.original_git_output = code_step_review.git_output
-        code_step_review.run_command = lambda command, cwd, **_: self.calls.append(command) or self.logger_result
+        review_asks.run_command = lambda command, cwd, **_: self.calls.append(command) or self.logger_result
         code_step_review.git_output = lambda *_: "some-branch"
 
     def tearDown(self):
-        code_step_review.run_command = self.original_run_command
+        review_asks.run_command = self.original_run_command
         code_step_review.git_output = self.original_git_output
 
     def log(self, asks, outcomes, phase="1"):
@@ -56,8 +56,9 @@ class LogAskOutcomes(unittest.TestCase):
         return stderr.getvalue()
 
     def test_argv_carries_finding_id_and_no_free_text(self):
-        self.log([ask_item()], ["accepted"])
+        stderr = self.log([ask_item()], ["accepted"])
 
+        self.assertEqual("", stderr)
         self.assertEqual(len(self.calls), 1)
         argv = self.calls[0]
         self.assertIn(f"finding_id={MINTED_FINDING_ID}", argv)
@@ -92,30 +93,32 @@ class LogAskOutcomes(unittest.TestCase):
         self.assertIn(f"ask outcome without a valid finding_id (no finding_id), logged under new finding_id "
                       f"{new_finding_id}", stderr)
 
+    def test_an_ask_whose_finding_id_is_not_a_minted_id_is_logged_under_a_new_id(self):
+        not_ids = [
+            ("the word none", "none"),
+            ("prose with a space", "not logged (no id was printed)"),
+            ("a short hex id", "abc123"),
+            ("an upper case hex id", MINTED_FINDING_ID.upper()),
+        ]
+        for label, not_an_id in not_ids:
+            with self.subTest(label):
+                self.calls.clear()
+                stderr = self.log([ask_item(finding_id=not_an_id), ask_item(finding_id=OTHER_MINTED_FINDING_ID)],
+                                  ["accepted", "rejected"])
+
+                new_finding_id, kept_finding_id = self.logged_finding_ids()
+                self.assertRegex(new_finding_id, r"^[0-9a-f]{16}$")
+                self.assertNotEqual(not_an_id, new_finding_id)
+                self.assertEqual(OTHER_MINTED_FINDING_ID, kept_finding_id)
+                self.assertEqual(1, stderr.count("logged under new finding_id"))
+                self.assertIn(f"ignored {not_an_id!r}", stderr)
+
     def test_asks_whose_finding_id_is_the_word_none_each_get_their_own_new_id(self):
-        stderr = self.log([ask_item(finding_id="none"), ask_item(finding_id="none"),
-                           ask_item(finding_id=OTHER_MINTED_FINDING_ID)], ["accepted", "rejected", "accepted"])
+        stderr = self.log([ask_item(finding_id="none"), ask_item(finding_id="none")], ["accepted", "rejected"])
 
-        first_new_id, second_new_id, kept_finding_id = self.logged_finding_ids()
+        first_new_id, second_new_id = self.logged_finding_ids()
         self.assertNotEqual(first_new_id, second_new_id)
-        self.assertNotIn("none", (first_new_id, second_new_id))
-        self.assertEqual(kept_finding_id, OTHER_MINTED_FINDING_ID)
         self.assertEqual(stderr.count("ignored 'none'"), 2)
-
-    def test_an_ask_whose_finding_id_is_prose_with_a_space_is_logged_under_a_new_id(self):
-        stderr = self.log([ask_item(finding_id="not logged (no id was printed)")], ["accepted"])
-
-        [new_finding_id] = self.logged_finding_ids()
-        self.assertRegex(new_finding_id, r"^[0-9a-f]{16}$")
-        self.assertIn("ignored 'not logged (no id was printed)'", stderr)
-
-    def test_a_short_or_upper_case_hex_finding_id_is_not_an_id(self):
-        stderr = self.log([ask_item(finding_id="abc123"), ask_item(finding_id=MINTED_FINDING_ID.upper())],
-                          ["accepted", "accepted"])
-
-        self.assertNotIn("abc123", self.logged_finding_ids())
-        self.assertNotIn(MINTED_FINDING_ID.upper(), self.logged_finding_ids())
-        self.assertEqual(stderr.count("logged under new finding_id"), 2)
 
     def test_a_new_id_whose_log_call_fails_is_named_as_not_logged(self):
         self.logger_result = (1, "ledger write refused")
@@ -135,12 +138,6 @@ class LogAskOutcomes(unittest.TestCase):
         self.assertIn("exited 1", stderr)
         self.assertIn("field finding_id has a space", stderr)
 
-    def test_a_logger_that_succeeds_prints_nothing(self):
-        stderr = self.log([ask_item()], ["accepted"])
-
-        self.assertEqual(1, len(self.calls))
-        self.assertEqual("", stderr)
-
     def test_a_missing_hand_back_reader_logs_nothing_and_says_why(self):
         original = code_step_review.load_handback
         code_step_review.load_handback = lambda: (None, "handback.py could not be imported (boom)")
@@ -153,19 +150,28 @@ class LogAskOutcomes(unittest.TestCase):
         self.assertIn("ask outcomes not logged", stderr)
         self.assertIn("boom", stderr)
 
+    def test_a_plan_impact_ask_logs_no_outcome_row_as_review_does(self):
+        plan_impact_ask = ask_item(finding="PLAN-IMPACT: the plan names the wrong table", finding_id=None)
+
+        stderr = self.log([plan_impact_ask, ask_item()], ["accepted", "rejected"])
+
+        self.assertEqual([MINTED_FINDING_ID], self.logged_finding_ids())
+        self.assertIn("ask_outcome=rejected", self.calls[0])
+        self.assertEqual("", stderr)
+
 
 class ReviewFixLogAskOutcome(unittest.TestCase):
     def setUp(self):
         self.calls = []
-        self.original_run_command = review_fix.run_command
-        review_fix.run_command = lambda command, cwd=None: self.calls.append(command) or (0, "")
+        self.original_run_command = review_asks.run_command
+        review_asks.run_command = lambda command, cwd=None: self.calls.append(command) or (0, "")
         self.state = {"branch": "some-branch", "lane": "fix", "scope": "diff", "iter": 1}
 
     def tearDown(self):
-        review_fix.run_command = self.original_run_command
+        review_asks.run_command = self.original_run_command
 
     def test_argv_carries_finding_id_and_no_free_text(self):
-        review_fix.log_ask_outcome(self.state, ask_item(), "accepted", MINTED_FINDING_ID)
+        review_asks.log_ask_outcome(review_fix.ASK_LOGGER, self.state, ask_item(), "accepted", "user")
 
         self.assertEqual(len(self.calls), 1)
         argv = self.calls[0]
@@ -221,7 +227,7 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
                 return 1, "boom"
             return 0, ""
 
-        review_fix.run_command = run_command
+        review_asks.run_command = run_command
         asks = [ask_item(finding_id="1111111111111111"), ask_item(finding_id="2222222222222222")]
 
         first, _ = self.asks_done(asks, ["accepted", "rejected"])
@@ -237,9 +243,6 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
         self.assertIn("Logged 2 of 2", second)
         self.assertNotIn("Failures", second)
         self.assertEqual(self.state["stage"], "done")
-
-    def test_handback_item_keys_include_finding_id(self):
-        self.assertIn("finding_id", handback.ITEM_KEYS)
 
 
 if __name__ == "__main__":

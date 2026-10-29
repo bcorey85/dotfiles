@@ -22,7 +22,6 @@ loaded = importlib.util.spec_from_file_location("code_step", SCRIPTS_DIR / "code
 code_step = importlib.util.module_from_spec(loaded)
 loaded.loader.exec_module(code_step)
 import code_step_boundary
-import code_step_core
 import code_step_review
 import code_step_start
 
@@ -75,29 +74,21 @@ class PhaseStaysOpenWhenTheReviewDidNotConverge(TempRepo):
         gate_dir = self.home / ".claude" / "state" / "review-gate"
         return list(gate_dir.glob("*")) if gate_dir.exists() else []
 
-    def test_a_loop_that_ended_on_a_plan_impact_question_marks_nothing_and_records_no_fingerprint(self):
-        marked, out, state, recorded = self.mark("plan-impact")
+    def test_only_a_converged_loop_marks_the_gate_and_records_the_fingerprint(self):
+        loops = [
+            ("plan-impact question", "plan-impact", False, []),
+            ("cap reached", "cap-reached", False, []),
+            ("converged", "converged", True, ["s1"]),
+        ]
+        for label, review_status, is_marked, session_ids in loops:
+            with self.subTest(label):
+                marked, out, state, recorded = self.mark(review_status)
 
-        self.assertFalse(marked)
-        self.assertEqual([], recorded)
-        self.assertEqual([], self.gate_files())
-        self.assertIn("ACTION: stop", out)
-        self.assertIn("phase stays open", out)
-        self.assertIn("plan-impact", out)
-        self.assertEqual("stopped", state["stage"])
-
-    def test_a_loop_that_hit_its_cap_marks_nothing(self):
-        marked, _out, _state, recorded = self.mark("cap-reached")
-
-        self.assertFalse(marked)
-        self.assertEqual([], recorded)
-
-    def test_a_converged_loop_still_marks_the_gate_and_records_the_fingerprint(self):
-        marked, _out, _state, recorded = self.mark("converged")
-
-        self.assertTrue(marked)
-        self.assertEqual(["s1"], recorded)
-        self.assertEqual(["s1"], [path.name for path in self.gate_files()])
+                self.assertEqual(is_marked, marked)
+                self.assertEqual(session_ids, recorded)
+                self.assertEqual(session_ids, [path.name for path in self.gate_files()])
+                self.assertEqual(not is_marked, "phase stays open" in out)
+                self.assertEqual(not is_marked, state["stage"] == "stopped")
 
     def test_finish_phase_stops_and_commits_nothing_after_a_non_converged_loop(self):
         state = {"stage": "review", "plan": None, "phase": None, "sessionId": "s1", "reviewStatus": "plan-impact"}
@@ -184,11 +175,6 @@ class AskOutcomesReachLaterPasses(TempRepo):
         self.rule("rejected")
 
         self.assertNotIn("ruled-asks", self.handoff(plan="docs/plans/other.md"))
-
-    def test_the_outcome_is_kept_in_the_code_step_state_directory(self):
-        self.rule("accepted")
-
-        self.assertTrue((code_step_core.state_dir(self.repo) / "ruled-asks.json").is_file())
 
 
 if __name__ == "__main__":

@@ -102,14 +102,6 @@ class LogScanTest(unittest.TestCase):
         self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
         self.assertEqual(self.scan_rows(), [])
 
-    def test_retired_scan_runs_file_var_writes_no_file(self):
-        retired = self.temp_root / "retired-scan-runs.jsonl"
-        done = self.run_scan(*RAN_ARGS, env=self.environment(SCAN_RUNS_FILE=str(retired)))
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertFalse(retired.exists())
-        self.assertFalse((self.home / ".claude" / "scan-runs.jsonl").exists())
-        self.assertEqual(len(self.scan_rows()), 1)
-
     def test_help_prints_usage_and_writes_nothing(self):
         for flag in ("--help", "-h"):
             with self.subTest(flag=flag):

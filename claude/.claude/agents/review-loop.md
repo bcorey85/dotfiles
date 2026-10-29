@@ -34,7 +34,7 @@ the review scope:
 
 Run it by this path as one plain command. A worktree-isolated session refuses a command that holds `$HOME`, a variable, `$(...)` or a second statement. Write `root=` with the repo's absolute path, literally. When the repo is a file path (a handoff file), write `root=` with that path's directory, literally. Add `base=<ref>` only when the dispatch gave one.
 
-`ROOT` in the output is the repo for the whole loop. When ROOT differs from your cwd, run each git, check and log command (Steps 6, 7 and 7b included) as `cd <ROOT> && <command>` in one call; otherwise run it plain. Put `Repo root: <ROOT>` in every reviewer and coder prompt. Exit 3 is a STOP: the branch has no merge base. Do nothing else, and return the script's message as the blocker of a `status: critical-blocker` packet, telling the caller to pass `base=<ref>`. An empty `ROOT=` or exit 2 "cannot enter" is also a STOP: return a `status: critical-blocker` packet naming the repo path you could not use. On any other failure, continue, and take the file list from `git status --porcelain` in the repo from Inputs, by the same rule: `cd <repo> &&` only when it differs from your cwd.
+`ROOT` in the output is the repo for the whole loop. When ROOT differs from your cwd, run each git and check command (Step 6 included) as `cd <ROOT> && <command>` in one call, and give each logger call (Steps 7 and 7b) `root=<ROOT>` in place of the `cd`; otherwise run them plain. Put `Repo root: <ROOT>` in every reviewer and coder prompt. Exit 3 is a STOP: the branch has no merge base. Do nothing else, and return the script's message as the blocker of a `status: critical-blocker` packet, telling the caller to pass `base=<ref>`. An empty `ROOT=` or exit 2 "cannot enter" is also a STOP: return a `status: critical-blocker` packet naming the repo path you could not use. On any other failure, continue, and take the file list from `git status --porcelain` in the repo from Inputs, by the same rule: `cd <repo> &&` only when it differs from your cwd.
 
 ## Loop ordering (GATE-CRITICAL — do not reorder)
 
@@ -189,12 +189,14 @@ gets a coder. The cap stops a third full review and nothing else. A deferred
 finding is not discarded: it moves to the branch-exit queue, where it is read
 once, in one place, against the whole branch instead of one phase of it.
 
-**What may defer.** Only a `class` `fix` finding defers: a class member that
-Step 6 finds open at `iter >= 2`. Step 6 returns `cap-reached`.
+**What may defer.** Only a `class` or `scoped` `fix` finding defers: a class
+member that Step 6 finds open at `iter >= 2`, or a finding of the scoped
+reviewer at the cap exit (below). Step 6 returns `cap-reached`.
 
 Every other `fix` finding gets a coder (Step 5) at any `iter`: each full review's
 (`round`) and the execution gate's (`gate`). Log each `fix` finding with its
-source word (Step 7b). The logger refuses a deferred row with any other source.
+source word (Step 7b). The logger refuses a deferred row with any source but
+`class` and `scoped` (the cap exit's scoped reviewer).
 
 **Defer** = log each finding per `~/.claude/skills/_shared/finding-log.md` with
 `actioned=deferred`, then return it in `findings_remaining`. The `branch` field
@@ -208,7 +210,7 @@ the `fix` findings of a gate failure get one coder per invocation: after the
 repair, run the gate once more; a second failure returns `status: critical-blocker`, or `status: setup-fault` when the gate could not run.
 Exception to "no full review": when any coder (a second-round fix coder, or a gate-repair coder before its gate re-run)
 changed files after the last reviewer, dispatch one reviewer scoped to the changed files (not a full review). Its `fix`
-findings get no coder: they go to `findings_remaining` and the status is `cap-reached`. If that reviewer cannot run,
+findings get no coder: they go to `findings_remaining`, log with `source=scoped actioned=deferred`, and the status is `cap-reached`. If that reviewer cannot run,
 return `status: cap-reached` with `findings_remaining` naming the unreviewed files.
 
 ## Step 6: Convergence — the execution gate

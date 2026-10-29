@@ -112,6 +112,25 @@ kv_unfold() {
   kv_pairs+=("$key=${words[0]}" "${words[@]:1}")
 }
 
+# usage: kv_enter_root [arg ...]
+#
+# Enters the folder a root=<path> arg names, so a writer run from outside the reviewed repo reads
+# that repo's git state and `ledger write` names that repo. Sets kv_args to the args without
+# root=. Exits the calling script 1 when the folder cannot be entered. Call it before any git read.
+kv_enter_root() {
+  local kv root
+  kv_args=()
+  for kv in "$@"; do
+    case "$kv" in
+      root=*)
+        root="${kv#root=}"
+        cd -- "$root" 2>/dev/null || { echo "refusing to log: cannot enter root=$root" >&2; exit 1; }
+        ;;
+      *) kv_args+=("$kv") ;;
+    esac
+  done
+}
+
 # usage: kv_help_exit <script_path> [arg ...]
 #
 # When the first arg is --help or -h, prints the script's leading comment block (its usage

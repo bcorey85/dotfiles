@@ -475,8 +475,10 @@ def read_header(raw):
 def normalize_ask(item):
     if item.get("from_text"):
         item["finding"] = item["question"]
-    elif item.get("finding") and not item.get("question"):
-        item["question"] = item["finding"]
+    elif not item.get("question"):
+        question_source = item.get("finding") or item.get("change")
+        if question_source:
+            item["question"] = question_source
     item["gate"] = first_token(item.get("gate")) or DEFAULT_GATE
 
     ask_class = str(item.get("class") or "").strip()
@@ -574,14 +576,45 @@ def normalize_items(key, entries):
     return items
 
 
+def is_askable(item):
+    """Whether ask entry `item` holds a question, once normalize_ask has filled it from its finding or its change."""
+    return isinstance(item, dict) and bool(item.get("question"))
+
+
+def drop_unaskable_asks(packet):
+    """Removes each ask entry with no question, finding or change from packet["ask"]. packet["dropped_asks"]
+    holds one warning line per dropped entry, naming its file_line and gate when it has them, so the rest of the
+    review survives it."""
+    askable_asks = [item for item in packet["ask"] if is_askable(item)]
+    packet["dropped_asks"] = [dropped_ask_warning(item) for item in packet["ask"] if not is_askable(item)]
+    packet["ask"] = askable_asks
+
+
+def dropped_ask_warning(item):
+    warning = "ask entry has no question, finding or change, so it was dropped"
+    if not isinstance(item, dict):
+        return f"{warning}: {one_line(item, 80)!r}"
+    named = [f"{key} {item[key]}" for key in ("file_line", "gate") if item.get(key)]
+    return f"{warning}: {', '.join(named)}" if named else warning
+
+
+def print_dropped_asks(packet):
+    """Prints the packet's dropped-ask warnings once, before any route. Each command that loads a packet calls it
+    right after the load."""
+    if not packet["dropped_asks"]:
+        return
+    print("DROPPED ASKS (tell the user; the review went on without them):")
+    for warning in packet["dropped_asks"]:
+        print("- " + warning)
+
+
 def item_problems(raw, packet):
     problems = [f"fixed entry has no finding: {one_line(item, 80)!r}" for item in packet["fixed"]
                 if not (isinstance(item, dict) and item.get("finding"))]
     if raw.get("ask", "").strip() and not packet["ask"] and not NONE_VALUE.match(raw["ask"].strip()):
         problems.append(f"ask holds text but yields no ask entries: {one_line(raw['ask'], 80)!r}")
     for item in packet["ask"]:
-        if not isinstance(item, dict) or not item.get("question"):
-            problems.append(f"ask entry has no question: {one_line(item, 80)!r}")
+        if not is_askable(item):
             continue
         question = one_line(item.get("question"), 80)
         if not item.get("file_line") and not item.get("from_text"):
@@ -621,6 +654,8 @@ def validate(raw):
     problems += item_problems(raw, packet) + status_problems(raw, packet)
     if problems:
         raise PacketError(problems)
+
+    drop_unaskable_asks(packet)
     return packet
 
 
@@ -957,6 +992,7 @@ def command_check():
             print(f"- {problem}", file=sys.stderr)
         return 1
     print(f"ok: status={packet['status']} fixed={len(packet['fixed'])} ask={len(packet['ask'])}")
+    print_dropped_asks(packet)
     return 0
 
 

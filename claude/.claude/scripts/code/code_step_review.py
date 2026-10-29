@@ -632,13 +632,16 @@ def load_review_packet(repo_dir, state, message):
     if module is None:
         return emit("stop", f"Cannot read the review-loop packet: {import_error}. Tell the user.")
     try:
-        return module, module.load(message)
+        packet = module.load(message)
     except module.PacketError as error:
         state.update({"stage": "stopped", "stopReason": "invalid-packet"})
         save_state(repo_dir, state)
         return emit("stop", "The review-loop packet does not parse. Show the user the raw packet. Problems: "
                     + "; ".join(error.problems), message,
                     "To review the same diff again, invoke Skill code with `review-again`.")
+
+    module.print_dropped_asks(packet)
+    return module, packet
 
 
 def is_capped_review(state):

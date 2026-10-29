@@ -292,7 +292,7 @@ CODER_REPORT_STOP_LINES = 6
 
 def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
     # The run stops on the coder's report: the user answers it, and the coder resumed with SendMessage goes on.
-    set_stop(state, CODER_RESUMABLE, agent_id=agent_id or "unknown")
+    set_stop(state, CODER_RESUMABLE, agent_id=agent_id or "unknown", coder_stage=state["stage"])
     state.pop("dispatchAt", None)
     save_state(repo_dir, state)
     tick_text = (f" If the user says Phase {state['phase']} is already done, invoke Skill code with `tick "
@@ -313,8 +313,10 @@ def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
         + " Relay the coder's report to the user:", report)
 
 
-def record_coder_report(repo_dir, state, report, gate, changed_files):
-    # Saves what the review needs from a reviewable report: behavior, why notes, tests run and files.
+def record_coder_report(repo_dir, state, report, gate, changed_files, asks_changed_files=None):
+    # Saves what the review needs from a reviewable report: behavior, why notes, tests run and files. The summary
+    # replaces the earlier notes of asks_changed_files (the files the asks coder changed; the files it wrote notes
+    # for when no asks snapshot exists), while changed_files is the review scope.
     coder_stage = state["stage"]
     is_ask_fix = coder_stage == "asks-coder"
     behavior = behavior_lines(report)
@@ -322,13 +324,21 @@ def record_coder_report(repo_dir, state, report, gate, changed_files):
     tests_run = tests_run_text(gate, state)
     if is_ask_fix:
         # The ask-fix coder's behavior stays off the phase's own behavior (its Implemented line and Behavior delta).
-        state["askFixBehavior"] = list(state.get("askFixBehavior", [])) + behavior
+        state["askRounds"] = [*state.get("askRounds", []), behavior]
         behavior = list(state.get("behavior", []))
+        # The summary shows the asks coder's notes for the files it changed and the earlier notes for the rest. The
+        # reviewer's notes (state["why"]) keep the phase coder's notes for a changed file ahead of the asks coder's.
+        earlier_summary_why = state["summaryWhy"] if "summaryWhy" in state else state["why"]
+        replaced_paths = why_groups if asks_changed_files is None else asks_changed_files
+        kept_earlier_why = {path: notes for path, notes in earlier_summary_why.items() if path not in replaced_paths}
+        state["summaryWhy"] = {**kept_earlier_why, **why_groups}
         for path, notes in state["why"].items():
             if path in changed_files:
                 why_groups[path] = notes + why_groups.get(path, [])
         tests_run = state["testsRun"] + "; ask-fix coder -> ran its own checks"
         state.update({"iter": 0, "spec_iter": 0, "priorIssues": prior_issues(state["acceptedAsks"])})
+    else:
+        state.pop("summaryWhy", None)
     state.update({"behavior": behavior, "exception": bool(state["flagged"]), "files": changed_files,
                   "why": why_groups, "testsRun": tests_run, "coderStage": coder_stage})
 
@@ -366,16 +376,19 @@ def review_coder_report(repo_dir, state, handback):
         return stop_on_coder_report(repo_dir, state, report, handback.get("agent_id"), outcome)
 
     asks_baseline = snapshot_part(state, "asks")
-    if is_ask_fix and asks_baseline is not None and not is_open:
+    asks_changed_files = None
+    if is_ask_fix and asks_baseline is not None:
+        asks_changed_files = asks_coder_changed_files(changed_now, asks_baseline)
+    if asks_changed_files is not None and not is_open:
         # The review after an asks-coder covers only what the asks-coder changed. A state from before the asks snapshot
         # existed keeps the whole-phase scope, and so does a review that left findings open (a cap, or a critical
         # blocker with asks): its carried findings may sit in any file.
-        changed_files = asks_coder_changed_files(changed_now, asks_baseline)
+        changed_files = asks_changed_files
         if all(name.lower().endswith(DOCS_SUFFIXES) for name in changed_files):
             return finish_without_review(repo_dir, state, changed_files, coder_stage,
                                          "The asks coder changed only docs files. No review runs on them.")
 
-    record_coder_report(repo_dir, state, report, gate, changed_files)
+    record_coder_report(repo_dir, state, report, gate, changed_files, asks_changed_files)
     state["gateLines"] = gate_lines
     impact = stage_plan_impact(repo_dir, state, coder_stage)
     if impact:

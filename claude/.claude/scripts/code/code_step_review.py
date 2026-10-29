@@ -532,6 +532,13 @@ def handoff_report(repo_dir, state):
     return "\n\n".join(last_messages)
 
 
+ASK_CURRENT_LABEL = "Ask-fix coder (current report): "
+
+
+def behavior_text(behavior_lines):
+    return "; ".join(behavior_lines) or "see the diff."
+
+
 def emit_review_dispatch(repo_dir, state):
     report = handoff_report(repo_dir, state)
     untracked_text = git_output(repo_dir, "ls-files", "--others", "--exclude-standard") or ""
@@ -565,14 +572,23 @@ def emit_review_dispatch(repo_dir, state):
     state.pop("reviewStatus", None)
     save_state(repo_dir, state)
 
-    summary = ["Implemented: " + ("; ".join(state["behavior"]) or "see the diff.")]
-    if state.get("askFixBehavior"):
-        summary.append("Ask-fix: " + "; ".join(state["askFixBehavior"]))
+    phase_behavior = behavior_text(state["behavior"])
+    ask_rounds = state.get("askRounds", [])
+    if ask_rounds:
+        # After an asks round the current asks coder's report leads; the phase coder's behavior is one line.
+        summary = [ASK_CURRENT_LABEL + behavior_text(ask_rounds[-1])]
+        for round_number, round_behavior in enumerate(ask_rounds[:-1], start=1):
+            summary.append(f"Earlier ask-fix round {round_number}: " + behavior_text(round_behavior))
+        summary.append("Phase coder's behavior (earlier): " + phase_behavior)
+        summary_why = state["summaryWhy"] if "summaryWhy" in state else state["why"]
+    else:
+        summary = ["Implemented: " + phase_behavior]
+        summary_why = state["why"]
     summary.append("Flagged: " + ("; ".join(state["flagged"]) if state["flagged"] else "none."))
-    for path, notes in state["why"].items():
+    for path, notes in summary_why.items():
         summary += [f"  {path}:{note['lines']} - {note['note']}" for note in notes]
     summary.append("Auto-dispatching review to check the implementation before committing.")
-    say(repo_dir, "\n".join(summary), replaces_blocks_starting="Implemented: ")
+    say(repo_dir, "\n".join(summary), replaces_blocks_starting=("Implemented: ", ASK_CURRENT_LABEL))
     if runs_review_script():
         return launch_review_script(repo_dir, state, prompt)
     emit_dispatch(repo_dir, state, prompt=prompt, agent="review-loop", model="sonnet")

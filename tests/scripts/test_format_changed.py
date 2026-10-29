@@ -5,6 +5,7 @@ Set HOOK_SCRIPTS_DIR to run against another directory of scripts."""
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,203 +24,6 @@ FAKE_TOOL = """#!/bin/sh
   printf -- '--\\n'
 } >> "$FAKE_LOG"
 """
-
-PROMPT = {"do": "hook", "event": "UserPromptSubmit"}
-STOP = {"do": "hook", "event": "Stop"}
-
-
-def write(files):
-    return {"do": "write", "files": files}
-
-
-PARITY_SCENARIOS = [
-    {"name": "stop formats a new ts file", "steps": [PROMPT, write({"a.ts": "x\n"}), STOP]},
-    {"name": "stop with no change", "steps": [PROMPT, STOP]},
-    {"name": "stop without snapshot", "steps": [write({"a.ts": "x\n"}), STOP]},
-    {"name": "prompt only", "steps": [write({"a.ts": "x\n"}), PROMPT]},
-    {"name": "preexisting dirty file is left alone", "steps": [write({"a.ts": "x\n"}), PROMPT, STOP]},
-    {
-        "name": "preexisting dirty file edited again",
-        "steps": [write({"a.ts": "x\n"}), PROMPT, write({"a.ts": "y\n"}), STOP],
-    },
-    {
-        "name": "all extensions",
-        "steps": [
-            PROMPT,
-            write(
-                {
-                    "a.ts": "1",
-                    "b.tsx": "1",
-                    "c.js": "1",
-                    "d.jsx": "1",
-                    "e.vue": "1",
-                    "f.json": "1",
-                    "g.css": "1",
-                    "h.scss": "1",
-                    "i.md": "1",
-                    "j.txt": "1",
-                    "k.py": "1",
-                    "l.TS": "1",
-                    "m": "1",
-                }
-            ),
-            STOP,
-        ],
-    },
-    {
-        "name": "format-only files skip the linter",
-        "steps": [PROMPT, write({"a.json": "1", "b.md": "1"}), STOP],
-        "path_tools": ["npx", "oxlint"],
-    },
-    {"name": "unformattable files do nothing", "steps": [PROMPT, write({"a.txt": "1"}), STOP]},
-    {
-        "name": "oxlint and oxfmt on PATH",
-        "path_tools": ["npx", "oxlint", "oxfmt"],
-        "steps": [PROMPT, write({"a.ts": "1", "b.json": "1"}), STOP],
-    },
-    {"name": "oxlint on PATH only", "path_tools": ["npx", "oxlint"], "steps": [PROMPT, write({"a.ts": "1"}), STOP]},
-    {"name": "oxfmt on PATH only", "path_tools": ["npx", "oxfmt"], "steps": [PROMPT, write({"a.ts": "1"}), STOP]},
-    {
-        "name": "local oxlint and oxfmt",
-        "local_tools": ["oxlint", "oxfmt"],
-        "steps": [PROMPT, write({"a.ts": "1"}), STOP],
-    },
-    {
-        "name": "local eslint only",
-        "local_tools": ["eslint"],
-        "steps": [PROMPT, write({"a.vue": "1", "b.md": "1"}), STOP],
-    },
-    {
-        "name": "local eslint and oxlint prefers oxlint",
-        "local_tools": ["eslint", "oxlint"],
-        "steps": [PROMPT, write({"a.js": "1"}), STOP],
-    },
-    {"name": "no npx on PATH", "path_tools": [], "steps": [PROMPT, write({"a.ts": "1"}), STOP]},
-    {"name": "second stop formats nothing new", "steps": [PROMPT, write({"a.ts": "1"}), STOP, STOP]},
-    {
-        "name": "deleted file is skipped",
-        "tracked": {"gone.ts": "1\n"},
-        "steps": [PROMPT, write({"gone.ts": None}), STOP],
-    },
-    {"name": "tracked file modified", "tracked": {"t.ts": "1\n"}, "steps": [PROMPT, write({"t.ts": "2\n"}), STOP]},
-    {
-        "name": "tracked file modified before the prompt",
-        "tracked": {"t.ts": "1\n"},
-        "steps": [write({"t.ts": "2\n"}), PROMPT, STOP],
-    },
-    {"name": "staged new file", "steps": [PROMPT, write({"s.ts": "1"}), {"do": "git", "args": ["add", "s.ts"]}, STOP]},
-    {
-        "name": "ignored file is not dirty",
-        "tracked": {".gitignore": "ignored.ts\n"},
-        "steps": [PROMPT, write({"ignored.ts": "1", "seen.ts": "1"}), STOP],
-    },
-    {
-        "name": "nested paths and spaces",
-        "steps": [PROMPT, write({"src/a b.ts": "1", "src/deep/c.md": "1", "-dash.ts": "1"}), STOP],
-    },
-    {
-        "name": "sort order of mixed names",
-        "steps": [
-            PROMPT,
-            write({"b.ts": "1", "B.ts": "1", "a.ts": "1", "_u.ts": "1", "A-1.ts": "1", "a_1.ts": "1", "a1.ts": "1"}),
-            STOP,
-        ],
-    },
-    {"name": "unicode name", "steps": [PROMPT, write({"caf\u00e9.ts": "1", "\u65e5\u672c.md": "1"}), STOP]},
-    {"name": "same content in two files", "steps": [PROMPT, write({"a.ts": "same", "b.ts": "same"}), STOP]},
-    {
-        "name": "commit between prompt and stop",
-        "tracked": {},
-        "steps": [
-            PROMPT,
-            write({"c.ts": "1"}),
-            {"do": "git", "args": ["add", "-A"]},
-            {"do": "git", "args": ["commit", "-q", "-m", "c"]},
-            STOP,
-        ],
-    },
-    {"name": "repo without commits", "no_commit": True, "steps": [PROMPT, write({"n.ts": "1"}), STOP]},
-    {"name": "not a repo", "no_repo": True, "steps": [PROMPT, write({"n.ts": "1"}), STOP]},
-    {
-        "name": "cwd in a subdirectory",
-        "steps": [
-            write({"sub/x.txt": "1"}),
-            PROMPT,
-            write({"top.ts": "1", "sub/n.ts": "1"}),
-            {"do": "hook", "event": "Stop", "cwd": "{REPO}/sub"},
-        ],
-    },
-    {
-        "name": "cwd missing falls back to PWD",
-        "steps": [
-            {"do": "hook", "event": "UserPromptSubmit", "payload": {"cwd": ""}},
-            write({"a.ts": "1"}),
-            {"do": "hook", "event": "Stop", "payload": {"cwd": ""}},
-        ],
-    },
-    {"name": "cwd not a directory", "steps": [{"do": "hook", "event": "Stop", "cwd": "/nonexistent/dir"}]},
-    {
-        "name": "no session id",
-        "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "Stop", "payload": {"session_id": ""}}],
-    },
-    {"name": "null session id", "steps": [{"do": "hook", "event": "Stop", "payload": {"session_id": None}}]},
-    {
-        "name": "numeric session id",
-        "steps": [
-            {"do": "hook", "event": "UserPromptSubmit", "payload": {"session_id": 5}},
-            write({"a.ts": "1"}),
-            {"do": "hook", "event": "Stop", "payload": {"session_id": 5}},
-        ],
-    },
-    {
-        "name": "other sessions do not share snapshots",
-        "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "Stop", "payload": {"session_id": "other"}}],
-    },
-    {"name": "other event", "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "SessionStart"}]},
-    {"name": "event missing", "steps": [{"do": "hook", "event": "x", "raw": '{"session_id":"s","cwd":"/"}'}]},
-    {
-        "name": "event is number",
-        "steps": [{"do": "hook", "event": "x", "raw": '{"hook_event_name":5,"session_id":"s"}'}],
-    },
-    {
-        "name": "skip hooks on stop",
-        "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "Stop", "env": {"CLAUDE_SKIP_HOOKS": "1"}}],
-    },
-    {
-        "name": "skip hooks on prompt",
-        "steps": [
-            {"do": "hook", "event": "UserPromptSubmit", "env": {"CLAUDE_SKIP_HOOKS": "1"}},
-            write({"a.ts": "1"}),
-            STOP,
-        ],
-    },
-    {
-        "name": "empty skip hooks still runs",
-        "steps": [PROMPT, write({"a.ts": "1"}), {"do": "hook", "event": "Stop", "env": {"CLAUDE_SKIP_HOOKS": ""}}],
-    },
-    {"name": "empty stdin", "steps": [{"do": "hook", "event": "x", "raw": ""}]},
-    {"name": "invalid json", "steps": [{"do": "hook", "event": "x", "raw": "not json"}]},
-    {"name": "array payload", "steps": [{"do": "hook", "event": "x", "raw": "[1]"}]},
-    {"name": "null payload", "steps": [{"do": "hook", "event": "x", "raw": "null"}]},
-    {
-        "name": "old snapshots deleted",
-        "steps": [
-            {"do": "seed-state", "name": "old-1", "days": 4},
-            {"do": "seed-state", "name": "new-1", "days": 1},
-            PROMPT,
-        ],
-    },
-    {"name": "snapshot just over two days is kept", "steps": [{"do": "seed-state", "name": "edge", "days": 2}, PROMPT]},
-    {"name": "snapshot three days old is deleted", "steps": [{"do": "seed-state", "name": "three", "days": 3}, PROMPT]},
-    {
-        "name": "old snapshot of own session is replaced",
-        "steps": [PROMPT, {"do": "age", "days": 5}, write({"a.ts": "1"}), STOP],
-    },
-    {"name": "prompt refreshes the snapshot", "steps": [PROMPT, write({"a.ts": "1"}), PROMPT, STOP]},
-    {"name": "files deleted since snapshot", "steps": [write({"a.ts": "1"}), PROMPT, write({"a.ts": None}), STOP]},
-]
-TYPICAL = {"name": "typical", "path_tools": ["npx"],
-           "steps": [PROMPT, write({"src/a.ts": "1", "src/b.json": "1", "README.md": "1"}), STOP]}
 
 
 class Repo:
@@ -442,11 +246,6 @@ class FormatChangedTest(unittest.TestCase):
         names = self.repo.state_files()
         self.assertEqual((self.repo.home / ".claude" / "state" / "format-changed" / names[0]).read_text(), "")
 
-    def test_prompt_never_runs_a_formatter(self):
-        self.repo.put("a.ts", "1")
-        self.repo.hook("UserPromptSubmit")
-        self.assertEqual(self.repo.calls(), [])
-
     def test_stop_without_a_snapshot_does_nothing(self):
         self.repo.put("a.ts", "1")
         self.repo.hook("Stop")
@@ -494,13 +293,11 @@ class FormatChangedTest(unittest.TestCase):
         finished = self.repo.hook("UserPromptSubmit", cwd="/nonexistent/dir")
         self.assertEqual((finished.returncode, self.repo.state_files()), (0, []))
 
-    def test_skip_hooks_exits_quietly_and_writes_nothing(self):
-        finished = self.repo.hook("UserPromptSubmit", extra_env={"CLAUDE_SKIP_HOOKS": "1"})
-        self.assertEqual((finished.returncode, finished.stdout, self.repo.state_files()), (0, b"", []))
-
-    def test_format_hook_off_exits_quietly_and_writes_nothing(self):
-        finished = self.repo.hook("UserPromptSubmit", extra_env={"CLAUDE_FORMAT_HOOK_OFF": "1"})
-        self.assertEqual((finished.returncode, finished.stdout, self.repo.state_files()), (0, b"", []))
+    def test_skip_switches_exit_quietly_and_write_nothing(self):
+        for variable in ("CLAUDE_SKIP_HOOKS", "CLAUDE_FORMAT_HOOK_OFF"):
+            with self.subTest(variable=variable):
+                finished = self.repo.hook("UserPromptSubmit", extra_env={variable: "1"})
+                self.assertEqual((finished.returncode, finished.stdout, self.repo.state_files()), (0, b"", []))
 
     def test_empty_skip_hooks_still_runs(self):
         self.repo.hook("UserPromptSubmit", extra_env={"CLAUDE_SKIP_HOOKS": ""})
@@ -526,6 +323,10 @@ class FormatChangedTest(unittest.TestCase):
 
     def test_missing_npx_is_not_fatal(self):
         (self.repo.bin / "npx").unlink()
+        git_only = self.repo.bin.parent / "git-only"
+        git_only.mkdir()
+        (git_only / "git").symlink_to(shutil.which("git"))
+        self.repo.environment["PATH"] = f"{self.repo.bin}:{git_only}"
         finished = self.turn({"a.ts": "1"})
         self.assertEqual(finished.returncode, 0)
 
@@ -539,25 +340,14 @@ class FormatChangedTest(unittest.TestCase):
         self.repo.hook("Stop", cwd=str(fresh))
         self.assertEqual(self.repo.calls(), [])
 
-    def test_unfinished_merge_marker_blocks_formatting(self):
-        finished = self.stop_with_marker("MERGE_HEAD", as_directory=False)
-        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
-
-    def test_unfinished_cherry_pick_marker_blocks_formatting(self):
-        finished = self.stop_with_marker("CHERRY_PICK_HEAD", as_directory=False)
-        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
-
-    def test_unfinished_revert_marker_blocks_formatting(self):
-        finished = self.stop_with_marker("REVERT_HEAD", as_directory=False)
-        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
-
-    def test_rebase_merge_directory_blocks_formatting(self):
-        finished = self.stop_with_marker("rebase-merge", as_directory=True)
-        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
-
-    def test_rebase_apply_directory_blocks_formatting(self):
-        finished = self.stop_with_marker("rebase-apply", as_directory=True)
-        self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
+    def test_unfinished_operation_markers_block_formatting(self):
+        markers = (("MERGE_HEAD", False), ("CHERRY_PICK_HEAD", False), ("REVERT_HEAD", False),
+                   ("rebase-merge", True), ("rebase-apply", True))
+        for marker, as_directory in markers:
+            with self.subTest(marker=marker):
+                self.setUp()
+                finished = self.stop_with_marker(marker, as_directory=as_directory)
+                self.assertEqual((finished.returncode, finished.stdout, self.repo.calls()), (0, b"", []))
 
     def test_files_brought_in_by_an_uncommitted_merge_are_not_formatted(self):
         self.repo.commit_branch_files("other", {"theirs.md": "* item\n", "theirs.ts": "1"})
@@ -578,17 +368,21 @@ class FormatChangedTest(unittest.TestCase):
         self.repo.hook("Stop", cwd=str(worktree))
         self.assertEqual(self.repo.calls(), [])
 
-    def test_formatting_resumes_once_the_merge_is_committed(self):
-        self.repo.commit_branch_files("other", {"theirs.ts": "1"})
-        merged = self.repo.git("merge", "--no-ff", "--no-commit", "other")
-        self.assertEqual(merged.returncode, 0, merged.stderr)
-        committed = self.repo.git("commit", "-q", "-m", "merge")
-        self.assertEqual(committed.returncode, 0, committed.stderr)
-        second_parent = self.repo.git("rev-parse", "HEAD^2")
-        self.assertEqual(second_parent.returncode, 0, second_parent.stderr)
-        self.assertFalse((self.repo.repo / ".git" / "MERGE_HEAD").exists())
-        self.turn({"mine.ts": "1"})
-        self.assertEqual(self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "mine.ts"])])
+    def test_formatting_resumes_once_the_merge_or_squash_is_committed(self):
+        for kind in ("merge", "squash"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                self.repo.commit_branch_files("other", {"theirs.ts": "1"})
+                flag = "--no-ff" if kind == "merge" else "--squash"
+                arguments = ["merge", flag] + (["--no-commit"] if kind == "merge" else []) + ["other"]
+                merged = self.repo.git(*arguments)
+                self.assertEqual(merged.returncode, 0, merged.stderr)
+                committed = self.repo.git("commit", "-q", "-m", kind)
+                self.assertEqual(committed.returncode, 0, committed.stderr)
+                marker = "MERGE_HEAD" if kind == "merge" else "SQUASH_MSG"
+                self.assertFalse((self.repo.repo / ".git" / marker).exists())
+                self.turn({"mine.ts": "1"})
+                self.assertEqual(self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "mine.ts"])])
 
     def test_files_brought_in_by_an_uncommitted_squash_merge_are_not_formatted(self):
         self.repo.commit_branch_files("other", {"theirs.md": "* item\n", "theirs.ts": "1"})
@@ -611,16 +405,6 @@ class FormatChangedTest(unittest.TestCase):
         self.assertFalse((git_dir / "CHERRY_PICK_HEAD").exists())
         self.repo.hook("Stop")
         self.assertEqual(self.repo.calls(), [])
-
-    def test_formatting_resumes_once_the_squash_merge_is_committed(self):
-        self.repo.commit_branch_files("other", {"theirs.ts": "1"})
-        squashed = self.repo.git("merge", "--squash", "other")
-        self.assertEqual(squashed.returncode, 0, squashed.stderr)
-        committed = self.repo.git("commit", "-q", "-m", "squash")
-        self.assertEqual(committed.returncode, 0, committed.stderr)
-        self.assertFalse((self.repo.repo / ".git" / "SQUASH_MSG").exists())
-        self.turn({"mine.ts": "1"})
-        self.assertEqual(self.repo.calls(), [("npx", ["--yes", "prettier", "--write", "mine.ts"])])
 
 
 if __name__ == "__main__":

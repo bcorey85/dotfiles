@@ -3,7 +3,6 @@ or removed. STALE_PROSE_SCRIPT overrides the script path; it defaults to the ins
 import contextlib
 import importlib.util
 import io
-import json
 import os
 import pathlib
 import subprocess
@@ -303,13 +302,14 @@ class StaleProseTest(unittest.TestCase):
         self.assertIn("docs/guide.md:1:", third.stdout)
         self.assertNotIn("[new] docs/guide.md", third.stdout)
 
-    def test_state_lives_in_the_git_dir_and_is_keyed_by_path_and_text(self):
+    def test_a_shown_hit_that_moves_to_another_line_is_not_new(self):
         self.rename_scenario()
-        self.run_script()
+        first = self.run_script()
+        self.write("docs/guide.md", "A new opening line.\nCall fetchWidget to get one.\nUnrelated line.\n")
+        second = self.run_script()
 
-        state = json.loads((self.repo / ".git" / "stale-prose-shown.json").read_text())
-
-        self.assertIn("docs/guide.md\tCall fetchWidget to get one.", state["shown"])
+        self.assertEqual([1, 0], [first.returncode, second.returncode])
+        self.assertNotIn("[new] docs/guide.md", second.stdout)
 
     def test_state_is_per_base_commit_and_a_new_commit_shows_the_hits_again(self):
         self.rename_scenario()
@@ -323,14 +323,16 @@ class StaleProseTest(unittest.TestCase):
         self.assertEqual([1, 0, 1], [first.returncode, second.returncode, third.returncode])
         self.assertIn("[new] docs/guide.md:1:", third.stdout)
 
-    def test_a_saved_state_whose_shown_is_not_a_list_exits_two(self):
+    def test_a_saved_state_that_is_not_json_or_whose_shown_is_not_a_list_exits_two(self):
         self.rename_scenario()
-        (self.repo / ".git" / "stale-prose-shown.json").write_text('{"base": "x", "shown": "abc"}')
+        for state in ('{"base": "x", "shown": "abc"}', "{not json"):
+            with self.subTest(state=state):
+                (self.repo / ".git" / "stale-prose-shown.json").write_text(state)
 
-        done = self.run_script()
+                done = self.run_script()
 
-        self.assertEqual(2, done.returncode)
-        self.assertIn("stale-prose-shown.json", done.stderr)
+                self.assertEqual(2, done.returncode)
+                self.assertIn("stale-prose-shown.json", done.stderr)
 
     def test_a_symbol_with_a_new_hit_is_listed_before_symbols_with_only_old_hits(self):
         self.commit_files({
@@ -431,19 +433,7 @@ class StaleProseTest(unittest.TestCase):
         self.assertEqual(1, at_parent.returncode)
         self.assertIn("docs/guide.md:1:", at_parent.stdout)
 
-    def test_output_is_capped_at_sixty_lines_and_counts_the_rest(self):
-        self.commit_files({"src/a.ts": "const widgetValue = 100;\n",
-                           "docs/long.md": "".join(f"Line {index} about widgetValue 100.\n" for index in range(70))})
-        self.write("src/a.ts", "const widgetValue = 200;\n")
-
-        done = self.run_script()
-
-        body = done.stdout.splitlines()[1:-1]
-        self.assertEqual(1, done.returncode)
-        self.assertEqual(60, len(body))
-        self.assertEqual("11 more hit(s) not shown.", done.stdout.splitlines()[-1])
-
-    def test_a_cut_list_shows_the_rest_on_the_next_run(self):
+    def test_output_is_capped_at_sixty_lines_counts_the_rest_and_shows_it_on_the_next_run(self):
         self.commit_files({"src/a.ts": "const widgetValue = 100;\n",
                            "docs/long.md": "".join(f"Line {index} about widgetValue 100.\n" for index in range(70))})
         self.write("src/a.ts", "const widgetValue = 200;\n")
@@ -452,6 +442,9 @@ class StaleProseTest(unittest.TestCase):
         second = self.run_script()
         third = self.run_script()
 
+        body = first.stdout.splitlines()[1:-1]
+        self.assertEqual(60, len(body))
+        self.assertEqual("11 more hit(s) not shown.", first.stdout.splitlines()[-1])
         self.assertEqual([1, 1, 0], [first.returncode, second.returncode, third.returncode])
         self.assertIn("[new] docs/long.md:70:", second.stdout)
 
@@ -479,15 +472,6 @@ class StaleProseTest(unittest.TestCase):
             found = stale_prose.grep_lines(self.repo, ["alphaThing", "betaThing", "gammaThing"])
 
         self.assertEqual({("README.md", 1), ("README.md", 2), ("README.md", 3)}, set(found))
-
-    def test_unreadable_state_exits_two(self):
-        self.rename_scenario()
-        (self.repo / ".git" / "stale-prose-shown.json").write_text("{not json")
-
-        done = self.run_script()
-
-        self.assertEqual(2, done.returncode)
-        self.assertIn("stale-prose-shown.json", done.stderr)
 
 
 class DeclaredNamesTest(unittest.TestCase):

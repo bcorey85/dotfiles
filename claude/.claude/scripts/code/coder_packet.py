@@ -13,12 +13,12 @@ import sys
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import plan_format
 import script_utils
+from source_paths import SCRIPT_SUFFIXES
 
 MAX_IMPORTED_FILES = 15
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 SCRIPT_IMPORT = re.compile(r"""(?:from|import)\s*\(?\s*['"]([^'"]+)['"]""")
 PYTHON_IMPORT = re.compile(r"^from\s+(\.+)([\w.]*)\s+import", re.MULTILINE)
-SCRIPT_SUFFIXES = [".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs"]
 TEST_HELPER_DIRECTORY = re.compile(r"test|fixture|factor", re.IGNORECASE)
 TEST_FILE = re.compile(r"\.(test|spec)\.|^test_|_test\.py$")
 

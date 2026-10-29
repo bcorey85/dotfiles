@@ -297,7 +297,7 @@ class_closure: <the enumeration | none, + each fixed[] finding and why it fits n
 full_check: passed | unverified (exit 0, no runner summary) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | not run (timeout) | not run (scoped command: it names files or tests, so it is no full check) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only)  # the Step 6 result
 full_check_command: <the exact command full_check.py ran>
 full_check_summary: <the script's `summary:` line>  # passed | unverified only
-scoped_tests: <passed | failed: <cmds> | not run (<reason>)>  # optional; the scoped test rerun after a fix no passed full check followed
+scoped_tests: <passed | failed: <cmds>[; failing tests: <lines>]; full output: <log path> | setup fault / not run (timeout): <cmds>; full output: <log path> | command error: <cmd> (<line>)[; ...]; full output: <log path> | not run (<reason>)>  # optional; the scoped test rerun after a fix no passed full check followed
 check_changed: [<path>]                  # the `changed by the check:` paths from every full_check.py run in this invocation
 check_rewrote_edited: [<path>]           # the `rewrote edited files:` paths from every full_check.py run in this invocation
 check_created: [<path>]                  # the `created by the check:` paths from every full_check.py run in this invocation

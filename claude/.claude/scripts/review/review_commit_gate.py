@@ -28,16 +28,20 @@ stage or pick more than that, or when the hook cannot tell which repo or files i
   - no `git commit` in the command, or more than one
   - a command shlex cannot read, a missing cwd, a git error or timeout, an empty list of paths, a pathspec that
     names a folder
-A command counts as a commit when, with line continuations removed, it matches `git commit` as text (not
-`git commit-tree` or `git commit-graph`, which move no branch), or `git`, then
-only global options (a known one that takes a value is followed by it, which may be quoted or a `$( )` or backtick
-substitution), then `commit` appears in it, or when a simple command runs git (any word whose base name is `git`, so
-`env git` or a path counts), with any global options, and then `commit`. A global option the hook does not know may
-take a value, so `commit` anywhere after it counts. A command shlex cannot read counts when `git`, then only
-option-like words with an optional value each, then `commit` appears in it. The `git commit` and git-then-commit
-text patterns (not the shlex reading) also run on each text (as written and with substitutions shrunk) with every
-quoted-string join (a quote, optional whitespace, `+`, optional whitespace, a quote; the quotes may be
-backslash-escaped) removed, so a probe that splits the words (`"gi" + "t com" + "mit"`) counts.
+A command counts as a commit when, with line continuations removed, a simple command in it, or in a `$( )` or
+backtick span, runs git (any word whose base name is `git`, so `env git` or a path counts), with any global options,
+and then `commit` (not `commit-tree` or `commit-graph`, which move no branch). A global option the hook does not know
+may take a value, so `commit` anywhere after it counts. The text match fails closed, for a command shlex reads and one
+it cannot: unless every simple command is a safe probe, or when shlex cannot read the command, it counts when its text
+holds `git commit`, or `git`, then only global options (a known one that takes a value is followed by it), then
+`commit`. The text is read as written, with every quoted-string join (a quote, optional whitespace, `+`, optional
+whitespace, a quote; the quotes may be backslash-escaped) removed, and with the quotes and backslashes removed too,
+so `"gi" + "t com" + "mit"` and `git 'commit'` count. A `$( )` or backtick span is judged whether or not every
+simple command is a safe probe. A safe probe's first word, as written, is echo, printf, grep, cat, head, tail, wc, rg
+with no `--pre`, `--pre=`, `--hostname-bin` or `--hostname-bin=` word (rg runs that program), or git with status,
+diff, log, show or rev-parse and no `-c` or `--config-env`. So a probe that prints or searches the words passes, and
+a backslashed `sh -c`, `env -S` or `awk` holding the words is denied. A command shlex cannot read also counts when
+`git`, then only option-like words with an optional value each, then `commit` appears in it.
 The session stays dirty; a later commit that ships code is denied again.
 
 A dirty session still commits in four more cases, each checked against something a subagent cannot write:
@@ -76,11 +80,14 @@ import script_utils
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
     command_after_wrappers,
+    git_options,
+    git_subcommand,
     parse_simple_commands,
     quoted_positions,
     redirection_writes_file,
     split_command_steps,
     split_simple_commands,
+    substitution_spans,
 )
 
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -98,6 +105,8 @@ COMMIT = re.compile(r"\bgit[ \t\r\f\v]+commit\b(?!-)")
 LINE_CONTINUATION = re.compile(r"\\\r?\n")
 # A closing quote, `+`, an opening quote: two string literals joined in a script's source.
 QUOTED_STRING_JOIN = re.compile(r"""\\?["']\s*\+\s*\\?["']""")
+# Quotes and backslashes, which the shell drops from `git 'commit'` before git runs.
+QUOTES_AND_BACKSLASHES = re.compile(r"[\"'\\]")
 # An option's value: a quoted string, a `$( )` or backtick substitution, or a plain word.
 OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 # For a command shlex cannot read: git, then only option-like words with an optional value each, then commit.
@@ -110,7 +119,14 @@ NOTES_SUFFIX = ".md"
 # Characters a shell or git would expand in a pathspec, and a newline.
 EXPANDING_CHARS = set("*?[]{}$`~\\\n")
 READ_ONLY_GIT = ("status", "diff", "log", "show", "rev-parse")
+# Programs the notes-only commit exemption allows beside git; not a subset of PROBE_PROGRAMS below.
 READ_ONLY_PROGRAMS = ("echo", "printf", "true", "pwd", "ls")
+# Programs that only print or search text. `rg --pre <program>` and `rg --hostname-bin <program>` run a program, so
+# rg with a `--pre`, `--pre=...`, `--hostname-bin` or `--hostname-bin=...` word is not one.
+PROBE_PROGRAMS = ("echo", "printf", "grep", "rg", "cat", "head", "tail", "wc")
+RG_PROGRAM_OPTIONS = ("--pre", "--hostname-bin")
+# git options that set config, which can name a program a read-only subcommand runs (core.pager, core.fsmonitor).
+GIT_CONFIG_OPTIONS = ("-c", "--config-env")
 # A message word `$(cat <<'X'` + body + `X` + `)` runs nothing: the body is quoted and ends at the first line X.
 HEREDOC_WORD = re.compile(r"\$\(cat <<'(?P<tag>[A-Za-z_]\w*)'\n(?:(?!(?P=tag)\n).*\n)*(?P=tag)\n\)")
 # In the command text the message is a double-quoted string; unquoted, the output is split into words.
@@ -226,6 +242,23 @@ def runs_git_commit(words):
     return any(commit_follows_git(words, git_index) for git_index in git_indexes)
 
 
+def is_safe_probe(words):
+    """True when the simple command's first word is a program in PROBE_PROGRAMS (rg with no `--pre` or
+    `--hostname-bin` word), or git with a read-only subcommand and no config option. The first word is taken as
+    written, so a wrapper, an assignment or a path before the program makes the command unsafe."""
+    program = words[0]
+    if program in PROBE_PROGRAMS:
+        runs_program = program == "rg" and any(word.partition("=")[0] in RG_PROGRAM_OPTIONS for word in words)
+        return not runs_program
+
+    if program != "git":
+        return False
+
+    options, _index = git_options(words)
+    sets_config = any(option.partition("=")[0] in GIT_CONFIG_OPTIONS for option, _value in options)
+    return git_subcommand(words) in READ_ONLY_GIT and not sets_config
+
+
 def commit_follows_git(words, git_index):
     index = git_index + 1
     unknown_option = False
@@ -242,31 +275,37 @@ def commit_follows_git(words, git_index):
 
 
 def is_commit_command(command):
-    """True when the command commits. On the text with line continuations removed, `git commit` or `git`, then only
-    global options (a known one that takes a value is followed by it, which may be quoted or a substitution), then
-    `commit` counts, whether or not shlex can read the command. A git simple command with global options before
-    `commit` counts too. A command shlex cannot read also counts when `git`, then only option-like words with an
-    optional value each, then `commit` appears in it. Both readings run on the text as written and on the text with
-    each substitution span shrunk, so `git -p""$(cat <<'X' ...)"" commit` counts too. The two text patterns, not the
-    shlex reading, also run on each text (as written and with substitutions shrunk) with every quoted-string join
-    (a quote, optional whitespace, `+`, optional whitespace, a quote; the quotes may be backslash-escaped) removed,
-    so `"gi" + "t com" + "mit"` counts."""
+    """True when the command commits, as the module docstring defines it. Line continuations are removed and each
+    substitution span is read both as written and shrunk."""
     joined = LINE_CONTINUATION.sub("", command)
     shrunk = SUBSTITUTION_SPAN.sub("$S", joined)
-    readings = {joined, shrunk}
-    unsplit_readings = {QUOTED_STRING_JOIN.sub("", reading) for reading in readings}
-    return (any(reads_as_commit(reading) for reading in readings)
-            or any(COMMIT.search(reading) or GIT_THEN_COMMIT.search(reading) for reading in unsplit_readings))
+    return any(reads_as_commit(reading) for reading in {joined, shrunk})
 
 
-def reads_as_commit(joined):
-    if COMMIT.search(joined) or GIT_THEN_COMMIT.search(joined):
-        return True
+def text_holds_commit(texts, patterns):
+    return any(pattern.search(text) for text in texts for pattern in patterns)
+
+
+def reads_as_commit(reading):
+    unsplit = QUOTED_STRING_JOIN.sub("", reading)
+    unquoted = QUOTES_AND_BACKSLASHES.sub("", unsplit)
+    texts = (reading, unsplit, unquoted)
     try:
-        simple_commands = split_simple_commands(joined)
+        simple_commands = split_simple_commands(reading)
     except ValueError:
-        return UNREADABLE_GIT_THEN_COMMIT.search(joined) is not None
-    return any(runs_git_commit(words) for words in simple_commands)
+        return text_holds_commit(texts, (UNREADABLE_GIT_THEN_COMMIT, COMMIT, GIT_THEN_COMMIT))
+
+    unsafe_commands = [words for words in simple_commands if not is_safe_probe(words)]
+    if any(runs_git_commit(words) for words in unsafe_commands):
+        return True
+
+    if any(is_commit_command(span) for span in substitution_spans(reading)):
+        return True
+
+    if unsafe_commands:
+        return text_holds_commit(texts, (COMMIT, GIT_THEN_COMMIT))
+
+    return False
 
 
 PATHSPEC_READERS = {"commit": commit_pathspecs, "add": add_pathspecs}

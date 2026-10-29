@@ -118,16 +118,18 @@ class CheckOutputTest(unittest.TestCase):
             1, "No tests found, exiting with code 1\nFAIL: test_x (app.tests.T)", self.repo))
         self.assertFalse(check_output.is_setup_fault(1, "ImproperlyConfigured: settings are not configured", self.repo))
 
-    def test_a_passing_run_with_no_tests_beside_a_real_failure_is_not_a_setup_fault(self):
-        for line in ("No tests found, exiting with code 0", "No test files found, exiting with code 0"):
-            with self.subTest(line=line):
-                self.assertFalse(check_output.is_setup_fault(1, f"{line}\nerror TS2322: type mismatch", self.repo))
-
-    def test_a_run_that_exits_non_zero_for_finding_no_test_is_a_setup_fault(self):
-        for line in ("No tests found, exiting with code 1", "No test files found, exiting with code 1", "NO TESTS RAN",
-                     "no tests ran in 0.01s"):
-            with self.subTest(line=line):
-                self.assertTrue(check_output.is_setup_fault(1, line, self.repo))
+    def test_a_no_tests_line_is_a_setup_fault_only_when_it_is_the_reason_for_the_non_zero_exit(self):
+        rows = [
+            ("No tests found, exiting with code 0\nerror TS2322: type mismatch", False),
+            ("No test files found, exiting with code 0\nerror TS2322: type mismatch", False),
+            ("No tests found, exiting with code 1", True),
+            ("No test files found, exiting with code 1", True),
+            ("NO TESTS RAN", True),
+            ("no tests ran in 0.01s", True),
+        ]
+        for output, is_fault in rows:
+            with self.subTest(output=output):
+                self.assertEqual(is_fault, check_output.is_setup_fault(1, output, self.repo))
 
     def test_a_failed_test_that_names_a_missing_package_json_is_not_a_setup_fault(self):
         output = "Tests: 3 failed\nENOENT: no such file or directory, open '/tmp/fixture/package.json'"

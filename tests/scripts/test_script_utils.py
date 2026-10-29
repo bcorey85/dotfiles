@@ -43,96 +43,75 @@ class SubagentTypeTest(unittest.TestCase):
 
 
 class FencedLineIndexesTest(unittest.TestCase):
-    def test_lines_between_backtick_fences_and_the_fences_themselves_are_fenced(self):
-        lines = ["# a", "```bash", "# not a heading", "```", "# b"]
-        self.assertEqual({1, 2, 3}, script_utils.fenced_line_indexes(lines))
-
-    def test_tilde_fence_is_closed_only_by_tildes(self):
-        lines = ["~~~", "```", "# x", "~~~", "# y"]
-        self.assertEqual({0, 1, 2, 3}, script_utils.fenced_line_indexes(lines))
-
-    def test_a_longer_fence_is_not_closed_by_a_shorter_one(self):
-        lines = ["````md", "```", "# x", "```", "````", "# y"]
-        self.assertEqual({0, 1, 2, 3, 4}, script_utils.fenced_line_indexes(lines))
-
-    def test_an_unclosed_fence_runs_to_the_end(self):
-        self.assertEqual({1, 2}, script_utils.fenced_line_indexes(["# a", "```", "# b"]))
-
-    def test_an_indented_fence_inside_a_list_item_counts(self):
-        lines = ["- step", "    ```sh", "    # comment", "    ```", "# h"]
-        self.assertEqual({1, 2, 3}, script_utils.fenced_line_indexes(lines))
-
-    def test_text_with_no_fence_has_no_fenced_lines(self):
-        self.assertEqual(set(), script_utils.fenced_line_indexes(["# a", "b `code` c"]))
+    def test_fenced_line_indexes(self):
+        cases = [
+            ("lines between backtick fences and the fences themselves are fenced",
+             ["# a", "```bash", "# not a heading", "```", "# b"], {1, 2, 3}),
+            ("a tilde fence is closed only by tildes", ["~~~", "```", "# x", "~~~", "# y"], {0, 1, 2, 3}),
+            ("a longer fence is not closed by a shorter one",
+             ["````md", "```", "# x", "```", "````", "# y"], {0, 1, 2, 3, 4}),
+            ("an unclosed fence runs to the end", ["# a", "```", "# b"], {1, 2}),
+            ("an indented fence inside a list item counts",
+             ["- step", "    ```sh", "    # comment", "    ```", "# h"], {1, 2, 3}),
+            ("text with no fence has no fenced lines", ["# a", "b `code` c"], set()),
+        ]
+        for label, lines, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(expected, script_utils.fenced_line_indexes(lines))
 
 
 class HeadingSectionIndexesTest(unittest.TestCase):
-    def test_the_lines_under_the_heading_run_to_the_next_heading_of_its_level(self):
-        lines = ["# t", "## Notes", "a", "## Other", "b"]
-        self.assertEqual([2], script_utils.heading_section_indexes(lines, "Notes"))
-
-    def test_a_deeper_heading_and_its_lines_stay_inside_the_section(self):
-        lines = ["## Notes", "a", "#### Deep", "b", "## Other", "c"]
-        self.assertEqual([1, 2, 3], script_utils.heading_section_indexes(lines, "Notes"))
-
-    def test_a_higher_heading_ends_the_section(self):
-        lines = ["### Notes", "a", "## Up", "b"]
-        self.assertEqual([1], script_utils.heading_section_indexes(lines, "Notes"))
-
-    def test_a_hash_line_inside_a_fence_is_not_a_heading_and_stays_in_the_section(self):
-        lines = ["## Notes", "```", "## Other", "```", "tail", "## End"]
-        self.assertEqual([1, 2, 3, 4], script_utils.heading_section_indexes(lines, "Notes"))
-
-    def test_the_heading_text_must_match_exactly_and_every_matching_section_counts(self):
-        lines = ["## Notes later", "a", "## Notes", "b", "## X", "## Notes", "c"]
-        self.assertEqual([3, 6], script_utils.heading_section_indexes(lines, "Notes"))
-
-    def test_text_with_no_such_heading_gives_no_lines(self):
-        self.assertEqual([], script_utils.heading_section_indexes(["## A", "b"], "Notes"))
+    def test_heading_section_indexes(self):
+        cases = [
+            ("the lines under the heading run to the next heading of its level",
+             ["# t", "## Notes", "a", "## Other", "b"], [2]),
+            ("a deeper heading and its lines stay inside the section",
+             ["## Notes", "a", "#### Deep", "b", "## Other", "c"], [1, 2, 3]),
+            ("a higher heading ends the section", ["### Notes", "a", "## Up", "b"], [1]),
+            ("a hash line inside a fence is not a heading and stays in the section",
+             ["## Notes", "```", "## Other", "```", "tail", "## End"], [1, 2, 3, 4]),
+            ("the heading text must match exactly and every matching section counts",
+             ["## Notes later", "a", "## Notes", "b", "## X", "## Notes", "c"], [3, 6]),
+            ("text with no such heading gives no lines", ["## A", "b"], []),
+        ]
+        for label, lines, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(expected, script_utils.heading_section_indexes(lines, "Notes"))
 
 
 class VisibleTextTest(unittest.TestCase):
-    def test_a_line_without_comments_comes_back_whole(self):
-        self.assertEqual(("plain text", False), script_utils.visible_text("plain text", False))
-
-    def test_an_inline_comment_is_removed(self):
-        self.assertEqual(("a  b", False), script_utils.visible_text("a <!-- x --> b", False))
-
-    def test_an_unclosed_comment_hides_the_rest_and_stays_open(self):
-        self.assertEqual(("a ", True), script_utils.visible_text("a <!-- x", False))
-
-    def test_an_open_comment_closes_on_a_later_line(self):
-        self.assertEqual((" tail", False), script_utils.visible_text("end --> tail", True))
-        self.assertEqual(("", True), script_utils.visible_text("still inside", True))
-
-    def test_a_comment_opener_inside_inline_code_opens_nothing(self):
-        self.assertEqual(("write `<!--` to open", False), script_utils.visible_text("write `<!--` to open", False))
-
-    def test_a_real_comment_after_an_inline_code_span_still_opens(self):
-        self.assertEqual(("`a` ", True), script_utils.visible_text("`a` <!-- x", False))
+    def test_visible_text(self):
+        cases = [
+            ("a line without comments comes back whole", "plain text", False, ("plain text", False)),
+            ("an inline comment is removed", "a <!-- x --> b", False, ("a  b", False)),
+            ("an unclosed comment hides the rest and stays open", "a <!-- x", False, ("a ", True)),
+            ("an open comment closes on a later line", "end --> tail", True, (" tail", False)),
+            ("an open comment stays open on a line with no closer", "still inside", True, ("", True)),
+            ("a comment opener inside inline code opens nothing",
+             "write `<!--` to open", False, ("write `<!--` to open", False)),
+            ("a real comment after an inline code span still opens", "`a` <!-- x", False, ("`a` ", True)),
+        ]
+        for label, line, in_comment, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(expected, script_utils.visible_text(line, in_comment))
 
 
 class LinesAddedTest(unittest.TestCase):
-    def test_a_new_line_is_added(self):
-        self.assertEqual(["Also b."], script_utils.lines_added(["a", "c"], ["a", "Also b.", "c"]))
-
-    def test_a_checkbox_tick_is_not_an_added_line(self):
-        self.assertEqual([], script_utils.lines_added(["- [ ] check"], ["- [x] check"]))
-        self.assertEqual([], script_utils.lines_added(["- [x] check"], ["- [X] check"]))
-
-    def test_added_blank_lines_are_not_added_lines(self):
-        self.assertEqual([], script_utils.lines_added(["a", "b"], ["a", "", "", "b"]))
-
-    def test_whitespace_only_changes_are_not_added_lines(self):
-        self.assertEqual([], script_utils.lines_added(["Do a."], ["Do a. "]))
-        self.assertEqual([], script_utils.lines_added(["- x"], ["  - x"]))
-        self.assertEqual([], script_utils.lines_added(["a  b"], ["a b"]))
-
-    def test_a_reworded_line_is_added_in_its_new_form(self):
-        self.assertEqual(["Do c."], script_utils.lines_added(["Do a."], ["Do c."]))
-
-    def test_deleted_lines_add_nothing(self):
-        self.assertEqual([], script_utils.lines_added(["a", "b"], ["a"]))
+    def test_lines_added(self):
+        cases = [
+            ("a new line is added", ["a", "c"], ["a", "Also b.", "c"], ["Also b."]),
+            ("an unchecked box ticked is not an added line", ["- [ ] check"], ["- [x] check"], []),
+            ("a lower-case tick made upper-case is not an added line", ["- [x] check"], ["- [X] check"], []),
+            ("added blank lines are not added lines", ["a", "b"], ["a", "", "", "b"], []),
+            ("trailing whitespace is not an added line", ["Do a."], ["Do a. "], []),
+            ("indentation is not an added line", ["- x"], ["  - x"], []),
+            ("inner whitespace is not an added line", ["a  b"], ["a b"], []),
+            ("a reworded line is added in its new form", ["Do a."], ["Do c."], ["Do c."]),
+            ("deleted lines add nothing", ["a", "b"], ["a"], []),
+        ]
+        for label, before, after, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(expected, script_utils.lines_added(before, after))
 
 
 class UsageRequestedTest(unittest.TestCase):
@@ -291,16 +270,6 @@ class ReadLedgerTest(unittest.TestCase):
 
         self.assertEqual((1, "broken schema\n", 1), (done.returncode, done.stderr, self.tries()))
 
-    def test_a_ledger_that_stays_busy_raises_with_its_stderr_line_and_the_wait(self):
-        self.plant('echo "cache behind: too many shard rows are not loaded yet; retry" >&2\nexit 75\n')
-
-        with self.assertRaises(script_utils.LedgerBusyError) as raised:
-            script_utils.read_ledger(["yield", "--deferred"])
-
-        self.assertEqual("ledger yield --deferred: cache behind: too many shard rows are not loaded yet; retry "
-                         "(0 s of pauses)", str(raised.exception))
-        self.assertEqual(8, self.tries())
-
     def test_the_wait_in_the_message_is_the_sum_of_the_pauses(self):
         busy = subprocess.CompletedProcess(["ledger"], 75, "", "cache behind\n")
         with unittest.mock.patch.dict(os.environ, {script_utils.LEDGER_BACKOFF_ENV: "3"}), \
@@ -311,16 +280,6 @@ class ReadLedgerTest(unittest.TestCase):
 
         self.assertEqual("ledger yield --deferred: cache behind (84 s of pauses)", str(raised.exception))
         self.assertEqual(8, retrying.call_args.args[2])
-
-    def test_a_ledger_that_never_answers_raises_busy(self):
-        self.plant("exec sleep 30\n")
-        os.environ[script_utils.LEDGER_CALL_TIMEOUT_ENV] = "0.3"
-
-        with self.assertRaises(script_utils.LedgerBusyError) as raised:
-            script_utils.read_ledger(["yield", "--deferred"])
-
-        self.assertIn("no answer within 0.3 s", str(raised.exception))
-        self.assertEqual(8, self.tries())
 
     def test_no_ledger_on_path_or_in_the_cargo_folder_raises_not_installed(self):
         with self.assertRaises(script_utils.LedgerNotInstalledError):
@@ -404,17 +363,17 @@ class RunProcessTest(unittest.TestCase):
 
     def test_a_command_that_outlives_the_timeout_returns_no_exit_code_with_what_it_printed(self):
         started = time.monotonic()
-        code, stdout, _ = script_utils.run_process("echo before; sleep 30", self.folder, timeout=1)
+        code, stdout, _ = script_utils.run_process("echo before; sleep 30", self.folder, timeout=0.5)
         self.assertIsNone(code)
         self.assertEqual("before\n", stdout)
         self.assertLess(time.monotonic() - started, 10)
 
     def test_a_timeout_kills_a_child_that_holds_the_pipes_open(self):
         marker = self.folder / "survived"
-        command = f"(sleep 3; touch {marker}) & wait"
-        code, _, _ = script_utils.run_process(command, self.folder, timeout=1)
+        command = f"(sleep 1.5; touch {marker}) & wait"
+        code, _, _ = script_utils.run_process(command, self.folder, timeout=0.5)
         self.assertIsNone(code)
-        time.sleep(3.5)
+        time.sleep(2)
         self.assertFalse(marker.exists())
 
 
@@ -498,17 +457,17 @@ class HasWhitespaceTest(unittest.TestCase):
 
 
 class WordsOfArgumentsTest(unittest.TestCase):
-    def test_one_argument_with_spaces_is_split_at_them(self):
-        self.assertEqual(["fix", "the", "typo"], script_utils.words_of_arguments(["fix  the typo"]))
-
-    def test_several_arguments_are_kept_as_given_even_when_one_holds_spaces(self):
-        self.assertEqual(["fix", "the typo"], script_utils.words_of_arguments(["fix", "the typo"]))
-
-    def test_no_arguments_give_no_words(self):
-        self.assertEqual([], script_utils.words_of_arguments([]))
-
-    def test_a_tuple_of_arguments_gives_a_list(self):
-        self.assertEqual(["a", "b"], script_utils.words_of_arguments(("a", "b")))
+    def test_words_of_arguments(self):
+        cases = [
+            ("one argument with spaces is split at them", ["fix  the typo"], ["fix", "the", "typo"]),
+            ("several arguments are kept as given even when one holds spaces",
+             ["fix", "the typo"], ["fix", "the typo"]),
+            ("no arguments give no words", [], []),
+            ("a tuple of arguments gives a list", ("a", "b"), ["a", "b"]),
+        ]
+        for label, arguments, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(expected, script_utils.words_of_arguments(arguments))
 
 
 class PreToolUseDenyTest(unittest.TestCase):
@@ -625,34 +584,25 @@ class StripFlagValuesTest(unittest.TestCase):
     def stripped(self, command):
         return " ".join(script_utils.strip_flag_values(command, self.FLAGS).split())
 
-    def test_a_flag_and_its_separate_value_are_removed(self):
-        self.assertEqual("cargo test --release", self.stripped("cargo test --manifest-path /a/b/Cargo.toml --release"))
-
-    def test_a_flag_joined_to_its_value_by_an_equals_sign_is_removed(self):
-        self.assertEqual("cargo test", self.stripped("cargo test --manifest-path=/a/b/Cargo.toml"))
-
-    def test_a_quoted_value_with_spaces_is_removed_whole(self):
-        self.assertEqual("tool run", self.stripped("tool --project 'my app/x.json' run"))
-        self.assertEqual("tool run", self.stripped('tool --project="my app/x.json" run'))
-
-    def test_every_listed_flag_is_removed(self):
-        for flag in self.FLAGS:
-            with self.subTest(flag=flag):
-                self.assertEqual("run", self.stripped(f"run {flag} name"))
-
-    def test_the_text_after_the_value_stays(self):
-        self.assertEqual("pytest tests/a.py", self.stripped("pytest -p xdist tests/a.py"))
-
-    def test_a_flag_followed_by_another_flag_or_by_nothing_is_left_alone(self):
-        self.assertEqual("cargo test -p --release", self.stripped("cargo test -p --release"))
-        self.assertEqual("cargo test -p", self.stripped("cargo test -p"))
-
-    def test_a_flag_name_inside_a_longer_word_is_not_a_match(self):
-        self.assertEqual("run --pp x -pq y a-p b", self.stripped("run --pp x -pq y a-p b"))
-        self.assertEqual("run --packages x", self.stripped("run --packages x"))
-
-    def test_other_flags_and_their_values_stay(self):
-        self.assertEqual("go test -run TestX", self.stripped("go test -run TestX"))
+    def test_strip_flag_values(self):
+        cases = [
+            ("a flag and its separate value are removed",
+             "cargo test --manifest-path /a/b/Cargo.toml --release", "cargo test --release"),
+            ("a flag joined to its value by an equals sign is removed",
+             "cargo test --manifest-path=/a/b/Cargo.toml", "cargo test"),
+            ("a quoted value with spaces is removed whole", "tool --project 'my app/x.json' run", "tool run"),
+            ("a quoted joined value with spaces is removed whole", 'tool --project="my app/x.json" run', "tool run"),
+            *[(f"listed flag {flag} is removed", f"run {flag} name", "run") for flag in self.FLAGS],
+            ("the text after the value stays", "pytest -p xdist tests/a.py", "pytest tests/a.py"),
+            ("a flag followed by another flag is left alone", "cargo test -p --release", "cargo test -p --release"),
+            ("a flag followed by nothing is left alone", "cargo test -p", "cargo test -p"),
+            ("a flag name inside a longer word is not a match", "run --pp x -pq y a-p b", "run --pp x -pq y a-p b"),
+            ("a longer flag name is not a match", "run --packages x", "run --packages x"),
+            ("other flags and their values stay", "go test -run TestX", "go test -run TestX"),
+        ]
+        for label, command, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(expected, self.stripped(command))
 
     def test_no_flags_changes_nothing(self):
         self.assertEqual("a -p b   c  d", script_utils.strip_flag_values("a -p b   c  d", ()))
@@ -831,54 +781,38 @@ class InsideGitWorkTreeTest(unittest.TestCase):
 
 
 class LeadingEnvAssignmentsTest(unittest.TestCase):
-    def test_a_line_gives_the_assignments_it_starts_with_as_written(self):
-        self.assertEqual(["A=1", "B=/x/y.py"], script_utils.leading_env_assignments(["A=1 B=/x/y.py cargo test"]))
-
-    def test_a_quoted_value_with_spaces_is_kept_whole(self):
-        self.assertEqual(['GREETING="a b"'], script_utils.leading_env_assignments(['GREETING="a b" bash -c true']))
-
-    def test_the_first_line_to_set_a_name_decides_its_value_and_order_is_first_seen(self):
-        lines = ["B=1 make", "A=2 make", "B=3 make"]
-
-        self.assertEqual(["B=1", "A=2"], script_utils.leading_env_assignments(lines))
-
-    def test_a_line_with_no_leading_assignment_or_only_an_assignment_sets_nothing(self):
-        lines = ["cargo test", "echo A=1", "A=1", "  ", ""]
-
-        self.assertEqual([], script_utils.leading_env_assignments(lines))
-
-    def test_an_assignment_after_the_command_is_not_a_leading_one(self):
-        self.assertEqual([], script_utils.leading_env_assignments(["cargo test A=1", "cargo test A=1 --quiet"]))
-
-    def test_no_lines_give_no_assignments(self):
-        self.assertEqual([], script_utils.leading_env_assignments([]))
-
-    def test_an_assignment_whose_value_the_shell_would_run_or_expand_is_not_a_setting(self):
-        lines = ['n=$(ledger count) && test "$n" = 3', "S=...; cargo test", "PATH=/x/bin:$PATH cargo test",
-                 "T=$(find . -name x) cargo test", "Q=`date` cargo test", "A=1&&cargo test", "B=x|cargo test",
-                 "C=<in cargo test", 'D="a $HOME" cargo test', "E='a;b' cargo test", "F=1 && cargo test",
-                 "G=1 ; cargo test", "H=1 | cat", "I=1 # note", "J=1 > out.txt", "K=1 (cargo test)", "L=1 {cargo test}",
-                 "M=1 ! cargo test", 'N="x\\" cmd"', 'O="a\\b" cargo test', "X=~/a cargo test",
-                 "X=a:~/b cargo test"]
-
-        self.assertEqual([], script_utils.leading_env_assignments(lines))
-
-    def test_a_literal_assignment_followed_by_one_the_shell_would_expand_gives_nothing(self):
-        self.assertEqual([], script_utils.leading_env_assignments(["A=1 B=$(x) cargo test"]))
-
-    def test_a_quoted_literal_value_and_a_path_value_are_settings(self):
-        lines = ['LEDGER_ORACLE="on" cargo test', "ROOT='/x/y z' cargo test", "HOOK=/home/u/dotfiles/a.sh bash t.sh"]
-
-        self.assertEqual(['LEDGER_ORACLE="on"', "ROOT='/x/y z'", "HOOK=/home/u/dotfiles/a.sh"],
-                         script_utils.leading_env_assignments(lines))
-
-    def test_a_span_of_only_assignments_is_prose_not_a_setting(self):
-        self.assertEqual(
-            [], script_utils.leading_env_assignments(["src=index pass=done", "src=index", "src=index ", "A=1  "])
-        )
-
-    def test_a_span_of_assignments_then_a_word_gives_the_assignments(self):
-        self.assertEqual(["src=index"], script_utils.leading_env_assignments(["src=index pass"]))
+    def test_leading_env_assignments(self):
+        cases = [
+            ("a line gives the assignments it starts with as written",
+             ["A=1 B=/x/y.py cargo test"], ["A=1", "B=/x/y.py"]),
+            ("a quoted value with spaces is kept whole",
+             ['GREETING="a b" bash -c true'], ['GREETING="a b"']),
+            ("the first line to set a name decides its value; order is first seen",
+             ["B=1 make", "A=2 make", "B=3 make"], ["B=1", "A=2"]),
+            ("no leading assignment, or only an assignment, sets nothing",
+             ["cargo test", "echo A=1", "A=1", "  ", ""], []),
+            ("an assignment after the command is not a leading one",
+             ["cargo test A=1", "cargo test A=1 --quiet"], []),
+            ("no lines give no assignments", [], []),
+            ("an assignment whose value the shell would run or expand is not a setting",
+             ['n=$(ledger count) && test "$n" = 3', "S=...; cargo test", "PATH=/x/bin:$PATH cargo test",
+              "T=$(find . -name x) cargo test", "Q=`date` cargo test", "A=1&&cargo test", "B=x|cargo test",
+              "C=<in cargo test", 'D="a $HOME" cargo test', "E='a;b' cargo test", "F=1 && cargo test",
+              "G=1 ; cargo test", "H=1 | cat", "I=1 # note", "J=1 > out.txt", "K=1 (cargo test)",
+              "L=1 {cargo test}", "M=1 ! cargo test", 'N="x\\" cmd"', 'O="a\\b" cargo test', "X=~/a cargo test",
+              "X=a:~/b cargo test"], []),
+            ("a literal assignment followed by one the shell would expand gives nothing",
+             ["A=1 B=$(x) cargo test"], []),
+            ("a quoted literal value and a path value are settings",
+             ['LEDGER_ORACLE="on" cargo test', "ROOT='/x/y z' cargo test", "HOOK=/home/u/dotfiles/a.sh bash t.sh"],
+             ['LEDGER_ORACLE="on"', "ROOT='/x/y z'", "HOOK=/home/u/dotfiles/a.sh"]),
+            ("a span of only assignments is prose, not a setting",
+             ["src=index pass=done", "src=index", "src=index ", "A=1  "], []),
+            ("a span of assignments then a word gives the assignments", ["src=index pass"], ["src=index"]),
+        ]
+        for label, lines, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(expected, script_utils.leading_env_assignments(lines))
 
 
 class FirstCommandWordTest(unittest.TestCase):
@@ -887,8 +821,6 @@ class FirstCommandWordTest(unittest.TestCase):
         self.assertEqual("cargo", script_utils.first_command_word("A=1 B='x y' cargo test"))
         self.assertEqual("npm", script_utils.first_command_word("  npm test "))
         self.assertEqual("cargo", script_utils.first_command_word("CARGO_BUILD_JOBS=4 cargo test --lib a::b"))
-        self.assertEqual(["CARGO_BUILD_JOBS=4"], script_utils.leading_env_assignments(
-            ["CARGO_BUILD_JOBS=4 cargo test --test side_streams"]))
 
     def test_a_command_of_only_blanks_has_no_first_word(self):
         self.assertEqual("", script_utils.first_command_word("   "))

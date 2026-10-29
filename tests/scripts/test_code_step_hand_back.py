@@ -103,7 +103,7 @@ class HandBackTest(base.CodeStepTest):
         out = self.step("after-review")
 
         self.assertIn("ACTION: stop", out)
-        self.assertEqual(("stopped", "check-unverified"), (self.state()["stage"], self.state()["stopReason"]))
+        self.assertEqual(("stopped", "check-unverified"), (self.state()["stage"], self.state()["stop"]["kind"]))
         self.assertEqual(1, out.count("Do not mark the phase done."))
         why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
                "test ran.")
@@ -171,7 +171,7 @@ class HandBackTest(base.CodeStepTest):
         self.assertNotIn("has not handed back in", self.question())
         self.assertIn("marked done", out)
         self.assertNotEqual("stopped", self.state()["stage"])
-        self.assertNotIn("resumableReview", self.state())
+        self.assertNotIn("stop", self.state())
 
     def test_the_plan_edit_coders_open_choice_reaches_the_hand_back_and_the_prompt_says_where_it_goes(self):
         self.coder_round(self.IMPACT_REPORT)

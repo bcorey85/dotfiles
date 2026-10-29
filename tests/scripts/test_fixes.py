@@ -185,7 +185,7 @@ class PlanImpactFlowTest(unittest.TestCase):
         self.assertIn("AGENT: review-loop", review_output)
         self.assertEqual(state_after_edit["stage"], "review")
         self.assertEqual(state_after_edit["flagged"], [])
-        self.assertNotIn("planEditBaseline", state_after_edit)
+        self.assertNotIn("planEdit", state_after_edit.get("snapshot", {}))
         self.assertIn("Decision: Adopt plan change", review_output)
 
     def test_plan_coder_code_edit_is_flagged_and_reviewed(self):

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A finding the coder made no change for is not listed as fixed"
 description: "When a coder pass, full-check repair or class-closure pass changes no file, its findings go to skipped_fp with the reason the coder made no change, not to fixed."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T09:00:00-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The security and query-cost specialist reviewers are removed, with their Opus copies"
 description: "The security and query-cost specialist reviewers are removed, with their Opus copies."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["census"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Global Safety Rails: when a hook blocks a shell write and tells the agent to use Write or Edit"
 description: "Global Safety Rails: when a hook blocks a shell write and tells the agent to use Write or Edit, the agent does that and continues."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 11
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["judgment"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The code step checks the criteria file under any Acceptance heading"
 description: "code_step stopped on a missing or empty acceptance-criteria.md only when the plan held the exact line `## Acceptance Criteria`. Any other wording skipped the check with no output. It now matches any level 2 or 3 heading that starts with Acceptance, case-insensitive."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T23:35:22-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`code-reviewer` checks each added line against each written rule in the conventions doc, the docs it names"
 description: "`code-reviewer` checks each added line against each written rule in the conventions doc, the docs it names, and the loaded CLAUDE.md files."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 14
+kind: "behavior"
 components: ["agent/code-reviewer", "rule/global-claude-md", "skill/fix"]
 evidence: ["sealed bench round"]
 watches: []

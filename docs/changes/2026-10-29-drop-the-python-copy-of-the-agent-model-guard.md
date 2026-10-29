@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Drop the Python copy of the agent-model guard"
 description: "settings.json registers one agent-model guard on PreToolUse(Agent), the work package's agent-model-guard.sh. The Python port gates/agent_model_guard.py, its test and its fork fixture are deleted."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T18:00:00-05:00"}

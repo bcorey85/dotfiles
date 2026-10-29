@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code_step runs one verb at a time on a run"
 description: "A second code_step verb started while another runs on the same run stops with the holder's pid and changes nothing; abort still runs."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T09:00:00-05:00"}

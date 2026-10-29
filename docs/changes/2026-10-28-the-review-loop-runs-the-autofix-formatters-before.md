@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review loop runs the autofix formatters before a full-check failure blocks"
 description: "The review loop runs the autofix formatters on touched files and reruns a failing full check once."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:43:40-05:00"}

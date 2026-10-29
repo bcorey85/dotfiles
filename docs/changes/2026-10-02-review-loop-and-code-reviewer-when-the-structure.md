@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "review-loop and code-reviewer: when the structure domain is eligible"
 description: "review-loop and code-reviewer: when the structure domain is eligible, the loop no longer dispatches the Opus structure reviewer."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["agent/review-loop", "agent/code-reviewer", "agent/smell-reviewer", "agent/test-reviewer"]
 evidence: ["seeded bench"]
 watches: []

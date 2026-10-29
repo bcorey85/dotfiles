@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The hand-back check runs with the plan's gate variables"
 description: "code-step reads the `NAME=value` words that the plan's verification commands start with, plus the repo's gate variables, and stores them in the gate with `coder-gate.py set --env`. The hand-back hook runs every check with them, so it sees the same settings as the coder's own run."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-23T14:43:56-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The full check reports its runner summary and its own file changes, and calls a version mismatch a setup fault"
 description: "full_check.py quotes the test runner's own summary line and calls an exit 0 with none `unverified`; it names tracked files its command rewrote and files it created, so neither counts as coder work or lands in /code's commit; a package-manager version mismatch is a setup fault; the review loop calls its logger by full path and never writes rows to a file of its own."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T00:18:28-05:00"}

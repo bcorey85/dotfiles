@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The scripted review loop writes one finding row per finding, with the reviewer's class and the coder's outcome"
 description: "The scripted review loop's finding rows now carry the class the reviewer tagged, a 1-based iter, the actioned value the coder's report shows, and one stable id per finding, so the watches that read review-findings.jsonl read the loop again instead of its logger."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T19:39:19-05:00"}

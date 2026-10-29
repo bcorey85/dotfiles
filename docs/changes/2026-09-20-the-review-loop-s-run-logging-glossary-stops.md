@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review loop's run-logging glossary stops claiming that its disposition counts sum"
 description: "The review loop's run-logging glossary stops claiming that its disposition counts sum."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 14
+kind: "fix"
 components: ["agent/review-loop"]
 evidence: ["census"]
 watches: []

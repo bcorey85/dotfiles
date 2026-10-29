@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "One module logs review ask ids and outcomes for /review and /code"
 description: "A new review_asks.py fills ask ids and logs ask outcome rows for both /review and /code, so a plan-impact ask now gets no id and no outcome row in /code, as in /review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T11:26:26-05:00"}

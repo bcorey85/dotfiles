@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "review-loop and code-reviewer: the security and query-cost reviewers no longer run in the loop"
 description: "review-loop and code-reviewer: the security and query-cost reviewers no longer run in the loop."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 8
+kind: "behavior"
 components: ["agent/review-loop", "agent/code-reviewer"]
 evidence: ["census"]
 watches: []

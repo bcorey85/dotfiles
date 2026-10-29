@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The coder's core skill lost its stop-and-ask list and the sentence that defined a plan-impact finding by its"
 description: "The coder's core skill lost its stop-and-ask list and the sentence that defined a plan-impact finding by its triggers (94 words, 534 remain)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 10
+kind: "behavior"
 components: ["skill/coder-core"]
 evidence: ["seeded round"]
 watches: []

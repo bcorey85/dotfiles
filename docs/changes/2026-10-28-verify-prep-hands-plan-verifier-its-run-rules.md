@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "verify-prep hands plan-verifier its run rules"
 description: "At branch end, plan-verifier ran every test file it could find, including one that snapshots the real ~/.claude. It wrote log files into a sibling checkout and deleted them, and it left a background test run going. verify-prep's payload is the only dispatch prompt plan-verifier gets, and it carried no run rules. The payload now ends with four: run the plan's commands as written and beyond them only a covering test's file, never run a self-chosen test that touches files outside the checkout (user config or sibling repos), run in the foreground and leave no process, and delete, move, kill or create nothing but a Manual Verification checkbox line."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T11:04:42-05:00"}

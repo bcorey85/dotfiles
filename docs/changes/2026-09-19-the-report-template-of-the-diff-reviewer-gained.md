@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The report template of the diff reviewer gained two lines (67 words, 588 in the agent file)"
 description: "The report template of the diff reviewer gained two lines (67 words, 588 in the agent file)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-19T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["seeded round", "census"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "review-loop reviews the repo it was given, not the session's cwd"
 description: "review-loop takes a repo: input, falls back to the first absolute path the prompt names, and runs review-scope with root= so a sibling worktree gets its own diff."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T19:11:08-05:00"}

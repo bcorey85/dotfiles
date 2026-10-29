@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "herdr-worktree fork starts the forked session on a hand-over brief"
 description: "herdr-worktree --fork now takes a required --prompt that the forked Claude session starts on, and the orchestration rule says to pass a brief naming the task, what is done, the next step and that the fork owns the work."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:35:04-05:00"}

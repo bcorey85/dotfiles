@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Plan checks refuse a command that hands a shell its code"
 description: "An eng-spec plan wrote an Automated Verification command as `sh -c '...'`. The plan check accepted it because `sh` is a program on PATH, and the shell hook then blocked the command when /code ran it. The check now treats a shell run with `-c` (sh, bash, zsh, dash, ksh, any flag cluster with c) as no verification command: the plan stops at write time with a message to write the command plainly or put the pipeline in an executable repo script. A shell that runs a script file still passes. The plan format says the same."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T07:16:10-05:00"}

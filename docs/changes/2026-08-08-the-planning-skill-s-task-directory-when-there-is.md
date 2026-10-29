@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The planning skill's task directory, when there is no ticket key"
 description: "The planning skill's task directory, when there is no ticket key, is now named for the area of the codebase being changed rather than for the change."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 20
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["census"]
 watches: []

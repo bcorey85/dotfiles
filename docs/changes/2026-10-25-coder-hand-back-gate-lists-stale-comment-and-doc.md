@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Coder hand-back gate lists stale comment and doc lines"
 description: "The coder's hand-back gate on every plan phase runs stale_prose.py, which lists the comment and doc lines that name a symbol the diff renamed, removed or changed, so the coder fixes stale prose before review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T16:25:49-05:00"}

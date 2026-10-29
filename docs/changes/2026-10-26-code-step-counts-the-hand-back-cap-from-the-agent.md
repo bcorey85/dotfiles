@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code_step counts the hand-back cap from the agent's launch"
 description: "The /code wait cap starts at the Agent call's launch, not at the printed dispatch, so a worker that holds a dispatch no longer gets a false has-not-handed-back stop."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T13:09:09-05:00"}

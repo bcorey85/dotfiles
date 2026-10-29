@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "coder-core: the coder writes files with Write and Edit, and uses Bash only to run commands"
 description: "coder-core: the coder writes files with Write and Edit, and uses Bash only to run commands."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["skill/coder-core"]
 evidence: ["model round"]
 watches: []

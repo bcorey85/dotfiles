@@ -1,9 +1,13 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The plan reviewer's instruction to batch its tree checks was removed"
 description: "The plan reviewer's instruction to batch its tree checks was removed."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-13T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
+reverts: "2026-09-12-the-plan-reviewer-now-batches-its-tree-checks-it"
+impact: {"metric": "tokens", "before": 1300000, "after": 800000, "unit": "tokens", "finding": "2026-09-12-tokbatch-1"}
 components: ["agent/plan-reviewer"]
 evidence: ["controlled replay"]
 watches: []

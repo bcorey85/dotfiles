@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Recorded late, for an edit made 2026-09-21: the refactor skill's description now gives one clause per mode"
 description: "Recorded late, for an edit made 2026-09-21: the refactor skill's description now gives one clause per mode."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-23T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["skill/refactor"]
 evidence: ["judgment"]
 watches: []

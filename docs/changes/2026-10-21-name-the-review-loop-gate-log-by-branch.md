@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Name the review-loop gate log by branch"
 description: "The review loop's full gate run now writes to /tmp/review-gate-<branch>.log, not one shared /tmp/review-gate.log that other sessions overwrite."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T22:53:46-05:00"}
 seq: 26
+kind: "fix"
 components: ["agent/review-loop"]
 evidence: ["work incident"]
 watches: []

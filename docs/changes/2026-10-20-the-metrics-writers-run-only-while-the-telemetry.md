@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The metrics writers run only while the telemetry switch is on"
 description: "Every metrics writer checks one helper first. The switch is on when CLAUDE_TOOLKIT_TELEMETRY=1 is set or the file ~/.claude/toolkit-telemetry exists. Off, each writer skips its write and exits 0."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-20T23:22:51-05:00"}
 seq: 15
+kind: "behavior"
 components: ["script/telemetry-switch"]
 evidence: ["tests", "judgment"]
 watches: []

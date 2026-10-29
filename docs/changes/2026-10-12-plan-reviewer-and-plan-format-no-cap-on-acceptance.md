@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "plan-reviewer and plan-format: no cap on acceptance criteria"
 description: "plan-reviewer and plan-format: no cap on acceptance criteria."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["agent/plan-reviewer", "shared/plan-format"]
 evidence: ["judgment"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Cull the code-step tests to their pins"
 description: "Deleted code-step tests whose behavior another test already pins, merged near-duplicates into subTest tables, and replaced slow end-to-end parse checks with unit tables; no script behavior changed."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T08:52:25-05:00"}

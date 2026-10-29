@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`review-loop`: a re-review dispatches a fresh reviewer of the same type with the Agent tool and passes it the"
 description: "`review-loop`: a re-review dispatches a fresh reviewer of the same type with the Agent tool and passes it the handoff block."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-19T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["agent/review-loop", "shared/handoff-block"]
 evidence: ["census", "bench smoke"]
 watches: ["review-loop-fresh-re-review"]

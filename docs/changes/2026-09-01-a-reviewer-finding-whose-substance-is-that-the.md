@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A reviewer finding whose substance is that the code and a plan, ADR"
 description: "A reviewer finding whose substance is that the code and a plan, ADR, or acceptance criterion disagree now has a mechanical route: decide which document is wrong, then either a plain fix naming the clause the code must match."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 7
+kind: "behavior"
 components: ["agent/code-reviewer", "agent/review-loop"]
 evidence: ["census"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Coder: before it writes a helper, it searches for code that does the same job"
 description: "Coder: before it writes a helper, it searches for code that does the same job; a near fit is extended with an option its caller sets, existing callers and test expectations unchanged, never copied with a line changed."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["agent/coder"]
 evidence: ["census", "bench round"]
 watches: []

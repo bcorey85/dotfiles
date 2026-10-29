@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "An ask outcome keeps the finding id of the ask row the loop logged"
 description: "The review-loop stop hook pairs each ask row the loop logged with the finding id the log helper printed; review_fix.py and code_step.py fill each packet ask from those rows, or log the ask row themselves, so every ask outcome supersedes its ask row instead of landing under a new id."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T20:52:28-05:00"}

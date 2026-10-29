@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A review-loop waiting on its own background agent is not a missing hand-back"
 description: "review_loop_gate.py records each review-loop stop with its count of open background agents; review_fix.py packet prints wait-for-loop, not stop-no-handback, while the loop waits, so /review and /fix no longer re-dispatch a second loop onto files the first loop's coder still edits."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T20:00:13-05:00"}

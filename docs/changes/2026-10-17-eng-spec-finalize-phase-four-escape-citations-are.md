@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "`eng-spec` finalize phase: four escape citations are gone (ticket IDs, dates and what each escape broke)"
 description: "`eng-spec` finalize phase: four escape citations are gone (ticket IDs, dates and what each escape broke)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-17T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["judgment"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Fold code_step_restart into code_step_start and inline the one-line resume wrappers"
 description: "code_step_restart.py's two functions move into code_step_start.py, their only caller, and the eight resume handlers that only forwarded to a command become entries in RESUME_HANDLERS. No behavior change."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T07:20:53-05:00"}

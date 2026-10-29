@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Plan check reads only a standalone upper-case AC<n> as a reference"
 description: "AC_REFERENCE matches `AC` case-sensitively and counts `_` as a word character, so `test_ac1_x`, `foo_AC2` and `ac3-evidence.md` no longer fail plan check as unknown AC ids."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T04:00:00-05:00"}

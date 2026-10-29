@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Code fork hands questions back instead of messaging"
 description: "A /code fork's question reaches the session that ran /code through question.md in the hand-back and is never sent by message, even when the task names a session to ask."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T03:58:57-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Stop hook checks a staged claim against the index"
 description: "A main session told the user files were staged without checking, so the user could commit a partial change. A new Stop and SubagentStop hook, staged_claim_gate.py, reads the final message. When a sentence says files are staged, it checks git diff --cached in the repo the sentence names, else the session cwd's repo, and blocks the stop when the index is empty or misses a file the sentence names."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T14:46:21-05:00"}

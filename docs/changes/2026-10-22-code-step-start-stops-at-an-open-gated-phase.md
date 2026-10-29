@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step start stops at an open gated phase"
 description: "When an open phase with a gate clause comes before the next ungated phase, `start` now stops and starts nothing. Before, it skipped the gated phases and started a later one."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T09:51:54-05:00"}
 seq: 5
+kind: "fix"
 components: ["script/code-step"]
 evidence: ["work incident"]
 watches: []

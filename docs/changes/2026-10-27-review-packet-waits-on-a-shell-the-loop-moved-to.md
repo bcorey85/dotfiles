@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "review packet waits on a shell the loop moved to the background"
 description: "The review-loop stop gate counts a shell call moved to the background, by run_in_background or its timeout, as open work until its task notification, so packet prints wait-for-loop, not stop-no-handback."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T11:08:03-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A required audit in the diff reviewer that reads every guard, filter, lint rule, validation check, tolerance"
 description: "A required audit in the diff reviewer that reads every guard, filter, lint rule, validation check, tolerance, exception handler and equality predicate the change touches against the contract it claims to enforce — its own name, docstring, rule id, the documented meaning of a config key."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["escape ranking + bench coverage"]
 watches: []

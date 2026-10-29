@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Review loop cannot hand back while its background reviewer runs"
 description: "The handback hook denies a review-loop hand-back while the loop's own transcript shows a background agent or shell that has not reported back, so the loop waits and its stop routes to wait-for-loop."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T06:00:00-05:00"}

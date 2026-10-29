@@ -1,9 +1,12 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The Opus-pinned deep coder is back"
 description: "The Opus-pinned deep coder is back."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
+reverts: "2026-09-29-the-opus-pinned-deep-coder-is-removed"
 components: ["agent/review-loop"]
 evidence: ["judgment"]
 watches: []

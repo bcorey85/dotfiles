@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "Deny unbounded waits in subagent Bash calls"
 description: "A new PreToolUse Bash hook denies a subagent's wait that has no time limit: an until or while loop with sleep, a long for loop with sleep, follow-mode log reads, and a sleep over 30 s. The deny reason gives the counted-loop form. At work, these waits ran to the 10-minute Bash ceiling and took about 4.3 hours of agent time over 3 days."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-19T16:42:38-05:00"}
 seq: 11
+kind: "behavior"
 components: ["script/wait-loop-gate"]
 evidence: ["census"]
 watches: ["wait-loop-gate"]

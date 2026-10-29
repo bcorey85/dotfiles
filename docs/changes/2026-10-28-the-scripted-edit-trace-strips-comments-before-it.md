@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The scripted-edit trace strips comments before it reads a literal"
 description: "shell-write-gate traced a script's write target through a list or dict literal, but a ')' or a quote inside a # comment in that literal cut it short, so a write to a tracked file passed. The gate now strips # comments, following quote state, before any tracing, and splits a dict literal at its top-level colon so a read-only loop over .items() that writes elsewhere is no longer denied."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T20:51:47-05:00"}

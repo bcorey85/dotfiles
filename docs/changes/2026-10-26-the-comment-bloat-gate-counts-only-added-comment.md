@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The comment-bloat gate counts only added comment lines and skips string text"
 description: "An edit that adds no net comment line passes the ratio check, the marker rule ignores text inside string literals, and the deny text keeps a comment the task requires."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:39:06-05:00"}

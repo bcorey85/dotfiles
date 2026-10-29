@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code-step refuses a refactor phase close until the concentration gate is evaluated"
 description: "A /code refactor closing phase could close with `skill-done pass` and no sign the concentration gate was checked. code-step now counts the added lines itself, prints whether the gate triggers, and refuses the close of a triggered gate until a simplify run is named for the module it computed. The record is saved in the plan."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T16:43:21-05:00"}

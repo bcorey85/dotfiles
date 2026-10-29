@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The global Safety Rails block was cut from 198 to 90 words"
 description: "The global Safety Rails block was cut from 198 to 90 words."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 12
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["removal round"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "shell-write-gate: /var/tmp counts as a temp dir"
 description: "A coder's redirect into a new log under /var/tmp was denied as a new file outside a temp dir unless $TMPDIR named /var/tmp; /var/tmp now always counts, and a redirect onto a git-tracked file there still denies."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T14:17:15-05:00"}

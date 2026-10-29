@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "quality-check-cap allows one rerun redirected to a file after a run cut by tail, head or grep"
 description: "When a check's last run was piped through tail, head or grep, the cap allows one rerun with its output sent to a file, and the deny names that exact form."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T08:07:26-05:00"}

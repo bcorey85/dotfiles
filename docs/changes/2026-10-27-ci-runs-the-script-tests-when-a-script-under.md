@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "CI runs the script tests when a script under scripts/.local/bin changes"
 description: "The script-tests workflow adds scripts/.local/bin/** to its push and pull_request paths, so an edit to herdr-worktree or another stowed script runs its tests in CI."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T13:41:24-05:00"}

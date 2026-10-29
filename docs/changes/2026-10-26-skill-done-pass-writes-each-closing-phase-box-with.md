@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "skill-done pass writes each closing-phase box with its evidence"
 description: "code_step.py skill-done pass now needs one --evidence per open Success Criteria item in a closing phase; it ticks each box and writes a Done line under it, so refactor and test-audit results reach the plan."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T11:19:27-05:00"}

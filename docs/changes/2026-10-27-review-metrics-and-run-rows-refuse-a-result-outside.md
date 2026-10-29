@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Review metrics and run rows refuse a result outside the verdicts, and a bare word"
 description: "log-review-metrics and log-review-finding take result= only from a fixed set and exit 1 on any other value or on an arg with no `=`; a metrics row needs a result; the loop's instructions name the underscore tokens."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T21:30:00-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Review loop records: crashed coders, metrics rows, run rows and test ledger writes come out right"
 description: "A coder that dies mid-fix reports the files it changed, the metrics logger refuses a row it would store wrong, the stop hook blocks a stale or short metrics line and an unlogged nit and writes run rows for the reviewed repo, and no test can write to the real ledger."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T21:35:08-05:00"}

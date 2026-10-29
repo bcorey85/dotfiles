@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`perf`/`security` triggers rewritten"
 description: "`perf`/`security` triggers rewritten."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["agent/review-loop", "agent/perf-reviewer", "agent/security-reviewer"]
 evidence: ["false positives"]
 watches: []

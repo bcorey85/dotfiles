@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "quality-check-cap skips help probes and allows a for-loop repeat"
 description: "The cap no longer counts a --help/-h/--version/-V call as a check run, and it allows a check repeated in one for loop over two or more values, so a flake check runs the same command N times without flag dodges."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T11:42:53-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The global CLAUDE.md gets a design-deferral rule under Engineering Judgment"
 description: "The global CLAUDE.md gets a design-deferral rule under Engineering Judgment."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-17T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["seeded round", "judgment"]
 watches: []

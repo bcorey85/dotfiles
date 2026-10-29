@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A finding on a scoped package path keeps its at sign"
 description: "The review loop reads a finding's file:line with the same path regex as the hand-back, so a finding on a path like @scope/pkg/file.ts keeps its @ and routes and matches by its real path."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T22:30:00-05:00"}

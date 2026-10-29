@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Review loop uses the shared test and lockfile path rules"
 description: "The scripted review loop routes tests to the test reviewer and sizes a change by the same test and lockfile rules as the other scripts, so __tests__/, test_*.py, *_test.* and nested tests/ files and every lockfile are recognised. Generated, dist/, snapshot and .min.js files also no longer count toward the size bar."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T09:35:48-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "resume with task text over an open run stops instead of resuming"
 description: "`code_step.py resume <text>` over an open run with no coder waiting for an answer now stops on the user's word with resume, restart and abort, instead of rerunning a bare `resume` that went on with the old task and dropped the new one."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T13:21:46-05:00"}

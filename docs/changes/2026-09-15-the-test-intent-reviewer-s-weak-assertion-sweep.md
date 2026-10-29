@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The test-intent reviewer's weak-assertion sweep now owes a count"
 description: "The test-intent reviewer's weak-assertion sweep now owes a count: the absence pass names what to enumerate (success-criterion lines, named contract values and fallbacks, edge-case rows), greps the suite per promise, and reports `Promises walked: N, unpinned: M` in the header, always."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-15T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["agent/test-intent-reviewer"]
 evidence: ["seeded round"]
 watches: []

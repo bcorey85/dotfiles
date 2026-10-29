@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The comment-bloat gate checks only files inside a git repo"
 description: "The comment-bloat gate blocks a write only when the file resolves into a git work tree. Scratch files, probes and temp scripts outside a repo are not committed code, and the gate blocked them."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T08:48:22-05:00"}
 seq: 12
+kind: "fix"
 components: ["script/comment-bloat-gate", "script/script-utils"]
 evidence: ["work incident", "tests"]
 watches: []

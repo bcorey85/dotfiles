@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code_step says the plan-rewrite coder's open choices to the user"
 description: "The plan-rewrite coder may not ask the user; it ends its report with one `OPEN CHOICE:` line per choice the ruling leaves open, and `after-plan-edit` says each one to the user."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T23:05:53-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Hand-back gate runs Python checks through the repo's runner and does not deny on setup faults"
 description: "The coder hand-back gate builds its pytest and ruff commands from the phase's listed pytest command, else the repo's lock file or virtualenv, and a failure that shows the environment cannot run a check is reported as a setup fault that never denies or counts toward the cap."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T13:05:39-05:00"}

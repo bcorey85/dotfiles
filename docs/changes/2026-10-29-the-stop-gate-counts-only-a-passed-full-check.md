@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The stop gate counts only a passed full check result"
 description: "The review-loop stop gate reads full_check.py's result line instead of the command text, so a failed, unverified or bare-runner check no longer lets the loop stop, and full_check.py refuses a command scoped to files or tests."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T08:46:35-05:00"}

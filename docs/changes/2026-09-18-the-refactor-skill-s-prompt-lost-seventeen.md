@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The `/refactor` skill's prompt lost seventeen sentences and clauses that explained why a rule exists (1,407"
 description: "The `/refactor` skill's prompt lost seventeen sentences and clauses that explained why a rule exists (1,407 words, was 1,578): the fresh-eyes and own-checklist notes, tests-are-the-contract, when to pick each modifier, the lean-context reasons in branch audit and simplify."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 4
+kind: "behavior"
 components: ["skill/refactor"]
 evidence: ["removal round"]
 watches: []

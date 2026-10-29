@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "A PostToolUse hook on Write and Edit, `code_layout_gate.py`, blocked new Python"
 description: "A PostToolUse hook on Write and Edit, `code_layout_gate.py`, blocked new Python, TypeScript or JavaScript code that passed a call result straight into a call that was itself an argument, or that ran more than 8 statements in one block with no blank line."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-17T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["rule/settings-json"]
 evidence: ["calibration", "judgment"]
 watches: []

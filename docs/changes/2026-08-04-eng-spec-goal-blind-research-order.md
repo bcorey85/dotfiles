@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`/eng-spec` goal-blind research order"
 description: "`/eng-spec` goal-blind research order."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 14
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["clean result"]
 watches: []

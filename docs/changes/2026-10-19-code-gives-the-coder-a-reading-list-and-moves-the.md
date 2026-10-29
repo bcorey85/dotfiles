@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`/code` gives the coder a reading list and moves the checks to a hook at hand-back"
 description: "`/code` gives the coder a reading list and moves the checks to a hook at hand-back."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-19T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["skill/code", "script/coder-gate", "agent/review-loop", "script/coder-packet", "skill/coder-core"]
 evidence: ["sealed bench round", "judgment"]
 watches: ["coder-packet-handback-gate", "coder-packet-handback-gate-escapes"]

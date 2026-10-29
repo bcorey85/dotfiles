@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Code-step tests jump through a fake nvim-jump, never the user's Neovim"
 description: "code_step.py present_asks reads the nvim-jump command from CODE_STEP_NVIM_JUMP, like review_fix.py's REVIEW_FIX_NVIM_JUMP, and the code-step tests set it to a fake, so a test run no longer opens its temp files in the user's Neovim."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T19:14:13-05:00"}

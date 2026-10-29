@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A phase commit subject names its phase"
 description: "A plan run's commit subject built from the coder summary or the title ends with (phase <id>), or (plan <folder>) with no phase; a plan-named Commit line and planless runs are unchanged."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T09:00:00-05:00"}

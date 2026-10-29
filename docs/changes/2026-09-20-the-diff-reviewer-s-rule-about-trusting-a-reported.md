@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The diff reviewer's rule about trusting a reported check no longer repeats a generic rule"
 description: "The diff reviewer's rule about trusting a reported check no longer repeats a generic rule."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 17
+kind: "behavior"
 components: ["agent/code-reviewer", "rule/global-claude-md"]
 evidence: ["census", "judgment"]
 watches: []

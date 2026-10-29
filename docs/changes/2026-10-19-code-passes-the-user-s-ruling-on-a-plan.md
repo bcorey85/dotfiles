@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "/code passes the user's ruling on a plan disagreement to the review, so the review stops asking it again"
 description: "When the code and the plan disagree, /code records the user's answer, in their words, as a ruling. The review after it gets the ruling as a RESOLVED block and reviews the code against it. Before, the review raised the same disagreement again after the user answered, and a work run looped."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-19T12:08:53-05:00"}
 seq: 9
+kind: "behavior"
 components: ["script/code-step", "agent/review-loop", "shared/handoff-block"]
 evidence: ["work incident"]
 watches: []

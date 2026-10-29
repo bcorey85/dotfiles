@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "bash-safety-gate pipe-to-shell rule reads real pipes only"
 description: "The pipe-to-shell rule no longer denies a pipe character inside a quoted argument, such as the regex (py|sh)."
 generated: {"by": "claude-code/sonnet-5-5", "at": "2026-10-25T22:55:34-05:00"}

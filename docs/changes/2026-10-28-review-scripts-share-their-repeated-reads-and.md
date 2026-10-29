@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Review scripts share their repeated reads and messages"
 description: "The review scripts drop hand-written copies of a session-row read, a skill-file update, a keep-dirty sentence, a deny line and an error translation, with no behavior change."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T07:21:11-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Coder core bans interpreter code on stdin and programs that write repo files"
 description: "The coder's list of shell forms the hooks block now names interpreter code fed on stdin (python3 - <<EOF, python3 <<EOF, cat x | python3) and a program the coder wrote that opens a repo file for writing."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T11:56:42-05:00"}

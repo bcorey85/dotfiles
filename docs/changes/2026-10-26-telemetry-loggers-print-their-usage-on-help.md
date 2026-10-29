@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Telemetry loggers print their usage on --help instead of refusing it as a malformed argument"
 description: "`log-escape --help` and `log-spec-run --help` refused the flag as a malformed key=value pair, so the four loggers and log-escape-check in telemetry/, and the four review scripts, now print their header usage block on --help or -h, exit 0 and write no row."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:40:14-05:00"}

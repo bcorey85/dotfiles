@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The rule for messages to other sessions no longer tells the sender to write a file"
 description: "The rule for messages to other sessions no longer tells the sender to write a file."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 12
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["judgment"]
 watches: []

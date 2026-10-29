@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The performance reviewer's scope list gained one bullet on unbounded single-object reads (26 words"
 description: "The performance reviewer's scope list gained one bullet on unbounded single-object reads (26 words, 694 in the agent file): a whole file, blob, or response body read into memory, or returned to a caller, with no size bound or streaming."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-19T00:00:00-05:00"}
 seq: 3
+kind: "behavior"
 components: ["agent/perf-reviewer"]
 evidence: ["seeded round"]
 watches: []

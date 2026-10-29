@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Retire the bash copies of ported hooks and the port workspace"
 description: "The installer deletes the bash copy of 20 hooks whose Python port settings.json runs, then deletes the port workspace ~/dev/evals/hookport/. Script prose stops naming the old .sh files."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T00:31:50-05:00"}
 seq: 2
+kind: "behavior"
 components: ["script/agent-foreground", "script/agent-model-guard", "script/batch-reads-nudge", "script/calibration-guard", "script/calibration-refs-guard", "script/claudemd-linecount", "script/comment-bloat-gate", "script/dead-prose-gate", "script/emit-orchestration", "script/format-changed", "script/git-discipline-gate", "script/log-agent-usage", "script/log-skill-use", "script/quality-check-cap", "script/review-commit-gate", "script/shell-write-gate", "script/spec-budget-gate", "script/stale-citation-gate", "script/test-edit-telemetry", "script/warn-skip-hooks", "script/claude-doctor", "script/review-gate-mark"]
 evidence: ["judgment", "tests"]
 watches: []

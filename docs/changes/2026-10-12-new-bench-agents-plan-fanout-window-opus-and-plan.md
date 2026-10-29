@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "added"
 title: "New bench agents `plan-fanout-window-opus` and `plan-window-view-opus`"
 description: "New bench agents `plan-fanout-window-opus` and `plan-window-view-opus`: the three-phase-window plan review with Opus as the window reviewers instead of Sonnet."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 11
+kind: "behavior"
 components: ["agent/plan-fanout-window-opus", "agent/plan-window-view-opus"]
 evidence: ["judgment", "model swap bench"]
 watches: []

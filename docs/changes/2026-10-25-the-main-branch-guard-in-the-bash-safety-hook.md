@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The main-branch guard in the bash safety hook reads only each push command's own arguments"
 description: "The main-branch guard no longer denies a chained command that holds push and a main or master word in different commands."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-25T22:39:01-05:00"}

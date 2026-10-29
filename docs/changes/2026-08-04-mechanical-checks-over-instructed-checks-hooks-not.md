@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Mechanical checks over instructed checks (hooks, not prose)"
 description: "Mechanical checks over instructed checks (hooks, not prose)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 13
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["judgment"]
 watches: []

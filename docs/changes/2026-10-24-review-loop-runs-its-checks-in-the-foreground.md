@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Review-loop runs its checks in the foreground"
 description: "The wait-loop hook now refuses every background job review-loop starts: run_in_background, a lone &, nohup, setsid and disown. The refusal tells it to run the same command in the foreground with a Bash timeout up to 600000 ms."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T16:25:18-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Per-phase weak-assertion lens retired → recap boundary"
 description: "Per-phase weak-assertion lens retired → recap boundary."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 10
+kind: "behavior"
 components: ["skill/test-audit", "agent/test-intent-reviewer"]
 evidence: ["remedy round"]
 watches: []

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "coder-core review handoff trimmed to the line formats; the calibration clauses on BEHAVIOR, WHY"
 description: "coder-core review handoff trimmed to the line formats; the calibration clauses on BEHAVIOR, WHY, REFACTOR CANDIDATES, REVIEW and PLAN-IMPACT: yes removed, \"one line per note\" kept."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 16
+kind: "behavior"
 components: ["skill/coder-core"]
 evidence: ["removal round"]
 watches: []

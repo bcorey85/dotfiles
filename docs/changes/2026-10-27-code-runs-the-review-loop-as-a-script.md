@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "/code runs the review loop as a script"
 description: "The /code step script launches review_loop_script.py in place of the Sonnet review-loop agent: each reviewer, coder and class-closure judgment is its own claude -p call, and scope, parsing, routing, the round cap and the full check are code."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T07:20:00-05:00"}

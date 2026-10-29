@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "parallel_tests kills a test file past its time limit"
 description: "The suite runner kills a test file's process group after 1200 s (TEST_FILE_TIMEOUT_SECONDS) and reports that file as failed by name, so one hung file no longer stalls tests/run.sh."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:43:01-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Dotfiles tests and scripts find toolkit code in their own checkout"
 description: "The test suite and ten scripts found toolkit code through ~/.claude, so a suite run in a dotfiles worktree tested the live scripts instead of the edited ones. They now find it from their own file location, and a script change can be edited and fully tested in a worktree before the user merges it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T15:25:01-05:00"}

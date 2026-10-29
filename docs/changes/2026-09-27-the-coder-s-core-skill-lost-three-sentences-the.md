@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The coder's core skill lost three sentences: the ban on dispatching or spawning a reviewer"
 description: "The coder's core skill lost three sentences: the ban on dispatching or spawning a reviewer, the explicit ban on writing tests and fixtures, and the targeted-tests line in its verify step."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 15
+kind: "behavior"
 components: ["skill/coder-core"]
 evidence: ["removal round"]
 watches: []

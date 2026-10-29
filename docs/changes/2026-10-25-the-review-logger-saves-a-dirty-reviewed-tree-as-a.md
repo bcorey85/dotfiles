@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The review logger saves a dirty reviewed tree as a commit"
 description: "A review row logged on a dirty tree now carries snapshot, a commit on HEAD of the tree the gate saw, kept under refs/review-snapshots/<id>, so the frozen review set can use the dirty rows it used to drop."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T22:15:23-05:00"}

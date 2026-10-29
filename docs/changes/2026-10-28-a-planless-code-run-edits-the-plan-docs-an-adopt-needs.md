@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A planless /code run edits the plan docs an adopt needs and says it is not committed"
 description: "After `decide adopt` in a planless run, code-step dispatches a coder to rewrite the branch's plan docs and add a Plan Deviations entry, and the review then covers that edit; the planless end says nothing is committed."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T12:00:00-05:00"}

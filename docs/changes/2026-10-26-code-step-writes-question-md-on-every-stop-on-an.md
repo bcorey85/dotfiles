@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "code_step writes question.md on every stop on an agent's report or silence"
 description: "Every /code stop on an agent's report or silence (no agent id, wait cap, coder stop, critical blocker, review cap, failed closing check) writes question.md with why, one line per open item and the exact command to go on; `skill-done fail` takes `--finding`."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T23:05:53-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The telemetry report's scan step dropped its recall measurement and now names only the two scans that still"
 description: "The telemetry report's scan step dropped its recall measurement and now names only the two scans that still run."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 5
+kind: "behavior"
 components: ["skill/audit"]
 evidence: ["census"]
 watches: []

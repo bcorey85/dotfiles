@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`/eng-spec` plan review on plans over 400 lines: two Opus shards instead of three"
 description: "`/eng-spec` plan review on plans over 400 lines: two Opus shards instead of three."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-12T00:00:00-05:00"}
 seq: 13
+kind: "behavior"
 components: ["skill/eng-spec"]
 evidence: ["removal round"]
 watches: ["plan-review-two-shards"]

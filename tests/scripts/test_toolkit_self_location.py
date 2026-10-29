@@ -48,7 +48,6 @@ ALLOWED_HITS = [
     ("scripts/code/code_step_core.py", "INSTALLED_COMMAND = ", PRINTED),
     ("scripts/code/code_step_core.py", "RESUME_LINE = ", PRINTED),
     ("scripts/code/code_step_review.py", "SUMMARY_LINES in ~/.claude/scripts/lib/test_run_output.py", PRINTED),
-    ("scripts/gates/agent_model_guard.py", "home_file = ", LIVE_AGENTS),
     ("scripts/gates/calibration_refs_guard.py", "calibration_path = ", LIVE_AGENTS),
     ("scripts/gates/calibration_refs_guard.py", "agents_dir = ", LIVE_AGENTS),
     ("scripts/gates/emit_orchestration.py", "SessionStart hook: inject", "docstring text"),

@@ -3,7 +3,7 @@ type: "Change"
 title: "A code phase stops when its full check shows no test run"
 description: "A /code phase whose review converged with the full check unverified (exit 0, no runner summary) finished as if verified, although the check did not show that any test ran. The phase now stops with the reason check-unverified, names the check command, and asks for a fix before review-again: a Quality check line in the repo's CLAUDE.md when it has none, else a check that prints its runner summary or a SUMMARY_LINES entry for the runner's format."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T06:34:11-05:00"}
-seq: 226
+seq: 235
 kind: "fix"
 components: ["script/code-step"]
 evidence: ["judgment"]

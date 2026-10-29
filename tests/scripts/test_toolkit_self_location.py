@@ -63,7 +63,6 @@ ALLOWED_HITS = [
     ("scripts/telemetry/log-escape", "Run the ratchet (", PRINTED),
     ("scripts/telemetry/log-escape-check", 'mkdir -p "$HOME/.claude"', LEDGER_DIR),
     ("scripts/telemetry/log_agent_usage.py", "os.path.join(os.environ.get", DATA_FILE + ", name on the next line"),
-    ("scripts/telemetry/log_skill_use.py", "os.path.join(os.environ.get", DATA_FILE + ", name on the next line"),
     ("scripts/tools/claude-doctor.sh", "CLAUDE.md is newer than opencode", PRINTED),
     ("scripts/tools/claude-doctor.sh", "shellcheck reported issues", PRINTED),
     ("scripts/tools/rule-anchors.sh", 'rel="${rel#"$HOME"/.claude/}"', "strips the home prefix to print a path"),

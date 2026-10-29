@@ -156,16 +156,6 @@ class InvalidUtf8StdinTest(HookRunTest):
         self.assertEqual(finished.returncode, 0)
         self.assertIn(b"resident load", finished.stdout)
 
-    def test_test_edit_telemetry_still_logs_next_to_invalid_utf8(self):
-        # finding 6
-        body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": "/r/a_test.py",
-                                                              "new_string": "a@@b"}})
-        self.run_hook("test-edit-telemetry", body.encode("utf-8").replace(b"@@", self.BAD))
-        log = self.home / ".claude" / "test-edit-telemetry.jsonl"
-        row = json.loads(log.read_text(encoding="utf-8"))
-        self.assertEqual(row["snippet"], "a�b")
-
-
 class SpecBudgetWordCountTest(HookRunTest):
     def over_budget(self, separator):
         # finding 7: 1600 words split by the separator; wc -w counts them all, a whitespace-blind count sees one
@@ -212,14 +202,6 @@ class IdeographicSpaceTest(HookRunTest):
 
 
 class LoneSurrogateLogTest(HookRunTest):
-    def test_log_skill_use_writes_the_row(self):
-        # finding 9
-        body = b'{"hook_event_name":"PostToolUse","tool_input":{"skill":"re\\ud800view"}}'
-        finished = self.run_hook("log-skill-use", body)
-        self.assertEqual((finished.returncode, finished.stderr), (0, b""))
-        row = json.loads((self.home / ".claude" / "skill-usage.jsonl").read_text(encoding="utf-8"))
-        self.assertEqual(row["skill"], "re?view")
-
     def test_log_agent_usage_writes_the_row(self):
         # finding 9
         body = (b'{"hook_event_name":"PostToolUse","tool_input":{"description":"x\\ud800y","subagent_type":"coder"},'
@@ -243,8 +225,8 @@ class GitDisciplineAmendTest(HookRunTest):
 class RunGateTest(HookRunTest):
     PORTED = ("calibration-guard", "calibration-refs-guard",
               "claudemd-linecount", "comment-bloat-gate", "dead-prose-gate", "emit-orchestration", "format-changed",
-              "git-discipline-gate", "log-agent-usage", "log-skill-use", "quality-check-cap", "review-commit-gate",
-              "shell-write-gate", "spec-budget-gate", "stale-citation-gate", "test-edit-telemetry", "warn-skip-hooks")
+              "git-discipline-gate", "log-agent-usage", "quality-check-cap", "review-commit-gate",
+              "shell-write-gate", "spec-budget-gate", "stale-citation-gate", "warn-skip-hooks")
     GATES = ("shell-write-gate", "quality-check-cap", "git-discipline-gate", "review-commit-gate",
              "comment-bloat-gate", "spec-budget-gate")
 

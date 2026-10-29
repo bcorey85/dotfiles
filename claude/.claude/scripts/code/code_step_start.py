@@ -9,24 +9,18 @@ import time
 
 import plan_format
 import script_utils
-from code_step_boundary import (
-    criteria_rel,
-    evidence_command_shape,
-    evidence_request_lines,
-    finish_phase,
-    run_verification_commands,
-    settle_criteria_guard,
-    stop_while_plan_edit_coder_is_out,
-    verification_format_failure,
-)
+from code_step_boundary import criteria_rel, finish_phase, settle_criteria_guard, stop_while_plan_edit_coder_is_out
+from code_step_closing import evidence_command_shape, evidence_request_lines
 from code_step_concentration import REFACTOR_SKILL, concentration_gate, gate_lines, simplify_option
 from code_step_core import (
+    CODER_RESUMABLE,
     INSTALLED_COMMAND,
     RESUME_LINE,
     RESUME_VERB,
     SCRIPTS_DIR,
     TICKET_ID,
     VERB_WORDS_REPLACED_BY_RESUME,
+    Refusal,
     abandon_open_dispatch,
     ask_user,
     branch_label,
@@ -36,6 +30,7 @@ from code_step_core import (
     file_hashes,
     head_commit,
     is_run_open,
+    is_stopped,
     load_state,
     open_dispatch,
     read_events,
@@ -51,6 +46,8 @@ from code_step_core import (
     stale_phase_reason,
     start_run,
     state_file,
+    stop_kind,
+    stop_record,
     uncommitted_files,
 )
 from code_step_gates import derive_gate_commands
@@ -74,6 +71,7 @@ from code_step_start_args import (
     start_repo_path,
     starts_task_text,
 )
+from code_step_verification import run_verification_commands, verification_format_failure
 from script_utils import run_command
 
 START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep] [--phase <id>] [--restart] '
@@ -251,8 +249,8 @@ def reopens_stopped_run(previous):
     # A run that stopped on the coder's report, in the session that now runs `start` again: the session has seen the
     # report and starts over on its own word.
     pinned = session_pin()
-    return (previous.get("stage") == "stopped" and not previous.get("stopReason")
-            and bool(previous.get("resumableCoderId")) and pinned is not None and previous.get("sessionId") == pinned)
+    return (stop_kind(previous) == CODER_RESUMABLE and bool(previous["stop"].get("agentId"))
+            and pinned is not None and previous.get("sessionId") == pinned)
 
 
 def drop_open_run(repo_dir, previous):
@@ -264,17 +262,35 @@ def drop_open_run(repo_dir, previous):
     state_file(repo_dir).unlink(missing_ok=True)
 
 
-def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
-    # An unfinished run blocks `start` unless --restart: (reason, commands, notes), or None. --task does not pass. A
-    # run that stopped on the coder's report does not block the session that got the report.
-    if not is_run_open(previous) or parsed.restart or reopens_stopped_run(previous):
-        return None
+OTHER_SESSION_RUN_NOTE = ("The run was started by another session, and `start --restart` would drop it: run that "
+                          "only on the user's word. To run in another checkout, pass `--repo <path>`.")
+OPEN_RUN_CHOICES_NOTE = ("`resume` goes on with the open run. `start --restart` drops it and starts this work instead. "
+                         "`abort` closes the open run.")
 
-    resume_command = script_command(RESUME_VERB)
+
+def open_run_reason(repo_dir, previous):
+    # The open run a refusal of new work names: its phase, its stage, and why it is stale when it is.
     reason = f"a /code run is open here: {phase_label(previous)} at stage {previous['stage']}."
     stale_reason = stale_phase_reason(repo_dir, previous)
     if stale_reason:
         reason += f" The run is stale: {stale_reason}."
+    return reason
+
+
+def is_run_of_another_session(previous):
+    started_by = previous.get("sessionId")
+    return bool(started_by and session_pin() and started_by != session_pin())
+
+
+def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
+    # An unfinished run blocks `start` unless --restart: a Refusal (or a plain (reason, commands, notes) tuple), or
+    # None. --task does not pass. A run that stopped on the coder's report does not block the session that got the
+    # report.
+    if not is_run_open(previous) or parsed.restart or reopens_stopped_run(previous):
+        return None
+
+    resume_command = script_command(RESUME_VERB)
+    reason = open_run_reason(repo_dir, previous)
     verify_commands = []
     if guarded_verb_runs("verify", previous):
         reason += " Run `verify` first: it runs the phase's checks and closes the phase when they pass."
@@ -282,27 +298,51 @@ def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
     if not args:
         return reason, verify_commands or [resume_command], ()
 
-    started_by = previous.get("sessionId")
-    if started_by and session_pin() and started_by != session_pin():
-        return reason, [*verify_commands, script_command("status")], (
-            "The run was started by another session, and `start --restart` would drop it: run that only on the "
-            "user's word. To run in another checkout, pass `--repo <path>`.",)
+    if parsed.task_text is not None:
+        reason += " The task was not started."
+    if is_run_of_another_session(previous):
+        return Refusal(reason, [*verify_commands, script_command("status")], (OTHER_SESSION_RUN_NOTE,), stop=True)
 
-    restart_command = script_command(f"start --restart {shlex.join(args)}")
+    restart_command = restart_command_for(args, parsed, repo_flags)
+    return reason, [*verify_commands, resume_command, restart_command, script_command("abort")], (
+        OPEN_RUN_CHOICES_NOTE,)
+
+
+def restart_command_for(args, parsed, repo_flags):
+    # The `start --restart` line that starts the user's arguments over the open run: plain task text keeps its +fast or
+    # +deep, anything else (a plan path, phase or run notes) goes through as given.
     plain_text_words = plain_task_words(parsed)
     if plain_text_words:
-        restart_command = task_command(plain_text_words, parsed.modifier, *repo_flags, "--restart")
-    return reason, [*verify_commands, resume_command, restart_command], (
-        "`resume` goes on with the open run. `start --restart` drops it and starts over.",)
+        return task_command(plain_text_words, parsed.modifier, *repo_flags, "--restart")
+
+    return script_command(f"start --restart {shlex.join(args)}")
+
+
+def resume_text_refusal(repo_dir, state, words):
+    # `resume <text>` over an open run with no stopped coder waiting for an answer: the Refusal. The text is new work,
+    # so the refusal stops for the user's word: a rerun of a bare `resume` would go on with the open run's task and
+    # drop the text. `command_resume` sends `resume <text>` with no run open to `start`. When the open run is this
+    # session's, a flag after a first word that is not a flag (`+fast --bogus`, `<plan> --phase` with no id,
+    # `+deep --task-file <bad path>`) exits 2 here with start's usage, as `start` would: nothing runs, and the exit is
+    # loud. A first word starting with `-` already exited 2 with resume's usage.
+    reason = ("resume takes text only as the answer a stopped coder waits for, and no coder waits: "
+              + open_run_reason(repo_dir, state) + " The text was not run.")
+    if is_run_of_another_session(state):
+        return Refusal(reason, [script_command("status")], (OTHER_SESSION_RUN_NOTE,), stop=True)
+
+    words = split_quoted_flags(words)
+    restart_command = restart_command_for(words, parse_start_args(words), [])
+    commands = [script_command(RESUME_VERB), restart_command, script_command("abort")]
+    return Refusal(reason, commands, (OPEN_RUN_CHOICES_NOTE,))
 
 
 def stopped_run_coder_id(previous, events):
     # The agent id of the coder a stopped run left out: the coder the run stopped on (its report, or the wait cap with
     # a launch id), else, for a plan-edit coder at the cap, the newest launch's id. None when no id names it.
-    coder_id = previous.get("resumableCoderId")
+    coder_id = (stop_record(previous) or {}).get("agentId")
     if coder_id and coder_id != "unknown":
         return coder_id
-    if previous.get("stopReason") != "coder-cap":
+    if stop_kind(previous) != "coder-cap":
         return None
 
     launches = [event for event in events if event.get("event") == "launch"]
@@ -319,7 +359,7 @@ def coder_still_out(events, coder_id):
 
 def out_coder_id(repo_dir, state):
     # The id of the stopped run's coder that has not handed back, or None.
-    if state.get("stage") != "stopped" or not state.get("runId"):
+    if not is_stopped(state) or not state.get("runId"):
         return None
 
     events = read_events(repo_dir, state["runId"])
@@ -385,9 +425,9 @@ def task_over_open_phases_refusal(repo_dir, previous, branch, parsed, repo_flags
 
 
 def start_refusal(repo_dir, previous, branch, args, parsed, repo_flags):
-    # Why `start` does not run, as (reason, commands, notes), or None. Checked before anything is written: a verb
-    # name as task text, an unfinished run, a plan or --phase inside task text, and task text over a plan with open
-    # phases.
+    # Why `start` does not run, as a Refusal (or a plain (reason, commands, notes) tuple), or None. Checked before
+    # anything is written: a verb name as task text, an unfinished run, a plan or --phase inside task text, and task
+    # text over a plan with open phases.
     words = script_utils.words_of_arguments(parsed.positional_words) if parsed.positional_words else []
     refusal = verb_as_task_refusal(words, parsed, repo_flags) if words else None
     if refusal:
@@ -537,8 +577,8 @@ def command_start(args):
     repo_flags = ["--repo", str(repo_dir)] if named_repo else []
     refusal = start_refusal(repo_dir, previous, branch, args, parsed, repo_flags)
     if refusal:
-        reason, commands, notes = refusal
-        return refuse(reason, *commands, notes=notes)
+        reason, commands, notes, stop = Refusal(*refusal)
+        return refuse(reason, *commands, notes=notes, stop=stop)
 
     start_command = script_command(shlex.join(["start", *args]))
     if stop_while_plan_edit_coder_is_out(repo_dir, previous, start_command):

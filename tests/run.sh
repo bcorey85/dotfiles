@@ -20,6 +20,7 @@ if command -v ruff >/dev/null 2>&1; then
     ruff check --no-cache --select C901 --output-format concise claude/.claude/scripts || echo "complexity report only: not a failure" >&2
     codeStepFiles=(claude/.claude/scripts/code/code_step.py claude/.claude/scripts/code/code_step_core.py
         claude/.claude/scripts/code/code_step_hooks.py claude/.claude/scripts/code/code_step_boundary.py
+        claude/.claude/scripts/code/code_step_verification.py claude/.claude/scripts/code/code_step_closing.py
         claude/.claude/scripts/code/code_step_gates.py claude/.claude/scripts/code/code_step_start.py
         claude/.claude/scripts/code/code_step_report.py claude/.claude/scripts/code/code_step_review.py
         claude/.claude/scripts/code/code_step_review_stops.py claude/.claude/scripts/lib/plan_format.py)

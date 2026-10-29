@@ -1129,6 +1129,45 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual(len(asks), 2)
 
+    def test_the_notes_after_a_sections_none_line_are_no_findings(self):
+        module = self.load_script_module()
+        review = ("### Fix\nNone. The four owned files match spec.md:76-145:\n- Every column matches the plan.\n"
+                  "- `drizzle-kit check` passes.\n\n### Ask\nNone.\n\n"
+                  "The new `find*` helpers repeat `matters/repository.ts:17`, so I did not flag it.\n\n"
+                  "### Nit\nNone.\n\nAll four owned files match spec Phase 0:\n"
+                  "- **Journal:** the new `when` is later than the previous entry's.\n"
+                  "- **Seed:** the truncate list is complete.\n")
+
+        parsed = module.parse_review(review)
+
+        self.assertEqual((parsed["fix"], parsed["ask"], parsed["nit"]), ([], [], []))
+
+    def test_a_finding_that_opens_with_a_bare_file_line_keeps_its_bullets(self):
+        module = self.load_script_module()
+        review = ("### Fix\nsrc/invoices/schema.ts:111 — [smell] Three places name the rate-source values:\n"
+                  "- The column type is the inline union `'general' | 'override'`.\n"
+                  "- `BillingRateSource` defines the same values at src/timekeepers/schema.ts:5-6.\n\n"
+                  "Nothing keeps them in step. The fix:\n- Type the column `.$type<BillingRateSource>()`.\n\n"
+                  "src/invoices/schema.ts:120 — [bug] The index predicate names its table.\n")
+
+        fixes = module.parse_review(review)["fix"]
+
+        self.assertEqual([(fix.path, fix.line) for fix in fixes],
+                         [("src/invoices/schema.ts", 111), ("src/invoices/schema.ts", 120)])
+        self.assertIn("defines the same values", fixes[0].text)
+        self.assertTrue(fixes[0].text.endswith("Type the column `.$type<BillingRateSource>()`."))
+
+    def test_a_section_that_opens_with_a_sentence_about_none_keeps_its_findings(self):
+        module = self.load_script_module()
+        review = ("### Fix\nNone of the three changed queries filters by tenant:\n"
+                  "- src/matters/repository.ts:12 — `findMatters` reads every tenant's rows.\n"
+                  "- src/entries/repository.ts:40 — `findEntries` reads every tenant's rows.\n")
+
+        fixes = module.parse_review(review)["fix"]
+
+        self.assertEqual([(fix.path, fix.line) for fix in fixes],
+                         [("src/matters/repository.ts", 12), ("src/entries/repository.ts", 40)])
+
     def test_change_if_accepted_marker_splits_question_from_change(self):
         ask = "`app.py:3` should it be configurable? Change if accepted: read from settings"
 
@@ -1996,8 +2035,18 @@ class ReviewLoopScriptTest(unittest.TestCase):
             os.kill(pid, 0)
         except ProcessLookupError:
             return False
-        stat = pathlib.Path(f"/proc/{pid}/stat")
-        return not (stat.exists() and stat.read_text().rpartition(")")[2].split()[0] == "Z")
+        try:
+            stat_text = pathlib.Path(f"/proc/{pid}/stat").read_text()
+        except (FileNotFoundError, ProcessLookupError):
+            return False
+        return stat_text.rpartition(")")[2].split()[0] != "Z"
+
+    def test_is_running_reports_a_pid_that_vanishes_after_the_signal_check_as_dead(self):
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+
+        with mock.patch.object(os, "kill", return_value=None):
+            self.assertFalse(self.is_running(gone.pid))
 
     @staticmethod
     def kill_quietly(pid):

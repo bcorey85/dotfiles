@@ -36,10 +36,13 @@ from code_step_core import (
     awaited_handback,
     awaits_resumed_review,
     branch_label,
+    clear_stop,
     dispatch_marker,
     emit,
     emit_dispatch,
     file_hashes,
+    has_snapshot_part,
+    is_stopped,
     load_handback,
     load_state,
     log_event,
@@ -50,6 +53,7 @@ from code_step_core import (
     prompt_with_gate_env,
     record_dispatch,
     record_ruled_asks,
+    record_snapshot,
     ruled_asks_lines,
     run_session_id,
     runs_review_script,
@@ -57,9 +61,12 @@ from code_step_core import (
     say,
     script_command,
     session_pin,
+    set_stop,
     state_dir,
+    stop_kind,
     stop_review_script,
     take_handback,
+    take_snapshot_part,
     timed_command,
     wait_for_handback,
     wait_for_loop_stop,
@@ -100,7 +107,7 @@ def guarded_verb_runs(verb, state):
 
     guard = STAGE_GUARDS[verb]
     at_stage = state["stage"] in guard["stages"]
-    reason_allowed = "stopReasons" not in guard or state.get("stopReason") in guard["stopReasons"]
+    reason_allowed = "stopReasons" not in guard or stop_kind(state) in guard["stopReasons"]
     if at_stage and reason_allowed:
         return True
     if verb == "review-again":
@@ -333,8 +340,8 @@ def emit_plan_edit_dispatch(repo_dir, state):
     criteria_path = criteria_file(repo_dir, state) if has_plan else None
     if has_plan and not ruling["byUser"]:
         save_criteria_guard(repo_dir, state)
-    state.update({"stage": "plan-coder", "planEditBaseline": file_hashes(repo_dir),
-                  "followUpBefore": change_snapshot(repo_dir)})
+    state["stage"] = "plan-coder"
+    record_snapshot(state, planEdit=file_hashes(repo_dir), followUp=change_snapshot(repo_dir))
     open_dispatch(state)
     save_state(repo_dir, state)
 
@@ -358,12 +365,10 @@ def emit_plan_edit_dispatch(repo_dir, state):
 
 def command_review_again(repo_dir, state, args):
     stop_review_script(state)
-    is_capped_stop = state.get("stopReason") == "cap-reached"
+    is_capped_stop = stop_kind(state) == "cap-reached"
     if is_capped_stop:
         state["iter"] = 0
-    state.pop("stopReason", None)
-    state.pop("resumableReview", None)
-    state.pop("resumeWaitAt", None)
+    clear_stop(state)
     # A failed review that ran the structure pass runs it again; one that skipped it skips it again. A capped review
     # ran it on this diff already.
     if not is_capped_stop and not state.get("structurePassSkipped"):
@@ -427,7 +432,7 @@ def command_after_plan_edit(repo_dir, state, args):
     if had_criteria_guard:
         save_state(repo_dir, state)
 
-    baseline = state.pop("planEditBaseline")
+    baseline = take_snapshot_part(state, "planEdit")
     changed_now = file_hashes(repo_dir)
     edited_files = [name for name, digest in changed_now.items() if baseline.get(name) != digest]
 
@@ -527,6 +532,13 @@ def handoff_report(repo_dir, state):
     return "\n\n".join(last_messages)
 
 
+ASK_CURRENT_LABEL = "Ask-fix coder (current report): "
+
+
+def behavior_text(behavior_lines):
+    return "; ".join(behavior_lines) or "see the diff."
+
+
 def emit_review_dispatch(repo_dir, state):
     report = handoff_report(repo_dir, state)
     untracked_text = git_output(repo_dir, "ls-files", "--others", "--exclude-standard") or ""
@@ -546,7 +558,7 @@ def emit_review_dispatch(repo_dir, state):
         header.append(state["modifier"])
     # The structure pass runs on the first review of a phase. A re-review after a ruling, or after a follow-up coder
     # whose own change is small, skips it. The review-loop round count (iter) is a separate matter.
-    follow_up_before = state.pop("followUpBefore", None)
+    follow_up_before = take_snapshot_part(state, "followUp")
     is_small_follow_up = follow_up_before is None or follow_up_is_small(follow_up_before, change_snapshot(repo_dir))
     state["structurePassSkipped"] = bool(state.get("reviewRan") and is_small_follow_up)
     if state["structurePassSkipped"]:
@@ -560,14 +572,23 @@ def emit_review_dispatch(repo_dir, state):
     state.pop("reviewStatus", None)
     save_state(repo_dir, state)
 
-    summary = ["Implemented: " + ("; ".join(state["behavior"]) or "see the diff.")]
-    if state.get("askFixBehavior"):
-        summary.append("Ask-fix: " + "; ".join(state["askFixBehavior"]))
+    phase_behavior = behavior_text(state["behavior"])
+    ask_rounds = state.get("askRounds", [])
+    if ask_rounds:
+        # After an asks round the current asks coder's report leads; the phase coder's behavior is one line.
+        summary = [ASK_CURRENT_LABEL + behavior_text(ask_rounds[-1])]
+        for round_number, round_behavior in enumerate(ask_rounds[:-1], start=1):
+            summary.append(f"Earlier ask-fix round {round_number}: " + behavior_text(round_behavior))
+        summary.append("Phase coder's behavior (earlier): " + phase_behavior)
+        summary_why = state["summaryWhy"] if "summaryWhy" in state else state["why"]
+    else:
+        summary = ["Implemented: " + phase_behavior]
+        summary_why = state["why"]
     summary.append("Flagged: " + ("; ".join(state["flagged"]) if state["flagged"] else "none."))
-    for path, notes in state["why"].items():
+    for path, notes in summary_why.items():
         summary += [f"  {path}:{note['lines']} - {note['note']}" for note in notes]
     summary.append("Auto-dispatching review to check the implementation before committing.")
-    say(repo_dir, "\n".join(summary), replaces_blocks_starting="Implemented: ")
+    say(repo_dir, "\n".join(summary), replaces_blocks_starting=("Implemented: ", ASK_CURRENT_LABEL))
     if runs_review_script():
         return launch_review_script(repo_dir, state, prompt)
     emit_dispatch(repo_dir, state, prompt=prompt, agent="review-loop", model="sonnet")
@@ -616,7 +637,7 @@ def load_review_packet(repo_dir, state, message):
     try:
         packet = module.load(message)
     except module.PacketError as error:
-        state.update({"stage": "stopped", "stopReason": "invalid-packet"})
+        set_stop(state, "invalid-packet")
         save_state(repo_dir, state)
         return emit("stop", "The review-loop packet does not parse. Show the user the raw packet. Problems: "
                     + "; ".join(error.problems), message,
@@ -648,7 +669,6 @@ def command_after_review(repo_dir, state, args):
     state["iter"] = packet["iter"]
     if packet["spec_iter"] is not None:
         state["spec_iter"] = packet["spec_iter"]
-    state["packet"] = packet
     rewrote_edited = set(state.get("checkRewroteEdited") or []) | set(packet["check_rewrote_edited"])
     created = set(state.get("checkCreated") or []) | set(packet["check_created"])
     changed = set(state.get("checkChanged") or []) | set(packet["check_changed"])
@@ -697,7 +717,7 @@ def present_asks(repo_dir, state, asks):
         run_command([nvim_jump, *anchors], repo_dir)
     state["asks"] = asks
     preset_outcome = preset_ask_outcome(repo_dir)
-    is_new_ask_after_asks_coder = preset_outcome and preset_outcome != "rejected" and state.get("asksApplied")
+    is_new_ask_after_asks_coder = preset_outcome and preset_outcome != "rejected" and has_snapshot_part(state, "asks")
     if is_new_ask_after_asks_coder:
         print(f"{len(asks)} new review ask(s) came back after the asks coder ran. The pre-set outcome "
               f"'{preset_outcome}' does not cover them: they go to the user.")
@@ -715,7 +735,8 @@ def ask_the_user(repo_dir, state, asks):
     # A review that left findings open leaves the gate dirty: the review after the rulings marks it.
     is_open = left_findings_open(state)
     if not is_open and not mark_review_gate_clean(repo_dir, state):
-        state["stage"] = "stopped"
+        if not is_stopped(state):
+            set_stop(state)
         save_state(repo_dir, state)
         return
 
@@ -816,8 +837,8 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
         save_state(repo_dir, state)
         return finish_phase(repo_dir, state)
 
-    state.update({"stage": "asks-coder", "acceptedAsks": accepted_asks, "asksApplied": True, "asksAlso": also_text,
-                  "asksBaseline": file_hashes(repo_dir), "followUpBefore": change_snapshot(repo_dir)})
+    state.update({"stage": "asks-coder", "acceptedAsks": accepted_asks, "asksAlso": also_text})
+    record_snapshot(state, asks=file_hashes(repo_dir), followUp=change_snapshot(repo_dir))
     open_dispatch(state)
     save_state(repo_dir, state)
     model = "haiku" if state.get("modifier") == "+fast" else None

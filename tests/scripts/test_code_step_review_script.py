@@ -163,7 +163,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.assertIn(state["reviewScriptLog"], out)
         self.assertIn("review-again", out)
         state = self.state()
-        self.assertEqual(("stopped", "invalid-packet"), (state["stage"], state["stopReason"]))
+        self.assertEqual(("stopped", "invalid-packet"), (state["stage"], state["stop"]["kind"]))
         self.assertNotIn("reviewScriptPid", state)
 
     def test_review_again_kills_the_running_script_and_launches_a_new_one(self):
@@ -334,7 +334,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
         self.assertIn("ACTION: stop", self.step("resume"))
-        self.assertTrue(self.state()["resumableReview"])
+        self.assertEqual("review-resumable", self.state()["stop"]["kind"])
         dispatch = self.events_named("dispatch")[-1]
         agent_id = f"loop-script-{self.state()['runId']}-{dispatch['id']}"
         self.hook("review-loop", self.LOOP_OK, agent_id=agent_id)
@@ -344,7 +344,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.assert_first_phase_ticked()
         self.assert_marked_clean(out)
         state = self.state()
-        self.assertFalse(state.get("resumableReview"))
+        self.assertNotIn("stop", state)
         self.assertNotIn("reviewScriptPid", state)
         self.step("abort")
 
@@ -368,7 +368,7 @@ class ReviewScriptTest(base.CodeStepTest):
         question = self.real_question_file().read_text()
         self.assertIn("The run is at stage stopped", question)
         self.assertNotIn("SendMessage", question)
-        self.assertFalse(self.state().get("resumableReview"))
+        self.assertNotEqual("review-resumable", self.state().get("stop", {}).get("kind"))
 
     def test_a_restart_kills_a_script_left_running_by_the_wait_cap_stop(self):
         self.env["FAKE_LOOP_MODE"] = "hang"
@@ -432,7 +432,7 @@ class GoneReviewScriptTest(base.unittest.TestCase):
         goes_on, printed = self.stop()
 
         self.assertFalse(goes_on)
-        self.assertEqual(("stopped", "invalid-packet"), (self.state["stage"], self.state["stopReason"]))
+        self.assertEqual(("stopped", "invalid-packet"), (self.state["stage"], self.state["stop"]["kind"]))
         self.assertIn("pid 4242 is not running", printed)
         self.assertIn("loop-script-r-d1", printed)
         self.assertIn("run event not written, TypeError: boom", printed)

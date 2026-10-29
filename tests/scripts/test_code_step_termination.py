@@ -545,8 +545,6 @@ def plan_progress(repo):
 IGNORED_STATE_KEYS = (
     "startedAt",
     "baseline",
-    "planEditBaseline",
-    "asksBaseline",
     "sessionId",
     "dispatchAt",
 )
@@ -559,6 +557,20 @@ def state_signature(repo):
     # The script stamps each ruling with the wall-clock minute. Two visits to one state a minute apart must still
     # compare equal, or whether a loop is caught depends on when the run happens to cross a minute.
     state = {key: value for key, value in load_saved_state(repo).items() if key not in IGNORED_STATE_KEYS}
+    snapshot = state.pop("snapshot", {})
+    kept_snapshot = {}
+    if "followUp" in snapshot:
+        kept_snapshot["followUp"] = snapshot["followUp"]
+    # only whether an asks baseline was taken matters, as asksApplied did
+    if "asks" in snapshot:
+        kept_snapshot["asks"] = "<taken>"
+    if kept_snapshot:
+        state["snapshot"] = kept_snapshot
+
+    # a stop with only a reason carried no timestamp before, and a resumable stop's time and agent are part of the state
+    stop = state.get("stop")
+    if stop and stop.get("kind") not in (code_step_core.CODER_RESUMABLE, code_step_core.REVIEW_RESUMABLE):
+        state["stop"] = {key: value for key, value in stop.items() if key not in ("at", "waitAt")}
     state_text = MINUTE_STAMP.sub("<minute>", json.dumps(state, sort_keys=True))
     return state_text + "#" + plan_progress(repo)
 
@@ -614,7 +626,7 @@ class Failure:
 def user_answers(state):
     # What the user can say after a hand-back: each is one more entry verb into a new run.
     stage = state.get("stage")
-    reason = state.get("stopReason")
+    reason = code_step_core.stop_kind(state)
     is_stopped = stage == "stopped"
     answers = [
         ("resume", ["resume"], None),
@@ -658,7 +670,7 @@ def user_answers(state):
         answers += [("review-again", ["review-again"], None),
                     ("resume after SendMessage to the review-loop", ["resume"], send_message_to(REVIEW_AGENT_ID))]
     if is_stopped and code_step.awaits_resumed_coder(state):
-        answers += [("resume after SendMessage to the coder", ["resume"], send_message_to(state["resumableCoderId"]))]
+        answers += [("resume after SendMessage to the coder", ["resume"], send_message_to(state["stop"]["agentId"]))]
     if is_stopped and reason in ("verification", "plan-format"):
         answers += [("verify (still failing)", ["verify"], None),
                     ("verify (fixed)", ["verify"], lambda repo: write_text(repo, "verify.flag", "ok\n"))]

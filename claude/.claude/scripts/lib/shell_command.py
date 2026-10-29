@@ -240,6 +240,32 @@ def skip_options(words, index, value_options):
     return index
 
 
+# git's own options that take the next word as their value.
+GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix",
+                     "--attr-source"}
+
+
+def git_options(words):
+    """The (option, value) pairs of git's own options in the words of a git call, and the index of the first word
+    after them; a flag's value is None."""
+    options = []
+    index = 1
+    while index < len(words) and words[index].startswith("-"):
+        option = words[index]
+        takes_value = option in GIT_VALUE_OPTIONS and index + 1 < len(words)
+        options.append((option, words[index + 1] if takes_value else None))
+        index += 2 if takes_value else 1
+    return options, index
+
+
+def git_subcommand(words):
+    """The subcommand of the git call in the words, after git's own options; None when it names none."""
+    _options, index = git_options(words)
+    if index == len(words):
+        return None
+    return words[index]
+
+
 def without_assignments(words):
     """The words with the leading NAME=value words dropped."""
     while words and "=" in words[0] and not words[0].startswith("-"):

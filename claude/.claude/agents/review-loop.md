@@ -62,9 +62,9 @@ each iteration:
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
 - **`ruled-asks`**: each line is an ask the user already ruled on, with its outcome. Pass them to every reviewer. A finding that matches one is already ruled: drop it, never return it in `ask[]` or `plan_impact`, and never fix against a `rejected` outcome.
-- **`carried-findings`**: each line is open from an earlier review. Pass them to every reviewer. Each one that still holds is a finding of this round.
+- **`carried-findings`**: each line is open from an earlier review. Pass them to every reviewer. Each one that still holds is a finding of this round. Your packet accounts for every carried line: in `fixed[]`, in `skipped_fp[]` with the reason, or in `findings_remaining[]`.
 
-- **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the user's ruling. Pass it to every reviewer as the standard the code must meet. Never return it as `plan-impact`; return `plan-impact` only for a disagreement the ruling does not settle.
+- **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the ruling, the user's or the session's by rule. Pass it to every reviewer as the standard the code must meet. Never return it as `plan-impact`; return `plan-impact` only for a disagreement the ruling does not settle.
 
 ## Step 2: Determine review scope
 
@@ -126,7 +126,7 @@ not re-derive it. Route on the label:
 `ask` looks obvious to you, it still goes to the user; the reviewer's uncertainty is
 information, not an error to correct.
 
-**PLAN-IMPACT** (`:158` semantics): a finding that invalidates a plan/design decision — not a defect, but evidence the plan's assumption is wrong (missed external contract/invariant, mis-tiered risk, ungated security surface). It is NOT a severity bucket. Return `status: plan-impact` with the verbatim block. Dispatch no coder.
+**PLAN-IMPACT** (`:158` semantics): a finding that invalidates a plan/design decision — not a defect, but evidence the plan's assumption is wrong (missed external contract/invariant, mis-tiered risk, ungated security surface). It is NOT a severity bucket. Return `status: plan-impact` with the verbatim block, its `acceptance_criteria:` line included. Dispatch no coder. List every `fix` finding not yet applied, from this round and earlier ones, in `findings_remaining[]`: the caller carries them into the re-dispatch.
 
 **Critical blockers** needing user judgment — return `status: critical-blocker` with `blockers`, dispatch no coder:
 
@@ -296,7 +296,7 @@ class_closure: <the enumeration | none, + each fixed[] finding and why it fits n
 full_check: passed | unverified (exit 0, no runner summary) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | not run (timeout) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only)  # the Step 6 result
 full_check_command: <the exact command full_check.py ran>
 full_check_summary: <the script's `summary:` line>  # passed | unverified only
-scoped_tests: <passed | failed: <cmds>[; failing tests: <lines>][; full output: <log path>] | not run (<reason>)>  # optional; the scoped test rerun after a fix no passed full check followed
+scoped_tests: <passed | failed: <cmds>[; failing tests: <lines>]; full output: <log path> | setup fault / command error / not run (timeout): <cmds>; full output: <log path> | not run (<reason>)>  # optional; the scoped test rerun after a fix no passed full check followed
 check_changed: [<path>]                  # the `changed by the check:` paths from every full_check.py run in this invocation
 check_rewrote_edited: [<path>]           # the `rewrote edited files:` paths from every full_check.py run in this invocation
 check_created: [<path>]                  # the `created by the check:` paths from every full_check.py run in this invocation

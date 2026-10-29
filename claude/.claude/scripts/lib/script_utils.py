@@ -393,6 +393,11 @@ def joined_distinct(values, separator=" - "):
     return separator.join(kept)
 
 
+def ask_text(item):
+    # The shared reader copies a finding into the question (and the reverse) when only one is given: show it once.
+    return joined_distinct([str(item.get("finding") or ""), str(item.get("question") or "")])
+
+
 def visible_text(line, in_comment):
     """Return (line without HTML comment text, still inside an unclosed comment). A `<!--` inside an
     inline code span opens nothing."""
@@ -434,6 +439,14 @@ def file_tail(path, max_lines, max_chars):
 
     tail = "\n".join(file_lines[-max_lines:])
     return tail[-max_chars:] or "(log is empty)"
+
+
+def write_command_outputs(output_file, command_outputs):
+    """Write each (command, outcome, output) to the file as `$ <command>`, the outcome line and the whole output, one
+    section per command, making the file's folder."""
+    sections = [f"$ {command}\n{outcome}\n{output}" for command, outcome, output in command_outputs]
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text("\n\n".join(sections))
 
 
 def contains_ignoring_whitespace(text, part):

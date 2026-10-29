@@ -46,6 +46,14 @@ MOVED_MARK = "-"
 MOVED_TARGET = re.compile(r"(?i:moved to)\s+([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])")
 DEVIATIONS_HEADING = "Plan Deviations"
 SESSION_RULING_OWNER = "the session, not the user"
+# A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its
+# bracketed tags, in either order.
+PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{EN DASH}:-]*)*plan[-_ ]?impact", re.I)
+# A PLAN-IMPACT's `acceptance_criteria:` line: `none`, or the criteria the change would alter.
+AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", re.I)
+PLAN_IMPACT_OPENING = re.compile(r"plan[-_ ]?impact(?![*`_]*:[ \t*`_]*yes\b)", re.I)
+BELOW_CRITERIA_RULING = ("No acceptance criterion changes, so the code wins: the plan follows the code. Adopted by "
+                         "rule; no one was asked.")
 STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
 RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)
 GATE_CLAUSE = re.compile(r"(?:^|\s)[—–-]\s*gate:\s*(.*)$", re.I)
@@ -679,6 +687,14 @@ def append_deviation(plan_path, entry):
         references = next((i for i in sections if lines[i].strip() == "## References"), len(lines))
         lines[references:references] = ["## Plan Deviations", "", *entry, ""]
     plan_path.write_text("\n".join(lines))
+
+
+def changes_acceptance_criteria(impact):
+    """False only when each PLAN-IMPACT in impact says `acceptance_criteria: none`. A PLAN-IMPACT with no such line
+    counts as an AC change, so the user is asked."""
+    answers = [match.group(1).strip(" \t.`*_").lower() for match in AC_CHANGE_LINE.finditer(impact)]
+    impacts = max(1, len(PLAN_IMPACT_OPENING.findall(impact)))
+    return len(answers) < impacts or any(answer != "none" for answer in answers)
 
 
 def ruling_owner(repo_dir, by):

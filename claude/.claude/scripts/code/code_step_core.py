@@ -51,6 +51,9 @@ FULL_CHECK_LOG = "full-check.log"
 FULL_CHECK_BASE_LOG = "full-check-base.log"
 REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", FULL_CHECK_LOG, FULL_CHECK_BASE_LOG)
 RESUME_VERB = "resume"
+# The verbs that older printed commands still name. Each one now does what `resume` does.
+RESUME_ALIASES = ("after-coder", "after-review", "after-plan-edit")
+VERB_WORDS_REPLACED_BY_RESUME = ("continue", "resume", *RESUME_ALIASES)
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
 SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
@@ -173,6 +176,14 @@ def session_open_run_repos(session_id):
     return [repo for repo in session_repo_dirs(session_id) if holds_open_run(repo, session_id)]
 
 
+def resume_run_repos(cwd_repo, session_id):
+    # The repos a resume may act on: the cwd's checkout when it holds the session's open run (or no
+    # session is given), else every checkout that holds one.
+    if not session_id or (cwd_repo is not None and holds_open_run(cwd_repo, session_id)):
+        return [cwd_repo]
+    return session_open_run_repos(session_id)
+
+
 RULED_ASKS_FILE = "ruled-asks.json"
 
 
@@ -274,8 +285,12 @@ def start_run(cwd):
     return script_utils.sortable_unique_id()
 
 
+def run_file_path(cwd, run_id, name):
+    return runs_dir(cwd) / run_id / name
+
+
 def run_events_path(cwd, run_id):
-    return runs_dir(cwd) / run_id / "events.jsonl"
+    return run_file_path(cwd, run_id, "events.jsonl")
 
 
 def log_event(cwd, run_id, event, session_id, **fields):
@@ -320,7 +335,7 @@ def record_dispatch(repo_dir, state, verb, agent_type, model, prompt):
     dispatch_count = sum(1 for event in read_events(repo_dir, run_id) if event.get("event") == "dispatch")
     dispatch_id = f"d{dispatch_count + 1}"
     marked_prompt = f"{own_path(prompt).rstrip()}\n\n{DISPATCH_MARKER} {run_id}/{dispatch_id}"
-    prompt_file = runs_dir(repo_dir) / run_id / f"prompt-{dispatch_id}.txt"
+    prompt_file = run_file_path(repo_dir, run_id, f"prompt-{dispatch_id}.txt")
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(marked_prompt + "\n")
     log_event(repo_dir, run_id, "dispatch", session_pin(), id=dispatch_id, agent_type=agent_type, stage=state["stage"],

@@ -15,7 +15,8 @@ import toolkit_paths
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
 INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
 STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), ("lib", "script_utils.py"),
-                ("lib", "reviewed_tree.py"), ("lib", "hook_input.py"), ("lib", "shell_command.py"))
+                ("lib", "reviewed_tree.py"), ("lib", "hook_input.py"), ("lib", "shell_command.py"),
+                ("lib", "plan_format.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder, run it as a "
@@ -136,6 +137,56 @@ class ReviewCommitGateTest(GateCase):
         self.dispatch()
         for command in ("git status", "echo git commits", "ls"):
             self.assert_silent(self.bash(command))
+
+    def test_a_probe_that_splits_the_commit_words_is_denied(self):
+        self.dispatch()
+        for command in ("""printf '%s\\n' 'G = "gi" + "t com" + "mit"' > probe.py && python3 probe.py""",
+                        """python3 -c 'COMMIT = "git" + " " + "commit"'""",
+                        """node -e "const c = 'git ' + 'commit -m x'\"""",
+                        r'''python3 -c "x = \"gi\" + \"t commit\""'''):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_a_quoted_commit_word_or_a_program_option_is_denied(self):
+        self.dispatch()
+        for command in ("""echo "$(git 'commit' -m x)"; true""",
+                        "cat <(git 'commit' -m x)", "echo x > >(git 'commit' -m x)",
+                        """echo ";" && git "commit" -m y""",
+                        "rg --hostname-bin=x -n git commit x.txt", "rg --hostname-bin x -n git commit x.txt"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_a_probe_that_only_prints_or_searches_the_commit_words_passes_while_dirty(self):
+        self.dispatch()
+        for command in ("echo git commit -m x", "printf '%s\\n' 'git commit -am x'", "git status && echo git commit",
+                        'rg -n "git commit" claude/.claude/scripts', "echo 'git -C . commit' | grep commit",
+                        """printf '%s\\n' 'G = "gi" + "t com" + "mit"'""",
+                        "cat notes.txt | grep 'git commit' | head -3", "tail -n 5 log.txt | wc -l && echo git commit",
+                        "git log --oneline -3 && echo 'git commit -m x'"):
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(command))
+
+    def test_a_heredoc_body_that_holds_the_commit_words_is_denied(self):
+        self.dispatch()
+        for body in ("echo git commit -m x", "note git commit -m x"):
+            with self.subTest(body=body):
+                self.assert_commit_denied(self.bash(f"cat <<'EOF'\n{body}\nEOF"))
+
+    def test_a_commit_inside_a_substitution_or_a_shell_runner_is_denied(self):
+        self.dispatch()
+        for command in ("echo $(git commit -m x)", "echo `git commit -m x`", 'echo "$(git -C . commit -m x)"',
+                        "bash -c 'git commit -m x'", "echo git commit -m x | sh",
+                        "echo git commit -m x |sh", "echo git commit -m x|bash", "echo git commit -m x | \\sh",
+                        "rg --pre sh git commit x.txt", "rg --pre=sh git commit x.txt",
+                        "\\sh -c 'git commit -m x'", "\\bash -c 'git commit -m x'", 'env -S "git commit -m x"',
+                        """awk 'BEGIN { system("git commit -m x") }'""",
+                        "git -c core.pager='sh -c \"git commit -m x\"' log"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_quoted_words_joined_by_a_plus_argument_are_not_a_commit(self):
+        self.dispatch()
+        self.assert_silent(self.bash("""printf '%s\\n' "git" "+" "commit\""""))
 
     def test_commit_tree_is_not_a_commit(self):
         self.dispatch()
@@ -455,7 +506,7 @@ class NotesOnlyCommitTest(GateCase):
                                 "GIT_INDEX_FILE=i git add docs/x.md && git commit -m x",
                                 f"git add {self.NOTES} && cd src && git commit -m x",
                                 "git commit -m x && git commit -m y", "git commit -m x; git commit -m y",
-                                "git commit -m x\ngit commit -m y", "git status && echo git commit",
+                                "git commit -m x\ngit commit -m y",
                                 "time git commit -m x",
                                 "git commit -m x || git commit -m y"])
 

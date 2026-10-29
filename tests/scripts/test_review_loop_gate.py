@@ -366,6 +366,32 @@ class StopRowTest(unittest.TestCase):
                 self.assertEqual(waiting_stop.stdout, "")
                 self.assertEqual(self.open_counts(store), [1, 0])
 
+    def test_a_reviewer_the_rate_limit_killed_is_closed_by_its_task_id_notification(self):
+        store = self.new_store()
+        waiting = coder_and_background_reviewer()
+        killed = ("<task-notification>\n<task-id>a7bf12f9c51bc4875</task-id>\n<status>failed</status>\n"
+                  "<summary>Agent \"code-reviewer\" failed: rate limit reached</summary>\n</task-notification>")
+        notified = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": killed}}
+
+        self.stop_in_session(waiting, store)
+        self.stop_in_session([*waiting, notified], store)
+
+        self.assertEqual(self.open_counts(store), [1, 0])
+
+    def test_a_background_resume_is_closed_by_a_later_task_id_only_notification(self):
+        store = self.new_store()
+        resumed = resume_background_coder()
+        killed = (
+            "<task-notification>\n<task-id>a5bc2ebfa0d6aeaf8</task-id>\n"
+            "<status>failed</status>\n</task-notification>"
+        )
+        notified = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": killed}}
+
+        self.stop_in_session(resumed, store)
+        self.stop_in_session([*resumed, notified], store)
+
+        self.assertEqual(self.open_counts(store), [1, 0])
+
 
 class FullCheckTest(unittest.TestCase):
     @classmethod

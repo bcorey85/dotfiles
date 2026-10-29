@@ -354,12 +354,12 @@ def takes_listed_test_command(command, repo_dir):
 
 def runs_cargo(command):
     # True when a step of the command runs cargo once its wrappers are peeled: `cd crate && cargo test`,
-    # `CARGO_BUILD_JOBS=4 cargo check`, `nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run`. Text the shell splitter
-    # cannot read is judged by its first command word.
+    # `CARGO_BUILD_JOBS=4 cargo check`, `nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run`. False for text the
+    # shell splitter cannot read.
     try:
         simple_commands = split_simple_commands(command)
     except ValueError:
-        return script_utils.first_command_word(command) == "cargo"
+        return False
 
     for words in simple_commands:
         program_words = command_after_wrappers(words)

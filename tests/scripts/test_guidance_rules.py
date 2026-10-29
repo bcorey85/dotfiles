@@ -69,6 +69,14 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("git ls-remote --heads <remote-url> <branch>", text)
         self.assertIn("— not pushed", text)
 
+    def test_sign_offs_stay_in_the_decision_log_and_out_of_code(self):
+        text = guidance_text("CLAUDE.md")
+        self.assertIn("Record each sign-off with who and when, only in the plan's decision log", text)
+        self.assertIn("never in code, comments, fixtures or commit messages", text)
+
+        coder_text = guidance_text("skills/coder-core/SKILL.md")
+        self.assertIn("the user's name, and sign-offs (who and when) are banned", coder_text)
+
 
 if __name__ == "__main__":
     unittest.main()

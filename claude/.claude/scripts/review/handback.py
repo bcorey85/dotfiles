@@ -711,10 +711,10 @@ def unreviewed_fix_section(packet):
 
 
 def full_check_lines(packet):
-    """The full check's lines for the user: a check that did not run, ran unverified or failed as it does without the
-    diff (`pre-existing`), and the files it changed or created."""
+    """The full check's lines for the user: a check that did not run, ran unverified, ran with no tests because CI runs
+    the full suite, or failed as it does without the diff (`pre-existing`), and the files it changed or created."""
     lines = []
-    if packet["full_check"].startswith(("not run", "unverified", "pre-existing")):
+    if packet["full_check"].startswith(("not run", "unverified", "pre-existing", "passed (check only")):
         lines.append("Full check: " + packet["full_check"])
     if packet["scoped_tests"]:
         lines.append("Scoped tests after the last fix: " + packet["scoped_tests"])

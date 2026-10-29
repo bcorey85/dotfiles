@@ -12,6 +12,8 @@ SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no p
 BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
 UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
                      "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
+CHECK_ONLY_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
+                     "full_check: passed (check only; CI runs the full suite)\nfull_check_command: cargo check")
 CACHE_ASK = ('{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?", '
              '"change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}')
 CAP_PACKET = "status: cap-reached\niter: 2\nfindings_remaining:\n  - finding: x\n    file_line: a.ts:1"
@@ -127,6 +129,16 @@ class HandBackTest(base.CodeStepTest):
         self.assertIn(self.own_command("review-again"), question_text)
         self.assertNotIn("add a Quality check", question_text)
         self.assertNotIn("add a Quality check", out)
+
+    def test_a_converged_review_whose_check_ran_with_no_tests_in_a_ci_repo_finishes_the_phase(self):
+        (self.repo / "CLAUDE.md").write_text("- Full suite: CI\n- Quality check: `cargo check`\n")
+        self.coder_round()
+        self.hook("review-loop", CHECK_ONLY_PACKET)
+
+        out = self.step("resume")
+
+        self.assertIn("Phase 1 marked done", out)
+        self.assertNotEqual("stopped", self.state().get("stage"))
 
     def test_a_stop_lists_the_reviewers_questions_apart_from_the_open_items_and_names_review_again(self):
         stops = [

@@ -1,3 +1,7 @@
+-- Keep links concealed on the cursor line in normal mode, so moving the cursor
+-- doesn't unhide the URL and rewrap the line. Insert mode still shows raw text.
+vim.opt_local.concealcursor = "nc"
+
 -- ]] / [[ — nvim's markdown heading jumps — also scroll the heading to the top.
 local heading_jump_descs = { ["]]"] = "Next heading to top", ["[["] = "Previous heading to top" }
 

@@ -5,6 +5,7 @@ run: python3 tests/scripts/test_code_step_open_phase.py
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import pathlib
 import subprocess
@@ -22,8 +23,10 @@ loaded = importlib.util.spec_from_file_location("code_step", SCRIPTS_DIR / "code
 code_step = importlib.util.module_from_spec(loaded)
 loaded.loader.exec_module(code_step)
 import code_step_boundary
+import code_step_core
 import code_step_review
 import code_step_start
+import review_asks
 
 PLAN = "docs/plans/orders.md"
 
@@ -120,6 +123,10 @@ class AskOutcomesReachLaterPasses(TempRepo):
                  "flagged": [], "iter": 0}
         return code_step_review.handoff_block(self.repo, state)
 
+    def ruled_asks_entries(self):
+        after_heading = self.handoff().split("  ruled-asks:\n", 1)[1]
+        return after_heading.split("\n  tests-run:", 1)[0].splitlines()
+
     def test_a_ruled_ask_is_in_the_review_handoff_of_a_later_phase(self):
         self.rule("rejected")
 
@@ -130,19 +137,62 @@ class AskOutcomesReachLaterPasses(TempRepo):
         self.assertIn("src/queue.py:40", handoff)
         self.assertIn("rejected", handoff)
 
-    def test_a_modified_ask_carries_the_users_change(self):
+    def test_a_modified_ask_names_the_users_change_and_not_the_asks_proposal(self):
+        self.ASK = {**self.ASK, "change": "cap it at three tries"}
         self.rule("modified", change="cap it at five tries")
 
-        self.assertIn("cap it at five tries", self.handoff())
+        self.assertEqual(["    - the retry loop has no cap - cap it? (src/queue.py:40): modified, so the user's change "
+                          "is made in place of the ask's proposal: cap it at five tries (ruled in Phase 2)"],
+                         self.ruled_asks_entries())
 
-    def test_a_multi_line_ask_is_one_ruled_asks_entry_with_its_outcome(self):
-        self.ASK = {**self.ASK, "question": "which cap holds?\nthe plan says three\nthe ruling says five"}
+    def test_a_rejected_ask_names_the_proposal_it_turned_down(self):
+        self.ASK = {**self.ASK, "change": "cap it at three tries"}
         self.rule("rejected")
 
-        ruled_block = self.handoff().split("  ruled-asks:\n", 1)[1].split("\n  tests-run:", 1)[0]
+        self.assertEqual(["    - the retry loop has no cap - cap it? (src/queue.py:40): rejected, so the ask's "
+                          "proposed change is not made: cap it at three tries (ruled in Phase 2)"],
+                         self.ruled_asks_entries())
+
+    def test_every_ask_outcome_word_has_its_ruled_asks_text(self):
+        self.assertEqual(review_asks.ASK_OUTCOMES, tuple(code_step_core.RULED_ASK_OUTCOMES))
+
+    def test_a_multi_line_ask_is_one_ruled_asks_entry_with_its_outcome(self):
+        self.ASK = {**self.ASK, "question": "which cap holds?\nthe plan says three\nthe ruling says five",
+                    "change": "cap it at three tries\nand log each retry"}
+        self.rule("rejected")
 
         self.assertEqual(["    - the retry loop has no cap - which cap holds? the plan says three the ruling says five "
-                          "(src/queue.py:40): rejected, Phase 2"], ruled_block.splitlines())
+                          "(src/queue.py:40): rejected, so the ask's proposed change is not made: cap it at three "
+                          "tries and log each retry (ruled in Phase 2)"],
+                         self.ruled_asks_entries())
+
+    def test_an_accepted_ask_that_offers_phases_reads_as_its_change_made_and_not_as_a_phase(self):
+        self.ASK = {**self.ASK, "question": "should the cap land in Phase 2 as the plan says, or in Phase 5?",
+                    "change": "land the cap in Phase 5"}
+        self.rule("accepted")
+
+        [entry] = self.ruled_asks_entries()
+
+        self.assertIn("(src/queue.py:40): accepted, so the ask's proposed change is made: land the cap in Phase 5",
+                      entry)
+        self.assertNotIn("accepted, Phase", entry)
+
+    def test_an_accepted_ask_whose_change_only_copies_its_question_names_no_proposed_change(self):
+        self.ASK = {**self.ASK, "change": self.ASK["question"]}
+        self.rule("accepted")
+
+        self.assertEqual(["    - the retry loop has no cap - cap it? (src/queue.py:40): accepted, so the ask's "
+                          "proposed change is made (ruled in Phase 2)"], self.ruled_asks_entries())
+
+    def test_an_accepted_ruling_recorded_before_its_change_was_kept_still_prints_its_line(self):
+        old_ruling = {"plan": PLAN, "phase": "2", "file_line": "", "ask": "cap it?", "outcome": "accepted",
+                      "change": ""}
+        ruled_asks_file = code_step_core.ruled_asks_path(self.repo)
+        ruled_asks_file.parent.mkdir(parents=True, exist_ok=True)
+        ruled_asks_file.write_text(json.dumps([old_ruling]))
+
+        self.assertEqual(["    - cap it?: accepted, so the ask's proposed change is made (ruled in Phase 2)"],
+                         self.ruled_asks_entries())
 
     def test_the_question_for_the_user_indents_a_multi_line_asks_folded_lines_under_its_number(self):
         ask = {**self.ASK, "question": "which cap holds?\nthe plan says three"}

@@ -21,6 +21,12 @@ ASK_CHANGE_MARK = re.compile(r"\bchange(?:\s+if\s+accepted)?:", re.I)
 ITEM_MARKER = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
 ITEM_MARKER_STRIP = re.compile(r"^\s*(?:[-*]+|\d+[.)])\s+")
 ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
+NONE_LINE = re.compile(r"\[?(none|n/a|omitted|empty)[^\]]*\]?\.?", re.I)
+# A section's opening none line: a none word that ends its sentence, as in "None." or "None. What I checked:".
+NONE_OPENING = re.compile(r"[\[(*_`]*(?:none|n/a|omitted|empty)[\])*_`]*"
+                          r"(?:[.:;,!]|\s+[\N{EM DASH}\N{EN DASH}-]|$)", re.I)
+# A finding's head: its file:line first, after an optional [blocker] tag and bold markup.
+FINDING_HEAD = re.compile(r"(?:\*{0,2}\[blocker\]\*{0,2}\s*)?[*_]*" + script_utils.PATH_LINE.pattern, re.I)
 
 
 def section(text, name):
@@ -35,25 +41,47 @@ def indent_of(line):
     return len(line) - len(line.lstrip())
 
 
+def is_bare_finding_head(line):
+    return not ITEM_MARKER.match(line) and bool(FINDING_HEAD.match(line.strip()))
+
+
+def item_start_lines(lines):
+    """The indexes of the section lines that start an item. A finding written as a paragraph opens with a bare
+    file:line, and the bullets under it are its points: when the section opens with one, each bare file:line line at
+    its indent starts an item. Otherwise a bullet or numbered marker at the first marker's indent starts one. A marker
+    indented deeper is a sub-bullet, and it and any other line, after a blank line too, continue the item before it."""
+    first_line = next(line for line in lines if line.strip())
+    if is_bare_finding_head(first_line):
+        return {index for index, line in enumerate(lines)
+                if is_bare_finding_head(line) and indent_of(line) <= indent_of(first_line)}
+
+    marker_indents = [indent_of(line) for line in lines if ITEM_MARKER.match(line)]
+    item_indent = marker_indents[0] if marker_indents else 0
+    return {index for index, line in enumerate(lines) if ITEM_MARKER.match(line) and indent_of(line) <= item_indent}
+
+
 def review_section_findings(block):
     if not block:
         return []
-    # A bullet or numbered marker at the first marker's indent starts an item. A marker indented deeper is a
-    # sub-bullet, and it and any other line, after a blank line too, continue the item before it.
-    marker_lines = [line for line in block.splitlines() if ITEM_MARKER.match(line)]
-    item_indent = indent_of(marker_lines[0]) if marker_lines else 0
+    lines = block.splitlines()
 
+    # A section that opens with a none line holds no finding: the lines after it are the reviewer's notes, such as
+    # what it checked or why it flagged nothing.
+    first_text = ITEM_MARKER_STRIP.sub("", next(line for line in lines if line.strip())).strip()
+    if NONE_OPENING.match(first_text):
+        return []
+
+    starts = item_start_lines(lines)
     found = []
-    for line in block.splitlines():
-        starts_item = bool(ITEM_MARKER.match(line)) and indent_of(line) <= item_indent
+    for index, line in enumerate(lines):
         stripped = ITEM_MARKER_STRIP.sub("", line).strip()
         if not stripped:
             continue
-        if re.fullmatch(r"\[?(none|n/a|omitted|empty)[^\]]*\]?\.?", stripped, re.I):
+        if NONE_LINE.fullmatch(stripped):
             continue
         if ASSESSMENT_LINE.match(stripped):
             continue
-        if starts_item or not found:
+        if index in starts or not found:
             found.append(stripped)
             continue
         found[-1] = f"{found[-1]} {stripped}"

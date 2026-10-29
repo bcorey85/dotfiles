@@ -7,6 +7,7 @@ SETUP_STEP = re.compile(r"^[ \t(]*(cd[ \t]|source[ \t]|\.[ \t]|export[ \t]|([^\W
 # `>|` (clobber redirection) is not a pipe. `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`; a lone
 # `&` sends the step before it to the background.
 OPERATOR = re.compile(r"(\|\||&&|(?<!>)\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
+LINE_CONTINUATION = re.compile(r"\\\r?\n")
 LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]))*")
 TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
 SEPARATOR_CHARS = set("();|&\n")
@@ -301,6 +302,17 @@ def command_after_wrappers(words, peel_containers=True):
             words = rest[1:] if name in WRAPPERS_WITH_A_LEADING_VALUE else rest
         else:
             return words
+
+
+def resolved_command_words(command):
+    """The words of each simple command, quotes and escapes resolved and wrapper words (`builtin`, `command`, `{`)
+    dropped; empty when shlex cannot read the command."""
+    try:
+        simple_commands = split_simple_commands(LINE_CONTINUATION.sub("", command))
+    except ValueError:
+        return []
+    unwrapped = (command_after_wrappers(words) for words in simple_commands)
+    return [words for words in unwrapped if words]
 
 
 def segment_words(segment):

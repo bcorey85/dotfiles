@@ -13,7 +13,7 @@ import script_utils
 import test_run_output
 from code_step_boundary import verification_command
 from linked_installs import VENV_FOLDERS
-from shell_command import command_after_wrappers, split_simple_commands
+from shell_command import resolved_command_words
 
 CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
 UNKNOWN_FAMILY = "unknown"
@@ -356,16 +356,7 @@ def runs_cargo(command):
     # True when a step of the command runs cargo once its wrappers are peeled: `cd crate && cargo test`,
     # `CARGO_BUILD_JOBS=4 cargo check`, `nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run`. False for text the
     # shell splitter cannot read.
-    try:
-        simple_commands = split_simple_commands(command)
-    except ValueError:
-        return False
-
-    for words in simple_commands:
-        program_words = command_after_wrappers(words)
-        if program_words and pathlib.PurePosixPath(program_words[0]).name == "cargo":
-            return True
-    return False
+    return any(pathlib.PurePosixPath(words[0]).name == "cargo" for words in resolved_command_words(command))
 
 
 def test_command_families(command):

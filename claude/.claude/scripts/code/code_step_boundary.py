@@ -637,9 +637,8 @@ def save_verification_output(repo_dir, state, failed):
     if not state.get("runId"):
         state["runId"] = script_utils.sortable_unique_id()
     output_file = run_file_path(repo_dir, state["runId"], VERIFICATION_OUTPUT_NAME)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    sections = [f"$ {command}\nexit {code}\n{output}" for command, code, output in failed]
-    output_file.write_text("\n\n".join(sections))
+    command_outputs = [(command, f"exit {code}", output) for command, code, output in failed]
+    script_utils.write_command_outputs(output_file, command_outputs)
     return output_file
 
 

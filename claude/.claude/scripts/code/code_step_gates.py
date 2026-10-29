@@ -13,10 +13,10 @@ import script_utils
 import test_run_output
 from code_step_boundary import verification_command
 from linked_installs import VENV_FOLDERS
+from shell_command import resolved_command_words
 from source_paths import SCRIPT_SUFFIXES, is_runnable_test_file
 
 CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
-RUNS_CARGO = re.compile(r"(?:^|&&\s*)cargo\s")
 UNKNOWN_FAMILY = "unknown"
 TEST_FAMILY_PATTERNS = {
     "js": re.compile(r"\b(?:vitest|jest|mocha)\b|\b(?:npm|pnpm|yarn|bun|npx)\b.*\btest\b"),
@@ -353,6 +353,13 @@ def takes_listed_test_command(command, repo_dir):
     return test_run_output.runs_tests(command) and not check_scope.runs_whole_check(command, str(repo_dir))
 
 
+def runs_cargo(command):
+    # True when a step of the command runs cargo once its wrappers are peeled: `cd crate && cargo test`,
+    # `CARGO_BUILD_JOBS=4 cargo check`, `nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run`. False for text the
+    # shell splitter cannot read.
+    return any(pathlib.PurePosixPath(words[0]).name == "cargo" for words in resolved_command_words(command))
+
+
 def test_command_families(command):
     # The runner families a listed test command runs: "js", "python" or "cargo", read from its text. A command that
     # names none of them, such as `make test-consistency` or `just test`, is the UNKNOWN_FAMILY.
@@ -385,8 +392,7 @@ def derive_gate_commands(repo_dir, phase_section):
     for package_dir, package_paths in by_package.items():
         commands += script_package_commands(repo_dir, package_dir, package_paths, derives_js_tests)
     root_manifests = BARE_CARGO_MANIFEST.findall(phase_section)
-    listed_cargo = [command for command in listed
-                    if RUNS_CARGO.search(script_utils.without_leading_env_assignments(command))]
+    listed_cargo = [command for command in listed if runs_cargo(command)]
     commands += listed_cargo or cargo_commands(repo_dir, paths + root_manifests, derives_cargo_tests)
     listed_runner = listed_python_runner(listed)
     listed_django = listed_django_test(listed)

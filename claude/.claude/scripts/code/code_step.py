@@ -60,8 +60,9 @@ hooks write only that log; the verbs read it and write state.json.
 The code is split in files that import one way: code_step_core (state, event log, hand-back matcher, output),
 code_step_boundary (criteria guard, verification runner, phase boundary), code_step_hooks, code_step_gates (gate
 commands), code_step_start (the start verb), code_step_report (reading a coder report), code_step_review
-(plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_usage (usage text and the
-`resume` argument parser) and this file."""
+(plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_asks (the asks route's
+words: ask listing, pre-set outcome, asks-done arguments, asks coder prompt, prior issues; ask ids and outcome rows
+come from review/review_asks.py), code_step_usage (usage text and the `resume` argument parser) and this file."""
 import contextlib
 import fcntl
 import functools
@@ -75,6 +76,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import coder_gate
 import plan_format
 import script_utils
+from code_step_asks import prior_issues
 from code_step_boundary import (
     command_tick,
     command_verify,
@@ -162,7 +164,6 @@ from code_step_review import (
     emit_review_dispatch,
     guarded_verb_runs,
     left_findings_open,
-    prior_issues,
 )
 from code_step_start import (
     command_start,

@@ -382,6 +382,25 @@ class MovedPhaseTest(unittest.TestCase):
         self.assertEqual([True, False, False, False], [e["open"] for e in entries])
 
 
+class BelowCriteriaDeviationTest(unittest.TestCase):
+    BLOCK = "PLAN-IMPACT:\n  assumed: a header row\n  found: none - src/a.ts:3\n  changes: drop the skip\n"
+
+    def test_below_criteria_deviations_reads_only_the_entries_the_rule_adopted(self):
+        ruling = plan_format.below_criteria_ruling(self.BLOCK + "  acceptance_criteria: none")
+        adopted = plan_format.ruling_deviation("2", "Adopt plan change", plan_format.SESSION_RULING_OWNER,
+                                               "2026-10-28 10:00", ruling, self.BLOCK)
+        user_ruled = plan_format.ruling_deviation("1", "Keep plan as written", "Pat", "2026-10-28 09:00",
+                                                  "keep it", self.BLOCK)
+        plan_text = "\n".join(["# Plan", "", "## Plan Deviations", "", *user_ruled, "", *adopted, "",
+                               "## References", f"  The ruling: {ruling}"])
+
+        summary = "assumed: a header row found: none - src/a.ts:3 changes: drop the skip"
+        self.assertEqual(f"{plan_format.BELOW_CRITERIA_RULING} {summary}", ruling)
+        self.assertEqual([f"Phase 2: {summary}"], plan_format.below_criteria_deviations(plan_text))
+        self.assertEqual([f"Phase 2: {summary}"], plan_format.below_criteria_deviations(plan_text, "2"))
+        self.assertEqual([], plan_format.below_criteria_deviations(plan_text, "1"))
+
+
 class LoudFailureTest(unittest.TestCase):
     def assert_fails_at(self, text, line_number):
         with self.assertRaises(plan_format.PlanFormatError) as caught:

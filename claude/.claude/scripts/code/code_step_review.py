@@ -167,7 +167,7 @@ def emit_plan_impact_modal(impact, repo_dir, carried=()):
         print("PLAN-IMPACT changes no acceptance criterion, so the plan follows the code. No question to the user.")
         state = load_state(repo_dir)
         return command_decide(repo_dir, state, ["adopt", "--by", "session", "--ruling",
-                                                plan_format.BELOW_CRITERIA_RULING])
+                                                plan_format.below_criteria_ruling(impact)])
     ask_user(repo_dir, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
              "answer. Then invoke Skill code with the args after the option the user chose, with the ruling in one "
              "line, in your own words, as the --ruling text. Do not quote the user.",

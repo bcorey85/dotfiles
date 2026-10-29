@@ -108,7 +108,7 @@ Apply **Disposition** from calibration. An unreachable path is not a finding at 
 
 ### Ask
 [file:line — issue — the question the human has to answer — change: the one edit an `accepted` answer makes]
-[Never auto-fixed. If the code contradicts the plan or ticket, say so here in those words.]
+[Never auto-fixed. When the code and the plan or ticket disagree and the plan is the side in doubt, open the line with `PLAN-IMPACT:`, name both sides, and end it with `acceptance_criteria: none` when every acceptance criterion holds either way, else `acceptance_criteria: <the criteria it changes>`.]
 
 ### Nit
 [One combined line. Never fixed, never re-raised. Omit when empty.]

@@ -81,6 +81,7 @@ CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap"
            "correctness", "docs", "other"]
 REVIEW_LOOP = "review-loop"
 NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
+RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
 REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
 ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])/[^\s`'\"<>|;:,()]+")
 GIT_TIMEOUT_SECONDS = 10
@@ -294,10 +295,6 @@ def read_list(raw):
 
 
 # ---------- items ----------
-
-def is_blocker(item):
-    return isinstance(item, dict) and str(item.get("blocker", "")).strip().lower() in ("true", "yes")
-
 
 def item_text(item, *keys):
     if isinstance(item, dict):
@@ -603,12 +600,6 @@ def receipt_is_missing(closure):
     return re.fullmatch(r"(none|n/a)?[\s.]*", closure.strip().lower()) is not None
 
 
-def skipped_line(item):
-    if item.get("from_text"):
-        return f"- {item['item']}"
-    return f"- {item_text(item, 'item', 'finding', 'file_line')}: {item.get('reason', 'no reason given')}"
-
-
 def remaining_line(item):
     return f"- [{item.get('disposition', 'open')}] {item_text(item, 'finding', 'file_line')}"
 
@@ -657,13 +648,10 @@ def full_check_lines(packet):
 
 
 def render(packet, skill, sections=()):
-    """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer."""
-    lines = ["### Fixed"]
-    fixed = sorted(packet["fixed"], key=lambda item: not is_blocker(item))
-    for item in fixed:
-        lines.append(f"- {'[blocker] ' if is_blocker(item) else ''}{item_text(item, 'finding', 'file_line')}")
-    if not fixed:
-        lines.append("- none")
+    """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer. Fixed findings, nits
+    and skipped false positives show as counts only."""
+    fixed = packet["fixed"]
+    lines = [f"Fixed {len(fixed)}, nits {len(packet['nit'])}, skipped {len(packet['skipped_fp'])}"]
 
     closure = packet["class_closure"]
     if skill == "review" or closure:
@@ -677,10 +665,6 @@ def render(packet, skill, sections=()):
     if load_bearing and load_bearing.lower() not in ("none", "omitted"):
         lines.append("Load-bearing: " + load_bearing)
 
-    render_items(lines, "Skipped as false positives", packet["skipped_fp"], skipped_line)
-    if packet["nit"]:
-        lines.append("### Nits")
-        lines.append("- " + "; ".join(item_text(item, "finding", "item") for item in packet["nit"]))
     remaining_heading = "Deferred to branch exit" if packet["status"] == "deferred" else "Findings remaining"
     render_items(lines, remaining_heading, packet["findings_remaining"], remaining_line)
     render_items(lines, "Blocked agents (not reviewed)", packet["blocked_agents"], lambda entry: f"- {entry}")
@@ -743,11 +727,11 @@ def latest(session_id):
     review-loop stop row after the last dispatch or None, "unanswered": the number of dispatches after the last
     hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
     it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
-    session_id; a dispatch row also no_review and repo (the top level of the repo it reviews, or None); a hand-back
-    row also agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row also agent_id,
-    open_dispatches (the background agents and shells the loop still waited on when it stopped) and ask_rows. A
-    stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by append, not by
-    clock."""
+    session_id; a dispatch row also no_review, resolved_plan_impact and repo (the top level of the repo it reviews, or
+    None); a hand-back row also agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row also
+    agent_id, open_dispatches (the background agents and shells the loop still waited on when it stopped) and
+    ask_rows. A stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by
+    append, not by clock."""
     standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
     if not session_id:
         return standing
@@ -956,6 +940,7 @@ def handle_dispatch(event, session_id, tool_input):
     elif subagent_type == REVIEW_LOOP:
         prompt = str(tool_input.get("prompt") or "")
         record(session_id, "dispatch", no_review=NO_REVIEW_MODE.search(prompt) is not None,
+               resolved_plan_impact=RESOLVED_PLAN_IMPACT.search(prompt) is not None,
                repo=reviewed_repo(prompt, event.get("cwd")))
 
 

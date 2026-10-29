@@ -69,6 +69,11 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("git ls-remote --heads <remote-url> <branch>", text)
         self.assertIn("— not pushed", text)
 
+    def test_review_loop_never_hands_back_an_ask_with_an_empty_question(self):
+        text = guidance_text("agents/review-loop.md")
+        self.assertIn("question is never empty: an ask with no question takes its finding, or else its change, "
+                      "as its question", text)
+
     def test_review_loop_writes_each_logger_call_with_literal_arguments(self):
         text = guidance_text("agents/review-loop.md")
         self.assertIn("Write each call out with literal key=value arguments, one call per row", text)

@@ -10,7 +10,6 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import handback
 import script_utils
 
-FINDING_FILE = re.compile(r"([\w./-]+\.\w+):(\d+)")
 FINDING_CLASS_TAG = re.compile(r"\[(" + "|".join(map(re.escape, handback.CLASSES)) + r")\]", re.I)
 MERGED_SEPARATOR = " Also reported: "
 
@@ -48,8 +47,8 @@ def code_identifiers(text):
 def parse_finding(text):
     """The record of one finding's text: its file:line, the class the reviewer tagged it with, its title and the
     code names it mentions."""
-    located = FINDING_FILE.search(text)
-    path, line = (located.group(1), int(located.group(2))) if located else ("", 0)
+    located = script_utils.PATH_LINE.search(text)
+    path, line = script_utils.split_location(located.group(1)) if located else ("", 0)
 
     # The tag rule puts the class right after the file:line; `other` when the reviewer tagged none.
     class_tag = FINDING_CLASS_TAG.search(text, located.end() if located else 0) or FINDING_CLASS_TAG.search(text)
@@ -57,7 +56,7 @@ def parse_finding(text):
 
     # The title is the text with its file:line and bracketed tags taken out, lowercased, punctuation folded to
     # spaces. A refile keeps it when the coder's edit moves the line.
-    title = re.sub(r"`?" + FINDING_FILE.pattern + r"`?", " ", text)
+    title = script_utils.PATH_LINE.sub(" ", text)
     title = re.sub(r"\[[\w-]+\]", " ", title)
     title = re.sub(r"\W+", " ", title).strip().lower()
 

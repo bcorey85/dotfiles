@@ -7,9 +7,9 @@ seq: 2
 kind: "behavior"
 components: ["script/code-step", "skill/code"]
 evidence: ["tests", "judgment"]
-watches: []
+watches: ["code-step-stop-share"]
 test: ""
-unmeasured: "No work-log field records which code-step verb a /code run used, or a run that went to the wrong step after a stop."
+unmeasured: ""
 ---
 
 ## Change

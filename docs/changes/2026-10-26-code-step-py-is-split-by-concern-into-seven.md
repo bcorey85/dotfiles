@@ -7,11 +7,12 @@ seq: 92
 kind: "structured"
 components: ["script/code-step"]
 evidence: ["judgment"]
-watches: []
+watches: ["code-step-seven-modules-stop-share"]
+overlap: "A move with no behavior change: its watch expects the code-step stop share flat, against the resume-verb watch that expects it to fall, so a change in it is read against both edits."
 test: ""
 asked: ""
 proof: ["2026-10-26-scripted-review-loop-with-bounded-re-review-vs"]
-unmeasured: "A move with no behavior change; the edit watches ship with the change that wires in the scripted review loop."
+unmeasured: ""
 ---
 
 ## Change

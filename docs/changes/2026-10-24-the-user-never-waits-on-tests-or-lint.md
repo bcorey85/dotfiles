@@ -7,9 +7,9 @@ seq: 6
 kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["user rule"]
-watches: []
+watches: ["user-check-commands"]
 test: ""
-unmeasured: "No work-log field records how long the user waited on a test or lint run that the agent handed over."
+unmeasured: ""
 ---
 
 ## Change

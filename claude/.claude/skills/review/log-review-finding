@@ -32,7 +32,7 @@
 #       branch-exit gate ran in a closing phase, on the whole-branch diff
 #       standalone  direct invocation, no enclosing loop
 #     phase=<index|name>          (omit it when scope is not `phase`; a "-" or empty value is dropped)
-#     iter=<N>                    review-loop iteration this dispatch belongs to
+#     iter=<N>                    review-loop iteration this dispatch belongs to; a non-numeric value is refused
 #     gate=code-reviewer|smell-reviewer|smell-reviewer-deep
 #         |security-reviewer|security-reviewer-deep|perf-reviewer
 #         |perf-reviewer-deep|complexity-reviewer|complexity-reviewer-deep
@@ -44,8 +44,9 @@
 #     n_findings=<n>              0 for a silent run — the point of the row.
 #       n_findings=null stores JSON null: the dispatch ran and its report
 #       could not be counted. Never write 0 for a report that was not counted.
+#       Any other non-numeric value is refused.
 #     diff_loc=<n>                lines the gate actually read (git diff
-#       --shortstat on its scope, insertions+deletions). Review-defect-detection
+#       --shortstat on its scope, insertions+deletions; a non-numeric value is refused). Review-defect-detection
 #       degrades with the size of the change under review, so a gate's yield is
 #       uninterpretable without it. Measure it; do not estimate it.
 #     diff_base=<ref>             in place of diff_loc: this script measures it, from
@@ -78,8 +79,8 @@
 #       mostly `other` has told the analysis nothing about what the gate catches.
 #     file=<path>                 repo-relative
 #       file=unlocated: the finding names no file (a plan promise with no test).
-#       The row is sent with no file and no line; a line= is dropped with a warning.
-#     line=<n>                    0 when the finding names no line
+#       The row is sent with no file and no line; a whole-number line= is dropped with a warning; a non-numeric one is refused.
+#     line=<n>                    0 when the finding names no line; a non-numeric value is refused
 #       gate=test-intent-reviewer refuses a finding row with no file, or a file
 #       and no line above 0: each of its findings names a test file:line, or is
 #       file=unlocated.
@@ -223,6 +224,7 @@ fold_writer_special_values() {
 # is how repo= ends up holding branch, lane, scope, phase and iter, destroying every
 # join key /audit review needs. Fail loud.
 kv_fold "desc result file" fold_writer_special_values "$@"
+kv_require_whole_numbers "iter line n_findings diff_loc"
 redirected=$kv_out_seen
 
 kind=$(jq -r '.kind // ""' <<< "$json")

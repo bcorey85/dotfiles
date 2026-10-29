@@ -134,6 +134,7 @@ escape_file_check() {
   return 1
 }
 kv_fold "desc file" escape_file_check "$@"
+kv_require_whole_numbers "line"
 
 guard=$(jq -r '.guard // ""' <<< "$json")
 if [ -z "$guard" ]; then

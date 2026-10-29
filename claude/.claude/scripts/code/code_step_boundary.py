@@ -30,6 +30,7 @@ from code_step_core import (
     REVIEW_SAME_DIFF_AGAIN_LINE,
     SCRIPTS_DIR,
     branch_label,
+    clear_stop,
     emit,
     file_hashes,
     is_dispatch_open,
@@ -42,6 +43,7 @@ from code_step_core import (
     say,
     script_command,
     session_pin,
+    set_stop,
 )
 from code_step_phase_end import block_a, block_b_or_c, manual_groups_of
 from code_step_usage import VERB_USAGES
@@ -400,8 +402,7 @@ def mark_review_gate_clean(repo_dir, state):
     # and can hold an earlier converged hand-back, so it never overrules a packet that did not converge.
     review_status = state.get("reviewStatus")
     if review_status is not None and review_status not in module.CLEAN_STATUSES:
-        state["stage"] = "stopped"
-        state["stopReason"] = "review-not-converged"
+        set_stop(state, "review-not-converged")
         save_state(repo_dir, state)
         emit("stop", f"The phase stays open: its review loop ended {review_status}, not converged. Nothing is "
              "committed and the review gate is not marked clean. Report to the user what the review waits on.")
@@ -409,8 +410,7 @@ def mark_review_gate_clean(repo_dir, state):
     reviewing_session = run_session_id(state)
     reason = module.false_clean_reason(reviewing_session)
     if reason:
-        state["stage"] = "stopped"
-        state["stopReason"] = "false-clean"
+        set_stop(state, "false-clean")
         save_state(repo_dir, state)
         emit("stop", f"The review gate is not marked clean: {reason}. Nothing is committed.",
              REVIEW_SAME_DIFF_AGAIN_LINE)
@@ -608,8 +608,7 @@ def load_finishing_plan(repo_dir, state):
     number = state["phase"]
     running_entry = next((e for e in plan["entries"] if e["number"] == number), None)
     if running_entry and running_entry["moved"]:
-        state["stage"] = "stopped"
-        state.pop("stopReason", None)
+        set_stop(state)
         save_state(repo_dir, state)
         return emit("stop", plan_format.moved_phase_stop(running_entry, state["plan"], coder_ran=True))
 
@@ -618,7 +617,7 @@ def load_finishing_plan(repo_dir, state):
 
 
 def stop_for_unparsed_items(repo_dir, state, unparsed, ran_text):
-    state.update({"stage": "stopped", "stopReason": "verification"})
+    set_stop(state, "verification")
     save_state(repo_dir, state)
     if state.get("phase"):
         tick_text = (f" For a check that cannot be automated, the user can confirm it; on the user's word only, invoke "
@@ -644,7 +643,7 @@ def save_verification_output(repo_dir, state, failed):
 
 def stop_for_failed_commands(repo_dir, state, failed):
     output_file = save_verification_output(repo_dir, state, failed)
-    state.update({"stage": "stopped", "stopReason": "verification"})
+    set_stop(state, "verification")
     save_state(repo_dir, state)
     failure_lines = []
     for command, code, output in failed:
@@ -756,7 +755,7 @@ def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verific
     state["autoAdvance"] = block == "A"
     state["commitFiles"] = commit_files
     state["commitLine"] = commit_line
-    state.pop("stopReason", None)
+    clear_stop(state)
     save_state(repo_dir, state)
 
     verify_results, skipped = verification
@@ -795,7 +794,7 @@ def finish_phase(repo_dir, state, skip_verification=False, verification=None):
     try:
         manual_items = plan_format.phase_manual_items(plan_lines, state["phase"], state["plan"])
     except plan_format.PlanFormatError as error:
-        state.update({"stage": "stopped", "stopReason": "plan-format"})
+        set_stop(state, "plan-format")
         save_state(repo_dir, state)
         return emit("stop", plan_format.manual_format_message(error, RESUME_LINE.format(noun="section", verb="verify")))
 
@@ -897,7 +896,7 @@ def command_skill_done(repo_dir, state, args, simplify_done_texts=(), rerun_comm
     if verdict not in ("pass", "fail"):
         return emit("stop", "skill-done takes pass or fail.")
     if verdict == "fail":
-        state["stage"] = "stopped"
+        set_stop(state)
         save_state(repo_dir, state)
         return emit("stop", "The closing phase's check failed (a MISSING criterion, or an unmet Success Criteria). "
                     "Do not mark the phase done. Report what failed to the user.")

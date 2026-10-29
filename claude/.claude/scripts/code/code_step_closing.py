@@ -2,7 +2,7 @@
 import script_utils
 from code_step_boundary import command_skill_done, phase_open_items
 from code_step_concentration import concentration_gate, gate_stop_lines, is_refactor_phase, simplify_done_text
-from code_step_core import emit, restart_instruction, save_state, script_command, stop_with_question
+from code_step_core import emit, restart_instruction, save_state, script_command, set_stop, stop_with_question
 
 
 def open_criteria_texts(repo_dir, state):
@@ -49,7 +49,7 @@ def command_skill_done_with_question(repo_dir, state, args):
     if verdict != "fail":
         return pass_with_concentration_gate(repo_dir, state, words)
 
-    state["stage"] = "stopped"
+    set_stop(state)
     save_state(repo_dir, state)
     items = [finding for finding in findings if finding.strip()] or open_criteria_texts(repo_dir, state)
     why = "the closing phase's check failed (a MISSING criterion, or an unmet Success Criteria)."

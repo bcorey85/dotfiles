@@ -84,8 +84,8 @@ kv_require_whole_numbers() {
     ($keys | split(" ") | map(select(. != ""))) as $int_keys
     | to_entries[]
     | select(.key as $key | $int_keys | index($key))
-    | select((.value | type) == "string" and (.value | test("^-?[0-9]+$") | not))
-    | "\(.key)=\(.value)"' <<< "$json")
+    | select((.value | type) == "string" and (.value | test("\\A-?[0-9]+\\z") | not))
+    | "\(.key)=\(.value | gsub("\n"; "\\n") | gsub("\r"; "\\r"))"' <<< "$json")
   [ -n "$bad_pairs" ] || return 0
 
   while IFS= read -r bad_pair; do

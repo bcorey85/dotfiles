@@ -14,6 +14,9 @@ import time
 
 import test_code_step as base
 
+# isort: split
+import code_step_core
+
 FAKE_LOOP_SCRIPT = """import os
 import pathlib
 import signal
@@ -246,17 +249,21 @@ class ReviewScriptTest(base.CodeStepTest):
         self.env["FAKE_LOOP_MODE"] = "hang"
         self.coder_round()
         self.wait_for_file("started")
-        self.age_dispatches(100)
-        self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
         script_dir = pathlib.Path(self.state()["reviewScriptLog"]).parent
-        (script_dir / "calls.jsonl").write_text("{}\n")
+        progress_names = ("calls.jsonl", code_step_core.FULL_CHECK_LOG, code_step_core.FULL_CHECK_BASE_LOG)
+        for progress_name in progress_names:
+            with self.subTest(progress_name):
+                self.age_dispatches(100)
+                self.age_script_output(100)
+                self.set_state(dispatchAt=time.time() - 100)
+                (script_dir / progress_name).write_text("{}\n")
 
-        out = self.step("after-review")
+                out = self.step("after-review")
 
-        self.assertIn("ACTION: wait", out)
-        self.assertNotIn("died", out)
-        self.assertEqual("review", self.state()["stage"])
+                self.assertIn("ACTION: wait", out)
+                self.assertNotIn("died", out)
+                self.assertEqual("review", self.state()["stage"])
         self.step("abort")
 
     def test_the_wait_cap_stop_of_a_running_script_with_no_progress_does_not_say_it_died(self):

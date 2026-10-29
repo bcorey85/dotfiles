@@ -47,7 +47,9 @@ REVIEW_LOOP_SCRIPT = SCRIPTS_DIR / "review" / "review_loop_script.py"
 REVIEW_SCRIPT_AGENT_PREFIX = "loop-script-"
 FINISHED_REVIEW_SCRIPT_KEYS = ("reviewScriptPid", "resumableReview", "resumeWaitAt")
 # The files beside the review loop script's log that it writes as it works: a write to one restarts the wait cap.
-REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", "full-check.log")
+FULL_CHECK_LOG = "full-check.log"
+FULL_CHECK_BASE_LOG = "full-check-base.log"
+REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", FULL_CHECK_LOG, FULL_CHECK_BASE_LOG)
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")

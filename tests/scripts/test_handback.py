@@ -365,9 +365,11 @@ class RenderTest(HandbackTestBase):
         packet = handback.load(CONVERGED.replace("class_closure: enumerated every query\n", ""))
         self.assertIn("receipt is missing", handback.render(packet, "review"))
 
-    def test_a_full_check_that_did_not_run_says_so_and_a_passed_one_prints_nothing(self):
+    def test_a_full_check_that_did_not_run_or_failed_before_the_diff_says_so_and_a_passed_one_prints_nothing(self):
         for full_check in ("not run (CI)", "not run (timeout)", "not run (environment gap: No module named 'ruff')",
-                           "not run (check-command error: fatal: ambiguous argument 'web/schema.json')"):
+                           "not run (check-command error: fatal: ambiguous argument 'web/schema.json')",
+                           "pre-existing failure (the check fails the same way without this diff, so it did not "
+                           "verify this diff)"):
             with self.subTest(full_check=full_check):
                 packet = handback.load(CONVERGED + f"full_check: {full_check}\n")
 

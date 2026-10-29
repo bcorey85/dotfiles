@@ -26,6 +26,36 @@ RAN_NO_TESTS = re.compile(r"No test(?: file)?s found, exiting with code [1-9]|(?
 # The line a runner prints for one failed test: pytest `FAILED `/`ERROR ` summary lines, unittest and Django
 # `FAIL: `/`ERROR: ` lines, vitest and jest `FAIL ` lines and lines that start with the multiplication sign.
 FAILING_TEST_LINE = re.compile(r"^(?:FAILED |ERROR |FAIL: |ERROR: |\s*FAIL\s|\s*\xd7)")
+# The text of an elapsed time (`1.5s`, `120 ms`) and of a clock time (`10:20:30`), which the timing patterns share.
+ELAPSED_TIME = r"\d+(?:\.\d+)?\s*m?s\b"
+CLOCK_TIME = r"\d+:\d{2}:\d{2}"
+# A runner's elapsed-time text, which differs between two runs of the same check.
+RUNNER_TIMING = re.compile(rf"\({ELAPSED_TIME}\)|\bin {ELAPSED_TIME}(?: \({CLOCK_TIME}\))?")
+# A runner's per-run clock line: jest's `Time:`, vitest's `Duration` and `Start at`. The line keeps its label, so it
+# still compares, and loses only the time (and vitest's parenthetical) that differs between two runs of the same
+# check. A line with any other text after the time keeps all of it.
+RUN_CLOCK_LINE = re.compile(
+    rf"^\s*(?P<label>Time:|Duration|Start at)\s+(?:{ELAPSED_TIME}|{CLOCK_TIME})(?:\s*\([^)]*\))?\s*$")
+# A jest `PASS <file>` line: jest lists the passing files after a failing block, and they are not details of it.
+PASSING_FILE_LINE = re.compile(r"^PASS ")
+# Where a failing test's name ends and its reason begins: pytest's `FAILED test - reason`.
+FAILURE_REASON_SEPARATOR = " - "
+# The words of a runner summary count, defined once. NON_FAILURE_WORDS count tests that did not fail, and warnings:
+# a diff that adds or removes one changes the count, and it is not a new error. FAILURE_WORDS count failed tests and
+# errors.
+NON_FAILURE_WORDS = "passed|skipped|total|deselected|warnings?|xfailed|xpassed"
+FAILURE_WORDS = "failed|errors?"
+# A runner summary count of a non-failure word, with the separator after it.
+NON_FAILURE_COUNT = re.compile(rf"\b\d+ (?:{NON_FAILURE_WORDS})\b\s*[,|]?")
+# A runner's summary line: only counts (`1 failed, 11 passed in 1.5s`, vitest `Tests  1 failed | 11 passed (12)`, jest
+# `Tests: 1 failed, 11 passed, 12 total`), with an optional label and elapsed time. A line with other words, such as
+# `expected 3 passed`, is a message.
+SUMMARY_COUNT = rf"\d+ (?:{NON_FAILURE_WORDS}|{FAILURE_WORDS})"
+# vitest's total test count in parentheses after its summary counts, which changes when a test is added.
+SUMMARY_TOTAL = re.compile(r"\(\d+\)")
+RUNNER_SUMMARY_LINE = re.compile(
+    rf"^[\s=]*(?:(?:Test Files|Tests|Test Suites)\s*:?\s*)?{SUMMARY_COUNT}(?:\s*[,|]\s*{SUMMARY_COUNT})*"
+    rf"(?:\s*\(\d+\))?(?:\s+in {ELAPSED_TIME}(?: \({CLOCK_TIME}\))?)?[\s=]*$")
 # A Django settings error under pytest, the pytest command that raises it, and the files whose change can raise it
 # themselves: a settings module or an app config.
 DJANGO_SETTINGS_ERROR = re.compile(r"ImproperlyConfigured|settings are not configured|Apps aren't loaded yet")
@@ -62,6 +92,42 @@ def tail_with_failing_tests(output, tail):
     if not missing:
         return tail
     return "Failing tests:\n" + "\n".join(missing) + "\n\n" + tail
+
+
+def normalized_log_line(line):
+    """The log line without runner timings (`(5.2 s)`, `in 1.2s`) and, on a runner summary line, without the non-failure
+    counts (`10 passed`, `2 skipped`) and vitest's total in parentheses (`(12)`), which differ per run; the failed and
+    error counts stay. A per-run clock line (`Time: 1.2 s`) keeps its label and loses its time and, for vitest, the
+    parenthetical after it; any other text after the time stays. Any other line keeps its counts: `expected 3 passed`
+    in an assertion message is not a runner summary."""
+    # A per-run clock line keeps its label and loses only its time, so it compares equal across runs.
+    line = RUN_CLOCK_LINE.sub(r"\g<label>", line)
+    # A failing test's reason keeps its numbers: `expected 5000ms, got 2000ms` is an assertion, not a timing.
+    if FAILING_TEST_LINE.match(line) and FAILURE_REASON_SEPARATOR in line:
+        name, separator, reason = line.partition(FAILURE_REASON_SEPARATOR)
+        without_timing = RUNNER_TIMING.sub(" ", name) + separator + reason
+    else:
+        without_timing = RUNNER_TIMING.sub(" ", line)
+
+    without_counts = without_timing
+    if RUNNER_SUMMARY_LINE.match(line):
+        without_totals = SUMMARY_TOTAL.sub(" ", without_timing)
+        without_counts = NON_FAILURE_COUNT.sub(" ", without_totals)
+    return " ".join(without_counts.split()).rstrip(",|").rstrip()
+
+
+def failing_block_details(log_lines):
+    """The normalized detail lines of the failing blocks: the non-blank lines after a failing line up to the next
+    failing test line or the end of the log. Jest prints one FAIL line per file and a `●` block per test, with blank
+    lines between the blocks, so a block runs across its blank lines. A jest `PASS` line is not a detail."""
+    details = set()
+    in_block = False
+    for line in log_lines:
+        if FAILING_TEST_LINE.match(line):
+            in_block = True
+        elif in_block and line.strip() and not PASSING_FILE_LINE.match(line):
+            details.add(normalized_log_line(line))
+    return details
 
 
 def missing_path(lines):

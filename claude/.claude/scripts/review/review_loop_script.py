@@ -9,13 +9,17 @@ scope, first-round reviewers (code, plus smell and test reviewers on a large dif
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py: none in a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
-calls run the changed files' tests, none in a repo where no check is found, and a check past CHECK_TIMEOUT_SECONDS is
-killed with its process group, and a check whose step stops on a missing path is a check-command error. A check
-that fails on a missing module the repo declares as a dependency is an environment gap. None is a failure: the
+calls run the changed files' tests, none in a repo where no check is found, and a check past
+full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process group, and a check whose step stops on a missing
+path is a check-command error. A check that fails on a missing module the repo declares as a dependency is an
+environment gap. None is a failure: the
 packet's `full_check` says `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
 `not run (check-command error: ...)` or `not run (environment gap: ...)`. An exit 0 with no runner summary is no
-failure either: it says `unverified (exit 0, no runner summary)`. A failed check's blocker holds the failing step's
-lines.
+failure either: it says `unverified (exit 0, no runner summary)`. So is a failure that the check shows the same way
+on HEAD without the diff: it says `pre-existing failure (...)` and did not verify the diff. To tell, a failed check is
+rerun once per loop (the base run) in a detached worktree of HEAD, up to full_check_gate.CHECK_TIMEOUT_SECONDS. A
+failed check's blocker holds the failing step's lines; after a repair coder, before recheck_full_check stops as a
+blocker, the autofix formatters run on the touched files and the check reruns once if one changed a file.
 
 Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
@@ -52,12 +56,15 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import code_step_core
 import full_check
+import full_check_gate
 import handback
 import plan_format
 import review_loop_gate
 import reviewed_tree
 import script_utils
-from worktree_snapshot import CHANGE_KINDS
+from review_findings import UNLOCATED, finding_class, finding_file, finding_title, merge_findings, parse_review
+from review_packet import crash_outcome, packet_message
+from script_utils import last_json_object
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
@@ -67,10 +74,8 @@ SPLIT_FILES = 5
 SPLIT_LINES = 300
 DIFF_CONTEXT = 12
 CALL_TIMEOUT_SECONDS = 1800
-CHECK_TIMEOUT_SECONDS = 900
 LOG_TIMEOUT_SECONDS = 60
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
-UNLOCATED = "unlocated"
 NO_CLOSURE = "n/a - fixed[] empty"
 TERMINAL_PANE_ENV = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET")
 CHILD_ENV = {**{name: value for name, value in os.environ.items() if name not in TERMINAL_PANE_ENV},
@@ -87,6 +92,11 @@ FENCE = (
     '\n'
     'If a listed issue turns out to be a false positive on inspection, skip it and report why. Do not '
     '"fix" issues that aren\'t actually broken just because the reviewer flagged them.'
+)
+
+SCOPED_TESTS = (
+    "Run only the tests for the files you changed. Do not run lint suites, the full test suite or other repo-wide "
+    "checks: the loop runs the full check after your pass."
 )
 
 SMALL_ITEMS = (
@@ -125,19 +135,13 @@ CHECK_FINDER = (
 # bracketed tags, in either order.
 PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{EN DASH}:-]*)*plan[-_ ]?impact", re.I)
 PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
-# The marker before the one edit an accepted ask makes: `... — the question — change: the edit`.
-ASK_CHANGE_MARK = re.compile(r"\bchange:", re.I)
-FINDING_CLASS_TAG = re.compile(r"\[(" + "|".join(map(re.escape, handback.CLASSES)) + r")\]", re.I)
 CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, right after its file:line, or first when "
                   "it names none. One of: " + " ".join(f"[{name}]" for name in handback.CLASSES) + ".")
-ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
 
 CALLS = []
 CALLS_LOCK = threading.Lock()
 FIX_DIFFS = []
-# Process-group leaders of the claude calls now running: each call starts its own session, so the group kill that
-# stops this script does not reach them.
-LIVE_CHILDREN = set()
+LIVE_CHILDREN = full_check_gate.LIVE_CHILDREN
 
 
 def now():
@@ -317,67 +321,6 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
     return "\n".join(lines)
 
 
-def section(text, name):
-    match = re.search(rf"^#+\s*{name}\s*$(.*?)(?=^#+\s|\Z)", text, re.S | re.M | re.I)
-    return match.group(1).strip() if match else None
-
-
-def review_section_findings(block):
-    if not block:
-        return []
-    found = []
-    for line in block.splitlines():
-        stripped = re.sub(r"^\s*(?:[-*]+|\d+[.)])\s+", "", line).strip()
-        if not stripped:
-            continue
-        if re.fullmatch(r"\[?(none|n/a|omitted|empty)[^\]]*\]?\.?", stripped, re.I):
-            continue
-        if ASSESSMENT_LINE.match(stripped):
-            continue
-        found.append(stripped)
-    return found
-
-
-TAGGED_BULLET = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+`?(fix|ask|nit)`?\s*:\s*(.+)$", re.I)
-
-
-def parse_tagged_bullets(text):
-    """Reviewers that tag each bullet with its disposition (the test reviewer) instead of using Fix/Ask/Nit sections."""
-    found = {"fix": [], "ask": [], "nit": []}
-    for line in text.splitlines():
-        match = TAGGED_BULLET.match(line)
-        if match:
-            found[match.group(1).lower()].append(match.group(2).strip())
-    if not any(found.values()):
-        return None
-    return {**found, "assessment": ""}
-
-
-def parse_review(text):
-    fix, ask, nit = section(text, "Fix"), section(text, "Ask"), section(text, "Nit")
-    if fix is None and ask is None and nit is None:
-        return parse_tagged_bullets(text)
-    assessment = re.search(r"Overall Assessment\W*\s*:?\W*\s*([A-Z][A-Z ]+[A-Z])", text)
-    return {"fix": review_section_findings(fix), "ask": review_section_findings(ask),
-            "nit": review_section_findings(nit),
-            "assessment": assessment.group(1).strip() if assessment else ""}
-
-
-def last_json_object(reply, keys):
-    """The last JSON object in a reply that holds any of `keys`, or None. Decodes from each "{" back to front, because
-    prose before the object can hold braces of its own ("{CUBE}")."""
-    decoder = json.JSONDecoder()
-    brace_positions = [match.start() for match in re.finditer(r"\{", reply)]
-    for position in reversed(brace_positions):
-        try:
-            parsed, _ = decoder.raw_decode(reply, position)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict) and any(key in parsed for key in keys):
-            return parsed
-    return None
-
-
 def disposition_call(text, repo, out):
     prompt = (
         "Below is a code reviewer's output. Copy each finding into one of three lists without changing its words: "
@@ -392,64 +335,11 @@ def disposition_call(text, repo, out):
     return {"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []), "assessment": ""}
 
 
-CODE_TOKEN = re.compile(r"`([^`]+)`")
-
-
-def identifiers(finding):
-    """Backticked names in a finding that are neither a file path nor a file:line pointer."""
-    names = set()
-    for token in CODE_TOKEN.findall(finding):
-        if "/" in token or re.search(r":\d", token) or (re.search(r"\.\w{1,4}$", token) and "(" not in token):
-            continue
-        names.add(token)
-    return names
-
-
-def merge_findings(findings):
-    """One list for the coder: a finding that names the same file and a shared identifier as an earlier one is
-    folded into it."""
-    merged = []
-    for finding in findings:
-        path = finding_file(finding)[0]
-        names = identifiers(finding)
-        home = next((index for index, kept in enumerate(merged)
-                     if finding_file(kept)[0] == path and names & identifiers(kept) and path), None)
-        if home is None:
-            merged.append(finding)
-        else:
-            merged[home] += f" Also reported: {finding}"
-    return merged
-
-
-FINDING_FILE = re.compile(r"([\w./-]+\.\w+):(\d+)")
-
-
-def finding_file(line):
-    match = FINDING_FILE.search(line)
-    return (match.group(1), int(match.group(2))) if match else ("", 0)
-
-
-def finding_class(line):
-    """The class the reviewer tagged the finding with, which the tag rule puts right after the file:line; `other` when
-    it tagged none."""
-    located = FINDING_FILE.search(line)
-    match = FINDING_CLASS_TAG.search(line, located.end() if located else 0) or FINDING_CLASS_TAG.search(line)
-    return match.group(1).lower() if match else "other"
-
-
-def finding_title(line):
-    """The finding's text with its file:line and bracketed tags taken out, lowercased, punctuation folded to spaces.
-    A refile keeps it when the coder's edit moves the line."""
-    title = re.sub(r"`?" + FINDING_FILE.pattern + r"`?", " ", line)
-    title = re.sub(r"\[[\w-]+\]", " ", title)
-    return re.sub(r"\W+", " ", title).strip().lower()
-
-
 def coder_prompt(repo, findings, small_items, files, gate_env=()):
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
     body += [f"{index}. {finding}" for index, finding in enumerate(findings, 1)]
     body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
-                 "where n is the issue number above."]
+                 "where n is the issue number above.", "", SCOPED_TESTS]
     if small_items:
         body += ["", "## Small items", "", SMALL_ITEMS, ""] + [f"- {item}" for item in small_items]
     body += ["", "Files in scope: " + ", ".join(files)]
@@ -483,24 +373,6 @@ def check_command_for(repo, out):
               f"{parsed.get('reason') or 'the check finder named none'}", file=sys.stderr)
         return None
     raise ValueError(f'the check-finder reply holds no {{"command": ..}} object: {reply!r}')
-
-
-def run_full_check(repo, out, check_command, gate_env=()):
-    """(the full_check result, the log's last lines with the failing tests above them, the run's details: runner
-    summaries and the files the check changed or created). A SIGTERM kills the check's process group with the claude
-    calls."""
-    assignments = script_utils.environment_from_assignments(gate_env)
-    check_pids = []
-
-    def check_started(pid):
-        check_pids.append(pid)
-        LIVE_CHILDREN.add(pid)
-
-    try:
-        return full_check.run(repo, check_command, out / "full-check.log", CHECK_TIMEOUT_SECONDS,
-                              env={**os.environ, **assignments}, on_start=check_started)
-    finally:
-        LIVE_CHILDREN.difference_update(check_pids)
 
 
 def file_texts(repo):
@@ -713,7 +585,7 @@ def prior_issue_entries(round_findings, skips):
     return entries
 
 
-class LoopRun:
+class LoopRun(full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -729,9 +601,7 @@ class LoopRun:
         self.prior_issues = []
         self.status = "converged"
         self.class_closure = NO_CLOSURE
-        self.full_check = ""
-        self.full_check_command = ""
-        self.check_details = {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
+        self.init_full_check_state()
         self.round_two_fix_diff_path = ""
         self.files = {}
         self.dispatches = []
@@ -871,63 +741,6 @@ class LoopRun:
             self.dispatches = second_round_plan(round_fix, changed, skipped_findings, coder_diffs)
         return not (changed and all(path.endswith(".md") for path in changed))
 
-    def full_check_pass(self, check_command):
-        """The full check, with one coder repair when it fails outside a spec file. A check that did not run, in CI
-        or past its time limit, and one that exited 0 with no runner summary, is no failure and gets no repair; one the
-        environment could not run stops as `setup-fault`."""
-        tail = self.run_check(check_command)
-        if full_check.is_setup_fault_result(self.full_check):
-            self.stop_on_setup_fault(check_command, tail)
-            return
-
-        if not full_check.is_failure(self.full_check):
-            return
-
-        gate_findings = [f"full check failed (`{check_command}`), failing lines:\n{tail}"]
-        if re.search(r"\.spec\.", tail):
-            self.stop("critical-blocker", gate_findings)
-            return
-
-        _report, _diffs, gate_changed = self.repair("coder-gate", gate_findings)
-        self.fixed += gate_findings
-        self.check_fixed += len(gate_findings)
-        self.files_touched.update(gate_changed)
-        self.recheck_full_check(check_command, "full check still failing after one repair")
-
-    def run_check(self, check_command):
-        """Run the full check, keep its result, command and details for the packet. Returns the log's tail.
-        The changed, rewrote_edited and created paths add up across runs; the summaries are the latest run's. The
-        check leaves the files it rewrote or created in place, and a repair measures its changes as the text
-        difference around its own call, so a changed or created file reaches files_touched only when the repair coder
-        edits it itself. A rewrote_edited file holds coder work and always counts as touched."""
-        self.full_check_command = check_command or ""
-        self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        check_wrote = set(self.check_details["changed"]) | set(self.check_details["created"])
-        details["rewrote_edited"] = [path for path in details["rewrote_edited"]
-                                     if path not in check_wrote or path in self.files_touched]
-        for key in CHANGE_KINDS:
-            details[key] = sorted(set(self.check_details[key]) | set(details[key]))
-        details["rewrote_edited"] = sorted(set(details["rewrote_edited"])
-                                           | ((set(details["changed"]) | set(details["created"])) & self.files_touched))
-        for key in ("changed", "created"):
-            details[key] = [path for path in details[key] if path not in details["rewrote_edited"]]
-        self.check_details = details
-        return tail
-
-    def recheck_full_check(self, check_command, failure_heading):
-        """The full check after a coder repair: a setup fault stops as `setup-fault`, any other failure as
-        `critical-blocker`."""
-        tail = self.run_check(check_command)
-        if full_check.is_setup_fault_result(self.full_check):
-            self.stop_on_setup_fault(check_command, tail)
-        elif full_check.is_failure(self.full_check):
-            self.stop("critical-blocker", [f"{failure_heading}:\n{tail}"])
-
-    def stop_on_setup_fault(self, check_command, tail):
-        """The full check could not run here, which no coder repair changes: stop for the user."""
-        self.stop("setup-fault", [f"the full check could not run in this environment (`{check_command}`), full "
-                                  f"log {self.out / 'full-check.log'}, last lines:\n{tail}"])
-
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open."""
         closure = closure_check(self.repo, self.out, self.fixed)
@@ -1002,88 +815,6 @@ def run_loop(repo, out, session, header, handoff, progress):
     return loop.outcome(ask_ids, ask_rows)
 
 
-# ---------- hand-back packet ----------
-
-def located(text):
-    """The packet's file_line for a finding text: the `path:line` the driver parses, or UNLOCATED."""
-    path, line = finding_file(text)
-    return f"{path}:{line}" if path else UNLOCATED
-
-
-def finding_entry(text):
-    return {"finding": text, "file_line": located(text)}
-
-
-def ask_entry(text, gate, finding_id):
-    # The text before the last `change:` marker is the question; the text after it is the edit an accepted answer
-    # makes. An ask with no marker carries its own recommended edit, so its whole text is both.
-    question, change = text, text
-    change_marks = list(ASK_CHANGE_MARK.finditer(text))
-    if change_marks:
-        last_mark = change_marks[-1]
-        question = text[:last_mark.start()].rstrip(" —-")
-        change = text[last_mark.end():].strip()
-
-    entry = {"question": question, "file_line": located(text), "change": change, "gate": gate,
-             "class": finding_class(text)}
-    if finding_id:
-        entry["finding_id"] = finding_id
-    return entry
-
-
-def packet_message(outcome):
-    """The outcome in the packet grammar handback.py reads: one `key: value` line per field, list fields as JSON."""
-    status = "plan-impact" if outcome["status"] == "plan-change" else outcome["status"]
-    asks = [ask_entry(text, outcome["ask_gates"].get(text, handback.DEFAULT_GATE), outcome["ask_ids"].get(text))
-            for text in outcome["asks"]]
-    fields = {
-        "status": status,
-        "iter": outcome["iter"],
-        "fixed": [finding_entry(text) for text in outcome["fixed"]],
-        "skipped_fp": [{"item": entry["item"], "reason": entry["reason"], "file_line": located(entry["item"])}
-                       for entry in outcome["skipped_fp"]],
-        "blockers": outcome["blockers"],
-        "findings_remaining": [],
-        "ask": asks,
-        "class_closure": script_utils.one_line(outcome["class_closure"], limit=None),
-        "files_touched": outcome["files_touched"],
-        "nit": [finding_entry(text) for text in outcome["nits"]],
-    }
-    if outcome["full_check"]:
-        fields["full_check"] = outcome["full_check"]
-        if outcome["full_check_command"]:
-            fields["full_check_command"] = script_utils.one_line(outcome["full_check_command"], limit=None)
-        summary = full_check.summary_text(outcome["full_check"], outcome["full_check_summaries"])
-        if summary is not None:
-            fields["full_check_summary"] = script_utils.one_line(summary, limit=None)
-    if outcome["check_changed"]:
-        fields["check_changed"] = outcome["check_changed"]
-    if outcome["check_rewrote_edited"]:
-        fields["check_rewrote_edited"] = outcome["check_rewrote_edited"]
-    if outcome["check_created"]:
-        fields["check_created"] = outcome["check_created"]
-    if outcome.get("tool_fault"):
-        fields["tool_fault"] = outcome["tool_fault"]
-    if outcome["plan_change"]:
-        fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
-    lines = []
-    for key, value in fields.items():
-        lines.append(f"{key}: {value if isinstance(value, str | int) else json.dumps(value)}")
-    return "\n".join(lines)
-
-
-def crash_outcome(progress, reason):
-    # A crash is a tool fault, not a finding: tool_fault tells code_step to offer review-again.
-    fixed = [item for item in progress["fixed"] if isinstance(item, str) and item.strip()]
-    return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
-            "skipped_fp": [], "blockers": [reason], "plan_change": [], "asks": [],
-            "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",
-            "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
-            "check_rewrote_edited": [], "check_created": [],
-            "files_touched": sorted(progress["files_touched"]), "nits": [],
-            "unreviewed_fix": False, "tool_fault": reason}
-
-
 # ---------- hand-back rows ----------
 
 def report_write_failure(what, error):
@@ -1144,10 +875,11 @@ def write_usage_row(repo, started):
 
 def stop_on_sigterm(_signal_number, _frame):
     """The stop signal of an abort, a review-again or a start --restart: kill the process group of every claude call
-    that is running, then exit without a packet."""
+    that is running and remove the base run's worktree, then exit without a packet."""
     for pid in list(LIVE_CHILDREN):
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(pid, signal.SIGKILL)
+    full_check_gate.remove_live_base_trees()
     os._exit(128 + signal.SIGTERM)
 
 

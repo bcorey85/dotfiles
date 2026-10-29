@@ -115,3 +115,50 @@ class CheckOutputTest(unittest.TestCase):
         output = "noise\nFAIL: test_x (app.tests.T)\n"
 
         self.assertEqual(output, check_output.tail_with_failing_tests(output, output))
+
+    def test_a_log_line_compares_equal_across_runs_only_when_its_failure_counts_match(self):
+        cases = {
+            "a pytest banner whose timing and passed count change":
+                ("=== 1 failed, 10 passed in 1.23s ===", "=== 1 failed, 12 passed in 4.56s ===", True),
+            "an error count that changes":
+                ("1 failed, 1 error", "1 failed, 0 errors", False),
+            "a message whose passed count changes":
+                ("expected 3 passed", "expected 5 passed", False),
+            "a message whose passed count does not change":
+                ("expected 3 passed", "expected 3 passed", True),
+            "a jest run time that changes":
+                ("Time:        1.2 s", "Time:        1.5 s", True),
+            "a vitest duration and start time that change":
+                ("Duration  1.23s (transform 10ms, setup 0ms)", "Duration  1.56s (transform 12ms, setup 1ms)", True),
+            "a vitest start time that changes":
+                ("Start at  10:20:30", "Start at  10:21:45", True),
+            "a jest time label whose number is an assertion value":
+                ("Time: 5 expected", "Time: 6 expected", False),
+            "a jest time label followed by an assertion about milliseconds":
+                ("Time: 5 ms expected 3 ms", "Time: 5 ms expected 4 ms", False),
+            "a jest time label followed by a limit":
+                ("Time: 2 s, limit 1 s", "Time: 3 s, limit 1 s", False),
+        }
+        for name, (first_line, second_line, expected_equal) in cases.items():
+            with self.subTest(name):
+                first_normalized = check_output.normalized_log_line(first_line)
+                second_normalized = check_output.normalized_log_line(second_line)
+
+                self.assertEqual(expected_equal, first_normalized == second_normalized)
+
+    def test_a_failing_block_runs_across_blank_lines_to_the_next_failing_line(self):
+        cases = {
+            "a jest file's second test after a blank line": (
+                ["FAIL src/a.test.js", "  ● suite > old", "", "    Expected: 3", "", "  ● suite > new", "",
+                 "    Expected: 5"],
+                {"● suite > old", "Expected: 3", "● suite > new", "Expected: 5"}),
+            "lines before the first failing line are not details": (
+                ["noise", "FAIL: test_a", "    detail"], {"detail"}),
+            "a blank line alone adds no detail": (["FAIL: test_a", ""], set()),
+            "a jest PASS line after a failing block is not a detail": (
+                ["FAIL src/a.test.js", "  ● suite > old", "", "PASS src/b.test.js", "Time:        1.2 s"],
+                {"● suite > old", "Time:"}),
+        }
+        for name, (log_lines, expected_details) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(expected_details, check_output.failing_block_details(log_lines))

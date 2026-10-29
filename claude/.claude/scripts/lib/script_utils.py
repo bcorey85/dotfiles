@@ -422,11 +422,31 @@ def one_line(text, limit=200):
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]
 
 
+def last_json_object(reply, keys):
+    """The last JSON object in a reply that holds any of `keys`, or None. Decodes from each "{" back to front, because
+    prose before the object can hold braces of its own ("{CUBE}")."""
+    decoder = json.JSONDecoder()
+    brace_positions = [match.start() for match in re.finditer(r"\{", reply)]
+    for position in reversed(brace_positions):
+        try:
+            parsed, _ = decoder.raw_decode(reply, position)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and any(key in parsed for key in keys):
+            return parsed
+    return None
+
+
 def contains_ignoring_whitespace(text, part):
     """True when `part` occurs in `text` once every run of whitespace in both reads as one space. An empty part
     is never contained."""
     squashed_part = " ".join(str(part).split())
     return bool(squashed_part) and squashed_part in " ".join(str(text).split())
+
+
+def names_path(path, text):
+    """True when `text` holds `path` as a whole path: not the start or the middle of a longer name (`/x/app-v2`)."""
+    return re.search(rf"(?<![\w.@+-]){re.escape(path)}(?![\w.@+-])", text) is not None
 
 
 def has_whitespace(text):

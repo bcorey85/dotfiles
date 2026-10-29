@@ -565,10 +565,10 @@ def unreviewed_fix_section(packet):
 
 
 def full_check_lines(packet):
-    """The full check's lines for the user: a check that did not run or ran unverified, and the files it changed or
-    created."""
+    """The full check's lines for the user: a check that did not run, ran unverified or failed as it does without the
+    diff (`pre-existing`), and the files it changed or created."""
     lines = []
-    if packet["full_check"].startswith(("not run", "unverified")):
+    if packet["full_check"].startswith(("not run", "unverified", "pre-existing")):
         lines.append("Full check: " + packet["full_check"])
     if packet["check_changed"]:
         lines.append("Changed by the full check, not by the coder (restore with `git checkout --` or keep): "

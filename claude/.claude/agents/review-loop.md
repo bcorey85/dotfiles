@@ -17,6 +17,8 @@ comes back in the packet.
 - `caller`: `code` | `review` | `fix` — for telemetry.
 - `lane`: `eng-spec` | `code` | `test-audit` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
+- `later-phase files: <path>, ...` — files the plan gives to a later phase. No coder you dispatch edits one.
+- `guidance: <text>` — the main session's guidance for the run. Put it in every coder prompt.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - `base: <ref>` — the ref the review diffs against. Absent → `HEAD`, the working-tree changes. `/review base=<ref>` passes it for a whole-branch review.
 - `repo: <path>` — the repo or worktree under review. Absent → the repo of the first absolute path the dispatch prompt names (a `Repo:` line, a worktree, a handoff file), else your cwd.
@@ -156,6 +158,8 @@ Include this text verbatim at the top of the `## Small items` section:
 
 Add to every coder prompt: "Never edit the plan file (`plan:`). A fix that needs a plan change is a PLAN-IMPACT block, not an edit."
 
+With a `later-phase files:` input, add to every coder prompt: "Never edit these files: the plan gives them to a later phase. When an issue needs one of them, leave it unapplied and report it as a PLAN-IMPACT: <the paths>". With a `guidance:` input, add: "Guidance from the main session. Follow it within the issues and the plan; it changes neither: <the text>". When a coder's changed files include a later-phase file, return `status: critical-blocker` naming the files.
+
 Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` — this is what the wrapper renders under "Fixed". A small item never enters `fixed[]`: from the coder report, end its `nit[]` line with `applied` or `skipped: <reason>`, and log an applied one in Step 7b with `actioned=fixed`.
 
 **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
@@ -219,7 +223,9 @@ return `status: cap-reached` with `findings_remaining` naming the unreviewed fil
 
 **Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from `<ROOT>/CLAUDE.md` (read it)) ONCE, after the last code change, with the Bash timeout at 600000:
 
-`python3 ~/.claude/scripts/review/full_check.py <ROOT> --log /tmp/review-gate-<branch>.log -- '<command>'`
+`python3 ~/.claude/scripts/review/full_check.py <ROOT> --log /tmp/review-gate-<branch>.log [--plan <plan> --phase <N>] -- '<command>'`
+
+Pass `--plan` and `--phase` when the inputs hold both. The script then leaves out the phase's `Expected red` steps and prints each as `expected red: <command> until Phase <id>`; a left-out step is no finding.
 
 `<branch>` is the `BRANCH` from Step 0 with each `/` as `-`, written literally. Other sessions write to `/tmp` too, so never use a name without the branch. A handoff `tests-run` never exempts it: that run covered only the changed files. Copy the result on the script's first line into the packet's `full_check`:
 - `passed` → proceed.
@@ -230,6 +236,7 @@ return `status: cap-reached` with `findings_remaining` naming the unreviewed fil
 - `not run (environment gap: No module named 'X')` → the check's interpreter lacks a module the repo declares as a dependency. No finding; never a blocker. Proceed.
 - `not run (check-command error: <line>)` → a step of the command stopped on a path that does not exist. No finding. Proceed.
 - `not run (scoped command: it names files or tests, so it is no full check)` → you passed a command other than the CLAUDE.md quality-check command, or narrowed it. Run the CLAUDE.md quality-check command as written, else the whole-suite command with no file, directory or test-name argument.
+- `not run (expected red until Phase <id>[, <id>...])` → the plan expects the whole check to fail until that phase. No finding. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
 - `not run (unresolved command: what it runs cannot be read, so it is no full check)` → you passed a command other than the CLAUDE.md quality-check command, and its scope cannot be read, such as a make call with a NAME=value argument or a missing target. Run the CLAUDE.md quality-check command as written, else the test runner's whole-suite command directly.
 - `not run (CI)` or `passed (check only; CI runs the full suite)` → the repo's CLAUDE.md holds `Full suite: CI`. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
 
@@ -285,30 +292,50 @@ and `nit[]`, on every pass, and the Step 7 metrics line. The stop hook blocks th
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 
-Return exactly this, and nothing else of substance:
+Hand back one JSON object alone: no code fence, no prose before or after it, and no indentation. Return exactly this shape, and nothing else of substance (`status: x` elsewhere in this file means the key `status` set to `"x"`):
 
+```json
+{
+  "status": "converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault",
+  "iter": 1,
+  "spec_iter": "<n, or omit>",
+  "fixed": [{"finding": "...", "file_line": "path:line", "blocker": false}],
+  "skipped_fp": [{"item": "...", "reason": "..."}],
+  "blockers": ["<one entry per blocker>"],
+  "findings_remaining": [{"disposition": "fix", "finding": "...", "file_line": "path:line", "blocker": false}],
+  "plan_impact": "<verbatim PLAN-IMPACT block>",
+  "ask": [{"finding": "...", "file_line": "path:line", "question": "...", "change": "...", "gate": "code-reviewer", "class": "smell"}],
+  "class_closure": "<the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a - fixed[] empty>",
+  "full_check": "passed",
+  "full_check_command": "<the exact command full_check.py ran>",
+  "full_check_summary": "<the script's summary: line>",
+  "files_touched": ["<path>"],
+  "check_changed": ["<path>"],
+  "check_rewrote_edited": ["<path>"],
+  "check_created": ["<path>"],
+  "nit": ["<one entry per item>"],
+  "load_bearing_clean": "<one line, or omit the key>",
+  "tool_fault": "<what failed, or omit the key>",
+  "blocked_agents": ["<agent>: <step it skipped> (<the refused call>)"],
+  "scoped_tests": "<see below, or omit the key>"
+}
 ```
-status: converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault
-iter: <n>                                # correctness rounds run
-fixed: [{finding, file_line, blocker}]   # `fix` findings you resolved — NEVER omit; a silent repair is a bug
-skipped_fp: [{item, reason}]             # `fix` findings dropped as false positives
-blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here)
-findings_remaining: [{disposition, finding, file_line, blocker}]  # status=deferred | cap-reached | plan-impact; a blocker never rides on converged or deferred
-plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
-ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; question is never empty: an ask with no question takes its finding, or else its change, as its question; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome. Log each ask row with the same file and line as its file_line; the caller reads the id from that row, so leave finding_id out
-class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
-full_check: passed | unverified (exit 0, no runner summary) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | passed (check only; CI runs the full suite) | not run (timeout) | not run (scoped command: it names files or tests, so it is no full check) | not run (unresolved command: what it runs cannot be read, so it is no full check) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only)  # the Step 6 result
-full_check_command: <the exact command full_check.py ran>
-full_check_summary: <the script's `summary:` line>  # passed | unverified only (not for passed (check only...))
-scoped_tests: <passed | failed: <cmds>[; failing tests: <lines>]; full output: <log path> | setup fault / not run (timeout): <cmds>; full output: <log path> | command error: <cmd> (<line>)[; ...]; full output: <log path> | not run (<reason>)>  # optional; the scoped test rerun after a fix no passed full check followed
-check_changed: [<path>]                  # the `changed by the check:` paths from every full_check.py run in this invocation
-check_rewrote_edited: [<path>]           # the `rewrote edited files:` paths from every full_check.py run in this invocation
-check_created: [<path>]                  # the `created by the check:` paths from every full_check.py run in this invocation
-files_touched: [<path>]
-nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
-load_bearing_clean: <one line, or omitted>
-blocked_agents:                          # one `- <agent>: <step it skipped> (<the refused call>)` line per entry: each reviewer report's `Blocked:` line, and any other refusal a subagent reports; omitted when none
-```
+
+Every value is a JSON string, a list, or (for `iter` and `spec_iter`) an integer. A list key holds a list, never a string; an empty list is `[]`. Leave out the optional keys that have nothing to say. Write `\n` inside a string for a line break.
+
+- `status`: one of the six words. `iter`: correctness rounds run.
+- `fixed`: the `fix` findings you resolved. NEVER leave it out; a silent repair is a bug.
+- `skipped_fp`: `fix` findings dropped as false positives.
+- `blockers`: status=critical-blocker | setup-fault (the full check could not run here). One string per entry.
+- `findings_remaining`: status=deferred | cap-reached | plan-impact. A blocker never rides on converged or deferred.
+- `plan_impact`: status=plan-impact. The verbatim PLAN-IMPACT block, as one string.
+- `ask`: never auto-fixed; the user answers these. question is never empty: an ask with no question takes its finding, or else its change, as its question. `change` is the one edit an accepted answer makes. `gate` and `class` ride along so the caller can log the outcome. Log each ask row with the same file and line as its `file_line`; the caller reads the id from that row, so leave `finding_id` out.
+- `full_check`: the Step 6 result, one of: passed | unverified (exit 0, no runner summary) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | passed (check only; CI runs the full suite) | not run (timeout) | not run (scoped command: it names files or tests, so it is no full check) | not run (unresolved command: what it runs cannot be read, so it is no full check) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | not run (expected red until Phase <id>[, <id>...]) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only).
+- `full_check_summary`: passed | unverified only (not for passed (check only; CI runs the full suite)).
+- `scoped_tests`: optional; the scoped test rerun after a fix no passed full check followed: passed | failed: <cmds>[; failing tests: <lines>]; full output: <log path> | setup fault / not run (timeout): <cmds>; full output: <log path> | command error: <cmd> (<line>)[; ...]; full output: <log path> | not run (<reason>).
+- `check_changed`, `check_rewrote_edited`, `check_created`: the paths of the `changed by the check:`, `rewrote edited files:` and `created by the check:` lines from every full_check.py run in this invocation.
+- `nit`: a small item ends `applied` or `skipped: <reason>`.
+- `blocked_agents`: one string per entry, `<agent>: <step it skipped> (<the refused call>)`: each reviewer report's `Blocked:` line, and any other refusal a subagent reports; omitted when none.
 
 `load_bearing_clean`: if a high-blast-radius file in scope (enforcement
 surface, many inbound references, public contract) came back with zero
@@ -317,7 +344,7 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 
 ## What NOT to do
 
-- **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, say so in the packet and stop.
+- **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, return `status` `critical-blocker` with the reason in `blockers`, and stop.
 - **Never write a ledger row anywhere but through its logger.** Call `~/.claude/skills/review/log-review-finding` by that full path; it is not on PATH. Write each call out with literal key=value arguments, one call per row; never build the arguments by splitting a string in a loop. If the call fails, add `ledger: <its error line>` to `nit` and go on; never write the row to a file of your own.
 - **Never put the plan file in `files_touched`, and never let a coder edit it.** The plan changes only through a plan-edit dispatch from the caller. A finding that needs a plan change returns as `status: plan-impact`. The hand-back hook denies a packet that names the plan file.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.

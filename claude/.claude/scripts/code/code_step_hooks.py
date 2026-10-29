@@ -11,6 +11,7 @@ import pathlib
 import sys
 import time
 
+import expected_red
 import plan_format
 import script_utils
 from code_step_core import (
@@ -25,9 +26,11 @@ from code_step_core import (
     SAY_MAX_AGE_SECONDS,
     VERB_WORDS_REPLACED_BY_RESUME,
     StateFileError,
+    coder_changed_files,
     dispatch_marker,
     dispatch_standing,
     expected_agent,
+    file_hashes,
     is_dispatch_open,
     log_event,
     newest_dispatch_standing,
@@ -44,6 +47,8 @@ from code_step_core import (
 from code_step_verification import verification_format_failure
 
 HookCall = collections.namedtuple("HookCall", "event repo state run_id session_id tool_input")
+# The stages whose coders may not edit a later phase's files. The plan-edit coder edits the plan only.
+LATER_PHASE_GUARD_STAGES = ("coder", "review", "asks-coder")
 
 
 def hook_repo_dirs(event):
@@ -149,10 +154,32 @@ def deny_handback_attempt(call):
     return True
 
 
+def later_phase_edit_denial(call):
+    # The reason to deny a coder's hand-back while the run's diff since its baseline edits a file that the plan names
+    # only in a later open phase, or None.
+    state = call.state
+    if call.event.get("agent_type") != CODER or state.get("stage") not in LATER_PHASE_GUARD_STAGES:
+        return None
+    if not state.get("plan") or not state.get("phase") or "baseline" not in state:
+        return None
+
+    repo_dir = pathlib.Path(call.repo)
+    plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+    later_files = set(expected_red.later_phase_paths(plan_lines, state["phase"]))
+    changed_files = coder_changed_files(repo_dir, state, file_hashes(repo_dir))
+    edited = sorted(later_files.intersection(changed_files))
+    if not edited:
+        return None
+    return (f"Do not hand back yet. Your edits touch files the plan gives to a later phase: {', '.join(edited)}. "
+            "Undo your edits to them, then hand back. If an issue needs one of them, leave that issue unapplied "
+            "and report it as a PLAN-IMPACT.")
+
+
 def command_hook():
     # PreToolUse on SubagentHandback: every attempt is logged, then the pinned fork's early hand-back is denied once
-    # per dispatch. Claude Code runs the hooks of one matcher side by side, so this one sees an attempt that the other
-    # gates deny. Only a hand-back that went through (PostToolUse) ends a wait. One denial answers the call.
+    # per dispatch, and a coder's hand-back is denied while the diff edits a later phase's file. Claude Code runs the
+    # hooks of one matcher side by side, so this one sees an attempt that the other gates deny. Only a hand-back that
+    # went through (PostToolUse) ends a wait. One denial answers the call.
     try:
         calls = read_hook_calls()
         for call in calls:
@@ -160,6 +187,17 @@ def command_hook():
 
         for call in calls:
             if deny_handback_attempt(call):
+                return
+
+        for call in calls:
+            try:
+                reason = later_phase_edit_denial(call)
+            except Exception as error:
+                plan_name = call.state.get("plan")
+                print(f"code-step hook: the later-phase check of plan {plan_name} failed: {error}", file=sys.stderr)
+                continue
+            if reason:
+                script_utils.pre_tool_use_deny(reason)
                 return
     except Exception as error:
         print(f"code-step hook: {error}", file=sys.stderr)
@@ -382,7 +420,8 @@ def command_plan_hook():
 
 
 def plan_write_failure(plan, plan_lines, plan_name, repo_dir):
-    # The first message the plan hook prints: Phase Status, then Manual Verification, then Automated Verification.
+    # The first message the plan hook prints: Phase Status, then Manual Verification, then Automated Verification,
+    # then the Expected red lines.
     if plan["failures"] and all(failure["kind"] in plan_format.MID_EDIT_KINDS for failure in plan["failures"]):
         return plan_format.plan_mid_edit_message(plan, plan_name)
 
@@ -392,7 +431,22 @@ def plan_write_failure(plan, plan_lines, plan_name, repo_dir):
     manual_failure = plan_format.manual_format_failure(plan_lines, plan_name)
     if manual_failure:
         return manual_failure
-    return verification_format_failure(plan_lines, plan_name, repo_dir, plan["entries"])
+    verification_failure = verification_format_failure(plan_lines, plan_name, repo_dir, plan["entries"])
+    if verification_failure:
+        return verification_failure
+    return expected_red_failure(plan_lines, plan_name, repo_dir)
+
+
+def expected_red_failure(plan_lines, plan_name, repo_dir):
+    # The message for Expected red lines that do not hold against the repo's Quality check, or None when all hold.
+    # Imported here: review/ joins sys.path when code_step_core loads, which sorted top-level imports would precede.
+    import full_check
+
+    quality_check = full_check.configured_check_command(repo_dir)
+    rows = expected_red.failure_rows(plan_lines, quality_check, plan_name)
+    if not rows:
+        return None
+    return "The plan's Expected red lines do not hold. Fix each line:\n" + "\n".join(rows)
 
 
 def command_say_hook():

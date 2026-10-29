@@ -26,9 +26,24 @@ MANAGE_TEST_VALUE_OPTIONS = {
     "-v", "--verbosity", "--settings", "--pythonpath", "--parallel", "--testrunner", "-t", "--top-level-directory",
     "-p", "--pattern", "--tag", "--exclude-tag",
 }
+# By runner: the flags that leave files or tests out of a `manage.py test` or CHECK_RUN_PREFIXES run. For the
+# CHECK_RUN_PREFIXES runners their space form already reads its value as a scope word; this list reads the `=` form.
+# ruff's --ignore takes rule codes, so it is no leave-out flag there. A script run through npm, yarn, pnpm or bun reads
+# the flags of every runner but ruff.
+LEAVES_OUT_FLAGS = {
+    "manage.py": {"--exclude-tag"},
+    "pytest": {"--ignore", "--ignore-glob", "--deselect"},
+    "vitest": {"--exclude"},
+    "jest": {"--testPathIgnorePatterns"},
+    "eslint": {"--ignore-pattern", "--ignore-path"},
+    "ruff": {"--exclude", "--extend-exclude"},
+}
+# The leave-out flags read for every CHECK_RUN_PREFIXES run but `ruff check`.
+NON_RUFF_LEAVE_OUT_FLAG_SETS = [flags for runner, flags in LEAVES_OUT_FLAGS.items() if runner != "ruff"]
+CHECK_RUN_LEAVES_OUT_FLAGS = set().union(*NON_RUFF_LEAVE_OUT_FLAG_SETS)
 
-# A simple command that starts with one of these runs tests or lint. With no path, test name or changed-files flag
-# after it, it covers the whole package. "test" and "lint" also match script names such as "test:unit".
+# A simple command that starts with one of these runs tests or lint. With no path, test name, changed-files flag or
+# exclude flag after it, it covers the whole package. "test" and "lint" also match script names such as "test:unit".
 CHECK_RUN_PREFIXES = [
     ["npm", "test"], ["npm", "t"], ["npm", "run", "test"], ["yarn", "test"], ["yarn", "run", "test"],
     ["pnpm", "test"], ["pnpm", "run", "test"], ["bun", "test"], ["npx", "vitest"], ["npx", "jest"],
@@ -46,7 +61,7 @@ BUILD_PREFIXES = [
 # word, which is no scope. tsc's and dotnet's project flags name the build file, and a whole run with them reads none.
 RUNNER_VALUE_FLAGS = {
     "cargo": {"--manifest-path", "--target-dir", "--target", "-j", "--jobs", "--features", "-F", "--profile", "-D",
-              "-A", "-W", "--test-threads", "--color", "--message-format", "--config", "-Z", "--exclude", "--retries",
+              "-A", "-W", "--test-threads", "--color", "--message-format", "--config", "-Z", "--retries",
               "--failure-output", "--success-output", "--status-level", "--final-status-level",
               "--max-fail", "--cargo-profile", "--archive-file", "--format", "--logfile", "-P", "--run-ignored"},
     "go": {"-p", "-coverprofile", "-o", "-count", "-timeout", "-parallel", "-tags", "-cpu", "-covermode",
@@ -55,7 +70,7 @@ RUNNER_VALUE_FLAGS = {
            "-memprofilerate", "-mutexprofile", "-mutexprofilefraction", "-trace", "-outputdir", "-testlogfile",
            "-fuzztime", "-fuzzminimizetime", "-pgo", "-buildmode", "-buildvcs", "-toolexec", "-compiler",
            "-installsuffix", "-list"},
-    "mypy": {"--python-version", "--config-file", "--cache-dir", "--python-executable", "--platform", "--exclude",
+    "mypy": {"--python-version", "--config-file", "--cache-dir", "--python-executable", "--platform",
              "--follow-imports", "--disable-error-code", "--enable-error-code", "--junit-xml", "--html-report",
              "--cobertura-xml-report", "--linecount-report", "--custom-typeshed-dir", "--always-true"},
     "pyright": {"-p", "--project", "--pythonversion", "--pythonpath", "--venvpath", "--level", "--typeshedpath",
@@ -68,22 +83,23 @@ RUNNER_VALUE_FLAGS = {
     # bats' -p is --pretty, a switch that takes no value and names no tests.
     "bats": {"-j", "--jobs", "-F", "--formatter", "-o", "--output", "--report-formatter"},
     "rspec": {"-f", "--format", "-r", "--require", "-I", "--seed", "--order", "--out", "--default-path",
-              "--exclude-pattern", "--failure-exit-code", "--deprecation-out", "-O", "--options"},
-    "phpunit": {"-c", "--configuration", "--log-junit", "--bootstrap", "-d", "--exclude-group", "--coverage-clover",
+              "--failure-exit-code", "--deprecation-out", "-O", "--options"},
+    "phpunit": {"-c", "--configuration", "--log-junit", "--bootstrap", "-d", "--coverage-clover",
                 "--coverage-html", "--coverage-xml", "--testdox-html", "--cache-result-file", "--order-by",
                 "--random-order-seed", "--printer", "--test-suffix", "--extensions", "--cache-directory",
                 "--processes", "--log-tap"},
 }
-# By runner: the flags that pick part of the suite and take a value, as `--flag value` or `--flag=value`.
+# By runner: the flags that pick part of the suite, or leave part of it out, and take a value, as `--flag value` or
+# `--flag=value`.
 RUNNER_SELECTOR_VALUE_FLAGS = {
     "cargo": {"-p", "--package", "--test", "--bench", "--bin", "--example", "-E", "--filterset", "--filter-expr",
-              "--skip", "--partition"},
+              "--skip", "--partition", "--exclude"},
     "go": {"-run", "-skip", "-fuzz"},
-    "mypy": {"-p", "--package", "-m", "--module"},
+    "mypy": {"-p", "--package", "-m", "--module", "--exclude"},
     "dotnet": {"--filter"},
-    "rspec": {"-e", "--example", "-t", "--tag", "-P", "--pattern"},
-    "phpunit": {"--filter", "--testsuite", "--group"},
-    "bats": {"--filter", "-f", "--filter-tags"},
+    "rspec": {"-e", "--example", "-t", "--tag", "-P", "--pattern", "--exclude-pattern"},
+    "phpunit": {"--filter", "--testsuite", "--group", "--exclude-group", "--exclude-filter", "--exclude-testsuite"},
+    "bats": {"--filter", "-f", "--filter-tags", "--negative-filter"},
 }
 # By runner: the switches that pick part of the suite.
 RUNNER_SELECTOR_SWITCHES = {
@@ -117,8 +133,8 @@ def matches_prefix(words, prefix):
 
 
 def direct_check_scope(words):
-    # "whole" for a build or a test or lint run with no path, test name or changed-files flag, "targeted" for one
-    # with, "none" for any other command and for a whole run of a runner in RUNNER_VALUE_FLAGS.
+    # "whole" for a build or a test or lint run with no path, test name, changed-files flag or exclude flag,
+    # "targeted" for one with, "none" for any other command and for a whole run of a runner in RUNNER_VALUE_FLAGS.
     # The caller has peeled the runner wrappers. A python program is judged by its basename.
     if words and PYTHON_PROGRAM.fullmatch(os.path.basename(words[0])):
         words = ["python", *words[1:]]
@@ -130,15 +146,17 @@ def direct_check_scope(words):
 
     if len(words) >= 3 and words[0] == "python" and os.path.basename(words[1]) == "manage.py" \
             and words[2] == "test":
+        leave_out_words = [word for word in words[3:] if word.split("=", 1)[0] in LEAVES_OUT_FLAGS["manage.py"]]
         labels = [word for word in without_flag_values(words[3:], MANAGE_TEST_VALUE_OPTIONS)
                   if not word.startswith("-")]
-        return "targeted" if labels else "whole"
+        return "targeted" if labels or leave_out_words else "whole"
 
     for prefix in CHECK_RUN_PREFIXES:
         if not matches_prefix(words, prefix):
             continue
+        leave_out_flags = LEAVES_OUT_FLAGS["ruff"] if prefix == ["ruff", "check"] else CHECK_RUN_LEAVES_OUT_FLAGS
         scope_words = [word for word in words[len(prefix):]
-                      if word.startswith(CHANGED_FILES_FLAGS)
+                      if word.startswith(CHANGED_FILES_FLAGS) or word.split("=", 1)[0] in leave_out_flags
                       or not (word.startswith("-") or word == "run" or word in WHOLE_PACKAGE_PATHS)]
         return "targeted" if scope_words else "whole"
     return "targeted" if runner_names_part_of_suite(words) else "none"

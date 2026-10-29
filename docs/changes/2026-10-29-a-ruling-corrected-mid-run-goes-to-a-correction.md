@@ -42,5 +42,5 @@ None; no intake number counts mid-run corrections.
 ## Back-out
 
 Revert the `correct-ruling` verb and its usage lines, the correction branch in `review_coder_report` and
-`unreviewable_outcome`, `correction_coder_prompt`, the ruled-asks replace in `record_ruled_asks`, the rule 2 and 5
-edits in `skills/code/SKILL.md`, the ask-question sentence, and the new tests.
+`unreviewable_outcome`, `correction_coder_prompt`, the ruled-asks replace in `record_ruled_asks`, the `asks-done`
+sentence of rule 5 in `skills/code/SKILL.md`, the ask-question sentence, and the new tests.

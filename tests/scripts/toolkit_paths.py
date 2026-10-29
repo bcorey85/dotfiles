@@ -23,10 +23,11 @@ CODE_STEP_MODULES = ("code_step_core.py", "code_step_boundary.py", "code_step_ho
                      "code_step_start.py", "code_step_report.py", "code_step_review.py", "code_step_closing.py",
                      "code_step_start_args.py", "code_step_concentration.py", "code_step_phase_end.py",
                      "code_step_usage.py", "code_step_asks.py", "review_asks.py",
-                     "code_step_review_stops.py", "code_step_verification.py")
+                     "code_step_review_stops.py", "code_step_verification.py", "code_guidance.py")
 # The lib modules a copied coder_gate.py or code-step script imports.
 CODE_STEP_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "makefile_text.py", "test_run_output.py",
-                         "check_output.py", "check_scope.py", "numstat.py", "source_paths.py", "linked_installs.py")
+                         "check_output.py", "check_scope.py", "numstat.py", "source_paths.py", "linked_installs.py",
+                         "expected_red.py")
 # A Python older than 3.14, or None: its pathlib raises on a path test of a word longer than a file name may be, where
 # 3.14 returns False, so a long-text test runs the script under it.
 PRE_314_PYTHON = shutil.which("python3.13") or shutil.which("python3.12") or shutil.which("python3.11")

@@ -751,5 +751,43 @@ class LinkedInstallsTest(unittest.TestCase):
         self.assertTrue(linked_installs.holds_editable_install(self.repo, env))
 
 
+class PhaseExpectedRedTest(unittest.TestCase):
+    QUALITY_CHECK = f"{PASSING_SUITE} && exit 1"
+    PLAN = ("## Phase Status\n\n- [ ] Phase 1: Totals (risk: low)\n- [ ] Phase 2: Audit (risk: low)\n\n"
+            "## Phase 1: Totals\n\nExpected red: `{command}` until Phase 2\n\n## Phase 2: Audit\n")
+
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name)
+        self.log = self.repo / "review-gate.log"
+        (self.repo / "CLAUDE.md").write_text(f"Quality check: `{self.QUALITY_CHECK}`\n")
+
+    def check(self, *plan_args, expected_red="exit 1"):
+        (self.repo / "plan.md").write_text(self.PLAN.format(command=expected_red))
+        argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log), *plan_args]
+        return subprocess.run([*argv, "--", self.QUALITY_CHECK], capture_output=True, text=True, timeout=60)
+
+    def test_the_phase_runs_its_check_without_the_expected_red_step(self):
+        completed = self.check("--plan", "plan.md", "--phase", "1")
+
+        self.assertEqual(0, completed.returncode, completed.stdout)
+        self.assertIn("expected red: `exit 1` until Phase 2", completed.stdout)
+
+    def test_without_a_plan_the_step_still_fails_the_check(self):
+        self.assertEqual(1, self.check().returncode)
+
+    def test_the_whole_check_expected_red_is_not_run(self):
+        completed = self.check("--plan", "plan.md", "--phase", "1", expected_red=self.QUALITY_CHECK)
+
+        self.assertEqual(0, completed.returncode, completed.stdout)
+        self.assertEqual("full check: not run (expected red until Phase 2)", completed.stdout.splitlines()[0])
+        self.assertFalse(self.log.exists())
+
+    def test_a_plan_without_its_phase_or_an_unreadable_plan_is_refused(self):
+        self.assertEqual(2, self.check("--plan", "plan.md").returncode)
+        self.assertEqual(2, self.check("--plan", "missing.md", "--phase", "1").returncode)
+
+
 if __name__ == "__main__":
     unittest.main()

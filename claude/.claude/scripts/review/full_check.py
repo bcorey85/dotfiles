@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """full_check.py — the review loop's one full check of a phase, under a time limit.
 
-    full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] -- '<command>'
+    full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] [--plan <path> --phase <id>] -- '<command>'
+
+With --plan and --phase, the phase's `Expected red:` lines whose later phase is still open leave their `&&` steps out
+of the command (lib/expected_red.py), and each left-out line prints as `expected red: <command> until Phase <id>`
+after the result line. When they leave out the whole command, nothing runs and the result is
+`not run (expected red until Phase <id>)`.
 
 Runs the command, given as one quoted word or as plain words, through the shell in the repo, output to the log, and
 prints `full check: <result>` first: `passed`, `unverified (exit 0, no runner summary)` when the command exited 0 but
@@ -47,6 +52,7 @@ import tomllib
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 
 import check_scope
+import expected_red
 import script_utils
 from check_output import (
     FAILING_TEST_LINE,
@@ -504,12 +510,25 @@ def is_setup_fault_result(result):
     return result.startswith(SETUP_FAULT)
 
 
+def phase_check(repo, check_command, plan, phase):
+    """(the command the phase's full check runs, None when the phase's Expected red lines leave out all of it; the
+    Expected red entries left out). `plan` is the plan path, relative to the repo or absolute. With no plan or phase
+    the command is as given. A plan that cannot be read raises OSError."""
+    if not plan or not phase or not check_command:
+        return check_command, []
+
+    plan_lines = (pathlib.Path(repo) / plan).read_text().splitlines()
+    return expected_red.check_for_phase(check_command, plan_lines, phase)
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("repo")
     parser.add_argument("--log", required=True)
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--base", default="HEAD")
+    parser.add_argument("--plan")
+    parser.add_argument("--phase")
     if "--" not in argv:
         parser.error("no command after --")
 
@@ -517,19 +536,30 @@ def main(argv):
     args = parser.parse_args(argv[:separator])
     if UNFILLED_LOG_NAME.search(pathlib.Path(args.log).name):
         parser.error(f"--log name {pathlib.Path(args.log).name!r} holds an unfilled placeholder (`...`, `<` or `>`)")
+    if bool(args.plan) != bool(args.phase):
+        parser.error("--plan and --phase go together")
 
     command_words = argv[separator + 1:]
     check_command = shlex.join(command_words) if len(command_words) > 1 else "".join(command_words)
     if not check_command:
         parser.error("no command after --")
 
+    try:
+        phase_command, left_out = phase_check(args.repo, check_command, args.plan, args.phase)
+    except OSError as error:
+        parser.error(f"--plan {args.plan}: {error.strerror}")
+
     declared = check_command == configured_check_command(args.repo)
     scoped = check_scope.command_check_scope(check_command, args.repo) == "targeted"
-    if not declared and scoped and not full_suite_runs_in_ci(args.repo):
+    if phase_command is None:
+        result, tail, details = expected_red.not_run_result(left_out), "", empty_details()
+    elif not declared and scoped and not full_suite_runs_in_ci(args.repo):
         result, tail, details = NOT_RUN_SCOPED, "", empty_details()
     else:
-        result, tail, details = run(args.repo, check_command, args.log, args.timeout, base=args.base)
+        result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base)
     print(f"full check: {result}")
+    for entry in left_out:
+        print("expected red: " + expected_red.entry_text(entry))
     summary = summary_text(result, details["summaries"])
     if summary is not None:
         print("summary: " + summary)

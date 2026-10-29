@@ -11,6 +11,7 @@ import sys
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib")]
 import code_step_core
+import expected_red
 import format_files
 import full_check
 import script_utils
@@ -60,6 +61,7 @@ class FullCheckSteps:
     def init_full_check_state(self):
         self.full_check = ""
         self.full_check_command = ""
+        self.expected_red = []  # the phase's Expected red entries that the check leaves out
         self.base_checked = False
         self.base_run = None
         self.check_details = {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
@@ -91,8 +93,13 @@ class FullCheckSteps:
         The changed, rewrote_edited and created paths add up across runs; the summaries are the latest run's. The
         check leaves the files it rewrote or created in place, and a repair measures its changes as the text
         difference around its own call, so a changed or created file reaches files_touched only when the repair coder
-        edits it itself. A rewrote_edited file holds coder work and always counts as touched."""
+        edits it itself. A rewrote_edited file holds coder work and always counts as touched. A check that the
+        Expected red entries leave out whole does not run, and leaves untested_fix as it is."""
         self.full_check_command = check_command or ""
+        if check_command is None and self.expected_red:
+            self.full_check = expected_red.not_run_result(self.expected_red)
+            return ""
+
         self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)
         if self.full_check == full_check.PASSED:
             self.untested_fix = False

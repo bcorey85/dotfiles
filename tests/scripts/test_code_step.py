@@ -44,6 +44,7 @@ import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
+import criteria_verdict  # noqa: E402
 import plan_format  # noqa: E402
 
 PLAN = """# Orders Plan
@@ -1133,6 +1134,56 @@ class CodeStepTest(unittest.TestCase):
         out = self.coder_round(report)
         self.assertIn("ACTION: ask-user", out)
 
+    def test_the_phase_end_block_lists_the_deviation_adopted_in_the_phase(self):
+        self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        self.step("after-plan-edit")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+
+        said = self.said()
+        self.assertNotIn("## Question for the user", said)
+        self.assertIn("Plan deviations adopted in Phase 1 (the code won; no acceptance criterion changed):", said)
+        self.assertIn("- Phase 1: assumed: the importer reads a header row", said)
+
+    def test_the_run_end_block_lists_the_deviation_adopted_in_phase_one(self):
+        self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        self.step("after-plan-edit")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+
+        self.mark_phases_done(3)
+        status_line = "- [ ] Phase 4: Refactor pass - /refactor cleanup sweep (risk: low)\n"
+        closing_section = "## Phase 4: Refactor pass\n\nSweep.\n\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(status_line, "").replace(closing_section, ""))
+        self.finish_phase_two()
+
+        said = self.said()
+        self.assertIn("Phase 2 complete (last phase).", said)
+        run_end_text = said.split("Phase 2 marked done", 1)[1]
+        self.assertIn("Plan deviations adopted in this plan (the code won; no acceptance criterion changed):",
+                      run_end_text)
+        self.assertIn("- Phase 1: assumed: the importer reads a header row", run_end_text)
+
+    def test_the_phase_end_block_omits_a_deviation_adopted_in_phase_1(self):
+        self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        self.step("after-plan-edit")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+
+        self.finish_phase_two()
+
+        said = self.said()
+        self.assertIn("Phase 2 complete", said)
+        phase_two_text = said.split("Phase 2 marked done", 1)[1]
+        self.assertNotIn("Plan deviations adopted in Phase 2", phase_two_text)
+        self.assertNotIn("the importer reads a header row", phase_two_text)
+
     def test_adopt_rewrites_the_plan_before_the_review(self):
         report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
         self.coder_round(report)
@@ -1720,7 +1771,8 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("Phase 1 complete.", out)
         self.assertIn("Phase 1 complete. Risk: low - Phase 1 calibration", self.said())
         self.assertNotIn("<<STAGE QUEUE>>", self.said())
-        self.assertIn("### Fixed", self.said())
+        self.assertIn("Fixed ", self.said())
+        self.assertNotIn("### Fixed", self.said())
         self.assertIn("- [x] Phase 1:", self.plan_text())
         self.assertIn("- [ ] Phase 2:", self.plan_text())
 
@@ -1907,6 +1959,14 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertIn("   Proposed change: export o as a const", self.said())
         self.assertIn("accepted (make the proposed change), rejected (leave the code as it stands)", self.said())
+
+    def test_the_question_for_the_user_shows_one_change_flag_after_each_modified_word(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+
+        self.step("after-review")
+
+        self.assertIn('`asks-done accepted modified --change "<text>" modified --change "<text>"`', self.said())
 
     def test_an_accepted_ask_sends_its_proposed_change_to_the_asks_coder(self):
         self.coder_round()
@@ -3360,7 +3420,7 @@ class CodeStepTest(unittest.TestCase):
         line = "- [ ] **Check**: `cd backend && ! rg -n x src/orders.ts`"
         command = code_step_boundary.verification_command(line)
         self.assertEqual(command, "cd backend && rg -n x src/orders.ts")
-        self.assertTrue(code_step_boundary.is_search_ban(command, line + " exists"))
+        self.assertTrue(criteria_verdict.is_search_ban(command, line + " exists"))
 
     def test_an_rg_ban_with_a_match_fails(self):
         self.set_verification("- [ ] **Prohibition**: no console.log - `rg -n console.log backend/src/orders.ts`")
@@ -3407,14 +3467,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Automated Verification failed", outcome)
         self.assertIn("unless its text says it checks presence", outcome)
 
-    def test_a_git_grep_line_with_presence_and_ban_wording_is_a_ban(self):
-        line = "- [ ] **Prohibition**: no match, the call must not exist - `git grep -n x -- src`"
-        self.assertTrue(code_step_boundary.is_search_ban("git grep -n x -- src", line))
-
     def test_a_test_n_wrapped_git_grep_is_not_a_ban(self):
         command = 'test -n "$(git grep -n --untracked \'export const o\' -- backend/src/orders.ts)"'
         line = f"- [ ] **Check**: the export is there - `{command}`"
-        self.assertFalse(code_step_boundary.is_search_ban(command, line))
+        self.assertFalse(criteria_verdict.is_search_ban(command, line))
 
         self.set_verification(line)
         outcome = self.finish_phase_one()
@@ -4857,12 +4913,14 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("`tick 1`", out)
 
     def test_a_plan_impact_block_is_found_in_each_shape_a_report_writes_it(self):
-        block = "assumed: the table has a key\nfound: it has none\nchanges: add a migration"
+        block = ("assumed: the table has a key\nfound: it has none\nchanges: add a migration\n"
+                 "acceptance_criteria: none")
         shapes = {
             "indented": "BEHAVIOR: none\nPLAN-IMPACT:\n  " + block.replace("\n", "\n  ") + "\nPLAN-IMPACT: yes",
             "keys at column 0": "BEHAVIOR: none\nPLAN-IMPACT:\n" + block + "\nPLAN-IMPACT: yes",
             "bold header and a blank line": "PLAN-IMPACT:**\n\n  " + block.replace("\n", "\n  "),
-            "bold keys": "**PLAN-IMPACT:**\n- **assumed:** a\n- **found:** b\n- **changes:** c",
+            "bold keys": ("**PLAN-IMPACT:**\n- **assumed:** a\n- **found:** b\n- **changes:** c\n"
+                          "- **acceptance_criteria:** none"),
         }
         for name, report in shapes.items():
             with self.subTest(name):
@@ -4871,6 +4929,8 @@ class CodeStepTest(unittest.TestCase):
                 self.assertNotIn("block not found", found)
                 self.assertIn("assumed", found)
                 self.assertIn("changes", found)
+                self.assertIn("acceptance_criteria", found)
+                self.assertFalse(plan_format.changes_acceptance_criteria(found))
 
     def test_a_run_without_the_phase_flag_still_advances(self):
         self.mark_phases_done(1)

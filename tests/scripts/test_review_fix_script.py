@@ -180,16 +180,17 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     # ---------- routing ----------
 
-    def test_converged_packet_renders_in_fixed_order_and_asks_for_the_gate_mark(self):
+    def test_converged_packet_renders_counts_in_place_of_the_fixed_nit_and_skipped_lists(self):
         code, output = self.packet(CONVERGED)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
         self.assertIn("`~/.claude/scripts/review/review-gate-mark clean`", output)
         self.assertNotIn("bash ~/.claude/scripts/review/review-gate-mark", output)
-        self.assertLess(output.index("[blocker] orders query lacked"), output.index("unused import"))
+        self.assertIn("Fixed 2, nits 1, skipped 1", output)
+        for listed in ("### Fixed", "### Nits", "### Skipped", "orders query lacked", "guarded two lines above",
+                       "rename tmp"):
+            self.assertNotIn(listed, output, listed)
         self.assertIn("Class closure: enumerated every query", output)
-        self.assertIn("### Skipped as false positives", output)
-        self.assertIn("guarded two lines above", output)
         self.assertIn("auth.ts came back clean", output)
         self.assertNotIn("Do not present this run as clean", output)
 
@@ -235,7 +236,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(CLEAN_EMPTY)
         self.assertEqual(code, 0, output)
         self.assertIn("No issues found that warrant auto-fix. Ready for `/commit`.", output)
-        self.assertIn("- none", output)
+        self.assertIn("Fixed 0, nits 0, skipped 0", output)
 
     def test_deferred_packet_lists_remaining_findings_and_asks_for_the_mark(self):
         code, output = self.packet(DEFERRED)
@@ -331,7 +332,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("ask-user-plan-impact", output)
         self.assertIn("ACTION: redispatch", output)
         self.assertIn("plan_impact: RESOLVED - Adopt plan change. The session ruled, not the user.", output)
-        self.assertIn("add these lines under ## Plan Deviations", output)
+        self.assertIn("Add these lines under ## Plan Deviations", output)
         self.assertIn("iter=1", output)
         self.assertIn("spec_iter=2", output)
 
@@ -380,6 +381,60 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
         self.assertEqual(code, 0, output)
         self.assertNotIn("the queue is at-most-once", output.split("RESOLVED", 1)[1])
+
+    def test_plan_impact_that_touches_no_criterion_redispatches_and_shows_the_deviation_with_no_question(self):
+        no_criterion = PLAN_IMPACT + "    acceptance_criteria: none\n"
+        code, output = self.packet(no_criterion)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("ask-user-plan-impact", output)
+        self.assertNotIn("AskUserQuestion", output)
+        self.assertIn("ACTION: redispatch", output)
+        self.assertIn("Plan deviation adopted: No acceptance criterion changes, so the code wins",
+                      output)
+        self.assertIn("assumed: the queue is at-least-once", output)
+        self.assertIn("plan_impact: RESOLVED - Adopt plan change. The session ruled, not the user.", output)
+        self.assertIn("Ruled by the session, not the user", output)
+
+        self.dispatch(prompt="mode: review-first\nplan_impact: RESOLVED - Adopt plan change.\niter=1")
+        self.hand_back(CONVERGED)
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertIn("### Plan deviations adopted (the code won; no acceptance criterion changed)", output)
+        self.assertIn("- assumed: the queue is at-least-once", output.split("### Plan deviations adopted", 1)[1])
+
+        code, output = self.packet(CLEAN_EMPTY)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("Plan deviations adopted", output)
+
+    def test_two_plan_impacts_adopted_across_one_redispatch_are_both_listed_in_the_closing_block(self):
+        first_impact = PLAN_IMPACT + "    acceptance_criteria: none\n"
+        second_impact = first_impact.replace("the queue is at-least-once", "the cache is write-through")
+        resolved_prompt = "mode: review-first\nplan_impact: RESOLVED - Adopt plan change.\niter=1"
+        self.packet(first_impact)
+        self.dispatch(prompt=resolved_prompt)
+        self.hand_back(second_impact, agent_id="a1")
+        code, output = self.packet("")
+        self.assertIn("ACTION: redispatch", output)
+        self.dispatch(prompt=resolved_prompt)
+        self.hand_back(CONVERGED, agent_id="a2")
+
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        deviations = output.split("### Plan deviations adopted", 1)[1]
+        self.assertIn("assumed: the queue is at-least-once", deviations)
+        self.assertIn("assumed: the cache is write-through", deviations)
+
+    def test_an_unrelated_review_after_an_abandoned_redispatch_shows_no_adopted_deviation(self):
+        no_criterion = PLAN_IMPACT + "    acceptance_criteria: none\n"
+        code, output = self.packet(no_criterion)
+        self.assertIn("ACTION: redispatch", output)
+
+        self.dispatch(prompt="mode: review-first\ncaller: review")
+        self.hand_back(CONVERGED)
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("Plan deviations adopted", output)
+        self.assertNotIn("the queue is at-least-once", output)
 
     def test_decide_appends_to_an_existing_plan_deviations_section_before_the_next_heading(self):
         self.packet(PLAN_IMPACT)
@@ -822,7 +877,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(CONVERGED, "--aikido", "src/orders.ts:42=111", skill="fix", GH_EXIT="1")
         self.assertEqual(code, 0, output)
         self.assertIn("NOT posted", output)
-        self.assertIn("### Fixed", output)
+        self.assertIn("Fixed 2, nits 1, skipped 1", output)
 
     def test_aikido_target_without_a_numeric_comment_id_fails_loudly(self):
         code, output = self.packet(CONVERGED, "--aikido", "src/orders.ts:42=abc", skill="fix")
@@ -914,7 +969,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         )
         code, output = self.packet(padded)
         self.assertEqual(code, 0, output)
-        self.assertIn("[blocker] orders query lacked a tenant filter - src/orders.ts:42", output)
+        self.assertIn("Fixed 2, nits 1, skipped 1", output)
 
     def test_status_with_trailing_words_and_extra_spaces_parses(self):
         code, output = self.packet(CLEAN_EMPTY.replace("status: converged", "status:    converged   (all clear)"))
@@ -929,19 +984,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(CLEAN_EMPTY + "\nThe second pass found nothing more.\n")
         self.assertEqual(code, 0, output)
         self.assertIn("The second pass found nothing more.", output)
-
-    def test_json_style_lists_parse(self):
-        text = CLEAN_EMPTY.replace("fixed: []", 'fixed: [{"finding": "x", "file_line": "a.ts:1", "blocker": false}]')
-        code, output = self.packet(text)
-        self.assertEqual(code, 0, output)
-        self.assertIn("- x - a.ts:1", output)
-
-    def test_finding_text_containing_a_comma_and_key_word_keeps_its_whole_text(self):
-        text = CLEAN_EMPTY.replace(
-            "fixed: []", 'fixed: [{finding: "guard the read, then class: fix it", file_line: a.ts:1, blocker: false}]'
-        )
-        _code, output = self.packet(text)
-        self.assertIn("guard the read, then class: fix it", output)
 
     # ---------- shapes seen in real review-loop hand-backs ----------
 
@@ -993,16 +1035,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(text)
         self.assertEqual(code, 0, output)
 
-    def test_fixed_entries_keyed_by_smell_or_starting_with_bare_text_parse(self):
-        text = CLEAN_EMPTY.replace("fixed: []", "fixed:\n"
-            "- {smell: literals extracted to constants, file_line: a.py:397-530, blocker: no}\n"
-            "- {blank lines between steps in two helpers, file_line: a.py:346-474, blocker: no}\n"
-            "- {summary overwrote the per-project total, serve.go summary, blocker: true}")
-        code, output = self.packet(text)
-        self.assertEqual(code, 0, output)
-        self.assertIn("summary overwrote the per-project total", output)
-        self.assertIn("blank lines between steps", output)
-
     def test_a_real_pending_report_is_a_parse_failure(self):
         self.assert_parse_failure(
             "status: pending. This is not a convergence packet. The verification pass has not reported.\n\nDone so "
@@ -1030,9 +1062,9 @@ class ReviewFixScriptTest(unittest.TestCase):
                               input=json.dumps(event), text=True, capture_output=True, env=self.environment(**extra))
         return done.returncode, done.stdout + done.stderr
 
-    def dispatch(self, session=SESSION, subagent="review-loop"):
-        return self.hook({"session_id": session, "tool_name": "Agent", "tool_input": {"subagent_type": subagent}},
-                         "dispatch")
+    def dispatch(self, session=SESSION, subagent="review-loop", prompt=""):
+        return self.hook({"session_id": session, "tool_name": "Agent",
+                          "tool_input": {"subagent_type": subagent, "prompt": prompt}}, "dispatch")
 
     def hand_back(self, message=CONVERGED, session=SESSION, agent="review-loop", agent_id="a1"):
         self.hook({"session_id": session, "tool_name": "Agent", "agent_type": agent, "agent_id": agent_id,
@@ -1636,6 +1668,31 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("Proposed change: add an index on tenant_id", output)
         self.assertIn("accepted: make the proposed change", output)
         self.assertIn("rejected: leave the code as it stands", output)
+
+    def test_present_asks_indents_a_multi_line_asks_folded_lines_under_its_number(self):
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n"
+            "  - {finding: jobs count changed, finding_id: a1b2c3d4e5f60031, file_line: plan.md:12, "
+            "change: restore -j8, gate: code-reviewer, class: smell}\n"
+            "  - the plan says -j8\n"
+            "  - which one holds?\n",
+        )
+        code, output = self.packet(text)
+        self.assertEqual(code, 0, output)
+        self.assertIn("\n   the plan says -j8\n   which one holds?\n", output)
+
+    def test_present_asks_indents_a_multi_line_proposed_changes_later_lines_under_its_number(self):
+        text = CLEAN_EMPTY.replace(
+            "ask: []",
+            "ask:\n"
+            "  - {finding: jobs count changed, finding_id: a1b2c3d4e5f60031, file_line: plan.md:12, "
+            "question: which one holds?, change: restore -j8, gate: code-reviewer, class: smell}\n"
+            "  - {change: and log the count}\n",
+        )
+        code, output = self.packet(text)
+        self.assertEqual(code, 0, output)
+        self.assertIn("\n   Proposed change: restore -j8\n   and log the count\n", output)
 
     def test_an_either_or_ask_with_no_proposed_change_is_a_parse_failure(self):
         self.assert_parse_failure(WITH_ASK.replace('    change: "cap retries at 3"\n', ""), "ask entry has no change")

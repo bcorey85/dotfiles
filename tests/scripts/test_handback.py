@@ -83,6 +83,29 @@ class ParseTest(HandbackTestBase):
         self.assertEqual(len(packet["fixed"]), 2)
         self.assertIn("timeout case", packet["fixed"][0]["finding"])
 
+    def test_fixed_entries_keep_their_whole_text_in_every_real_shape(self):
+        cases = [
+            ('fixed: [{"finding": "x", "file_line": "a.ts:1", "blocker": false}]', ["x"], "JSON style"),
+            ('fixed: [{finding: "guard the read, then class: fix it", file_line: a.ts:1, blocker: false}]',
+             ["guard the read, then class: fix it"], "a comma and a key word in the text"),
+            ("fixed:\n- {smell: literals extracted to constants, file_line: a.py:397-530, blocker: no}\n"
+             "- {blank lines between steps in two helpers, file_line: a.py:346-474, blocker: no}\n"
+             "- {summary overwrote the per-project total, serve.go summary, blocker: true}",
+             ["blank lines between steps in two helpers", "summary overwrote the per-project total"],
+             "keyed by smell, or starting with bare text"),
+        ]
+        for fixed_field, kept_texts, label in cases:
+            packet = handback.load(f"status: converged\niter: 0\n{fixed_field}\nask: []\nnit: []\n")
+            fixed_texts = " | ".join(handback.item_text(item, "finding", "item") for item in packet["fixed"])
+            for kept in kept_texts:
+                self.assertIn(kept, fixed_texts, label)
+
+    def test_extra_whitespace_and_a_code_fence_around_the_packet_still_parse(self):
+        padded = "```\n" + "\n".join("   " + line + "   " if line else line for line in CONVERGED.splitlines())
+        packet = handback.load(padded + "\n\n\n```\n")
+        self.assertEqual("orders query lacked a tenant filter", packet["fixed"][0]["finding"])
+        self.assertEqual("src/orders.ts:42", packet["fixed"][0]["file_line"])
+
     def test_every_marker_of_an_indented_list_is_top_level(self):
         text = ("status: converged\niter: 1\nfixed:\n  - {finding: a, file_line: a.ts:1}\n"
                 "  - {finding: b, file_line: b.ts:2}\nnit: []\n")
@@ -143,9 +166,68 @@ class ParseTest(HandbackTestBase):
                 "change: restore -j8}\n"
                 "- {question: which one holds?, blocker: no, class: test-gap}\nnit: []\n")
         ask = handback.load(text)["ask"][0]
-        self.assertTrue(handback.is_blocker(ask))
+        self.assertIn(str(ask["blocker"]).lower(), ("true", "yes"))
         self.assertEqual(ask["class"], "plan-drift")
         self.assertEqual(ask["question"], "which one holds?")
+
+    def test_bullets_after_a_text_ask_ending_in_a_colon_stay_inside_that_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees with the plan: | src/retry.py:4\n"
+                "- the plan says 3\n- the code says 5\n- which one holds?\n"
+                "- should tenant_id get an index? | src/db.ts:5\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 2)
+        self.assertEqual(asks[0]["file_line"], "src/retry.py:4")
+        self.assertIn("- the code says 5", asks[0]["question"])
+        self.assertIn("which one holds?", asks[0]["question"])
+        self.assertEqual(asks[1]["file_line"], "src/db.ts:5")
+
+    def test_a_mapping_bullet_after_a_text_ask_ending_in_a_colon_adds_its_change_to_that_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees with the plan: | src/retry.py:4\n"
+                "- which one holds?\n- change: set it to 3\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertEqual(asks[0]["file_line"], "src/retry.py:4")
+        self.assertEqual(asks[0]["change"], "set it to 3")
+        self.assertIn("which one holds?", asks[0]["question"])
+
+    def test_a_text_bullet_after_a_mapping_bullet_stays_a_dash_line_in_a_text_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees: | src/retry.py:4\n"
+                "- the plan says 3\n- change: set it to 3\n- the code says 5\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertIn("- the code says 5", asks[0]["question"])
+
+    def test_a_text_ask_not_ending_in_a_colon_takes_no_bullets(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- which cache holds the session?\n- should tenant_id get an index?\nnit: []\n")
+        self.assertEqual(len(handback.load(text)["ask"]), 2)
+
+    def test_a_blocker_text_bullet_after_a_mapping_bullet_marks_the_text_ask_a_blocker(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees with the plan: | src/retry.py:4\n"
+                "- {change: set it to 3}\n- [blocker] data loss\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertTrue(handback.is_blocker(asks[0]))
+
+    def test_a_blocker_text_bullet_marks_a_mapping_lead_with_no_blocker_field_a_blocker(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- {finding: the retry count disagrees with the plan, file_line: src/r.py:4, "
+                "question: which one holds?, change: set it to 3}\n- [blocker] data loss\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertTrue(handback.is_blocker(asks[0]))
+
+    def test_a_mapping_bullet_with_blocker_yes_marks_the_text_ask_a_blocker(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- the retry count disagrees with the plan: | src/retry.py:4\n"
+                "- {change: set it to 3, blocker: yes}\nnit: []\n")
+        asks = handback.load(text)["ask"]
+        self.assertEqual(len(asks), 1)
+        self.assertTrue(handback.is_blocker(asks[0]))
 
     def test_empty_list_key_does_not_swallow_the_next_unindented_line(self):
         packet = handback.parse("status: converged\niter: 1\nfixed: []\nask: []\nclass_closure: done\nnit: []\n")
@@ -457,10 +539,12 @@ class RenderTest(HandbackTestBase):
         rendered = handback.render(packet, "fix", [("Aikido replies", ["- a.ts:1: Fixed"])])
         self.assertLess(rendered.index("### Aikido replies"), rendered.index("Closing note"))
 
-    def test_blockers_sort_first_and_are_labelled(self):
+    def test_fixed_findings_show_as_a_count_and_never_as_a_list(self):
         text = CONVERGED.replace("fixed: [", "fixed: [{finding: small, file_line: a.ts:1, blocker: false}, ")
         rendered = handback.render(handback.load(text), "review")
-        self.assertLess(rendered.index("[blocker]"), rendered.index("small"))
+        self.assertIn("Fixed 2, nits 0, skipped 0", rendered)
+        self.assertNotIn("small", rendered)
+        self.assertNotIn("orders query lacked", rendered)
 
     def test_a_blocked_agent_and_the_step_it_skipped_print_under_their_own_heading(self):
         blocked_line = "test-reviewer: Step 1 test map skipped (credential hook denied a bulk cp)"
@@ -770,6 +854,13 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertEqual(self.hand_back(), (0, ""))
         self.assertFalse(handback.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_resolved_plan_impact_is_found_after_a_bullet_or_quote_marker(self):
+        for line in ("plan_impact: RESOLVED - adopt.", "- plan_impact: RESOLVED - adopt.",
+                     "> * plan_impact: RESOLVED - adopt."):
+            prompt = f"scope: branch\n{line}\n"
+            self.assertIsNotNone(handback.RESOLVED_PLAN_IMPACT.search(prompt), line)
+        self.assertIsNone(handback.RESOLVED_PLAN_IMPACT.search("see plan_impact: RESOLVED"))
 
     def test_a_normal_loop_is_denied_after_a_later_no_review_loop_claimed_the_exemption(self):
         self.dispatch("review-loop")

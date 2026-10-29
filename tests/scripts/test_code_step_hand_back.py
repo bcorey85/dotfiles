@@ -10,6 +10,8 @@ import test_code_step as base
 
 SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
 BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
+UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
+                     "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
 CACHE_ASK = ('{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?", '
              '"change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}')
 CAP_PACKET = "status: cap-reached\niter: 2\nfindings_remaining:\n  - finding: x\n    file_line: a.ts:1"
@@ -68,6 +70,47 @@ class HandBackTest(base.CodeStepTest):
         question_text = self.assert_stop_question("the review's full check could not run here", "no package.json")
         self.assertIn("review-again", question_text)
         self.assertEqual("setup-fault", self.state()["stopReason"])
+
+    def test_a_converged_review_whose_full_check_ran_no_tests_stops_the_phase_and_asks_for_a_quality_check_line(self):
+        self.coder_round()
+        self.hook("review-loop", UNVERIFIED_PACKET)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual(("stopped", "check-unverified"), (self.state()["stage"], self.state()["stopReason"]))
+        self.assertEqual(1, out.count("Do not mark the phase done."))
+        why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
+               "test ran.")
+        question_text = self.assert_stop_question(why, "npm run lint")
+        self.assertIn("Quality check: `", question_text)
+        self.assertIn(self.own_command("review-again"), question_text)
+
+    def test_an_unverified_stop_in_a_repo_with_a_quality_check_line_asks_for_a_runner_summary_not_a_quality_check_line(
+            self):
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npm run lint`\n")
+        self.coder_round()
+        self.hook("review-loop", UNVERIFIED_PACKET)
+
+        out = self.step("after-review")
+
+        self.assertIn("ACTION: stop", out)
+        question_text = self.question()
+        self.assertIn("SUMMARY_LINES", question_text)
+        self.assertIn("lib/test_run_output.py", question_text)
+        self.assertIn("`npm run lint`", question_text)
+        self.assertIn(self.own_command("review-again"), question_text)
+        self.assertNotIn("add a Quality check", question_text)
+        self.assertNotIn("add a Quality check", out)
+
+    def test_review_again_is_accepted_after_a_check_unverified_stop(self):
+        self.coder_round()
+        self.hook("review-loop", UNVERIFIED_PACKET)
+        self.step("after-review")
+
+        again = self.step("review-again")
+
+        self.assertIn("AGENT: review-loop", again)
 
     def test_a_critical_blocker_stop_lists_the_reviewers_questions_apart_from_the_blockers_and_names_review_again(self):
         self.coder_round()

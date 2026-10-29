@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""handback.py: the one reader of the review-loop hand-back packet, and the per-session store of hand-backs.
+"""handback.py: the one reader of the review-loop hand-back packet. The per-session store is handback_store.py.
 
   handback.py check < packet            exit 0 and one `ok` line for a packet that parses and validates; exit 1 and the
                                         problems on stderr for a bad one
@@ -19,9 +19,8 @@ ended_on_unreviewed_fix, fixed_paths, unreviewed_streak and unreviewed_fix_secti
 a `stop` row that review_loop_gate.py writes at each review-loop stop (agent_id, open_dispatches). `latest` keeps the
 last one after the last dispatch; while it shows open_dispatches > 0 and no hand-back is current, hand_back_gap returns
 LOOP_WAITING, and a later stop with none open, a hand-back or a new dispatch ends the wait. A validated packet's
-fixed, skipped_fp, findings_remaining and ask entries are all mappings. The store is one append-only JSON-lines file per
-session under $HANDBACK_STORE_DIR (default ~/.claude/state/handback), keyed by the hook event's session_id, which is
-the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
+fixed, skipped_fp, findings_remaining and ask entries are all mappings. The store is keyed by the hook event's
+session_id, which is the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
 import json
 import os
 import pathlib
@@ -29,10 +28,21 @@ import re
 import secrets
 import sys
 import textwrap
-import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import script_utils
+from handback_store import (  # noqa: F401 (re-exports)
+    LOOP_WAITING,
+    NO_DISPATCH,
+    NO_HANDBACK,
+    REDISPATCHED,
+    ended_on_unreviewed_fix,
+    hand_back_gap,
+    latest,
+    record,
+    session_rows,
+    unreviewed_streak,
+)
 from plan_format import PLAN_CHANGE_MARK
 from script_utils import first_number, one_line, unquote
 
@@ -81,6 +91,7 @@ CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap"
            "correctness", "docs", "other"]
 REVIEW_LOOP = "review-loop"
 NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
+RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
 REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
 ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])/[^\s`'\"<>|;:,()]+")
 GIT_TIMEOUT_SECONDS = 10
@@ -90,7 +101,6 @@ BLOCKER_TEXT = re.compile(r"\[blocker\]|\bblocker\s*[:=]\s*(?:yes|true)\b", re.I
 INLINE_KEY_AT = re.compile(r"(?:^|\n\s*|([,.;|?!)])\s+)(" + "|".join(ITEM_KEYS) + r")\s*:\s*")
 KEPT_DELIMITERS = "?!)"
 ITEM_KEY_START = re.compile(r"(?:{})\s*:".format("|".join(ITEM_KEYS)))
-STALE_STORE_SECONDS = 7 * 86400
 FINDING_ID_HEX_LEN = 16
 FINDING_ID_PATTERN = re.compile(rf"[0-9a-f]{{{FINDING_ID_HEX_LEN}}}")
 # A line `log-review-finding` prints for each finding row it writes.
@@ -482,15 +492,32 @@ def fold_bullets_into_asks(entries):
     lead mapping whose bullets carry its facts, its question and its conditional changes. The bullets add to its
     question, or to its finding when it has no question. A mapping bullet with no file_line and no finding adds to the
     lead ask the fields it lacks, and joins its question and change to the lead's; any other field keeps the lead's
-    value. A bullet that carries a `| path:line` field starts a new ask."""
+    value. A plain-text ask whose text ends in a colon takes the bullets after it, plain-text or mapping, the same way,
+    each plain-text bullet kept as a `- ` line. A bullet that carries a `| path:line` field starts a new ask."""
     asks = []
+    is_open_text_ask = False
     for entry in entries:
         follows_mapping_ask = bool(asks) and isinstance(asks[-1], dict)
-        if not (follows_mapping_ask and continues_lead_ask(entry)):
+        follows_open_text_ask = is_open_text_ask
+        if not ((follows_mapping_ask or follows_open_text_ask) and continues_lead_ask(entry)):
             asks.append(entry)
+            is_open_text_ask = opens_bullet_list(entry)
             continue
 
         lead_ask = asks[-1]
+        if isinstance(lead_ask, str) and isinstance(entry, str):
+            asks[-1] = f"{lead_ask}\n- {entry}"
+            continue
+
+        if isinstance(lead_ask, str):
+            lead_ask = asks[-1] = entry_from_text(lead_ask, "question")
+
+        # A text lead's `blocker` was read from its own text alone, and a mapping lead may carry none: a bullet that
+        # flags a blocker raises it. An explicit `blocker` on a mapping lead wins.
+        is_blocker_bullet = is_blocker(entry) or (isinstance(entry, str) and BLOCKER_TEXT.search(entry) is not None)
+        if is_blocker_bullet and (lead_ask.get("from_text") or "blocker" not in lead_ask):
+            lead_ask["blocker"] = "yes"
+
         if isinstance(entry, dict):
             for field, value in entry.items():
                 if field not in lead_ask:
@@ -500,13 +527,24 @@ def fold_bullets_into_asks(entries):
             continue
 
         key = "question" if "question" in lead_ask else "finding"
-        lead_ask[key] = f"{lead_ask.get(key, '')}\n{entry}".strip()
+        separator = "\n- " if lead_ask.get("from_text") else "\n"
+        lead_ask[key] = f"{lead_ask.get(key, '')}{separator}{entry}".strip()
     return asks
 
 
+def opens_bullet_list(entry):
+    """Whether ask entry `entry` is plain text whose text, before any `|` field, ends in a colon."""
+    if not isinstance(entry, str):
+        return False
+
+    ask_text_part = entry.split("|")[0]
+    return ask_text_part.rstrip().endswith(":")
+
+
 def continues_lead_ask(entry):
-    """Whether ask entry `entry` adds to the mapping ask before it: a plain-text bullet with no `| path:line` field, or
-    a mapping with no file_line and no finding."""
+    """Whether ask entry `entry` can add to the ask before it: a mapping ask, or a plain-text ask that opens a bullet
+    list. The entry is a plain-text bullet with no `| path:line` field, or a mapping with no file_line and no
+    finding."""
     if isinstance(entry, dict):
         return "file_line" not in entry and "finding" not in entry
     if not isinstance(entry, str):
@@ -603,12 +641,6 @@ def receipt_is_missing(closure):
     return re.fullmatch(r"(none|n/a)?[\s.]*", closure.strip().lower()) is not None
 
 
-def skipped_line(item):
-    if item.get("from_text"):
-        return f"- {item['item']}"
-    return f"- {item_text(item, 'item', 'finding', 'file_line')}: {item.get('reason', 'no reason given')}"
-
-
 def remaining_line(item):
     return f"- [{item.get('disposition', 'open')}] {item_text(item, 'finding', 'file_line')}"
 
@@ -657,13 +689,10 @@ def full_check_lines(packet):
 
 
 def render(packet, skill, sections=()):
-    """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer."""
-    lines = ["### Fixed"]
-    fixed = sorted(packet["fixed"], key=lambda item: not is_blocker(item))
-    for item in fixed:
-        lines.append(f"- {'[blocker] ' if is_blocker(item) else ''}{item_text(item, 'finding', 'file_line')}")
-    if not fixed:
-        lines.append("- none")
+    """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer. Fixed findings, nits
+    and skipped false positives show as counts only."""
+    fixed = packet["fixed"]
+    lines = [f"Fixed {len(fixed)}, nits {len(packet['nit'])}, skipped {len(packet['skipped_fp'])}"]
 
     closure = packet["class_closure"]
     if skill == "review" or closure:
@@ -677,10 +706,6 @@ def render(packet, skill, sections=()):
     if load_bearing and load_bearing.lower() not in ("none", "omitted"):
         lines.append("Load-bearing: " + load_bearing)
 
-    render_items(lines, "Skipped as false positives", packet["skipped_fp"], skipped_line)
-    if packet["nit"]:
-        lines.append("### Nits")
-        lines.append("- " + "; ".join(item_text(item, "finding", "item") for item in packet["nit"]))
     remaining_heading = "Deferred to branch exit" if packet["status"] == "deferred" else "Findings remaining"
     render_items(lines, remaining_heading, packet["findings_remaining"], remaining_line)
     render_items(lines, "Blocked agents (not reviewed)", packet["blocked_agents"], lambda entry: f"- {entry}")
@@ -693,81 +718,6 @@ def render(packet, skill, sections=()):
 
 
 # ---------- per-session store ----------
-
-def store_dir():
-    override = os.environ.get("HANDBACK_STORE_DIR")
-    return pathlib.Path(override) if override else pathlib.Path.home() / ".claude" / "state" / "handback"
-
-
-def session_file(session_id):
-    safe = re.sub(r"[^\w.-]", "_", str(session_id))
-    if not safe.strip("._"):
-        raise ValueError("session id is empty")
-    return store_dir() / (safe + ".jsonl")
-
-
-ANY_AGENT = object()
-
-
-def session_rows(session_id, kind=None, agent_id=ANY_AGENT):
-    """The rows of the session's file in append order, only those of `kind` and of `agent_id` when given. Raises
-    ValueError for an empty session id. `agent_id=None` selects the rows that name no agent."""
-    return [row for row in script_utils.read_jsonl(session_file(session_id))
-            if (kind is None or row.get("kind") == kind)
-            and (agent_id is ANY_AGENT or row.get("agent_id") == agent_id)]
-
-
-def prune_stale():
-    cutoff = time.time() - STALE_STORE_SECONDS
-    directory = store_dir()
-    if not directory.is_dir():
-        return
-    for path in directory.glob("*.jsonl"):
-        try:
-            if path.stat().st_mtime < cutoff:
-                path.unlink()
-        except OSError:
-            pass
-
-
-def record(session_id, kind, **fields):
-    """Append one row to the session's own file. Other sessions' files are never touched."""
-    row = {"kind": kind, "ts": time.time(), "session_id": session_id, **fields}
-    prune_stale()
-    script_utils.append_jsonl(session_file(session_id), row)
-    return row
-
-
-def latest(session_id):
-    """{"dispatch": last review-loop dispatch row or None, "handback": last hand-back row or None, "stop": the last
-    review-loop stop row after the last dispatch or None, "unanswered": the number of dispatches after the last
-    hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
-    it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
-    session_id; a dispatch row also no_review and repo (the top level of the repo it reviews, or None); a hand-back
-    row also agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row also agent_id,
-    open_dispatches (the background agents and shells the loop still waited on when it stopped) and ask_rows. A
-    stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by append, not by
-    clock."""
-    standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
-    if not session_id:
-        return standing
-    try:
-        stored_rows = session_rows(session_id)
-    except ValueError:
-        return standing
-    for row in stored_rows:
-        if row.get("kind") == "dispatch":
-            standing["dispatch"] = row
-            standing["stop"] = None
-            standing["unanswered"] += 1
-        elif row.get("kind") == "stop" and not row.get("blocked"):
-            standing["stop"] = row
-        elif row.get("kind") == "handback":
-            standing["handback"] = row
-            standing["unanswered"] = 0
-    standing["pending"] = standing["unanswered"] > 0
-    return standing
-
 
 def stop_rows_after(session_id, agent_id, since):
     """The stop rows of agent_id written at or after `since`, blocked or not, in append order."""
@@ -786,29 +736,6 @@ def settled_stop_row(session_id, agent_id, since):
     follows it."""
     settled = [row for row in stop_rows_after(session_id, agent_id, since) if not row.get("blocked")]
     return settled[-1] if settled else None
-
-
-NO_DISPATCH = "no-dispatch"
-NO_HANDBACK = "no-handback"
-REDISPATCHED = "redispatched"
-LOOP_WAITING = "loop-waiting"
-
-
-def hand_back_gap(seen):
-    """Why the session has no current hand-back, from a `latest` result: NO_DISPATCH (the session never dispatched a
-    review-loop), LOOP_WAITING (the loop's latest stop left a background agent or shell running, so it will resume and
-    may still hand back), NO_HANDBACK (dispatched, nothing came back), REDISPATCHED (dispatched again after a
-    hand-back), or None when the latest hand-back is current. The one rule that /review, /fix and the commit gate
-    share."""
-    if seen["dispatch"] is None:
-        return NO_DISPATCH
-    if seen["handback"] is not None and not seen["pending"]:
-        return None
-    if seen["stop"] is not None and seen["stop"].get("open_dispatches", 0) > 0:
-        return LOOP_WAITING
-    if seen["handback"] is None:
-        return NO_HANDBACK
-    return REDISPATCHED
 
 
 def false_clean_reason(session_id):
@@ -837,25 +764,6 @@ def loop_steps(session_id, agent_id):
     """The review-loop agent `agent_id`'s coder and reviewer dispatches, in order. Coders resumed with SendMessage are
     not counted: the hook sees only the recipient's id, not its type."""
     return [row["step"] for row in session_rows(session_id, "step", agent_id)]
-
-
-def unreviewed_streak(session_id):
-    """How many of the session's latest hand-backs in a row were clean with no reviewer run. 0 when the latest one had
-    a reviewer."""
-    hand_backs = session_rows(session_id, "handback")
-
-    streak = 0
-    for row in reversed(hand_backs):
-        if not row.get("no_reviewer"):
-            break
-        streak += 1
-    return streak
-
-
-def ended_on_unreviewed_fix(session_id, agent_id):
-    """True when the latest stored hand-back of `agent_id` was clean and its last step was a coder after a reviewer."""
-    hand_backs = session_rows(session_id, "handback", agent_id)
-    return bool(hand_backs) and bool(hand_backs[-1].get("unreviewed_fix"))
 
 
 def claim_no_review(session_id, agent_id):
@@ -956,6 +864,7 @@ def handle_dispatch(event, session_id, tool_input):
     elif subagent_type == REVIEW_LOOP:
         prompt = str(tool_input.get("prompt") or "")
         record(session_id, "dispatch", no_review=NO_REVIEW_MODE.search(prompt) is not None,
+               resolved_plan_impact=RESOLVED_PLAN_IMPACT.search(prompt) is not None,
                repo=reviewed_repo(prompt, event.get("cwd")))
 
 

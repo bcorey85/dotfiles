@@ -44,41 +44,11 @@ from code_step_core import (
 )
 from code_step_phase_end import block_a, block_b_or_c, manual_groups_of
 from code_step_usage import VERB_USAGES
+from criteria_verdict import item_verdict, without_leading_cd_and_env, without_negation
 from script_utils import git_output, run_command
-from test_run_output import matches_no_test
 
 VERIFY_TIMEOUT_SECONDS = 600
 VERIFICATION_OUTPUT_NAME = "verification-output.txt"
-# A filtered test run that exits 0 but reports no passed test did not run the phase's test: it fails the box.
-NO_TEST_MATCHED_EXIT_CODE = 1
-NO_TEST_MATCHED_NOTE = "\nthe test filter matched no test: the run exits 0 but reports no passed test\n"
-# An rg, grep or git grep line is a ban (exit 1, no match, holds it) unless its text, outside the command, says it
-# checks presence (exit 0 passes). Ban wording on the same line wins. A search wrapped in another command, such as
-# `test -n "$(git grep ...)"`, is judged by its own exit code.
-SEARCH_COMMAND = re.compile(r"^(?:rg|grep|egrep|git grep)\s")
-BAN_WORDING = re.compile(r"\bprohibition\b|\bno\s+(?:match(?:es)?|output|hits?)\b|\bprints?\s+nothing\b"
-                         r"|\bexit(?:s|ing)?\s+(?:code\s+)?1\b|\babsent\b|\bmust\s+not\b|\bnone\b|\bnothing\b"
-                         r"|\bgone\b|\bremoved\b|\bzero\b|\bno\s+longer\b",
-                         re.IGNORECASE)
-PRESENCE_WORDING = re.compile(r"\bpresence\b|\bpresent\b|\bexists?\b|\bcontains?\b|\bdefines?\b|\bdefined\b"
-                              r"|\bfinds?\b|\bfound\b|\ba\s+hit\b|\bmatches\b", re.IGNORECASE)
-SEARCH_BAN_NOTE = ("\nan rg, grep or git grep line is a ban unless its text says it checks presence "
-                   "(present, exists, contains, finds)\n")
-# A ban written `! rg ...` is the same ban as `rg ...`: no match holds it.
-# A leading `cd <dir> &&` does not change what the command searches: it stays in the command and is ignored here.
-LEADING_CD = r"(?:cd \S+ && )?"
-NEGATED_SEARCH = re.compile(r"^(" + LEADING_CD + r")!\s+(?=(?:rg|grep|egrep|git grep)\s)")
-
-
-def without_negation(span):
-    """The span with the `!` of a negated search taken off, any leading `cd <dir> &&` kept."""
-    return NEGATED_SEARCH.sub(r"\1", span)
-
-
-def without_leading_cd_and_env(command):
-    """The command with any NAME=value words and a `cd <dir> &&` it starts with taken off, for judging what it is."""
-    unassigned = script_utils.without_leading_env_assignments(command)
-    return re.sub(r"^cd \S+ && ", "", unassigned)
 WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"
                          r"|(?:cd \S+ && )?npx (?:vitest|jest)(?: run)?|(?:python3 -m )?pytest|ruff check)$")
 TICKET_IN_NAME = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])")
@@ -359,38 +329,10 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
             + VERIFICATION_ITEM_SHAPE)
 
 
-def is_search_ban(command, line):
-    if not SEARCH_COMMAND.match(without_leading_cd_and_env(command)):
-        return False
-
-    if any(without_negation(span) == command and span != command for span in script_utils.backticked_spans(line)):
-        return True
-
-    text = line.replace(command, "")
-    if BAN_WORDING.search(text):
-        return True
-
-    return not PRESENCE_WORDING.search(text)
-
-
-def check_prohibition(repo_dir, command, code, output):
-    # A git grep, rg or grep ban passes on exit 1 (no match) and fails on exit 0 (a hit). Any other exit is an error
-    # that stops.
-    # A pipe form is judged by its output: empty or 0 passes.
-    hit_rows = len([row for row in output.splitlines() if row.strip()])
-    if "|" in command:
-        verdict = 0 if output.strip() in ("", "0") else 1
-        hits = 0 if verdict == 0 else int(output) if output.strip().isdigit() else hit_rows
-    elif code == 1:
-        verdict, hits = 0, 0
-    elif code == 0:
-        verdict, hits = 1, hit_rows
-    else:
-        verdict, hits = code, 0
+def log_prohibition_scan(repo_dir, command, verdict):
     run_command(["bash", str(SCRIPTS_DIR / "telemetry" / "log-scan"), f"repo={repo_dir.name}", "scan=prohibition",
-                 "stage=code-phase", f"exit={verdict}", f"candidates={hits}", f"confirmed={hits}",
-                 f"branch={branch_label(repo_dir)}", f"note={command[:120]}"], repo_dir)
-    return command, verdict, output
+                 "stage=code-phase", f"exit={verdict.code}", f"candidates={verdict.hits}",
+                 f"confirmed={verdict.hits}", f"branch={branch_label(repo_dir)}", f"note={command[:120]}"], repo_dir)
 
 
 def run_verification_commands(repo_dir, phase_section):
@@ -409,16 +351,10 @@ def run_verification_commands(repo_dir, phase_section):
             skipped.append(command)
             continue
         code, output = run_command(command, repo_dir, timeout=timeout)
-        if is_search_ban(command, line):
-            result = check_prohibition(repo_dir, command, code, output)
-            if result[1] != 0 and not PRESENCE_WORDING.search(line.replace(command, "")):
-                result = (result[0], result[1], result[2] + SEARCH_BAN_NOTE)
-            results.append(result)
-            continue
-        if matches_no_test(command, code, output):
-            code = NO_TEST_MATCHED_EXIT_CODE
-            output += NO_TEST_MATCHED_NOTE
-        results.append((command, code, output))
+        verdict = item_verdict(command, line, code, output)
+        if verdict.hits is not None:
+            log_prohibition_scan(repo_dir, command, verdict)
+        results.append((command, verdict.code, verdict.output))
     return results, skipped, unparsed
 
 
@@ -763,6 +699,8 @@ def announce_boundary(repo_dir, state, boundary):
     done_line = boundary["done_line"]
     print(done_line)
     say(repo_dir, done_line)
+    if boundary["deviation_text"]:
+        say(repo_dir, boundary["deviation_text"])
     if boundary["commit_text"]:
         say(repo_dir, boundary["commit_text"])
     ledger_warning = script_utils.missing_ledger_warning()
@@ -787,6 +725,18 @@ def announce_boundary(repo_dir, state, boundary):
         "block at the end of the turn: do not write it. Then wait for the user. When they say continue, run "
         f"`code_step.py {RESUME_VERB}`.",
     )
+
+
+def adopted_deviation_text(plan_path, number, is_run_end):
+    # The plan changes the code won without a question: this phase's at a phase end, every phase's at the run end.
+    phase = None if is_run_end else number
+    deviations = plan_format.below_criteria_deviations(plan_path.read_text(), phase)
+    if not deviations:
+        return ""
+
+    scope = "this plan" if is_run_end else f"Phase {number}"
+    heading = f"Plan deviations adopted in {scope} (the code won; no acceptance criterion changed):"
+    return "\n".join([heading, *[f"- {line}" for line in deviations]])
 
 
 def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verification):
@@ -816,7 +766,8 @@ def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verific
         "next_number": next_ungated["number"] if next_ungated else None,
         "gate_block_message": plan_format.gate_block_text(gated_ahead, next_ungated) if gated_ahead else "",
         "moved_text": plan_format.moved_phase_text(entries),
-        "done_line": done_line_of(state, section, verify_results, skipped, reopened)}
+        "done_line": done_line_of(state, section, verify_results, skipped, reopened),
+        "deviation_text": adopted_deviation_text(plan_path, number, block == "C")}
     announce_boundary(repo_dir, state, boundary)
 
 

@@ -359,11 +359,9 @@ def check_command_for(repo, out):
     if full_check.full_suite_runs_in_ci(repo):
         return None
 
-    claude_md = pathlib.Path(repo) / "CLAUDE.md"
-    text = claude_md.read_text() if claude_md.is_file() else ""
-    match = re.search(r"^\s*[-*]?\s*Quality check:\s*`([^`]+)`", text, re.I | re.M)
-    if match:
-        return match.group(1)
+    configured = full_check.configured_check_command(repo)
+    if configured:
+        return configured
 
     reply = claude_call("check-finder", CHECK_FINDER.format(repo=repo), repo, out, model="haiku",
                         tools="Read,Glob,Grep")

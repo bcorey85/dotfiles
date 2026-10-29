@@ -1094,6 +1094,25 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Decision: Adopt plan change", out)
         self.assertIn("## Plan Deviations", self.plan_text())
 
+    def test_plan_impact_that_changes_no_acceptance_criterion_is_adopted_without_asking(self):
+        report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
+                  "PLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertNotIn("ACTION: ask-user", out)
+        self.assertNotIn("## Question for the user", self.said())
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("Edit only the plan file", out)
+        out = self.step("after-plan-edit")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertIn("Decision: Adopt plan change", out)
+        self.assertIn("the code wins", self.plan_text())
+
+    def test_plan_impact_that_changes_an_acceptance_criterion_still_asks(self):
+        report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: AC-3\n"
+                  "PLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: ask-user", out)
+
     def test_adopt_rewrites_the_plan_before_the_review(self):
         report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
         self.coder_round(report)

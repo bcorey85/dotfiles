@@ -22,6 +22,7 @@ SIBLING_FOLDERS = ("code", "lib", "review", "telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in SIBLING_FOLDERS]
 import plan_format
 import script_utils
+from code_guidance import coder_guidance_lines
 from script_utils import git_output
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -34,10 +35,12 @@ DISPATCH_MARKER = "code-step-dispatch:"
 DISPATCH_MARKER_PATTERN = re.compile(re.escape(DISPATCH_MARKER) + r"\s+([^\s/]+)/(d\d+)\b")
 PROMPT_DENIAL_LIMIT = 3
 FORK_STOP_BLOCK_LIMIT = 2
-HANDBACK_WAIT_SECONDS = 570
+# Claude Code moves a subagent's Bash call to the background once it has run 180 seconds, and the fork then loses the
+# verb's output, so each wait ends well before that. Twelve waits make the cap about thirty minutes.
+HANDBACK_WAIT_SECONDS = 150
+HANDBACK_TOTAL_WAIT_MULTIPLE = 12
 HANDBACK_POLL_SECONDS = 2
 STOP_ROW_WAIT_SECONDS = 15
-HANDBACK_TOTAL_WAIT_MULTIPLE = 3
 LAUNCH_EXPECTED_SECONDS = 60
 PLAN_EDIT_STAGES = ("plan-coder", "impact-coder", "impact-review")
 PLAN_EDIT_STOP_REASONS = ("verification", "plan-format")
@@ -455,6 +458,19 @@ def file_hashes(repo_dir):
     return hashes
 
 
+def changed_since_baseline(state, changed_now):
+    # The files of the working tree that differ from the run's baseline.
+    baseline = state["baseline"]
+    return [name for name, digest in changed_now.items() if name not in baseline or baseline[name] != digest]
+
+
+def coder_changed_files(repo_dir, state, changed_now):
+    # The files the phase changed since its baseline, and the files the coder committed itself.
+    changed_files = changed_since_baseline(state, changed_now)
+    committed = committed_since(repo_dir, state.get("baseHead"))
+    return changed_files + [name for name in committed if name not in changed_files]
+
+
 def load_handback():
     # The shared hand-back reader is imported where it is used. When it is missing the caller reports that and stops.
     try:
@@ -553,7 +569,10 @@ def checkout_line(repo_dir):
 
 def emit_dispatch(repo_dir, state, *lines, prompt, agent, model=None):
     # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
-    # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt.
+    # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt. A coder also gets the run's
+    # guidance from the main session.
+    if agent == CODER:
+        prompt = "\n".join([prompt, *coder_guidance_lines(state)])
     prompt_in_checkout = f"{checkout_line(repo_dir)}\n\n{prompt}"
     prompt = prompt_with_gate_env(repo_dir, state, prompt_in_checkout)
 

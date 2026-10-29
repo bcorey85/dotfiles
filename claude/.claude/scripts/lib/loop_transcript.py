@@ -7,6 +7,7 @@ import os
 import re
 import shlex
 
+import expected_red
 import script_utils
 
 FINDING_ID_HEX_LEN = 16
@@ -17,7 +18,9 @@ AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
 ASYNC_LAUNCH = "Async agent launched"
 RESUMED_AGENT_ID = re.compile(r"resumedAgentId\W+([A-Za-z0-9-]+)")
 RESUMING_MESSAGE = re.compile(r"Resuming agent\s+([A-Za-z0-9-]+)")
-PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b")
+# The status line of the old free-text packet form, or the "status" key of a JSON packet (minified or indented).
+PLAN_IMPACT = re.compile(r'(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b'
+                         r'|"status"[ \t]*:[ \t]*"[ \t`\'*]*plan-impact\b')
 # One shell command ends at a ;, a | or && that joins the next command, or at a newline no backslash escapes.
 SEGMENT_END = re.compile(r"&&|\|\||[;|]|(?<!\\)\n")
 # A shell call that ran the review loop's full-check script, and the first line that script prints: its result.
@@ -48,7 +51,7 @@ SCOPE_CALL = re.compile(r"review-scope\b")
 SCOPE_ROOT = re.compile(r"(?m)^ROOT=(\S.*?)\s*$")
 PROMPT_REPO = prompt_field("repo", r"(\S+?)[`*]*[ \t]*$")
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
-                    "that edit, and return the finding that needs a plan change as `status: plan-impact`.")
+                    "that edit, and return the finding that needs a plan change with `status` set to `plan-impact`.")
 GATE_REASON = ("No passed full_check.py result follows the last code change in this phase. A scoped run, "
                "including the handoff's tests-run, does not count. If a full_check.py result already follows the "
                "last code change and was not passed, do not run it again: follow Step 6's route for that result "
@@ -115,7 +118,9 @@ class LoopTranscript:
         self.finding_calls = {}  # Bash tool_use_id -> the key=value fields of each `kind=finding` call, in order
         self.ask_rows = []  # {file, line, finding_id} of each `actioned=ask` row whose id the log helper printed
         self.full_check_calls = {}  # Bash tool_use_id -> (transcript line, full_check.py calls in it)
-        self.full_checks = []  # the transcript lines of the full_check.py calls whose result is `full check: passed`
+        # the transcript lines of the full_check.py calls whose result is exactly `passed` (not `passed (check only;
+        # ...)`), or starts with `not run (expected red until Phase ` (a check the Expected red lines leave out whole)
+        self.full_checks = []
         with open(path, encoding="utf-8") as fh:
             for n, line in enumerate(fh):
                 self.read_record(n, json.loads(line))
@@ -171,7 +176,9 @@ class LoopTranscript:
         if tool_use_id in self.full_check_calls:
             line, call_count = self.full_check_calls[tool_use_id]
             full_check_results = [found.strip() for found in FULL_CHECK_RESULT.findall(text_of(block.get("content")))]
-            if len(full_check_results) >= call_count and all(found == "passed" for found in full_check_results):
+            counted = [found for found in full_check_results
+                       if found == "passed" or found.startswith(expected_red.NOT_RUN_PREFIX)]
+            if len(full_check_results) >= call_count and len(counted) == len(full_check_results):
                 self.full_checks.append(line)
         if tool_use_id in self.finding_calls:
             self.read_printed_finding_ids(block)

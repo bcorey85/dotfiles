@@ -1,14 +1,17 @@
 """The review half of code_step: plan-impact modal, plan-edit dispatch, review dispatch, review packet and asks."""
 import os
+import pathlib
 import re
 import shutil
 import subprocess
 import sys
 import time
 
+import expected_red
 import plan_format
 import review_asks
 import script_utils
+from code_guidance import guidance_header_line
 from code_step_asks import (
     ASKS_DONE_USAGE,
     accepted_asks_of,
@@ -96,7 +99,7 @@ STAGE_GUARDS = {
                                 "call, unmarked review gate, critical blocker, setup fault, a full check that showed "
                                 "no test run or silent review-loop pending."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
-    "correct-ruling": {"stages": ("asks-coder",), "sayRefusal": True,
+    "correct-ruling": {"stages": ("asks-coder",), "goOnRefusal": True,
                        "message": "No asks coder is running, so the ruling cannot be corrected in this run. Put the "
                                   "change in a new /code run."},
     "skill-done": {"stages": ("skill",), "message": "skill-done ran with no closing-phase skill pending."},
@@ -545,6 +548,14 @@ def behavior_text(behavior_lines):
     return "; ".join(behavior_lines) or "see the diff."
 
 
+def later_phase_header_lines(repo_dir, state):
+    # The review prompt's `later-phase files:` line: the files the plan names only in later open phases, which no
+    # review coder edits. [] when there are none.
+    plan_lines = (pathlib.Path(repo_dir) / state["plan"]).read_text().splitlines()
+    later_files = expected_red.later_phase_paths(plan_lines, state["phase"])
+    return [f"later-phase files: {', '.join(later_files)}"] if later_files else []
+
+
 def emit_review_dispatch(repo_dir, state):
     report = handoff_report(repo_dir, state)
     untracked_text = git_output(repo_dir, "ls-files", "--others", "--exclude-standard") or ""
@@ -560,6 +571,10 @@ def emit_review_dispatch(repo_dir, state):
         header.append(f"plan: {state['plan']}")
         if state.get("phase"):
             header.append(f"phase: {state['phase']}")
+            header += later_phase_header_lines(repo_dir, state)
+    guidance_line = guidance_header_line(state)
+    if guidance_line:
+        header.append(guidance_line)
     if state.get("modifier"):
         header.append(state["modifier"])
     # The structure pass runs on the first review of a phase. A re-review after a ruling, or after a follow-up coder
@@ -892,12 +907,12 @@ def command_asks_done(repo_dir, state, args):
 
 def command_correct_ruling(repo_dir, state, args):
     # Valid while an asks coder runs. The corrected rulings wait in the state until that coder reports; a correction
-    # equal to the rulings the coder works from is dropped. Every refusal is a `say`: the run goes on.
+    # equal to the rulings the coder works from is dropped. Every refusal is a `go-on`: the run goes on.
     if "rulings" not in state:
-        return emit("say", "This run's asks coder started before corrections were supported, so the ruling cannot "
+        return emit("go-on", "This run's asks coder started before corrections were supported, so the ruling cannot "
                     "be corrected in this run. Put the change in a new /code run.")
 
-    rulings = parse_rulings(state, args, refusal_action="say")
+    rulings = parse_rulings(state, args, refusal_action="go-on")
     if rulings is None:
         return
 
@@ -919,14 +934,14 @@ def command_correct_ruling(repo_dir, state, args):
         drop_line = ("The corrected rulings equal the rulings the asks coder works from; any earlier "
                      "correction is dropped.")
         say(repo_dir, drop_line, replaces_blocks_starting=("The corrected rulings",))
-        return emit("say", drop_line)
+        return emit("go-on", drop_line)
 
     state["pendingCorrection"] = {**corrected, "also": also_text}
     save_state(repo_dir, state)
 
     saved_line = "The corrected rulings are saved. A correction coder applies them when the asks coder reports."
     say(repo_dir, saved_line, replaces_blocks_starting=("The corrected rulings",))
-    emit("say", saved_line)
+    emit("go-on", saved_line)
 
 
 def dispatch_correction_coder(repo_dir, state):

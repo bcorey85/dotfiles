@@ -34,7 +34,7 @@ Thin wrapper over the `review-loop` agent. A script parses the returned packet, 
 
    `--scope branch-exit` when you dispatched with `base=`. `--lane` only when the handoff names one.
 
-   When the packet's first line is `status: converged` or `status: deferred`, put `~/.claude/scripts/review/review-gate-mark clean` in the same response as a second, parallel Bash call. For any other status, never mark. If the gate denies a `clean` mark, leave the gate dirty, tell the user the reason it gave, and do not retry the mark.
+   When the packet's `status` is `converged` or `deferred`, put `~/.claude/scripts/review/review-gate-mark clean` in the same response as a second, parallel Bash call. For any other status, never mark. If the gate denies a `clean` mark, leave the gate dirty, tell the user the reason it gave, and do not retry the mark.
 
 3. **Do what the script printed.** Read the `ACTION:` line:
 

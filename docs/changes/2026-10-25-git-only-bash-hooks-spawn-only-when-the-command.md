@@ -8,7 +8,7 @@ kind: "fix"
 components: ["script/git-discipline-gate", "script/review-commit-gate", "script/deferred-push-check"]
 evidence: ["judgment"]
 watches: []
-test: "tests/scripts/test_hook_if_filters.py::HookIfFiltersTest::test_git_only_hooks_keep_wide_if_filters"
+test: "tests/scripts/test_hook_if_filters.py::HookIfFiltersTest::test_bash_hooks_behind_an_if_filter_keep_wide_filters"
 asked: ""
 proof: []
 unmeasured: ""

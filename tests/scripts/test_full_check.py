@@ -93,6 +93,10 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 1)
         self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 1)")
 
+        outside = self.check("echo \"ModuleNotFoundError: No module named 'requests'\"; exit 2")
+
+        self.assertEqual(outside.stdout.splitlines()[0], "full check: failed (exit 2)")
+
     def test_each_dependency_file_shape_declares_its_modules_by_normalized_name(self):
         dependency_files = {
             "pyproject.toml": ('[project]\ndependencies = ["Typing_Extensions>=4"]\n'
@@ -200,16 +204,14 @@ class FullCheckTest(unittest.TestCase):
                 self.assertEqual(completed.returncode, 1, completed.stdout)
                 self.assertTrue(completed.stdout.startswith("full check: failed"), completed.stdout)
 
-    def test_a_check_with_no_package_manifest_is_a_setup_fault(self):
-        completed = self.check("echo ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND; exit 1")
+    def test_a_package_manager_marker_in_the_output_is_a_setup_fault(self):
+        for marker in ("ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND",
+                       "ERR_PNPM_BAD_PM_VERSION  This project is configured to use v9"):
+            with self.subTest(marker=marker):
+                completed = self.check(f"echo '{marker}'; exit 1")
 
-        self.assertEqual(completed.returncode, 1)
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: setup fault (exit 1)")
-
-    def test_a_missing_module_from_outside_the_repo_is_a_failure_not_a_setup_fault(self):
-        completed = self.check("echo \"ModuleNotFoundError: No module named 'requests'\"; exit 2")
-
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 2)")
+                self.assertEqual(completed.returncode, 1)
+                self.assertEqual(completed.stdout.splitlines()[0], "full check: setup fault (exit 1)")
 
     def test_a_failing_test_name_the_tail_cut_off_is_printed_above_the_tail(self):
         failing_test = "FAILED tests/test_totals.py::test_rounding"
@@ -239,22 +241,53 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
         self.assertFalse(marker.exists())
 
-    def test_the_check_runs_when_claude_md_has_no_full_suite_line(self):
-        completed = self.check(PASSING_SUITE, claude_md="Quality check: `make test`\n")
-
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
-
-    def test_a_misspelled_full_suite_line_still_runs_the_check(self):
-        for line in ("Full suite: ci", "Full-suite: CI", "Full suite CI", "Full suite: CI runs it"):
+    def test_a_missing_or_misspelled_full_suite_line_still_runs_the_check(self):
+        for line in ("Quality check: `make test`", "Full suite: ci", "Full-suite: CI", "Full suite CI",
+                     "Full suite: CI runs it"):
             with self.subTest(line=line):
                 completed = self.check(PASSING_SUITE, claude_md=line + "\n")
 
                 self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
 
-    def test_a_package_manager_version_mismatch_is_a_setup_fault(self):
-        completed = self.check("echo 'ERR_PNPM_BAD_PM_VERSION  This project is configured to use v9'; exit 1")
+    def test_exit_zero_with_a_failure_count_in_a_runners_summary_is_a_failure(self):
+        cases = {
+            "pytest": "echo '=== 3 failed, 1 passed in 0.1s ==='; true",
+            "a failing summary after the fifth": ("for n in 1 2 3 4 5 6; do echo \"test result: ok. $n passed; "
+                                                  "0 failed\"; done; echo '=== 2 failed, 1 passed in 0.1s ==='"),
+            "unittest": "printf 'Ran 3 tests in 0.1s\\n\\nFAILED (failures=1)\\n'",
+            "mocha": "printf '  3 passing (9ms)\\n  2 failing\\n'",
+            "bun": "printf ' 3 pass\\n 2 fail\\n'",
+            "node test": "printf '# tests 5\\n# pass 3\\n# fail 2\\n'",
+            "playwright": "printf '  2 failed\\n  3 passed (5.2s)\\n'",
+            "go": "printf 'ok  \\texample.com/a\\t0.1s\\nFAIL\\texample.com/b\\t0.2s\\n'",
+            "dotfiles suite": "echo '9 tests in 2 files, wall-clock 1.0s, sum of per-file seconds 1.5s, 1 failed'",
+        }
+        for runner, command in cases.items():
+            with self.subTest(runner):
+                completed = self.check(command)
 
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: setup fault (exit 1)")
+                self.assertEqual(completed.returncode, 1, completed.stdout)
+                self.assertEqual(completed.stdout.splitlines()[0],
+                                 "full check: failed (exit 0, summary reports failures)")
+        self.assertTrue(full_check.is_failure("failed (exit 0, summary reports failures)"))
+
+    def test_exit_zero_summaries_with_no_failures_stay_passed(self):
+        cases = {
+            "all passed": "echo '=== 4 passed in 0.1s ==='",
+            "cargo zero failed": "echo 'test result: ok. 5 passed; 0 failed; 0 ignored'",
+            "mocha": "printf '  3 passing (9ms)\\n'",
+            "bun": "printf ' 3 pass\\n 0 fail\\n'",
+            "node test": "printf '# tests 3\\n# pass 3\\n# fail 0\\n'",
+            "playwright": "printf '  3 passed (5.2s)\\n'",
+            "go": "printf 'ok  \\texample.com/a\\t0.1s\\n'",
+            "dotfiles suite": "echo '9 tests in 2 files, wall-clock 1.0s, sum of per-file seconds 1.5s, 0 failed'",
+        }
+        for name, command in cases.items():
+            with self.subTest(name):
+                completed = self.check(command)
+
+                self.assertEqual(completed.returncode, 0, completed.stdout)
+                self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
 
 
 class FullCheckSideEffectsTest(unittest.TestCase):
@@ -293,63 +326,6 @@ class FullCheckSideEffectsTest(unittest.TestCase):
 
         self.assertEqual(completed.stdout.splitlines(), [
             "full check: passed", "summary: 3 passed in 0.1s", "rewrote edited files: generated.ts"])
-
-    def test_exit_zero_with_a_summary_that_reports_failures_is_a_failure(self):
-        completed = self.check("echo '=== 3 failed, 1 passed in 0.1s ==='; true")
-
-        self.assertEqual(completed.returncode, 1)
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 0, summary reports failures)")
-        self.assertTrue(full_check.is_failure("failed (exit 0, summary reports failures)"))
-
-    def test_a_failing_summary_after_the_fifth_is_still_a_failure(self):
-        command = ("for n in 1 2 3 4 5 6; do echo \"test result: ok. $n passed; 0 failed\"; done; "
-                   "echo '=== 2 failed, 1 passed in 0.1s ==='")
-
-        completed = self.check(command)
-
-        self.assertEqual(completed.returncode, 1)
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 0, summary reports failures)")
-
-    def test_exit_zero_with_a_unittest_failed_line_is_a_failure(self):
-        completed = self.check("printf 'Ran 3 tests in 0.1s\\n\\nFAILED (failures=1)\\n'")
-
-        self.assertEqual(completed.returncode, 1)
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 0, summary reports failures)")
-
-    def test_exit_zero_with_a_failure_count_in_a_runners_summary_is_a_failure(self):
-        cases = {
-            "mocha": "printf '  3 passing (9ms)\\n  2 failing\\n'",
-            "bun": "printf ' 3 pass\\n 2 fail\\n'",
-            "node test": "printf '# tests 5\\n# pass 3\\n# fail 2\\n'",
-            "playwright": "printf '  2 failed\\n  3 passed (5.2s)\\n'",
-            "go": "printf 'ok  \\texample.com/a\\t0.1s\\nFAIL\\texample.com/b\\t0.2s\\n'",
-            "dotfiles suite": "echo '9 tests in 2 files, wall-clock 1.0s, sum of per-file seconds 1.5s, 1 failed'",
-        }
-        for runner, command in cases.items():
-            with self.subTest(runner):
-                completed = self.check(command)
-
-                self.assertEqual(completed.returncode, 1, completed.stdout)
-                self.assertEqual(completed.stdout.splitlines()[0],
-                                 "full check: failed (exit 0, summary reports failures)")
-
-    def test_exit_zero_summaries_with_no_failures_stay_passed(self):
-        cases = {
-            "all passed": "echo '=== 4 passed in 0.1s ==='",
-            "cargo zero failed": "echo 'test result: ok. 5 passed; 0 failed; 0 ignored'",
-            "mocha": "printf '  3 passing (9ms)\\n'",
-            "bun": "printf ' 3 pass\\n 0 fail\\n'",
-            "node test": "printf '# tests 3\\n# pass 3\\n# fail 0\\n'",
-            "playwright": "printf '  3 passed (5.2s)\\n'",
-            "go": "printf 'ok  \\texample.com/a\\t0.1s\\n'",
-            "dotfiles suite": "echo '9 tests in 2 files, wall-clock 1.0s, sum of per-file seconds 1.5s, 0 failed'",
-        }
-        for name, command in cases.items():
-            with self.subTest(name):
-                completed = self.check(command)
-
-                self.assertEqual(completed.returncode, 0, completed.stdout)
-                self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
 
     def test_a_check_that_times_out_still_names_what_it_rewrote_and_leaves_it(self):
         completed = self.check("echo generated v2 > generated.ts; sleep 30", timeout=1)
@@ -404,20 +380,23 @@ class BaseComparisonTest(unittest.TestCase):
         seen = []
 
         def check_run(base_repo, *args, **kwargs):
-            seen.append((set(trees), pathlib.Path(base_repo).is_dir()))
+            seen.append((set(trees), pathlib.Path(base_repo), pathlib.Path(base_repo).is_dir()))
             return "passed", set(), {}
 
         with mock.patch.object(full_check, "run", side_effect=check_run):
             full_check.base_run(str(self.repo), "exit 1", self.base_log, 60, live_trees=trees)
 
         self.assertEqual(len(seen), 1)
-        registered, tree_existed = seen[0]
+        registered, base_tree, tree_existed = seen[0]
+        self.assertTrue(tree_existed)
         self.assertEqual(len(registered), 1)
         (root, tree), = registered
         self.assertEqual(pathlib.Path(root).resolve(), self.repo.resolve())
-        self.assertTrue(tree_existed)
         self.assertTrue(str(tree).endswith("base"))
         self.assertEqual(trees, set())
+        base_folder = (self.repo / ".git" / full_check.BASE_TREE_FOLDER).resolve()
+        self.assertIn(base_folder, base_tree.resolve().parents)
+        self.assertFalse(base_tree.exists())
 
     def test_a_check_that_fails_only_with_the_diff_has_no_base_failure(self):
         (self.repo / "app.py").write_text("limit = 2\n")
@@ -619,39 +598,22 @@ class BaseComparisonTest(unittest.TestCase):
                 self.assertEqual(self.base_log.exists(), not expected)
                 self.base_log.unlink(missing_ok=True)
 
-    def test_a_check_command_or_env_value_naming_the_repo_path_gets_no_base_run(self):
+    def test_a_base_run_is_skipped_only_when_the_command_or_env_names_the_repo_path_itself(self):
         cases = {
-            "the command": (f"cd {self.repo} && echo 'FAIL: test_old'; exit 1", None),
-            "a gate-env value": ("echo 'FAIL: test_old'; exit 1", {"APP_DIR": f"{self.repo}/src"}),
+            "the command": (f"cd {self.repo} && echo 'FAIL: test_old'; exit 1", None, True),
+            "a gate-env value": ("echo 'FAIL: test_old'; exit 1", {"APP_DIR": f"{self.repo}/src"}, True),
+            "a sibling path named like the repo": (f"echo 'FAIL: test_old'; exit 1 # {self.repo}-v2/run",
+                                                   {"APP_DIR": f"{self.repo}-v2"}, False),
         }
-        for name, (command, gate_env) in cases.items():
+        for name, (command, gate_env, blocked) in cases.items():
             with self.subTest(name):
+                self.base_log.unlink(missing_ok=True)
+
                 base = full_check.base_run(str(self.repo), command, self.base_log, 60,
                                            env={**os.environ, **(gate_env or {})}, gate_env=gate_env)
 
-                self.assertIsNone(base)
-                self.assertFalse(self.base_log.exists())
-
-    def test_an_inherited_pwd_in_the_repo_does_not_block_the_base_run(self):
-        env = {**os.environ, "PWD": str(self.repo)}
-
-        base = full_check.base_run(str(self.repo), "echo 'FAIL: test_old'; exit 1", self.base_log, 60, env=env)
-
-        self.assertIsInstance(base, full_check.BaseRun)
-
-    def test_the_base_tree_is_made_under_the_repos_git_common_dir_and_removed_afterwards(self):
-        seen = []
-
-        def check_run(base_repo, *args, **kwargs):
-            seen.append(pathlib.Path(base_repo))
-            return "passed", set(), {}
-
-        with mock.patch.object(full_check, "run", side_effect=check_run):
-            full_check.base_run(str(self.repo), "exit 1", self.base_log, 60)
-
-        base_folder = (self.repo / ".git" / full_check.BASE_TREE_FOLDER).resolve()
-        self.assertIn(base_folder, seen[0].resolve().parents)
-        self.assertFalse(seen[0].exists())
+                self.assertEqual(base is None, blocked)
+                self.assertEqual(self.base_log.exists(), not blocked)
 
     def test_an_inherited_import_path_inside_the_repo_blocks_the_base_run(self):
         (self.repo / "src").mkdir()
@@ -660,21 +622,14 @@ class BaseComparisonTest(unittest.TestCase):
                  "NODE_PATH in the repo": ("NODE_PATH", f"{self.repo}/node_modules", True),
                  "a relative entry in the repo": ("PYTHONPATH", "src", True),
                  "PYTHONPATH outside the repo": ("PYTHONPATH", str(outside), False),
-                 "a sibling named like the repo": ("PYTHONPATH", f"{self.repo}-v2/src", False)}
+                 "a sibling named like the repo": ("PYTHONPATH", f"{self.repo}-v2/src", False),
+                 "an inherited PWD in the repo": ("PWD", str(self.repo), False)}
         for name, (variable, value, blocked) in cases.items():
             with self.subTest(name):
                 base = full_check.base_run(str(self.repo), "echo 'FAIL: test_old'; exit 1", self.base_log, 60,
                                            env={**os.environ, variable: value})
 
                 self.assertEqual(base is None, blocked)
-
-    def test_a_sibling_path_named_like_the_repo_does_not_block_the_base_run(self):
-        command = f"echo 'FAIL: test_old'; exit 1 # {self.repo}-v2/run"
-
-        base = full_check.base_run(str(self.repo), command, self.base_log, 60,
-                                   gate_env={"APP_DIR": f"{self.repo}-v2"})
-
-        self.assertIsInstance(base, full_check.BaseRun)
 
     def test_a_repo_in_a_subfolder_runs_its_check_in_the_same_subfolder_of_the_base_tree(self):
         (self.repo / "pkg").mkdir()

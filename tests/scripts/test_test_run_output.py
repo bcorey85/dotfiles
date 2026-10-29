@@ -67,11 +67,11 @@ class MatchesNoTestTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertTrue(test_run_output.matches_no_test(command, 0, ""))
 
-    def test_a_filtered_mocha_run_that_passed_is_not_a_no_match(self):
-        self.assertFalse(test_run_output.matches_no_test("npx mocha --grep totals", 0, PASSING_SUMMARIES["mocha"]))
-
-    def test_a_filtered_bun_run_that_passed_is_not_a_no_match(self):
-        self.assertFalse(test_run_output.matches_no_test("bun test -t totals", 0, PASSING_SUMMARIES["bun"]))
+    def test_a_filtered_mocha_or_bun_run_that_passed_is_not_a_no_match(self):
+        runs = (("npx mocha --grep totals", "mocha"), ("bun test -t totals", "bun"))
+        for command, runner in runs:
+            with self.subTest(runner=runner):
+                self.assertFalse(test_run_output.matches_no_test(command, 0, PASSING_SUMMARIES[runner]))
 
     def test_a_filtered_run_that_ran_no_test_is_a_no_match(self):
         self.assertTrue(test_run_output.matches_no_test("npx vitest run -t totals", 0, NO_TEST_OUTPUTS["vitest"]))
@@ -82,36 +82,30 @@ class MatchesNoTestTest(unittest.TestCase):
     def test_a_failing_run_is_never_a_no_match(self):
         self.assertFalse(test_run_output.matches_no_test("npx vitest run -t totals", 1, NO_TEST_OUTPUTS["vitest"]))
 
-    def test_a_cargo_test_name_after_option_flags_is_a_filter(self):
-        commands = [
-            "cargo test --test billing totals",
-            "cargo test -p ledger --test billing totals",
-            "cargo test --test billing -- totals",
-            "cargo test --release --lib totals",
+    def test_a_cargo_test_name_after_option_flags_is_a_filter_and_bare_options_are_not(self):
+        rows = [
+            ("cargo test --test billing totals", True),
+            ("cargo test -p ledger --test billing totals", True),
+            ("cargo test --test billing -- totals", True),
+            ("cargo test --release --lib totals", True),
+            ("cargo test --test billing", False),
+            ("cargo test -p ledger --test billing --release", False),
+            ("cargo test", False),
         ]
-        for command in commands:
+        for command, is_filter in rows:
             with self.subTest(command=command):
-                self.assertTrue(test_run_output.matches_no_test(command, 0, NO_TEST_OUTPUTS["cargo"]))
+                self.assertEqual(is_filter, test_run_output.matches_no_test(command, 0, NO_TEST_OUTPUTS["cargo"]))
 
-    def test_a_cargo_test_with_only_options_is_not_a_filter(self):
-        commands = ["cargo test --test billing", "cargo test -p ledger --test billing --release", "cargo test"]
-        for command in commands:
+    def test_only_a_command_with_a_test_runner_step_runs_tests(self):
+        not_runs = ("git grep -n test -- src", "ruff check tests/", "test -f out.txt", "npm run lint",
+                    "cd tests && ls", "ruff check test", "npx eslint test", "mypy test-utils")
+        runs = ("npm run test:unit", "go test ./pkg/...", "FOO=1 vitest run a.test.ts", "npx mocha a.js",
+                "npm run typecheck && npm test", "cd pkg && npm test", "(cd pkg && pytest)", "a&&pytest",
+                "pipenv run python backend/manage.py test app.tests", "make test-consistency ARGS=a.test.ts",
+                "pnpm --filter api test")
+        for command in not_runs + runs:
             with self.subTest(command=command):
-                self.assertFalse(test_run_output.matches_no_test(command, 0, NO_TEST_OUTPUTS["cargo"]))
-
-    def test_a_check_that_only_names_a_test_does_not_run_tests(self):
-        for command in ("git grep -n test -- src", "ruff check tests/", "test -f out.txt", "npm run lint",
-                        "cd tests && ls", "ruff check test", "npx eslint test", "mypy test-utils"):
-            with self.subTest(command=command):
-                self.assertFalse(test_run_output.runs_tests(command))
-
-    def test_a_step_of_a_command_that_runs_tests_is_a_test_run(self):
-        for command in ("npm run test:unit", "go test ./pkg/...", "FOO=1 vitest run a.test.ts", "npx mocha a.js",
-                        "npm run typecheck && npm test", "cd pkg && npm test", "(cd pkg && pytest)", "a&&pytest",
-                        "pipenv run python backend/manage.py test app.tests", "make test-consistency ARGS=a.test.ts",
-                        "pnpm --filter api test"):
-            with self.subTest(command=command):
-                self.assertTrue(test_run_output.runs_tests(command))
+                self.assertEqual(command in runs, test_run_output.runs_tests(command))
 
     def test_each_runners_own_summary_line_is_read(self):
         outputs = {
@@ -166,6 +160,7 @@ class MatchesNoTestTest(unittest.TestCase):
 
         self.assertEqual(["Tests  9 passed (9)", "8 passing (1ms)"], found[:2])
         self.assertEqual(5, len(found))
+        self.assertEqual(7, len(test_run_output.runner_summaries(cargo_lines, limit=None)))
 
     def test_a_printed_line_that_is_no_runner_summary_gives_no_summary(self):
         output = "496 tests registered\nlint ok\nok\nTotal: 496 passed checks\n"
@@ -213,12 +208,6 @@ class MatchesNoTestTest(unittest.TestCase):
         found = test_run_output.runner_summaries(f"test_a.py    3 tests    0.1s FAILED\n\n{total}\nFAILED: tests\n")
 
         self.assertEqual([total], found)
-
-    def test_a_limit_of_none_returns_every_summary(self):
-        cargo_lines = "".join(f"test result: ok. {count} passed; 0 failed\n" for count in range(1, 8))
-
-        self.assertEqual(7, len(test_run_output.runner_summaries(cargo_lines, limit=None)))
-        self.assertEqual(5, len(test_run_output.runner_summaries(cargo_lines)))
 
 
 if __name__ == "__main__":

@@ -2,12 +2,12 @@
 """review_loop_gate.py — deterministic checks on the review loop.
 
   SubagentStop (review-loop), the backstop: blocks once when no full check ran after the last code
-      change: a shell call that runs a project checker, or redirects into the review-gate log, with
-      no file, directory or test-name filter. For the checkers that take them, the value of
-      `--manifest-path`, `-p`, `--package` or `--project` names a package or project and is no
-      filter (see NON_SCOPING_FLAGS). The last coder step — a dispatch, or a SendMessage to a coder
-      it dispatched — is the last code change; with none, the loop start is, since the phase changed
-      code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
+      change: a shell call of review/full_check.py whose tool_result holds the line
+      `full check: passed`. A failed, unverified, setup-fault or not-run result, and a checker run by hand, never
+      count; full_check.py itself refuses a command scoped to files or tests, unless its text equals the CLAUDE.md
+      `Quality check:` command. The last coder step — a
+      dispatch, or a SendMessage to a coder it dispatched — is the last code change; with none, the loop start
+      is, since the phase changed code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
       `status: plan-impact` owes no check, and neither does a loop in a repo whose CLAUDE.md holds the line
       `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. That repo is the one the loop
       reviewed (reviewed_root), else the hook cwd. A stop with a
@@ -66,33 +66,11 @@ RESUMING_MESSAGE = re.compile(r"Resuming agent\s+([A-Za-z0-9-]+)")
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
 HANDOFF = re.compile(r"(?im)^[ \t]*handoff[ \t]*:")
 PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b")
-REDIRECT = re.compile(r"\d*>>?\s*&?\S+|&>\s*\S+")
 # One shell command ends at a ;, a | or && that joins the next command, or at a newline no backslash escapes.
 SEGMENT_END = re.compile(r"&&|\|\||[;|]|(?<!\\)\n")
-SCOPED = re.compile(r"(?:^|\s)(?:-k|-t|-m|-run|--testNamePattern|--grep|--findRelatedTests|--onlyChanged|--changedSince"
-                    r"|--related)(?=[\s=]|$)|(?:^|\s)(?!\./\.\.\.(?:\s|$))[^\s-]\S*(?:/|::|\.(?:[cm]?[jt]sx?|py|go|rb|rs|php|vue|svelte)\b)")
-# By checker: the flags whose value names a package, a project or a manifest, never a test, so the value does not
-# scope a run. Another checker's `-p` or `--project` may select a test file (`rspec -p`, `bats -p`), so a flag counts
-# only for the checkers listed here.
-NON_SCOPING_FLAGS = {
-    "cargo": ("--manifest-path", "-p", "--package"),
-    "pytest": ("-p",),
-    "go": ("-p",),
-    "mypy": ("-p",),
-    "pyright": ("-p",),
-    "tsc": ("-p", "--project"),
-    "vitest": ("--project",),
-    "dotnet": ("--project",),
-}
-GATE_LOG = re.compile(r"(?:>\s*|\btee\s+(?:-a\s+)?|--log[=\s]+)\S*review-gate[\w.-]*\.log")
-# A checker opens the command, a segment of it, or the words after `--` that full_check.py runs.
-CHECKER = re.compile(r"(?:\A|[;&|(]\s*|\n\s*|\s--\s+['\"]?)(?:cd\s+\S+\s*&&\s*)?(?:[A-Za-z_]\w*=\S+\s+)*"
-                     r"(?:(?:time|npx|bunx|uv\s+run|poetry\s+run|python3?\s+-m|bundle\s+exec)\s+)*"
-                     r"(?P<checker>(?:npm|pnpm|yarn|bun)\s+(?:(?:-F|--filter|workspace)\s+\S+\s+)?(?:run\s+)?"
-                     r"[\w:-]*(?:test|lint|typecheck|type-check|check|build)[\w:-]*"
-                     r"|jest|vitest|pytest|tsc|vue-tsc|svelte-check|eslint|oxlint|ruff|mypy|pyright|golangci-lint"
-                     r"|go\s+(?:test|vet)|cargo\s+(?:test|clippy|check)|make\s+[\w-]*(?:test|lint|check)[\w-]*"
-                     r"|\S*quality-check|bats|shellcheck|rspec|phpunit|dotnet\s+test)(?![\w-])")
+# A shell call that ran the review loop's full-check script, and the first line that script prints: its result.
+FULL_CHECK_SCRIPT = re.compile(r"(?<![\w.-])full_check\.py(?![\w-])")
+FULL_CHECK_RESULT = re.compile(r"(?m)^full check: (.*)$")
 
 RUN_GATES = re.compile(r"-reviewer(-deep)?$")
 AGENT_MESSAGE = re.compile(r"<agent-message\s+from=\"([\w-]+)\">(.*?)(?=</agent-message>|<agent-message\s|\Z)", re.S)
@@ -156,10 +134,10 @@ RETURN_TAIL = "then return the packet."
 DELIVERED_TAIL = "then stop: the packet was already delivered, and a second hand-back is denied."
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
                     "that edit, and return the finding that needs a plan change as `status: plan-impact`.")
-GATE_REASON = ("No full check ran after the last code change in this phase. A scoped run, including the "
-               "handoff's tests-run, does not count. Run the Step 6 execution gate now: the project's full "
-               "quality-check command once, through Step 6's full_check.py call. Route the result as Step 6 "
-               "says, then return the packet.")
+GATE_REASON = ("No passed full_check.py result follows the last code change in this phase. A scoped run, "
+               "including the handoff's tests-run, does not count. If a full_check.py result already follows the "
+               "last code change and was not passed, do not run it again: follow Step 6's route for that result "
+               "and return the packet. Otherwise run the Step 6 execution gate now.")
 HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. Build it per "
                   "~/.claude/skills/_shared/handoff-block.md and dispatch again.")
 NESTED_REASON = ("Run /review from the main session: a review-loop that a subagent dispatches cannot ask for "
@@ -170,27 +148,6 @@ def text_of(content):
     if isinstance(content, str):
         return content
     return " ".join(b.get("text", "") for b in content or [] if isinstance(b, dict))
-
-
-def scoping_words(rest, checker):
-    """The arguments of one checker call as the scope check reads them: redirects gone, and the values of the flags
-    that pick a package, a project or a manifest for this checker gone, since those values do not narrow which tests
-    run."""
-    arguments = REDIRECT.sub(" ", rest)
-    flags = NON_SCOPING_FLAGS.get(checker, ())
-    return script_utils.strip_flag_values(arguments, flags)
-
-
-def full_check(cmd):
-    """True when the command runs a checker, or writes the review-gate log, and no checker in it is filtered to
-    files, directories or test names."""
-    hits = list(CHECKER.finditer(cmd))
-    for m in hits:
-        rest = SEGMENT_END.split(cmd[m.end():], 1)[0]
-        checker = m.group("checker").split()[0]
-        if SCOPED.search(scoping_words(rest, checker)):
-            return False
-    return bool(hits) or bool(GATE_LOG.search(cmd))
 
 
 def finding_call_pattern(command, tail):
@@ -246,7 +203,8 @@ class LoopTranscript:
         self.scope_root = None  # the ROOT= that the last review-scope call printed
         self.finding_calls = {}  # Bash tool_use_id -> the key=value fields of each `kind=finding` call, in order
         self.ask_rows = []  # {file, line, finding_id} of each `actioned=ask` row whose id the log helper printed
-        self.full_checks = []  # the transcript lines of the shell calls that ran a full check
+        self.full_check_calls = {}  # Bash tool_use_id -> transcript line, of each full_check.py call
+        self.full_checks = []  # the transcript lines of the full_check.py calls whose result is `full check: passed`
         with open(path, encoding="utf-8") as fh:
             for n, line in enumerate(fh):
                 self.read_record(n, json.loads(line))
@@ -299,6 +257,10 @@ class LoopTranscript:
     def read_bash_result(self, block):
         """One Bash call can chain a finding row, a metrics row and a scope call, so each check reads the result."""
         tool_use_id = block.get("tool_use_id")
+        if tool_use_id in self.full_check_calls:
+            first_result = FULL_CHECK_RESULT.search(text_of(block.get("content")))
+            if first_result and first_result.group(1).strip() == "passed":
+                self.full_checks.append(self.full_check_calls[tool_use_id])
         if tool_use_id in self.finding_calls:
             self.read_printed_finding_ids(block)
         refused = block.get("is_error") or METRICS_REFUSAL in text_of(block.get("content"))
@@ -364,8 +326,8 @@ class LoopTranscript:
         self.metrics_calls += [(n, fields, tool_use_id) for fields in metrics_calls(command)]
         if SCOPE_CALL.search(command):
             self.scope_calls.add(tool_use_id)
-        if full_check(command):
-            self.full_checks.append(n)
+        if FULL_CHECK_SCRIPT.search(command):
+            self.full_check_calls[tool_use_id] = n
 
     def reviewed_root(self):
         """The repo the loop reviewed: the ROOT= review-scope printed, else the prompt's `repo:` line, when it names a
@@ -438,7 +400,8 @@ def full_suite_in_ci(transcript, cwd):
 
 
 def scan(transcript, final=None, full_suite_in_ci=False):
-    """(no full check ran after the last code change, the count of background dispatches that have not reported).
+    """(no passed full_check.py result after the last code change, the count of background dispatches that have
+    not reported).
     final is the loop's last message; the transcript's last text stands in when it is None."""
     last_step = last_code_step(transcript)
     last_full = max(transcript.full_checks, default=-1)

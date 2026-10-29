@@ -171,7 +171,9 @@ class StartInputTest(base.CodeStepTest):
 
         self.assertTrue(out.startswith("Refused: "), out)
         self.assertNotIn("code_step.py start --restart", out)
-        self.assertIn("ACTION: rerun", out)
+        self.assertNotIn("ACTION: rerun", out)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("The task was not started.", out)
         self.assertIn("another session", out)
         self.assertIn("--repo", out)
 

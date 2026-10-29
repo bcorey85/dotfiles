@@ -39,6 +39,7 @@ LIST_ENTRY = re.compile(r"^(?:[-*]|\d+[.)])\s+(?:\[([ xX])\]\s+)?(.*)$")
 NOT_APPLICABLE = re.compile(r"^(?:[-*]\s+)?N/A\b", re.I)
 FOREIGN_START = ("|", ">", "<")
 SECTION_LEVELS = (3, 4)
+MID_EDIT_KINDS = {"duplicate-id", "missing-section", "section-without-status"}
 HUMAN_ONLY_MARK = "human-only"
 AGENT_VERIFIED_MARK = "agent-verified"
 
@@ -775,6 +776,14 @@ def plan_failure_rows(plan, plan_name):
 def plan_failure_message(plan, plan_name):
     rows = plan_failure_rows(plan, plan_name)
     return "The plan's Phase Status does not parse. Report each line to the user and stop:\n" + "\n".join(rows)
+
+
+def plan_mid_edit_message(plan, plan_name):
+    """The message for a plan whose failures are all kinds a renumber passes through one Edit at a time."""
+    rows = plan_failure_rows(plan, plan_name)
+    return ("The plan does not parse yet. It may be mid-edit, for example renumbering phase headings one Edit at a "
+            "time. Finish the edits and re-check after the last Edit. If the error is still "
+            "there then, report these lines to the user and stop:\n" + "\n".join(rows))
 
 
 def phase_manual_items(plan_lines, number, plan_name):

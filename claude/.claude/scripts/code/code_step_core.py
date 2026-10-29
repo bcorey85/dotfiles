@@ -59,8 +59,7 @@ HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
 # their saved hand-back.
 REVIEW_HANDBACK_STAGES = ("coder", "review", "asks-coder")
 CODER_STAGES = ("coder", "asks-coder")
-# The agent the /code skill forks into (its `agent:` line). It has no Edit or Write tool.
-FORK_AGENT_TYPE = "code-fork"
+FORK_AGENT_TYPE = script_utils.FORK_AGENT_TYPE
 SAY_MAX_AGE_SECONDS = 6 * 3600
 STATE_DIRS = {}  # resolved folder -> the code-step state folder git named for it
 

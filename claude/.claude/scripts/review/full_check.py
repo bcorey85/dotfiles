@@ -18,8 +18,10 @@ repo's `Quality check:` command exited 0 with no runner summary, `not run (scope
 runs tests or lint on named files or tests, or with a changed-files flag, and its text does not equal the CLAUDE.md
 `Quality check:` command (it does not run then), or `not run (unresolved command: ...)` when lib/check_scope cannot
 read what it runs, such as a make call with a NAME=value argument or a target no Makefile names, under the same
-exception. A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">`
-or `summary: not found`. `run` with no command returns `not run (no check found; ...)`.
+exception; `run()` applies both refusals unless the caller passes `scope_checked=True`, as `base_run` does after
+the head run has applied them. A `passed` or `unverified` result is followed
+by `summary: <the runner summary lines joined with " | ">` or `summary: not found`. `run` with no command returns
+`not run (no check found; ...)`.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
 (`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
@@ -297,18 +299,26 @@ def empty_details():
     return {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
 
 
-def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD"):
+def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD", scope_checked=False):
     """Run the full check once. Returns (result, the log's last lines, details). The details hold `summaries` (the
     runner's own summary lines), `changed` (tracked files the command rewrote) and `created` (files it created), all
     lists; both kinds of file are left in place. On a lint failure the lines are the failing step's lines, not the
     log's last lines. `on_start`, when given, is called with the pid of the process group
-    the check leads."""
+    the check leads. A command that is no full check (it names files or tests, or its scope cannot be read) is not run
+    and returns `NOT_RUN_SCOPED` or `NOT_RUN_UNRESOLVED`, unless it equals the CLAUDE.md `Quality check:` command.
+    `scope_checked=True` skips the refusal, for a caller whose
+    own run of the command already passed it (`base_run`)."""
     details = empty_details()
     in_ci = full_suite_runs_in_ci(repo)
-    if in_ci and (check_command is None or check_command != configured_check_command(repo)):
+    declared = check_command is not None and check_command == configured_check_command(repo)
+    if in_ci and not declared:
         return NOT_RUN_CI, "", details
     if check_command is None:
         return NOT_RUN_NO_CHECK, "", details
+    if not declared and not scope_checked:
+        refusal = scope_refusal(check_command, repo)
+        if refusal:
+            return refusal, "", details
 
     env = pinned_interpreter_env(repo, env)
     before = take(repo)
@@ -419,7 +429,8 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
     the repo's folder (an untracked one). The user's
     working tree is never touched. A cache the check writes through a linked folder lands in the user's folder.
     `live_trees`, when given, is a set that holds (repo root, worktree) while the worktree exists, so a signal
-    handler can remove it."""
+    handler can remove it. The caller must have run `check_command` through `run()` on the head tree first, so the
+    scope refusals have already passed: this run skips them (`scope_checked=True`)."""
     root = script_utils.repo_root(repo)
     if root is None:
         return None
@@ -453,7 +464,8 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
                 return None
 
             link_dependency_folders(repo_path, base_repo)
-            result, _lines, _details = run(base_repo, check_command, log, timeout, env=env, on_start=on_start)
+            result, _lines, _details = run(base_repo, check_command, log, timeout, env=env, on_start=on_start,
+                                           scope_checked=True)
         finally:
             remove_worktree(root, tree)
             if live_trees is not None:
@@ -543,12 +555,7 @@ def main(argv):
     if not check_command:
         parser.error("no command after --")
 
-    declared = check_command == configured_check_command(args.repo)
-    refusal = scope_refusal(check_command, args.repo)
-    if not declared and refusal and not full_suite_runs_in_ci(args.repo):
-        result, tail, details = refusal, "", empty_details()
-    else:
-        result, tail, details = run(args.repo, check_command, args.log, args.timeout, base=args.base)
+    result, tail, details = run(args.repo, check_command, args.log, args.timeout, base=args.base)
     print(f"full check: {result}")
     summary = summary_text(result, details["summaries"])
     if summary is not None:

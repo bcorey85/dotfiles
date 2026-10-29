@@ -14,7 +14,8 @@ in a repo where no check is found. A check past full_check_gate.CHECK_TIMEOUT_SE
 group, and a check whose step stops on a missing path is a check-command error. A check that fails on a missing
 module the repo declares as a dependency is an environment gap. None is a failure: the packet's `full_check` says
 `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
-`not run (check-command error: ...)` or `not run (environment gap: ...)`. An exit 0 with no runner summary is no
+`not run (check-command error: ...)`, `not run (environment gap: ...)`, `not run (scoped command: ...)` or
+`not run (unresolved command: ...)`. An exit 0 with no runner summary is no
 failure either: it says `unverified (exit 0, no runner summary)`. So is a failure that the check shows the same way
 on HEAD without the diff: it says `pre-existing failure (...)` and did not verify the diff. To tell, a failed check is
 rerun once per loop (the base run) in a detached worktree of HEAD, up to full_check_gate.CHECK_TIMEOUT_SECONDS. A

@@ -3,7 +3,7 @@ type: "Change"
 title: "A text review ask ending in a colon keeps its bullets as one ask"
 description: "A plain-text ask whose text ends in a colon takes the plain-text bullets after it, so one finding with sub-points is one ask with one outcome word in place of one ask per bullet."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T06:31:20-05:00"}
-seq: 225
+seq: 231
 kind: "fix"
 components: ["script/handback", "script/code-step"]
 evidence: ["transcript read"]

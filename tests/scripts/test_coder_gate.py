@@ -557,18 +557,18 @@ class CommandCheckScopeTests(unittest.TestCase):
             "mypy .", "pyright .", "rspec .", "phpunit .", "bats .", "dotnet test .",
             "cargo test", "cargo nextest run", "cargo +nightly test", "cargo test --manifest-path=/r/a/Cargo.toml",
             "cargo test --target-dir target/x", "cargo test --color always", "cargo clippy --workspace -- -D warnings",
-            "cargo clippy --workspace --exclude foo -- -D warnings", "go test ./...", "go vet -p 4 ./...",
+            "go test ./...", "go vet -p 4 ./...",
             "go test -coverprofile cover/c.out ./...", "go build -o bin/app ./...", "go test -mod vendor ./...",
             "tsc -p packages/web/tsconfig.json", "npx tsc --project packages/web/tsconfig.json",
             "tsc -t es2020 --noEmit", "dotnet test --project src/App", "dotnet test --logger trx", "bats -p",
             "rspec --format documentation", "bundle exec rspec --format progress",
             "phpunit --configuration phpunit.xml", "mypy --python-version 3.11", "pyright --pythonversion 3.11",
             "go test -coverpkg ./pkg/... ./...", "go test -bench . ./...", "go test -benchtime 2s -trace t.out ./...",
-            "go test -fuzztime 10s ./...", "phpunit --exclude-group slow", "phpunit -d memory_limit=1G",
+            "go test -fuzztime 10s ./...", "phpunit -d memory_limit=1G",
             "cargo nextest run --retries 2",
             "phpunit --coverage-clover coverage.xml", "rspec --out results.txt .", "go test -buildmode pie ./...",
             "cargo test --workspace -- --format terse", "cargo test -- --logfile out.txt", "bats -j 4 .",
-            "mypy --exclude tests .", "pyright --level error .", "dotnet test --collect \"Code Coverage\"",
+            "pyright --level error .", "dotnet test --collect \"Code Coverage\"",
             "cargo nextest run --run-ignored all", "cargo nextest run --run-ignored=default",
             "cargo nextest run -P ci", "phpunit --cache-directory .cache", "phpunit --processes 4",
             "phpunit --log-tap out.tap", "rspec --failure-exit-code 2", "rspec --deprecation-out log.txt",
@@ -584,6 +584,37 @@ class CommandCheckScopeTests(unittest.TestCase):
         for command in whole_runs_read_none:
             with self.subTest(whole=command):
                 self.assertEqual("none", self.scope(command))
+
+    def test_a_run_that_excludes_part_of_the_suite_is_targeted(self):
+        excluding_runs = (
+            "cargo clippy --workspace --exclude foo -- -D warnings", "cargo test --workspace --exclude=foo",
+            "cargo nextest run --workspace --exclude foo", "mypy --exclude tests .", "mypy --exclude=tests .",
+            "rspec --exclude-pattern spec/slow/**", "rspec --exclude-pattern=spec/slow/**",
+            "phpunit --exclude-group slow", "phpunit --exclude-group=slow", "phpunit --exclude-filter=testSlow",
+            "phpunit --exclude-testsuite unit", "phpunit --exclude-testsuite=unit", "bats --negative-filter=slow .",
+            "python manage.py test --exclude-tag slow", "python manage.py test --exclude-tag=slow",
+            "pytest --ignore=tests/slow", "pytest --ignore-glob=tests/slow*", "pytest --deselect=tests/test_a.py::t",
+            "npx vitest run --exclude=src/slow", "npx jest --testPathIgnorePatterns=slow",
+            "npm test -- --testPathIgnorePatterns=slow", "npm test -- --exclude-tag=slow",
+            "yarn test --exclude-tag=slow", "npx eslint --ignore-pattern=src/gen .",
+            "npx eslint --ignore-path=.eslintignore .",
+            "ruff check --exclude=src/gen", "ruff check --extend-exclude=src/gen",
+        )
+
+        for command in excluding_runs:
+            with self.subTest(command=command):
+                self.assertEqual("targeted", self.scope(command))
+
+    def test_a_run_with_a_flag_that_leaves_nothing_out_is_whole(self):
+        whole_runs = (
+            "pytest --import-mode=importlib", "npx vitest run --reporter=verbose", "npx eslint --max-warnings=0 .",
+            "ruff check --output-format=github", "python manage.py test --settings=x",
+            "ruff check --ignore=E501 .",
+        )
+
+        for command in whole_runs:
+            with self.subTest(command=command):
+                self.assertEqual("whole", self.scope(command))
 
     def test_make_scope_is_read_from_the_makefile(self):
         eight_deep = "".join(f"t{number}: t{number + 1}\n" for number in range(8)) + "t8:\n\tpytest\n"

@@ -7,9 +7,10 @@ seq: 9
 kind: "behavior"
 components: ["script/code-step"]
 evidence: ["census", "judgment"]
-watches: []
+watches: ["code-step-stop-share"]
+overlap: "The resume-verb change ships the same day and owns the code-step-stop-share watch; the two edits move the same stop share and are read together."
 test: ""
-unmeasured: "The change keeps every verb, route and printed ACTION text. The cut branches had no sighting in any session, so no intake number reads them. The gain it aims at is fewer code-step fix lanes, which no intake stream counts."
+unmeasured: ""
 ---
 
 ## Change

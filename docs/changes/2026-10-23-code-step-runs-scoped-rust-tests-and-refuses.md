@@ -7,7 +7,7 @@ seq: 4
 kind: "behavior"
 components: ["script/code-step", "script/plan-format", "shared/plan-format"]
 evidence: ["work incident", "tests"]
-watches: []
+watches: ["rust-code-step-seconds"]
 ---
 
 ## Change

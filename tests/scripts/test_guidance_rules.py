@@ -8,6 +8,11 @@ def guidance_text(relative_path):
     return " ".join((toolkit_paths.CLAUDE_DIR / relative_path).read_text().split())
 
 
+def repo_doc_text(relative_path):
+    repo_root = toolkit_paths.TREE_CLAUDE_DIR.parents[1]
+    return " ".join((repo_root / "docs" / relative_path).read_text().split())
+
+
 class GuidanceRulesTest(unittest.TestCase):
     def test_the_main_session_and_the_coder_loop_over_arrays_in_a_form_zsh_and_bash_both_split(self):
         for relative_path in ("orchestration.md", "skills/coder-core/SKILL.md"):
@@ -20,6 +25,16 @@ class GuidanceRulesTest(unittest.TestCase):
         text = guidance_text("orchestration.md")
         self.assertIn("After `EnterWorktree`, Claude Code's own worktree guard refuses", text)
         self.assertIn("one simple command per call with literal paths", text)
+
+    def test_a_main_push_line_waits_for_the_branch_s_verify_branch_and_non_negotiables_results(self):
+        text = guidance_text("orchestration.md")
+        self.assertIn("only after the branch reports `/verify-branch` done and, where the repo's CLAUDE.md names a "
+                      "non-negotiables check, that check passed", text)
+        self.assertIn("A green gate or CI run alone never produces that line.", text)
+
+    def test_a_coder_runs_a_changed_test_file_through_the_sharding_runner(self):
+        text = repo_doc_text("toolkit-script-rules.md")
+        self.assertIn("Run a changed test file through `python3 tests/parallel_tests.py <test file name>`", text)
 
     def test_a_cancelled_spec_deletes_its_questions_file_and_research_writes_nothing_without_it(self):
         phase_text = guidance_text("skills/eng-spec/phases/2-research.md")

@@ -382,9 +382,13 @@ def command_plan_hook():
 
 
 def plan_write_failure(plan, plan_lines, plan_name, repo_dir):
-    # The first message that stops a plan write: Phase Status, then Manual Verification, then Automated Verification.
+    # The first message the plan hook prints: Phase Status, then Manual Verification, then Automated Verification.
+    if plan["failures"] and all(failure["kind"] in plan_format.MID_EDIT_KINDS for failure in plan["failures"]):
+        return plan_format.plan_mid_edit_message(plan, plan_name)
+
     if plan["failures"]:
         return plan_format.plan_failure_message(plan, plan_name)
+
     manual_failure = plan_format.manual_format_failure(plan_lines, plan_name)
     if manual_failure:
         return manual_failure

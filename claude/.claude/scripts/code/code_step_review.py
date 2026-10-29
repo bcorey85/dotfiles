@@ -29,6 +29,7 @@ from code_step_core import (
     RESUME_VERB,
     REVIEW_LOOP,
     REVIEW_LOOP_SCRIPT,
+    REVIEW_SAME_DIFF_AGAIN_LINE,
     REVIEW_SCRIPT_AGENT_PREFIX,
     ask_user,
     awaited_agent_id,
@@ -172,12 +173,11 @@ def record_deviation(repo_dir, state):
 
 
 def split_decide_args(args):
-    # The decision word, who ruled (`--by user|session`, None when missing), then the words after `--ruling`,
+    # The decision word, who ruled (`--by user|session`; None or "" when missing), then the words after `--ruling`,
     # joined when the caller left them unquoted.
     word = args[0].lower() if args else ""
     ruling_at = args.index("--ruling") if "--ruling" in args else len(args)
-    by_words = args[:ruling_at]
-    by = by_words[by_words.index("--by") + 1] if "--by" in by_words[:-1] else None
+    _, by = script_utils.pop_option(args[:ruling_at], "--by")
     ruling_words = " ".join(args[ruling_at + 1:])
     return word, by, ruling_words.strip()
 
@@ -620,7 +620,7 @@ def load_review_packet(repo_dir, state, message):
         save_state(repo_dir, state)
         return emit("stop", "The review-loop packet does not parse. Show the user the raw packet. Problems: "
                     + "; ".join(error.problems), message,
-                    "To review the same diff again, invoke Skill code with `review-again`.")
+                    REVIEW_SAME_DIFF_AGAIN_LINE)
 
 
 def command_after_review(repo_dir, state, args):

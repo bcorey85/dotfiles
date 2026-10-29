@@ -55,18 +55,6 @@ def run_git(cwd, *args):
     return finished.returncode, finished.stdout
 
 
-def read_rows(path):
-    rows = []
-    for text in pathlib.Path(path).read_text().splitlines():
-        try:
-            row = json.loads(text)
-        except ValueError:
-            continue
-        if isinstance(row, dict):
-            rows.append(row)
-    return rows
-
-
 def is_listed_row(row, repo, branch):
     line = row.get("line")
     return (row.get("kind") == "finding" and row.get("actioned") == "deferred"
@@ -209,7 +197,7 @@ def main():
         if not branch:
             sys.exit(0)
         findings_file = os.environ.get("REVIEW_FINDINGS_FILE") or DEFAULT_FINDINGS_FILE
-        candidates = branch_findings(read_rows(findings_file), script_utils.repo_name(cwd), branch)
+        candidates = branch_findings(script_utils.read_jsonl(findings_file), script_utils.repo_name(cwd), branch)
         unchanged = [row for row in candidates if code_unchanged(cwd, row)]
         if unchanged:
             sys.stdout.write(json.dumps({"hookSpecificOutput": {

@@ -50,7 +50,7 @@ from code_step_core import (
     session_pin,
     stale_phase_reason,
     start_run,
-    state_dir,
+    state_file,
     uncommitted_files,
 )
 from code_step_gates import derive_gate_commands
@@ -261,7 +261,7 @@ def drop_open_run(repo_dir, previous):
     if not is_run_open(previous):
         return
 
-    (state_dir(repo_dir) / "state.json").unlink(missing_ok=True)
+    state_file(repo_dir).unlink(missing_ok=True)
 
 
 def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):

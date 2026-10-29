@@ -91,6 +91,7 @@ from code_step_core import (
     HOOK_STAGES,
     RESUME_ALIASES,
     RESUME_VERB,
+    REVIEW_AGAIN_INVOKE,
     SCRIPTS_DIR,
     StateFileError,
     ask_user,
@@ -121,6 +122,7 @@ from code_step_core import (
     session_pin,
     stale_phase_reason,
     state_dir,
+    state_file,
     stop_review_script,
     stop_with_question,
     take_handback,
@@ -532,7 +534,7 @@ def resume_closing_skill(repo_dir, state):
 
 def ask_about_review_cap(repo_dir, state):
     ask_user(repo_dir, "The review-loop never handed back. If the user resumes it with SendMessage, run "
-             "resume. If it died, invoke Skill code with `review-again`.")
+             f"resume. If it died, {REVIEW_AGAIN_INVOKE}.")
 
 
 def ask_about_critical_blocker(repo_dir, state):
@@ -653,7 +655,7 @@ def command_abort(args):
     archive_path = directory / f"aborted-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
     lines = abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_pid,
                                 review_script_was_running)
-    (directory / "state.json").rename(archive_path)
+    state_file(repo_dir).rename(archive_path)
     emit("stop", *lines)
 
 

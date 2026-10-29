@@ -1,11 +1,9 @@
 """Reading a coder hand-back report: plan-impact blocks, why and behavior notes, and change lines."""
 import json
-import pathlib
 import re
 
 import coder_gate
 import script_utils
-from script_utils import git_output
 
 
 def coder_flags(report):
@@ -153,10 +151,10 @@ def change_line(report, path, files, fallback_behavior, is_new_file=False):
 
 
 def gate_results(repo_dir):
-    gate_file = git_output(repo_dir, "rev-parse", "--path-format=absolute", "--git-path", "coder-gate.json")
-    if gate_file is None or not pathlib.Path(gate_file).exists():
+    gate_file = coder_gate.gate_path(repo_dir)
+    if gate_file is None or not gate_file.exists():
         return None
-    return json.loads(pathlib.Path(gate_file).read_text())
+    return json.loads(gate_file.read_text())
 
 
 def tests_run_text(gate, state):

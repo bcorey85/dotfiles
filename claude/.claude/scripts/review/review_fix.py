@@ -86,19 +86,19 @@ class UsageError(Exception):
 # ---------- shell helpers ----------
 
 def review_fix_dir():
-    found = script_utils.git_output(".", "rev-parse", "--path-format=absolute", "--git-path", "review-fix")
+    found = script_utils.git_path(".", "review-fix")
     if found is None:
         raise UsageError("not inside a git repo")
-    return pathlib.Path(found)
+    return found
 
 
-def state_file():
+def review_fix_state_file():
     return review_fix_dir() / "state.json"
 
 
 def read_state():
     """The saved state, or None when there is none or it is unreadable."""
-    path = state_file()
+    path = review_fix_state_file()
     if not path.exists():
         return None
     try:
@@ -111,7 +111,7 @@ def load_fix_state():
     state = read_state()
     if state is not None:
         return state
-    path = state_file()
+    path = review_fix_state_file()
     if path.exists():
         raise UsageError(f"{path} is not readable JSON")
     raise UsageError(f"no packet was processed in {path.parent} (the state is kept per repo, and this call ran in "
@@ -120,7 +120,7 @@ def load_fix_state():
 
 
 def save_fix_state(state):
-    path = state_file()
+    path = review_fix_state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=1))
 
@@ -916,7 +916,7 @@ def main():
     except PacketError as error:
         stop_for_parse_failure(error, error.raw)
         try:
-            if state_file().exists():
+            if review_fix_state_file().exists():
                 save_fix_state({**load_fix_state(), "stage": "parse-failed"})
         except UsageError:
             pass

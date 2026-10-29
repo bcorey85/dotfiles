@@ -19,6 +19,7 @@ unmeasured: ""
 - `review_loop_gate.py`: the Agent dispatch check refuses a review-loop dispatch whose hook event names a calling
   agent, unless that agent is the /code fork. The reason tells the caller to run /review from the main session. The
   `caller: code` handoff check is unchanged.
+- `lib/script_utils.py` holds the /code fork's agent type, which the gate and `code_step_core.py` both read.
 
 ## Evidence
 

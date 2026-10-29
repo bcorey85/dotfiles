@@ -41,6 +41,9 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 hand-back and resume events of the run
   code_step.py dispatch-hook                    PreToolUse hook on Agent: deny a coder or review-loop launch whose
                                                 prompt lacks the saved dispatch prompt, or a repeat launch of a coder
+  code_step.py launch-hook                      PreToolUse hook on Skill: deny a /code resume of a run stopped on its
+                                                Automated Verification (a failed command or an item that could not be
+                                                run), naming the fix and then verify
   code_step.py stop-hook                        SubagentStop hook: keep the /code fork from stopping while a dispatch
                                                 is open
   code_step.py plan-hook                        PostToolUse hook on Edit|Write: reject a plan edit that does not parse
@@ -83,6 +86,7 @@ from code_step_core import (
     CODER,
     CODER_STAGES,
     HOOK_STAGES,
+    RESUME_ALIASES,
     RESUME_VERB,
     SCRIPTS_DIR,
     StateFileError,
@@ -99,19 +103,18 @@ from code_step_core import (
     dispatch_since,
     emit,
     file_hashes,
-    holds_open_run,
     load_state,
     own_phase_text,
     phase_coder_reports,
     refuse,
     repo_root_or_exit,
     restart_instruction,
+    resume_run_repos,
     review_script_running,
     save_state,
     say,
     script_command,
     sent_message_since,
-    session_open_run_repos,
     session_pin,
     stale_phase_reason,
     state_dir,
@@ -124,6 +127,7 @@ from code_step_core import (
 from code_step_hooks import (
     command_dispatch_hook,
     command_hook,
+    command_launch_hook,
     command_log_hook,
     command_plan_hook,
     command_say_hook,
@@ -158,7 +162,6 @@ from code_step_review import (
     prior_issues,
 )
 from code_step_start import (
-    RESUME_ALIASES,
     command_start,
     emit_closing_skill,
     phase_label,
@@ -662,10 +665,13 @@ def enter_run_checkout():
     # in a worktree or another repo keeps every step there. False after a stop.
     session_id = session_pin()
     cwd_repo = script_utils.repo_root(os.getcwd())
-    if session_id is None or (cwd_repo is not None and holds_open_run(cwd_repo, session_id)):
+    if session_id is None:
         return True
 
-    open_run_repos = session_open_run_repos(session_id)
+    open_run_repos = resume_run_repos(cwd_repo, session_id)
+    if open_run_repos == [cwd_repo]:
+        return True
+
     if len(open_run_repos) > 1:
         checkout_lines = [f"- {repo}" for repo in open_run_repos]
         emit("stop", "This session has an open /code run in each of these checkouts, and the current directory is in "
@@ -691,9 +697,10 @@ def run_status():
 HOOK_VERBS = {
     "hook": command_hook, "log-hook": command_log_hook, "dispatch-hook": command_dispatch_hook,
     "plan-hook": command_plan_hook, "stop-hook": command_stop_hook, "say-hook": command_say_hook,
+    "launch-hook": command_launch_hook,
 }
 VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|verify|review-again|tick|abort|hook"
-              "|log-hook|dispatch-hook|stop-hook|say-hook|status|plan|plan-hook")
+              "|log-hook|dispatch-hook|launch-hook|stop-hook|say-hook|status|plan|plan-hook")
 
 
 @contextlib.contextmanager

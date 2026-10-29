@@ -94,6 +94,59 @@ class ParseTest(HandbackTestBase):
         self.assertEqual(len(packet["ask"]), 2)
         self.assertIn("two questions follow", packet["trailer"])
 
+    def test_bullets_after_a_mapping_ask_stay_inside_that_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
+                "- the plan says -j8\n- the ruling says -j2\n- which one holds?\n"
+                "- if the plan: restore -j8\n- if the ruling: keep -j2\nnit: []\n")
+        packet = handback.load(text)
+        self.assertEqual(len(packet["ask"]), 1)
+        self.assertIn("which one holds?", packet["ask"][0]["question"])
+        self.assertIn("if the ruling: keep -j2", packet["ask"][0]["question"])
+
+    def test_fact_bullets_citing_a_location_mid_sentence_stay_inside_the_mapping_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
+                "- the plan says -j8 at plan.md:12\n- the ruling says -j2 at docs/ruling.md:4\n"
+                "- which one holds?\nnit: []\n")
+        packet = handback.load(text)
+        self.assertEqual(len(packet["ask"]), 1)
+        self.assertIn("which one holds?", packet["ask"][0]["question"])
+
+    def test_a_bullet_naming_its_own_location_after_a_mapping_ask_is_a_separate_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
+                "- should tenant_id get an index? | src/db.ts:5\nnit: []\n")
+        packet = handback.load(text)
+        self.assertEqual(len(packet["ask"]), 2)
+        self.assertEqual(packet["ask"][1]["file_line"], "src/db.ts:5")
+
+    def test_a_fact_bullet_leading_with_a_location_stays_inside_the_mapping_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
+                "- docs/ruling.md:4 says -j2\n- which one holds?\nnit: []\n")
+        packet = handback.load(text)
+        self.assertEqual(len(packet["ask"]), 1)
+        self.assertIn("docs/ruling.md:4 says -j2", packet["ask"][0]["question"])
+
+    def test_a_mapping_bullet_with_no_location_or_finding_adds_its_fields_to_the_lead_ask(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
+                "- {question: which one holds?}\nnit: []\n")
+        packet = handback.load(text)
+        self.assertEqual(len(packet["ask"]), 1)
+        self.assertEqual(packet["ask"][0]["question"], "which one holds?")
+
+    def test_a_continuation_mapping_keeps_the_lead_ask_blocker_and_class(self):
+        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
+                "- {finding: jobs count changed, file_line: plan.md:12, blocker: yes, class: plan-drift, "
+                "change: restore -j8}\n"
+                "- {question: which one holds?, blocker: no, class: test-gap}\nnit: []\n")
+        ask = handback.load(text)["ask"][0]
+        self.assertTrue(handback.is_blocker(ask))
+        self.assertEqual(ask["class"], "plan-drift")
+        self.assertEqual(ask["question"], "which one holds?")
+
     def test_empty_list_key_does_not_swallow_the_next_unindented_line(self):
         packet = handback.parse("status: converged\niter: 1\nfixed: []\nask: []\nclass_closure: done\nnit: []\n")
         self.assertEqual(packet["class_closure"], "done")
@@ -365,9 +418,11 @@ class RenderTest(HandbackTestBase):
         packet = handback.load(CONVERGED.replace("class_closure: enumerated every query\n", ""))
         self.assertIn("receipt is missing", handback.render(packet, "review"))
 
-    def test_a_full_check_that_did_not_run_says_so_and_a_passed_one_prints_nothing(self):
+    def test_a_full_check_that_did_not_run_or_failed_before_the_diff_says_so_and_a_passed_one_prints_nothing(self):
         for full_check in ("not run (CI)", "not run (timeout)", "not run (environment gap: No module named 'ruff')",
-                           "not run (check-command error: fatal: ambiguous argument 'web/schema.json')"):
+                           "not run (check-command error: fatal: ambiguous argument 'web/schema.json')",
+                           "pre-existing failure (the check fails the same way without this diff, so it did not "
+                           "verify this diff)"):
             with self.subTest(full_check=full_check):
                 packet = handback.load(CONVERGED + f"full_check: {full_check}\n")
 

@@ -26,6 +26,8 @@ BACKTICKED = re.compile(r"`([^`]+)`")
 # Subagent types: the agents that change code, and the agents that review it (code-reviewer, perf-reviewer-deep, ...).
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 REVIEWERS = re.compile(r"^([a-z]+-)*reviewer(-deep)?$")
+# The agent the /code skill forks into (its `agent:` line). It has no Edit or Write tool.
+FORK_AGENT_TYPE = "code-fork"
 # The line that starts the stamp the coder gate appends to a hand-back message. Everything after it is the gate's text.
 HAND_BACK_GATE_MARKER = "\n\nHAND-BACK GATE:"
 TIMEOUT_EXIT_CODE = 124
@@ -422,11 +424,28 @@ def one_line(text, limit=200):
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]
 
 
+def file_tail(path, max_lines, max_chars):
+    """The last `max_lines` lines of the file, cut to its last `max_chars` characters; a note in brackets when the
+    file cannot be read or is empty."""
+    try:
+        file_lines = pathlib.Path(path).read_text(errors="replace").splitlines()
+    except OSError as error:
+        return f"(log not readable: {error})"
+
+    tail = "\n".join(file_lines[-max_lines:])
+    return tail[-max_chars:] or "(log is empty)"
+
+
 def contains_ignoring_whitespace(text, part):
     """True when `part` occurs in `text` once every run of whitespace in both reads as one space. An empty part
     is never contained."""
     squashed_part = " ".join(str(part).split())
     return bool(squashed_part) and squashed_part in " ".join(str(text).split())
+
+
+def names_path(path, text):
+    """True when `text` holds `path` as a whole path: not the start or the middle of a longer name (`/x/app-v2`)."""
+    return re.search(rf"(?<![\w.@+-]){re.escape(path)}(?![\w.@+-])", text) is not None
 
 
 def has_whitespace(text):

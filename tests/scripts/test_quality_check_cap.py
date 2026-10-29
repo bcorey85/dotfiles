@@ -706,29 +706,21 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_denied(self.pre("pytest -q > /tmp/check.log 2>&1"))
 
     def test_the_cut_deny_names_a_form_the_cap_then_allows(self):
-        self.post("cd sub && npm test 2>&1 | tail -2", cwd=self.work)
-        (self.work / "sub").mkdir()
-        reason = self.assert_denied(self.pre("npm test", cwd=self.work / "sub"))
-        suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
-        self.assertEqual(suggested, "npm test > /tmp/check.log 2>&1")
-        self.assert_allowed(self.pre(suggested, cwd=self.work / "sub"))
-
-    def test_the_cut_deny_keeps_the_cd_prefix_as_typed(self):
         (self.work / "sub").mkdir()
         self.post("cd sub && npm test 2>&1 | tail -2", cwd=self.work)
         reason = self.assert_denied(self.pre("cd sub && npm test", cwd=self.work))
-        suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
-        self.assertEqual(suggested, "cd sub && npm test > /tmp/check.log 2>&1")
-        self.assert_allowed(self.pre(suggested, cwd=self.work))
-
-    def test_the_cut_deny_keeps_the_wrapper_and_env_prefix_as_typed(self):
-        for typed in ("npx eslint .", "FOO=1 pytest -q"):
+        self.assertIn("`<check> > /tmp/check.log 2>&1`", reason)
+        for typed in ("cd sub && npm test", "npx eslint .", "FOO=1 pytest -q"):
             with self.subTest(typed=typed):
-                self.post(typed + " 2>&1 | tail -3")
-                reason = self.assert_denied(self.pre(typed))
-                suggested = reason.split("Run it once as `", 1)[1].split("`", 1)[0]
-                self.assertEqual(suggested, typed + " > /tmp/check.log 2>&1")
-                self.assert_allowed(self.pre(suggested))
+                self.post(typed + " 2>&1 | tail -3", cwd=self.work)
+                self.assert_allowed(self.pre(typed + " > /tmp/check.log 2>&1", cwd=self.work))
+
+    def test_the_cut_deny_never_suggests_a_command_cut_inside_a_substitution(self):
+        cut_run = "ruff check $(git diff --name-only | grep py) | grep -c E"
+        self.post(cut_run)
+        reason = self.assert_denied(self.pre(cut_run))
+        self.assertNotIn("--name-only > /tmp/check.log", reason)
+        self.assertIn("rather than built by a `$( )` substitution", reason)
 
     def test_the_plain_deny_suggests_only_forms_the_cap_allows(self):
         self.post("pytest -q")

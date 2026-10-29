@@ -23,8 +23,8 @@ never recorded. A check in the body of a `for` loop (`for i in 1 2 3; do pytest 
 check can repeat with no edit between; it is still recorded, so a plain rerun after it is denied. A `while` or `until`
 body, an `if`, a bare `true;` and a `for` over fewer than two values get no such exemption. A run whose output was
 piped into `tail`, `head` or `grep` and not kept in a file (`>`, `&>`, `| tee <file>`) is recorded as cut: one rerun
-with stdout sent to a file is then allowed, and the deny names that exact form. Escape: a trailing
-`#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state errors fail open. State lives in
+with stdout sent to a file is then allowed, and the deny names that form without rebuilding the command. Escape: a
+trailing `#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state errors fail open. State lives in
 ~/.claude/state/quality-check/<session>/.
 """
 import collections
@@ -85,7 +85,6 @@ TEE_TO_FILE = re.compile("^tee(" + WS + "+-a)?" + WS + "+[^-" + SP + "]")
 STDOUT_TO_FILE = re.compile("(^|" + WS + ")[1&]?>>?" + WS + "*(?!/dev/null(" + WS + "|$))[^&|;<>" + SP + "]")
 # The second line of a run record whose output went through tail, head or grep and was not kept in a file.
 CUT_MARK = "cut"
-LOG_REDIRECT = " > /tmp/check.log 2>&1"
 DENY_TAIL = (" If it still fails after that batch fix, stop and ask the user. To repeat a check on purpose, run it in "
              "one loop over two or more values, `for i in 1 2 3; do <check>; done`. If you believe this deny is "
              "wrong, stop and tell the user what you were about to run.")
@@ -93,8 +92,9 @@ DENY_TEXT = ("' already ran this session and nothing has been edited since. Re-r
              "produce a different result. Read that run's whole output, fix every failure in one batch, then run "
              "it once more with its output redirected to /tmp/check.log and read the WHOLE log." + DENY_TAIL)
 CUT_DENY_TEXT = ("' already ran this session and nothing has been edited since, and that run's output went through "
-                 "tail, head or grep. Run it once as `{redirected}`, read the WHOLE log, fix every failure in one "
-                 "batch, then run it once more." + DENY_TAIL)
+                 "tail, head or grep. Run it once more with no tail, head or grep after it and its output sent to a "
+                 "file, `<check> > /tmp/check.log 2>&1`, with any file list written out rather than built by a `$( )` "
+                 "substitution. Read the WHOLE log, fix every failure in one batch, then run it once more." + DENY_TAIL)
 CHAIN_DENY_TEXT = (" This call was denied as a whole because of that fragment alone: none of its other steps ran. "
                    "Send the other steps again without it, as their own call.")
 
@@ -105,7 +105,7 @@ START_SUFFIX = ".start"
 START_PREFIX = "start "
 
 CheckStep = collections.namedtuple(
-    "CheckStep", "index norm command_text run_file cwd in_repeat_loop output_saved output_cut redirect_files")
+    "CheckStep", "index norm run_file cwd in_repeat_loop output_saved output_cut redirect_files")
 
 
 class DenyError(Exception):
@@ -504,7 +504,6 @@ def run(raw, state):
     checks = []
     format_indexes = []
     loop_kinds = []
-    cd_steps = []
     for index, (_, segment) in enumerate(steps):
         segment = re.sub("^" + WS + "+", "", segment)
         segment = re.sub(WS + "+$", "", segment)
@@ -514,7 +513,6 @@ def run(raw, state):
             if target.startswith("~"):
                 target = home + target[1:]
             cwd = target if target.startswith("/") else cwd + "/" + target
-            cd_steps.append(segment)
             continue
         segment = LOOP_BODY_START.sub("", segment)
         if LOOP_HEADER.match(segment):
@@ -524,7 +522,6 @@ def run(raw, state):
                 loop_kinds.pop()
             continue
         segment = re.sub(r"^[({ \t]+", "", segment)
-        command_text = " && ".join([*cd_steps, normalize(segment)])
         while True:
             stripped = ASSIGNMENT.sub("", WRAPPER.sub("", segment, count=1), count=1)
             if stripped == segment:
@@ -548,7 +545,7 @@ def run(raw, state):
         in_repeat_loop = bool(loop_kinds) and loop_kinds[-1] == "repeat"
         output_saved = saves_output(steps, index, segment)
         output_cut = not output_saved and cuts_output(steps, index)
-        checks.append(CheckStep(index, norm, command_text, run_file, cwd, in_repeat_loop, output_saved, output_cut,
+        checks.append(CheckStep(index, norm, run_file, cwd, in_repeat_loop, output_saved, output_cut,
                                 redirect_files(segment, cwd)))
 
     if event in ("PostToolUse", "PostToolUseFailure"):
@@ -583,8 +580,7 @@ def run(raw, state):
             raise DenyError("[quality-check-cap] '" + check.norm + DENY_TEXT + chain_text)
         if check.output_saved:
             continue
-        cut_deny_text = CUT_DENY_TEXT.format(redirected=check.command_text + LOG_REDIRECT)
-        raise DenyError("[quality-check-cap] '" + check.norm + cut_deny_text + chain_text)
+        raise DenyError("[quality-check-cap] '" + check.norm + CUT_DENY_TEXT + chain_text)
 
     mark_run_starts(checks)
 

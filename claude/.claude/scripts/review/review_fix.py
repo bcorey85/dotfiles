@@ -43,6 +43,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import sys
 import time
 
@@ -653,6 +654,45 @@ STOP_STATUSES = {
 }
 
 
+# A class-closure receipt that says a class is still open. The receipt is free text, so this matches its words.
+OPEN_CLASS = re.compile(r"\b(not closed|unclosed|(still|left|remains?|stays?) open|open (class|members?))\b", re.I)
+# Words that turn an open-class clause into a closed one: "none left open", "open members: none", "was left open".
+NEGATED_CLASS = re.compile(r"\b(none|no|nothing|zero|0|was|were)\b", re.I)
+RECEIPT_CLAUSE = re.compile(r"[;,.\n()]")
+SCOPED_RERUN = ("The review cap was reached with a class still open. Report these findings. Another full review "
+                "would find one more member at a time, so do not offer one: the next run is a scoped review of the "
+                "files the capped run's fixes touched. When the user asks to go on, dispatch review-loop "
+                "(model: \"sonnet\") with the dispatch lines below. "
+                "Do not run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.")
+
+
+def names_an_open_class(receipt):
+    """Whether a clause of the class-closure receipt says a class is still open and no word in it negates that."""
+    clauses = RECEIPT_CLAUSE.split(receipt)
+    return any(OPEN_CLASS.search(clause) and not NEGATED_CLASS.search(clause) for clause in clauses)
+
+
+def scoped_rerun_lines(packet, skill):
+    """The dispatch that reviews only the files the capped run's fixes touched after a cap-reached with an open
+    class, or [] when the class is closed or the packet names no file the fix touched."""
+    if not names_an_open_class(packet["class_closure"]):
+        return []
+    fix_files = [str(path) for path in packet["files_touched"]]
+    if not fix_files:
+        return []
+
+    lines = ["mode: review-first", f"caller: {skill}", "iter=0", "handoff:", "  files:"]
+    for path in fix_files:
+        lines += [f"    - path: {path}", "      change: touched by the capped run's fixes"]
+    lines += ["  tests-run: none", f"  flagged: the open class - {one_line(packet['class_closure'])}",
+              "  prior-issues:"]
+    for item in packet["findings_remaining"]:
+        file_path, _line = split_location(item.get("file_line", ""))
+        lines += [f"    - issue: {one_line(item_text(item, 'finding'))}", "      status: partial",
+                  f"      file: {file_path or '-'}"]
+    return lines
+
+
 def stop_for_status(packet, options, state):
     save_fix_state(state)
     if packet["ask"]:
@@ -661,10 +701,15 @@ def stop_for_status(packet, options, state):
     replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
+    entries = entry_lines(packet)
+    rerun_lines = scoped_rerun_lines(packet, options.skill) if packet["status"] == "cap-reached" else []
+    if rerun_lines:
+        instruction = SCOPED_RERUN
+        entries += ["Dispatch lines (pass exactly these):", *rerun_lines]
     ask_lines = []
     if packet["ask"]:
         ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state), *ask_listing_lines(packet["ask"])]
-    print_action("stop", instruction, *entry_lines(packet), *ask_lines)
+    print_action("stop", instruction, *entries, *ask_lines)
     if replies:
         print("AIKIDO REPLIES POSTED:")
         print("\n".join(replies))

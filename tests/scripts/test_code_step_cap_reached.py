@@ -49,6 +49,13 @@ class CapReachedTest(base.CodeStepTest):
         self.assert_marked_clean(out)
         self.assert_first_phase_ticked()
 
+    def test_asks_done_with_the_wrong_number_of_outcomes_names_how_many_it_expects(self):
+        self.cap_round(CAP_WITH_ASK)
+
+        out = self.step("asks-done", "accepted", "rejected")
+
+        self.assertIn("1 ask(s) wait: give 1 outcome(s), in order.", out)
+
     def test_a_cap_reached_stop_with_an_accepted_ask_sends_the_open_findings_to_the_review_after_the_asks_coder(self):
         self.cap_round(CAP_WITH_ASK)
 

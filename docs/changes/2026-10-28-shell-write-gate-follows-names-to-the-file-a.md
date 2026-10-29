@@ -3,7 +3,7 @@ type: "Change"
 title: "shell-write-gate follows names to the file a script writes"
 description: "Sessions and coders edited tracked files through one-off Python scripts. shell-write-gate already denied an untracked script whose write statement named a tracked file as a literal, but an edit script names its target through a variable, an edit list or edit dict looped over, a helper's parameter, a joined path, or a method `.open(`, so the gate let it through and the edits skipped the Write/Edit hooks. The gate now follows the written target's names through assignments, for loops and function calls, joins path literals, and its deny text says to keep scratch scripts in the scratchpad."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T14:46:21-05:00"}
-seq: 199
+seq: 216
 kind: "fix"
 components: ["script/shell-write-gate"]
 evidence: ["judgment"]

@@ -47,7 +47,9 @@ REVIEW_LOOP_SCRIPT = SCRIPTS_DIR / "review" / "review_loop_script.py"
 REVIEW_SCRIPT_AGENT_PREFIX = "loop-script-"
 FINISHED_REVIEW_SCRIPT_KEYS = ("reviewScriptPid", "resumableReview", "resumeWaitAt")
 # The files beside the review loop script's log that it writes as it works: a write to one restarts the wait cap.
-REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", "full-check.log")
+FULL_CHECK_LOG = "full-check.log"
+FULL_CHECK_BASE_LOG = "full-check-base.log"
+REVIEW_SCRIPT_PROGRESS_FILES = ("calls.jsonl", FULL_CHECK_LOG, FULL_CHECK_BASE_LOG)
 RESUME_VERB = "resume"
 RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
@@ -410,6 +412,14 @@ def awaits_resumed_review(state):
     # SendMessage, or keep waiting on a review script that still runs: its hand-back, still after dispatchAt, then
     # counts as the pending review.
     return state.get("stage") == "stopped" and bool(state.get("resumableReview"))
+
+
+def phase_code_in_place(state):
+    # The phase's review converged and no coder works on it since, so `verify` may run its checks and close it.
+    module, _import_error = load_handback()
+    if module is None or state.get("stage") in (*CODER_STAGES, "plan-coder", "skill", "done"):
+        return False
+    return state.get("reviewStatus") in module.CLEAN_STATUSES
 
 
 def awaited_agent_id(repo_dir, state):
@@ -852,14 +862,24 @@ def wait_for_loop_stop(state, module, handback):
               "may be missed, so an ask it logged may get a second ask row.", file=sys.stderr)
 
 
+SCRIPT_LOG_TAIL_LINES = 8
+SCRIPT_LOG_TAIL_CHARS = 800
+
+
 def stop_on_gone_review_script(repo_dir, state):
     log_path = state.get("reviewScriptLog", "")
+    script_pid = state.get("reviewScriptPid")
     # A wait-cap stop before this one left the review resumable; a gone script has nothing left to resume.
     for finished_key in FINISHED_REVIEW_SCRIPT_KEYS:
         state.pop(finished_key, None)
     state.update({"stage": "stopped", "stopReason": "invalid-packet"})
     save_state(repo_dir, state)
-    emit("stop", f"The review loop script exited with no hand-back. Show the user its log: {log_path}",
+    agent_id = awaited_agent_id(repo_dir, state) or "(none logged)"
+    log_tail = script_utils.file_tail(log_path, SCRIPT_LOG_TAIL_LINES, SCRIPT_LOG_TAIL_CHARS)
+    emit("stop", f"The review loop script exited with no hand-back (pid {script_pid} is not running and the run's "
+         f"event log holds no hand-back from agent {agent_id} after the dispatch). "
+         f"Show the user its log: {log_path}",
+         "End of the log:", log_tail,
          "To review the same diff again, invoke Skill code with `review-again`.")
     return False
 
@@ -989,14 +1009,17 @@ def stop_a_silent_coder(repo_dir, state, stopped_at):
     # then reads like the stop on a coder's report. A coder that was resumed once keeps its id. Only the phase coder
     # is resumed this way: a resumed coder goes back to the coder stage, so a plan-edit coder, and a launch with no
     # agent id, leave only a restart.
-    restart_command = script_command("start --restart")
-    restart_instruction_text = restart_instruction(state, restart_command)
+    # A coder with an agent id may still run, so the restart stops it first.
+    restart_instruction_text = restart_instruction(state, script_command("start --restart"))
+    agent_id = awaited_agent_id(repo_dir, state)
+    if agent_id:
+        stopped_restart_text = restart_instruction(state, script_command("start --restart --coder-stopped"))
+        restart_instruction_text = f"stop coder {agent_id} with TaskStop, then {stopped_restart_text}"
     if state.get("stage") == "plan-coder":
         state["stopReason"] = "coder-cap"
         return (" The plan-edit coder cannot be resumed: only the phase coder can. To dispatch the phase coder "
                 f"again, {restart_instruction_text}.")
 
-    agent_id = awaited_agent_id(repo_dir, state)
     if not agent_id:
         state["stopReason"] = "coder-cap"
         return (f" Its launch has no agent id, so it cannot be resumed: {restart_instruction_text} "

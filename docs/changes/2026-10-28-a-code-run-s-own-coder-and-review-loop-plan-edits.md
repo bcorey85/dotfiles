@@ -3,7 +3,7 @@ type: "Change"
 title: "A code run's own coder and review-loop plan edits no longer make it stale"
 description: "Taking the hand-back of the run's own coder or review-loop re-reads the phase text from the plan, and `resume` skips the stale check when that hand-back is waiting, so the run's own edits under the same phase heading never ask for `start --restart`. A plan edit made after the hand-back was taken, or while the coder is still out, is still stale."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T13:59:07-05:00"}
-seq: 182
+seq: 197
 kind: "fix"
 components: ["script/code-step"]
 evidence: ["judgment"]

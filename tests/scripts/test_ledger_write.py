@@ -173,10 +173,11 @@ class LedgerWriteTest(unittest.TestCase):
         self.assertEqual(len(fake_ledger.recorded_rows(self.ledger_env, "review_escape")), 1)
         self.assertFalse((self.home / ".claude" / file_name).exists())
 
-    def test_a_deferred_review_loop_fix_row_is_logged_only_for_an_open_class_member(self):
+    def test_a_deferred_review_loop_fix_row_is_logged_only_for_an_open_class_member_or_the_scoped_reviewer(self):
         script, args, _file_name, _expected_fields = CASES["review_finding"]
         deferred_args = [arg for arg in args if not arg.startswith("actioned=")] + ["actioned=deferred"]
-        sources = (("class", True), ("last-pass", False), ("fix-diff", False), ("round", False), ("", False))
+        sources = (("class", True), ("scoped", True), ("last-pass", False), ("fix-diff", False), ("round", False),
+                   ("", False))
         for source, logged in sources:
             with self.subTest(source=source):
                 source_args = [f"source={source}"] if source else []

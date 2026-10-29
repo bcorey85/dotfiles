@@ -6,13 +6,20 @@ its own tests run there, not here.
 
 run: python3 -m unittest test_code_step_review_script
 """
+import contextlib
+import io
 import json
 import os
 import pathlib
 import signal
+import tempfile
 import time
+from unittest import mock
 
 import test_code_step as base
+
+# isort: split
+import code_step_core
 
 FAKE_LOOP_SCRIPT = """import os
 import pathlib
@@ -130,7 +137,8 @@ class ReviewScriptTest(base.CodeStepTest):
         self.assert_first_phase_ticked()
         self.assert_marked_clean(out)
         self.assertIn("### Last fix not reviewed", self.said())
-        self.assertIn("Its files are among: src/orders.ts", self.said())
+        self.assertIn("No reviewer read the loop's last fixes. Their files are among: src/orders.ts", self.said())
+        self.assertIn("Review-again is not advised", self.said())
 
     def test_a_converged_hand_back_ending_on_a_reviewer_names_no_unreviewed_fix(self):
         self.coder_round()
@@ -246,17 +254,21 @@ class ReviewScriptTest(base.CodeStepTest):
         self.env["FAKE_LOOP_MODE"] = "hang"
         self.coder_round()
         self.wait_for_file("started")
-        self.age_dispatches(100)
-        self.set_state(dispatchAt=time.time() - 100)
         self.wait_env(1, "0.2", waits=3)
         script_dir = pathlib.Path(self.state()["reviewScriptLog"]).parent
-        (script_dir / "calls.jsonl").write_text("{}\n")
+        progress_names = ("calls.jsonl", code_step_core.FULL_CHECK_LOG, code_step_core.FULL_CHECK_BASE_LOG)
+        for progress_name in progress_names:
+            with self.subTest(progress_name):
+                self.age_dispatches(100)
+                self.age_script_output(100)
+                self.set_state(dispatchAt=time.time() - 100)
+                (script_dir / progress_name).write_text("{}\n")
 
-        out = self.step("after-review")
+                out = self.step("after-review")
 
-        self.assertIn("ACTION: wait", out)
-        self.assertNotIn("died", out)
-        self.assertEqual("review", self.state()["stage"])
+                self.assertIn("ACTION: wait", out)
+                self.assertNotIn("died", out)
+                self.assertEqual("review", self.state()["stage"])
         self.step("abort")
 
     def test_the_wait_cap_stop_of_a_running_script_with_no_progress_does_not_say_it_died(self):
@@ -373,6 +385,45 @@ class ReviewScriptTest(base.CodeStepTest):
 for inherited_test in [name for name in dir(base.CodeStepTest) if name.startswith("test_")]:
     if inherited_test not in vars(ReviewScriptTest):
         setattr(ReviewScriptTest, inherited_test, None)
+
+
+class GoneReviewScriptTest(base.unittest.TestCase):
+    """stop_on_gone_review_script, called with the saved state of a run whose script pid probe read it as gone."""
+
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.repo = pathlib.Path(temp_dir.name)
+        self.log_path = self.repo / "script.log"
+        self.state = {"stage": "review", "reviewScriptPid": 4242, "reviewScriptLog": str(self.log_path),
+                      "resumableReview": 1.0}
+
+    def stop(self):
+        core = base.code_step_core
+        with (mock.patch.object(core, "awaited_agent_id", return_value="loop-script-r-d1"),
+              mock.patch.object(core, "save_state"),
+              contextlib.redirect_stdout(io.StringIO()) as printed):
+            return core.stop_on_gone_review_script(self.repo, self.state), printed.getvalue()
+
+    def test_the_stop_names_the_pid_the_agent_and_the_tail_of_the_script_log(self):
+        self.log_path.write_text("early line\n" + "\n".join(f"line {number}" for number in range(20))
+                                 + "\nreview-loop-script: run event not written, TypeError: boom\n")
+
+        goes_on, printed = self.stop()
+
+        self.assertFalse(goes_on)
+        self.assertEqual(("stopped", "invalid-packet"), (self.state["stage"], self.state["stopReason"]))
+        self.assertIn("pid 4242 is not running", printed)
+        self.assertIn("loop-script-r-d1", printed)
+        self.assertIn("run event not written, TypeError: boom", printed)
+        self.assertNotIn("early line", printed)
+        self.assertIn("review-again", printed)
+
+    def test_the_stop_says_so_when_the_script_log_cannot_be_read(self):
+        goes_on, printed = self.stop()
+
+        self.assertFalse(goes_on)
+        self.assertIn("log not readable", printed)
 
 
 if __name__ == "__main__":

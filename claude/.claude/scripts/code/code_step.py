@@ -19,9 +19,10 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 a criterion
   code_step.py decide discuss                   ask the user how to rule when the code and the plan disagree; records
                                                 nothing
-  code_step.py asks-done [--by <user|session>] <outcome>...
+  code_step.py asks-done [--by <user|session>] [--also "<text>"] <outcome>...
                                                 log the answer to each ask[] entry, then run the phase gates;
-                                                --by session when the session ruled itself, default user
+                                                --by session when the session ruled itself, default user;
+                                                --also: other work for the coder, kept even if every ask is rejected
   code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...
                                                 a closing phase's skill returned: mark it done (pass) or stop (fail);
                                                 at pass, give one --evidence per open Success Criteria item and the
@@ -58,6 +59,8 @@ code_step_boundary (criteria guard, verification runner, phase boundary), code_s
 commands), code_step_start (the start verb), code_step_report (reading a coder report), code_step_review
 (plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_usage (usage text and the
 `resume` argument parser) and this file."""
+import contextlib
+import fcntl
 import functools
 import json
 import os
@@ -150,10 +153,17 @@ from code_step_review import (
     command_review_again,
     emit_plan_impact_modal,
     emit_review_dispatch,
+    guarded_verb_runs,
     left_findings_open,
     prior_issues,
 )
-from code_step_start import RESUME_ALIASES, command_start, emit_closing_skill, phase_label
+from code_step_start import (
+    RESUME_ALIASES,
+    command_start,
+    emit_closing_skill,
+    phase_label,
+    stopped_run_restart_instruction,
+)
 from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
 from script_utils import run_command
 
@@ -391,10 +401,7 @@ def run_guarded_verb(verb, handler, args):
     repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     state = load_state(repo_dir)
-    at_stage = state is not None and state["stage"] in guard["stages"]
-    reason_allowed = "stopReasons" not in guard or (state or {}).get("stopReason") in guard["stopReasons"]
-    resumed_review = verb == "review-again" and state is not None and awaits_resumed_review(state)
-    if not (at_stage and reason_allowed) and not resumed_review:
+    if not guarded_verb_runs(verb, state):
         return refuse(guard["message"], script_command(RESUME_VERB))
     handler(repo_dir, state, args)
 
@@ -474,7 +481,7 @@ def ask_about_stopped_coder(repo_dir, state, answer=None):
     phase_tick = (f" If the user says Phase {state['phase']} is done, run `tick {state['phase']}`."
                  if state.get("plan") and state.get("phase") else "")
     report = stopped_coder_report(repo_dir, state)
-    restart_instruction_text = restart_instruction(state)
+    restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
     coder_id = state["resumableCoderId"]
     if answer is None:
         send_step = f"Send the user's answer to agent {coder_id} with SendMessage, then run resume."
@@ -502,7 +509,7 @@ def ask_about_unrecorded_state(repo_dir, state):
     if guarded_verb:
         next_step = f"When the cause is fixed, run `{guarded_verb}`."
     else:
-        restart_instruction_text = restart_instruction(state)
+        restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
         status_command = script_command("status")
         next_step = (
             f"Run `{status_command}` to read the saved state. To start the phase over, {restart_instruction_text}."
@@ -541,7 +548,7 @@ def ask_about_stale_phase(repo_dir, state):
 
 
 def ask_about_coder_cap(repo_dir, state):
-    restart_instruction_text = restart_instruction(state)
+    restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
     ask_user(repo_dir, "The coder never handed back and cannot be resumed here: it is a plan-edit coder, or "
              f"its launch has no agent id. To dispatch the phase coder again, {restart_instruction_text}.")
 
@@ -689,19 +696,50 @@ VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|skill-done|veri
               "|log-hook|dispatch-hook|stop-hook|say-hook|status|plan|plan-hook")
 
 
+@contextlib.contextmanager
+def verb_lock(repo, verb):
+    # One verb at a time on a run: a second copy (a resumed agent beside a live one) stops before it reads the state.
+    # abort skips the lock so a stuck verb can still be dropped. A checkout with no state folder has no run to share.
+    folder = state_dir(repo)
+    if verb == "abort" or folder is None or not folder.is_dir():
+        yield True
+        return
+
+    with open(folder / "verb.lock", "a+") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock_file.seek(0)
+            holder = lock_file.read().strip() or "unknown"
+            emit("stop", f"another code_step verb is running on this run (pid {holder}). Do not start another verb "
+                 "and do not resume a second copy of the agent: wait for that verb's output.")
+            yield False
+            return
+
+        lock_file.truncate(0)
+        lock_file.write(str(os.getpid()))
+        lock_file.flush()
+        yield True
+
+
 def run_verb(verb, handler, args):
     try:
         if verb != "start" and not enter_run_checkout():
             return
 
-        clear_question(repo_root_or_exit())
-        if verb in VERBS_THAT_CLEAR_SAY:
-            clear_say(repo_root_or_exit())
+        repo = repo_root_or_exit()
+        with verb_lock(repo, verb) as holds_lock:
+            if not holds_lock:
+                return
 
-        if verb in STAGE_GUARDS:
-            run_guarded_verb(verb, handler, args)
-        else:
-            handler(args)
+            clear_question(repo)
+            if verb in VERBS_THAT_CLEAR_SAY:
+                clear_say(repo)
+
+            if verb in STAGE_GUARDS:
+                run_guarded_verb(verb, handler, args)
+            else:
+                handler(args)
     except StateFileError as error:
         emit("stop", f"{error}. Tell the user to delete that file, then run `start`.")
 

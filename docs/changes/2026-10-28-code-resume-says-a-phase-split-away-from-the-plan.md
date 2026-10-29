@@ -3,7 +3,7 @@ type: "Change"
 title: "code resume says a phase split away from the plan is stale at a plan-fix stop"
 description: "A stop for a verification or plan-format fix no longer hides that the stopped phase id left the plan."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-28T14:10:00-05:00"}
-seq: 187
+seq: 199
 kind: "fix"
 components: ["script/code-step"]
 evidence: ["judgment"]

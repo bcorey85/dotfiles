@@ -36,6 +36,7 @@ import unittest
 from unittest import mock
 
 import toolkit_paths
+from in_process import process_exit_code
 
 HERE = pathlib.Path(__file__).parent
 REPO_SCRIPT = HERE.parent.parent / "claude" / ".claude" / "scripts" / "code" / "code_step.py"
@@ -464,16 +465,6 @@ def run_staged_script_in_process(real_run_command, command, cwd=None, stdin=None
     finally:
         sys.argv, sys.path[:] = previous_argv, previous_path
     return exit_code, script_output.getvalue().strip()
-
-
-def process_exit_code(stopped, script_output):
-    # The exit code a python3 process gives for this SystemExit; a message goes to its output, as python3 prints it.
-    if stopped.code is None:
-        return 0
-    if isinstance(stopped.code, int):
-        return stopped.code
-    script_output.write(f"{stopped.code}\n")
-    return 1
 
 
 @contextlib.contextmanager

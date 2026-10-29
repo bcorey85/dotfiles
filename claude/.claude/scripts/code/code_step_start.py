@@ -21,6 +21,7 @@ from code_step_boundary import (
 )
 from code_step_concentration import REFACTOR_SKILL, concentration_gate, gate_lines, simplify_option
 from code_step_core import (
+    CODER_RESUMABLE,
     INSTALLED_COMMAND,
     RESUME_LINE,
     RESUME_VERB,
@@ -36,6 +37,7 @@ from code_step_core import (
     file_hashes,
     head_commit,
     is_run_open,
+    is_stopped,
     load_state,
     open_dispatch,
     read_events,
@@ -51,6 +53,8 @@ from code_step_core import (
     stale_phase_reason,
     start_run,
     state_file,
+    stop_kind,
+    stop_record,
     uncommitted_files,
 )
 from code_step_gates import derive_gate_commands
@@ -251,8 +255,8 @@ def reopens_stopped_run(previous):
     # A run that stopped on the coder's report, in the session that now runs `start` again: the session has seen the
     # report and starts over on its own word.
     pinned = session_pin()
-    return (previous.get("stage") == "stopped" and not previous.get("stopReason")
-            and bool(previous.get("resumableCoderId")) and pinned is not None and previous.get("sessionId") == pinned)
+    return (stop_kind(previous) == CODER_RESUMABLE and bool(previous["stop"].get("agentId"))
+            and pinned is not None and previous.get("sessionId") == pinned)
 
 
 def drop_open_run(repo_dir, previous):
@@ -299,10 +303,10 @@ def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
 def stopped_run_coder_id(previous, events):
     # The agent id of the coder a stopped run left out: the coder the run stopped on (its report, or the wait cap with
     # a launch id), else, for a plan-edit coder at the cap, the newest launch's id. None when no id names it.
-    coder_id = previous.get("resumableCoderId")
+    coder_id = (stop_record(previous) or {}).get("agentId")
     if coder_id and coder_id != "unknown":
         return coder_id
-    if previous.get("stopReason") != "coder-cap":
+    if stop_kind(previous) != "coder-cap":
         return None
 
     launches = [event for event in events if event.get("event") == "launch"]
@@ -319,7 +323,7 @@ def coder_still_out(events, coder_id):
 
 def out_coder_id(repo_dir, state):
     # The id of the stopped run's coder that has not handed back, or None.
-    if state.get("stage") != "stopped" or not state.get("runId"):
+    if not is_stopped(state) or not state.get("runId"):
         return None
 
     events = read_events(repo_dir, state["runId"])

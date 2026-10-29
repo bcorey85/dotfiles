@@ -1809,7 +1809,7 @@ class CodeStepTest(unittest.TestCase):
         bad_line = self.break_manual_section()
         out = self.step("resume")
         self.assertIn("ACTION: stop", out)
-        self.assertEqual("plan-format", self.state()["stopReason"])
+        self.assertEqual("plan-format", self.state()["stop"]["kind"])
         self.assertIn(f"{self.plan}:{bad_line}:", out)
         self.assertIn("code_step.py verify", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
@@ -2583,7 +2583,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("invoke Skill code with `review-again`", out)
         self.assertNotIn("python3", out.split("invoke Skill code with `review-again`")[0].splitlines()[-1])
         self.assertEqual("stopped", self.state()["stage"])
-        self.assertEqual("invalid-packet", self.state()["stopReason"])
+        self.assertEqual("invalid-packet", self.state()["stop"]["kind"])
 
     def test_review_again_after_an_unreadable_packet_dispatches_the_review_loop_on_the_same_diff(self):
         self.leave_unreadable_packet()
@@ -2604,7 +2604,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(self.SKIP_LINE, out)
         self.hand_back_an_unreadable_packet(agent_id="a2")
         self.assertIn("review-again", self.step("resume"))
-        self.assertEqual("invalid-packet", self.state()["stopReason"])
+        self.assertEqual("invalid-packet", self.state()["stop"]["kind"])
         again = self.step("review-again")
         self.assertIn("AGENT: review-loop", again)
         self.assertIn(self.SKIP_LINE, again)
@@ -2623,7 +2623,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("critical blocker", out)
         self.assertIn("Prompt is too long", out)
         self.assertIn("invoke Skill code with `review-again`", out)
-        self.assertEqual("tool-fault", self.state()["stopReason"])
+        self.assertEqual("tool-fault", self.state()["stop"]["kind"])
 
     def test_a_tool_fault_with_a_reviewer_question_stops_as_a_tool_fault_without_carrying_a_blocker(self):
         self.coder_round()
@@ -2634,7 +2634,7 @@ class CodeStepTest(unittest.TestCase):
         self.step("resume")
 
         state = self.state()
-        self.assertEqual("tool-fault", state["stopReason"])
+        self.assertEqual("tool-fault", state["stop"]["kind"])
         self.assertEqual("stopped", state["stage"])
         self.assertNotIn("blockerCarried", state)
 
@@ -3504,7 +3504,7 @@ class CodeStepTest(unittest.TestCase):
         self.hook("coder", self.ALREADY_DONE_REPORT)
         out = self.step("resume")
         self.assertIn("Automated Verification failed", out)
-        self.assertEqual("verification", self.state()["stopReason"])
+        self.assertEqual("verification", self.state()["stop"]["kind"])
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
     def assert_unchanged_asks_coder_stops(self, report):
@@ -4199,7 +4199,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_on_a_stopped_run_marks_the_phase_done_once_its_verification_passes(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
 
         out = self.step("tick", "1")
 
@@ -4211,7 +4211,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_after_abort_refuses_once_a_planless_run_was_aborted_after_it(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
         self.step("abort")
         self.step("start", "--task", "add a flag")
         self.step("abort")
@@ -4223,7 +4223,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_after_abort_refuses_once_another_run_started_and_its_state_is_gone(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
         self.step("abort")
         self.step("start", "--task", "add a flag")
         (self.repo / ".git" / "code-step" / "state.json").unlink()
@@ -4245,7 +4245,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_runs_a_whole_suite_command_and_refuses_when_it_fails(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
         self.put_failing_npx_first_on_path(["boom"])
 
         out = self.step("tick", "1")
@@ -4260,7 +4260,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_after_abort_refuses_a_failing_verification_and_leaves_no_state(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
         self.step("abort")
         self.put_failing_npx_first_on_path(["boom"])
 
@@ -4272,7 +4272,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_refusal_quotes_the_failing_test_of_the_command(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
         self.put_failing_npx_first_on_path([" FAIL  src/orders.test.ts > totals", "AssertionError: expected 3 to be 4"])
 
         out = self.step("tick", "1")
@@ -4283,7 +4283,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_refusal_says_no_output_when_the_failing_command_printed_nothing(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
         self.put_failing_npx_first_on_path([])
 
         out = self.step("tick", "1")
@@ -4292,7 +4292,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_records_that_no_verification_command_ran_when_no_item_parses(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
         (self.repo / self.plan).write_text(self.plan_text().replace("`npx vitest run`", "see the log"))
         self.set_verification("- [ ] **Check**: the streams pass, see the log")
 
@@ -4305,7 +4305,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_after_two_aborts_reads_the_newest_aborted_plan(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
         self.step("abort")
         state_folder = self.repo / ".git/code-step"
         (archive,) = state_folder.glob("aborted-*.json")
@@ -4325,7 +4325,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_tick_refuses_when_the_newest_archive_names_no_plan(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", stopReason="critical-blocker")
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
         self.step("abort")
         state_folder = self.repo / ".git/code-step"
         (archive,) = state_folder.glob("aborted-*.json")
@@ -4400,13 +4400,25 @@ class CodeStepTest(unittest.TestCase):
         stop = self.step("resume")
         self.assertIn("invoke Skill code with `review-again`", stop)
         self.assertNotIn("Tell the user", stop)
-        self.assertEqual("false-clean", self.state()["stopReason"])
+        self.assertEqual("false-clean", self.state()["stop"]["kind"])
 
         again = self.step("review-again")
         self.assertIn("AGENT: review-loop", again)
         self.assertEqual("review", self.state()["stage"])
         self.hook("review-loop", self.LOOP_OK, agent_id="a2")
         self.assertIn("ACTION: stop-block-B", self.step("resume"))
+
+    def test_a_false_clean_stop_reached_through_the_asks_path_keeps_its_kind_and_review_again_recovers_it(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        shutil.rmtree(self.tmp / "handback-store")
+
+        self.step("resume")
+
+        self.assertEqual("false-clean", self.state()["stop"]["kind"])
+        again = self.step("review-again")
+        self.assertIn("AGENT: review-loop", again)
+        self.assertEqual("review", self.state()["stage"])
 
     def test_missing_handback_module_stops_the_run_and_writes_no_gate_file(self):
         bare = self.tmp / "bare"
@@ -4953,7 +4965,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: wait", out)
         self.assertNotIn("has not handed back in", out)
-        self.assertIsNotNone(self.state().get("resumeWaitAt"))
+        self.assertIsNotNone(self.state()["stop"].get("waitAt"))
 
     def test_repeated_waits_on_a_resumed_coder_end_in_the_cap_stop(self):
         self.stop_the_coder_on_a_blocked_report()
@@ -4970,24 +4982,22 @@ class CodeStepTest(unittest.TestCase):
         self.send_message("a1")
         self.wait_env(1, "0.2")
         self.step("resume")
-        first_wait_at = self.state()["resumeWaitAt"]
+        first_wait_at = self.state()["stop"]["waitAt"]
         self.step("resume")
-        self.assertEqual(first_wait_at, self.state()["resumeWaitAt"])
+        self.assertEqual(first_wait_at, self.state()["stop"]["waitAt"])
 
     def test_the_hand_back_of_a_resumed_coder_clears_the_saved_first_wait_time(self):
         self.stop_the_coder_on_a_blocked_report()
         self.send_message("a1")
         self.wait_env(1, "0.2")
         self.step("resume")
-        self.assertIsNotNone(self.state().get("resumeWaitAt"))
+        self.assertIsNotNone(self.state()["stop"].get("waitAt"))
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
         self.assertIn("AGENT: review-loop", self.step("resume"))
         state = self.state()
         self.assertEqual("review", state["stage"])
-        self.assertNotIn("resumeWaitAt", state)
-        self.assertNotIn("resumableCoderAt", state)
-        self.assertNotIn("resumableCoderId", state)
+        self.assertNotIn("stop", state)
 
     def test_after_coder_says_the_resumed_coder_has_not_handed_back_when_it_runs_with_no_wait(self):
         self.stop_the_coder_on_a_blocked_report()
@@ -5126,21 +5136,21 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: wait", waiting_out)
         self.assertNotIn("no review pending", waiting_out)
         self.assertEqual("stopped", self.state()["stage"])
-        first_wait_at = self.state()["resumeWaitAt"]
+        first_wait_at = self.state()["stop"]["waitAt"]
         self.assertIn("ACTION: wait", self.step("resume"))
-        self.assertEqual(first_wait_at, self.state()["resumeWaitAt"])
+        self.assertEqual(first_wait_at, self.state()["stop"]["waitAt"])
 
         self.set_state(resumeWaitAt=time.time() - 100)
         cap_stop_out = self.step("resume")
         self.assertIn("ACTION: stop", cap_stop_out)
         self.assertIn("has not handed back in", cap_stop_out)
-        self.assertNotIn("resumeWaitAt", self.state())
+        self.assertNotIn("waitAt", self.state()["stop"])
 
         self.send_message("r1")
         again_out = self.step("resume")
         self.assertIn("ACTION: wait", again_out)
         self.assertNotIn("has not handed back in", again_out)
-        self.assertIn("resumeWaitAt", self.state())
+        self.assertIn("waitAt", self.state()["stop"])
 
         self.hook("review-loop", self.LOOP_OK, agent_id="r1")
         out = self.step("resume")
@@ -5148,8 +5158,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Phase 1 marked done", out)
         state = self.state()
         self.assertNotEqual("stopped", state["stage"])
-        self.assertNotIn("resumeWaitAt", state)
-        self.assertNotIn("resumableReview", state)
+        self.assertNotIn("stop", state)
 
     def test_the_coder_reports_of_an_asks_round_hold_only_the_agents_of_its_newest_dispatch(self):
         self.start_phase_one()
@@ -5466,7 +5475,7 @@ class CodeStepTest(unittest.TestCase):
         self.step("resume")
         self.set_state(resumeWaitAt=time.time() - 100)
         self.assertIn("has not handed back in", self.step("resume"))
-        self.assertNotIn("resumeWaitAt", self.state())
+        self.assertNotIn("waitAt", self.state()["stop"])
         self.send_message("a1")
         out = self.step("resume")
         self.assertIn("ACTION: wait", out)
@@ -5481,7 +5490,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: wait", out)
         self.assertEqual("stopped", self.state()["stage"])
-        self.assertIn("resumableCoderAt", self.state())
+        self.assertEqual("coder-resumable", self.state()["stop"]["kind"])
 
     # ---------- a second no-reviewable-change stop keeps the first one's PLAN-IMPACT ----------
 

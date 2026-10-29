@@ -1,7 +1,14 @@
 """The review statuses that end a code_step run: a tool fault, a critical blocker, a setup fault, an unverified check
 and the review cap. Each prints its stop or question; the caller goes on to the asks or the phase end otherwise."""
 import script_utils
-from code_step_core import REVIEW_AGAIN_INVOKE, restart_instruction, save_state, script_command, stop_with_question
+from code_step_core import (
+    REVIEW_AGAIN_INVOKE,
+    restart_instruction,
+    save_state,
+    script_command,
+    set_stop,
+    stop_with_question,
+)
 from script_utils import ask_text
 
 
@@ -51,7 +58,7 @@ def stop_on_review_status(repo_dir, state, module, packet):
     import full_check
     status = packet["status"]
     if packet["tool_fault"]:
-        state.update({"stage": "stopped", "stopReason": "tool-fault"})
+        set_stop(state, "tool-fault")
         save_state(repo_dir, state)
         stop_with_question(
             repo_dir, "a review call failed, so the review did not finish; it found nothing.",
@@ -68,7 +75,7 @@ def stop_on_review_status(repo_dir, state, module, packet):
         return False
     if status in BLOCKER_STOP_TEXT:
         question, instruction = BLOCKER_STOP_TEXT[status]
-        state.update({"stage": "stopped", "stopReason": status})
+        set_stop(state, status)
         save_state(repo_dir, state)
 
         blocker_lines = ["- " + script_utils.one_line(module.item_text(item, "finding", "file_line"), 800)
@@ -80,7 +87,7 @@ def stop_on_review_status(repo_dir, state, module, packet):
     if status in ("converged", "deferred") and full_check.is_unverified(packet["full_check"]):
         # A check that exited 0 printed no test-runner summary, so the check did not show that any test ran: the phase
         # is not verified, so it does not finish.
-        state.update({"stage": "stopped", "stopReason": "check-unverified"})
+        set_stop(state, "check-unverified")
         save_state(repo_dir, state)
         check_command = packet["full_check_command"] or "(not named)"
         configured = full_check.configured_check_command(repo_dir)
@@ -114,10 +121,14 @@ def stop_on_review_status(repo_dir, state, module, packet):
             state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
             return False
 
-        state["stage"] = "stopped"
+        if is_second_cap:
+            set_stop(state)
+        else:
+            state["carriedFindings"] = module.carried_findings(packet)
+            set_stop(state, "cap-reached")
+
         next_step = review_stop_next_step(state)
         if not is_second_cap:
-            state.update({"carriedFindings": module.carried_findings(packet), "stopReason": "cap-reached"})
             next_step = (f"for one more review-loop pass on the same diff, {REVIEW_AGAIN_INVOKE}. "
                          f"Or, {next_step}")
         save_state(repo_dir, state)

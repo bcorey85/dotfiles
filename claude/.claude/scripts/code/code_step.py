@@ -86,6 +86,7 @@ from code_step_boundary import (
 from code_step_closing import command_skill_done_with_question
 from code_step_core import (
     CODER,
+    CODER_RESUMABLE,
     CODER_STAGES,
     HOOK_STAGES,
     RESUME_VERB,
@@ -118,9 +119,12 @@ from code_step_core import (
     script_command,
     sent_message_since,
     session_pin,
+    set_stop,
+    snapshot_part,
     stale_phase_reason,
     state_dir,
     state_file,
+    stop_kind,
     stop_review_script,
     stop_with_question,
     take_handback,
@@ -270,7 +274,7 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     # does it or the check that passed; "recommended-eng-spec" for a report whose marker line recommends /eng-spec;
     # "no-change" for a report with no reviewable change (a failed edit, a blocked hook, a question); else None.
     is_ask_fix = state["stage"] == "asks-coder"
-    asks_coder_changed_nothing = is_ask_fix and changed_now == state.get("asksBaseline")
+    asks_coder_changed_nothing = is_ask_fix and changed_now == snapshot_part(state, "asks")
     escalates = recommends_eng_spec(report)
     report_raises_blocker = escalates or bool(first_plan_impact([report])) or bool(coder_flags(report))
     if asks_coder_changed_nothing and not report_raises_blocker and every_accepted_ask_already_done(
@@ -288,10 +292,7 @@ CODER_REPORT_STOP_LINES = 6
 
 def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
     # The run stops on the coder's report: the user answers it, and the coder resumed with SendMessage goes on.
-    state["stage"] = "stopped"
-    state.pop("stopReason", None)
-    state["resumableCoderAt"] = time.time()
-    state["resumableCoderId"] = agent_id or "unknown"
+    set_stop(state, CODER_RESUMABLE, agent_id=agent_id or "unknown")
     state.pop("dispatchAt", None)
     save_state(repo_dir, state)
     tick_text = (f" If the user says Phase {state['phase']} is already done, invoke Skill code with `tick "
@@ -364,9 +365,9 @@ def review_coder_report(repo_dir, state, handback):
     if outcome in ("no-change", "recommended-eng-spec"):
         return stop_on_coder_report(repo_dir, state, report, handback.get("agent_id"), outcome)
 
-    asks_baseline = state.get("asksBaseline")
+    asks_baseline = snapshot_part(state, "asks")
     if is_ask_fix and asks_baseline is not None and not is_open:
-        # The review after an asks-coder covers only what the asks-coder changed. A state from before asksBaseline
+        # The review after an asks-coder covers only what the asks-coder changed. A state from before the asks snapshot
         # existed keeps the whole-phase scope, and so does a review that left findings open (a cap, or a critical
         # blocker with asks): its carried findings may sit in any file.
         changed_files = asks_coder_changed_files(changed_now, asks_baseline)
@@ -414,7 +415,7 @@ def run_guarded_verb(verb, handler, args):
 def stopped_coder_report(repo_dir, state):
     # The last message of the coder the run stopped on, or a note that none was saved.
     for report in reversed(phase_coder_reports(repo_dir, state)):
-        if report["agent_id"] == state.get("resumableCoderId") and report["messages"]:
+        if report["agent_id"] == state["stop"].get("agentId") and report["messages"]:
             return report["messages"][-1]
     return "(none saved)"
 
@@ -424,8 +425,8 @@ def coder_answer_sent(repo_dir, state):
     # stop.
     if awaited_handback(repo_dir, state) is not None:
         return True
-    coder_id = state.get("resumableCoderId")
-    return sent_message_since(repo_dir, state, state["resumableCoderAt"], None if coder_id == "unknown" else coder_id)
+    coder_id = state["stop"].get("agentId")
+    return sent_message_since(repo_dir, state, state["stop"]["at"], None if coder_id == "unknown" else coder_id)
 
 
 def review_answer_sent(repo_dir, state):
@@ -434,7 +435,7 @@ def review_answer_sent(repo_dir, state):
     if launch_id is None:
         return False
     return (awaited_handback(repo_dir, state) is not None
-            or sent_message_since(repo_dir, state, state["resumableReview"], launch_id))
+            or sent_message_since(repo_dir, state, state["stop"]["at"], launch_id))
 
 
 def stopped_route(repo_dir, state):
@@ -445,12 +446,13 @@ def stopped_route(repo_dir, state):
             return "after-review"
         return "after-review" if review_answer_sent(repo_dir, state) else "ask-review-cap"
 
-    if state.get("stopReason") == "coder-cap":
+    kind = stop_kind(state)
+    if kind == "coder-cap":
         return "ask-coder-cap"
-    if state.get("stopReason") in BLOCKER_STOP_TEXT:
+    if kind in BLOCKER_STOP_TEXT:
         return "ask-critical-blocker"
     # A review gate refused as false-clean is reviewed again, not stopped on again.
-    return "review-again" if state.get("stopReason") == "false-clean" else "ask-unknown"
+    return "review-again" if kind == "false-clean" else "ask-unknown"
 
 
 def resume_route(repo_dir, state):
@@ -485,7 +487,7 @@ def ask_about_stopped_coder(repo_dir, state, answer=None):
                  if state.get("plan") and state.get("phase") else "")
     report = stopped_coder_report(repo_dir, state)
     restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
-    coder_id = state["resumableCoderId"]
+    coder_id = state["stop"]["agentId"]
     if answer is None:
         send_step = f"Send the user's answer to agent {coder_id} with SendMessage, then run resume."
     else:
@@ -505,7 +507,7 @@ def ask_about_unrecorded_state(repo_dir, state):
     if stage == "skill":
         return resume_closing_skill(repo_dir, state)
 
-    stop_reason = state.get("stopReason")
+    stop_reason = stop_kind(state)
     saved = f"The run is at stage {stage}" + (f" with stop reason {stop_reason}." if stop_reason else ".")
     guarded_verb = next((verb for verb, guard in STAGE_GUARDS.items()
                         if stage in guard["stages"] and stop_reason in guard.get("stopReasons", ())), None)
@@ -535,7 +537,7 @@ def ask_about_review_cap(repo_dir, state):
 
 def ask_about_critical_blocker(repo_dir, state):
     status_command = script_command("status")
-    opening_sentence = BLOCKER_STOP_TEXT[state["stopReason"]][0]
+    opening_sentence = BLOCKER_STOP_TEXT[stop_kind(state)][0]
     ask_user(repo_dir, f"The run stopped: {opening_sentence} Present it to the user. Run "
              f"`{status_command}` to read the saved state. Then, {blocker_stop_next_step(state)}")
 

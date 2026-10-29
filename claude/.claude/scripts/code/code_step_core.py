@@ -54,7 +54,10 @@ RESUME_VERB = "resume"
 # The task words that mean `resume`: the code skill runs some as `resume`,
 # and `start` refuses the rest and names `resume`.
 VERB_WORDS_REPLACED_BY_RESUME = ("continue", "resume", "after-coder", "after-review", "after-plan-edit")
-RESUME_LINE = "When the {noun} is fixed, run `python3 ~/.claude/scripts/code/code_step.py {verb}`."
+RESUME_LINE = f"When the {{noun}} is fixed, run `{INSTALLED_COMMAND} {{verb}}`."
+# What a stop tells the main session to do to review the same diff again, and the sentence that says it alone.
+REVIEW_AGAIN_INVOKE = "invoke Skill code with `review-again`"
+REVIEW_SAME_DIFF_AGAIN_LINE = f"To review the same diff again, {REVIEW_AGAIN_INVOKE}."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
 SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
@@ -64,6 +67,7 @@ REVIEW_HANDBACK_STAGES = ("coder", "review", "asks-coder")
 CODER_STAGES = ("coder", "asks-coder")
 FORK_AGENT_TYPE = script_utils.FORK_AGENT_TYPE
 SAY_MAX_AGE_SECONDS = 6 * 3600
+STATE_FILE_NAME = "state.json"
 STATE_DIRS = {}  # resolved folder -> the code-step state folder git named for it
 
 
@@ -89,11 +93,15 @@ def state_dir(cwd):
     if resolved_cwd in STATE_DIRS:
         return STATE_DIRS[resolved_cwd]
 
-    found = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", "code-step")
+    found = script_utils.git_path(cwd, "code-step")
     if found is None:
         return None
-    STATE_DIRS[resolved_cwd] = pathlib.Path(found)
+    STATE_DIRS[resolved_cwd] = found
     return STATE_DIRS[resolved_cwd]
+
+
+def state_file(cwd):
+    return state_dir(cwd) / STATE_FILE_NAME
 
 
 class StateFileError(Exception):
@@ -108,13 +116,13 @@ def load_state(cwd):
 
 
 def read_state_file(directory):
-    state_file = directory / "state.json"
-    if not state_file.exists():
+    path = directory / STATE_FILE_NAME
+    if not path.exists():
         return None
     try:
-        return json.loads(state_file.read_text())
+        return json.loads(path.read_text())
     except ValueError:
-        raise StateFileError(f"{state_file} is not readable JSON") from None
+        raise StateFileError(f"{path} is not readable JSON") from None
 
 
 def branch_label(cwd):
@@ -123,9 +131,8 @@ def branch_label(cwd):
 
 
 def save_state(cwd, state):
-    directory = state_dir(cwd)
-    directory.mkdir(parents=True, exist_ok=True)
-    script_utils.write_text_atomically(directory / "state.json", json.dumps(state, indent=1))
+    state_dir(cwd).mkdir(parents=True, exist_ok=True)
+    script_utils.write_text_atomically(state_file(cwd), json.dumps(state, indent=1))
 
     register_session_repo(cwd, state.get("sessionId"))
 
@@ -898,7 +905,7 @@ def stop_on_gone_review_script(repo_dir, state):
          f"event log holds no hand-back from agent {agent_id} after the dispatch). "
          f"Show the user its log: {log_path}",
          "End of the log:", log_tail,
-         "To review the same diff again, invoke Skill code with `review-again`.")
+         REVIEW_SAME_DIFF_AGAIN_LINE)
     return False
 
 

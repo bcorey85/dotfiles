@@ -936,6 +936,12 @@ class PlanFileEditTest(unittest.TestCase):
         plan_format.append_deviation(self.plan_path, ["- second"])
         self.assertEqual("## Plan Deviations\n\n- first\n\n- second\n\n## References\n", self.plan_path.read_text())
 
+    def test_a_section_heading_inside_a_code_fence_does_not_end_the_deviations_section(self):
+        self.plan_path.write_text("## Plan Deviations\n\n- first\n\n```\n## sample\n```\n\n## References\n")
+        plan_format.append_deviation(self.plan_path, ["- second"])
+        self.assertEqual("## Plan Deviations\n\n- first\n\n```\n## sample\n```\n\n- second\n\n## References\n",
+                         self.plan_path.read_text())
+
     def test_a_deviation_goes_to_the_end_when_the_plan_has_no_references(self):
         self.plan_path.write_text("## Phase 1: a\n\ntext\n")
         plan_format.append_deviation(self.plan_path, ["- note"])

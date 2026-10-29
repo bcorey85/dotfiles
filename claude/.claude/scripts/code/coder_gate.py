@@ -65,6 +65,8 @@ COMMAND_TIMEOUT_SECONDS = 1200
 TAIL_CHARS = 6000
 TIMEOUT_TAIL_CHARS = 600
 GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
+# The gate's state file, kept in the repo's git dir.
+CODER_GATE_FILE = "coder-gate.json"
 
 WHOLE_PACKAGE_REASON = ("This command runs a whole test suite, lints a whole package or runs a build. Run the "
                         "typecheck, and lint and tests for only the files you changed. The review loop runs the full "
@@ -115,10 +117,7 @@ NO_RESULT_STAMP_SECTIONS = (
 
 
 def gate_path(cwd):
-    git_path = script_utils.git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", "coder-gate.json")
-    if git_path is None:
-        return None
-    return pathlib.Path(git_path)
+    return script_utils.git_path(cwd, CODER_GATE_FILE)
 
 
 def whole_recipe_lines(scan):

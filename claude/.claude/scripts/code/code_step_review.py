@@ -7,7 +7,15 @@ import sys
 import time
 
 import plan_format
+import review_asks
 import script_utils
+from code_step_asks import (
+    ASKS_DONE_USAGE,
+    asks_coder_prompt,
+    numbered_ask_lines,
+    preset_ask_outcome,
+    split_asks_done_args,
+)
 from code_step_boundary import (
     criteria_file,
     finish_phase,
@@ -21,6 +29,7 @@ from code_step_core import (
     RESUME_VERB,
     REVIEW_LOOP,
     REVIEW_LOOP_SCRIPT,
+    REVIEW_SAME_DIFF_AGAIN_LINE,
     REVIEW_SCRIPT_AGENT_PREFIX,
     ask_user,
     awaited_agent_id,
@@ -41,7 +50,6 @@ from code_step_core import (
     prompt_with_gate_env,
     record_dispatch,
     record_ruled_asks,
-    restart_instruction,
     ruled_asks_lines,
     run_session_id,
     runs_review_script,
@@ -51,22 +59,19 @@ from code_step_core import (
     session_pin,
     state_dir,
     stop_review_script,
-    stop_with_question,
     take_handback,
     timed_command,
     wait_for_handback,
     wait_for_loop_stop,
 )
-from code_step_report import ENG_SPEC_MARKER, change_line, coder_message_without_gate_stamp
+from code_step_report import change_line, coder_message_without_gate_stamp
+from code_step_review_stops import is_capped_review, left_findings_open, stop_on_review_status
 from code_step_usage import DECIDE_COMMAND
-from script_utils import ask_text, git_output, run_command
+from script_utils import git_output, run_command
 from source_paths import is_counted_source
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
-ASKS_DONE_USAGE = ("asks-done needs one outcome per ask: accepted, rejected or modified. Each modified ask needs the "
-                   "user's change after it as `--change \"<text>\"`. `--by user` or `--by session` says who ruled. "
-                   "`--also \"<text>\"` carries any other work the user named alongside the outcomes.")
 # The state each guarded verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped",
 # and the refusal text when the state is anything else. `start`, `tick` and `resume` run at any stage and are not in
 # the table. A review-loop resumed after the wait cap also counts for review-again, and a converged review of the
@@ -107,28 +112,6 @@ def guarded_verb_runs(verb, state):
 
 NO_REVIEW_PACKET = ("No review-loop packet was saved. The log-hook (code_step.py log-hook) is not installed. "
                     "Tell the user.")
-
-
-def prior_issues(accepted_asks):
-    issues = []
-    for item, _outcome, change_text in accepted_asks:
-        file_line = item.get("file_line", "")
-        issue_text = ask_text(item)
-        if change_text:
-            issue_text += f" (user's change: {change_text})"
-        issues.append({"issue": issue_text, "file": file_line.partition(":")[0]})
-    return issues
-
-
-def numbered_ask_lines(asks):
-    # Each ask with the one change an accepted answer makes. A multi-line ask's later lines sit indented under its
-    # number.
-    lines = []
-    for number, item in enumerate(asks, 1):
-        lines += script_utils.hanging_indent_lines(f"{number}. ", ask_text(item))
-        if item.get("change"):
-            lines += script_utils.hanging_indent_lines("   Proposed change: ", item["change"])
-    return lines
 
 
 def preset_decision(repo_dir):
@@ -190,12 +173,11 @@ def record_deviation(repo_dir, state):
 
 
 def split_decide_args(args):
-    # The decision word, who ruled (`--by user|session`, None when missing), then the words after `--ruling`,
+    # The decision word, who ruled (`--by user|session`; None or "" when missing), then the words after `--ruling`,
     # joined when the caller left them unquoted.
     word = args[0].lower() if args else ""
     ruling_at = args.index("--ruling") if "--ruling" in args else len(args)
-    by_words = args[:ruling_at]
-    by = by_words[by_words.index("--by") + 1] if "--by" in by_words[:-1] else None
+    _, by = script_utils.pop_option(args[:ruling_at], "--by")
     ruling_words = " ".join(args[ruling_at + 1:])
     return word, by, ruling_words.strip()
 
@@ -638,141 +620,7 @@ def load_review_packet(repo_dir, state, message):
         save_state(repo_dir, state)
         return emit("stop", "The review-loop packet does not parse. Show the user the raw packet. Problems: "
                     + "; ".join(error.problems), message,
-                    "To review the same diff again, invoke Skill code with `review-again`.")
-
-
-def is_capped_review(state):
-    return state.get("reviewStatus") == "cap-reached"
-
-
-def left_findings_open(state):
-    # The review ended with findings open (a cap, or a critical blocker with asks): its rulings go to one more review
-    # of the whole phase, and the review gate stays dirty until that review ends clean.
-    return state.get("reviewStatus") in ("cap-reached", "critical-blocker")
-
-
-def review_stop_next_step(state):
-    # The command after a review stop: the phase started over, once the user has ruled on the findings.
-    return f"after the user rules on the findings, {restart_instruction(state)} to start the phase over."
-
-
-# The statuses that stop on the packet's blockers: (the question, the instruction to the caller).
-BLOCKER_STOP_TEXT = {
-    "critical-blocker": ("the review found a critical blocker.",
-                         "Review found a critical blocker. Present these to the user. Do not mark the phase done."),
-    "setup-fault": ("the review's full check could not run here.",
-                    "The full check could not run here. This is a toolkit or environment fault, not a code failure. "
-                    "Present these to the user. Do not mark the phase done."),
-}
-
-
-def blocker_stop_next_step(state):
-    # A critical blocker the user can clear without a code change (a missing tool, a broken environment) goes on with
-    # one command: the review runs again on the same diff.
-    review_again_command = script_command("review-again")
-    return (f"if the blocker is a fault of the environment and the user has fixed it, run `{review_again_command}` to "
-            f"review the same diff again. Otherwise {review_stop_next_step(state)}")
-
-
-def ask_lines(packet):
-    # The reviewer's questions for the user, one line each, with the file and line they concern.
-    return [f"{script_utils.one_line(ask_text(item), 800)} ({item.get('file_line', '-')})"
-            for item in packet.get("ask", [])]
-
-
-def stop_on_review_status(repo_dir, state, module, packet):
-    # True after the stop or question a packet status that ends the run prints.
-    # Imported here: review/ joins sys.path when code_step_core loads, which sorted top-level imports would precede.
-    import full_check
-    status = packet["status"]
-    if status == "plan-impact":
-        state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
-        save_state(repo_dir, state)
-        state["carriedFindings"] = module.carried_findings(packet)
-        save_state(repo_dir, state)
-        emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
-        return True
-    if packet["tool_fault"]:
-        state.update({"stage": "stopped", "stopReason": "tool-fault"})
-        save_state(repo_dir, state)
-        stop_with_question(
-            repo_dir, "a review call failed, so the review did not finish; it found nothing.",
-            [packet["tool_fault"]], "to run the review again on the same diff, invoke Skill code with `review-again`.",
-            "The review did not run to the end: a tool fault, not a finding. Do not mark the phase done.",
-            "Tool fault: " + packet["tool_fault"],
-            "To run the review again on the same diff, invoke Skill code with `review-again`.")
-        return True
-    if status == "critical-blocker" and packet["ask"] and not state.get("blockerCarried"):
-        # With asks, the asks route takes the rulings first, as after a cap: the blockers go to the review after it.
-        # Only the first blocker stop of a phase takes it, so a preset ruling cannot loop with no human.
-        state["blockerCarried"] = True
-        state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
-        return False
-    if status in BLOCKER_STOP_TEXT:
-        question, instruction = BLOCKER_STOP_TEXT[status]
-        state.update({"stage": "stopped", "stopReason": status})
-        save_state(repo_dir, state)
-
-        blocker_lines = ["- " + script_utils.one_line(module.item_text(item, "finding", "file_line"), 800)
-                         for item in packet["blockers"]]
-        stop_with_question(
-            repo_dir, question, [line[2:] for line in blocker_lines], blocker_stop_next_step(state), instruction,
-            *blocker_lines, questions=ask_lines(packet))
-        return True
-    if status in ("converged", "deferred") and full_check.is_unverified(packet["full_check"]):
-        # A check that exited 0 printed no test-runner summary, so the check did not show that any test ran: the phase
-        # is not verified, so it does not finish.
-        state.update({"stage": "stopped", "stopReason": "check-unverified"})
-        save_state(repo_dir, state)
-        check_command = packet["full_check_command"] or "(not named)"
-        configured = full_check.configured_check_command(repo_dir)
-        if configured:
-            # The repo already names its check, so a Quality check line would change nothing: the runner's output
-            # is what the toolkit does not recognize.
-            why = ("the full check exited 0 and printed no test-runner summary this toolkit recognizes, so the check "
-                   "did not show that any test ran.")
-            fix = (f"make the configured check (`{configured}`) print its test runner's summary, or add the "
-                   "runner's summary format to SUMMARY_LINES in ~/.claude/scripts/lib/test_run_output.py")
-        else:
-            why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
-                   "test ran.")
-            fix = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
-        why_sentence = why[0].upper() + why[1:]
-        fix_sentence = fix[0].upper() + fix[1:]
-        stop_with_question(
-            repo_dir, why, [check_command],
-            f"{fix}, then run `{script_command('review-again')}` to review the same diff again.",
-            f"{why_sentence} The check ran: `{check_command}`. {fix_sentence}, then run "
-            "review-again. Do not mark the phase done.",
-            questions=ask_lines(packet))
-        return True
-    if status == "cap-reached":
-        # The first cap of a phase sends the open findings to one more review-loop pass with a fresh round budget.
-        # With asks, the asks route takes the rulings first. A cap after that pass stops for a restart.
-        # The packet's iter stays on the state: the ask rows of this round log it. The next review dispatch resets it.
-        is_second_cap = state.get("capCarried", False)
-        state["capCarried"] = True
-        if packet["ask"] and not is_second_cap:
-            state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
-            return False
-
-        state["stage"] = "stopped"
-        next_step = review_stop_next_step(state)
-        if not is_second_cap:
-            state.update({"carriedFindings": module.carried_findings(packet), "stopReason": "cap-reached"})
-            next_step = (f"for one more review-loop pass on the same diff, invoke Skill code with `review-again`. "
-                         f"Or, {next_step}")
-        save_state(repo_dir, state)
-        remaining_lines = ["- " + module.item_text(item, "finding", "file_line")
-                           for item in packet["findings_remaining"]]
-        stop_with_question(
-            repo_dir, "the review cap was reached with findings still open.", [line[2:] for line in remaining_lines],
-            next_step,
-            "The review cap was reached. Report these findings to the user. Do not mark the phase "
-            "done. The session stays dirty, so git commit stays blocked.", *remaining_lines,
-            questions=ask_lines(packet))
-        return True
-    return False
+                    REVIEW_SAME_DIFF_AGAIN_LINE)
 
 
 def command_after_review(repo_dir, state, args):
@@ -806,6 +654,13 @@ def command_after_review(repo_dir, state, args):
     state["checkChanged"] = sorted(changed - coder_edited)
     state["checkRewroteEdited"] = sorted(rewrote_edited)
     state["reviewStatus"] = packet["status"]
+    if packet["status"] == "plan-impact":
+        state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
+        save_state(repo_dir, state)
+        state["carriedFindings"] = module.carried_findings(packet)
+        save_state(repo_dir, state)
+        emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
+        return
     if stop_on_review_status(repo_dir, state, module, packet):
         return
 
@@ -822,19 +677,6 @@ def command_after_review(repo_dir, state, args):
         fill_review_ask_ids(repo_dir, state, module, handback, asks)
         return present_asks(repo_dir, state, asks)
     finish_phase(repo_dir, state)
-
-
-ASK_OUTCOMES = ("accepted", "rejected", "modified")
-
-
-def preset_ask_outcome(repo_dir):
-    # A pre-answered outcome for every review ask, for runs with no user (claude -p, bench): env var or a file in the
-    # state dir.
-    word = os.environ.get("CODE_STEP_ASKS_OUTCOME", "").strip().lower()
-    preset_file = state_dir(repo_dir) / "asks-outcome"
-    if not word and preset_file.exists():
-        word = preset_file.read_text().strip().lower()
-    return word if word in ASK_OUTCOMES else None
 
 
 def present_asks(repo_dir, state, asks):
@@ -897,6 +739,11 @@ def ask_the_user(repo_dir, state, asks):
     )
 
 
+def ask_logger():
+    # Read at call time: CLAUDE_DIR is the toolkit folder this run was pointed at.
+    return CLAUDE_DIR / "skills/review/log-review-finding"
+
+
 def ask_log_context(repo_dir, state):
     # The run fields that an ask row and its outcome row share.
     return {"branch": git_output(repo_dir, "branch", "--show-current") or "-", "lane": state["lane"],
@@ -920,8 +767,8 @@ def fill_review_ask_ids(repo_dir, state, module, handback, asks):
             item["finding_id"] = kept_ids[key]
 
     session_id = run_session_id(state)
-    logger = CLAUDE_DIR / "skills/review/log-review-finding"
-    module.supply_ask_finding_ids(asks, session_id, logger, ask_log_context(repo_dir, state), repo_dir)
+    context = ask_log_context(repo_dir, state)
+    review_asks.supply_finding_ask_ids(asks, session_id, ask_logger(), context, repo_dir)
     for item, key in zip(asks, keys, strict=True):
         if module.ask_finding_id(item):
             kept_ids[key] = module.ask_finding_id(item)
@@ -936,43 +783,14 @@ def log_ask_outcomes(repo_dir, state, outcomes, decided_by="user"):
 
     context = ask_log_context(repo_dir, state)
     for item, outcome in zip(state["asks"], outcomes, strict=False):
-        finding_id, new_finding_id_note = module.ask_outcome_finding_id(item)
-        logger_code, logger_output = run_command(
-            ["bash", str(CLAUDE_DIR / "skills/review/log-review-finding"), "kind=finding",
-             f"finding_id={finding_id}", *module.ask_row_fields(context, item), f"ask_outcome={outcome}",
-             f"ask_decided_by={decided_by}"], repo_dir)
-        if logger_code != 0:
-            print(f"code-step: ask outcome for finding_id {finding_id} not logged: log-review-finding exited "
-                  f"{logger_code}: {script_utils.one_line(logger_output)}", file=sys.stderr)
-        elif new_finding_id_note:
-            print(f"code-step: {new_finding_id_note}", file=sys.stderr)
-
-
-def asks_coder_prompt(accepted_asks, also_text=""):
-    lines = []
-    if accepted_asks:
-        lines += ["Apply these review asks. The user accepted them. Make the change each one names and nothing else.",
-                  ""]
-    for number, (item, outcome, change_text) in enumerate(accepted_asks, 1):
-        location = item.get("file_line", "")
-        lines.append(f"{number}. [{outcome}] {ask_text(item)}"
-                     + (f" ({location})" if location else ""))
-        if change_text:
-            lines.append(f"   The user's change: {change_text}")
-        elif item.get("change"):
-            lines.append(f"   The proposed change: {item['change']}")
-    if also_text:
-        lines += ["", "Also do this, as the user instructed alongside the asks:", also_text]
-    lines += [
-        "",
-        "Run the typecheck, and lint and tests for only the files you changed, once, after all edits. "
-        f"If an ask turns out architectural, end your report with the line `{ENG_SPEC_MARKER}`.",
-        "For each ask whose change the code already makes, so that it needs no edit, add one line to your report: "
-        "`ALREADY-DONE: <ask number> — <file:line>`. For an ask that only asks you to run checks, when they pass "
-        "with no edit, the line is `ALREADY-DONE: <ask number> — `<command>` -> exit 0`. Add that line for no "
-        "other ask.",
-    ]
-    return "\n".join(lines)
+        outcome_row = review_asks.log_ask_outcome(ask_logger(), context, item, outcome, decided_by, repo_dir)
+        if outcome_row is None:
+            continue
+        if outcome_row.code != 0:
+            print(f"code-step: ask outcome for finding_id {outcome_row.finding_id} not logged: log-review-finding "
+                  f"exited {outcome_row.code}: {script_utils.one_line(outcome_row.output)}", file=sys.stderr)
+        elif outcome_row.new_finding_id_note:
+            print(f"code-step: {outcome_row.new_finding_id_note}", file=sys.stderr)
 
 
 def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
@@ -1010,33 +828,13 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
                   + review_sentence, prompt=asks_coder_prompt(accepted_asks, also_text), agent="coder", model=model)
 
 
-def split_asks_done_args(args):
-    # Outcome words in order, the text after each `--change` flag (one per modified ask, in order), and the text of
-    # `--also` joined by blank lines ("" when none). A flag with no text after it makes the change texts None.
-    outcomes = []
-    change_texts = []
-    also_texts = []
-    position = 0
-    while position < len(args):
-        if args[position] in ("--change", "--also"):
-            if position + 1 >= len(args):
-                return outcomes, None, ""
-            target = change_texts if args[position] == "--change" else also_texts
-            target.append(args[position + 1])
-            position += 2
-            continue
-        outcomes.append(args[position])
-        position += 1
-    return outcomes, change_texts, "\n\n".join(also_texts)
-
-
 def command_asks_done(repo_dir, state, args):
     outcome_args, decided_by = script_utils.pop_option(args, "--by")
     if decided_by is None:
         decided_by = "user"
     outcomes, given_changes, also_text = split_asks_done_args(outcome_args)
     if decided_by not in ("user", "session") or len(outcomes) != len(state["asks"]) \
-            or any(outcome not in ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
+            or any(outcome not in review_asks.ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
             or len(given_changes) != outcomes.count("modified"):
         ask_count = len(state["asks"])
         return emit("stop", f"{ASKS_DONE_USAGE} {ask_count} ask(s) wait: give {ask_count} outcome(s), in order.")

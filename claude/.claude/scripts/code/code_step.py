@@ -60,8 +60,9 @@ hooks write only that log; the verbs read it and write state.json.
 The code is split in files that import one way: code_step_core (state, event log, hand-back matcher, output),
 code_step_boundary (criteria guard, verification runner, phase boundary), code_step_hooks, code_step_gates (gate
 commands), code_step_start (the start verb), code_step_report (reading a coder report), code_step_review
-(plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_usage (usage text and the
-leading-dash check of `resume`) and this file."""
+(plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_asks (the asks route's
+words: ask listing, pre-set outcome, asks-done arguments, asks coder prompt, prior issues; ask ids and outcome rows
+come from review/review_asks.py), code_step_usage (usage text and the leading-dash check of `resume`) and this file."""
 import contextlib
 import fcntl
 import json
@@ -74,6 +75,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import coder_gate
 import plan_format
 import script_utils
+from code_step_asks import prior_issues
 from code_step_boundary import (
     command_tick,
     command_verify,
@@ -87,6 +89,7 @@ from code_step_core import (
     CODER_STAGES,
     HOOK_STAGES,
     RESUME_VERB,
+    REVIEW_AGAIN_INVOKE,
     SCRIPTS_DIR,
     StateFileError,
     ask_user,
@@ -117,6 +120,7 @@ from code_step_core import (
     session_pin,
     stale_phase_reason,
     state_dir,
+    state_file,
     stop_review_script,
     stop_with_question,
     take_handback,
@@ -145,10 +149,8 @@ from code_step_report import (
     why_by_file,
 )
 from code_step_review import (
-    BLOCKER_STOP_TEXT,
     STAGE_GUARDS,
     ask_the_user,
-    blocker_stop_next_step,
     command_after_plan_edit,
     command_after_review,
     command_asks_done,
@@ -157,9 +159,8 @@ from code_step_review import (
     emit_plan_impact_modal,
     emit_review_dispatch,
     guarded_verb_runs,
-    left_findings_open,
-    prior_issues,
 )
+from code_step_review_stops import BLOCKER_STOP_TEXT, blocker_stop_next_step, left_findings_open
 from code_step_start import (
     command_start,
     emit_closing_skill,
@@ -529,7 +530,7 @@ def resume_closing_skill(repo_dir, state):
 
 def ask_about_review_cap(repo_dir, state):
     ask_user(repo_dir, "The review-loop never handed back. If the user resumes it with SendMessage, run "
-             "resume. If it died, invoke Skill code with `review-again`.")
+             f"resume. If it died, {REVIEW_AGAIN_INVOKE}.")
 
 
 def ask_about_critical_blocker(repo_dir, state):
@@ -650,7 +651,7 @@ def command_abort(args):
     archive_path = directory / f"aborted-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
     lines = abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_pid,
                                 review_script_was_running)
-    (directory / "state.json").rename(archive_path)
+    state_file(repo_dir).rename(archive_path)
     emit("stop", *lines)
 
 

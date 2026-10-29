@@ -149,10 +149,8 @@ from code_step_report import (
     why_by_file,
 )
 from code_step_review import (
-    BLOCKER_STOP_TEXT,
     STAGE_GUARDS,
     ask_the_user,
-    blocker_stop_next_step,
     command_after_plan_edit,
     command_after_review,
     command_asks_done,
@@ -161,8 +159,8 @@ from code_step_review import (
     emit_plan_impact_modal,
     emit_review_dispatch,
     guarded_verb_runs,
-    left_findings_open,
 )
+from code_step_review_stops import BLOCKER_STOP_TEXT, blocker_stop_next_step, left_findings_open
 from code_step_start import (
     command_start,
     emit_closing_skill,

@@ -1113,6 +1113,38 @@ class CodeStepTest(unittest.TestCase):
         out = self.coder_round(report)
         self.assertIn("ACTION: ask-user", out)
 
+    def test_the_phase_end_block_lists_the_deviation_adopted_in_the_phase(self):
+        self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        self.step("after-plan-edit")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+
+        said = self.said()
+        self.assertNotIn("## Question for the user", said)
+        self.assertIn("Plan deviations adopted in Phase 1 (the code won; no acceptance criterion changed):", said)
+        self.assertIn("- Phase 1: assumed: the importer reads a header row", said)
+
+    def test_the_run_end_block_lists_the_deviation_adopted_in_phase_one(self):
+        self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        self.step("after-plan-edit")
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+
+        self.mark_phases_done(3)
+        status_line = "- [ ] Phase 4: Refactor pass - /refactor cleanup sweep (risk: low)\n"
+        closing_section = "## Phase 4: Refactor pass\n\nSweep.\n\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(status_line, "").replace(closing_section, ""))
+        self.finish_phase_two()
+
+        said = self.said()
+        self.assertIn("Phase 2 complete (last phase).", said)
+        self.assertIn("Plan deviations adopted in this plan (the code won; no acceptance criterion changed):", said)
+        self.assertIn("- Phase 1: assumed: the importer reads a header row", said)
+
     def test_adopt_rewrites_the_plan_before_the_review(self):
         report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
         self.coder_round(report)
@@ -1700,7 +1732,8 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("Phase 1 complete.", out)
         self.assertIn("Phase 1 complete. Risk: low - Phase 1 calibration", self.said())
         self.assertNotIn("<<STAGE QUEUE>>", self.said())
-        self.assertIn("### Fixed", self.said())
+        self.assertIn("Fixed ", self.said())
+        self.assertNotIn("### Fixed", self.said())
         self.assertIn("- [x] Phase 1:", self.plan_text())
         self.assertIn("- [ ] Phase 2:", self.plan_text())
 
@@ -4837,12 +4870,14 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("`tick 1`", out)
 
     def test_a_plan_impact_block_is_found_in_each_shape_a_report_writes_it(self):
-        block = "assumed: the table has a key\nfound: it has none\nchanges: add a migration"
+        block = ("assumed: the table has a key\nfound: it has none\nchanges: add a migration\n"
+                 "acceptance_criteria: none")
         shapes = {
             "indented": "BEHAVIOR: none\nPLAN-IMPACT:\n  " + block.replace("\n", "\n  ") + "\nPLAN-IMPACT: yes",
             "keys at column 0": "BEHAVIOR: none\nPLAN-IMPACT:\n" + block + "\nPLAN-IMPACT: yes",
             "bold header and a blank line": "PLAN-IMPACT:**\n\n  " + block.replace("\n", "\n  "),
-            "bold keys": "**PLAN-IMPACT:**\n- **assumed:** a\n- **found:** b\n- **changes:** c",
+            "bold keys": ("**PLAN-IMPACT:**\n- **assumed:** a\n- **found:** b\n- **changes:** c\n"
+                          "- **acceptance_criteria:** none"),
         }
         for name, report in shapes.items():
             with self.subTest(name):
@@ -4851,6 +4886,8 @@ class CodeStepTest(unittest.TestCase):
                 self.assertNotIn("block not found", found)
                 self.assertIn("assumed", found)
                 self.assertIn("changes", found)
+                self.assertIn("acceptance_criteria", found)
+                self.assertFalse(plan_format.changes_acceptance_criteria(found))
 
     def test_a_run_without_the_phase_flag_still_advances(self):
         self.mark_phases_done(1)

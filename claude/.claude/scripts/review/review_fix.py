@@ -307,8 +307,7 @@ def present_plan_impact(packet, state):
     state.update({"stage": "plan-impact", "plan_impact": packet["plan_impact"],
                   "carried_findings": handback.carried_findings(packet)})
     if not plan_format.changes_acceptance_criteria(packet["plan_impact"]):
-        print("The plan impact changes no acceptance criterion, so the plan follows the code. No question to the user.")
-        return record_plan_ruling(state, "adopt", "session", plan_format.BELOW_CRITERIA_RULING, None)
+        return adopt_code_side_for_review(state)
 
     save_fix_state(state)
     print_action(
@@ -612,7 +611,23 @@ def new_state(options, packet, packet_id):
                 state[key] = previous[key]
     if waiting_packets:
         state["waiting_packets"] = waiting_packets
+
+    # Only the run that the adoption's re-dispatch started shows the deviations: any other dispatch drops them.
+    carries_ruling = same_run or (previous.get("stage") == "redispatch" and dispatched_with_ruling())
+    if carries_ruling and previous.get("adopted_deviations"):
+        state["adopted_deviations"] = previous["adopted_deviations"]
     return state
+
+
+def dispatched_with_ruling():
+    """Whether this session's last review-loop dispatch carried a resolved plan_impact line, as a re-dispatch after
+    a ruling does. A packet on stdin with no dispatch on record never does."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if not session_id:
+        return False
+
+    last_dispatch = handback.latest(session_id)["dispatch"] or {}
+    return bool(last_dispatch.get("resolved_plan_impact"))
 
 
 def has_unanswered_asks(packet_state):
@@ -751,7 +766,7 @@ def command_packet(argv):
         present_packet_asks(packet, state)
     else:
         print_action("render-and-finish", gate_mark_line())
-    sections = packet_sections(packet, replies, unreviewed_fix)
+    sections = packet_sections(packet, state, replies, unreviewed_fix)
     print_user_block(handback.render(packet, options.skill, sections))
     print_logged(notes)
     if options.skill == "review" and not is_outstanding(packet):
@@ -759,8 +774,11 @@ def command_packet(argv):
     print("MODEL STILL DOES: " + model_duties(packet, options))
 
 
-def packet_sections(packet, replies, unreviewed_fix):
+def packet_sections(packet, state, replies, unreviewed_fix):
     sections = [("Aikido replies", replies)] if replies else []
+    if state.get("adopted_deviations"):
+        deviation_lines = [f"- {ruling}" for ruling in state["adopted_deviations"]]
+        sections.append(("Plan deviations adopted (the code won; no acceptance criterion changed)", deviation_lines))
     if unreviewed_fix:
         sections.append(handback.unreviewed_fix_section(packet))
     ledger_warning = script_utils.missing_ledger_warning()
@@ -974,9 +992,13 @@ def command_decide(argv):
     record_plan_ruling(state, options.decision, options.by, options.ruling, plan_path)
 
 
-def record_plan_ruling(state, decision, by, ruling, plan_path):
+NO_PLAN_LINE = "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
+ADOPT_NO_PLAN_LINE = "Add these lines under ## Plan Deviations in the plan yourself, then continue:"
+
+
+def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no_plan_line=NO_PLAN_LINE):
     """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds) and print the
-    re-dispatch."""
+    re-dispatch. `user_lines` go first, for the main session to show the user."""
     choice = DECISION_WORDS[decision]
     owner = plan_format.ruling_owner(".", by)
     ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -999,16 +1021,22 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
     save_fix_state(state)
     print_action(
         "redispatch",
-        (
-            f"Recorded in {plan_path} under ## Plan Deviations."
-            if plan_path is not None
-            else "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
-        ),
+        *user_lines,
+        f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else no_plan_line,
         *entry,
         'Re-dispatch review-loop (same Agent call, model: "sonnet") with the same arguments as the first dispatch '
         "and these lines added, both counters kept:",
         *lines,
     )
+
+
+def adopt_code_side_for_review(state):
+    """A plan change that changes no acceptance criterion: the code wins with no question, and the user sees the
+    deviation now and again in the closing block."""
+    ruling = plan_format.below_criteria_ruling(state["plan_impact"])
+    state["adopted_deviations"] = [*state.get("adopted_deviations", []), ruling]
+    user_line = f"Show the user this line, and ask nothing: Plan deviation adopted, no question asked: {ruling}"
+    return record_plan_ruling(state, "adopt", "session", ruling, None, (user_line,), ADOPT_NO_PLAN_LINE)
 
 
 def main():

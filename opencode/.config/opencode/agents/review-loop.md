@@ -109,7 +109,7 @@ not re-derive it. Route on the label:
 `ask` looks obvious to you, it still goes to the user; the reviewer's uncertainty is
 information, not an error to correct.
 
-**PLAN-IMPACT** (`:158` semantics): a finding that invalidates a plan/design decision — not a defect, but evidence the plan's assumption is wrong (missed external contract/invariant, mis-tiered risk, ungated security surface). It is NOT a severity bucket. Return `status: plan-impact` with the verbatim block. Dispatch no coder.
+**PLAN-IMPACT** (`:158` semantics): a finding that invalidates a plan/design decision — not a defect, but evidence the plan's assumption is wrong (missed external contract/invariant, mis-tiered risk, ungated security surface). It is NOT a severity bucket. Return `status: plan-impact` with the verbatim block, its `acceptance_criteria:` line included. Dispatch no coder. List every `fix` finding not yet applied, from this round and earlier ones, in `findings_remaining[]`: the caller carries them into the re-dispatch.
 
 **Critical blockers** needing user judgment — return `status: critical-blocker` with `blockers`, dispatch no coder:
 

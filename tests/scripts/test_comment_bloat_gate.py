@@ -91,6 +91,14 @@ class CommentBloatGateTest(unittest.TestCase):
         stderr = self.assert_blocked(self.edit(path, MARKER_LINE, tool="Write"))
         self.assertIn("  1:" + MARKER_LINE + "\n", stderr)
 
+    def test_a_file_git_ignores_passes_but_a_tracked_file_matching_an_ignore_pattern_is_still_flagged(self):
+        self.source(".gitignore", "probe/\n")
+        ignored = self.source("probe/check.py", MARKER_LINE + "\n")
+        self.assert_allowed(self.edit(ignored, MARKER_LINE, tool="Write"))
+        tracked = self.source("probe/tracked.py", MARKER_LINE + "\n")
+        subprocess.run(["git", "-C", self.tmp.name, "add", "-f", "probe/tracked.py"], check=True)
+        self.assert_blocked(self.edit(tracked, MARKER_LINE, tool="Write"))
+
     def test_symlink_from_outside_a_repo_into_a_repo_file_is_checked(self):
         target = self.source("repo/probe/check.py", MARKER_LINE + "\n")
         link = pathlib.Path(self.scratch_source("keep.txt", "x\n")).parent / "link.py"

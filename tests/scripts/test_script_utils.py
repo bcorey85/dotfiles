@@ -816,6 +816,35 @@ class InsideGitWorkTreeTest(unittest.TestCase):
             self.assertFalse(script_utils.inside_git_work_tree(str(hook)))
 
 
+class IsGitIgnoredTest(unittest.TestCase):
+    def folder(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return pathlib.Path(tmp.name)
+
+    def test_an_ignored_path_is_ignored_even_before_it_exists_and_a_tracked_one_is_not(self):
+        repo = self.folder()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / ".gitignore").write_text("probe/\n")
+        (repo / "probe").mkdir()
+        (repo / "probe" / "tracked.py").write_text("x\n")
+        subprocess.run(["git", "-C", str(repo), "add", "-f", "probe/tracked.py"], check=True)
+
+        self.assertTrue(script_utils.is_git_ignored(str(repo / "probe" / "new" / "a.py")))
+        self.assertFalse(script_utils.is_git_ignored(str(repo / "probe" / "tracked.py")))
+        self.assertFalse(script_utils.is_git_ignored(str(repo / "other.py")))
+
+    def test_a_path_outside_a_repo_or_with_git_missing_is_not_ignored(self):
+        repo = self.folder()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / ".gitignore").write_text("probe/\n")
+        elsewhere = self.folder()
+
+        self.assertFalse(script_utils.is_git_ignored(str(elsewhere / "a.py")))
+        with unittest.mock.patch.dict(os.environ, {"PATH": str(self.folder())}):
+            self.assertFalse(script_utils.is_git_ignored(str(repo / "probe" / "a.py")))
+
+
 class LeadingEnvAssignmentsTest(unittest.TestCase):
     def test_a_line_gives_the_assignments_it_starts_with_as_written(self):
         self.assertEqual(["A=1", "B=/x/y.py"], script_utils.leading_env_assignments(["A=1 B=/x/y.py cargo test"]))

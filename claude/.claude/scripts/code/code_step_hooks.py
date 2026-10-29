@@ -1,8 +1,8 @@
 """code_step_hooks.py: the hook commands of code_step.py. The hooks write the run's event log and deny or block the
 fork's calls; none writes state.json.
 
-Imports run one way: code_step_core, code_step_boundary, code_step_hooks, code_step_gates, code_step_start,
-code_step_report, code_step_review, code_step."""
+Imports run one way: code_step_core, code_step_verification, code_step_boundary, code_step_closing, code_step_hooks,
+code_step_gates, code_step_start, code_step_report, code_step_review, code_step."""
 import collections
 import datetime
 import json
@@ -13,7 +13,6 @@ import time
 
 import plan_format
 import script_utils
-from code_step_boundary import verification_format_failure
 from code_step_core import (
     BASH_TIMEOUT_MS,
     CODER,
@@ -39,8 +38,10 @@ from code_step_core import (
     say_file_in,
     session_repo_dirs,
     state_dir,
+    stop_kind,
     timed_command,
 )
+from code_step_verification import verification_format_failure
 
 HookCall = collections.namedtuple("HookCall", "event repo state run_id session_id tool_input")
 
@@ -268,7 +269,7 @@ def command_launch_hook():
         if call is None:
             return
 
-        if call.state.get("stage") != "stopped" or call.state.get("stopReason") != "verification":
+        if stop_kind(call.state) != "verification":
             return
 
         script_utils.pre_tool_use_deny(
@@ -276,8 +277,9 @@ def command_launch_hook():
             "an item could not be run. A resume cannot fix that: the /code fork has no Edit tool and "
             "dispatches no coder for this stop. Fix the cause yourself. Dispatch the fix (a coder or /debug "
             "for a failing command, at most 3 attempts), or edit the plan for an item that could not be run, "
-            "then invoke Skill code with `verify`. On the user's word only, `tick <phase>` instead marks the "
-            "phase done; then resume starts the next phase.")
+            "then invoke Skill code with `verify`. On the user's word only, `tick <phase>` marks the "
+            "phase done once the phase's verification commands pass (an item that could not be run is left to the "
+            "user's word); then resume starts the next phase.")
     except Exception as error:
         print(f"code-step launch-hook: {error}", file=sys.stderr)
 
@@ -380,9 +382,13 @@ def command_plan_hook():
 
 
 def plan_write_failure(plan, plan_lines, plan_name, repo_dir):
-    # The first message that stops a plan write: Phase Status, then Manual Verification, then Automated Verification.
+    # The first message the plan hook prints: Phase Status, then Manual Verification, then Automated Verification.
+    if plan["failures"] and all(failure["kind"] in plan_format.MID_EDIT_KINDS for failure in plan["failures"]):
+        return plan_format.plan_mid_edit_message(plan, plan_name)
+
     if plan["failures"]:
         return plan_format.plan_failure_message(plan, plan_name)
+
     manual_failure = plan_format.manual_format_failure(plan_lines, plan_name)
     if manual_failure:
         return manual_failure

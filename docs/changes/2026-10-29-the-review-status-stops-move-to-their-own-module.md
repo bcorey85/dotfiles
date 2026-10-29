@@ -18,9 +18,9 @@ unmeasured: ""
 
 `code/code_step_review_stops.py` holds `stop_on_review_status` and its helpers: `is_capped_review`,
 `left_findings_open`, `review_stop_next_step`, `BLOCKER_STOP_TEXT`, `blocker_stop_next_step` and `ask_lines`. The stop
-branches' bodies are unchanged. The plan-impact branch moved to its caller, `command_after_review`, ahead of the
-`stop_on_review_status` call, because it opens the plan-impact modal that `code_step_review.py` defines. It still runs
-first, as before. `code_step_review.py` drops from 974 to 846 lines, so the next stop reason can land under the
+branches' bodies moved unchanged, except that the stops write through `set_stop`. The plan-impact branch moved to its
+caller, `command_after_review`, ahead of the `stop_on_review_status` call, because it opens the plan-impact modal that
+`code_step_review.py` defines. It still runs first, as before. `code_step_review.py` drops from 980 to 854 lines, so the next stop reason can land under the
 1000-line rule.
 
 ## Evidence

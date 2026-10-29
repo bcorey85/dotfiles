@@ -44,6 +44,7 @@ import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
+import code_step_verification  # noqa: E402
 import coder_gate  # noqa: E402
 import criteria_verdict  # noqa: E402
 import plan_format  # noqa: E402
@@ -222,6 +223,14 @@ class CodeStepTest(unittest.TestCase):
                         CODE_STEP_REVIEW_LOOP="agent",
                         HANDBACK_STORE_DIR=str(self.tmp / "handback-store"),
                         PYTHONPATH=str(HANDBACK_SCRIPT.parent))
+        # `tick` runs the whole-suite commands of a phase. The sample plan names `npx vitest run`, and the real npx
+        # would fetch a package: a stand-in that passes keeps these tests offline.
+        passing_npx_folder = self.tmp / "passing-npx"
+        passing_npx_folder.mkdir()
+        passing_npx = passing_npx_folder / "npx"
+        passing_npx.write_text("#!/usr/bin/env bash\nexit 0\n")
+        passing_npx.chmod(0o755)
+        self.env["PATH"] = f"{passing_npx_folder}{os.pathsep}{self.env['PATH']}"
         self.env.pop("CODE_STEP_IMPACT_DECISION", None)
         self.env.pop("CODE_STEP_ASKS_OUTCOME", None)
         self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
@@ -912,9 +921,9 @@ class CodeStepTest(unittest.TestCase):
     def test_a_verification_item_may_start_with_an_environment_setting(self):
         item = "- [ ] **Tests**: the streams pass - `CARGO_BUILD_JOBS=4 cargo test --test side_streams`"
 
-        command = code_step_boundary.verification_command(item)
+        command = code_step_verification.verification_command(item)
         self.assertEqual("CARGO_BUILD_JOBS=4 cargo test --test side_streams", command)
-        self.assertIsNone(code_step_boundary.verification_item_problem(item, self.repo))
+        self.assertIsNone(code_step_verification.verification_item_problem(item, self.repo))
 
     def test_gate_runs_no_cargo_command_when_the_phase_names_no_rust_file(self):
         (self.repo / "crate").mkdir()
@@ -1538,6 +1547,16 @@ class CodeStepTest(unittest.TestCase):
     def test_tick_stops_while_the_plan_edit_coder_is_out(self):
         self.check_a_verb_stops_while_the_plan_edit_coder_is_out(["tick", "1"])
 
+    def test_tick_after_an_abort_is_not_held_by_the_archived_plan_edit_guard(self):
+        self.open_plan_edit_with_a_late_criteria_write()
+        self.step("abort")
+
+        out = self.step("tick", "1")
+
+        self.assertIn("Phase 1 is marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+        self.assertNotIn("has not reported yet", out)
+
     def test_start_stops_while_the_plan_edit_coder_is_out(self):
         self.check_a_verb_stops_while_the_plan_edit_coder_is_out(["start", "--restart"])
 
@@ -1791,7 +1810,7 @@ class CodeStepTest(unittest.TestCase):
         bad_line = self.break_manual_section()
         out = self.step("resume")
         self.assertIn("ACTION: stop", out)
-        self.assertEqual("plan-format", self.state()["stopReason"])
+        self.assertEqual("plan-format", self.state()["stop"]["kind"])
         self.assertIn(f"{self.plan}:{bad_line}:", out)
         self.assertIn("code_step.py verify", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
@@ -2070,13 +2089,128 @@ class CodeStepTest(unittest.TestCase):
         self.hook("coder", "BEHAVIOR: tests only, schema unchanged")
         self.step("resume")
         said = self.said()
-        self.assertIn("Implemented: orders exist\n", said)
-        self.assertIn("Ask-fix: tests only, schema unchanged", said)
+        self.assertIn("Ask-fix coder (current report): tests only, schema unchanged\n", said)
+        self.assertIn("Phase coder's behavior (earlier): orders exist\n", said)
         self.assertNotIn("orders exist; tests only", said)
         self.assertEqual(["orders exist"], self.state()["behavior"])
         self.hook("review-loop", self.LOOP_OK)
         self.step("resume")
         self.assertNotIn("tests only", self.said().split("Behavior delta")[-1])
+
+    def asks_round(self, report, source):
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("resume")
+        self.step("asks-done", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text(source)
+        self.hook("coder", report)
+        self.step("resume")
+
+    def test_the_summary_after_two_asks_rounds_leads_with_the_current_asks_coder(self):
+        self.coder_round()
+        self.asks_round("BEHAVIOR: first ask fix\nWHY: backend/src/orders.ts 1-2 — first round note",
+                        "export const o = 2\n")
+        self.asks_round("BEHAVIOR: second ask fix\nWHY: backend/src/orders.ts 4-5 — second round note",
+                        "export const o = 3\n")
+
+        said = self.said()
+
+        summary = said.split("Auto-dispatching review")[-2].split("\n\n")[-1]
+        self.assertTrue(summary.startswith("Ask-fix coder (current report): second ask fix\n"), summary)
+        self.assertIn("Earlier ask-fix round 1: first ask fix\n", summary)
+        self.assertIn("Phase coder's behavior (earlier): orders exist\n", summary)
+        self.assertEqual(1, said.count("Ask-fix coder (current report): "))
+        self.assertIn("second round note", summary)
+        for replaced_note in ("order matters", "first round note"):
+            self.assertNotIn(replaced_note, summary)
+        self.assertEqual([["first ask fix"], ["second ask fix"]], self.state()["askRounds"])
+        self.assertEqual(["orders exist"], self.state()["behavior"])
+
+    def test_the_summary_keeps_the_phase_note_of_a_file_the_asks_coder_did_not_change(self):
+        report = ("BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\n"
+                  "WHY: backend/src/other.ts 1-2 — other matters\nREVIEW: recommended")
+        self.begin_coder()
+        (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
+        self.hook("coder", report)
+        self.step("resume")
+
+        self.asks_round("BEHAVIOR: ask fix\nWHY: backend/src/orders.ts 1-2 — ask note", "export const o = 2\n")
+
+        said = self.said()
+        self.assertIn("ask note", said)
+        self.assertIn("other matters", said)
+        self.assertNotIn("order matters", said)
+
+    def test_without_an_asks_snapshot_the_summary_replaces_only_the_notes_of_files_the_asks_coder_noted(self):
+        report = ("BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\n"
+                  "WHY: backend/src/other.ts 1-2 — other matters\nREVIEW: recommended")
+        self.begin_coder()
+        (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
+        self.hook("coder", report)
+        self.step("resume")
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("resume")
+        self.step("asks-done", "accepted")
+        snapshot = {part: value for part, value in self.state()["snapshot"].items() if part != "asks"}
+        self.set_state(snapshot=snapshot)
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: ask fix\nWHY: backend/src/orders.ts 1-2 — ask note")
+
+        self.step("resume")
+
+        said = self.said()
+        self.assertIn("ask note", said)
+        self.assertIn("other matters", said)
+        self.assertNotIn("order matters", said)
+
+    def test_a_second_asks_round_that_stopped_on_no_change_and_is_resumed_leads_the_summary_with_its_report(self):
+        self.coder_round()
+        self.asks_round("BEHAVIOR: first ask fix\nWHY: backend/src/orders.ts 1-2 — first round note",
+                        "export const o = 2\n")
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("resume")
+        self.step("asks-done", "accepted")
+        self.hook("coder", "BEHAVIOR: none\nstill blocked")
+        out = self.step("resume")
+        self.assertIn("ACTION: stop", out)
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 3\n")
+        self.hook("coder", "BEHAVIOR: second ask fix\nWHY: backend/src/orders.ts 4-5 — second round note")
+
+        self.step("resume")
+
+        said = self.said()
+        summary = said.split("Auto-dispatching review")[-2].split("\n\n")[-1]
+        self.assertTrue(summary.startswith("Ask-fix coder (current report): second ask fix\n"), summary)
+        self.assertIn("Earlier ask-fix round 1: first ask fix\n", summary)
+        self.assertEqual(["orders exist"], self.state()["behavior"])
+
+    def test_the_summary_keeps_the_phase_note_of_an_untouched_file_when_the_review_left_findings_open(self):
+        report = ("BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\n"
+                  "WHY: backend/src/other.ts 1-2 — other matters\nREVIEW: recommended")
+        self.begin_coder()
+        (self.repo / "backend/src/other.ts").write_text("export const x = 1\n")
+        self.hook("coder", report)
+        self.step("resume")
+        self.hook("review-loop", self.ASK_WITHOUT_FINDING_ID)
+        self.step("resume")
+        self.step("asks-done", "accepted")
+        self.set_state(reviewStatus="cap-reached")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: ask fix\nWHY: backend/src/orders.ts 1-2 — ask note")
+
+        self.step("resume")
+
+        said = self.said()
+        self.assertIn("ask note", said)
+        self.assertIn("other matters", said)
+        self.assertNotIn("order matters", said)
+
+    def test_an_old_flat_ask_fix_behavior_state_reads_as_one_earlier_round(self):
+        old_state = {"stage": "review", "askFixBehavior": ["one", "two"]}
+
+        migrated = code_step_core.migrate_old_state(old_state)
+
+        self.assertEqual([["one", "two"]], migrated["askRounds"])
+        self.assertNotIn("askFixBehavior", migrated)
 
     def test_rejected_asks_finish_the_phase_without_a_coder(self):
         self.coder_round()
@@ -2477,6 +2611,51 @@ class CodeStepTest(unittest.TestCase):
         event["tool_input"]["file_path"] = str(self.repo / "backend/src/orders.ts")
         self.assertEqual(0, run(self.repo, self.env, "plan-hook", stdin=json.dumps(event)).returncode)
 
+    def plan_hook_stderr_for(self, text):
+        self.start_phase_one()
+        (self.repo / self.plan).write_text(text)
+        event = {"cwd": str(self.repo), "tool_input": {"file_path": str(self.repo / self.plan)}}
+        result = run(self.repo, self.env, "plan-hook", stdin=json.dumps(event))
+        self.assertEqual(2, result.returncode)
+        return result.stderr
+
+    def test_plan_hook_on_a_duplicate_phase_id_asks_for_a_re_check_after_the_last_edit_and_no_stop(self):
+        stderr = self.plan_hook_stderr_for(self.plan_text().replace("- [ ] Phase 3:", "- [ ] Phase 2:"))
+        self.assertIn("duplicate-id", stderr)
+        self.assertIn("mid-edit", stderr)
+        self.assertIn("re-check after the last Edit", stderr)
+        self.assertNotIn("Report each line to the user and stop", stderr)
+
+    def test_plan_hook_on_a_section_without_a_status_entry_asks_for_a_re_check(self):
+        text = self.plan_text().replace(
+            "## Testing Strategy", "## Phase 5: Extra\n\nNo status entry.\n\n## Testing Strategy"
+        )
+        stderr = self.plan_hook_stderr_for(text)
+        self.assertIn("section-without-status", stderr)
+        self.assertNotIn("duplicate-id", stderr)
+        self.assertNotIn("missing-section", stderr)
+        self.assertIn("mid-edit", stderr)
+        self.assertNotIn("Report each line to the user and stop", stderr)
+
+    def test_plan_hook_on_a_renamed_phase_section_heading_asks_for_a_re_check(self):
+        stderr = self.plan_hook_stderr_for(self.plan_text().replace("## Phase 3:", "## Phase 2:"))
+        self.assertIn("mid-edit", stderr)
+        self.assertIn("re-check after the last Edit", stderr)
+
+    def test_plan_hook_on_sections_one_three_four_asks_for_a_re_check(self):
+        stderr = self.plan_hook_stderr_for(self.plan_text().replace("## Phase 2: Totals", "## Notes"))
+        self.assertIn("missing-section", stderr)
+        self.assertIn("mid-edit", stderr)
+        self.assertNotIn("Report each line to the user and stop", stderr)
+
+    def test_plan_hook_on_a_duplicate_id_with_an_unparsed_line_keeps_the_stop_message(self):
+        text = self.plan_text().replace(
+            "- [ ] Phase 3: Audit trail (risk: high)\n", "- [ ] Phase 2: Audit trail (risk: high)\n- [ ] Step five\n")
+        stderr = self.plan_hook_stderr_for(text)
+        self.assertIn("unparsed-line", stderr)
+        self.assertIn("Report each line to the user and stop", stderr)
+        self.assertNotIn("mid-edit", stderr)
+
     def test_plan_hook_during_a_hook_stage_exits_2_and_names_the_bad_manual_verification_line(self):
         self.start_phase_one()
         ok_line = "- [ ] **Manual-verified** (agent-verified): hit /orders"
@@ -2565,7 +2744,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("invoke Skill code with `review-again`", out)
         self.assertNotIn("python3", out.split("invoke Skill code with `review-again`")[0].splitlines()[-1])
         self.assertEqual("stopped", self.state()["stage"])
-        self.assertEqual("invalid-packet", self.state()["stopReason"])
+        self.assertEqual("invalid-packet", self.state()["stop"]["kind"])
 
     def test_review_again_after_an_unreadable_packet_dispatches_the_review_loop_on_the_same_diff(self):
         self.leave_unreadable_packet()
@@ -2586,7 +2765,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(self.SKIP_LINE, out)
         self.hand_back_an_unreadable_packet(agent_id="a2")
         self.assertIn("review-again", self.step("resume"))
-        self.assertEqual("invalid-packet", self.state()["stopReason"])
+        self.assertEqual("invalid-packet", self.state()["stop"]["kind"])
         again = self.step("review-again")
         self.assertIn("AGENT: review-loop", again)
         self.assertIn(self.SKIP_LINE, again)
@@ -2605,7 +2784,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("critical blocker", out)
         self.assertIn("Prompt is too long", out)
         self.assertIn("invoke Skill code with `review-again`", out)
-        self.assertEqual("tool-fault", self.state()["stopReason"])
+        self.assertEqual("tool-fault", self.state()["stop"]["kind"])
 
     def test_a_tool_fault_with_a_reviewer_question_stops_as_a_tool_fault_without_carrying_a_blocker(self):
         self.coder_round()
@@ -2616,7 +2795,7 @@ class CodeStepTest(unittest.TestCase):
         self.step("resume")
 
         state = self.state()
-        self.assertEqual("tool-fault", state["stopReason"])
+        self.assertEqual("tool-fault", state["stop"]["kind"])
         self.assertEqual("stopped", state["stage"])
         self.assertNotIn("blockerCarried", state)
 
@@ -2651,6 +2830,20 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertIn("- [ ] Phase 4:", self.plan_text())
         self.assertEqual("stopped", self.state()["stage"])
+
+    def test_skill_done_fail_after_option_stops_without_marking(self):
+        self.start_closing_phase_with_criteria()
+        out = self.step("skill-done", "--evidence", "x", "fail")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("- [ ] Phase 4:", self.plan_text())
+        self.assertEqual("stopped", self.state()["stage"])
+
+    def test_skill_done_rejects_a_verdict_that_is_not_pass_or_fail(self):
+        self.start_closing_phase_with_criteria()
+        out = self.step("skill-done", "maybe")
+        self.assertIn("skill-done takes pass or fail.", out)
+        self.assertIn("- [ ] Phase 4:", self.plan_text())
+        self.assertNotEqual("done", self.state()["stage"])
 
     CLOSING_CRITERIA = (
         "\nSweep.\n\n### Success Criteria\n\n#### Automated Verification\n\n"
@@ -3199,9 +3392,9 @@ class CodeStepTest(unittest.TestCase):
 
     def test_other_test_scripts_are_run_not_skipped(self):
         for command in ("npm run test:e2e", "npm run lint:fix", "npx vitest run src/a.test.ts"):
-            self.assertIsNone(code_step_boundary.WHOLE_SUITE.match(command), command)
+            self.assertIsNone(code_step_verification.WHOLE_SUITE.match(command), command)
         for command in ("cd backend && npm test", "npm run lint", "npx vitest run", "pytest", "ruff check"):
-            self.assertIsNotNone(code_step_boundary.WHOLE_SUITE.match(command), command)
+            self.assertIsNotNone(code_step_verification.WHOLE_SUITE.match(command), command)
         self.env["CODE_STEP_VERIFY_TIMEOUT"] = "5"
         self.set_verification("- [ ] **E2E**: `python3 -c 'raise SystemExit(3)'`")
         self.coder_round()
@@ -3297,7 +3490,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_cd_then_negated_rg_is_a_ban(self):
         line = "- [ ] **Check**: `cd backend && ! rg -n x src/orders.ts`"
-        command = code_step_boundary.verification_command(line)
+        command = code_step_verification.verification_command(line)
         self.assertEqual(command, "cd backend && rg -n x src/orders.ts")
         self.assertTrue(criteria_verdict.is_search_ban(command, line + " exists"))
 
@@ -3486,7 +3679,7 @@ class CodeStepTest(unittest.TestCase):
         self.hook("coder", self.ALREADY_DONE_REPORT)
         out = self.step("resume")
         self.assertIn("Automated Verification failed", out)
-        self.assertEqual("verification", self.state()["stopReason"])
+        self.assertEqual("verification", self.state()["stop"]["kind"])
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
     def assert_unchanged_asks_coder_stops(self, report):
@@ -4179,6 +4372,146 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("already marked done", self.step("tick", "1"))
         self.assertIn("usage: code_step.py tick", self.step("tick"))
 
+    def test_tick_on_a_stopped_run_marks_the_phase_done_once_its_verification_passes(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+
+        out = self.step("tick", "1")
+
+        self.assertIn("Phase 1 is marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+        self.assertIn("outside the coder and review steps of /code; its 2 Automated Verification command(s) "
+                      "passed at `tick`.", self.plan_text())
+        self.assertEqual("done", self.state()["stage"])
+
+    def test_tick_after_abort_refuses_once_a_planless_run_was_aborted_after_it(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        self.step("start", "--task", "add a flag")
+        self.step("abort")
+
+        out = self.step("tick", "1")
+
+        self.assertIn("no saved plan state", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_tick_after_abort_refuses_once_another_run_started_and_its_state_is_gone(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        self.step("start", "--task", "add a flag")
+        (self.repo / ".git" / "code-step" / "state.json").unlink()
+
+        out = self.step("tick", "1")
+
+        self.assertIn("no saved plan state", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def put_failing_npx_first_on_path(self, printed_lines):
+        # A stand-in `npx` that prints `printed_lines` and exits 1, ahead of the passing one from setUp.
+        failing_npx_folder = self.tmp / "failing-npx"
+        failing_npx_folder.mkdir()
+        failing_npx = failing_npx_folder / "npx"
+        printing = "".join(f"echo '{line}'\n" for line in printed_lines)
+        failing_npx.write_text(f"#!/usr/bin/env bash\n{printing}exit 1\n")
+        failing_npx.chmod(0o755)
+        self.env["PATH"] = f"{failing_npx_folder}{os.pathsep}{self.env['PATH']}"
+
+    def test_tick_runs_a_whole_suite_command_and_refuses_when_it_fails(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.put_failing_npx_first_on_path(["boom"])
+
+        out = self.step("tick", "1")
+
+        self.assertIn("tick refused", out)
+        self.assertIn("`npx vitest run` exit 1", out)
+        self.assertIn("then run `tick` again", out)
+        self.assertIn("Do not mark the phase done", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+        self.assertNotIn("marked done with `tick`", self.plan_text())
+        self.assertEqual("stopped", self.state()["stage"])
+
+    def test_tick_after_abort_refuses_a_failing_verification_and_leaves_no_state(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        self.put_failing_npx_first_on_path(["boom"])
+
+        out = self.step("tick", "1")
+
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+        self.assertIn("tick refused", out)
+
+    def test_tick_refusal_quotes_the_failing_test_of_the_command(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.put_failing_npx_first_on_path([" FAIL  src/orders.test.ts > totals", "AssertionError: expected 3 to be 4"])
+
+        out = self.step("tick", "1")
+
+        self.assertIn("src/orders.test.ts > totals", out)
+        self.assertIn("AssertionError: expected 3 to be 4", out)
+        self.assertNotIn("(no output)", out)
+
+    def test_tick_refusal_says_no_output_when_the_failing_command_printed_nothing(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.put_failing_npx_first_on_path([])
+
+        out = self.step("tick", "1")
+
+        self.assertIn("`npx vitest run` exit 1: (no output)", out)
+
+    def test_tick_records_that_no_verification_command_ran_when_no_item_parses(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        (self.repo / self.plan).write_text(self.plan_text().replace("`npx vitest run`", "see the log"))
+        self.set_verification("- [ ] **Check**: the streams pass, see the log")
+
+        out = self.step("tick", "1")
+
+        self.assertIn("Phase 1 is marked done", out)
+        self.assertIn("outside the coder, review and verification steps of /code; "
+                      "no Automated Verification command ran at `tick`", self.plan_text())
+        self.assertNotIn("passed at `tick`", self.plan_text())
+
+    def test_tick_after_two_aborts_reads_the_newest_aborted_plan(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        state_folder = self.repo / ".git/code-step"
+        (archive,) = state_folder.glob("aborted-*.json")
+        archive.rename(state_folder / "aborted-20260102T000000Z.json")
+        older_plan = "docs/plans/older/plan.md"
+        older_path = self.repo / older_plan
+        older_path.parent.mkdir(parents=True)
+        older_path.write_text("# Older\n\n## Phase Status\n\n- [ ] Phase 2: Something else\n")
+        (state_folder / "aborted-20260101T000000Z.json").write_text(
+            json.dumps({"plan": older_plan, "stage": "stopped"}))
+
+        out = self.step("tick", "1")
+
+        self.assertIn("Phase 1 is marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+        self.assertEqual("# Older\n\n## Phase Status\n\n- [ ] Phase 2: Something else\n", older_path.read_text())
+
+    def test_tick_refuses_when_the_newest_archive_names_no_plan(self):
+        self.start_phase_one()
+        self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        self.step("abort")
+        state_folder = self.repo / ".git/code-step"
+        (archive,) = state_folder.glob("aborted-*.json")
+        archive.rename(state_folder / "aborted-20260101T000000Z.json")
+        (state_folder / "aborted-20260102T000000Z.json").write_text(json.dumps({"stage": "stopped"}))
+
+        out = self.step("tick", "1")
+
+        self.assertIn("no saved plan state", out)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
     def test_the_no_change_stop_names_the_tick_command(self):
         self.start_phase_one()
         self.hook("coder", "BEHAVIOR: none")
@@ -4242,13 +4575,25 @@ class CodeStepTest(unittest.TestCase):
         stop = self.step("resume")
         self.assertIn("invoke Skill code with `review-again`", stop)
         self.assertNotIn("Tell the user", stop)
-        self.assertEqual("false-clean", self.state()["stopReason"])
+        self.assertEqual("false-clean", self.state()["stop"]["kind"])
 
         again = self.step("review-again")
         self.assertIn("AGENT: review-loop", again)
         self.assertEqual("review", self.state()["stage"])
         self.hook("review-loop", self.LOOP_OK, agent_id="a2")
         self.assertIn("ACTION: stop-block-B", self.step("resume"))
+
+    def test_a_false_clean_stop_reached_through_the_asks_path_keeps_its_kind_and_review_again_recovers_it(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        shutil.rmtree(self.tmp / "handback-store")
+
+        self.step("resume")
+
+        self.assertEqual("false-clean", self.state()["stop"]["kind"])
+        again = self.step("review-again")
+        self.assertIn("AGENT: review-loop", again)
+        self.assertEqual("review", self.state()["stage"])
 
     def test_missing_handback_module_stops_the_run_and_writes_no_gate_file(self):
         bare = self.tmp / "bare"
@@ -4282,7 +4627,7 @@ class CodeStepTest(unittest.TestCase):
     def test_a_cargo_verification_item_is_read_as_a_command(self):
         item = "- [ ] **Tests**: the streams pass - `cargo test --test side_streams && cargo clippy -- -D warnings`"
         self.assertEqual("cargo test --test side_streams && cargo clippy -- -D warnings",
-                         code_step_boundary.verification_command(item))
+                         code_step_verification.verification_command(item))
 
     def test_a_phase_whose_verification_items_yield_no_command_is_not_marked_done(self):
         self.coder_round_then_edit_verification("- [ ] **Check**: the streams pass, see the log")
@@ -4534,7 +4879,7 @@ class CodeStepTest(unittest.TestCase):
     def test_an_automated_verification_section_of_only_not_applicable_items_is_empty(self):
         for item in ("- [ ] N/A — docs only", "- [ ] **N/A**: nothing to run", "- [x] none"):
             with self.subTest(item=item):
-                self.assertEqual(([], [], []), code_step_boundary.run_verification_commands(
+                self.assertEqual(([], [], []), code_step_verification.run_verification_commands(
                     self.repo, f"#### Automated Verification:\n\n{item}\n\n#### Manual Verification:\n"))
 
     def test_a_phase_with_only_a_not_applicable_automated_item_is_marked_done(self):
@@ -4546,10 +4891,10 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("done", self.state()["stage"])
 
     def test_a_script_path_or_sh_command_is_read_as_a_verification_command(self):
-        self.assertEqual("./scripts/check.sh --fast", code_step_boundary.verification_command(
+        self.assertEqual("./scripts/check.sh --fast", code_step_verification.verification_command(
             "- [ ] **Check**: passes - `./scripts/check.sh --fast`"))
         self.assertEqual(
-            "sh scripts/check.sh", code_step_boundary.verification_command("- [ ] **Check**: `sh scripts/check.sh`")
+            "sh scripts/check.sh", code_step_verification.verification_command("- [ ] **Check**: `sh scripts/check.sh`")
         )
 
     def test_a_command_with_leading_variable_assignments_runs_with_them_set(self):
@@ -4565,13 +4910,13 @@ class CodeStepTest(unittest.TestCase):
     def test_the_prefixed_command_wins_over_a_later_span_without_a_prefix(self):
         item = "- [ ] **Env**: `PARITY_PATH=/x/y.py cargo test --test watch_parity`, not `cargo test`"
 
-        command = code_step_boundary.verification_command(item)
+        command = code_step_verification.verification_command(item)
         self.assertEqual("PARITY_PATH=/x/y.py cargo test --test watch_parity", command)
 
     def test_a_quoted_assignment_value_with_spaces_is_kept_in_the_command(self):
         item = "- [ ] **Env**: `GREETING=\"a b\" echo hi`"
 
-        self.assertEqual("GREETING=\"a b\" echo hi", code_step_boundary.verification_command(item))
+        self.assertEqual("GREETING=\"a b\" echo hi", code_step_verification.verification_command(item))
 
     def test_a_command_that_hands_a_shell_its_code_is_not_a_verification_command(self):
         for item in ("- [ ] **Check**: `sh -c 'npm test | tee out.log'`",
@@ -4582,15 +4927,15 @@ class CodeStepTest(unittest.TestCase):
                      "- [ ] **Check**: `timeout 60 bash -c 'npm test'`",
                      "- [ ] **Check**: `cd backend && sh -c 'pytest -q'`"):
             with self.subTest(item=item):
-                self.assertIsNone(code_step_boundary.verification_command(item, self.repo))
+                self.assertIsNone(code_step_verification.verification_command(item, self.repo))
                 self.assertIn("hands a shell its code",
-                              code_step_boundary.verification_item_problem(item, self.repo))
+                              code_step_verification.verification_item_problem(item, self.repo))
 
     def test_a_shell_that_runs_a_script_file_is_still_a_verification_command(self):
         for command in ("sh scripts/check.sh", "bash -e scripts/check.sh --fast", "bash -o pipefail scripts/check.sh",
                         "bash -euo pipefail scripts/check.sh", "sh scripts/check.sh -c fast"):
             with self.subTest(command=command):
-                self.assertEqual(command, code_step_boundary.verification_command(f"- [ ] **Check**: `{command}`"))
+                self.assertEqual(command, code_step_verification.verification_command(f"- [ ] **Check**: `{command}`"))
 
     def test_a_plan_whose_check_hands_a_shell_its_code_stops_at_write_time(self):
         self.set_verification("- [ ] **Check**: `bash -c 'npm test | tee out.log'`")
@@ -4607,26 +4952,26 @@ class CodeStepTest(unittest.TestCase):
             "- [ ] **Env**: `PARITY_PATH=/x/y.py nosuchprogram hi`",
         ):
             with self.subTest(item=item):
-                self.assertIsNone(code_step_boundary.verification_command(item))
+                self.assertIsNone(code_step_verification.verification_command(item))
 
     def test_an_assignment_that_expands_a_variable_or_runs_a_command_still_leads_to_the_command(self):
         for command in ("LEDGER_REAL_DOTFILES=$HOME/dotfiles cargo test --test watch_parity",
                         "PATH=/x/bin:$PATH cargo test", 'DATABASE_URL="$TEST_DB" pytest -q',
                         "T=$(find . -name x) cargo test", "A=1 B=$HOME/x make all"):
             with self.subTest(command=command):
-                self.assertTrue(code_step_boundary.COMMAND_START.match(command))
+                self.assertTrue(code_step_verification.COMMAND_START.match(command))
                 item = f"- [ ] **Check**: passes - `{command}`"
-                self.assertEqual(command, code_step_boundary.verification_command(item))
+                self.assertEqual(command, code_step_verification.verification_command(item))
 
     def test_an_assignment_followed_by_a_control_operator_is_not_a_command_start(self):
         for span in ("A=1 && cargo test", "A=1 ; cargo test", "A=1 | cat", "A=1 # note"):
             with self.subTest(span=span):
-                self.assertIsNone(code_step_boundary.COMMAND_START.match(span))
+                self.assertIsNone(code_step_verification.COMMAND_START.match(span))
 
     def test_a_whole_suite_command_with_a_variable_prefix_is_still_skipped(self):
         section = "#### Automated Verification:\n\n- [ ] **All**: `CI=1 npm test`\n\n#### Manual Verification:\n"
 
-        results, skipped, unparsed = code_step_boundary.run_verification_commands(self.repo, section)
+        results, skipped, unparsed = code_step_verification.run_verification_commands(self.repo, section)
 
         self.assertEqual(([], ["CI=1 npm test"], []), (results, skipped, unparsed))
 
@@ -4638,7 +4983,7 @@ class CodeStepTest(unittest.TestCase):
     def test_a_filtered_test_run_that_matches_no_test_fails_the_verification(self):
         command = """python3 -c "print('vitest: no tests found')" -t nomatch"""
 
-        results, _, _ = code_step_boundary.run_verification_commands(self.repo, self.verification_section(command))
+        results, _, _ = code_step_verification.run_verification_commands(self.repo, self.verification_section(command))
 
         (ran_command, code, output), = results
         self.assertEqual(command, ran_command)
@@ -4686,8 +5031,8 @@ class CodeStepTest(unittest.TestCase):
         for label, item_text, source, holds, names_ban_note in cases:
             with self.subTest(label):
                 (self.repo / "backend/src/orders.ts").write_text(source)
-                with unittest.mock.patch.object(code_step_boundary, "log_prohibition_scan"):
-                    results, skipped, unparsed = code_step_boundary.run_verification_commands(
+                with unittest.mock.patch.object(code_step_verification, "log_prohibition_scan"):
+                    results, skipped, unparsed = code_step_verification.run_verification_commands(
                         self.repo, f"#### Automated Verification:\n\n- [ ] {item_text}\n\n"
                                    "#### Manual Verification:\n")
 
@@ -4705,7 +5050,7 @@ class CodeStepTest(unittest.TestCase):
     def test_a_filtered_test_run_that_reports_a_passed_test_stays_green(self):
         command = """python3 -c "print('vitest: 2 passed')" -t match"""
 
-        results, _, _ = code_step_boundary.run_verification_commands(self.repo, self.verification_section(command))
+        results, _, _ = code_step_verification.run_verification_commands(self.repo, self.verification_section(command))
 
         (_, code, _), = results
         self.assertEqual(0, code)
@@ -4795,7 +5140,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: wait", out)
         self.assertNotIn("has not handed back in", out)
-        self.assertIsNotNone(self.state().get("resumeWaitAt"))
+        self.assertIsNotNone(self.state()["stop"].get("waitAt"))
 
     def test_repeated_waits_on_a_resumed_coder_end_in_the_cap_stop(self):
         self.stop_the_coder_on_a_blocked_report()
@@ -4812,24 +5157,22 @@ class CodeStepTest(unittest.TestCase):
         self.send_message("a1")
         self.wait_env(1, "0.2")
         self.step("resume")
-        first_wait_at = self.state()["resumeWaitAt"]
+        first_wait_at = self.state()["stop"]["waitAt"]
         self.step("resume")
-        self.assertEqual(first_wait_at, self.state()["resumeWaitAt"])
+        self.assertEqual(first_wait_at, self.state()["stop"]["waitAt"])
 
     def test_the_hand_back_of_a_resumed_coder_clears_the_saved_first_wait_time(self):
         self.stop_the_coder_on_a_blocked_report()
         self.send_message("a1")
         self.wait_env(1, "0.2")
         self.step("resume")
-        self.assertIsNotNone(self.state().get("resumeWaitAt"))
+        self.assertIsNotNone(self.state()["stop"].get("waitAt"))
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
         self.assertIn("AGENT: review-loop", self.step("resume"))
         state = self.state()
         self.assertEqual("review", state["stage"])
-        self.assertNotIn("resumeWaitAt", state)
-        self.assertNotIn("resumableCoderAt", state)
-        self.assertNotIn("resumableCoderId", state)
+        self.assertNotIn("stop", state)
 
     def test_after_coder_says_the_resumed_coder_has_not_handed_back_when_it_runs_with_no_wait(self):
         self.stop_the_coder_on_a_blocked_report()
@@ -4968,21 +5311,21 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: wait", waiting_out)
         self.assertNotIn("no review pending", waiting_out)
         self.assertEqual("stopped", self.state()["stage"])
-        first_wait_at = self.state()["resumeWaitAt"]
+        first_wait_at = self.state()["stop"]["waitAt"]
         self.assertIn("ACTION: wait", self.step("resume"))
-        self.assertEqual(first_wait_at, self.state()["resumeWaitAt"])
+        self.assertEqual(first_wait_at, self.state()["stop"]["waitAt"])
 
         self.set_state(resumeWaitAt=time.time() - 100)
         cap_stop_out = self.step("resume")
         self.assertIn("ACTION: stop", cap_stop_out)
         self.assertIn("has not handed back in", cap_stop_out)
-        self.assertNotIn("resumeWaitAt", self.state())
+        self.assertNotIn("waitAt", self.state()["stop"])
 
         self.send_message("r1")
         again_out = self.step("resume")
         self.assertIn("ACTION: wait", again_out)
         self.assertNotIn("has not handed back in", again_out)
-        self.assertIn("resumeWaitAt", self.state())
+        self.assertIn("waitAt", self.state()["stop"])
 
         self.hook("review-loop", self.LOOP_OK, agent_id="r1")
         out = self.step("resume")
@@ -4990,8 +5333,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Phase 1 marked done", out)
         state = self.state()
         self.assertNotEqual("stopped", state["stage"])
-        self.assertNotIn("resumeWaitAt", state)
-        self.assertNotIn("resumableReview", state)
+        self.assertNotIn("stop", state)
 
     def test_the_coder_reports_of_an_asks_round_hold_only_the_agents_of_its_newest_dispatch(self):
         self.start_phase_one()
@@ -5308,7 +5650,7 @@ class CodeStepTest(unittest.TestCase):
         self.step("resume")
         self.set_state(resumeWaitAt=time.time() - 100)
         self.assertIn("has not handed back in", self.step("resume"))
-        self.assertNotIn("resumeWaitAt", self.state())
+        self.assertNotIn("waitAt", self.state()["stop"])
         self.send_message("a1")
         out = self.step("resume")
         self.assertIn("ACTION: wait", out)
@@ -5323,7 +5665,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: wait", out)
         self.assertEqual("stopped", self.state()["stage"])
-        self.assertIn("resumableCoderAt", self.state())
+        self.assertEqual("coder-resumable", self.state()["stop"]["kind"])
 
     # ---------- a second no-reviewable-change stop keeps the first one's PLAN-IMPACT ----------
 
@@ -6043,17 +6385,18 @@ class CodeStepTest(unittest.TestCase):
         self.make_repo_script("check-orders")
         text = self.bad_item_plan("- [ ] **Check**: the orders pass - `check-orders --all`")
 
-        self.assertFalse(code_step_boundary.starts_like_a_program_here("check-orders --all", self.repo))
+        self.assertFalse(code_step_verification.starts_like_a_program_here("check-orders --all", self.repo))
         self.assertEqual(1, self.plan_check(text).returncode)
 
     def test_a_line_that_names_a_path_program_and_then_holds_the_real_command_gives_the_real_command(self):
         item = "- [ ] **Check**: with `ls -la` listing the files, `npm run build` exits 0."
 
-        self.assertEqual("npm run build", code_step_boundary.verification_command(item))
+        self.assertEqual("npm run build", code_step_verification.verification_command(item))
 
     def test_a_program_of_the_path_needs_an_argument_to_be_a_fallback_command(self):
-        self.assertIsNone(code_step_boundary.verification_command("- [ ] **Check**: the `ls` program lists them"))
-        self.assertEqual("ls -la", code_step_boundary.verification_command("- [ ] **Check**: lists them - `ls -la`"))
+        self.assertIsNone(code_step_verification.verification_command("- [ ] **Check**: the `ls` program lists them"))
+        listing_command = code_step_verification.verification_command("- [ ] **Check**: lists them - `ls -la`")
+        self.assertEqual("ls -la", listing_command)
 
     def test_a_program_that_never_ends_or_waits_for_input_is_never_a_fallback_command(self):
         spans = ("watch -n 1 date", "top -b", "htop -d 5", "less notes.txt", "more notes.txt", "vi notes.txt",
@@ -6064,23 +6407,24 @@ class CodeStepTest(unittest.TestCase):
         with unittest.mock.patch.object(shutil, "which", return_value="/usr/bin/anything"):
             for span in spans:
                 with self.subTest(span=span):
-                    self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
+                    self.assertFalse(code_step_verification.starts_like_a_program_here(span, self.repo))
 
     def test_tail_without_follow_is_a_fallback_command(self):
         with unittest.mock.patch.object(shutil, "which", return_value="/usr/bin/tail"):
             for span in ("tail -n 5 app.log", "tail app.log", "tail -c 20 app.log"):
                 with self.subTest(span=span):
-                    self.assertTrue(code_step_boundary.starts_like_a_program_here(span, self.repo))
+                    self.assertTrue(code_step_verification.starts_like_a_program_here(span, self.repo))
 
     def test_claude_and_yes_are_never_a_fallback_command_by_name_or_by_a_path_to_them(self):
         for span in ("claude -p hello", "yes please", "FOO=1 claude --version"):
             with self.subTest(span=span):
-                self.assertIsNone(code_step_boundary.verification_command(f"- [ ] **Check**: runs `{span}`"))
+                self.assertIsNone(code_step_verification.verification_command(f"- [ ] **Check**: runs `{span}`"))
 
         for span in ("/usr/bin/yes y", "/home/u/.local/bin/claude -p hi", "FOO=1 /usr/bin/yes y"):
             with self.subTest(span=span):
-                self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
-                self.assertIsNone(code_step_boundary.verification_command(f"- [ ] **Check**: runs `{span}`", self.repo))
+                self.assertFalse(code_step_verification.starts_like_a_program_here(span, self.repo))
+                item = f"- [ ] **Check**: runs `{span}`"
+                self.assertIsNone(code_step_verification.verification_command(item, self.repo))
 
     def test_a_file_outside_the_repo_is_not_a_repo_file_command(self):
         outside = self.repo.parent / "outside-tool"
@@ -6092,14 +6436,14 @@ class CodeStepTest(unittest.TestCase):
 
         for span in (f"../{outside.name} --x", "./link-tool --x"):
             with self.subTest(span=span):
-                self.assertFalse(code_step_boundary.starts_like_a_program_here(span, self.repo))
+                self.assertFalse(code_step_verification.starts_like_a_program_here(span, self.repo))
 
     def test_a_relative_path_is_never_looked_up_from_the_working_directory_as_a_path_program(self):
         with unittest.mock.patch.object(shutil, "which", return_value="/anywhere/tool"):
-            self.assertFalse(code_step_boundary.starts_like_a_program_here("../tool --x", self.repo))
-            self.assertFalse(code_step_boundary.starts_like_a_program_here("sub/tool --x", self.repo))
-            self.assertTrue(code_step_boundary.starts_like_a_program_here("tool --x", self.repo))
-            self.assertTrue(code_step_boundary.starts_like_a_program_here("/opt/bin/tool --x", self.repo))
+            self.assertFalse(code_step_verification.starts_like_a_program_here("../tool --x", self.repo))
+            self.assertFalse(code_step_verification.starts_like_a_program_here("sub/tool --x", self.repo))
+            self.assertTrue(code_step_verification.starts_like_a_program_here("tool --x", self.repo))
+            self.assertTrue(code_step_verification.starts_like_a_program_here("/opt/bin/tool --x", self.repo))
 
     def test_a_file_inside_the_repo_by_a_path_that_goes_through_a_folder_is_a_repo_file_command(self):
         (self.repo / "bin").mkdir()
@@ -6109,7 +6453,7 @@ class CodeStepTest(unittest.TestCase):
 
         for span in ("bin/tool --x", "./bin/tool --x", "bin/../bin/tool --x", f"{tool} --x"):
             with self.subTest(span=span):
-                self.assertTrue(code_step_boundary.starts_like_a_program_here(span, self.repo))
+                self.assertTrue(code_step_verification.starts_like_a_program_here(span, self.repo))
 
     def test_the_write_time_check_applies_the_argument_and_program_rules_of_the_fallback(self):
         for item in ("- [ ] **Check**: the `ls` program lists them", "- [ ] **Check**: asks `claude -p hello`",
@@ -6120,15 +6464,15 @@ class CodeStepTest(unittest.TestCase):
     def test_a_repo_file_is_a_command_only_when_it_is_executable(self):
         check_file = self.make_repo_script("scripts/check-orders", 0o644)
         item = "- [ ] **Check**: the orders pass - `scripts/check-orders --all`"
-        not_executable = code_step_boundary.verification_command(item, self.repo)
+        not_executable = code_step_verification.verification_command(item, self.repo)
         check_file.chmod(0o755)
-        executable = code_step_boundary.verification_command(item, self.repo)
+        executable = code_step_verification.verification_command(item, self.repo)
 
         self.assertEqual((None, "scripts/check-orders --all"), (not_executable, executable))
 
     def test_the_item_problem_names_the_command_word_after_the_variable_assignments(self):
         item = "- [ ] **Check**: the orders pass - `FOO=1 RUN x`"
-        problem = code_step_boundary.verification_item_problem(item, self.repo)
+        problem = code_step_verification.verification_item_problem(item, self.repo)
 
         self.assertIn("it starts with `RUN`", problem)
         self.assertNotIn("FOO=1", problem)
@@ -6141,20 +6485,20 @@ class CodeStepTest(unittest.TestCase):
                      "- [x] **Human-only:** open it", "- [ ] **Test-verified**: HUMAN-ONLY, a person looks"):
             with self.subTest(item=item):
                 self.assertIsNotNone(code_step.plan_format.deferred_verification_tag(item))
-                self.assertIsNone(code_step_boundary.verification_item_problem(item, self.repo))
+                self.assertIsNone(code_step_verification.verification_item_problem(item, self.repo))
                 self.assertEqual(0, self.plan_check(self.bad_item_plan(item)).returncode)
 
     def test_an_item_that_only_mentions_ci_verified_after_other_words_is_not_tagged(self):
         item = "- [ ] **Check**: the orders pass, not CI-verified yet"
 
         self.assertIsNone(code_step.plan_format.deferred_verification_tag(item))
-        self.assertIsNotNone(code_step_boundary.verification_item_problem(item, self.repo))
+        self.assertIsNotNone(code_step_verification.verification_item_problem(item, self.repo))
 
     def test_an_item_tagged_for_ci_or_a_person_is_never_run_even_with_a_command_in_it(self):
         section = ("#### Automated Verification:\n\n- [ ] **CI-verified**: the pipeline runs `touch ran-by-code-step`\n"
                    "- [ ] Human-only: look at the page\n\n#### Manual Verification:\n")
 
-        self.assertEqual(([], [], []), code_step_boundary.run_verification_commands(self.repo, section))
+        self.assertEqual(([], [], []), code_step_verification.run_verification_commands(self.repo, section))
         self.assertFalse((self.repo / "ran-by-code-step").exists())
 
     def test_a_not_applicable_item_is_never_run_even_with_a_command_in_it(self):
@@ -6163,7 +6507,7 @@ class CodeStepTest(unittest.TestCase):
             "Verification:\n"
         )
 
-        self.assertEqual(([], [], []), code_step_boundary.run_verification_commands(self.repo, section))
+        self.assertEqual(([], [], []), code_step_verification.run_verification_commands(self.repo, section))
         self.assertFalse((self.repo / "ran-na-item").exists())
 
     def test_deferred_items_are_listed_with_their_tag_in_file_order(self):
@@ -6172,7 +6516,7 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual([("CI-verified", "**CI-verified**: the pipeline runs it"),
                           ("human-only", "Human-only: look at the page")],
-                         code_step_boundary.deferred_verification_items(section))
+                         code_step_verification.deferred_verification_items(section))
 
     def test_start_accepts_a_plan_with_an_item_tagged_ci_verified(self):
         (self.repo / self.plan).write_text(self.bad_item_plan("- [ ] **CI-verified**: the pipeline runs it"))
@@ -6207,7 +6551,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("CI-verified**: push and watch the pipeline - ", out)
 
     def test_the_item_shape_text_names_the_three_shapes(self):
-        shape = code_step_boundary.VERIFICATION_ITEM_SHAPE
+        shape = code_step_verification.VERIFICATION_ITEM_SHAPE
 
         for text in ("one of three shapes", "N/A", "CI-verified", "Human-only", "executable file in the repo",
                      "'- [ ] **Name**: what it checks - `npm test`'"):

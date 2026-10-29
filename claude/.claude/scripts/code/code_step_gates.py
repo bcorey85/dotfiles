@@ -11,7 +11,7 @@ import check_scope
 import plan_format
 import script_utils
 import test_run_output
-from code_step_boundary import verification_command
+from code_step_verification import verification_command
 from linked_installs import VENV_FOLDERS
 from shell_command import resolved_command_words
 from source_paths import SCRIPT_SUFFIXES, is_runnable_test_file

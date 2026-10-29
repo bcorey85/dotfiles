@@ -274,8 +274,12 @@ def start_run(cwd):
     return script_utils.sortable_unique_id()
 
 
+def run_file_path(cwd, run_id, name):
+    return runs_dir(cwd) / run_id / name
+
+
 def run_events_path(cwd, run_id):
-    return runs_dir(cwd) / run_id / "events.jsonl"
+    return run_file_path(cwd, run_id, "events.jsonl")
 
 
 def log_event(cwd, run_id, event, session_id, **fields):
@@ -320,7 +324,7 @@ def record_dispatch(repo_dir, state, verb, agent_type, model, prompt):
     dispatch_count = sum(1 for event in read_events(repo_dir, run_id) if event.get("event") == "dispatch")
     dispatch_id = f"d{dispatch_count + 1}"
     marked_prompt = f"{own_path(prompt).rstrip()}\n\n{DISPATCH_MARKER} {run_id}/{dispatch_id}"
-    prompt_file = runs_dir(repo_dir) / run_id / f"prompt-{dispatch_id}.txt"
+    prompt_file = run_file_path(repo_dir, run_id, f"prompt-{dispatch_id}.txt")
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(marked_prompt + "\n")
     log_event(repo_dir, run_id, "dispatch", session_pin(), id=dispatch_id, agent_type=agent_type, stage=state["stage"],

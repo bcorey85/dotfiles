@@ -2990,7 +2990,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertTrue(out.startswith("Refused: "), out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
-    def test_a_failed_verification_keeps_the_failing_test_names_above_the_tail(self):
+    def test_a_failed_verification_quotes_the_failing_test_name_with_its_error_text(self):
         failing_run = "print('FAIL: test_totals (orders.tests.OrderTest)'); print('x' * 1000); raise SystemExit(1)"
         self.set_verification(f'- [ ] **Tests**: orders pass - `python3 -c "{failing_run}"`')
         self.coder_round()
@@ -3000,6 +3000,8 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertIn("Automated Verification failed", out)
         self.assertIn("Failing tests:\nFAIL: test_totals (orders.tests.OrderTest)", out)
+        self.assertIn("x" * 300, out)
+        self.assertNotIn("x" * 301, out)
 
     def test_start_does_not_inherit_the_fast_modifier(self):
         self.assertIn("MODEL: haiku", self.start_phase_one("+fast"))
@@ -3192,6 +3194,80 @@ class CodeStepTest(unittest.TestCase):
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("Automated Verification failed", self.step("after-review"))
         self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_failed_verification_saves_full_output_and_quotes_the_error(self):
+        command = ("python3 -c 'print(\"FAILED t.py::test_x - boom\"); print(\"E   assert 3 == 4\"); "
+                   "print(\"x\" * 600); raise SystemExit(1)'")
+        self.set_verification(f"- [ ] **Unit**: `{command}`")
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("after-review")
+        output_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "verification-output.txt"
+        self.assertTrue(output_file.is_file())
+        saved = output_file.read_text()
+        self.assertTrue(saved.startswith("$ python3 -c"), saved[:40])
+        self.assertIn("exit 1", saved)
+        self.assertIn("FAILED t.py::test_x - boom\nE   assert 3 == 4\n" + "x" * 600, saved)
+        self.assertIn(str(output_file), out)
+        self.assertIn("FAILED t.py::test_x - boom\nE   assert 3 == 4", out)
+        self.assertIn("(full output in the output file)", out)
+
+    def test_two_failed_verification_commands_are_both_saved_in_order(self):
+        first = "python3 -c 'print(\"FIRST-MARKER\"); raise SystemExit(1)'"
+        second = "python3 -c 'print(\"SECOND-MARKER\"); raise SystemExit(2)'"
+        self.set_verification(f"- [ ] **Unit**: `{first}`\n- [ ] **Lint**: `{second}`")
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+        output_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "verification-output.txt"
+
+        saved = output_file.read_text()
+
+        self.assertIn(f"$ {first}\nexit 1\nFIRST-MARKER", saved)
+        self.assertIn(f"$ {second}\nexit 2\nSECOND-MARKER", saved)
+        self.assertLess(saved.index("FIRST-MARKER"), saved.index("SECOND-MARKER"))
+
+    def test_a_failed_verification_with_no_run_id_in_the_state_gets_one_and_saves_its_output(self):
+        self.set_verification("- [ ] **Unit**: `python3 -c 'raise SystemExit(1)'`")
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("after-review")
+        state_path = self.repo / ".git/code-step/state.json"
+        legacy_state = json.loads(state_path.read_text())
+        legacy_state["runId"] = None
+        state_path.write_text(json.dumps(legacy_state))
+
+        out = self.step("verify")
+
+        run_id = self.state()["runId"]
+        self.assertIn("Automated Verification failed", out)
+        self.assertTrue(isinstance(run_id, str) and run_id)
+        self.assertTrue((self.repo / ".git/code-step/runs" / run_id / "verification-output.txt").exists())
+
+    def test_a_failure_with_no_error_text_after_its_failing_lines_quotes_the_tail(self):
+        lines = ["E   assert 1 == 2", "FAILED t.py::test_a - assert 1 == 2", "FAILED t.py::test_b - assert 3 == 4",
+                 "=== 2 failed in 0.1s ==="]
+        printing = "; ".join(f"print({line!r})" for line in lines)
+        self.set_verification(f'- [ ] **Unit**: `python3 -c "{printing}; raise SystemExit(1)"`')
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("after-review")
+
+        self.assertIn(
+            "E   assert 1 == 2\nFAILED t.py::test_a - assert 1 == 2\nFAILED t.py::test_b - assert 3 == 4", out)
+
+    def test_a_failing_test_with_no_error_text_still_shows_beside_one_that_has_it(self):
+        lines = ["FAILED t.py::test_a - boom", "FAILED t.py::test_b - bang", "  b detail"]
+        printing = "; ".join(f"print({line!r})" for line in lines)
+        self.set_verification(f'- [ ] **Unit**: `python3 -c "{printing}; raise SystemExit(1)"`')
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("after-review")
+
+        self.assertIn("FAILED t.py::test_a - boom\nFAILED t.py::test_b - bang", out)
+        self.assertNotIn("(full output in the output file)", out)
 
     def test_a_grep_ban_with_no_match_holds(self):
         self.set_verification("- [ ] **Prohibition**: no console.log - `grep -n console.log backend/src/orders.ts`")

@@ -378,6 +378,20 @@ class StopRowTest(unittest.TestCase):
 
         self.assertEqual(self.open_counts(store), [1, 0])
 
+    def test_a_background_resume_is_closed_by_a_later_task_id_only_notification(self):
+        store = self.new_store()
+        resumed = resume_background_coder()
+        killed = (
+            "<task-notification>\n<task-id>a5bc2ebfa0d6aeaf8</task-id>\n"
+            "<status>failed</status>\n</task-notification>"
+        )
+        notified = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": killed}}
+
+        self.stop_in_session(resumed, store)
+        self.stop_in_session([*resumed, notified], store)
+
+        self.assertEqual(self.open_counts(store), [1, 0])
+
 
 class FullCheckTest(unittest.TestCase):
     @classmethod

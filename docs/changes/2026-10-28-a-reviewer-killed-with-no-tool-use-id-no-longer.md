@@ -3,7 +3,7 @@ type: "Change"
 title: "A reviewer killed with no tool-use id no longer blocks the hand-back"
 description: "The loop transcript reader closes a background agent launch on a task notification that names the agent by its task id, so a reviewer the rate limit killed stops counting as pending and the review loop can hand back."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T21:10:20-05:00"}
-seq: 216
+seq: 219
 kind: "fix"
 components: ["script/review-loop-gate", "script/handback"]
 evidence: ["judgment"]

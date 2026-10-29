@@ -7,7 +7,7 @@ seq: 7
 kind: "behavior"
 components: ["script/review-commit-gate"]
 evidence: ["work incident", "tests"]
-watches: []
+watches: ["commit-prompt-wait"]
 ---
 
 ## Change

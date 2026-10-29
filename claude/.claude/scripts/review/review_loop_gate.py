@@ -402,8 +402,8 @@ class LoopTranscript:
 
     def resume_is_open(self, line, agent_id, send_id, open_launches):
         """True when a SendMessage that resumed `agent_id` has had no agent message from it and no task notification
-        on a later transcript line, keyed by the SendMessage's id (the harness's key for a resumed agent) or by its
-        launch's. A launch that is itself still open already counts."""
+        on a later transcript line, keyed by the SendMessage's id (the harness's key for a resumed agent), by its
+        launch's, or by the agent's task id. A launch that is itself still open already counts."""
         launch_ids = [tool_use_id for tool_use_id in self.results if self.launched_agent(tool_use_id) == agent_id]
         if any(tool_use_id in open_launches for tool_use_id in launch_ids):
             return False

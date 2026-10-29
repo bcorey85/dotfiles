@@ -191,7 +191,9 @@ once, in one place, against the whole branch instead of one phase of it.
 
 **What may defer.** Only a `class` or `scoped` `fix` finding defers: a class
 member that Step 6 finds open at `iter >= 2`, or a finding of the scoped
-reviewer at the cap exit (below). Step 6 returns `cap-reached`.
+reviewer at the cap exit (below). Step 6 returns `cap-reached`. A blocker
+never leaves on `deferred` or `converged`: it carries `blocker: yes` and the
+status is `cap-reached`.
 
 Every other `fix` finding gets a coder (Step 5) at any `iter`: each full review's
 (`round`) and the execution gate's (`gate`). Log each `fix` finding with its
@@ -210,7 +212,7 @@ the `fix` findings of a gate failure get one coder per invocation: after the
 repair, run the gate once more; a second failure returns `status: critical-blocker`, or `status: setup-fault` when the gate could not run.
 Exception to "no full review": when any coder (a second-round fix coder, or a gate-repair coder before its gate re-run)
 changed files after the last reviewer, dispatch one reviewer scoped to the changed files (not a full review). Its `fix`
-findings get no coder: they go to `findings_remaining`, log with `source=scoped actioned=deferred`, and the status is `cap-reached`. If that reviewer cannot run,
+findings get no coder: they go to `findings_remaining` with `blocker: yes` on each blocker, log with `source=scoped actioned=deferred`, and the status is `cap-reached`. If that reviewer cannot run,
 return `status: cap-reached` with `findings_remaining` naming the unreviewed files.
 
 ## Step 6: Convergence — the execution gate
@@ -290,7 +292,7 @@ iter: <n>                                # correctness rounds run
 fixed: [{finding, file_line, blocker}]   # `fix` findings you resolved — NEVER omit; a silent repair is a bug
 skipped_fp: [{item, reason}]             # `fix` findings dropped as false positives
 blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here)
-findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
+findings_remaining: [{disposition, finding, file_line, blocker}]  # status=deferred | cap-reached | plan-impact; a blocker never rides on converged or deferred
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome. Log each ask row with the same file and line as its file_line; the caller reads the id from that row, so leave finding_id out
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>

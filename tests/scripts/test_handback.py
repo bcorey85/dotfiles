@@ -911,6 +911,29 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertTrue(handback.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
+    def test_a_nit_fixed_at_the_cap_exit_commits_and_a_blocker_left_over_does_not(self):
+        self.two_rounds_ending_on_the_cap_exit_coder()
+        blocker_left = ("status: deferred\niter: 2\nfixed: []\n"
+                        "findings_remaining:\n- {finding: x, file_line: a.ts:1, blocker: yes}\n")
+        nit_fixed = ("status: converged\niter: 2\nfixed:\n- {finding: reword the error, file_line: a.ts:1, "
+                     "blocker: no}\nfindings_remaining: []\n")
+
+        self.assert_denied(self.hand_back(message=blocker_left))
+        self.assertEqual(self.hand_back(message=nit_fixed), (0, ""))
+
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_a_clean_status_with_a_failed_full_check_is_refused(self):
+        leftover = "findings_remaining:\n- {finding: x, file_line: a.ts:1, blocker: false}\n"
+        for status in handback.CLEAN_STATUSES:
+            for full_check in ("failed (3 tests)", "setup fault (exit 2)"):
+                with (
+                    self.subTest(status=status, full_check=full_check),
+                    self.assertRaisesRegex(handback.PacketError, "full_check is"),
+                ):
+                    handback.load(CONVERGED.replace("status: converged", f"status: {status}")
+                                  + leftover + f"full_check: {full_check}\n")
+
     def test_unreviewed_streak_counts_the_latest_flagged_hand_backs_and_a_reviewed_one_ends_it(self):
         self.dispatch("review-loop")
         self.dispatch("coder", "a1")

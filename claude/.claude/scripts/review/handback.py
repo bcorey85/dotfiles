@@ -597,6 +597,14 @@ def status_problems(raw, packet):
     if "fixed" not in raw and status in CLEAN_STATUSES:
         problems.append("fixed is missing: the packet must always carry fixed, even as []")
 
+    # A blocker left open keeps the commit gate shut, so it never rides out on a status that clears it.
+    if status in CLEAN_STATUSES and any(is_blocker(item) for item in packet["findings_remaining"]):
+        problems.append(f"status is {status} but findings_remaining holds a blocker: return cap-reached")
+
+    if status in CLEAN_STATUSES and packet["full_check"].startswith(("failed", "setup fault")):
+        problems.append(f"status is {status} but full_check is {packet['full_check']!r}: a failed gate returns "
+                        "critical-blocker and a gate that could not run returns setup-fault")
+
     field, absence = STATUS_REQUIRES.get(status, (None, ""))
     if field is None or packet[field]:
         return problems

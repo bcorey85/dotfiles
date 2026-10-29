@@ -269,22 +269,35 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("still racy", output)
         self.assertIn("stays blocked", output)
 
-    def test_a_cap_reached_with_an_open_class_routes_the_next_run_to_the_last_fix_diff_only(self):
+    def test_a_cap_reached_with_an_open_class_routes_the_next_run_to_the_files_the_fixes_touched_only(self):
         code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: stop", output)
-        self.assertIn("scoped review of the last fix diff", output)
+        self.assertIn("files the capped run's fixes touched", output)
+        self.assertIn("Dispatch lines (pass exactly these):", output)
         self.assertIn("    - path: src/logs.ts", output)
         self.assertIn("trailing blank line compares as different", output)
         self.assertIn("iter=0", output)
         self.assertNotIn("Do not re-dispatch", output)
 
     def test_a_cap_reached_with_every_class_closed_keeps_the_plain_stop(self):
-        closed = CAP_WITH_AN_OPEN_CLASS.replace("still open", "closed")
-        code, output = self.packet(closed)
+        closed_receipts = ["closed", "closed, none left open", "closed; open members: none",
+                           "closed (was left open in iter 1)"]
+        for receipt in closed_receipts:
+            with self.subTest(receipt):
+                closed = CAP_WITH_AN_OPEN_CLASS.replace("still open", receipt)
+                code, output = self.packet(closed)
+                self.assertEqual(code, 0, output)
+                self.assertIn("Do not re-dispatch", output)
+                self.assertNotIn("files the capped run's fixes touched", output)
+
+    def test_a_cap_reached_with_an_open_class_and_no_files_touched_keeps_the_plain_stop(self):
+        no_files = CAP_WITH_AN_OPEN_CLASS.replace("files_touched:\n  - src/logs.ts\n", "files_touched: []\n")
+        code, output = self.packet(no_files)
         self.assertEqual(code, 0, output)
         self.assertIn("Do not re-dispatch", output)
-        self.assertNotIn("scoped review of the last fix diff", output)
+        self.assertNotIn("files the capped run's fixes touched", output)
+        self.assertNotIn("Dispatch lines", output)
 
     def test_plan_impact_prints_the_modal_and_decide_builds_the_redispatch_with_both_counters(self):
         code, output = self.packet(PLAN_IMPACT)

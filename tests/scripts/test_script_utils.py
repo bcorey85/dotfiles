@@ -619,45 +619,6 @@ class TextAndFileHelpersTest(unittest.TestCase):
         self.assertEqual(len(script_utils.read_jsonl(path)), 160)
 
 
-class StripFlagValuesTest(unittest.TestCase):
-    FLAGS = ("--manifest-path", "-p", "--package", "--project")
-
-    def stripped(self, command):
-        return " ".join(script_utils.strip_flag_values(command, self.FLAGS).split())
-
-    def test_a_flag_and_its_separate_value_are_removed(self):
-        self.assertEqual("cargo test --release", self.stripped("cargo test --manifest-path /a/b/Cargo.toml --release"))
-
-    def test_a_flag_joined_to_its_value_by_an_equals_sign_is_removed(self):
-        self.assertEqual("cargo test", self.stripped("cargo test --manifest-path=/a/b/Cargo.toml"))
-
-    def test_a_quoted_value_with_spaces_is_removed_whole(self):
-        self.assertEqual("tool run", self.stripped("tool --project 'my app/x.json' run"))
-        self.assertEqual("tool run", self.stripped('tool --project="my app/x.json" run'))
-
-    def test_every_listed_flag_is_removed(self):
-        for flag in self.FLAGS:
-            with self.subTest(flag=flag):
-                self.assertEqual("run", self.stripped(f"run {flag} name"))
-
-    def test_the_text_after_the_value_stays(self):
-        self.assertEqual("pytest tests/a.py", self.stripped("pytest -p xdist tests/a.py"))
-
-    def test_a_flag_followed_by_another_flag_or_by_nothing_is_left_alone(self):
-        self.assertEqual("cargo test -p --release", self.stripped("cargo test -p --release"))
-        self.assertEqual("cargo test -p", self.stripped("cargo test -p"))
-
-    def test_a_flag_name_inside_a_longer_word_is_not_a_match(self):
-        self.assertEqual("run --pp x -pq y a-p b", self.stripped("run --pp x -pq y a-p b"))
-        self.assertEqual("run --packages x", self.stripped("run --packages x"))
-
-    def test_other_flags_and_their_values_stay(self):
-        self.assertEqual("go test -run TestX", self.stripped("go test -run TestX"))
-
-    def test_no_flags_changes_nothing(self):
-        self.assertEqual("a -p b   c  d", script_utils.strip_flag_values("a -p b   c  d", ()))
-
-
 class NearestFileUpwardTest(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()

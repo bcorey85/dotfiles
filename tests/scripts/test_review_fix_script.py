@@ -1206,7 +1206,9 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_loop_that_hands_back_before_its_background_reviewer_reports_gets_wait_for_loop(self):
         full_check = {"type": "assistant", "message": {"role": "assistant", "content": [
             {"type": "tool_use", "id": "t_full", "name": "Bash",
-             "input": {"command": "npm test > /tmp/review-gate.log 2>&1"}}]}}
+             "input": {"command": "python3 ~/.claude/scripts/review/full_check.py /r --log /tmp/g.log -- 'npm test'"}},
+            {"type": "tool_result", "tool_use_id": "t_full",
+             "content": [{"type": "text", "text": "full check: passed\nsummary: 3 passed"}]}]}}
         launch = {"type": "assistant", "message": {"role": "assistant", "content": [
             {"type": "tool_use", "id": "t_rev", "name": "Agent",
              "input": {"subagent_type": "code-reviewer", "prompt": "review"}}]}}

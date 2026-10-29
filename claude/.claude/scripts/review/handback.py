@@ -8,11 +8,11 @@
                                         SubagentHandback validates and records each review-loop hand-back, and denies a
                                         bad packet once per agent so the loop can repair it, denies a hand-back (any
                                         status but plan-impact, in a repo whose CLAUDE.md does not say
-                                        `Full suite: CI`) whose own transcript shows no full check after its
-                                        last code change (once per code change), denies a hand-back (any status but
-                                        plan-impact) whose files_touched names the dispatch prompt's plan file, and
-                                        denies any call from an agent whose report is already stored. Any other
-                                        argument does nothing.
+                                        `Full suite: CI`) whose own transcript shows no passed full_check.py
+                                        result after its last code change (once per code change), denies a
+                                        hand-back (any status but plan-impact) whose files_touched names the
+                                        dispatch prompt's plan file, and denies any call from an agent whose
+                                        report is already stored. Any other argument does nothing.
 
 Importers use parse, validate, load, render, record, latest, hand_back_gap, false_clean_reason,
 ended_on_unreviewed_fix, fixed_paths, unreviewed_streak and unreviewed_fix_section. The store also holds
@@ -818,7 +818,8 @@ def last_unchecked_step(session_id, agent_id):
 
 
 def unchecked_code_reason(event, session_id, agent_id, message):
-    """The deny reason when the loop's own transcript shows no full check after its last code change, else None.
+    """The deny reason when the loop's own transcript shows no passed full_check.py result after its last code
+    change, else None.
     The denial is recorded with the last code step it saw and repeats only after a later code change, so a loop that
     hands back again on the same state passes. A transcript that cannot be read never blocks."""
     try:
@@ -889,8 +890,8 @@ def reviewed_repo(prompt, cwd):
 def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back. Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
-    unreviewed reason for a clean packet with no reviewer run, review_loop_gate.GATE_REASON when no full check ran
-    after the last code change, or review_loop_gate.PLAN_EDIT_REASON when the packet names the plan file."""
+    unreviewed reason for a clean packet with no reviewer run, review_loop_gate.GATE_REASON when no passed full_check.py
+    result follows the last code change, or review_loop_gate.PLAN_EDIT_REASON when the packet names the plan file."""
     session_id = event.get("session_id")
     if not session_id:
         return None

@@ -59,6 +59,8 @@ from worktree_snapshot import CHANGE_KINDS, changes_since, take
 
 FULL_SUITE_IN_CI = "Full suite: CI"
 LIST_MARKER = re.compile(r"^\s*[-*]\s+")
+# The CLAUDE.md line that names the repo's full check; group 1 is the command.
+QUALITY_CHECK_LINE = re.compile(r"^\s*[-*]?\s*Quality check:\s*`([^`]+)`", re.I | re.M)
 # A log name that still holds a template placeholder: `...`, or a `<branch>` never filled in.
 UNFILLED_LOG_NAME = re.compile(r"\.\.\.|[<>]")
 SUMMARY_SEPARATOR = " | "
@@ -107,6 +109,19 @@ def full_suite_runs_in_ci(repo):
 
     lines = claude_md.read_text(errors="replace").splitlines()
     return any(LIST_MARKER.sub("", line).strip() == FULL_SUITE_IN_CI for line in lines)
+
+
+def configured_check_command(repo):
+    """The command of the repo's CLAUDE.md `Quality check:` line, or None when the file or the line is missing."""
+    claude_md = pathlib.Path(repo) / "CLAUDE.md"
+    if not claude_md.is_file():
+        return None
+
+    match = QUALITY_CHECK_LINE.search(claude_md.read_text(errors="replace"))
+    if not match:
+        return None
+
+    return match.group(1)
 
 
 def pinned_interpreter_env(repo, env):

@@ -1575,6 +1575,33 @@ class ReviewLoopScriptTest(unittest.TestCase):
         kept = review_loop_findings.unreported_parts("`app.py:2` [smell]", ["`app.py:2` [smell]"])
         self.assertEqual(kept, [])
 
+    def test_an_untitled_fix_at_the_same_line_reopens_a_titled_fixed_part(self):
+        titled_fix = "`app.py:2` the limit is wrong for `limit`"
+        kept = review_loop_findings.unreported_parts(titled_fix, ["`app.py:2` [smell]"])
+        self.assertEqual(kept, [])
+
+    def test_an_untitled_fix_at_another_line_keeps_a_titled_fixed_part(self):
+        titled_fix = "`app.py:2` the limit is wrong for `limit`"
+        kept = review_loop_findings.unreported_parts(titled_fix, ["`app.py:9` [smell]"])
+        self.assertEqual(kept, [titled_fix])
+
+    def test_a_titled_fix_is_not_reopened_by_a_fix_in_another_file(self):
+        titled_fix = "`app.py:2` the limit is wrong for `limit`"
+        kept = review_loop_findings.unreported_parts(titled_fix, ["`other.py:2` [smell]"])
+        self.assertEqual(kept, [titled_fix])
+
+    def test_a_titled_fix_at_the_same_line_is_not_reopened_by_a_differently_titled_fix(self):
+        titled_fix = "`app.py:2` the limit is wrong for `limit`"
+        kept = review_loop_findings.unreported_parts(titled_fix, ["`app.py:2` cache eviction is unbounded"])
+        self.assertEqual(kept, [titled_fix])
+
+    def test_a_titled_fix_is_not_reopened_by_the_same_title_in_another_file(self):
+        titled_fix = "`app.py:2` the limit is wrong for `limit`"
+
+        kept = review_loop_findings.unreported_parts(titled_fix, ["`other.py:2` the limit is wrong for `limit`"])
+
+        self.assertEqual(kept, [titled_fix])
+
     def test_the_same_ask_from_two_reviewers_is_one_ask(self):
         same_ask = "- `app.py:1` should the limit be configurable? — change: read it from the config\n"
         first = f"## Fix\nNone\n\n## Ask\n{same_ask}\n## Nit\nNone\n"

@@ -482,15 +482,32 @@ def fold_bullets_into_asks(entries):
     lead mapping whose bullets carry its facts, its question and its conditional changes. The bullets add to its
     question, or to its finding when it has no question. A mapping bullet with no file_line and no finding adds to the
     lead ask the fields it lacks, and joins its question and change to the lead's; any other field keeps the lead's
-    value. A bullet that carries a `| path:line` field starts a new ask."""
+    value. A plain-text ask whose text ends in a colon takes the bullets after it, plain-text or mapping, the same way,
+    each plain-text bullet kept as a `- ` line. A bullet that carries a `| path:line` field starts a new ask."""
     asks = []
+    is_open_text_ask = False
     for entry in entries:
         follows_mapping_ask = bool(asks) and isinstance(asks[-1], dict)
-        if not (follows_mapping_ask and continues_lead_ask(entry)):
+        follows_open_text_ask = is_open_text_ask
+        if not ((follows_mapping_ask or follows_open_text_ask) and continues_lead_ask(entry)):
             asks.append(entry)
+            is_open_text_ask = opens_bullet_list(entry)
             continue
 
         lead_ask = asks[-1]
+        if isinstance(lead_ask, str) and isinstance(entry, str):
+            asks[-1] = f"{lead_ask}\n- {entry}"
+            continue
+
+        if isinstance(lead_ask, str):
+            lead_ask = asks[-1] = entry_from_text(lead_ask, "question")
+
+        # A text lead's `blocker` was read from its own text alone, and a mapping lead may carry none: a bullet that
+        # flags a blocker raises it. An explicit `blocker` on a mapping lead wins.
+        is_blocker_bullet = is_blocker(entry) or (isinstance(entry, str) and BLOCKER_TEXT.search(entry) is not None)
+        if is_blocker_bullet and (lead_ask.get("from_text") or "blocker" not in lead_ask):
+            lead_ask["blocker"] = "yes"
+
         if isinstance(entry, dict):
             for field, value in entry.items():
                 if field not in lead_ask:
@@ -500,13 +517,24 @@ def fold_bullets_into_asks(entries):
             continue
 
         key = "question" if "question" in lead_ask else "finding"
-        lead_ask[key] = f"{lead_ask.get(key, '')}\n{entry}".strip()
+        separator = "\n- " if lead_ask.get("from_text") else "\n"
+        lead_ask[key] = f"{lead_ask.get(key, '')}{separator}{entry}".strip()
     return asks
 
 
+def opens_bullet_list(entry):
+    """Whether ask entry `entry` is plain text whose text, before any `|` field, ends in a colon."""
+    if not isinstance(entry, str):
+        return False
+
+    ask_text_part = entry.split("|")[0]
+    return ask_text_part.rstrip().endswith(":")
+
+
 def continues_lead_ask(entry):
-    """Whether ask entry `entry` adds to the mapping ask before it: a plain-text bullet with no `| path:line` field, or
-    a mapping with no file_line and no finding."""
+    """Whether ask entry `entry` can add to the ask before it: a mapping ask, or a plain-text ask that opens a bullet
+    list. The entry is a plain-text bullet with no `| path:line` field, or a mapping with no file_line and no
+    finding."""
     if isinstance(entry, dict):
         return "file_line" not in entry and "finding" not in entry
     if not isinstance(entry, str):

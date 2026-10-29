@@ -76,10 +76,10 @@ STAGE_GUARDS = {
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
     "review-again": {"stages": ("stopped",),
                      "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "tool-fault", "critical-blocker",
-                                     "setup-fault"),
+                                     "setup-fault", "check-unverified"),
                      "message": "review-again ran with no unreadable review packet, capped review, crashed review "
-                                "call, unmarked review gate, critical blocker, setup fault or silent review-loop "
-                                "pending."},
+                                "call, unmarked review gate, critical blocker, setup fault, a full check that showed "
+                                "no test run or silent review-loop pending."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
     "skill-done": {"stages": ("skill",), "message": "skill-done ran with no closing-phase skill pending."},
     "verify": {"stages": ("stopped",), "stopReasons": PLAN_EDIT_STOP_REASONS,
@@ -121,12 +121,13 @@ def prior_issues(accepted_asks):
 
 
 def numbered_ask_lines(asks):
-    # Each ask with the one change an accepted answer makes.
+    # Each ask with the one change an accepted answer makes. A multi-line ask's later lines sit indented under its
+    # number.
     lines = []
     for number, item in enumerate(asks, 1):
-        lines.append(f"{number}. {ask_text(item)}")
+        lines += script_utils.hanging_indent_lines(f"{number}. ", ask_text(item))
         if item.get("change"):
-            lines.append(f"   Proposed change: {item['change']}")
+            lines += script_utils.hanging_indent_lines("   Proposed change: ", item["change"])
     return lines
 
 
@@ -167,7 +168,7 @@ def emit_plan_impact_modal(impact, repo_dir, carried=()):
         print("PLAN-IMPACT changes no acceptance criterion, so the plan follows the code. No question to the user.")
         state = load_state(repo_dir)
         return command_decide(repo_dir, state, ["adopt", "--by", "session", "--ruling",
-                                                plan_format.BELOW_CRITERIA_RULING])
+                                                plan_format.below_criteria_ruling(impact)])
     ask_user(repo_dir, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
              "answer. Then invoke Skill code with the args after the option the user chose, with the ruling in one "
              "line, in your own words, as the --ruling text. Do not quote the user.",
@@ -681,6 +682,8 @@ def ask_lines(packet):
 
 def stop_on_review_status(repo_dir, state, module, packet):
     # True after the stop or question a packet status that ends the run prints.
+    # Imported here: review/ joins sys.path when code_step_core loads, which sorted top-level imports would precede.
+    import full_check
     status = packet["status"]
     if status == "plan-impact":
         state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
@@ -715,6 +718,33 @@ def stop_on_review_status(repo_dir, state, module, packet):
         stop_with_question(
             repo_dir, question, [line[2:] for line in blocker_lines], blocker_stop_next_step(state), instruction,
             *blocker_lines, questions=ask_lines(packet))
+        return True
+    if status in ("converged", "deferred") and full_check.is_unverified(packet["full_check"]):
+        # A check that exited 0 printed no test-runner summary, so the check did not show that any test ran: the phase
+        # is not verified, so it does not finish.
+        state.update({"stage": "stopped", "stopReason": "check-unverified"})
+        save_state(repo_dir, state)
+        check_command = packet["full_check_command"] or "(not named)"
+        configured = full_check.configured_check_command(repo_dir)
+        if configured:
+            # The repo already names its check, so a Quality check line would change nothing: the runner's output
+            # is what the toolkit does not recognize.
+            why = ("the full check exited 0 and printed no test-runner summary this toolkit recognizes, so the check "
+                   "did not show that any test ran.")
+            fix = (f"make the configured check (`{configured}`) print its test runner's summary, or add the "
+                   "runner's summary format to SUMMARY_LINES in ~/.claude/scripts/lib/test_run_output.py")
+        else:
+            why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
+                   "test ran.")
+            fix = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
+        why_sentence = why[0].upper() + why[1:]
+        fix_sentence = fix[0].upper() + fix[1:]
+        stop_with_question(
+            repo_dir, why, [check_command],
+            f"{fix}, then run `{script_command('review-again')}` to review the same diff again.",
+            f"{why_sentence} The check ran: `{check_command}`. {fix_sentence}, then run "
+            "review-again. Do not mark the phase done.",
+            questions=ask_lines(packet))
         return True
     if status == "cap-reached":
         # The first cap of a phase sends the open findings to one more review-loop pass with a fresh round budget.
@@ -856,9 +886,12 @@ def ask_the_user(repo_dir, state, asks):
         repo_dir,
         f"ask the user about each review ask below in plain text and wait for the answers. Each answer is accepted "
         f"(make the proposed change), rejected (leave the code as it stands) or modified (make the user's change "
-        f"instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. After "
-        "a modified outcome, add `--change \"<the user's change text>\"`. If the repo's CLAUDE.md hands ask "
-        "decisions to the session, decide each ask yourself instead of asking, and add `--by session` to asks-done.",
+        f"instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. Put "
+        "`--change \"<the user's change text>\"` right after each `modified` word, one per modified ask, as in "
+        "`asks-done accepted modified --change \"<text>\" modified --change \"<text>\"` (the example only shows the "
+        "shape of the arguments, not how many words). If the repo's CLAUDE.md "
+        "hands ask decisions to the session, decide each ask yourself instead of asking, and add `--by session` to "
+        "asks-done.",
         *numbered_ask_lines(asks),
         *open_findings_lines,
     )

@@ -14,9 +14,9 @@ import toolkit_paths
 
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
 INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
-STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), ("lib", "script_utils.py"),
-                ("lib", "reviewed_tree.py"), ("lib", "hook_input.py"), ("lib", "shell_command.py"),
-                ("lib", "plan_format.py"))
+STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), ("review", "handback_store.py"),
+                ("lib", "script_utils.py"), ("lib", "reviewed_tree.py"), ("lib", "hook_input.py"),
+                ("lib", "shell_command.py"), ("lib", "plan_format.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder, run it as a "

@@ -99,6 +99,17 @@ findings_remaining:
   - {disposition: fix, finding: "still racy", file_line: src/q.ts:7}
 """
 
+CAP_WITH_AN_OPEN_CLASS = """status: cap-reached
+iter: 2 of 2
+fixed:
+  - {finding: "a log with no timestamp compared as equal", file_line: src/logs.ts:12}
+findings_remaining:
+  - {disposition: fix, finding: "a log with a trailing blank line compares as different", file_line: src/logs.ts:30}
+class_closure: log shapes the comparison takes - no timestamp closed; trailing blank line still open
+files_touched:
+  - src/logs.ts
+"""
+
 DEFERRED = """status: deferred
 iter: 1
 fixed: []
@@ -257,6 +268,23 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: stop", output)
         self.assertIn("still racy", output)
         self.assertIn("stays blocked", output)
+
+    def test_a_cap_reached_with_an_open_class_routes_the_next_run_to_the_last_fix_diff_only(self):
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("scoped review of the last fix diff", output)
+        self.assertIn("    - path: src/logs.ts", output)
+        self.assertIn("trailing blank line compares as different", output)
+        self.assertIn("iter=0", output)
+        self.assertNotIn("Do not re-dispatch", output)
+
+    def test_a_cap_reached_with_every_class_closed_keeps_the_plain_stop(self):
+        closed = CAP_WITH_AN_OPEN_CLASS.replace("still open", "closed")
+        code, output = self.packet(closed)
+        self.assertEqual(code, 0, output)
+        self.assertIn("Do not re-dispatch", output)
+        self.assertNotIn("scoped review of the last fix diff", output)
 
     def test_plan_impact_prints_the_modal_and_decide_builds_the_redispatch_with_both_counters(self):
         code, output = self.packet(PLAN_IMPACT)

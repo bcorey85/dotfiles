@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "One call runs the fixed steps of /stage"
 description: "`stage.mjs --run` classifies once, stages the SAFE tier, writes the metrics row and prints the finished report and jump list. The model keeps only the per-entry notes, the nvim-jump call and tier disagreements."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T18:31:11-05:00"}
 seq: 5
+kind: "behavior"
 components: ["skill/stage"]
 evidence: ["census", "judgment"]
 watches: ["stage-run-one-call"]

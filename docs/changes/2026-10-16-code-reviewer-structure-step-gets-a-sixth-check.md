@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "`code-reviewer` structure step gets a sixth check, helper placement"
 description: "`code-reviewer` structure step gets a sixth check, helper placement."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-16T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/code-reviewer", "skill/fix"]
 evidence: ["seeded round"]
 watches: ["share-first-placement"]

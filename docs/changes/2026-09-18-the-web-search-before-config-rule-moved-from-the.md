@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The web-search-before-config rule moved from the global rules file to the main-session orchestration file"
+change_type: "changed"
+title: "The web-search-before-config rule now covers dispatches and lives in the main-session orchestration file"
 description: "The web-search-before-config rule moved from the global rules file to the main-session orchestration file, and it now covers a dispatch as well as a direct write: the main session does the research and puts the result in the dispatch brief."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["rule/global-claude-md", "rule/orchestration"]
 evidence: ["census", "judgment"]
 watches: []

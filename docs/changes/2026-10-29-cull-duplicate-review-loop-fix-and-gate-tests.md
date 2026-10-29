@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "Cull duplicate review-loop, fix and gate tests"
 description: "The review-loop, fix and gate tests lose duplicate runs and near-copies: like cases become subTest tables, and tests another test already pins are deleted."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T07:59:10-05:00"}

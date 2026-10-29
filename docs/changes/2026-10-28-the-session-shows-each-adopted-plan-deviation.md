@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The session shows each adopted plan deviation, and a later review drops a stale one"
 description: "A plan impact adopted below the acceptance criteria prints one deviation line, with no question: in code_step's say.md at phase end and run end, and in the /review and /fix closing block. Adopted deviations carry into a re-dispatch only when the dispatch prompt holds the resolved plan_impact; any other review shows none."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T20:39:30-05:00"}

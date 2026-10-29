@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code_step commit list keeps a dirty-before file the phase edited"
 description: "The phase commit command now names a file that was dirty before the phase when the phase changed its content, and the hand-back flags it as mixing earlier edits; dirty files the phase left alone stay out."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:55:06-05:00"}

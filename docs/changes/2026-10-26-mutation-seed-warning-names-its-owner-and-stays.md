@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "mutation seed warning names its owner and stays quiet while the run is live"
 description: "The mutation and calibrate lock records its worktree and owner pid; the session-start guard gives a restore command, with an absolute path, only for a stale lock, and a short do-not-restore note for a live one."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:53:23-05:00"}

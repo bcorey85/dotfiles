@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "verify-log writes nothing when a criterion id has no verdict row"
 description: "verify-log now exits 2, names the criterion ids with no verdict row and writes no rows. Before, it logged each absent id as a `missing` gap."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-22T09:51:55-05:00"}
 seq: 6
+kind: "behavior"
 components: ["script/verify-log"]
 evidence: ["work incident"]
 watches: []

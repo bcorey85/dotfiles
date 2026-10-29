@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "review-fix packet reads a standalone review's hand-back while a code run waits on another agent"
 description: "review_fix packet refuses a hand-back only when it belongs to the agent the open /code run launched, so a standalone /review in the same session gets its fix packet."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:40:05-05:00"}

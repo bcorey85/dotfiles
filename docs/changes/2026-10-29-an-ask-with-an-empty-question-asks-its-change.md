@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "An ask with an empty question asks its change"
 description: "The review loop no longer builds an ask with an empty question unless it has no change either. Packet validation fills an empty ask question from its finding or its change, and drops an ask with none of them under a Dropped asks warning, so one bad ask no longer fails the whole review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T21:00:00-05:00"}

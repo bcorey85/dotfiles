@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "Test-intent reviewer: the lost-coverage check is cut"
-description: "Test-intent reviewer: the lost-coverage check is cut."
+change_type: "removed"
+title: "The test audit now runs cull and weak-assertion checks only"
+description: "The test-intent reviewer now runs cull and weak-assertion checks only, without the lost-coverage check."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 15
+kind: "behavior"
 components: ["agent/test-intent-reviewer", "skill/test-audit"]
 evidence: ["census"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-Test-intent reviewer: the lost-coverage check is cut. The test audit runs cull and weak-assertion checks only, and its receipt and log row drop the lost-coverage count and base-suite size
+The test-intent reviewer now runs cull and weak-assertion checks only, without the lost-coverage check. The test audit's receipt and log row drop the lost-coverage count and base-suite size
 
 ## Evidence
 

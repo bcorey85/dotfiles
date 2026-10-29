@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A review-loop dispatch from a lane subagent is refused"
-description: "A review-loop that a subagent dispatched ended with no hand-back twice in a row; the dispatch gate now refuses it at once and names the main-session route, except from the /code fork."
+description: "The dispatch gate now refuses a review-loop dispatched by a subagent at once and names the main-session route, except from the /code fork. Before, a review-loop that a subagent dispatched ended with no hand-back twice in a row."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T19:46:12-05:00"}
 seq: 208
 kind: "fix"

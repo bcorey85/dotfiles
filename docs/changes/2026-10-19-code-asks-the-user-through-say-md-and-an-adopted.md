@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "/code asks the user through say.md, and an adopted plan change gets a plan-edit coder before the review"
 description: "/code writes every question for the user into say.md. When the user adopts a plan change, a coder rewrites the contradicted plan steps before the review, so one disagreement gets one question and one review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-19T08:42:34-05:00"}
 seq: 8
+kind: "behavior"
 components: ["skill/code", "script/code-step"]
 evidence: ["bench run"]
 watches: ["code-one-question-per-plan-disagreement"]

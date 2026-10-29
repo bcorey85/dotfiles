@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The structure reviewer and the module simplification reviewer now run only on Opus"
 description: "The structure reviewer and the module simplification reviewer now run only on Opus."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["agent/smell-reviewer", "skill/refactor", "agent/review-loop", "shared/finding-log"]
 evidence: ["gate ranking", "seeded round"]
 watches: []

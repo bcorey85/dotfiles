@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The review loop agent and the two shared prompt files it cites are 312 words shorter"
 description: "The review loop agent and the two shared prompt files it cites are 312 words shorter."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["agent/review-loop"]
 evidence: ["judgment"]
 watches: []

@@ -18,6 +18,9 @@ VERB_USAGES = {
                   '<accepted|rejected|modified>...\n'
                   'One outcome per ask, in order. --also carries other work the user named alongside the outcomes '
                   'to the coder.'),
+    "correct-ruling": ('usage: code_step.py correct-ruling [--by <user|session>] [--also "<text>"] '
+                       '<accepted|rejected|modified>...\n'
+                       'The same words as asks-done, to correct the rulings while the asks coder runs.'),
     "skill-done": ('usage: code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...\n'
                    'A closing phase\'s skill returned.'),
     "verify": ("usage: code_step.py verify\nRuns the phase gates and closes the phase, after a failed Automated "

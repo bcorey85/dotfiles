@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Review findings are records after one parse"
 description: "Review-loop findings are parsed once into Finding records, and a merged finding keeps its parts as a list instead of text joined with ' Also reported: ', so each part keeps its own path and line."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T10:38:49-05:00"}

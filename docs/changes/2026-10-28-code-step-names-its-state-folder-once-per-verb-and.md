@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step names its state folder once per verb, and the walk's hand-back stub carries a transcript"
-description: "state_dir asked git for the code-step state folder about 14 times per verb; it now asks once per resolved folder, which cuts the termination walk's CPU time by about a sixth. The walk's review-loop hand-back stub now names an empty loop transcript, so the hand-back gates run instead of printing a KeyError."
+description: "state_dir now asks git for the code-step state folder once per resolved folder, which cuts the termination walk's CPU time by about a sixth. The walk's review-loop hand-back stub now names an empty loop transcript, so the hand-back gates run instead of printing a KeyError. Before, it asked git about 14 times per verb."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T08:22:31-05:00"}
 seq: 179
 kind: "fix"

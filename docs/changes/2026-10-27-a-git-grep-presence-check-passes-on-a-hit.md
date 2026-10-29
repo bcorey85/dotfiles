@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A git grep presence check passes on a hit"
 description: "/code verify reads a git grep line the way it reads an rg or grep line: a ban unless its text says it checks presence, so a presence check that finds its match passes."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:59:00-05:00"}

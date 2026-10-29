@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "added"
 title: "The /code fork runs as an agent with no Edit or Write tool"
 description: "The /code skill forks into a new code-fork agent that has no Edit, Write or NotebookEdit tool, so the fork can no longer implement a brief itself and skip the coder gate and review loop."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T13:24:10-05:00"}

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code_step resume routes a late review hand-back on its report"
 description: "After a wait-cap stop, `resume` routes a review-loop report that arrived late on that report, and the stale \"never handed back\" question is replaced."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T23:05:53-05:00"}

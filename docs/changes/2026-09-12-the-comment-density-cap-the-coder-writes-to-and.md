@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The comment-density cap the coder writes to and the reviewer flags against was raised from a tenth of a"
+change_type: "changed"
+title: "The comment-density cap is now a fifth of a file's lines instead of a tenth"
 description: "The comment-density cap the coder writes to and the reviewer flags against was raised from a tenth of a file's lines to a fifth, in the reviewer and in the write-time gate alike."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 14
+kind: "behavior"
 components: ["agent/code-reviewer", "script/comment-bloat-gate"]
 evidence: ["judgment"]
 watches: []

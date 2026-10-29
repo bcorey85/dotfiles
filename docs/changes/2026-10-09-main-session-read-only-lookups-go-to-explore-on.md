@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Main session: read-only lookups go to `Explore` on `haiku`, not to `general-purpose` on Sonnet"
 description: "Main session: read-only lookups go to `Explore` on `haiku`, not to `general-purpose` on Sonnet."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 2
+kind: "behavior"
 components: ["agent/general-purpose"]
 evidence: ["census", "judgment"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A too-long reviewer prompt is a tool fault with a retry"
 description: "The review loop script passes the round-one fix diff as a file path, marks a crashed run `tool_fault`, and /code stops on it with a review-again route instead of a critical blocker."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:59:00-05:00"}

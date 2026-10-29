@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The ask question shows one change flag after each modified outcome"
 description: "The /code question for review asks spells out the asks-done layout, a --change right after each modified word, so the first answer parses."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T06:52:26-05:00"}

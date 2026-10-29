@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "One table of start flags, so a quoted --headless start splits"
 description: "The /code start flags now come from one table in code_step_start_args.py; a start string that opens with --headless is split into words instead of exiting on an unknown flag."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T09:38:38-05:00"}

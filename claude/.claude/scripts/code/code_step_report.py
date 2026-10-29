@@ -94,7 +94,20 @@ def every_accepted_ask_already_done(repo_dir, state, report):
 
 
 ENG_SPEC_MARKER = "RECOMMEND: eng-spec"
-ENG_SPEC_BRIEF = f"If the task turns out architectural, end your report with the line `{ENG_SPEC_MARKER}`."
+CODER_CHECKS_LINE = "Run the typecheck, and lint and tests for only the files you changed, once, after all edits."
+
+
+def eng_spec_brief(subject):
+    return f"If {subject} turns out architectural, end your report with the line `{ENG_SPEC_MARKER}`."
+
+
+ENG_SPEC_BRIEF = eng_spec_brief("the task")
+
+
+def coder_model(modifier):
+    return "haiku" if modifier == "+fast" else None
+
+
 ENG_SPEC_MARKER_LINE = re.compile(r"^[ \t>*`_-]*RECOMMEND[*`_]*:[ \t]*/?eng-spec[*`_.]*[ \t]*$", re.M | re.I)
 
 

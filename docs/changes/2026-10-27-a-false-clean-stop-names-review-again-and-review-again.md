@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A false-clean stop names review-again, and review-again recovers it in place"
 description: "When the hand-back record refuses the clean mark, code_step saves the run as stopped with reason false-clean and tells the session to invoke Skill code with `review-again`, which now accepts that stop and runs one more review on the same diff."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T23:00:00-05:00"}

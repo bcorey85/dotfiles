@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The workflow routing block left the main-session orchestration file"
-description: "The workflow routing block left the main-session orchestration file."
+change_type: "removed"
+title: "The main-session orchestration file is shorter: each skill now holds its own routing rules"
+description: "The workflow routing block is out of the main-session orchestration file, because every rule in it except three is stated in the skill or agent that it governs."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["rule/orchestration"]
 evidence: ["removal round", "census", "judgment"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-The workflow routing block left the main-session orchestration file. It mapped each kind of request to the skill that owns it and retired the built-in look-alikes. The user types the skill commands, and every rule in the block except three is stated in the skill or agent that it governs.
+The main-session orchestration file is shorter, because each skill now holds its own routing rules. The workflow routing block left that file. It mapped each kind of request to the skill that owns it and retired the built-in look-alikes. The user types the skill commands, and every rule in the block except three is stated in the skill or agent that it governs.
 
 ## Evidence
 

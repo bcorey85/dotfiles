@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "removed"
 title: "The unattended rule and its Engineering Judgment heading left the orchestration file"
 description: "The unattended rule and its Engineering Judgment heading left the orchestration file, and the CLAUDE.md pointer no longer names working judgment."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 8
+kind: "behavior"
 components: ["rule/orchestration", "rule/global-claude-md"]
 evidence: ["removal round"]
 watches: []

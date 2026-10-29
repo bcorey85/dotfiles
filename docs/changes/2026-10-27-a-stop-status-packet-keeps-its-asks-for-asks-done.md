@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A stop-status packet keeps its asks for asks-done"
 description: "A cap-reached or critical-blocker packet that carries ask[] entries now prints and saves them, so asks-done logs their outcomes."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T17:31:35-05:00"}

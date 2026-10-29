@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The worktree rule names tuios beside herdr"
 description: "The worktree line in orchestration.md now sends a session inside tuios to `herdr-worktree --fork`, the same as inside herdr. tuios sets `HERDR_ENV` too."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T05:06:55-05:00"}

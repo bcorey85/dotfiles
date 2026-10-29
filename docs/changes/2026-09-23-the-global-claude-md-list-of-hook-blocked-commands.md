@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The global CLAUDE.md list of hook-blocked commands now names the forms the model kept trying"
 description: "The global CLAUDE.md list of hook-blocked commands now names the forms the model kept trying: credential reads of `.env*` and `*.key` files, including through `cat`, inline interpreters with the instruction to write a script file, `sh -c` and `bash -c`, `rm -rf`, `xargs`, and `find -exec`."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-23T00:00:00-05:00"}
 seq: 6
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["hook block log"]
 watches: ["hook-block-list-in-claude-md", "hook-block-list-cut"]

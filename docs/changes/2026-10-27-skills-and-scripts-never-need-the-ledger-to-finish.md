@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Skills and scripts never need the ledger to finish; verify-branch falls back on any unread ledger"
 description: "New rule in toolkit-script-rules.md: no skill, agent or script needs the ledger to finish. verify_common now treats a missing or failing ledger like a busy one, so verify-prep and verify-log fall back to the checkout's own record of the logged review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T07:16:43-05:00"}

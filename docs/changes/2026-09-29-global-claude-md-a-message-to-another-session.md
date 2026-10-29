@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "Global CLAUDE.md: a message to another session stays under 150 words, and tables, logs"
+change_type: "changed"
+title: "Global CLAUDE.md: messages to another session stay under 150 words, with long content sent as a file path"
 description: "Global CLAUDE.md: a message to another session stays under 150 words, and tables, logs, diffs and reports go to a file whose path the message carries."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 11
+kind: "behavior"
 components: ["rule/global-claude-md"]
 evidence: ["census"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "Test-audit rows carry their lane, a test file:line or unlocated, and a measured diff size"
 description: "A /fix started by a test audit passes lane test-audit to its review-loop, whose metrics and run rows now carry it; log-review-finding measures diff_loc from diff_base=<ref> to the working tree, takes file=unlocated, and refuses a test-intent-reviewer finding with no file or line 0."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T21:08:38-05:00"}

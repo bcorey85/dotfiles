@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "code-step start and adr prep take long task text on Python before 3.14"
 description: "code_step.py and adr_flow.py test argument words with os.path instead of pathlib, so a task text longer than a file name no longer crashes start with OSError File name too long on Python 3.13 and older."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T07:59:41-05:00"}

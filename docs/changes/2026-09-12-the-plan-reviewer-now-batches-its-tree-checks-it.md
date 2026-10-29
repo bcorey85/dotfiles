@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The plan reviewer now batches its tree checks: it lists the plan's claims first and settles every independent"
+change_type: "changed"
+title: "The plan reviewer now batches its independent tree checks into one turn"
 description: "The plan reviewer now batches its tree checks: it lists the plan's claims first and settles every independent check in the same turn, taking a new turn only for a check that depends on the previous result."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 15
+kind: "behavior"
 components: ["agent/plan-reviewer"]
 evidence: ["token census"]
 watches: []

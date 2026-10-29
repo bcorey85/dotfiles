@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A /code phase stays open when its review loop did not converge"
 description: "code-step records how each review loop ended and, when it did not converge, leaves the phase open, commits nothing, records no reviewed-tree fingerprint and says what the run waits on."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-26T00:15:29-05:00"}

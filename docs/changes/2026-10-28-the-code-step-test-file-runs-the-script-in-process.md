@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The code_step test file runs the script in-process"
 description: "test_code_step.py runs code_step.main() in the test process instead of starting python3 for each of about 4,000 script calls, and one review wait test stops waiting 15 seconds for a stop row it never writes. The file goes from 339 s to 141 s run alone."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T19:10:36-05:00"}

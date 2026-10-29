@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A review finding recorded as induced by a previous fix is now always recorded as blocking"
 description: "A review finding recorded as induced by a previous fix is now always recorded as blocking, whether or not the caller said so."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 10
+kind: "behavior"
 components: ["script/log-review-finding"]
 evidence: ["judgment"]
 watches: []

@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Shell gates cover subagents, coder new files and stdin code; quoted redirects stop counting"
 description: "shell-write-gate now holds subagents and coders to the redirect and in-place rules with no skip comment, denies a coder's new file outside the temp roots, and stops reading a quoted `>` or `2>&1` as a write; the interpreter hint denies code fed on stdin; the pipe-to-shell check ignores a quoted `|` and sees through wrappers."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T08:33:27-05:00"}

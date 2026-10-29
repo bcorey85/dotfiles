@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "The branch-exit skill states each of its own rules once: never-commit lives in the output contract"
+change_type: "changed"
+title: "The branch-exit skill now states each of its own rules once"
 description: "The branch-exit skill states each of its own rules once: never-commit lives in the output contract, never-re-run-a-gate in the opening, and the other copies point at them."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 26
+kind: "behavior"
 components: ["skill/branch-recap"]
 evidence: ["census"]
 watches: []

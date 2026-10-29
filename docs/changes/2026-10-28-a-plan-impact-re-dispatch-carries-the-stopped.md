@@ -1,7 +1,8 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "A plan-impact re-dispatch carries the stopped round's open findings"
-description: "After a plan-impact ruling, the re-dispatch carried only the ruling and the counters, so the stopped round's fix findings and asks were lost and the next packet looked complete. The ruling's re-dispatch lines now list them under carried-findings, the scripted loop puts the round's unapplied fixes in findings_remaining, and review-loop accounts for every carried line in its packet."
+description: "After a plan-impact ruling, the re-dispatch lines now list the stopped round's fix findings and asks under carried-findings, the scripted loop puts the round's unapplied fixes in findings_remaining, and review-loop accounts for every carried line in its packet. Before, the re-dispatch carried only the ruling and the counters, so those findings and asks were lost and the next packet looked complete."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T23:45:38-05:00"}
 seq: 225
 kind: "fix"

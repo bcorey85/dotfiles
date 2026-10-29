@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The gate scripts drop duplicate checks and hand-built deny output"
 description: "A refactor with no behavior change: the review-commit gate's second folder-change check folds into its first, the /code hooks share one fork-block helper, and the hand-back gate uses the shared deny printer and table-driven report text."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T07:10:49-05:00"}

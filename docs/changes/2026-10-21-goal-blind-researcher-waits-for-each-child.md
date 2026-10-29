@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Goal-blind researcher waits for each child"
 description: "The goal-blind researcher now waits for each child's completion notice and checks for the file it writes before the next step. It never ends its turn while a child runs."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T22:44:29-05:00"}
 seq: 25
+kind: "fix"
 components: ["agent/goal-blind-researcher"]
 evidence: ["work incident"]
 watches: []

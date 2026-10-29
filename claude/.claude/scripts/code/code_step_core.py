@@ -372,6 +372,7 @@ def record_ruled_asks(cwd, state, outcomes, change_texts):
     # impact or refactor pass of the same plan reads it so that it does not raise the same ask again. `change` holds
     # the change the ruling names: the ask's proposal for an accepted or rejected ask, the user's change for a modified
     # one. An ask with no proposed change of its own carries its question as its change, so that copy is no proposal.
+    # A later ruling of the same plan, phase and ask replaces the earlier entry.
     ruled = read_ruled_asks(cwd)
     for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=True):
         question = str(item.get("question") or "")
@@ -380,8 +381,11 @@ def record_ruled_asks(cwd, state, outcomes, change_texts):
             proposed = ""
 
         named_change = (change_text or "") if outcome == "modified" else proposed
+        ask = script_utils.ask_text(item)
+        ruled = [earlier for earlier in ruled if (earlier["plan"], earlier["phase"], earlier["ask"])
+                 != (state.get("plan"), state.get("phase"), ask)]
         ruled.append({"plan": state.get("plan"), "phase": state.get("phase"), "file_line": item.get("file_line", ""),
-                      "ask": script_utils.ask_text(item), "outcome": outcome, "change": named_change})
+                      "ask": ask, "outcome": outcome, "change": named_change})
     state_dir(cwd).mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(ruled_asks_path(cwd), json.dumps(ruled, indent=1))
 

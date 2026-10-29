@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "The hand-back gate finds a subfolder manage.py and names a missing test path as a command error"
 description: "The gate builds `manage.py test` from a manage.py in a subfolder with labels from that folder, and a gate command that stops on a path that does not exist is a command error that never denies or spends the cap, flagged apart from the cap."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T14:00:00-05:00"}

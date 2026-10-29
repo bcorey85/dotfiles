@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "A small follow-up re-review does not re-send the structure and test reviewers"
 description: "When /code reviews again after the coder that applies accepted asks, or after a plan ruling, and that coder's own change is small, the review carries `structure-pass: skip` and the review loop sends only the code reviewer."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-20T18:46:31-05:00"}
 seq: 7
+kind: "behavior"
 components: ["agent/review-loop", "script/code-step"]
 evidence: ["census", "judgment"]
 watches: ["structure-pass-skip-escapes"]

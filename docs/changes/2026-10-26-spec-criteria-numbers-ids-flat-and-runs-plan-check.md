@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "spec-criteria numbers ids flat and runs plan check before it returns"
 description: "spec-criteria gets Bash for one command: it runs plan check on the spec and fixes its criteria file until every remaining row starts with the spec's path, with flat unique ids and no reason text on a verbatim ticket AC line."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-26T22:47:31-05:00"}

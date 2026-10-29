@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The user never waits on tests or lint"
 description: "The global quality-checks block now says the agent runs the full suite and lint on the files an install command writes before it hands that command over, and the command only writes files."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-24T05:14:23-05:00"}

@@ -1,9 +1,11 @@
 ---
 type: "Change"
+change_type: "changed"
 title: "The batch-reads hook also fires inside coder subagents, reading the coder's own transcript"
 description: "The batch-reads hook also fires inside coder subagents, reading the coder's own transcript; other subagents stay skipped."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-13T00:00:00-05:00"}
 seq: 1
+kind: "behavior"
 components: ["script/batch-reads-nudge"]
 evidence: ["census"]
 watches: []

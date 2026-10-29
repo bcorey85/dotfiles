@@ -1,9 +1,11 @@
 ---
 type: "Change"
-title: "`load_bearing_clean` excluded from the `nit` telemetry count"
-description: "`load_bearing_clean` excluded from the `nit` telemetry count."
+change_type: "changed"
+title: "The `nit` telemetry count now ignores the clean-file flag"
+description: "The `nit` count in review telemetry no longer includes `load_bearing_clean`, so a packet reporting 1 nit logs `nit:1` instead of `nit:2`."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 9
+kind: "behavior"
 components: ["script/log-review-metrics"]
 evidence: ["field audit"]
 watches: []
@@ -11,7 +13,7 @@ watches: []
 
 ## Change
 
-`load_bearing_clean` excluded from the `nit` telemetry count
+The `nit` telemetry count no longer includes the `load_bearing_clean` flag, so the field measures reviewer noise correctly when a gate comes back clean.
 
 ## Evidence
 

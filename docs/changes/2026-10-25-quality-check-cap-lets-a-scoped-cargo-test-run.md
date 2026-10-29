@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Quality-check cap lets a scoped cargo test run"
 description: "The quality-check cap no longer denies a repeat of a cargo test scoped to a named lib, doc, test target, bin or filter; the unscoped run stays capped."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-25T23:30:54-05:00"}

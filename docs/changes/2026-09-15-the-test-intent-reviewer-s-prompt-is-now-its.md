@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The test-intent reviewer's prompt is now its contract only"
+title: "The test-intent reviewer's prompt now holds its contract only, loading about 1,350 words instead of about 2,060"
 description: "The test-intent reviewer's prompt is now its contract only: the boxed question with a one-sentence definition of a pinned bug, the oracle resolution with its exit codes, the two dispatch halves, the three audit labels, the cull question with the read-only mutation fence."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-15T00:00:00-05:00"}
 seq: 3

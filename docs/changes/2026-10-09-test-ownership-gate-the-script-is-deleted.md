@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "test-ownership-gate: the script is deleted"
-description: "test-ownership-gate: the script is deleted."
+title: "The shell-write gate now skips the ownership check when the test-ownership-gate script is absent"
+description: "The shell-write gate skips the ownership check when the test-ownership-gate script is absent, and the script, whose agent list was empty, is deleted."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 8
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-test-ownership-gate: the script is deleted. Its agent list was empty, so it denied nothing. The shell-write gate skips the ownership check when the script is absent
+The shell-write gate now skips the ownership check when the test-ownership-gate script is absent, and the script is deleted. Its agent list was empty, so it denied nothing
 
 ## Evidence
 

@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The memory paragraph left the diff reviewer and the shared calibration file (150 words in each"
-description: "The memory paragraph left the diff reviewer and the shared calibration file (150 words in each, 523 remain in the diff reviewer)."
+title: "The diff reviewer and the shared calibration file are each 150 words shorter without the memory paragraph"
+description: "The diff reviewer and the shared calibration file are each 150 words shorter without the memory paragraph (523 words remain in the diff reviewer)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-19T00:00:00-05:00"}
 seq: 1
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The memory paragraph left the diff reviewer and the shared calibration file (150 words in each, 523 remain in the diff reviewer). The first-action line of the four specialist reviewers no longer names that section, the calibration file now counts four named headings, and the opencode ports lost the name and their skip sentence. The `memory: project` frontmatter line also left the ten reviewer agents and the review loop.
+The diff reviewer and the shared calibration file are each 150 words shorter without the memory paragraph (523 words remain in the diff reviewer). The first-action line of the four specialist reviewers no longer names that section, the calibration file now counts four named headings, and the opencode ports lost the name and their skip sentence. The `memory: project` frontmatter line also left the ten reviewer agents and the review loop.
 
 ## Evidence
 

@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The workflow-routing rules — which lane handles which kind of work, when to delegate"
+title: "The workflow-routing rules are now injected at session start, into the main session only"
 description: "The workflow-routing rules — which lane handles which kind of work, when to delegate, which review path a change takes — left the always-loaded instruction file and are now injected at session start, into the main session only."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 8

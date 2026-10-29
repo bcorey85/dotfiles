@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "`log-scan`'s `exit=` redefined as did-it-RUN (0 = printed rows, 1 = ran clean, 2 = did not run)"
-description: "`log-scan`'s `exit=` redefined as did-it-RUN (0 = printed rows, 1 = ran clean, 2 = did not run), `scan=prohibition` added, and `/code` step 2 now runs and logs a plan's prohibition criteria."
+title: "`log-scan` now records whether a scan ran, and `/code` logs prohibition criteria"
+description: "`log-scan`'s `exit=` now means did-it-run (0 = printed rows, 1 = ran clean, 2 = did not run), `scan=prohibition` is added, and `/code` step 2 now runs and logs a plan's prohibition criteria."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-08T00:00:00-05:00"}
 seq: 8
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-`log-scan`'s `exit=` redefined as did-it-RUN (0 = printed rows, 1 = ran clean, 2 = did not run), `scan=prohibition` added, and `/code` step 2 now runs and logs a plan's prohibition criteria
+`log-scan`'s `exit=` now records whether the scan ran (0 = printed rows, 1 = ran clean, 2 = did not run), `scan=prohibition` is added, and `/code` step 2 now runs and logs a plan's prohibition criteria. Before, the field conflated "ran" with "passed".
 
 ## Evidence
 

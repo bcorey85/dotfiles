@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "review-loop: on a large diff (the size test that sends the test reviewer)"
+title: "review-loop: on a large diff, the Opus structure reviewer runs beside the first review"
 description: "review-loop: on a large diff (the size test that sends the test reviewer), the Opus structure reviewer runs again beside the first review, on the whole diff, in the same message as the code reviewer and the test reviewer."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 10

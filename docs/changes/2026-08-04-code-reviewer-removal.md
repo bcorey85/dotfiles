@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "`code-reviewer` removal"
-description: "`code-reviewer` removal."
+title: "`code-reviewer` stays: removing it could not be shipped"
+description: "Removing the `code-reviewer` agent was judged not shippable, because the comparison without it could not be produced."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-08-04T00:00:00-05:00"}
 seq: 6
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-`code-reviewer` removal
+The `code-reviewer` agent stays in place. Removing it was judged not shippable, because the comparison without it could not be produced.
 
 ## Evidence
 

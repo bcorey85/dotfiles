@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "fixed"
-title: "The review-loop gate run drops the repeat-check skip marker"
-description: "The review loop's Step 6 gate run no longer ends with a skip marker for the repeat-check cap. The auto-mode classifier denied every command that carried the marker, so the gate run never ran. This reverses the 2026-10-20 change."
+title: "The review-loop gate run now runs: it no longer ends with the repeat-check skip marker"
+description: "The review loop's Step 6 gate run no longer ends with a skip marker for the repeat-check cap, so the auto-mode classifier stops denying it. Before, the classifier denied every command that carried the marker and the gate run never ran. This reverses the 2026-10-20 change."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T07:58:25-05:00"}
 seq: 5
 kind: "fix"

@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The escape logger's retired recall field and the scan logger's recall paragraph now say so instead of"
+title: "The escape and scan loggers now say their recall field is retired"
 description: "The escape logger's retired recall field and the scan logger's recall paragraph now say so instead of documenting a measurement."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 11

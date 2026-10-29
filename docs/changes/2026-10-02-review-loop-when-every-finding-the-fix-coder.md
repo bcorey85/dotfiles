@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "review-loop: when every finding the fix coder applied is a docs finding"
+title: "review-loop: a fix pass of only docs findings goes straight to the execution gate"
 description: "review-loop: when every finding the fix coder applied is a docs finding, the loop dispatches no further review and no fix-diff check, and goes straight to the execution gate."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 1

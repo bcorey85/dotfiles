@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "coder-core, `/code`, test-ownership-gate, spec-criteria-lint, plan-format"
-description: "coder-core, `/code`, test-ownership-gate, spec-criteria-lint, plan-format, eng-spec finalize: the coder writes the tests for the behavior it implements, asserting what the plan and acceptance criteria state, and fixes the code, never the assertion, when a supported test is red."
+title: "The coder now writes its own tests from the plan and acceptance criteria, and `/code` dispatches no separate test-writer"
+description: "The coder writes the tests for the behavior it implements, asserting what the plan and acceptance criteria state, and fixes the code, never the assertion, when a supported test is red."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-02T00:00:00-05:00"}
 seq: 5
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: ["coder-writes-own-tests"]
 
 ## Change
 
-coder-core, `/code`, test-ownership-gate, spec-criteria-lint, plan-format, eng-spec finalize: the coder writes the tests for the behavior it implements, asserting what the plan and acceptance criteria state, and fixes the code, never the assertion, when a supported test is red. `/code` no longer dispatches a test-writer after the coder; `tests-run` comes from the coder's report. The test-file hook binds no agent type, plans list test files as File targets, and the lint checks that flagged test files in a plan are gone. The review loop still runs the test reviewer beside the code reviewer, and still sends test-gap fixes to a test-writer
+The coder writes the tests for the behavior it implements, asserting what the plan and acceptance criteria state, and fixes the code, never the assertion, when a supported test is red. `/code` no longer dispatches a test-writer after the coder; `tests-run` comes from the coder's report. The test-file hook binds no agent type, plans list test files as File targets, and the lint checks that flagged test files in a plan are gone. The review loop still runs the test reviewer beside the code reviewer, and still sends test-gap fixes to a test-writer
 
 ## Evidence
 

@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "Global hook list: after any block with an approved path (Write or Edit, a script file, the direct command"
+title: "Global hook list: after a block that has an approved path, the agent retries once, lists the block and keeps working"
 description: "Global hook list: after any block with an approved path (Write or Edit, a script file, the direct command, the call without the blocked fragment), the agent retries once, lists the block, and keeps working."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-09T00:00:00-05:00"}
 seq: 5

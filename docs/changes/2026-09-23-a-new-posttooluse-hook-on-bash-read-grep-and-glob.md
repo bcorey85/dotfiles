@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "added"
-title: "A new PostToolUse hook on Bash, Read, Grep and Glob"
+title: "A new hook tells the model to batch its remaining reads after three single-read responses in a row"
 description: "A new PostToolUse hook on Bash, Read, Grep and Glob."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-23T00:00:00-05:00"}
 seq: 5

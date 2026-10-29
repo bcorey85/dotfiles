@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The review skill's prompt is now its contract only: the one-line role, the modifier pass-through"
+title: "The review skill's prompt now holds its contract only"
 description: "The review skill's prompt is now its contract only: the one-line role, the modifier pass-through, the dispatch step with its five pass-through items, the five status routes with every STOP and do-NOT rule, the seven render lines in order, the ask step with the log command."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-16T00:00:00-05:00"}
 seq: 3

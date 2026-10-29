@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The telemetry report's scan step dropped its recall measurement and now names only the two scans that still"
-description: "The telemetry report's scan step dropped its recall measurement and now names only the two scans that still run."
+title: "The telemetry report's scan step now names only the two scans that still run"
+description: "The telemetry report's scan step now names only the two scans that still run and no longer measures recall."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 5
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The telemetry report's scan step dropped its recall measurement and now names only the two scans that still run
+The telemetry report's scan step now names only the two scans that still run and no longer measures recall
 
 ## Evidence
 

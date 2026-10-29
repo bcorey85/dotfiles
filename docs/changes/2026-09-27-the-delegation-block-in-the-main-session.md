@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The delegation block in the main-session orchestration file was trimmed from 283 to 111 words"
-description: "The delegation block in the main-session orchestration file was trimmed from 283 to 111 words."
+title: "The delegation block in the main-session orchestration file is now 111 words, down from 283"
+description: "The delegation block in the main-session orchestration file is now 111 words, down from 283."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 2
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The delegation block in the main-session orchestration file was trimmed from 283 to 111 words. It keeps three rules: dispatch design work through `/code` with its direct-edit exceptions, disjoint scopes for parallel writers, and web search before slow-feedback config or CI. It drops the review-before-commit bullet and the agent-model bullet. The review-commit gate and the agent model guard enforce those two. The user chose to accept that the guard does not block fable.
+The delegation block in the main-session orchestration file is now 111 words, down from 283. It keeps three rules: dispatch design work through `/code` with its direct-edit exceptions, disjoint scopes for parallel writers, and web search before slow-feedback config or CI. It drops the review-before-commit bullet and the agent-model bullet. The review-commit gate and the agent model guard enforce those two. The user chose to accept that the guard does not block fable.
 
 ## Evidence
 

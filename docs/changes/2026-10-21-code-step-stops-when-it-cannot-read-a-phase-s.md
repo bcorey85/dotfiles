@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "code-step stops when it cannot read a phase's checks"
-description: "code-step marked a phase done after running none of its Automated Verification checks when it could not read them as commands. It did not know `cargo`, so every Rust phase skipped its tests. It now reads more command forms and stops when an item stays unreadable. The same batch fixes how it joins coder reports, revives a stopped coder and writes the commit prefix."
+description: "code-step now reads more command forms, including `cargo`, so Rust phases run their tests, and it stops a phase whose Automated Verification item stays unreadable. The same batch fixes how it joins coder reports, revives a stopped coder and writes the commit prefix. Before, it marked such a phase done after running none of its checks."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T08:30:23-05:00"}
 seq: 11
 kind: "fix"

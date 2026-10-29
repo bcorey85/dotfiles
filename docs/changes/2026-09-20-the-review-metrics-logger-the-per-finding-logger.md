@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The review metrics logger, the per-finding logger and the escape logger now stamp every row with the session"
+title: "The review metrics, per-finding and escape loggers now stamp every row with the session id and git branch"
 description: "The review metrics logger, the per-finding logger and the escape logger now stamp every row with the session id and the current git branch."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 19

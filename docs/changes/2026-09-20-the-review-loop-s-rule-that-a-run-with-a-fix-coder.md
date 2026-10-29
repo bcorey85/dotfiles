@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "fixed"
-title: "The review loop's rule that a run with a fix coder ends on a reviewer now names the one caller flag that is"
+title: "The review loop's end-on-a-reviewer rule now names the one caller flag that is exempt"
 description: "The review loop's rule that a run with a fix coder ends on a reviewer now names the one caller flag that is exempt."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 15

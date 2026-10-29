@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "`review-loop`: a re-review dispatches a fresh reviewer of the same type with the Agent tool and passes it the"
-description: "`review-loop`: a re-review dispatches a fresh reviewer of the same type with the Agent tool and passes it the handoff block."
+title: "`review-loop` re-reviews with a fresh reviewer and fixes with a fresh coder each round"
+description: "A re-review in `review-loop` dispatches a fresh reviewer of the same type with the Agent tool and passes it the handoff block, and each fix round dispatches a fresh coder. The loop no longer hands back before the re-review result and the full check."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-19T00:00:00-05:00"}
 seq: 3
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: ["review-loop-fresh-re-review"]
 
 ## Change
 
-`review-loop`: a re-review dispatches a fresh reviewer of the same type with the Agent tool and passes it the handoff block. Each fix round dispatches a fresh coder. Reviewer continuity and coder continuity are gone, and SendMessage is gone from the loop's tools
+`review-loop` now dispatches a fresh reviewer of the same type with the Agent tool for each re-review and passes it the handoff block. Each fix round dispatches a fresh coder. SendMessage leaves the loop's tools. Before, the loop continued the earlier reviewer and coder
 
 ## Evidence
 

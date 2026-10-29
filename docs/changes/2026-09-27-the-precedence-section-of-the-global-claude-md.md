@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "The Precedence section of the global CLAUDE.md, which ranked the user's current instruction over project"
-description: "The Precedence section of the global CLAUDE.md, which ranked the user's current instruction over project, global and agent rules, was deleted."
+title: "The global CLAUDE.md is shorter: the Precedence section is gone"
+description: "The global CLAUDE.md is shorter: the Precedence section, which ranked the user's current instruction over project, global and agent rules, is gone."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-27T00:00:00-05:00"}
 seq: 14
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The Precedence section of the global CLAUDE.md, which ranked the user's current instruction over project, global and agent rules, was deleted.
+The global CLAUDE.md is shorter: the Precedence section, which ranked the user's current instruction over project, global and agent rules, is gone.
 
 ## Evidence
 

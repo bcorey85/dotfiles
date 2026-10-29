@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The coder's core skill gained a two-line block about import paths (30 words"
+title: "The coder's core skill now tells the coder to copy import paths from existing imports or the module manifest"
 description: "The coder's core skill gained a two-line block about import paths (30 words, 683 in all): before the first import of one of the repo's own packages, copy the import path from an existing import or the module manifest."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 15

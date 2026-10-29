@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "removed"
-title: "Retire the spec criteria lint"
-description: "The eng-spec finalization step no longer runs spec-criteria-lint.sh, and the script is deleted. Its one check, verification paths that no phase creates, was wrong on every report it made."
+title: "Eng-spec finalization runs one less command and no longer shows false lint findings"
+description: "The eng-spec finalization step no longer runs spec-criteria-lint.sh, so the user no longer resolves false lint findings before Phase 7. The script is deleted: its one check, verification paths that no phase creates, was wrong on every report it made."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-21T22:28:55-05:00"}
 seq: 24
 kind: "behavior"

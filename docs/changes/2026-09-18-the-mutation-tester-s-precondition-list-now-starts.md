@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The mutation tester's precondition list now starts with \"The dispatch does not state a test command → stop"
-description: "The mutation tester's precondition list now starts with \"The dispatch does not state a test command → stop and say so."
+title: "The mutation tester now stops and says so when the dispatch states no test command"
+description: "The mutation tester now stops and says so when the dispatch states no test command, and never infers one from the repo."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 6
 kind: "behavior"

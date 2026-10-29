@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The mutation tester's prompt lost seventeen sentences and clauses that explained why a rule exists (1,169"
-description: "The mutation tester's prompt lost seventeen sentences and clauses that explained why a rule exists (1,169 words, was 1,418): the authorized-agent framing, the invented-mutation, global-lock, red-baseline, diff-hash, and SessionStart-guard reasons, the reasons behind the verdict order."
+title: "The mutation tester's prompt is now 1,169 words, down from 1,418, with rule rationales cut"
+description: "The mutation tester's prompt is now 1,169 words, down from 1,418, after seventeen sentences and clauses that explained why a rule exists were cut: the authorized-agent framing, the invented-mutation, global-lock, red-baseline, diff-hash, and SessionStart-guard reasons, the reasons behind the verdict order."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 5
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The mutation tester's prompt lost seventeen sentences and clauses that explained why a rule exists (1,169 words, was 1,418): the authorized-agent framing, the invented-mutation, global-lock, red-baseline, diff-hash, and SessionStart-guard reasons, the reasons behind the verdict order, the cull-verdict and no-test-can-kill notes, "do not soften", the Write/Edit and gate-bypass reasons, the routing notes, and the plausible-guess reason. Two clauses stay: "A previous run mutated a file and never restored it" at the lock check, and "it would also destroy the real uncommitted work in that file" at the restore.
+The mutation tester's prompt is now 1,169 words, down from 1,418, after seventeen sentences and clauses that explained why a rule exists were cut: the authorized-agent framing, the invented-mutation, global-lock, red-baseline, diff-hash, and SessionStart-guard reasons, the reasons behind the verdict order, the cull-verdict and no-test-can-kill notes, "do not soften", the Write/Edit and gate-bypass reasons, the routing notes, and the plausible-guess reason. Two clauses stay: "A previous run mutated a file and never restored it" at the lock check, and "it would also destroy the real uncommitted work in that file" at the restore.
 
 ## Evidence
 

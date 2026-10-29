@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The test reviewer's prompt is now its contract only: the role line with the mission folded in"
+title: "The test reviewer's prompt now holds its contract only, loading about 810 words instead of about 1,210"
 description: "The test reviewer's prompt is now its contract only: the role line with the mission folded in, the calibration section, the four target scopes with the branch diff command, one paragraph per review step (map, gaps with the must-test rule, weak/brittle/stale/missing classes, hygiene)."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-16T00:00:00-05:00"}
 seq: 1

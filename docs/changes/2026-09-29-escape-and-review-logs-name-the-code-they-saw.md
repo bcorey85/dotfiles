@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "Escape and review logs name the code they saw: every review-log row records the commit and whether the tree"
+title: "Escape and review logs now record the commit they saw and whether the tree was dirty"
 description: "Escape and review logs name the code they saw: every review-log row records the commit and whether the tree was dirty, and the PR-comment step logs each escape with its line and the comment's commit."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-29T00:00:00-05:00"}
 seq: 8

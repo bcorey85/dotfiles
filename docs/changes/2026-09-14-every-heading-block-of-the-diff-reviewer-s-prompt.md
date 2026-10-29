@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "Every heading block of the diff reviewer's prompt, and of the two shared files it loads"
+title: "Every block of the diff reviewer's prompt now has a recorded content hash, evidence kind and reason"
 description: "Every heading block of the diff reviewer's prompt, and of the two shared files it loads, now has a content hash in a sidecar table under `docs/`, each with the kind of evidence behind the block and a one-line reason."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-14T00:00:00-05:00"}
 seq: 2

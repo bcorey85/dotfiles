@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The coder's core skill gained a block that tells the coder to check the plan against the code it names (104"
+title: "The coder's core skill now tells the coder to check the plan against the code it names"
 description: "The coder's core skill gained a block that tells the coder to check the plan against the code it names (104 words, 638 in all): open the definition of each existing type, function, or field that the plan describes, read the code that sets a value that the new code depends on."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-18T00:00:00-05:00"}
 seq: 11

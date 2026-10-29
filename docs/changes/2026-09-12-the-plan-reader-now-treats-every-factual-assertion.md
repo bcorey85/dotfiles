@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The plan reader now treats every factual assertion a plan makes about the repository as unverified and runs"
+title: "The plan reader now verifies every factual assertion a plan makes about the repository"
 description: "The plan reader now treats every factual assertion a plan makes about the repository as unverified and runs the command that settles it; resolves every cited path, line number, rule number, section heading and cross-document reference against the tree as it currently stands."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-12T00:00:00-05:00"}
 seq: 2

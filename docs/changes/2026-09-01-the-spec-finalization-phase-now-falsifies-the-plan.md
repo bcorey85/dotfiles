@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The spec finalization phase now falsifies the plan's own factual claims against the current tree before the"
+title: "The spec finalization phase now checks the plan's factual claims against the tree before any coder runs"
 description: "The spec finalization phase now falsifies the plan's own factual claims against the current tree before the plan reaches a coder — counts re-run, quoted names and flags re-grepped or `--help`ed, tool and dependency behavior confirmed, any quantity stated twice required to agree."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-01T00:00:00-05:00"}
 seq: 8

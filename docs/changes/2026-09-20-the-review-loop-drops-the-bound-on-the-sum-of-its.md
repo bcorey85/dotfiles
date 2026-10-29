@@ -1,8 +1,8 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The review loop drops the bound on the sum of its two round counters"
-description: "The review loop drops the bound on the sum of its two round counters."
+title: "The review loop no longer checks the sum of its two round counters, a bound that could never trigger"
+description: "The review loop no longer bounds the sum of its two round counters, a check that could never trigger."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-09-20T00:00:00-05:00"}
 seq: 13
 kind: "behavior"
@@ -13,7 +13,7 @@ watches: []
 
 ## Change
 
-The review loop drops the bound on the sum of its two round counters. Each channel refuses its own third round, so the sum can never reach the value that bound tested. The branch it guarded was unreachable in every saved run.
+The review loop no longer bounds the sum of its two round counters. Each channel refuses its own third round, so the sum can never reach the value that bound tested. The branch it guarded was unreachable in every saved run.
 
 ## Evidence
 

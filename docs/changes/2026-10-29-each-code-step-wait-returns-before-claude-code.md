@@ -1,5 +1,6 @@
 ---
 type: "Change"
+change_type: "fixed"
 title: "Each code-step wait returns before Claude Code moves the fork's call to the background"
 description: "A code-step verb that waits on an agent now prints its wait line within 150 seconds (was 570), before Claude Code moves the fork's Bash call to the background at 180 seconds, so the fork reads the line and runs the verb again instead of stalling on an empty background call. The cap still stops a silent agent after about thirty minutes."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T16:52:26-05:00"}

@@ -178,6 +178,7 @@ class ReviewCommitGateTest(GateCase):
     def test_commit_tree_is_not_a_commit(self):
         self.dispatch()
         self.assert_silent(self.bash("git commit-tree abc"))
+        self.assert_silent(self.bash("git --exec-path /x commit -m x"))
 
     def test_mark_clean_then_commit_passes_and_mark_dirty_denies_again(self):
         self.dispatch()
@@ -572,7 +573,8 @@ class NotesOnlyCommitTest(GateCase):
                     "git -P commit -m x", "git --git-dir=x commit -m x", "git --git-dir x commit -m x",
                     "git add docs/x.md && git -C . commit -m x", "git -C x commit -m 'open",
                     "git --attr-source HEAD commit -m x", "git --frob x commit -m x", "git --frob commit -m x",
-                    "git --frob=1 -C . commit -m x"]
+                    "git --frob=1 -C . commit -m x", "git --exec-path commit -m x",
+                    "git --exec-path=/x commit -m x"]
         self.stage(self.NOTES)
         self.assert_all_denied(commands)
         self.assert_commit_denied(self.commit_in("git commit -m 'open"))
@@ -768,6 +770,12 @@ class ReviewedWorkCommitTest(GateCase):
         self.review_converged()
         self.assert_silent(self.dispatch())
         self.assert_silent(self.commit("git -C repo commit -a -m x", cwd=self.tmp))
+
+    def test_a_bare_git_exec_path_commit_is_credited_to_the_cwd(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        self.assert_silent(self.dispatch())
+        self.assert_silent(self.commit("git --exec-path commit -a -m x"))
 
     def test_a_git_dir_option_gets_no_review_credit(self):
         (self.repo / "base.py").write_text("changed\n")

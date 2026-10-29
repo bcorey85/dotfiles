@@ -5,15 +5,15 @@ parser in code_step_start_args.
 Imports run one way: script_utils, code_step_usage, then code_step_boundary and code_step_review, then code_step."""
 import sys
 
+import plan_format
 import script_utils
 
-DECIDE_COMMAND = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
 ANSWER_USAGE = ('usage: code_step.py resume ["<the user\'s answer to the stopped coder>"]\n'
                 'Goes on with the saved run, whatever stage or stop it is in. Only a coder that waits for the user\'s '
                 'answer takes one, and the answer must not start with "-".')
 VERB_USAGES = {
     "resume": ANSWER_USAGE,
-    "decide": f"usage: code_step.py {DECIDE_COMMAND}\n       code_step.py decide discuss",
+    "decide": f"usage: code_step.py {plan_format.DECIDE_USAGE_STEM}\n       code_step.py decide discuss",
     "asks-done": ('usage: code_step.py asks-done [--by <user|session>] [--also "<text>"] '
                   '<accepted|rejected|modified>...\n'
                   'One outcome per ask, in order. --also carries other work the user named alongside the outcomes '

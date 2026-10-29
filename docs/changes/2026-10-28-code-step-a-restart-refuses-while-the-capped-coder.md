@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "code-step: a restart refuses while the capped coder has not handed back"
-description: "After the coder wait cap, `start --restart` dispatched a new coder while the silent one could still be editing the same tree; it now refuses and names the coder to stop, and `--coder-stopped` passes once it is stopped."
+description: "After the coder wait cap, `start --restart` now refuses and names the coder to stop, and `--coder-stopped` passes once it is stopped. Before, it dispatched a new coder while the silent one could still be editing the same tree."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T14:24:16-05:00"}
 seq: 196
 kind: "fix"

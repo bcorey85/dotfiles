@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-The commit gate blocked any commit in a dirty session. It now passes four more cases, each checked against something a subagent cannot write:
+The commit gate now passes four more cases in a dirty session; before, it blocked any commit there. Each is checked against something a subagent cannot write:
 
 - A commit that concludes a merge (the repo has a MERGE_HEAD).
 - A commit while the user's latest prompt in the main transcript starts with `[no-review]`. Tool results, meta records, subagent records and task notifications never count, so a subagent report cannot carry the order. The next prompt without the marker ends it.

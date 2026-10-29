@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "review_fix reports a pending dispatch before a code run's ownership"
-description: "packet named a /code run as the owner of the session's hand-backs when the stored hand-back was the run's but a newer standalone review-loop dispatch had not handed back yet. It now reports the pending dispatch first."
+description: "packet now reports a pending standalone review-loop dispatch before it names a /code run as the owner of the session's hand-backs. Before, it named the run as owner when the stored hand-back was the run's but a newer dispatch had not handed back yet."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-28T01:37:06-05:00"}
 seq: 156
 kind: "fix"

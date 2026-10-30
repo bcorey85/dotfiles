@@ -92,10 +92,11 @@ STAGE_GUARDS = {
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
     "review-again": {"stages": ("stopped",),
                      "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "tool-fault", "critical-blocker",
-                                     "setup-fault", "check-unverified"),
+                                     "setup-fault", "check-unverified",
+                                     "check-not-run"),
                      "message": "review-again ran with no unreadable review packet, capped review, crashed review "
                                 "call, unmarked review gate, critical blocker, setup fault, a full check that showed "
-                                "no test run or silent review-loop pending."},
+                                "no test run or did not run, or silent review-loop pending."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
     "correct-ruling": {"stages": ("asks-coder",), "goOnRefusal": True,
                        "message": "No asks coder is running, so the ruling cannot be corrected in this run. Put the "

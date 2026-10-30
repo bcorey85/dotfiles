@@ -14,8 +14,34 @@ UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
                      "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
 CHECK_ONLY_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
                      "full_check: passed (check only; CI runs the full suite)\nfull_check_command: cargo check")
+CONVERGED_PACKET_HEAD = "status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
+QUALITY_CHECK_FIX = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
+# The full-check results of a check that did not run, so the review verified nothing.
+CHECK_NOT_RUN_RESULTS = (
+    ("not run (timeout)", "make the check finish under the time limit"),
+    ("not run (scoped command: it names files or tests, so it is no full check)", QUALITY_CHECK_FIX),
+    ("not run (unresolved command: what it runs cannot be read, so it is no full check)", QUALITY_CHECK_FIX),
+)
+# A converged and a deferred review stop and finish alike on the full check.
+REVIEW_PACKET_HEADS = {
+    "converged": CONVERGED_PACKET_HEAD,
+    # An empty findings_remaining is an unreadable deferred packet: one open finding makes it readable.
+    "deferred": "status: deferred\niter: 1\nfixed: []\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n"
+                "ask: []\nnit: []\n",
+}
+# The not-run results that leave the phase to finish: CI runs the suite, the repo names no check, the plan expects
+# the check red until a later phase, or the check hit a check-command error or an environment gap.
+CHECK_NOT_OWED_RESULTS = (
+    "not run (CI)",
+    "not run (no check found; the coder's scoped tests stand)",
+    "not run (expected red until Phase 2)",
+    "not run (check-command error: sh: 1: cd: can't cd to gone)",
+    "not run (environment gap: No module named 'requests')",
+)
 CACHE_ASK = ('{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?", '
              '"change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}')
+# A converged packet with no fixed or ask line: the questions test appends its own.
+NO_ASK_HEAD = "status: converged\niter: 1\nnit: []\n"
 CAP_PACKET = "status: cap-reached\niter: 2\nfindings_remaining:\n  - finding: x\n    file_line: a.ts:1"
 
 
@@ -156,11 +182,65 @@ class HandBackTest(base.CodeStepTest):
         self.assertIn("Phase 1 marked done", out)
         self.assertNotEqual("stopped", self.state().get("stage"))
 
+    def test_a_not_run_stop_in_a_repo_with_a_quality_check_line_names_the_configured_check_not_a_new_line(self):
+        for result in (CHECK_NOT_RUN_RESULTS[1][0], CHECK_NOT_RUN_RESULTS[2][0]):
+            with self.subTest(result):
+                self.setUp()
+                (self.repo / "CLAUDE.md").write_text("- Quality check: `npm test`\n")
+                self.coder_round()
+                self.hook("review-loop",
+                          CONVERGED_PACKET_HEAD + f"full_check: {result}\nfull_check_command: npm t a.test.ts")
+
+                out = self.step("resume")
+
+                self.assertIn("ACTION: stop", out)
+                question_text = self.question()
+                self.assertIn("the configured check (`npm test`) as written", question_text)
+                self.assertNotIn("Quality check:", question_text)
+                self.assertNotIn("Quality check:", out)
+
+    def test_a_converged_or_deferred_review_whose_full_check_did_not_run_stops_the_phase_naming_the_result(self):
+        for status, packet_head in REVIEW_PACKET_HEADS.items():
+            for result, fix_text in CHECK_NOT_RUN_RESULTS:
+                with self.subTest(f"{status}: {result}"):
+                    self.setUp()
+                    self.coder_round()
+                    self.hook("review-loop", packet_head + f"full_check: {result}\nfull_check_command: npm test")
+
+                    out = self.step("resume")
+
+                    self.assertIn("ACTION: stop", out)
+                    self.assertEqual(("stopped", "check-not-run"),
+                                     (self.state()["stage"], self.state()["stop"]["kind"]))
+                    self.assertEqual(1, out.count("Do not mark the phase done."))
+                    question_text = self.question()
+                    self.assertIn(result, question_text)
+                    self.assertIn("`npm test`", question_text)
+                    self.assertIn(fix_text, question_text)
+                    self.assertIn(self.own_command("review-again"), question_text)
+
+    def test_a_converged_or_deferred_review_whose_full_check_was_not_owed_finishes_the_phase(self):
+        for status, packet_head in REVIEW_PACKET_HEADS.items():
+            for result in CHECK_NOT_OWED_RESULTS:
+                with self.subTest(f"{status}: {result}"):
+                    self.setUp()
+                    self.coder_round()
+                    self.hook("review-loop", packet_head + f"full_check: {result}")
+
+                    out = self.step("resume")
+
+                    self.assertIn("Phase 1 marked done", out)
+                    self.assertNotEqual("stopped", self.state().get("stage"))
+
     def test_a_stop_lists_the_reviewers_questions_apart_from_the_open_items_and_names_review_again(self):
         stops = [
             ("critical blocker", {"blockerCarried": True}, BLOCKER_PACKET,
              "`" + self.own_command("review-again") + "`"),
             ("review cap", {"capCarried": True}, CAP_PACKET, "start --restart"),
+            ("check not run", {}, NO_ASK_HEAD + "full_check: not run (timeout)\nfull_check_command: npm test",
+             "review-again"),
+            ("check unverified", {}, NO_ASK_HEAD + "full_check: unverified (exit 0, no runner summary)\n"
+                                                   "full_check_command: npm run lint", "review-again"),
         ]
         for label, carried, packet, next_command in stops:
             with self.subTest(label):

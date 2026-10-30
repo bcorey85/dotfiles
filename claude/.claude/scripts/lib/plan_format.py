@@ -887,6 +887,18 @@ def ruling_deviation(phase, decision, owner, ruled_at, ruling_words, disagreemen
     return entry
 
 
+def resolved_block(resolved, decision, ruled_by, ruled_at, ruling_words, disagreement):
+    # The RESOLVED plan_impact block of the handoff: review-loop reads it as settled and reviews against the ruling.
+    lines = [f"RESOLVED: {resolved}. Review the code against the ruling. It is not an open question.",
+             f"Decision: {decision}",
+             f"Ruled by: {ruled_by}, at {ruled_at}",
+             "The ruling:"]
+    lines += ["  " + line for line in ruling_words.splitlines()]
+    lines.append("The disagreement it settles:")
+    lines += ["  " + line for line in disagreement.splitlines()]
+    return "\n".join(lines)
+
+
 def reopen_closing_phases(plan_path):
     """Uncheck every done closing phase in the plan file; the numbers of the phases it unchecked."""
     plan_lines = plan_path.read_text().split("\n")

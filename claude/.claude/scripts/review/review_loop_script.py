@@ -510,6 +510,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.prior_issues = []
         self.status = "converged"
         self.class_closure = NO_CLOSURE
+        self.open_classes = []  # the class members the repair pass left unfixed
         self.init_full_check_state()
         self.round_two_fix_diff_path = ""
         self.files = {}
@@ -769,6 +770,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
         open_findings = [parse_finding(text) for text in closure["open"]]
         _report, _diffs, class_changed = self.repair("coder-class", open_findings)
         self.mark_repaired(open_findings, class_changed)
+        if not class_changed:
+            self.open_classes = closure["open"]
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")
 
@@ -793,6 +796,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "ask_ids": ask_ids,
             "ask_rows": ask_rows,
             "class_closure": self.class_closure,
+            "open_classes": self.open_classes,
             "full_check": self.full_check,
             "full_check_command": self.full_check_command,
             "full_check_summaries": self.check_details["summaries"],

@@ -55,7 +55,7 @@ with open(os.path.join(fake_dir, "calls.jsonl"), "a") as handle:
     pane_names = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET")
     pane_env = {name: os.environ.get(name) for name in pane_names}
     record = {"key": key, "hook_off": os.environ.get("CLAUDE_FORMAT_HOOK_OFF"), "prompt": prompt,
-              "pane_env": pane_env}
+              "pane_env": pane_env, "name": args[args.index("--name") + 1] if "--name" in args else None}
     handle.write(json.dumps(record) + "\\n")
 
 if os.environ.get("FAKE_CLAUDE_HANG"):
@@ -2284,6 +2284,25 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertTrue(calls)
         for call in calls:
             self.assertEqual(set(call["pane_env"].values()), {None})
+
+    def test_each_child_session_is_named_as_a_child_of_the_session_that_ran_the_loop(self):
+        sessions = self.scratch / "home" / ".claude" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / "4242.json").write_text(json.dumps({"pid": 4242, "sessionId": SESSION, "name": "app-abc-12-e6"}))
+        (sessions / "4343.json").write_text(json.dumps({"pid": 4343, "sessionId": "other", "name": "app-abc-12-9f"}))
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([call["name"] for call in self.fake_calls()],
+                         ["child of app-abc-12-e6 (review1-code-reviewer)"])
+
+    def test_a_child_session_whose_parent_is_not_registered_is_named_by_the_parent_session_id(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([call["name"] for call in self.fake_calls()],
+                         [f"child of session {SESSION} (review1-code-reviewer)"])
 
     def test_the_gate_env_of_the_prompt_reaches_the_full_check_and_the_coder_brief(self):
         completed = self.run_script({

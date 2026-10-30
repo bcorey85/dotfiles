@@ -50,6 +50,7 @@ import code_step_verification  # noqa: E402
 import coder_gate  # noqa: E402
 import criteria_verdict  # noqa: E402
 import plan_format  # noqa: E402
+import reviewed_tree  # noqa: E402
 
 PLAN = """# Orders Plan
 
@@ -2317,6 +2318,20 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
+    def test_a_cap_reached_with_no_blocker_and_a_passed_check_of_the_final_tree_finishes_the_phase(self):
+        self.coder_round()
+        tree = reviewed_tree.fingerprint(self.repo)[1]
+        packet = {"status": "cap-reached", "iter": 2, "full_check": "passed", "full_check_tree": tree,
+                  "findings_remaining": [{"disposition": "fix", "finding": "x", "file_line": "a.ts:1",
+                                          "blocker": False}]}
+        self.hook("review-loop", json.dumps(packet))
+
+        out = self.step("resume")
+
+        self.assertNotIn("cap-reached", out)
+        self.assertIn("Phase 1 marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+
     def test_the_question_for_the_user_names_each_asks_proposed_change_and_what_each_answer_does(self):
         self.coder_round()
         self.hook("review-loop", self.ASK)
@@ -3976,13 +3991,11 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(f"Implement: {text}", out)
         self.assertNotIn("Phase 1 of", out)
 
-    def test_a_positional_argument_that_starts_with_a_real_plan_file_and_holds_text_is_refused_with_both_commands(self):
+    def test_a_positional_argument_that_starts_with_a_real_plan_file_and_holds_text_takes_the_text_as_run_notes(self):
         out = self.step("start", f"{self.plan} fix the typo")
-        self.assertIn("Refused: ", out)
-        self.assertIn("ACTION: stop", out)
-        self.assertIn(self.own_command(f"start {self.plan}"), out)
-        self.assertIn(self.own_command("start --task 'fix the typo'"), out)
-        self.assertNotIn("AGENT:", out)
+        self.assertIn(f"Implement Phase 1 of `{self.plan}`", out)
+        self.assertIn("Run notes from the user. They bind this run; the plan stays the spec:\nfix the typo", out)
+        self.assertNotIn("Refused: ", out)
 
     def test_a_positional_argument_with_whitespace_that_is_a_real_plan_file_is_a_plan_path(self):
         spaced_plan = "docs/plans/orders/spec copy.md"

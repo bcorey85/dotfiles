@@ -63,6 +63,7 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../telemetry")]
 import handback
+import handback_hook
 import handback_store
 import script_utils
 from loop_transcript import (
@@ -378,7 +379,7 @@ def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
 def check_stop(hook):
     try:
         transcript = LoopTranscript(hook["agent_transcript_path"])
-        in_ci = handback.full_suite_in_ci(transcript, hook.get("cwd"))
+        in_ci = handback_hook.full_suite_in_ci(transcript, hook.get("cwd"))
         scanned = scan(transcript, hook.get("last_assistant_message"), in_ci)
     except Exception:
         # A transcript the gate cannot read still ends an earlier wait: with no row, the last open count would stand.

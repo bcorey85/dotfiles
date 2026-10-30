@@ -1,5 +1,5 @@
-"""What `start` of code_step.py reads from its arguments: a task file, run notes after a phase, a plan file outside the
-repo, a restart over an open run, and the refusal of an Automated Verification line that cannot run.
+"""What `start` of code_step.py reads from its arguments: a task file, run notes after a phase or a plan, a plan file
+outside the repo, a restart over an open run, and the refusal of an Automated Verification line that cannot run.
 
 The fixtures are those of test_code_step.py; its own tests run there, not here.
 
@@ -21,6 +21,7 @@ import code_step_start_args
 HOOK_SENSITIVE_TASK = "decide: wrap `sudo -u deploy` and a '-c' flag; each case's new rule stays \"quoted\""
 COMPOUND_LINE = "- [ ] **Check**: totals - `TMP=$(mktemp -d) && npx vitest run \"$TMP\"`"
 SHELL_WRAPPER = "-c '"
+RUN_NOTES_HEADING = "Run notes from the user. They bind this run; the plan stays the spec:"
 
 
 class StartInputTest(base.CodeStepTest):
@@ -95,6 +96,16 @@ class StartInputTest(base.CodeStepTest):
         self.assertIn("ACTION: ask-user", out)
         self.assertIn("outside the repo", (self.repo / ".git/code-step/question.md").read_text())
 
+    def test_run_notes_after_a_plan_outside_the_repo_and_its_phase_reach_the_question(self):
+        plan_file = self.write_outside_file("spec.md", base.PLAN)
+
+        out = self.step("start", str(plan_file), "--phase", "1", "only", "touch", "orders")
+
+        self.assertIn("ACTION: ask-user", out)
+        question = (self.repo / ".git/code-step/question.md").read_text()
+        self.assertIn("outside the repo", question)
+        self.assertIn("only touch orders", question)
+
     def test_start_help_names_the_task_file_and_the_run_notes(self):
         finished = base.run(self.repo, self.env, "start", "--help")
 
@@ -113,6 +124,62 @@ class StartInputTest(base.CodeStepTest):
         self.assertIn("Run notes from the user.", out)
         self.assertIn("only touch totals; no console.log", out)
         self.assertEqual("2", self.state()["phase"])
+
+    def test_a_brief_after_a_plan_with_no_phase_starts_the_next_phase_with_it_as_run_notes(self):
+        for brief_words in (["—", "only", "touch", "orders"], ["— only touch orders"]):
+            with self.subTest(brief_words=brief_words):
+                (self.repo / ".git/code-step/state.json").unlink(missing_ok=True)
+
+                out = self.step("start", self.plan, *brief_words)
+
+                self.assertIn("AGENT: coder", out)
+                self.assertIn(f"{RUN_NOTES_HEADING}\n— only touch orders", out)
+                self.assertEqual("1", self.state()["phase"])
+
+    def test_text_after_an_in_repo_markdown_file_that_is_no_plan_is_not_taken_as_run_notes(self):
+        (self.repo / "README.md").write_text("# Readme\n")
+
+        out = self.step("start", "README.md", "typo")
+
+        self.assertTrue(out.startswith("Refused: "), out)
+        self.assertNotIn("AGENT: coder", out)
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
+
+    def test_text_after_a_brief_outside_the_repo_keeps_the_refusal_that_drops_no_words_silently(self):
+        task_file = self.write_outside_file("brief.md", "Add retries to the orders client.\n")
+
+        out = self.step("start", str(task_file), "Add", "retries")
+
+        self.assertTrue(out.startswith("Refused: "), out)
+        self.assertIn("The text after it was not passed to the coder.", out)
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
+
+    def test_two_plan_files_with_text_and_no_phase_do_not_start_a_run_on_the_first(self):
+        second_plan = self.repo / "second.md"
+        second_plan.write_text(base.PLAN)
+
+        out = self.step("start", self.plan, str(second_plan), "only", "touch", "orders")
+
+        self.assertNotIn("Run notes from the user.", out)
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
+
+    def test_two_plan_files_with_a_phase_flag_and_text_do_not_start_a_run_on_the_first(self):
+        second_plan = self.repo / "second.md"
+        second_plan.write_text(base.PLAN)
+
+        out = self.step("start", self.plan, str(second_plan), "--phase", "1", "only", "touch", "orders")
+
+        self.assertNotIn("Run notes from the user.", out)
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
+
+    def test_text_after_a_plan_file_outside_the_repo_is_refused_and_kept_in_the_output(self):
+        plan_file = self.write_outside_file("spec.md", base.PLAN)
+
+        out = self.step("start", str(plan_file), "only", "touch", "orders")
+
+        self.assertTrue(out.startswith("Refused: "), out)
+        self.assertIn("only touch orders", out)
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
 
     def test_a_phase_run_with_no_trailing_text_has_no_run_notes_in_the_brief(self):
         self.finish_phase_one()
@@ -342,11 +409,11 @@ class StartInputTest(base.CodeStepTest):
         for command in start_commands:
             self.assertIn(f"--repo {other}", command)
 
-    def test_refusals_keep_the_repo_flag_for_a_verb_as_task_text_and_text_after_a_plan(self):
+    def test_refusals_keep_the_repo_flag_for_a_verb_a_ticket_id_and_a_phase_flag_in_task_text(self):
         other = self.other_repo()
         cases = {
             "verb as task text": ["resume", "now"],
-            "text after a plan": [self.plan, "extra"],
+            "text after a ticket id": ["PROJ-12", "is", "broken"],
             "phase flag inside task text": ["fix", "the", "typo", "--phase", "2"],
         }
         for name, words in cases.items():

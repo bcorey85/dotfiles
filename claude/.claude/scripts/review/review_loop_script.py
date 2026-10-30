@@ -24,7 +24,8 @@ rerun once per loop (the base run) in a detached worktree of HEAD, up to full_ch
 failed check's blocker holds the failing step's lines; after a repair coder, before recheck_full_check stops as a
 blocker, the autofix formatters run on the touched files and the check reruns once if one changed a file.
 
-Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
+Model steps are `claude -p` calls in auto permission mode, each named `child of <parent session> (<role>)` so
+ListAgents tells it from a worker, and each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
 judgment (Sonnet). When the repo CLAUDE.md names no `Quality check` line, a Haiku check-finder call names the full
 check; when it names none, the review runs with no full check. A Sonnet disposition call runs
@@ -124,6 +125,8 @@ CHECK_FINDER = (
 CALLS = []
 CALLS_LOCK = threading.Lock()
 LIVE_CHILDREN = full_check_gate.LIVE_CHILDREN
+# The ListAgents label of the session that ran this loop; main() sets it. Each child session's --name carries it.
+PARENT_SESSION = {"label": ""}
 
 
 def now():
@@ -140,7 +143,8 @@ def token_total(payload):
 def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
     """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises. The
     prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument."""
-    command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto"]
+    command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto",
+               "--name", f"child of {PARENT_SESSION['label']} ({role})"]
     if agent:
         command += ["--agent", agent]
         skills_prompt = script_utils.preloaded_skills_prompt(agent)
@@ -934,6 +938,7 @@ def parse_review_loop_arguments(argv):
 def main(argv=None):
     args = parse_review_loop_arguments(argv)
     signal.signal(signal.SIGTERM, stop_on_sigterm)
+    PARENT_SESSION["label"] = script_utils.session_display_name(args.session) or f"session {args.session}"
     repo = str(pathlib.Path(args.repo).resolve())
     out = pathlib.Path(args.state_dir) / "loop-script" / args.agent_id
     out.mkdir(parents=True, exist_ok=True)

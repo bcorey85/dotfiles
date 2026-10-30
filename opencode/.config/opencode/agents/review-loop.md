@@ -40,7 +40,7 @@ Never block on it. If it fails, continue, and take the file list from `git statu
 
 A coder dispatch marks the session `dirty`. The only clean transition is your
 caller running `review-gate-mark clean` after rendering a packet whose `status`
-is `converged` or `deferred` — those two are the normal exits; the other three
+is `converged` or `deferred` — those two are the normal exits; the other five
 statuses leave the session dirty by design. Your caller routes on `status`, so
 a dishonest `converged` becomes an unearned mark.
 
@@ -283,12 +283,12 @@ that returned nothing. Runs after Step 6b so `actioned` is real.
 Return exactly this, and nothing else of substance:
 
 ```
-status: converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault
+status: converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault | fix-removed-change
 iter: <n>                                # correctness rounds run
 spec_iter: <n>                           # specialist re-entries consumed (cap 2)
 fixed: [{finding, file_line, blocker}]   # `fix` findings you resolved — NEVER omit; a silent repair is a bug
 skipped_fp: [{item, reason}]             # `fix` findings dropped as false positives
-blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here)
+blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here) | fix-removed-change (the fix passes removed half or more of the source lines of a change under review that adds 10 or more; the scripted loop sets it)
 findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; question is never empty: an ask with no question takes its finding, or else its change, as its question; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome

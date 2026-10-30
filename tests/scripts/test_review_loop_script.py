@@ -77,6 +77,9 @@ if position >= len(replies):
     sys.exit(3)
 reply = replies[position]
 
+for old_path, new_path in reply.get("renames", {}).items():
+    os.rename(old_path, new_path)
+
 edits = dict(reply.get("edits", {}))
 if os.environ.get("CLAUDE_FORMAT_HOOK_OFF") != "1":
     edits.update(reply.get("edits_when_format_hook_on", {}))
@@ -253,6 +256,181 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((usage[0]["agent"], usage[0]["model"], usage[0]["driver"]),
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
+
+    def start_with_a_twelve_line_change(self):
+        added = "".join(f"mechanism = {number}\n" for number in range(12))
+        (self.repo / "app.py").write_text(APP_BEFORE + added)
+        return added
+
+    def test_a_fix_coder_that_removes_the_mechanism_the_change_added_stops_the_loop(self):
+        self.start_with_a_twelve_line_change()
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_BEFORE}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], handback.FIX_REMOVED_CHANGE)
+        self.assertEqual(["the fix passes removed 12 of the 12 source lines the change under review adds; "
+                          "most lost in app.py (12)"], packet["blockers"])
+        keys = [call["key"] for call in self.fake_calls()]
+        self.assertNotIn("closure", keys)
+        self.assertEqual(1, keys.count("code-reviewer"))
+        self.assertEqual("", packet["scoped_tests"])
+        self.assertEqual(packet["files_touched"], ["app.py"])
+
+    def test_a_fix_that_moves_the_added_lines_into_a_new_file_converges(self):
+        added = self.start_with_a_twelve_line_change()
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_BEFORE, "lib_helper.py": added}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
+
+    def test_a_fix_that_moves_the_added_lines_into_a_test_file_stops_the_loop(self):
+        added = self.start_with_a_twelve_line_change()
+        (self.repo / "tests").mkdir()
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_BEFORE, "tests/test_mechanism.py": added}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], handback.FIX_REMOVED_CHANGE)
+        self.assertIn("12 of the 12", packet["blockers"][0])
+
+    def test_a_fix_that_edits_half_of_a_renamed_file_it_did_not_add_converges(self):
+        original = "".join(f"constant_{number} = {number}\n" for number in range(12))
+        self.commit_files({"old_name.py": original})
+        (self.repo / "app.py").write_text(APP_BEFORE)
+        git(self.repo, "mv", "old_name.py", "new_name.py")
+        edited = "".join(f"constant_{number} = {number + 100}\n" if number < 6 else f"constant_{number} = {number}\n"
+                         for number in range(12))
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"new_name.py": edited}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
+
+    def test_a_fix_that_cuts_most_of_a_file_moved_with_a_plain_mv_stops_the_loop(self):
+        original = "".join(f"constant_{number} = {number}\n" for number in range(24))
+        self.commit_files({"old_name.py": original})
+        (self.repo / "app.py").write_text(APP_BEFORE)
+        (self.repo / "old_name.py").rename(self.repo / "new_name.py")
+        trimmed = "".join(f"constant_{number} = {number}\n" for number in range(8))
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"new_name.py": trimmed}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], handback.FIX_REMOVED_CHANGE)
+        self.assertIn("16 of the 24", packet["blockers"][0])
+
+    def test_a_fix_that_renames_a_file_and_removes_the_added_lines_elsewhere_stops_the_loop(self):
+        self.start_with_a_twelve_line_change()
+        original = "".join(f"constant_{number} = {number}\n" for number in range(12))
+        self.commit_files({"old_name.py": original})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "renames": {"old_name.py": "new_name.py"},
+                       "edits": {"app.py": APP_BEFORE}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], handback.FIX_REMOVED_CHANGE)
+        self.assertIn("12 of the 12", packet["blockers"][0])
+
+    def test_a_fix_that_edits_a_few_of_the_added_lines_still_converges(self):
+        added = self.start_with_a_twelve_line_change()
+        fixed = APP_BEFORE + added.replace("mechanism = 0", "mechanism = 100").replace("mechanism = 1\n",
+                                                                                         "mechanism = 101\n")
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": fixed}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
+
+    def test_a_class_coder_that_removes_the_mechanism_the_change_added_stops_the_loop(self):
+        added = self.start_with_a_twelve_line_change()
+        closure = json.dumps({"receipt": "one member still open", "open": ["`app.py:4` the same limit is wrong here"]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_BEFORE + added.replace("mechanism = 0",
+                                                                                            "mechanism = 100")}},
+                      {"result": "Closed the class.", "edits": {"app.py": APP_BEFORE}}],
+            "closure": [{"result": closure}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], handback.FIX_REMOVED_CHANGE)
+        self.assertIn("12 of the 12", packet["blockers"][0])
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
+
+    def test_a_gate_repair_coder_that_removes_the_mechanism_the_change_added_stops_the_loop(self):
+        added = self.start_with_a_twelve_line_change()
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_BEFORE + added, "broken.flag": "x\n"}},
+                      {"result": "Repaired.", "edits": {"app.py": APP_BEFORE}}],
+            "closure": [{"result": CLOSED}],
+        }, quality_check="test ! -f broken.flag")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], handback.FIX_REMOVED_CHANGE)
+        self.assertIn("12 of the 12", packet["blockers"][0])
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
+
+    def test_a_fix_that_removes_added_test_lines_does_not_count_as_removing_the_change(self):
+        added = "".join(f"def test_case_{number}(): pass\n" for number in range(12))
+        (self.repo / "tests").mkdir()
+        (self.repo / "tests" / "test_app.py").write_text(added)
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"tests/test_app.py": ""}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
+
+    def test_a_fix_that_empties_an_untracked_new_file_the_change_added_stops_the_loop(self):
+        (self.repo / "feature.py").write_text("".join(f"mechanism = {number}\n" for number in range(12)))
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"feature.py": ""}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], handback.FIX_REMOVED_CHANGE)
+        self.assertIn("feature.py (12)", packet["blockers"][0])
 
     def run_with_scoped_tests(self, gate_commands, scenario):
         self.state_dir.mkdir()

@@ -9,6 +9,8 @@ kind: "behavior"
 components: ["shared/plan-reading", "skill/coder-core"]
 evidence: ["removal round"]
 watches: []
+proof: ["2026-09-14-codercore-1"]
+impact: {"metric": "tokens", "before": 950000, "after": 780000, "unit": "tokens", "finding": "2026-09-14-codercore-1"}
 ---
 
 ## Change

@@ -1,8 +1,9 @@
 """code_step_hooks.py: the hook commands of code_step.py. The hooks write the run's event log and deny or block the
 fork's calls; none writes state.json.
 
-Imports run one way: code_step_state, code_step_routes, code_step_core, code_step_verification, code_step_boundary,
-code_step_closing, code_step_hooks, code_step_gates, code_step_start, code_step_report, code_step_review, code_step."""
+Imports run one way: code_step_state, code_step_routes, code_step_store, code_step_core, code_step_verification,
+code_step_boundary, code_step_closing, code_step_hooks, code_step_gates, code_step_start, code_step_report,
+code_step_review, code_step."""
 import collections
 import datetime
 import json
@@ -24,7 +25,6 @@ from code_step_core import (
     RESUME_VERB,
     SAY_MAX_AGE_SECONDS,
     VERB_WORDS_REPLACED_BY_RESUME,
-    StateFileError,
     coder_changed_files,
     dispatch_marker,
     dispatch_standing,
@@ -37,7 +37,6 @@ from code_step_core import (
     newest_dispatch_standing,
     own_path,
     read_events,
-    read_state_file,
     resume_run_repos,
     say_file_in,
     session_repo_dirs,
@@ -46,7 +45,8 @@ from code_step_core import (
     timed_command,
 )
 from code_step_routes import STAGE_FACTS, StageFact
-from code_step_state import Stage
+from code_step_state import Stage, StateFileError
+from code_step_store import read_state_file
 from code_step_verification import verification_format_failure
 
 HookCall = collections.namedtuple("HookCall", "event repo state run_id session_id tool_input")

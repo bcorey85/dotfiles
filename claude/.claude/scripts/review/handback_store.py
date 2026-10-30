@@ -13,6 +13,8 @@ import script_utils
 
 STALE_STORE_SECONDS = 7 * 86400
 ASKS_LOGGED_ROW = "asks-logged"
+# A row that replaces the repo of the latest dispatch with the one its loop's ROOT= line named.
+DISPATCH_REPO_KIND = "dispatch-repo"
 
 
 def store_dir():
@@ -71,10 +73,10 @@ def latest(session_id):
     hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
     it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
     session_id; a dispatch row also no_review, resolved_plan_impact and repo (the top level of the repo it reviews, or
-    None); a hand-back row also agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row also
-    agent_id, open_dispatches (the background agents and shells the loop still waited on when it stopped) and
-    ask_rows. A stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by
-    append, not by clock."""
+    None; a later DISPATCH_REPO_KIND row replaces it); a hand-back row also agent_id, status, problems, message,
+    no_reviewer, unreviewed_fix; a stop row also agent_id, open_dispatches (the background agents and shells the loop
+    still waited on when it stopped) and ask_rows. A stop the gate blocked is not a stop: the loop went on, so such a
+    row is skipped. Rows are ordered by append, not by clock."""
     standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
     if not session_id:
         return standing
@@ -87,6 +89,8 @@ def latest(session_id):
             standing["dispatch"] = row
             standing["stop"] = None
             standing["unanswered"] += 1
+        elif row.get("kind") == DISPATCH_REPO_KIND and standing["dispatch"] is not None:
+            standing["dispatch"] = {**standing["dispatch"], "repo": row.get("repo")}
         elif row.get("kind") == "stop" and not row.get("blocked"):
             standing["stop"] = row
         elif row.get("kind") == "handback":

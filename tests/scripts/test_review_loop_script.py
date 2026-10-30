@@ -1187,6 +1187,33 @@ class ReviewLoopScriptTest(unittest.TestCase):
         loader.loader.exec_module(module)
         return module
 
+    def test_a_fix_coder_command_carries_the_body_of_the_skills_its_agent_preloads(self):
+        module = self.load_script_module()
+        claude_home = self.scratch / "home" / ".claude"
+        (claude_home / "agents").mkdir(parents=True)
+        (claude_home / "agents" / "coder.md").write_text("---\nname: coder\nskills:\n  - coder-core\n---\n\nBody.\n")
+        (claude_home / "skills" / "coder-core").mkdir(parents=True)
+        (claude_home / "skills" / "coder-core" / "SKILL.md").write_text(
+            "---\nname: coder-core\n---\n\n# Coder Core\nRule one.\n")
+        commands = []
+
+        def run_process(command, *args, **kwargs):
+            commands.append(command)
+            return 0, json.dumps({"result": "ok", "usage": {}}), ""
+
+        out = self.scratch / "out"
+        out.mkdir()
+        preloaded_skills_prompt = module.script_utils.preloaded_skills_prompt
+        with mock.patch.object(module.script_utils, "run_process", run_process), \
+                mock.patch.object(module.script_utils, "preloaded_skills_prompt",
+                                  lambda agent: preloaded_skills_prompt(agent, claude_home)):
+            module.claude_call("fix", "prompt", self.repo, out, agent="coder")
+
+        command = commands[0]
+        appended = command[command.index("--append-system-prompt") + 1]
+        self.assertIn("# Coder Core\nRule one.", appended)
+        self.assertNotIn("name: coder-core", appended)
+
     def test_a_multi_line_ask_with_a_blank_line_paragraph_parses_as_one_located_ask(self):
         module = self.load_script_module()
         review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n"

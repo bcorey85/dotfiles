@@ -31,6 +31,9 @@ CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 REVIEWERS = re.compile(r"^([a-z]+-)*reviewer(-deep)?$")
 # The agent the /code skill forks into (its `agent:` line). It has no Edit or Write tool.
 FORK_AGENT_TYPE = "code-fork"
+# A markdown file's opening `---` frontmatter block, and one `- name` line of a block list in it.
+FRONTMATTER = re.compile(r"\A---\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
+FRONTMATTER_LIST_ITEM = re.compile(r"^\s+-\s+(.+?)\s*$")
 # The line that starts the stamp the coder gate appends to a hand-back message. Everything after it is the gate's text.
 HAND_BACK_GATE_MARKER = "\n\nHAND-BACK GATE:"
 TIMEOUT_EXIT_CODE = 124
@@ -613,6 +616,60 @@ def agent_transcript_path(hook):
     if named:
         return named
     return subagent_transcript_path(hook["transcript_path"], hook["agent_id"])
+
+
+def frontmatter_skills(agent_text):
+    """The skill names in an agent file's `skills:` frontmatter key: a block list of `- name` lines. An inline
+    value after `skills:` raises ValueError."""
+    frontmatter = FRONTMATTER.match(agent_text)
+    if not frontmatter:
+        return []
+
+    lines = frontmatter.group(1).splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith("skills:"):
+            continue
+        inline_value = line[len("skills:"):].strip()
+        if inline_value:
+            raise ValueError(f"`skills:` frontmatter has the inline value {inline_value!r}; expected a block list "
+                             "of `  - name` lines")
+        names = []
+        for item_line in lines[index + 1:]:
+            item = FRONTMATTER_LIST_ITEM.match(item_line)
+            if not item:
+                break
+            names.append(item.group(1).strip("'\""))
+        return names
+    return []
+
+
+def preloaded_skills_prompt(agent, claude_home=None):
+    """The skills `agent`'s `skills:` frontmatter preloads, as the Agent tool hands them to the agent: each SKILL.md
+    body without its frontmatter, under a `Base directory for this skill:` line. `claude -p --agent` loads none of
+    them, so a script that starts an agent that way appends this to its system prompt. Empty when the agent preloads
+    nothing or has no agent file. `claude_home` defaults to the toolkit folder this file sits in. A named skill with
+    no SKILL.md raises FileNotFoundError."""
+    claude_home = claude_home or pathlib.Path(__file__).resolve().parents[2]
+    agent_file = claude_home / "agents" / f"{agent}.md"
+    if not agent_file.is_file():
+        return ""
+
+    agent_text = agent_file.read_text()
+    try:
+        skill_names = frontmatter_skills(agent_text)
+    except ValueError as error:
+        raise ValueError(f"{agent_file}: {error}") from error
+
+    skill_texts = []
+    for name in skill_names:
+        skill_dir = claude_home / "skills" / name
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.is_file():
+            raise FileNotFoundError(f"{agent_file} preloads skill {name!r}, but {skill_file} does not exist")
+        skill_text = skill_file.read_text()
+        skill_body = FRONTMATTER.sub("", skill_text, count=1).strip()
+        skill_texts.append(f"Base directory for this skill: {skill_dir}\n\n{skill_body}")
+    return "\n\n".join(skill_texts)
 
 
 def telemetry_switch_on():

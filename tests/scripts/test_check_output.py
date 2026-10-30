@@ -55,15 +55,17 @@ VERDICT_ROWS = [
     ("a filtered run with a failing summary", "pytest tests/ -k totals", 0, "===== 1 failed in 0.10s =====",
      check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
     ("a file print that holds a failing summary", "cat run.log", 0, "1 failed, 2 passed in 0.1s",
-     check_output.PASSED, full_check.PASSED, "pass"),
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
     ("a script wrapper that swallowed a failing summary", "bash tests/run.sh", 0, "1 failed, 2 passed in 0.1s",
      check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
-    ("a negated runner whose failure is expected", "! pytest new_test.py", 0, "1 failed, 2 passed in 0.1s",
-     check_output.PASSED, full_check.PASSED, "pass"),
-    ("a negated filtered runner whose failure is expected", "! pytest t.py::test_new", 0, "1 failed in 0.10s",
-     check_output.PASSED, full_check.PASSED, "pass"),
+    ("a negated runner that prints a failed summary and exits zero", "! pytest new_test.py", 0,
+     "1 failed, 2 passed in 0.1s", check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a negated filtered runner that prints a failed summary and exits zero", "! pytest t.py::test_new", 0,
+     "1 failed in 0.10s", check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
     ("a tail of a log that holds a failing summary", "tail -5 run.log", 0, "1 failed, 2 passed in 0.1s",
-     check_output.PASSED, full_check.PASSED, "pass"),
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a tail with a line count of a log that holds a failing summary", "tail -n 50 run.log", 0,
+     "1 failed, 2 passed in 0.1s", check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
     ("a timeout", "pytest tests/", None, "", check_output.NOT_RUN, full_check.NOT_RUN_TIMEOUT, "timeout"),
 ]
 COARSE_OUTCOME = {check_output.PASSED: PASS, check_output.FAILED: NOT_PASS, check_output.FAILED_EXIT_ZERO: NOT_PASS,
@@ -508,6 +510,14 @@ class CheckOutputTest(unittest.TestCase):
 class CheckVerdictTest(unittest.TestCase):
     """check_verdict and the three pass rules that call it read every row the same way."""
 
+    def test_a_negated_filtered_run_that_matched_no_test_is_green(self):
+        # full_check reads no passed summary as unverified, so this row stays out of VERDICT_ROWS.
+        command = "! pytest t.py -k nothing"
+        output = "===== 42 deselected in 0.20s ====="
+
+        self.assertEqual(check_output.PASSED, check_output.check_verdict(command, 0, output))
+        self.assertEqual("GREEN", criteria_verdict.judge_item(command, f"`{command}` exits 0", 0, output).outcome)
+
     def test_a_search_that_names_a_runner_is_not_read_for_no_tests_ran(self):
         # criteria_verdict bans an exit-0 search, so this command stays out of VERDICT_ROWS.
         verdict = check_output.check_verdict("rg -t py pytest scripts/", 0, "no tests ran")
@@ -711,6 +721,24 @@ class CommandClassificationTest(unittest.TestCase):
             with self.subTest(whole=command):
                 self.assertFalse(check_scope.names_test_filter(command))
                 self.assertFalse(test_run_output.matches_no_test(command, 0, no_pass_output))
+
+    def test_the_value_of_each_cargo_flag_is_no_test_filter(self):
+        no_pass_output = "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out"
+        flag_commands = {"-A": "cargo test -A warnings", "-W": "cargo test -W unused",
+                         "-D": "cargo test -D warnings", "--retries": "cargo test --retries 2",
+                         "--test-threads": "cargo test --test-threads 4"}
+        for flag, command in flag_commands.items():
+            with self.subTest(flag=flag):
+                self.assertFalse(check_scope.names_test_filter(command))
+                self.assertFalse(test_run_output.matches_no_test(command, 0, no_pass_output))
+
+    def test_a_cargo_test_in_a_quoted_string_of_another_step_runs_no_test(self):
+        command = 'echo "cargo test x"'
+
+        self.assertFalse(check_scope.runs_tests(command))
+        self.assertEqual("none", check_scope.command_check_scope(command, self.repo))
+        self.assertFalse(check_scope.runs_whole_check(command, self.repo))
+        self.assertFalse(check_scope.names_test_filter(command))
 
     def test_a_check_is_any_test_lint_typecheck_or_build_run_through_its_wrappers(self):
         checks = ("python3 -m pytest", "uv run pytest", "time npx vitest run", "env A=1 cargo +nightly clippy",

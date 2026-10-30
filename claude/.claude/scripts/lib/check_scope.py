@@ -517,8 +517,9 @@ def names_test_runner(command):
 
 def prints_own_runner_summary(command):
     """False when no step of the shell command can print a runner summary of its own: every step is a search, a file
-    print, a `cd` or similar program, or is negated with `!`, so a summary in the output is quoted text. True for any
-    other step (a test runner or a script wrapper such as `bash tests/run.sh`) and for text shlex cannot split."""
+    print, a `cd` or similar program, or is negated with `!`, so the answer gates only the no-test-matched check. True
+    for any other step (a test runner or a script wrapper such as `bash tests/run.sh`) and for text shlex cannot
+    split."""
     try:
         simple_command_list = split_simple_commands(command)
     except ValueError:

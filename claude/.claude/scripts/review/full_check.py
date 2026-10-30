@@ -31,8 +31,7 @@ calls, refuses a scoped or unresolved command the same way; there a command that
 command counts as that command. `base_run` skips the refusal, since the head run has applied it.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
-(`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure, unless every step
-is a search, a file print or a `!`-negated command.
+(`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
 A command past the limit is killed with its whole process group, so no test process outlives the check. A repo with
 a `.python-version` file runs the command with the pyenv shims first on PATH. A failed check whose log says
 `No module named X`, for an X that the repo declares as a dependency (requirements*.txt, pyproject.toml, setup.cfg

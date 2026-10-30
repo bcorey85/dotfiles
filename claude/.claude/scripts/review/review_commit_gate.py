@@ -3,7 +3,8 @@
 
   PostToolUse(Agent): a coder dispatch is recorded with the id of the agent it ran.
   PreToolUse(Bash):   `git commit` in a dirty session is denied, with the reason telling the session to run /review
-                      and commit after it converges; `review-gate-mark clean|dirty` records that state.
+                      and commit after it converges; `review-gate-mark clean` records the reviewed tree
+                      and `dirty` replaces the state with one dirty event.
                       `clean` is denied unless this session's latest stored review-loop hand-back (handback.py) is
                       converged or deferred.
 
@@ -60,9 +61,9 @@ dir or work-tree option or variable, quotes and escapes resolved) or holds a `$`
 string, a comment or a double-quoted quoted-heredoc message earns no credit. So does a command with a step that is
 not a plain `git` command but has a word holding `commit` (`env -C <dir> git commit`, `time git commit`).
 
-State: ~/.claude/state/review-gate/<session>, one line per record: `clean` (a clean mark; earlier lines no longer
-count), or a JSON event {"kind": "dispatch"|"dirty", "ts", "agent"}. A plain `dirty` line, from
-before events carried a time, counts from the file's last change. Hook JSON in, one permissionDecision line out,
+State: ~/.claude/state/review-gate/<session>, one line per record: a JSON event {"kind": "dispatch"|"dirty", "ts",
+"agent"}. A plain `dirty` line, from before events carried a time, counts from the file's last change. A leftover
+`clean` line counts as an unreadable line. Hook JSON in, one permissionDecision line out,
 exit 0. On an internal error PreToolUse asks the user; PostToolUse stays silent.
 """
 import json
@@ -409,8 +410,8 @@ def open_state_dir():
 
 
 def gate_events(state_file):
-    """The state events after the last clean mark, oldest first. A plain `dirty` line, and a line the gate cannot
-    read, become a dirty event at the file's last change."""
+    """The state events, oldest first. A plain `dirty` line, and a line the gate cannot read, become a dirty event at
+    the file's last change."""
     try:
         with open(state_file, "rb") as handle:
             lines = handle.read().decode("utf-8", "replace").splitlines()
@@ -420,9 +421,6 @@ def gate_events(state_file):
 
     events = []
     for line in lines:
-        if line == "clean":
-            events = []
-            continue
         try:
             event = json.loads(line)
         except ValueError:
@@ -690,30 +688,23 @@ def mark_in(command):
 def apply_mark(mark, session, state_file):
     """Record `review-gate-mark clean|dirty`. `clean` is denied without a converged or deferred hand-back, and
     credits the tree of the repo the stored review dispatch ran on."""
-    reviewed_repo = None
     if mark == "clean":
         # Imported here, not at load: a missing module is an internal error on a `clean` mark only, and the
         # commit check and the dirty mark keep working.
         import handback
-        reason = handback.false_clean_reason(session)
+        reason, reviewed_repo = handback.record_clean_review(session)
         if reason:
             raise DenyError(
                 f"[review-commit-gate] Gate not marked clean: {reason}. Only a converged or deferred review "
                 "hand-back from this session allows clean."
             )
-        import handback_store
-        reviewed_repo = handback_store.latest(session)["dispatch"].get("repo")
-    # A mark stands for every repo, so it replaces the events before it.
-    line = mark if mark == "clean" else json.dumps({"kind": "dirty", "ts": time.time()})
+        if not reviewed_repo:
+            print("[review-commit-gate] The stored review dispatch names no repo, so no tree was recorded as "
+                  "reviewed.", file=sys.stderr)
+        return
+    # A dirty mark stands for every repo, so it replaces the events before it.
     with open(state_file, "w") as handle:
-        handle.write(line + "\n")
-    if mark != "clean":
-        return
-    if not reviewed_repo:
-        print("[review-commit-gate] The stored review dispatch names no repo, so no tree was recorded as "
-              "reviewed.", file=sys.stderr)
-        return
-    reviewed_tree.record_reviewed(session, reviewed_repo)
+        handle.write(json.dumps({"kind": "dirty", "ts": time.time()}) + "\n")
 
 
 def on_pre_tool_use(root, session, state_file):

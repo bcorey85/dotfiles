@@ -78,9 +78,9 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                '[--headless] [--coder-stopped] [<run notes>]\n'
                '       code_step.py start [--repo <path>] --task "<task text>"\n'
                '       code_step.py start [--repo <path>] --task-file <path>\n'
-               '--phase <id> starts the named phase; the text after a plan file or ticket id and its phase is the '
-               "run notes: the constraints for that run, given to its coder or, on a closing phase, to its skill. "
-               "Text that comes first, when there is no plan file, "
+               '--phase <id> starts the named phase; the text after a plan file inside the repo that has phases, or '
+               "after a plan file or ticket id and its phase, is the run notes: the constraints for that run, given "
+               "to its coder or, on a closing phase, to its skill. Text that comes first, when there is no plan file, "
                'ticket id or directory, is the task text. --task-file reads the task text from a file, as it is. A '
                'flag before the text, or after a plan, must be known. --restart drops an unfinished run and starts '
                'over. With --restart, text that comes first becomes the run notes of the saved plan when that plan '
@@ -193,7 +193,7 @@ def phase_words_as_flag(args):
         return args
 
     plan_word = words[plan_at]
-    if not (plan_word.endswith(".md") and os.path.isfile(plan_word)):
+    if not script_utils.is_existing_md_file(plan_word):
         return args
     return [*words[:plan_at + 1], "--phase", words[-1]]
 
@@ -403,8 +403,7 @@ def plan_inside_task_refusal(words, parsed, repo_flags):
     commands = [script_command(shlex.join(start_words))]
     # A word that is no plan file (a directory, a ticket id, a source file) may be the first word of the task, so
     # the task choice keeps it in the text.
-    has_word_that_is_no_plan_file = any(
-        not (os.path.isfile(plan_word) and plan_word.endswith(".md")) for plan_word in plan_words)
+    has_word_that_is_no_plan_file = any(not script_utils.is_existing_md_file(plan_word) for plan_word in plan_words)
     task_words = [*plan_words, *text_words] if has_word_that_is_no_plan_file else text_words
     if task_words:
         commands.append(task_command(task_words, parsed.modifier, *repo_flags))
@@ -628,17 +627,19 @@ def resolve_start_plan(repo_dir, previous, branch, plan_args):
     return plan_arg, lane if previous.get("plan") == plan_arg else "code"
 
 
-def load_start_plan(repo_dir, plan_arg, args):
-    # (plan path in the repo, plan lines, parsed plan) of a plan that is fit to start, or None after a stop.
+def load_start_plan(repo_dir, plan_arg, args, run_notes=None):
+    # (plan path in the repo, plan lines, parsed plan) of a plan that is fit to start, or None after a stop. The
+    # question that asks for another plan names the run notes, so the next start keeps them.
+    notes_to_keep = f" Pass these run notes after it: {run_notes}" if run_notes else ""
     plan_path = pathlib.Path(plan_arg)
     if not os.path.isfile(plan_arg):
         return ask_user(repo_dir, f"no plan file is at {plan_arg}. Ask the user for the path. Then invoke Skill code "
-                        "with that path.")
+                        f"with that path.{notes_to_keep}")
     try:
         plan_rel = str(plan_path.resolve().relative_to(repo_dir))
     except ValueError:
         return ask_user(repo_dir, f"the plan {plan_arg} is outside the repo {repo_dir}. Ask the user for a plan inside "
-                        "the repo. Then invoke Skill code with that path.")
+                        f"the repo. Then invoke Skill code with that path.{notes_to_keep}")
 
     plan_lines = plan_path.read_text().splitlines()
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
@@ -711,7 +712,7 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
     plan_arg, lane = resolved
 
     args_for_resume = shlex.split(start_command)[len(shlex.split(script_command(""))):]
-    loaded = load_start_plan(repo_dir, plan_arg, args_for_resume[1:])
+    loaded = load_start_plan(repo_dir, plan_arg, args_for_resume[1:], parsed.run_notes)
     if loaded is None:
         return
     plan_rel, plan_lines, plan = loaded

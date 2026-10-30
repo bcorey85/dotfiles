@@ -19,11 +19,13 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 a criterion
   code_step.py decide discuss                   ask the user how to rule when the code and the plan disagree; records
                                                 nothing
-  code_step.py asks-done [--by <user|session>] [--also "<text>"] <outcome>...
+  code_step.py asks-done [--repo <path>] [--by <user|session>] [--also "<text>"] <outcome>...
+                                                --repo: the checkout of the run, when the shell is in none of them;
                                                 log the answer to each ask[] entry, then run the phase gates;
                                                 --by session when the session ruled itself, default user;
                                                 --also: other work for the coder, kept even if every ask is rejected
-  code_step.py correct-ruling [--by <user|session>] [--also "<text>"] <outcome>...
+  code_step.py correct-ruling [--repo <path>] [--by <user|session>] [--also "<text>"] <outcome>...
+                                                --repo: as for asks-done;
                                                 while the asks coder runs: save corrected rulings; a correction coder
                                                 applies them when the asks coder reports, before the review
   code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...
@@ -114,6 +116,7 @@ from code_step_core import (
     guarded_verb_runs,
     head_commit,
     head_left_phase_start,
+    is_run_open,
     load_state,
     own_phase_text,
     phase_coder_reports,
@@ -804,17 +807,55 @@ def command_status():
     print(state_text(state))
 
 
-def enter_run_checkout():
+VERBS_THAT_TAKE_REPO = ("asks-done", "correct-ruling")
+
+
+def enter_named_checkout(named_repo):
+    # The checkout `--repo` names must hold an open run, of any session: a session started after /clear resumes a run
+    # that still names the old session. The stage guard of the verb refuses a wrong stage. False after a stop.
+    named_root = script_utils.repo_root(named_repo) if named_repo else None
+    if named_root is None:
+        emit("stop", f"--repo {named_repo or ''} is not a path inside a git repo. Tell the user.")
+        return False
+
+    named_state = load_state(named_root)
+    if named_state is None or not is_run_open(named_state):
+        emit("stop", f"{named_root} holds no open /code run, so --repo {named_repo} names no run. "
+             f"Tell the user. `{script_command('status')}` run from a checkout shows its run.")
+        return False
+
+    os.chdir(named_root)
+    return True
+
+
+def enter_run_checkout(verb="", named_repo=None):
     # Every verb after `start` runs in the checkout of the session's open run, wherever the shell stands: a run started
-    # in a worktree or another repo keeps every step there. False after a stop.
+    # in a worktree or another repo keeps every step there. `--repo` (asks-done, correct-ruling) names that checkout.
+    # With several open runs and none in the cwd, asks-done goes on with the one run that waits at its asks. False
+    # after a stop.
+    if named_repo is not None:
+        return enter_named_checkout(named_repo)
+
     session_id = session_pin()
-    cwd_repo = script_utils.repo_root(os.getcwd())
     if session_id is None:
         return True
 
+    cwd_repo = script_utils.repo_root(os.getcwd())
     open_run_repos = resume_run_repos(cwd_repo, session_id)
     if open_run_repos == [cwd_repo]:
         return True
+
+    if len(open_run_repos) > 1 and verb == "asks-done":
+        asks_run_repos = [repo for repo in open_run_repos if load_state(repo)["stage"] == "asks"]
+        if len(asks_run_repos) > 1:
+            checkout_lines = [f"- {repo}" for repo in asks_run_repos]
+            emit("stop", "This session has open asks in each of these checkouts, and the current directory is in "
+                 "none of them:", *checkout_lines,
+                 "Run asks-done again with `--repo <checkout>` for the run the user answered.")
+            return False
+
+        if asks_run_repos:
+            open_run_repos = asks_run_repos
 
     if len(open_run_repos) > 1:
         checkout_lines = [f"- {repo}" for repo in open_run_repos]
@@ -875,7 +916,10 @@ def verb_lock(repo, verb):
 
 def run_verb(verb, handler, args):
     try:
-        if verb != "start" and not enter_run_checkout():
+        named_repo = None
+        if verb in VERBS_THAT_TAKE_REPO:
+            args, named_repo = script_utils.pop_option(args, "--repo")
+        if verb != "start" and not enter_run_checkout(verb, named_repo):
             return
 
         repo = repo_root_or_exit()

@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "/code does not count an earlier phase's late commit as the next coder's work"
 description: "A commit of the earlier phase made after /code started the next phase no longer reaches the next coder's hand-back check or review scope; a rebase or reset off the phase's start commit stops the run and names both commits."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T22:05:49-05:00"}
-seq: 297
+seq: 330
 kind: "fix"
 components: ["script/code-step"]
 evidence: ["judgment"]

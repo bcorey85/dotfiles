@@ -9,6 +9,8 @@ kind: "behavior"
 components: ["agent/code-reviewer", "skill/fix"]
 evidence: ["sealed bench round"]
 watches: ["code-reviewer-taste-as-fix"]
+proof: ["2026-10-14-catchlist-sealed-4-runs-per-arm"]
+impact: {"metric": "quality", "before": 14, "after": 0, "unit": "planted taste defects not filed as fix (of 28)", "finding": "2026-10-14-catchlist-sealed-4-runs-per-arm", "better": "lower"}
 ---
 
 ## Change

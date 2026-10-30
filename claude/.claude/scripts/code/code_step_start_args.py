@@ -1,5 +1,5 @@
 """code_step_start_args.py: what `start` reads from its arguments besides the plain flags: the task file, the run notes
-that follow a plan and its phase, and a plan file outside the repo.
+that follow a plan and its phase or a plan with no phase, and a plan file outside the repo.
 
 Imports run one way: code_step_core, code_step_start_args, code_step."""
 import os
@@ -181,14 +181,41 @@ def leading_phase_words(words):
     return words[1], words[2:]
 
 
+def has_phase_status_entries(path):
+    # Whether the file parses to at least one Phase Status entry, so a README or a brief is not taken for a plan.
+    try:
+        plan = plan_format.parse_plan_with_closing_phases(pathlib.Path(path).read_text().splitlines())
+    except (OSError, UnicodeDecodeError):
+        return False
+
+    return bool(plan["entries"])
+
+
 def is_plan_reference(word):
-    return (word.endswith(".md") and os.path.isfile(word)) or TICKET_ID.match(word) is not None
+    return script_utils.is_existing_md_file(word) or TICKET_ID.match(word) is not None
+
+
+def is_plan_file_in_repo(word):
+    # A plan file inside the current directory (`start` has moved to the repo) that parses to Phase Status entries.
+    # With no phase, a plan outside the repo is not carried: the refusal that says the text after the plan is not
+    # task text keeps it. With a phase it is carried, and the question that asks for a plan inside the repo names
+    # the notes.
+    if not script_utils.is_existing_md_file(word):
+        return False
+
+    is_inside_repo = pathlib.Path(word).resolve().is_relative_to(pathlib.Path.cwd())
+    if not is_inside_repo:
+        return False
+
+    return has_phase_status_entries(word)
 
 
 def carry_run_notes(parsed, saved_plan=None):
     # A phase run's text after the plan is its run notes. `<plan file or ticket id> [--phase <id> | Phase <id>] <text>`
-    # comes back with the plan, the phase and the notes set and no task text. An explicit `--phase <id>` with no plan
-    # named takes the saved plan. Any other text stays task text.
+    # comes back with the plan, the phase and the notes set and no task text.
+    # `<plan file inside the repo that has phases> <text>` with no phase does the same for the plan's next phase; a
+    # ticket id with no phase may be the first word of a task, so its text stays task text.
+    # An explicit `--phase <id>` with no plan named takes the saved plan. Any other text stays task text.
     if not parsed.positional_words:
         return parsed
 
@@ -199,7 +226,9 @@ def carry_run_notes(parsed, saved_plan=None):
     if phase_id is None:
         phase_id, text_words = leading_phase_words(text_words)
 
-    if phase_id is None or not plan_words or not all(is_plan_reference(word) for word in plan_words):
+    if len(plan_words) != 1 or not is_plan_reference(plan_words[0]):
+        return parsed
+    if phase_id is None and not is_plan_file_in_repo(plan_words[0]):
         return parsed
 
     run_notes = " ".join(text_words) or None

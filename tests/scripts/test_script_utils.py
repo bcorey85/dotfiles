@@ -1135,5 +1135,15 @@ class PreloadedSkillsPromptTest(unittest.TestCase):
                 self.assertIsNone(script_utils.json_string_list(text))
 
 
+class IsBlockerTest(unittest.TestCase):
+    def test_a_mapping_is_a_blocker_only_when_its_blocker_field_reads_true_or_yes(self):
+        for value in (True, "true", "Yes", " YES "):
+            with self.subTest(value=value):
+                self.assertTrue(script_utils.is_blocker({"blocker": value}))
+        for item in ({"blocker": False}, {"blocker": "no"}, {}, "blocker: yes", None):
+            with self.subTest(item=item):
+                self.assertFalse(script_utils.is_blocker(item))
+
+
 if __name__ == "__main__":
     unittest.main()

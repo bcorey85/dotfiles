@@ -578,6 +578,7 @@ def launch_review_script(repo_dir, state, prompt):
     if module is None:
         return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
 
+    import handback_hook
     import handback_store  # after the load check: a missing hand-back module must stop the run, not crash the import
 
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
@@ -585,7 +586,7 @@ def launch_review_script(repo_dir, state, prompt):
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state.run_id}-{dispatch_id}"
     session_id = run_session_id(state)
-    handback_store.record(session_id, "dispatch", no_review=False, repo=module.reviewed_repo("", repo_dir))
+    handback_store.record(session_id, "dispatch", no_review=False, repo=handback_hook.reviewed_repo("", repo_dir))
 
     code_step_dir = state_dir(repo_dir)
     script_dir = code_step_dir / "loop-script" / agent_id
@@ -622,6 +623,9 @@ def load_review_packet(repo_dir, state, message):
                     + "; ".join(error.problems), message,
                     REVIEW_SAME_DIFF_AGAIN_LINE)
 
+    import capped_review  # beside handback in scripts/review; on sys.path once load_handback imported handback
+
+    packet["status"] = capped_review.effective_status(packet, repo_dir)
     module.print_dropped_asks(packet)
     return module, packet
 
@@ -737,9 +741,11 @@ def ask_the_user(repo_dir, state, asks):
         repo_dir,
         f"ask the user about each review ask below in plain text and wait for the answers. Each answer is accepted "
         f"(make the proposed change), rejected (leave the code as it stands) or modified (make the user's change "
-        f"instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. Put "
+        f"instead). Then invoke Skill code with the args `asks-done --repo {repo_dir}` and {len(asks)} outcome "
+        "word(s), in order. Put "
         "`--change \"<the user's change text>\"` right after each `modified` word, one per modified ask, as in "
-        "`asks-done accepted modified --change \"<text>\" modified --change \"<text>\"` (the example only shows the "
+        f"`asks-done --repo {repo_dir} accepted modified --change \"<text>\" modified --change \"<text>\"` "
+        "(the example only shows the "
         "shape of the arguments, not how many words). If the repo's CLAUDE.md "
         "hands ask decisions to the session, decide each ask yourself instead of asking, and add `--by session` to "
         "asks-done. To correct a ruling after asks-done, send the running /code fork the full corrected `asks-done "

@@ -87,7 +87,9 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                '--phase <id> starts the named phase; the text after a plan file inside the repo that has phases, or '
                "after a plan file or ticket id and its phase, is the run notes: the constraints for that run, given "
                "to its coder or, on a closing phase, to its skill. Text that comes first, when there is no plan file, "
-               'ticket id or directory, is the task text. --task-file reads the task text from a file, as it is. A '
+               'ticket id or directory, is the task text. --task-file reads the task text from a file, as it is; '
+               'a file whose text opens with a plan file inside the repo, or a plan file or ticket id followed by '
+               'a phase, runs that plan with the rest as run notes. A '
                'flag before the text, or after a plan, must be known. --restart drops an unfinished run and starts '
                'over. With --restart, text that comes first becomes the run notes of the saved plan when that plan '
                'has open phases; use --task for planless work after --restart. --repo runs everything in that '
@@ -107,7 +109,8 @@ def usage_error(message):
 
 
 StartArgs = collections.namedtuple("StartArgs", "modifier plan_args task_text phase_id restart positional_words "
-                                   "run_notes headless coder_stopped", defaults=(None, False, False))
+                                   "run_notes headless coder_stopped is_task_file",
+                                   defaults=(None, False, False, False))
 
 
 def phase_flag_value(args, position):
@@ -143,6 +146,7 @@ def parse_start_args(args):
     plan_args = []
     task_text = None
     positional_words = None
+    is_task_file = False
     phase_id = None
     switches = set()
     position = 0
@@ -155,6 +159,7 @@ def parse_start_args(args):
             usage_error("text after --task-file")
         if word == "--task-file":
             task_text = task_file_text(args, position)
+            is_task_file = True
             position += 2
             continue
         if word == "--phase":
@@ -179,7 +184,8 @@ def parse_start_args(args):
         position += 1
     modifier = "+deep" if "+deep" in modifiers else "+fast" if modifiers else None
     return StartArgs(modifier, plan_args, task_text, phase_id, "--restart" in switches, positional_words,
-                     headless="--headless" in switches, coder_stopped="--coder-stopped" in switches)
+                     headless="--headless" in switches, coder_stopped="--coder-stopped" in switches,
+                     is_task_file=is_task_file)
 
 
 def phase_label(state):

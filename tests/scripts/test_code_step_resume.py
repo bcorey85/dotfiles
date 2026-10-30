@@ -1470,6 +1470,112 @@ class ResumeTest(base.CodeStepTest):
         self.assertEqual("2", self.state()["phase"])
         self.assertEqual("2", self.state()["onlyPhase"])
 
+    def finish_planless_task(self):
+        self.step("start", "--task", "add orders")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", self.CODER_REPORT)
+        self.step("resume")
+        self.hook("review-loop", self.LOOP_OK)
+        return self.step("resume")
+
+    def test_a_bare_resume_at_a_finished_planless_run_stops_with_the_commit_command_and_starts_no_run(self):
+        self.finish_planless_task()
+        state_before = self.state()
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT:", out)
+        commit_line = "git add -- backend/src/orders.ts && git commit -m 'orders exist' -- backend/src/orders.ts"
+        self.assertEqual(1, (self.said() + out).count(commit_line))
+        self.assertEqual(state_before, self.state())
+        self.assertIsNone(self.state().get("plan"))
+
+    def test_a_bare_resume_at_a_finished_planless_run_with_nothing_uncommitted_stops_and_starts_no_run(self):
+        self.finish_planless_task()
+        self.commit_all()
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT:", out)
+        self.assertIn("the run left no files uncommitted", out)
+        self.assertNotIn("commit command above", out)
+        self.assertIn("start <plan> [--phase <id>]", out)
+        self.assertNotIn("git add --", self.said())
+        self.assertEqual("done", self.state()["stage"])
+        self.assertIsNone(self.state().get("plan"))
+
+    def test_a_bare_resume_at_a_finished_planless_run_that_saved_no_file_list_still_names_the_uncommitted_files(self):
+        self.finish_planless_task()
+        self.set_state(commitFiles=None)
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("the run left no files uncommitted", out)
+        self.assertIn("backend/src/orders.ts", self.said())
+
+    def test_a_bare_resume_at_a_finished_planless_run_leaves_a_newly_written_plan_out_of_the_commit_command(self):
+        self.finish_planless_task()
+        self.commit_all()
+        (self.repo / "docs/plans/new-plan.md").write_text("# New plan\n")
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("start <plan> [--phase <id>]", out)
+        self.assertNotIn("git add --", self.said() + out)
+        self.assertNotIn("orders exist", self.said() + out)
+
+    def test_a_bare_resume_at_a_finished_planless_run_leaves_a_file_outside_the_run_out_of_its_notes(self):
+        (self.repo / "backend/src/existing.ts").write_text("export const a = 2\n")
+        self.finish_planless_task()
+        (self.repo / "backend/src/existing.ts").write_text("export const a = 3\n")
+
+        out = self.step("resume")
+
+        self.assertIn("backend/src/orders.ts", self.said())
+        self.assertNotIn("existing.ts", self.said() + out)
+
+    def test_a_bare_resume_on_another_branch_than_a_finished_planless_run_does_not_stop_on_that_run(self):
+        self.finish_planless_task()
+        self.commit_all()
+        subprocess.run(["git", "checkout", "-q", "-b", "other-work"], cwd=self.repo, check=True)
+
+        out = self.step("resume")
+
+        self.assertNotIn("is finished", out)
+        self.assertNotIn("start <plan> [--phase <id>]", out)
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("no task or plan resolves", (self.repo / ".git/code-step/question.md").read_text())
+
+    def test_a_plan_run_started_from_a_task_file_walks_through_asks_to_its_own_commit_block(self):
+        task_file = self.tmp / "brief.md"
+        task_file.write_text(f"{self.plan} — From x (orchestrator): notes\nsecond line\n")
+        self.step("start", "--task-file", str(task_file))
+        self.pass_coder_gate()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", self.CODER_REPORT)
+        self.step("resume")
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+        self.assertEqual("asks", self.state()["stage"])
+
+        out = self.step("asks-done", "accepted")
+        self.assertIn("AGENT: coder", out)
+        self.assertEqual("asks-coder", self.state()["stage"])
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        self.step("resume")
+        self.hook("review-loop", self.LOOP_OK)
+        out = self.step("resume")
+
+        self.assertIn("Phase 1 marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
+        self.assertEqual(self.plan, self.state()["plan"])
+        self.assertIn("git add -- ", self.said())
+
 
 # The tests inherited from the fixture class run in test_code_step.py: leave them out here.
 for inherited_test in [name for name in dir(base.CodeStepTest) if name.startswith("test_")]:

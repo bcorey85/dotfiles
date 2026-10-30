@@ -7069,6 +7069,15 @@ class CodeForkToolsTest(unittest.TestCase):
         self.assertNotIn("SendMessage", disallowed_tools)
         self.assertIn("takes no scope change mid-run", skill.read_text())
 
+    def test_the_code_fork_records_a_mid_run_routing_or_constraint_note_as_guidance(self):
+        skill_text = (REAL_CLAUDE / "skills" / "code" / "SKILL.md").read_text()
+
+        self.assertIn("routes the run or sets a constraint on how it works", skill_text)
+        self.assertIn("and changes no scope is guidance, with or without a `guidance:` start", skill_text)
+        self.assertIn("A message that adds, drops or changes the work the task or the plan names is a scope change",
+                      skill_text)
+        self.assertIn("/code takes no question mid-run", skill_text)
+
     def test_the_code_fork_runs_a_message_starting_with_asks_done_as_a_ruling_correction(self):
         skill_text = (REAL_CLAUDE / "skills" / "code" / "SKILL.md").read_text()
 

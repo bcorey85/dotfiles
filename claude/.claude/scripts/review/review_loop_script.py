@@ -99,6 +99,7 @@ SPLIT_FILES = 5
 SPLIT_LINES = 300
 DIFF_CONTEXT = 12
 CALL_TIMEOUT_SECONDS = 1800
+DISPOSITION_ERROR_CHARS = 200
 LOG_TIMEOUT_SECONDS = 60
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 ABSENT_FILE_REASON = "the file is not in the tree"
@@ -261,6 +262,13 @@ def disposition_call(text, repo, out):
     )
     reply = claude_call("disposition", prompt, repo, out, model="sonnet")
     parsed = last_json_object(reply, ("fix", "ask", "nit"))
+    if parsed is None:
+        error = f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}'
+        retry_prompt = (prompt + f"\n\nYour last reply could not be parsed: {error[:DISPOSITION_ERROR_CHARS]}\n"
+                        "Reply with the JSON object only.")
+        # The retry's own role gives it its own row in calls.jsonl.
+        reply = claude_call("disposition-retry", retry_prompt, repo, out, model="sonnet")
+        parsed = last_json_object(reply, ("fix", "ask", "nit"))
     if parsed is None:
         raise ValueError(f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}')
     return finding_records({"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []),

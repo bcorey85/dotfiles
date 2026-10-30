@@ -677,6 +677,17 @@ def tool_use_calls(line):
     return calls
 
 
+def bash_commands(transcript_path):
+    """Every Bash command in a transcript, oldest first. A torn byte reads as a replacement character."""
+    commands = []
+    with open(transcript_path, encoding="utf-8", errors="replace") as transcript:
+        for line in transcript:
+            calls = tool_use_calls(line)
+            commands += [tool_input.get("command") for name, tool_input in calls
+                         if name == "Bash" and isinstance(tool_input.get("command"), str)]
+    return commands
+
+
 def agent_transcript_path(hook):
     """The calling subagent's transcript: the path the hook event names, else the one under the session transcript."""
     named = hook.get("agent_transcript_path")

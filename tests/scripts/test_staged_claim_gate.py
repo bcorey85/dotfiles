@@ -39,9 +39,9 @@ class StagedClaimGateTest(unittest.TestCase):
             (repo / file_name).write_text("y\n")
         return repo
 
-    def run_gate(self, message, cwd=None, event="Stop", stop_hook_active=False):
+    def run_gate(self, message, cwd=None, event="Stop", stop_hook_active=False, transcript_path=None):
         payload = {"hook_event_name": event, "cwd": str(cwd or self.repo), "last_assistant_message": message,
-                   "stop_hook_active": stop_hook_active}
+                   "stop_hook_active": stop_hook_active, "transcript_path": str(transcript_path or "")}
         finished = subprocess.run([sys.executable, str(SCRIPT)], input=json.dumps(payload), capture_output=True,
                                   text=True, cwd=str(self.tmp))
         self.assertEqual((finished.returncode, finished.stderr), (0, ""))
@@ -83,6 +83,103 @@ class StagedClaimGateTest(unittest.TestCase):
         self.assert_blocked(f"{other}/a.txt is staged.", cwd=self.outside)
         git(other, "add", "a.txt")
         self.assert_passes(f"{other}/a.txt is staged.", cwd=self.outside)
+
+    def write_transcript(self, *commands, name="transcript.jsonl"):
+        transcript = self.tmp / name
+        entries = [{"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "name": "Bash", "input": {"command": command}}]}} for command in commands]
+        transcript.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+        return transcript
+
+    def stage_in_linked_tree(self, file_name):
+        linked = self.tmp / "linked"
+        git(self.repo, "worktree", "add", "-q", "-b", "side", str(linked))
+        (linked / file_name).write_text("z\n")
+        git(linked, "add", file_name)
+        return linked
+
+    def test_a_claim_passes_only_when_a_worktree_the_session_staged_in_holds_staged_files(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        transcript_without_staging = self.write_transcript("git status", name="without-staging.jsonl")
+        self.assert_blocked("The files are staged.", transcript_path=transcript_without_staging)
+
+        for command in (f"git -C {linked} add a.txt", f"cd {linked} && git add a.txt", "cd ../linked && git add a.txt"):
+            with self.subTest(command=command):
+                git(linked, "add", "a.txt")
+                transcript = self.write_transcript("git status", command)
+                self.assert_passes("The files are staged.", transcript_path=transcript)
+                self.assert_blocked(f"{self.repo}/a.txt is staged.", transcript_path=transcript)
+
+                git(linked, "reset", "-q", "a.txt")
+                self.assert_blocked("The files are staged.", transcript_path=transcript)
+
+    def test_a_linked_tree_with_staged_files_but_no_staging_command_does_not_vouch_for_the_claim(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        transcript = self.write_transcript(f"git -C {linked} status", f"git -C {linked} diff --cached")
+        self.assert_blocked("The files are staged.", transcript_path=transcript)
+
+    def test_a_later_command_in_the_transcript_does_not_hide_the_staging_in_the_linked_tree(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        transcript = self.write_transcript(f"git -C {linked} add a.txt", "git status")
+        self.assert_passes("The files are staged.", transcript_path=transcript)
+
+    def test_a_linked_tree_staging_other_files_does_not_vouch_for_a_named_file(self):
+        linked = self.stage_in_linked_tree("b.txt")
+        transcript = self.write_transcript(f"git -C {linked} add b.txt")
+        self.assert_blocked("a.txt is staged.", transcript_path=transcript)
+        self.assert_passes("b.txt is staged.", transcript_path=transcript)
+        self.assert_blocked("a.txt and b.txt are staged.", transcript_path=transcript)
+
+    def test_a_file_present_but_unstaged_in_the_linked_tree_is_blocked(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        (linked / "queue").mkdir()
+        (linked / "queue" / "x.md").write_text("z\n")
+        transcript = self.write_transcript(f"git -C {linked} add a.txt")
+        self.assert_blocked("queue/x.md is staged.", transcript_path=transcript)
+
+    def test_a_file_missing_from_the_cwd_index_is_blocked_beside_a_staging_linked_tree(self):
+        linked = self.stage_in_linked_tree("b.txt")
+        transcript = self.write_transcript(f"git -C {linked} add b.txt")
+        git(self.repo, "add", "a.txt")
+        reason = self.assert_blocked("b.txt is staged.", transcript_path=transcript)
+        self.assertIn("b.txt", reason)
+
+    def test_an_untracked_file_in_the_cwd_checkout_blocks_a_claim_the_linked_tree_cannot_vouch_for(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        (self.repo / "c.txt").write_text("x\n")
+        transcript = self.write_transcript(f"git -C {linked} add a.txt")
+        self.assert_blocked("c.txt is staged.", transcript_path=transcript)
+
+    def test_a_file_named_relative_to_a_subdirectory_cwd_is_vouched_for_by_the_linked_tree(self):
+        linked = self.stage_in_linked_tree("c.txt")
+        (self.repo / "sub").mkdir()
+        (self.repo / "sub" / "c.txt").write_text("x\n")
+        transcript = self.write_transcript(f"git -C {linked} add c.txt")
+        self.assert_blocked("c.txt is staged.", cwd=self.repo / "sub", transcript_path=transcript)
+
+    def test_a_torn_transcript_line_does_not_hide_a_false_claim_or_a_true_one(self):
+        torn_line = '{"type": "assistant", "message": {"content": [{"type": "tool_use", "na\n'
+        transcript = self.write_transcript("git status")
+        with transcript.open("a") as torn:
+            torn.write(torn_line)
+        self.assert_blocked("The files are staged.", transcript_path=transcript)
+
+        linked = self.stage_in_linked_tree("a.txt")
+        valid_line = self.write_transcript(f"git -C {linked} add a.txt", name="valid.jsonl").read_text()
+        for name, text in (("torn-before.jsonl", torn_line + valid_line), ("torn-after.jsonl", valid_line + torn_line)):
+            with self.subTest(name=name):
+                torn_transcript = self.tmp / name
+                torn_transcript.write_text(text)
+                self.assert_passes("The files are staged.", transcript_path=torn_transcript)
+
+    def test_a_torn_multibyte_character_at_the_end_of_the_transcript_still_blocks(self):
+        transcript = self.write_transcript("git status")
+        with transcript.open("ab") as torn:
+            torn.write(b'{"text": "caf\xc3')
+        self.assert_blocked("The files are staged.", transcript_path=transcript)
+
+    def test_a_missing_transcript_file_still_blocks_an_empty_index_claim(self):
+        self.assert_blocked("The files are staged.", transcript_path=self.tmp / "missing.jsonl")
 
     def test_messages_without_a_staged_claim_pass(self):
         for message in ("Nothing is staged yet.", "The files are not staged.", "Stage a.txt when you are ready.",

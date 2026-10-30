@@ -12,7 +12,10 @@
                                         `Full suite: CI`) whose own transcript shows no passed full_check.py
                                         result after its last code change (once per code change), denies a
                                         hand-back (any status but plan-impact) whose files_touched names the
-                                        dispatch prompt's plan file, and denies any call from an agent whose
+                                        dispatch prompt's plan file, denies a hand-back whose packet owes
+                                        per-finding rows or a metrics line the loop did not log (a `ledger` row;
+                                        it repeats once only: a second hand-back with no new logger call goes
+                                        through), and denies any call from an agent whose
                                         report is already stored. Any other argument does nothing.
 
 Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths, unreviewed_fix_section
@@ -49,7 +52,10 @@ from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
 from plan_format import PLAN_CHANGE_MARK, plan_impact_cause
 from script_utils import first_number, one_line, unquote
 
-STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
+# The status for a loop that stopped because the fix passes removed the change under review.
+FIX_REMOVED_CHANGE = "fix-removed-change"
+STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault",
+            FIX_REMOVED_CHANGE]
 CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "files_touched",
@@ -72,7 +78,8 @@ ASK_JOINED_TEXT_KEYS = ("question", "change")
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
 STATUS_REQUIRES = {"plan-impact": ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
-                   "setup-fault": ("blockers", "empty"), "cap-reached": ("findings_remaining", "empty"),
+                   "setup-fault": ("blockers", "empty"), FIX_REMOVED_CHANGE: ("blockers", "empty"),
+                   "cap-reached": ("findings_remaining", "empty"),
                    "deferred": ("findings_remaining", "missing or empty")}
 BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
 ITEM_KEYS = [
@@ -973,6 +980,7 @@ OPEN_WORK_REASON = ("{count} agent(s) or shell(s) you started in the background 
                     "back yet: end your turn and wait for each task notification, act on what it reports, then hand "
                     "back.")
 UNCHECKED_KIND = "unchecked-code"
+LEDGER_KIND = "ledger"
 
 
 def open_work_reason(open_dispatches):
@@ -1021,9 +1029,41 @@ def hand_back_plan_edit_reason(transcript, packet):
     return loop_transcript.plan_edit_reason(transcript, packet)
 
 
+def last_ledger_calls(session_id, agent_id):
+    """The count of logger calls the loop had made when the hook last denied agent_id for a ledger gap, or None."""
+    counts = [row.get("ledger_calls", 0) for row in session_rows(session_id, LEDGER_KIND, agent_id)]
+    return max(counts, default=None)
+
+
+def hand_back_ledger_reason(transcript, packet, session_id, agent_id):
+    """The first loop_transcript.packet_ledger_reasons entry when the packet owes finding rows or a metrics line the
+    loop did not log, else None. A packet that does not parse owes nothing: the parse gate answers for it.
+    The denial is recorded with the count of logger calls the loop had made, refused ones included, and repeats only
+    after a later logger call, so a loop whose logger fails and hands back again on the same state passes."""
+    if packet is None:
+        return None
+    reasons = loop_transcript.packet_ledger_reasons(transcript, packet)
+    if not reasons:
+        return None
+    attempted = transcript.ledger_calls_attempted
+    denied_at = last_ledger_calls(session_id, agent_id)
+    if denied_at is not None and attempted <= denied_at:
+        return None
+    record(session_id, LEDGER_KIND, agent_id=agent_id, ledger_calls=attempted)
+    return reasons[0]
+
+
+def packet_gate_reason(transcript, packet, session_id, agent_id):
+    """The deny reason of the first gate that reads the packet against the transcript: a plan file in files_touched,
+    then a ledger gap."""
+    return (hand_back_plan_edit_reason(transcript, packet)
+            or hand_back_ledger_reason(transcript, packet, session_id, agent_id))
+
+
 def transcript_gate_reason(event, session_id, agent_id, message, packet):
     """The deny reason of the first gate that reads the loop's own transcript, in order: a background dispatch or
-    shell still open, no passed full check after the last code change, a plan file in the packet's files_touched.
+    shell still open, no passed full check after the last code change, a plan file in the packet's files_touched,
+    finding rows or a metrics line the packet owes and the loop did not log (the ledger reason, denied once per state).
     The transcript is read once. One that cannot be read never blocks, and a failed full-check scan skips the
     full-check gate only."""
     try:
@@ -1041,9 +1081,9 @@ def transcript_gate_reason(event, session_id, agent_id, message, packet):
         last_step = loop_transcript.last_code_step(transcript)
     except Exception as error:
         print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
-        return hand_back_plan_edit_reason(transcript, packet)
+        return packet_gate_reason(transcript, packet, session_id, agent_id)
     return (unchecked_code_reason(ungated, last_step, session_id, agent_id)
-            or hand_back_plan_edit_reason(transcript, packet))
+            or packet_gate_reason(transcript, packet, session_id, agent_id))
 
 
 def handle_dispatch(event, session_id, tool_input):
@@ -1082,7 +1122,9 @@ def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back. Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
     unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no passed full_check.py
-    result follows the last code change, or loop_transcript.PLAN_EDIT_REASON when the packet names the plan file."""
+    result follows the last code change, loop_transcript.PLAN_EDIT_REASON when the packet names the plan file, or the
+    ledger reason when the packet owes finding rows or a metrics line (once, until the loop makes another logger
+    call)."""
     session_id = event.get("session_id")
     if not session_id:
         return None

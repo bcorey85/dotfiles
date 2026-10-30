@@ -505,10 +505,54 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(f"python3 {stale_prose_script} --base {first_base_head}", self.stored_gate_commands()[-1])
         self.assertEqual(first_base_head, self.state()["baseHead"])
 
+    def seed_older_failed_gate(self):
+        # A gate left by a run that has ended: a coder result of failed, and no state file for the run.
+        gate = {"setAt": time.time(), "repoRoot": str(self.repo), "commands": ["echo older"],
+                "coders": {"a1": {"runs": 1, "denies": 1, "result": "failed", "commands": {}}}}
+        (self.repo / ".git/coder-gate.json").write_text(json.dumps(gate))
+
     def test_planless_start_keeps_no_stale_prose_gate(self):
+        self.seed_older_failed_gate()
+
         self.step("start", "fix the typo in the orders page")
 
         self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
+    def test_a_start_that_dispatches_no_gated_coder_clears_an_older_gate(self):
+        self.on_feature_branch()
+        self.mark_phases_done(1, 2, 3)
+        starts = {"a closing phase": lambda: self.step("start", "--restart", self.plan),
+                  "a phase that derives no commands": lambda: self.step("start", "--restart", self.single_plan())}
+        for name, start in starts.items():
+            with self.subTest(name):
+                self.seed_older_failed_gate()
+
+                start()
+
+                self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
+    def single_plan(self):
+        self.use_single_phase_plan()
+        return self.plan
+
+    def test_a_planless_start_that_drops_an_open_run_leaves_no_live_gate(self):
+        self.start_phase_one()
+        self.assertTrue((self.repo / ".git/coder-gate.json").exists())
+
+        out = self.step("start", "--restart", "--task", "fix the typo in the orders page")
+
+        self.assertIn("Implement: fix the typo in the orders page", out)
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
+    def test_a_failed_packet_leaves_no_live_gate_for_the_run_that_never_started(self):
+        (self.claude / "scripts/code/coder_packet.py").write_text("raise SystemExit('packet broke')\n")
+
+        done = run(self.repo, self.env, "start", self.plan)
+
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn("coder-packet failed", done.stderr)
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+        self.assertEqual({}, self.state())
 
     def test_gate_skips_a_package_in_a_sibling_repo(self):
         sibling = self.tmp / "sibling/evals"
@@ -1008,8 +1052,9 @@ class CodeStepTest(unittest.TestCase):
 
     def test_after_coder_does_not_read_the_gate_stamp_as_the_coders_report(self):
         stamp = ('\n\nHAND-BACK GATE: timeout after 1 run(s), failed: none, skipped (no changed files): none.\n'
-                 'HAND-BACK GATE TIMEOUT: these commands timed out after 1200 s with no test result:\n'
-                 '  `cargo test --tests`, output tail:\nERROR: column reference "id" is ambiguous')
+                 'HAND-BACK GATE TIMEOUT: these commands timed out with no test result:\n'
+                 '  `cargo test --tests`, timed out after 1200 s, output tail:\n'
+                 'ERROR: column reference "id" is ambiguous')
         self.begin_coder()
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended" + stamp)
 
@@ -1020,8 +1065,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_handoff_takes_no_file_change_from_the_gate_stamp_output_tail(self):
         stamp = ('\n\nHAND-BACK GATE: timeout after 1 run(s), failed: none, skipped (no changed files): none.\n'
-                 'HAND-BACK GATE TIMEOUT: these commands timed out after 1200 s with no test result:\n'
-                 '  `cargo test --tests`, output tail:\n- backend/src/orders.ts: 1 failed')
+                 'HAND-BACK GATE TIMEOUT: these commands timed out with no test result:\n'
+                 '  `cargo test --tests`, timed out after 1200 s, output tail:\n- backend/src/orders.ts: 1 failed')
         self.begin_coder()
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended" + stamp)
 
@@ -1030,20 +1075,30 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("path: backend/src/orders.ts", out)
         self.assertNotIn("change: 1 failed", out)
 
-    def test_after_coder_reports_a_gate_command_that_timed_out_as_timed_out_not_exit_0(self):
+    def resume_after_gate_outcome(self, outcome):
+        # Resumes after a coder whose gate stored the outcome for the gate's first command; returns (command, output).
         self.begin_coder()
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
         gate_path = self.repo / ".git/coder-gate.json"
         gate = json.loads(gate_path.read_text())
-        timed_out_command = gate["commands"][0]
+        command = gate["commands"][0]
         gate["coders"]["a1"] = {"runs": 1, "denies": 0, "result": "timeout",
-                                "commands": {timed_out_command: {"outcome": "timed-out", "detail": ""}}}
+                                "commands": {command: {"outcome": outcome, "detail": ""}}}
         gate_path.write_text(json.dumps(gate))
 
-        out = self.step("resume")
+        return command, self.step("resume")
+
+    def test_after_coder_reports_a_gate_command_that_timed_out_as_timed_out_not_exit_0(self):
+        timed_out_command, out = self.resume_after_gate_outcome("timed-out")
 
         self.assertIn(f"{timed_out_command} -> timed out at the hand-back gate, no test result", out)
         self.assertNotIn(f"{timed_out_command} -> exit 0", out)
+
+    def test_after_coder_reports_a_gate_command_the_budget_never_started_as_not_started_not_exit_0(self):
+        command, out = self.resume_after_gate_outcome("not-started")
+
+        self.assertIn(f"{command} -> not started at the hand-back gate (time budget used up), no test result", out)
+        self.assertNotIn(f"{command} -> exit 0", out)
 
     def test_after_coder_reports_a_gate_setup_fault_as_no_test_result_not_exit_0(self):
         self.begin_coder()
@@ -2871,6 +2926,20 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("stopped", self.state()["stage"])
         self.assertIn("The coder produced no reviewable change.", out)
         self.assertNotIn("recommended /eng-spec", out)
+
+    def test_a_coder_resumed_after_a_no_change_stop_is_still_gated_at_its_next_hand_back(self):
+        self.start_phase_one()
+        self.hook("coder", "Blocked: the schema is missing.")
+        self.step("resume")
+        self.assertTrue((self.repo / ".git/coder-gate.json").exists())
+
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+
+        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
+        self.assertEqual(2, gate["coders"]["a1"]["runs"])
+        self.step("resume")
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
 
     def test_coder_recommending_eng_spec_stops_instead_of_reviewing(self):
         self.begin_coder()

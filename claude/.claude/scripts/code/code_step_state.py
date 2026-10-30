@@ -39,6 +39,7 @@ class StopKind(enum.StrEnum):
     TOOL_FAULT = "tool-fault"
     CRITICAL_BLOCKER = "critical-blocker"
     SETUP_FAULT = "setup-fault"
+    FIX_REMOVED_CHANGE = "fix-removed-change"
     CHECK_UNVERIFIED = "check-unverified"
     CHECK_NOT_RUN = "check-not-run"
     PLAN_IMPACT_CAUSE = "plan-impact-cause"

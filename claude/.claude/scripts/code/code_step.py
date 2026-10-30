@@ -98,7 +98,6 @@ from code_step_core import (
     HOOK_STAGES,
     RESUME_VERB,
     REVIEW_AGAIN_INVOKE,
-    SCRIPTS_DIR,
     StateFileError,
     ask_user,
     awaited_agent_id,
@@ -125,6 +124,7 @@ from code_step_core import (
     restart_instruction,
     resume_run_repos,
     review_script_running,
+    run_coder_gate,
     save_state,
     say,
     script_command,
@@ -176,9 +176,10 @@ from code_step_review import (
     dispatch_correction_coder,
     emit_plan_impact_modal,
     emit_review_dispatch,
+    guard_stop_reasons,
     guarded_verb_runs,
 )
-from code_step_review_stops import BLOCKER_STOP_TEXT, blocker_stop_next_step, left_findings_open
+from code_step_review_stops import blocker_stop_next_step, blocker_stop_text, left_findings_open
 from code_step_start import (
     command_start,
     emit_closing_skill,
@@ -188,7 +189,6 @@ from code_step_start import (
 )
 from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
 from code_step_verification import verification_format_failure
-from script_utils import run_command
 
 WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")
 # These verbs open a new /code run after the user answered. The last run's say.md text was already handed back.
@@ -468,6 +468,15 @@ def end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_
 
 
 def review_coder_report(repo_dir, state, handback):
+    # The hand-back gate stays up through a stop that resumes the same coder, whose next hand-back runs the checks
+    # again. Any other outcome ends the coder's gate.
+    is_ask_fix = state.stage == "asks-coder"
+    route_coder_report(repo_dir, state, handback)
+    if not is_ask_fix and stop_kind(state) != CODER_RESUMABLE:
+        run_coder_gate(repo_dir, "clear")
+
+
+def route_coder_report(repo_dir, state, handback):
     coder_stage = state.stage
     is_ask_fix = coder_stage == "asks-coder"
     report = coder_message_without_gate_stamp(handback.get("message", ""))
@@ -478,7 +487,7 @@ def review_coder_report(repo_dir, state, handback):
     gate = None if is_ask_fix else gate_results(repo_dir)
     gate_lines = state.gate_lines
     if not is_ask_fix:
-        _code, gate_lines = run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), "clear"], repo_dir)
+        _code, gate_lines = run_coder_gate(repo_dir, "summary")
     state.flagged = coder_flagged(state, gate, report, is_ask_fix)
 
     changed_now = file_hashes(repo_dir)
@@ -580,7 +589,7 @@ def stopped_route(repo_dir, state):
     kind = stop_kind(state)
     if kind == "coder-cap":
         return "ask-coder-cap"
-    if kind in BLOCKER_STOP_TEXT:
+    if kind in blocker_stop_text():
         return "ask-critical-blocker"
     # A review gate refused as false-clean is reviewed again, not stopped on again.
     return "review-again" if kind == "false-clean" else "ask-unknown"
@@ -641,7 +650,7 @@ def ask_about_unrecorded_state(repo_dir, state):
     stop_reason = stop_kind(state)
     saved = f"The run is at stage {stage}" + (f" with stop reason {stop_reason}." if stop_reason else ".")
     guarded_verb = next((verb for verb, guard in STAGE_GUARDS.items()
-                        if stage in guard["stages"] and stop_reason in guard.get("stopReasons", ())), None)
+                        if stage in guard["stages"] and stop_reason in guard_stop_reasons(verb)), None)
     if guarded_verb:
         next_step = f"When the cause is fixed, run `{guarded_verb}`."
     else:
@@ -667,7 +676,7 @@ def ask_about_review_cap(repo_dir, state):
 
 def ask_about_critical_blocker(repo_dir, state):
     status_command = script_command("status")
-    opening_sentence = BLOCKER_STOP_TEXT[stop_kind(state)][0]
+    opening_sentence = blocker_stop_text()[stop_kind(state)][0]
     ask_user(repo_dir, f"The run stopped: {opening_sentence} Present it to the user. Run "
              f"`{status_command}` to read the saved state. Then, {blocker_stop_next_step(state)}")
 
@@ -777,7 +786,7 @@ def command_abort(args):
     script_pid = stop_review_script(state)
     clear_say(repo_dir)
     clear_question(repo_dir)
-    run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), "clear"], repo_dir)
+    run_coder_gate(repo_dir, "clear")
 
     directory = state_dir(repo_dir)
     archive_path = directory / f"aborted-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"

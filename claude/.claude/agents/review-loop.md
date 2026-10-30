@@ -182,6 +182,8 @@ Dispatch ONE `coder` for the findings. Split into parallel coders only when the 
 **Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]` and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, return `status: plan-impact` with it verbatim and dispatch nothing further — do not enter the loop, do not return `converged`).
 **`no-review`**: when this flag is in args, dispatch the coder, run the coder-report post-processing above, run the execution gate as verification, and return `status: converged` WITHOUT dispatching a reviewer. Do not enter step 1.
 
+Every fix-first hand-back, `no-review` included, runs Step 7 and Step 7b first: one metrics line and one `log-review-finding kind=finding` row per `fixed[]`, `skipped_fp[]`, `findings_remaining[]`, `ask[]` and `nit[]` entry. The hand-back hook denies a packet without them.
+
 Skip any finding that is a false positive, a stylistic preference, out of scope, blocked by another unresolved issue, or architectural (recommend `/eng-spec`). Report each skip with its reason.
 
 **Test guard on the fix set.** NEVER let a fix dispatch prune a test in an acceptance-spec file (`*.spec.*`) or one covering an acceptance criterion, whatever disposition the finding carried — move it to `ask[]` instead. This is the one place you override a reviewer's label, and it only ever moves in the safe direction.
@@ -280,7 +282,7 @@ Gate passed and class closed → go to Step 7.
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
 prose. Do not add an enum for it.
 
-`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; a `fix` finding routed to `ask[]` counts under `ask`, not `fix`. When the loop ends before any reviewer ran (`setup-fault`, `critical-blocker`, a fix-first `plan-impact`, an empty scope), log the line with `result="NOT DISPATCHED"`. `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit**. `fix` does not equal `fixed + skipped_fp`: routing moves some `fix` findings to `blockers`, and the budget defers others. `smells` = `[smell]` findings the code-reviewer's structure step and `smell-reviewer` returned this run. `culled` = diff-added tests deleted this run; always 0. `comment_noise` = always 0. Outside no-review mode, the gate refuses any other result before the first reviewer dispatch. If the script fails, mention it and continue — telemetry never blocks.
+`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; a `fix` finding routed to `ask[]` counts under `ask`, not `fix`. When the loop ends before any reviewer ran (`setup-fault`, `critical-blocker`, a fix-first `plan-impact`, an empty scope), log the line with `result="NOT DISPATCHED"`. `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit**. `fix` does not equal `fixed + skipped_fp`: routing moves some `fix` findings to `blockers`, and the budget defers others. `smells` = `[smell]` findings the code-reviewer's structure step and `smell-reviewer` returned this run. `culled` = diff-added tests deleted this run; always 0. `comment_noise` = always 0. Outside no-review mode, the gate refuses any other result before the first reviewer dispatch. If the script fails, mention it and continue: a failed logger costs one denied hand-back and one blocked stop; the second of each goes through.
 
 ### Step 7b: Per-finding rows
 
@@ -288,7 +290,7 @@ Also emit the per-finding rows per
 `~/.claude/skills/_shared/finding-log.md` (read it). Skip its `kind=run` block;
 the stop hook writes those. Run it last, so `actioned` is real.
 Log one `kind=finding` row for every entry the packet lists in `fixed[]`, `skipped_fp[]`, `findings_remaining[]`, `ask[]`
-and `nit[]`, on every pass, and the Step 7 metrics line. The stop hook blocks the hand-back until they exist.
+and `nit[]`, on every pass, and the Step 7 metrics line. The hand-back hook denies the packet until they exist.
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 
@@ -296,7 +298,7 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
 
 ```json
 {
-  "status": "converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault",
+  "status": "converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault | fix-removed-change",
   "iter": 1,
   "spec_iter": "<n, or omit>",
   "fixed": [{"finding": "...", "file_line": "path:line", "blocker": false}],
@@ -324,10 +326,10 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
 
 Every value is a JSON string, a list, or (for `iter` and `spec_iter`) an integer. A list key holds a list, never a string; an empty list is `[]`. Every entry of `fixed`, `skipped_fp`, `findings_remaining` and `ask` is an object with its text field (`finding`, `item`, `finding`, `question`), never a string. Leave out the optional keys that have nothing to say. Write `\n` inside a string for a line break.
 
-- `status`: one of the six words. `iter`: correctness rounds run.
+- `status`: one of the seven words. `iter`: correctness rounds run.
 - `fixed`: the `fix` findings you resolved. NEVER leave it out; a silent repair is a bug.
 - `skipped_fp`: `fix` findings dropped as false positives.
-- `blockers`: status=critical-blocker | setup-fault (the full check could not run here). One string per entry.
+- `blockers`: status=critical-blocker | setup-fault (the full check could not run here) | fix-removed-change (the fix passes removed half or more of the source lines of a change under review that adds 10 or more; the scripted loop sets it). One string per entry.
 - `findings_remaining`: status=deferred | cap-reached | plan-impact. A blocker never rides on converged or deferred.
 - `open_classes`: status=cap-reached with a class not closed: one string per unenumerated member; otherwise `[]`.
 - `plan_impact`: status=plan-impact. The verbatim PLAN-IMPACT block, as one string.

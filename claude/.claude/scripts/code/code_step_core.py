@@ -26,7 +26,7 @@ import script_utils
 import worktree_snapshot
 from code_guidance import coder_guidance_lines
 from code_step_state import RunState, StateFileError, Stop
-from script_utils import git_output
+from script_utils import git_output, run_command
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
@@ -443,11 +443,11 @@ def runs_dir(cwd):
     return state_dir(cwd) / RUNS_DIR_NAME
 
 
-def start_run(cwd):
+def start_run(cwd, run_id=None):
     # A new run: the logs and prompt files of older runs go, and the new run's id comes back. The run's folder is made
-    # by its first write.
+    # by its first write. A caller that needs the id before the run starts passes the one it made.
     shutil.rmtree(runs_dir(cwd), ignore_errors=True)
-    return script_utils.sortable_unique_id()
+    return run_id or script_utils.sortable_unique_id()
 
 
 def run_file_path(cwd, run_id, name):
@@ -487,10 +487,33 @@ def dispatch_standing(events):
     return {"dispatch": current, "launched": launches[0] if launches else None, "blocks": blocks}
 
 
+def launched_dispatch(cwd, run_id, agent_id):
+    # The dispatch the run's event log says this agent was launched for, or None when it holds no such launch or the
+    # agent has no id. A coder resumed with SendMessage keeps its agent id, so it keeps its dispatch.
+    if agent_id is None:
+        return None
+
+    for event in read_events(cwd, run_id):
+        if event.get("event") == "launch" and event.get("agent_id") == agent_id:
+            return event.get("dispatch")
+    return None
+
+
 def newest_dispatch_standing(repo_dir, state):
     if not state.run_id:
         return {"dispatch": None, "launched": None, "blocks": []}
     return dispatch_standing(read_events(repo_dir, state.run_id))
+
+
+def dispatch_id_at(position):
+    # The id of a run's dispatch by its place in the run, counted from 1. DISPATCH_MARKER_PATTERN reads it back.
+    return f"d{position}"
+
+
+def run_coder_gate(repo_dir, verb, *arguments):
+    # (exit code, output) of `coder_gate.py <verb> <arguments>` in the repo. The verbs are clear (print the results,
+    # then delete the gate), summary (print only) and set (which takes the set arguments).
+    return run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), verb, *arguments], repo_dir)
 
 
 def record_dispatch(repo_dir, state, agent_type, model, prompt):
@@ -498,7 +521,7 @@ def record_dispatch(repo_dir, state, agent_type, model, prompt):
     # logs the dispatch. Returns the prompt with its marker and the path of the saved file.
     run_id = state.run_id
     dispatch_count = sum(1 for event in read_events(repo_dir, run_id) if event.get("event") == "dispatch")
-    dispatch_id = f"d{dispatch_count + 1}"
+    dispatch_id = dispatch_id_at(dispatch_count + 1)
     marked_prompt = f"{own_path(prompt).rstrip()}\n\n{DISPATCH_MARKER} {run_id}/{dispatch_id}"
     prompt_file = run_file_path(repo_dir, run_id, f"prompt-{dispatch_id}.txt")
     prompt_file.parent.mkdir(parents=True, exist_ok=True)

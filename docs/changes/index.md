@@ -116,6 +116,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [code_step start takes text after a plan file as run notes for the next phase](2026-10-29-code-step-start-takes-text-after-a-plan-file-as.md) [script/code-step] `/code <plan file> — <brief>` starts the plan's next phase with the brief as run notes instead of refusing the text and stopping for the user.
 * [The review loop's full check refuses a scoped command](2026-10-29-the-review-loop-s-full-check-refuses-a-scoped-command.md) [script/full-check] `full_check.run`, which the review loop calls, now refuses a command that names files or tests, or whose scope cannot be read, as `full_check.py` already did from the command line.
 * [the check-unverified stop names the Full suite CI line for a check the toolkit does not recognize as a test run](2026-10-29-the-check-unverified-stop-names-the-full-suite-ci.md) [script/code-step] When a repo's configured check is not a command the toolkit recognizes as a test run, the /code check-unverified stop names the `Full suite: CI` line and the SUMMARY_LINES fix, so a CI-gated repo is fixed once instead of needing a ruling at every phase.
 * [comment-bloat gate skips files git ignores](2026-10-29-comment-bloat-gate-skips-files-git-ignores.md) [script/comment-bloat-gate] The write-time comment-bloat gate no longer checks files git ignores, so a scratch probe script that names a plan path in a string is not blocked.

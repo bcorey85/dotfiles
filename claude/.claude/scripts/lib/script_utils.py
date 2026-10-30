@@ -527,6 +527,11 @@ def has_whitespace(text):
     return re.search(r"\s", str(text)) is not None
 
 
+def is_existing_md_file(word):
+    """True when `word` names a Markdown file that exists."""
+    return word.endswith(".md") and os.path.isfile(word)
+
+
 def words_of_arguments(arguments):
     """The words of command-line text. One argument that holds spaces is split at them (the text came quoted as a
     whole); several arguments are kept as they were given."""

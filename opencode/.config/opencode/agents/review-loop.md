@@ -221,7 +221,7 @@ If a fixed finding is class-shaped and the class is NOT closed, the loop has not
 converged: re-enter step 5 with the unenumerated members as findings (counts
 toward `iter` — this is correctness, not a specialist channel; the correctness
 cap still bounds it). If the cap hits first, return
-`cap-reached` with them in `findings_remaining` — never `converged`.
+`cap-reached` with them in `findings_remaining` and `open_classes` — never `converged`.
 
 **Report the denominator, always.** `class_closure` carries the enumeration, `n/a — fixed[] empty`, or `none` plus each fixed finding with why it fits neither shape. A bare `none` is an unrun check, not a receipt.
 
@@ -295,6 +295,7 @@ ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; 
 perf: [{finding, principle, file_line}]
 specialists: [security | perf | smell]   # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
+open_classes: [<one string per unenumerated class member>]  # status=cap-reached with a class not closed; otherwise []
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>

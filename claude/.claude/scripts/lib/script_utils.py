@@ -107,6 +107,20 @@ def json_type_name(value):
     return next(name for kind, name in JSON_TYPE_NAMES if isinstance(value, kind))
 
 
+def is_string_list(value):
+    """Whether a decoded JSON value is a list whose every entry is a string."""
+    return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
+
+
+def json_string_list(text):
+    """The list of strings that the JSON text holds, or None when the text is not JSON or not a list of strings."""
+    try:
+        loaded = json.loads(text)
+    except ValueError:
+        return None
+    return loaded if is_string_list(loaded) else None
+
+
 def unfenced_text(text):
     """The text without whitespace around it and without one wrapping code fence."""
     text = text.strip()

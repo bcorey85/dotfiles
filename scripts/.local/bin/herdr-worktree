@@ -19,6 +19,10 @@
 # remaining slashes as dashes). When that folder is taken, as by a second
 # branch for one ticket, it is <repo>-<branch> instead.
 # The branch is pushed to origin when that remote exists.
+# Node dependencies are installed for each tracked package-lock.json or
+# pnpm-lock.yaml at the worktree root or one folder down, before the panes
+# start. Their output goes to herdr-worktree-install.log in the worktree's git
+# dir; a failed install names the command and that log.
 #
 # With --fork, the run fails when the new claude pane shows no claude agent
 # within HERDR_WORKTREE_FORK_TIMEOUT seconds (default 30). The error names the
@@ -150,6 +154,28 @@ else
         || { echo "herdr-worktree: herdr worktree create failed" >&2; exit 1; }
 fi
 ws=$(jq -r '.result.workspace.workspace_id' <<<"$created")
+
+# A new worktree has no node_modules, so install node dependencies for each
+# lockfile at the root or one folder down before any pane runs repo tooling.
+# A failed install warns with the command to run and does not stop the run.
+lockfiles=$(git -C "$worktree" ls-files -- ':(glob)package-lock.json' ':(glob)pnpm-lock.yaml' \
+    ':(glob)*/package-lock.json' ':(glob)*/pnpm-lock.yaml')
+install_log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-install.log)
+while IFS= read -r lockfile; do
+    [ -n "$lockfile" ] || continue
+    package_dir="$worktree"
+    [[ "$lockfile" != */* ]] || package_dir="$worktree/${lockfile%/*}"
+    case "${lockfile##*/}" in
+        package-lock.json) install_cmd=(npm ci --no-audit --no-fund) ;;
+        pnpm-lock.yaml) install_cmd=(pnpm install --frozen-lockfile) ;;
+    esac
+    if ! command -v "${install_cmd[0]}" >/dev/null; then
+        echo "herdr-worktree: ${install_cmd[0]} is not on PATH; install dependencies in $package_dir by hand" >&2
+        continue
+    fi
+    (cd "$package_dir" && "${install_cmd[@]}") </dev/null >>"$install_log" 2>&1 \
+        || echo "herdr-worktree: dependency install failed (output in $install_log); run in $package_dir: ${install_cmd[*]}" >&2
+done <<<"$lockfiles"
 
 # tuios ignores create's --focus, and herdr-dev's layout calls need the client
 # on this workspace.

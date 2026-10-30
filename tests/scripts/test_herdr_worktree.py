@@ -45,7 +45,17 @@ class HerdrWorktreeTest(unittest.TestCase):
         self.bin_dir.mkdir()
         shutil.copy(HERDR_WORKTREE, self.bin_dir / "herdr-worktree")
         self.herdr_args = self.root / "herdr-args"
-        write_stub(self.bin_dir / "herdr", f'printf "%s\\n" "$@" > {self.herdr_args}\necho \'{CREATED_WORKSPACE}\'')
+        write_stub(self.bin_dir / "herdr", f"""printf "%s\\n" "$@" > {self.herdr_args}
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --branch) branch="$2"; shift ;;
+        --path) path="$2"; shift ;;
+        --base) base="$2"; shift ;;
+    esac
+    shift
+done
+git -C {self.main_checkout} worktree add -q -b "$branch" "$path" "$base"
+echo '{CREATED_WORKSPACE}'""")
         write_stub(self.bin_dir / "herdr-api", "exit 0")
         write_stub(self.bin_dir / "herdr-dev", "exit 0")
 
@@ -78,6 +88,73 @@ class HerdrWorktreeTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0, finished.stderr)
         herdr_args = self.herdr_args.read_text().splitlines()
         self.assertEqual(herdr_args[herdr_args.index("--base") + 1], linked_head)
+
+    def stub_installers(self, npm_status=0):
+        """npm and pnpm log their folder and arguments to installs."""
+        installs = self.root / "installs"
+        write_stub(self.bin_dir / "npm", f'echo "$PWD npm $*" >> {installs}\nexit {npm_status}')
+        write_stub(self.bin_dir / "pnpm", f'echo "$PWD pnpm $*" >> {installs}')
+        return installs
+
+    def commit_lockfiles(self, *lockfiles):
+        for lockfile in lockfiles:
+            lockfile_path = self.main_checkout / lockfile
+            lockfile_path.parent.mkdir(parents=True, exist_ok=True)
+            lockfile_path.write_text("{}\n")
+        git(self.main_checkout, "add", *lockfiles)
+        git(self.main_checkout, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "lockfiles")
+
+    def test_a_new_worktree_gets_node_dependencies_for_each_lockfile_at_the_root_or_one_folder_down(self):
+        installs = self.stub_installers()
+        self.commit_lockfiles("package-lock.json", "frontend/pnpm-lock.yaml", "fixtures/app/package-lock.json")
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        worktree = self.root / "repo-new-thing"
+        self.assertEqual(sorted(installs.read_text().splitlines()), [
+            f"{worktree} npm ci --no-audit --no-fund",
+            f"{worktree}/frontend pnpm install --frozen-lockfile",
+        ])
+
+    def test_an_installer_that_reads_stdin_does_not_swallow_the_remaining_lockfiles(self):
+        installs = self.root / "installs"
+        write_stub(self.bin_dir / "npm", f'cat >/dev/null\necho "$PWD npm $*" >> {installs}')
+        write_stub(self.bin_dir / "pnpm", f'cat >/dev/null\necho "$PWD pnpm $*" >> {installs}')
+        self.commit_lockfiles("package-lock.json", "frontend/pnpm-lock.yaml")
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        worktree = self.root / "repo-new-thing"
+        self.assertEqual(sorted(installs.read_text().splitlines()), [
+            f"{worktree} npm ci --no-audit --no-fund",
+            f"{worktree}/frontend pnpm install --frozen-lockfile",
+        ])
+
+    def test_a_failed_install_warns_with_the_command_and_the_run_goes_on(self):
+        self.stub_installers(npm_status=1)
+        self.commit_lockfiles("package-lock.json")
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        worktree = self.root / "repo-new-thing"
+        install_log = self.main_checkout / ".git" / "worktrees" / "repo-new-thing" / "herdr-worktree-install.log"
+        self.assertIn(f"dependency install failed (output in {install_log}); "
+                      f"run in {worktree}: npm ci --no-audit --no-fund", finished.stderr)
+
+    def test_install_output_goes_to_the_log_and_a_clean_install_prints_no_log_path(self):
+        write_stub(self.bin_dir / "npm", 'echo "npm says added 3 packages"\necho "npm warns deprecated" >&2')
+        self.commit_lockfiles("package-lock.json")
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        install_log = self.main_checkout / ".git" / "worktrees" / "repo-new-thing" / "herdr-worktree-install.log"
+        self.assertEqual(install_log.read_text(), "npm says added 3 packages\nnpm warns deprecated\n")
+        self.assertNotIn("npm", finished.stdout + finished.stderr)
+        self.assertNotIn("herdr-worktree-install.log", finished.stderr)
 
     def stub_fork(self, fork_pane):
         """The current pane runs claude; the new workspace's claude pane w1:p1 answers `pane get` with fork_pane."""

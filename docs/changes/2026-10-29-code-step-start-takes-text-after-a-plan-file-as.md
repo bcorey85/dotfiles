@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "code_step start takes text after a plan file as run notes for the next phase"
 description: "`/code <plan file> — <brief>` starts the plan's next phase with the brief as run notes instead of refusing the text and stopping for the user."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T17:31:47-05:00"}
-seq: 295
+seq: 296
 kind: "fix"
 components: ["script/code-step"]
 evidence: ["judgment"]

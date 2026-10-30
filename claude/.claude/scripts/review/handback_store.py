@@ -12,6 +12,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import script_utils
 
 STALE_STORE_SECONDS = 7 * 86400
+ASKS_LOGGED_ROW = "asks-logged"
 
 
 def store_dir():
@@ -135,3 +136,30 @@ def ended_on_unreviewed_fix(session_id, agent_id):
     """True when the latest stored hand-back of `agent_id` was clean and its last step was a coder after a reviewer."""
     hand_backs = session_rows(session_id, "handback", agent_id)
     return bool(hand_backs) and bool(hand_backs[-1].get("unreviewed_fix"))
+
+
+def hand_back_id(stored_row, session_id):
+    """The run id of a stored hand-back row; `none:<session>` when the session has no hand-back yet, so sessions in
+    one repo never share a miss count."""
+    if stored_row is None:
+        return f"none:{session_id}"
+    return f"handback:{stored_row.get('agent_id')}:{stored_row.get('ts')}"
+
+
+def agent_hand_back_id(session_id, agent_id):
+    """The run id of the agent's latest stored hand-back, or None when it stored none."""
+    hand_backs = session_rows(session_id, "handback", agent_id)
+    return hand_back_id(hand_backs[-1], session_id) if hand_backs else None
+
+
+def record_asks_logged(session_id, packet_id, repo):
+    """Notes that this packet's ask outcomes are logged in `repo`. Ask state is kept per repo, so a
+    `review_fix.py packet` run from another repo reads this row instead."""
+    record(session_id, ASKS_LOGGED_ROW, packet_id=packet_id, repo=repo)
+
+
+def repo_that_logged_the_asks(session_id, packet_id):
+    """The repo where this session logged this packet's ask outcomes, or None when none did."""
+    logged_rows = session_rows(session_id, ASKS_LOGGED_ROW)
+    packet_rows = [row for row in logged_rows if row.get("packet_id") == packet_id]
+    return packet_rows[-1]["repo"] if packet_rows else None

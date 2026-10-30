@@ -2535,6 +2535,26 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("AGENT: coder", out)
         self.assertIn("Phase 1 marked done", out)
 
+    def test_asks_logged_by_code_are_not_offered_again_by_review_fix_packet(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+        self.step("asks-done", "rejected")
+        logged_before = self.log.read_text()
+
+        other_repo = self.tmp / "otherrepo"
+        other_repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=other_repo, check=True, capture_output=True, env=self.env)
+        review_fix_env = dict(self.env, REVIEW_FIX_CLAUDE_DIR=str(self.claude))
+        packet_run = subprocess.run([sys.executable, str(HANDBACK_SCRIPT.parent / "review_fix.py"), "packet",
+                                     "--skill", "review"], cwd=other_repo, env=review_fix_env,
+                                    stdin=subprocess.DEVNULL, capture_output=True, text=True)
+
+        self.assertIn("ACTION: done", packet_run.stdout, packet_run.stdout + packet_run.stderr)
+        self.assertIn(os.path.realpath(self.repo), packet_run.stdout)
+        self.assertNotIn("present-asks", packet_run.stdout)
+        self.assertEqual(logged_before, self.log.read_text())
+
     def test_review_asks_jump_through_the_set_nvim_jump_and_never_the_one_on_path(self):
         path_folder = self.tmp / "bin"
         path_folder.mkdir()

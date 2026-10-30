@@ -28,6 +28,7 @@ def open_questions(report):
     return [f"the OPEN QUESTIONS line could not be read as a JSON list of strings: {quoted}"]
 
 
+PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
 PLAN_IMPACT_HEADER = re.compile(r"^[ \t>*`_-]*PLAN-IMPACT[*`_]*:?[*`_]*[ \t]*$")
 PLAN_IMPACT_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes|acceptance_criteria|cause)[*`_]*:", re.I)
 
@@ -58,10 +59,16 @@ def plan_impact_block(report):
             continue
         body = plan_impact_body(lines[index + 1:])
         if body:
-            return "PLAN-IMPACT:\n" + "\n".join(body)
+            return PLAN_IMPACT_BLOCK_HEADER + "\n".join(body)
     if re.search(r"^PLAN-IMPACT:\s*yes\s*$", report, re.M):
         return "PLAN-IMPACT: yes (block not found in the report; read the report)"
     return None
+
+
+def has_plan_impact_block(report):
+    # True when the report holds a found block, not the `PLAN-IMPACT: yes (block not found…)` fallback.
+    block = plan_impact_block(report)
+    return block is not None and block.startswith(PLAN_IMPACT_BLOCK_HEADER)
 
 
 def first_plan_impact(messages, handled=None):

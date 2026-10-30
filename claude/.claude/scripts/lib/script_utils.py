@@ -240,6 +240,11 @@ def text_before_marker(text, marker):
     return text.split(marker, 1)[0]
 
 
+def path_is_under(path, prefix):
+    # True when path is prefix itself or lies below it, compared as text so "ab" is not under "a".
+    return path == prefix or path.startswith(prefix.rstrip("/") + "/")
+
+
 def details_with_outcome(outcomes, outcome):
     # {key: detail} for each entry of an {key: {"outcome": ..., "detail": ...}} map that has this outcome, in map order.
     return {key: entry["detail"] for key, entry in outcomes.items() if entry["outcome"] == outcome}
@@ -274,11 +279,11 @@ def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(
     except subprocess.TimeoutExpired as error:
         raise error_type(f"`{' '.join(argv)}` ran past {timeout} seconds") from error
 
-    stdout_text = finished.stdout.decode("utf-8", "replace")
     if not as_bytes:
-        finished.stdout = stdout_text
+        finished.stdout = finished.stdout.decode("utf-8", "replace")
     finished.stderr = finished.stderr.decode("utf-8", "replace")
     if check and finished.returncode not in ok_codes:
+        stdout_text = finished.stdout.decode("utf-8", "replace") if as_bytes else finished.stdout
         detail = finished.stderr.strip() or stdout_text.strip()
         raise error_type(f"`{' '.join(argv)}` failed: {detail}")
     return finished

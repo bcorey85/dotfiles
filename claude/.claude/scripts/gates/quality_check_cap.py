@@ -208,7 +208,7 @@ def git_state_hash(cwd):
 
 
 def run_record_lines(run_file):
-    """The lines of a run record: the tree fingerprint, then CUT_MARK when that run's output was cut, then
+    """The lines of a run record: the git state hash, then CUT_MARK when that run's output was cut, then
     `start <ns>` when the cap marked the run's start."""
     try:
         with open(run_file) as handle:
@@ -217,7 +217,7 @@ def run_record_lines(run_file):
         return []
 
 
-def recorded_fingerprint(run_file):
+def recorded_git_state_hash(run_file):
     record_lines = run_record_lines(run_file)
     return record_lines[0].strip() if record_lines else ""
 
@@ -355,8 +355,8 @@ def changed_since_run(cwd, run_file):
 
 
 def tree_changed_since_run(cwd, run_file):
-    """True when the run recorded a tree fingerprint and the tree now differs from it, or git cannot say."""
-    recorded = recorded_fingerprint(run_file)
+    """True when the run recorded a git state hash and the tree now differs from it, or git cannot say."""
+    recorded = recorded_git_state_hash(run_file)
     if not recorded:
         return False
     return git_state_hash(cwd) != recorded

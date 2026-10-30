@@ -28,6 +28,15 @@ class TextBeforeMarkerTest(unittest.TestCase):
         self.assertEqual("", script_utils.text_before_marker("--stamp only", "--stamp"))
 
 
+class PathIsUnderTest(unittest.TestCase):
+    def test_a_path_is_under_its_prefix_or_equal_to_it_but_not_under_a_sibling_that_shares_the_start(self):
+        self.assertTrue(script_utils.path_is_under("task", "task"))
+        self.assertTrue(script_utils.path_is_under("task/notes.md", "task"))
+        self.assertTrue(script_utils.path_is_under("task/notes.md", "task/"))
+        self.assertFalse(script_utils.path_is_under("task-other.md", "task"))
+        self.assertFalse(script_utils.path_is_under("tas", "task"))
+
+
 class DetailsWithOutcomeTest(unittest.TestCase):
     def test_only_the_entries_with_the_outcome_are_kept_in_map_order(self):
         outcomes = {"b": {"outcome": "x", "detail": "one"}, "a": {"outcome": "y", "detail": "two"},

@@ -66,10 +66,14 @@ import handback
 import handback_store
 import script_utils
 from loop_transcript import (
+    DELIVERED_TAIL,
     GATE_REASON,
     NO_REVIEW_MODE,
+    RETURN_TAIL,
+    RUN_GATES,
     LoopTranscript,
     metrics_calls,
+    packet_ledger_reasons,
     plan_edit_reason,
     prompt_field,
     scan,
@@ -79,7 +83,6 @@ OWN_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2]
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
 HANDOFF = re.compile(r"(?im)^[ \t]*handoff[ \t]*:")
 
-RUN_GATES = re.compile(r"-reviewer(-deep)?$")
 NIT_SECTION = re.compile(r"(?mi)^\s*#{2,4}\s*[*_`]*Nits?\b")
 FENCE =re.compile(r"^(```|~~~)")
 HEADING_MARKUP = re.compile(r"[*_`:]")
@@ -104,19 +107,8 @@ ASSESSMENT = re.compile(r"Overall Assessment\*{0,2}:?\s*\**(PASS WITH WARNINGS|P
 
 
 PROMPT_LANE = prompt_field("lane", r"(eng-spec|code|test-audit|other|none)\b")
-PACKET_ROW_KEYS = ("fixed", "skipped_fp", "findings_remaining", "ask", "nit")
 PROMPT_PHASE = prompt_field("phase", r"([\w.-]+)")
 
-LEDGER_REASON = ("The packet lists {owed} finding(s) (fixed, skipped, deferred, ask, nit) but only {logged} "
-                 "per-finding row(s) were logged{metrics}. Run Step 7 and Step 7b now, one "
-                 "`log-review-finding kind=finding` call per finding, then return the packet.")
-NIT_REASON = ("The packet lists {owed} nit(s) but only {logged} `disposition=nit` row(s) were logged. Log one "
-              "`log-review-finding kind=finding disposition=nit` row per nit, then return the packet.")
-METRICS_REASON = ("The last metrics line was logged before the last reviewer round, or its counts differ from the "
-                  "packet's. Log the Step 7 metrics line again with the final counts (fixed={fixed}, "
-                  "skipped_fp={skipped_fp}), then return the packet.")
-RETURN_TAIL = "then return the packet."
-DELIVERED_TAIL = "then stop: the packet was already delivered, and a second hand-back is denied."
 HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. Build it per "
                   "~/.claude/skills/_shared/handoff-block.md and dispatch again.")
 # The exact `result=` spellings the gate lets through before any reviewer dispatch: a run that ended with no reviewer.
@@ -154,18 +146,7 @@ def ledger_reasons(transcript, final, delivered=False):
     packet = final_packet(transcript, final)
     if packet is None:
         return []
-    reasons = []
-
-    owed = sum(len(packet.get(key) or []) for key in PACKET_ROW_KEYS)
-    missing_metrics = not transcript.metrics_calls
-    if transcript.finding_rows_logged < owed or missing_metrics:
-        metrics = " and no metrics line" if missing_metrics else ""
-        reasons.append(LEDGER_REASON.format(owed=owed, logged=transcript.finding_rows_logged, metrics=metrics))
-    elif unlogged_nits(transcript, packet):
-        reasons.append(NIT_REASON.format(owed=len(packet.get("nit") or []), logged=nit_rows(transcript)))
-    elif stale_metrics(transcript, packet):
-        reasons.append(METRICS_REASON.format(fixed=len(packet.get("fixed") or []),
-                                             skipped_fp=len(packet.get("skipped_fp") or [])))
+    reasons = packet_ledger_reasons(transcript, packet)
     if delivered:
         return [reason.replace(RETURN_TAIL, DELIVERED_TAIL) for reason in reasons]
 
@@ -173,37 +154,6 @@ def ledger_reasons(transcript, final, delivered=False):
     if plan_edit:
         reasons.append(plan_edit)
     return reasons
-
-
-def nit_rows(transcript):
-    return sum(fields.get("disposition") == "nit" for calls in transcript.finding_calls.values() for fields in calls)
-
-
-def unlogged_nits(transcript, packet):
-    """True when the packet lists more nits than the loop logged `disposition=nit` rows. A finding call whose
-    disposition is not spelled out (a shell variable, or no `disposition=` at all) leaves the count unknown, so
-    nothing is claimed."""
-    calls = [fields for calls in transcript.finding_calls.values() for fields in calls]
-    if any(not fields.get("disposition", "").isalpha() for fields in calls):
-        return False
-    return nit_rows(transcript) < len(packet.get("nit") or [])
-
-
-def stale_metrics(transcript, packet):
-    """True when the last metrics line came before the last reviewer round, or when a fixed= or skipped_fp= count it
-    logged differs from the packet's. A count the line leaves out or sends as a shell variable is not compared."""
-    line, fields, _ = transcript.metrics_calls[-1]
-    reviews = [transcript.dispatched_at[tool_use_id] for tool_use_id, kind in transcript.kinds.items()
-               if RUN_GATES.search(kind)]
-    last_review = max(reviews, default=-1)
-    if line < last_review:
-        return True
-
-    for key in ("fixed", "skipped_fp"):
-        logged = fields.get(key, "")
-        if logged.isdigit() and int(logged) != len(packet.get(key) or []):
-            return True
-    return False
 
 
 def section_findings(lines):
@@ -436,8 +386,8 @@ def check_stop(hook):
         raise
     try:
         # A delivered hand-back passed the hand-back hook's gate, unless that gate failed open on an error
-        # (it never blocks on its own failure) or let a repeat on the same code state through; pushing work after
-        # delivery only makes the loop hand back a second time.
+        # (it never blocks on its own failure) or let a repeat on the same code state or on the same ledger state
+        # through; pushing work after delivery only makes the loop hand back a second time.
         delivered = bool(transcript.handback_lines)
         why = [] if hook.get("stop_hook_active") or delivered else reasons_for(scanned)
         if not hook.get("stop_hook_active") and not scanned[1]:

@@ -323,7 +323,8 @@ class CodeStepTest(unittest.TestCase):
         packet_hook_denies = False
         if agent_type == "review-loop" and session:
             # The shared hand-back store sees the review-loop's dispatch and hand-back, as its own hooks record them.
-            self.handback_hook("dispatch", {"session_id": session, "tool_input": {"subagent_type": "review-loop"}})
+            self.handback_hook("dispatch", {"session_id": session, "cwd": cwd or str(self.repo),
+                                            "tool_input": {"subagent_type": "review-loop"}})
             self.handback_hook("dispatch", {"session_id": session, "agent_type": agent_type, "agent_id": agent_id,
                                             "tool_input": {"subagent_type": "code-reviewer"}})
             packet_result = self.handback_hook("handback", event)
@@ -349,13 +350,14 @@ class CodeStepTest(unittest.TestCase):
         return json.loads(out) if out.startswith("{") else {}
 
     def gate_mark(self, session=SESSION):
-        mark_file = self.home / ".claude/state/review-gate" / session
+        mark_file = self.home / ".claude/state/review-gate" / (session + ".reviewed")
         return mark_file.read_text() if mark_file.exists() else None
 
     def assert_marked_clean(self, out, session=SESSION):
-        # The script writes the review-commit-gate state file itself, so the output no longer tells the model to.
+        # The script records the reviewed tree itself, so the output no longer tells the model to.
         self.assertNotIn("review-gate-mark", out)
-        self.assertEqual("clean\n", self.gate_mark(session))
+        reviewed = json.loads(self.gate_mark(session))
+        self.assertEqual([str(self.repo.resolve())], [str(pathlib.Path(top).resolve()) for top in reviewed])
 
     def assert_first_phase_ticked(self):
         plan_lines = self.plan_text().split("\n")
@@ -4429,7 +4431,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIsNone(self.gate_mark("sess-1"))
         out = self.step("resume")
         self.assert_marked_clean(out, "sess-1")
-        self.assertEqual({"sess-1", "sess-1.reviewed"},
+        self.assertEqual({"sess-1.reviewed"},
                          {p.name for p in (self.home / ".claude/state/review-gate").iterdir()})
         reviewed = json.loads((self.home / ".claude/state/review-gate/sess-1.reviewed").read_text())
         self.assertEqual([str(self.repo.resolve())], [str(pathlib.Path(top).resolve()) for top in reviewed])

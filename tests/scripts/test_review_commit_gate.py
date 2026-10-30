@@ -77,6 +77,16 @@ class GateCase(unittest.TestCase):
         payload.update(extra)
         return self.fire_raw(json.dumps(payload))
 
+    def committed_repo(self, name="work"):
+        """The resolved path of a new git repo holding one commit, so its tree can be fingerprinted."""
+        repo = self.tmp / name
+        repo.mkdir()
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "GIT_AUTHOR_NAME": "t",
+               "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        for argv in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "base"]):
+            subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
+        return repo.resolve()
+
     def assert_silent(self, finished):
         self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
 
@@ -94,15 +104,17 @@ class GateCase(unittest.TestCase):
             "hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": reason}})
 
     def state(self, session="s1"):
-        """The gate's state for the session: "clean\n", "dirty\n" when any event follows the last clean line,
+        """The gate's state for the session: "dirty\n" when the state file holds any event, "" when it is empty,
         or None with no state file."""
         path = self.state_dir / session
         if not path.exists():
             return None
-        lines = path.read_text().splitlines()
-        if lines and lines[-1] == "clean":
-            return "clean\n"
-        return "dirty\n" if lines else ""
+        return "dirty\n" if path.read_text().splitlines() else ""
+
+    def reviewed_trees(self, session="s1"):
+        """The repo tops recorded as reviewed for the session."""
+        path = self.state_dir / (session + ".reviewed")
+        return sorted(json.loads(path.read_text())) if path.exists() else []
 
 
 class ReviewCommitGateTest(GateCase):
@@ -183,14 +195,16 @@ class ReviewCommitGateTest(GateCase):
         self.assert_silent(self.bash("git --exec-path /x commit -m x"))
 
     def test_mark_clean_then_commit_passes_and_mark_dirty_denies_again(self):
+        repo = self.committed_repo()
         self.dispatch()
-        self.seed_handback("converged")
-        self.assert_silent(self.bash("review-gate-mark clean"))
-        self.assertEqual(self.state(), "clean\n")
-        self.assert_silent(self.bash("git commit -m x"))
-        self.assert_silent(self.bash("~/.claude/scripts/review/review-gate-mark   dirty"))
+        self.seed_handback("converged", repo=str(repo))
+        self.assert_silent(self.bash("review-gate-mark clean", cwd=str(repo)))
+        self.assertEqual(self.reviewed_trees(), [str(repo)])
+        self.assert_silent(self.bash("git commit -m x", cwd=str(repo)))
+        self.assert_silent(self.bash("~/.claude/scripts/review/review-gate-mark   dirty", cwd=str(repo)))
         self.assertEqual(self.state(), "dirty\n")
-        self.assert_commit_denied(self.bash("git commit -m x"))
+        (repo / "edited-after-review.txt").write_text("x\n")
+        self.assert_commit_denied(self.bash("git commit -m x", cwd=str(repo)))
 
     def test_mark_with_other_word_is_ignored(self):
         self.assert_silent(self.bash("review-gate-mark other"))
@@ -202,21 +216,25 @@ class ReviewCommitGateTest(GateCase):
         self.assertEqual(self.state(), "dirty\n")
 
     def test_an_allowed_commit_that_names_a_mark_leaves_the_state(self):
+        repo = self.committed_repo()
         self.dispatch()
-        self.seed_handback("converged")
-        self.bash("review-gate-mark clean")
-        self.assert_silent(self.bash('git commit -m "review-gate-mark dirty"'))
-        self.assertEqual(self.state(), "clean\n")
+        self.seed_handback("converged", repo=str(repo))
+        self.bash("review-gate-mark clean", cwd=str(repo))
+        before = self.state()
+        self.assert_silent(self.bash('git commit -m "review-gate-mark dirty"', cwd=str(repo)))
+        self.assertEqual(self.state(), before)
 
     def test_an_allowed_commit_then_a_mark_writes_no_state(self):
         self.seed_handback("converged")
         self.assert_silent(self.bash("git commit -m x && review-gate-mark clean"))
         self.assertIsNone(self.state())
 
-    def test_mark_clean_without_prior_state_creates_it(self):
-        self.seed_handback("deferred")
-        self.assert_silent(self.bash("review-gate-mark clean"))
-        self.assertEqual(self.state(), "clean\n")
+    def test_mark_clean_records_the_reviewed_tree_and_writes_no_state(self):
+        repo = self.committed_repo()
+        self.seed_handback("deferred", repo=str(repo))
+        self.assert_silent(self.bash("review-gate-mark clean", cwd=str(repo)))
+        self.assertIsNone(self.state())
+        self.assertEqual(self.reviewed_trees(), [str(repo)])
 
     def test_clean_is_denied_for_every_status_that_is_not_converged_or_deferred(self):
         for status in ("critical-blocker", "cap-reached", "plan-impact", "invalid"):
@@ -363,8 +381,8 @@ class NotesOnlyCommitTest(GateCase):
         return self.bash(command, session=session, cwd=str(repo or self.repo))
 
     def go_clean(self):
-        self.seed_handback("converged")
-        self.assert_silent(self.bash("review-gate-mark clean"))
+        # The session holds no unreviewed work: its state file has no events.
+        (self.state_dir / "s1").unlink()
 
     def assert_all_denied(self, commands, repo=None):
         for command in commands:
@@ -685,13 +703,6 @@ class NotesOnlyCommitTest(GateCase):
         self.assert_commit_denied(self.commit_in("git add ':/src/a.md' && git commit -m x", inside))
         (self.repo / "sub").mkdir()
         self.assert_commit_denied(self.commit_in("git add docs/x.md && git commit -m x", self.repo / "sub"))
-
-    def test_clean_session_never_denies(self):
-        self.seed_handback("converged")
-        self.assert_silent(self.bash("review-gate-mark clean"))
-        self.stage("src/a.py")
-        self.assert_silent(self.commit_in("git commit -m x"))
-        self.assert_silent(self.commit_in("git add src/b.py && git commit -a -m x"))
 
 
 class ReviewedWorkCommitTest(GateCase):

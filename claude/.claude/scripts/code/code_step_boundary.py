@@ -11,10 +11,10 @@ import os
 import pathlib
 import re
 import shlex
+import sys
 import time
 
 import plan_format
-import reviewed_tree
 import script_utils
 import worktree_snapshot
 from check_output import failing_test_quote
@@ -182,10 +182,10 @@ def sign_off_decision(state, entries, number):
 
 
 def mark_review_gate_clean(repo_dir, state):
-    # The review-commit-gate hook reads this file: the review loop ended clean, so the session may commit.
+    # The review loop ended clean, so the committing session gets credit for the reviewed tree.
     # Returns False after emitting a stop when the hand-back record shows the loop did not end clean, or when the
-    # shared hand-back reader is not installed. Nothing is written then. The hand-back is read for the session the
-    # run is pinned to, which launched the review loop; the mark is written for the session that commits.
+    # shared hand-back reader is not installed. Nothing is credited then. The hand-back is read for the session the
+    # run is pinned to, which launched the review loop; the reviewed tree is credited to the session that commits.
     module, import_error = load_handback()
     if module is None:
         emit("stop", f"Cannot confirm the review loop ended clean: {import_error}. The review gate is not marked "
@@ -201,19 +201,18 @@ def mark_review_gate_clean(repo_dir, state):
              "committed and the review gate is not marked clean. Report to the user what the review waits on.")
         return False
     reviewing_session = run_session_id(state)
-    reason = module.false_clean_reason(reviewing_session)
+    committing_session = session_pin() or state.get("sessionId") or "unknown"
+    # The tree the loop reviewed: a later coder dispatch that edits nothing leaves it unchanged, so its commit passes.
+    reason, reviewed_repo = module.record_clean_review(reviewing_session, committing_session)
     if reason:
         set_stop(state, "false-clean")
         save_state(repo_dir, state)
         emit("stop", f"The review gate is not marked clean: {reason}. Nothing is committed.",
              REVIEW_SAME_DIFF_AGAIN_LINE)
         return False
-    gate_dir = reviewed_tree.review_gate_dir()
-    gate_dir.mkdir(parents=True, exist_ok=True)
-    committing_session = session_pin() or state.get("sessionId") or "unknown"
-    (gate_dir / committing_session).write_text("clean\n")
-    # The tree the loop reviewed: a later coder dispatch that edits nothing leaves it unchanged, so its commit passes.
-    reviewed_tree.record_reviewed(committing_session, repo_dir)
+    if not reviewed_repo:
+        print("[review-commit-gate] The stored review dispatch names no repo, so no tree was recorded as "
+              "reviewed.", file=sys.stderr)
     return True
 
 

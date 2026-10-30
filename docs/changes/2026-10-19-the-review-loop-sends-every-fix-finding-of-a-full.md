@@ -35,6 +35,8 @@ deferred fix findings per review run (down), review escapes per review run (down
 
 Reading, 2026-10-27 intake: BETTER on the report, held open. Deferred fix findings per review run went from a 0.67 median (range 0.37–2.03) to 0.31. The first after bin, 2026-10-19 to 10-24, read 0.43, inside the before range. The low bin, 0.12 on 10-25 to 10-27, comes mostly from 10-27, when `/code` began running the review loop as a script. That script files every fix finding as fixed when it logs the round, so its rows cannot show a deferral. Read again once the scripted loop logs what each finding's coder did.
 
+Reading, 2026-10-30 intake: BETTER on the report, held open. Deferred fix findings per review run read 0.13 against the 0.67 median. The first after bin still reads 0.43, inside the before range, and the low bin, 0.04, covers 10-26 to 10-29. On 10-28 and 10-29, 851 of 923 fix rows read fixed and 4 read deferred, across 330 run rows. That is too few deferrals to trust until someone confirms these rows follow the coder's result. Read again after that check.
+
 ## Back-out
 
 restore `agents/review-loop.md`, `skills/_shared/finding-log.md` and `skills/review/log-review-finding` from git

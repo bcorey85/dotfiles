@@ -263,7 +263,7 @@ of an enumerable set of ways the same mistake can occur. Two shapes qualify:
 If a fixed finding is class-shaped and the class is NOT closed, the loop has not
 converged: re-enter step 5 with the unenumerated members as findings (counts
 toward `iter`; the correctness cap still bounds it). If the cap hits first, return
-`cap-reached` with them in `findings_remaining` — never `converged`.
+`cap-reached` with them in `findings_remaining` and `open_classes` — never `converged`.
 
 **Report the denominator, always.** `class_closure` carries the enumeration, `n/a — fixed[] empty`, or `none` plus each fixed finding with why it fits neither shape. A bare `none` is an unrun check, not a receipt.
 
@@ -306,6 +306,7 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
   "plan_impact": "<verbatim PLAN-IMPACT block>",
   "ask": [{"finding": "...", "file_line": "path:line", "question": "...", "change": "...", "gate": "code-reviewer", "class": "smell"}],
   "class_closure": "<the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a - fixed[] empty>",
+  "open_classes": ["<one entry per class member still open, or []>"],
   "full_check": "passed",
   "full_check_command": "<the exact command full_check.py ran>",
   "full_check_summary": "<the script's summary: line>",
@@ -321,13 +322,14 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
 }
 ```
 
-Every value is a JSON string, a list, or (for `iter` and `spec_iter`) an integer. A list key holds a list, never a string; an empty list is `[]`. Leave out the optional keys that have nothing to say. Write `\n` inside a string for a line break.
+Every value is a JSON string, a list, or (for `iter` and `spec_iter`) an integer. A list key holds a list, never a string; an empty list is `[]`. Every entry of `fixed`, `skipped_fp`, `findings_remaining` and `ask` is an object with its text field (`finding`, `item`, `finding`, `question`), never a string. Leave out the optional keys that have nothing to say. Write `\n` inside a string for a line break.
 
 - `status`: one of the six words. `iter`: correctness rounds run.
 - `fixed`: the `fix` findings you resolved. NEVER leave it out; a silent repair is a bug.
 - `skipped_fp`: `fix` findings dropped as false positives.
 - `blockers`: status=critical-blocker | setup-fault (the full check could not run here). One string per entry.
 - `findings_remaining`: status=deferred | cap-reached | plan-impact. A blocker never rides on converged or deferred.
+- `open_classes`: status=cap-reached with a class not closed: one string per unenumerated member; otherwise `[]`.
 - `plan_impact`: status=plan-impact. The verbatim PLAN-IMPACT block, as one string.
 - `ask`: never auto-fixed; the user answers these. question is never empty: an ask with no question takes its finding, or else its change, as its question. `change` is the one edit an accepted answer makes. `gate` and `class` ride along so the caller can log the outcome. Log each ask row with the same file and line as its `file_line`; the caller reads the id from that row, so leave `finding_id` out.
 - `full_check`: the Step 6 result, one of: passed | unverified (exit 0, no runner summary) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | passed (check only; CI runs the full suite) | not run (timeout) | not run (scoped command: it names files or tests, so it is no full check) | not run (unresolved command: what it runs cannot be read, so it is no full check) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | not run (expected red until Phase <id>[, <id>...]) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only).

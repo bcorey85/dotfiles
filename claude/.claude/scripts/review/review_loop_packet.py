@@ -64,6 +64,7 @@ def packet_message(outcome):
                                for finding in outcome["open_fixes"]],
         "ask": asks,
         "class_closure": script_utils.one_line(outcome["class_closure"], limit=None),
+        "open_classes": outcome["open_classes"],
         "files_touched": outcome["files_touched"],
         "nit": [finding_entry(finding) for finding in outcome["nits"]],
     }
@@ -91,10 +92,10 @@ def packet_message(outcome):
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
     "status": "", "iter": 0, "fixed": [], "skipped_fp": [], "blockers": [], "plan_change": [], "open_fixes": [],
-    "asks": [], "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "", "full_check": "",
-    "full_check_command": "", "full_check_summaries": [], "check_changed": [], "check_rewrote_edited": [],
-    "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False, "scoped_tests": "",
-    "tool_fault": "", "plan_change_from_coder": False,
+    "asks": [], "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "", "open_classes": [],
+    "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
+    "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False,
+    "scoped_tests": "", "tool_fault": "", "plan_change_from_coder": False,
 }
 
 

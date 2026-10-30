@@ -110,6 +110,8 @@ fixed:
 findings_remaining:
   - {disposition: fix, finding: "a log with a trailing blank line compares as different", file_line: src/logs.ts:30}
 class_closure: log shapes the comparison takes - no timestamp closed; trailing blank line still open
+open_classes:
+  - "a log with a trailing blank line"
 files_touched:
   - src/logs.ts
 """
@@ -286,15 +288,18 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("Do not re-dispatch", output)
 
     def test_a_cap_reached_with_every_class_closed_keeps_the_plain_stop(self):
-        closed_receipts = ["closed", "closed, none left open", "closed; open members: none",
-                           "closed (was left open in iter 1)"]
-        for receipt in closed_receipts:
-            with self.subTest(receipt):
-                closed = CAP_WITH_AN_OPEN_CLASS.replace("still open", receipt)
-                code, output = self.packet(closed)
-                self.assertEqual(code, 0, output)
-                self.assertIn("Do not re-dispatch", output)
-                self.assertNotIn("files the capped run's fixes touched", output)
+        without_open_classes = CAP_WITH_AN_OPEN_CLASS.replace('open_classes:\n  - "a log with a trailing blank line"\n',
+                                                              "open_classes: []\n")
+        closed = without_open_classes.replace("still open", "closed")
+        code, output = self.packet(closed)
+        self.assertEqual(code, 0, output)
+        self.assertIn("Do not re-dispatch", output)
+        self.assertNotIn("files the capped run's fixes touched", output)
+
+    def test_open_classes_alone_routes_the_scoped_rerun(self):
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS.replace("still open", "closed"))
+        self.assertEqual(code, 0, output)
+        self.assertIn("files the capped run's fixes touched", output)
 
     def test_a_cap_reached_with_an_open_class_and_no_files_touched_keeps_the_plain_stop(self):
         no_files = CAP_WITH_AN_OPEN_CLASS.replace("files_touched:\n  - src/logs.ts\n", "files_touched: []\n")
@@ -769,6 +774,19 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertNotIn("Failures", output)
         self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()], ["accepted"])
+
+    def test_a_json_packet_with_n_asks_some_without_file_line_logs_n_outcome_rows(self):
+        asks = [{"question": f"question {number}?", "change": "edit", "gate": "code-reviewer", "class": "smell",
+                 **({"file_line": f"src/a{number}.ts:1"} if number % 2 == 0 else {})} for number in range(4)]
+        message = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": asks,
+                              "class_closure": "n/a - fixed[] empty"})
+        code, output = self.packet(message)
+        self.assertEqual(code, 0, output)
+        self.assertIn("asks-done <outcome> x4", output)
+        code, output = self.run_script(["asks-done", "accepted", "accepted", "rejected", "accepted"])
+        self.assertEqual(code, 0, output)
+        outcome_rows = [row for row in self.ledger_writes() if "ask_outcome" in row]
+        self.assertEqual([row["ask_outcome"] for row in outcome_rows], ["accepted", "accepted", "rejected", "accepted"])
 
     def test_asks_done_with_an_unknown_outcome_fails_loudly(self):
         self.packet(WITH_ASK)

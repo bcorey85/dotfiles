@@ -86,6 +86,7 @@ from review_loop_findings import (
     near_title,
     parse_review,
     plan_change_items,
+    reply_with_one_retry,
     reported_again,
     ruled_plan_split,
     still_fixed,
@@ -100,7 +101,6 @@ SPLIT_FILES = 5
 SPLIT_LINES = 300
 DIFF_CONTEXT = 12
 CALL_TIMEOUT_SECONDS = 1800
-DISPOSITION_ERROR_CHARS = 200
 LOG_TIMEOUT_SECONDS = 60
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 ABSENT_FILE_REASON = "the file is not in the tree"
@@ -264,18 +264,8 @@ def disposition_call(text, repo, out):
         "(the reviewer's own section decides; do not re-label). Reply with one JSON object only: "
         '{"fix": [..], "ask": [..], "nit": [..]}.\n\n' + text
     )
-    reply = claude_call("disposition", prompt, repo, out, model="sonnet")
-    parsed = last_json_object(reply, ("fix", "ask", "nit"))
-    if parsed is None:
-        error = f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}'
-        retry_note = f"A previous reply to this prompt could not be parsed: {error[:DISPOSITION_ERROR_CHARS]}"
-        retry_prompt = (prompt + f"\n\n{retry_note}\n"
-                        "Reply with the JSON object only.")
-        # The retry's own role gives it its own row in calls.jsonl.
-        reply = claude_call("disposition-retry", retry_prompt, repo, out, model="sonnet")
-        parsed = last_json_object(reply, ("fix", "ask", "nit"))
-    if parsed is None:
-        raise ValueError(f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}')
+    parsed = reply_with_one_retry(claude_call, "disposition", prompt, repo, out, ("fix", "ask", "nit"),
+                                  '{"fix": [..], "ask": [..], "nit": [..]}', model="sonnet")
     return finding_records({"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []),
                             "assessment": ""})
 

@@ -613,6 +613,7 @@ def launch_review_script(repo_dir, state, prompt):
     if module is None:
         return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
 
+    import handback_hook
     import handback_store  # after the load check: a missing hand-back module must stop the run, not crash the import
 
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
@@ -620,7 +621,7 @@ def launch_review_script(repo_dir, state, prompt):
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
     session_id = run_session_id(state)
-    handback_store.record(session_id, "dispatch", no_review=False, repo=module.reviewed_repo("", repo_dir))
+    handback_store.record(session_id, "dispatch", no_review=False, repo=handback_hook.reviewed_repo("", repo_dir))
 
     code_step_dir = state_dir(repo_dir)
     script_dir = code_step_dir / "loop-script" / agent_id
@@ -657,6 +658,9 @@ def load_review_packet(repo_dir, state, message):
                     + "; ".join(error.problems), message,
                     REVIEW_SAME_DIFF_AGAIN_LINE)
 
+    import capped_review  # beside handback in scripts/review; on sys.path once load_handback imported handback
+
+    packet["status"] = capped_review.effective_status(packet, repo_dir)
     module.print_dropped_asks(packet)
     return module, packet
 

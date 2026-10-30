@@ -48,6 +48,7 @@ import code_step_verification  # noqa: E402
 import coder_gate  # noqa: E402
 import criteria_verdict  # noqa: E402
 import plan_format  # noqa: E402
+import reviewed_tree  # noqa: E402
 
 PLAN = """# Orders Plan
 
@@ -2143,6 +2144,20 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: stop", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_a_cap_reached_with_no_blocker_and_a_passed_check_of_the_final_tree_finishes_the_phase(self):
+        self.coder_round()
+        tree = reviewed_tree.fingerprint(self.repo)[1]
+        packet = {"status": "cap-reached", "iter": 2, "full_check": "passed", "full_check_tree": tree,
+                  "findings_remaining": [{"disposition": "fix", "finding": "x", "file_line": "a.ts:1",
+                                          "blocker": False}]}
+        self.hook("review-loop", json.dumps(packet))
+
+        out = self.step("resume")
+
+        self.assertNotIn("cap-reached", out)
+        self.assertIn("Phase 1 marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
 
     def test_the_question_for_the_user_names_each_asks_proposed_change_and_what_each_answer_does(self):
         self.coder_round()

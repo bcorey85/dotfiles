@@ -1134,6 +1134,19 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
         self.assertIn("already delivered", reason)
         self.assertNotIn("return the packet", reason)
 
+    def test_a_delivered_stop_with_no_metrics_line_tells_the_loop_to_stop_not_return_the_packet(self):
+        handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
+                        "input": {"message": '{"status": "converged"}'}}
+        delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
+                     result("toolu_hb", "delivered")]
+        records = [*self.loop(FINDING_ROW, plan="other.md"), *delivered]
+
+        reason = json.loads(self.stop_with_packet(records, "b.py"))["reason"]
+
+        self.assertIn("no metrics line", reason)
+        self.assertIn("already delivered", reason)
+        self.assertNotIn("return the packet", reason)
+
     def test_a_metrics_line_whose_counts_differ_from_the_packet_is_blocked(self):
         undercount = METRICS_ROW.replace("fixed=1", "fixed=0 skipped_fp=0")
 

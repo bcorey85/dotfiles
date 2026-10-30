@@ -115,6 +115,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The hand-back refuses a review packet with missing finding rows](2026-10-30-the-hand-back-refuses-a-review-packet-with-missing.md) [script/handback, script/review-loop-gate, agent/review-loop] The hand-back hook denies a review-loop packet, in any mode, whose per-finding rows or metrics line were not logged, before the packet reaches the caller.
 * [Suite runs share one machine-wide worker slot pool and run niced](2026-10-30-suite-runs-share-one-machine-wide-worker-slot-pool.md) [script/parallel-tests] tests/parallel_tests.py takes a flock slot (nproc slots in a shared folder) before each test file starts and starts its workers at niceness +10, so two concurrent suite runs never run more than nproc test files together and interactive work stays responsive.
 * [JSON hand-back lists skip the free-text reader](2026-10-30-json-hand-back-lists-skip-the-free-text-reader.md) [script/handback, script/review-fix, script/review-loop-script, agent/review-loop] Every ask in a JSON hand-back reaches the user as its own question with its own outcome row, and an open class routes the scoped rerun, because typed lists stop being turned back into text.
 * [Review-loop fix coders load coder-core](2026-10-30-review-loop-fix-coders-load-coder-core.md) [script/review-loop-script, skill/coder-core] The scripted review loop appends the coder agent's preloaded skills to the fix coder's system prompt, because claude -p --agent does not load the agent's skills frontmatter.

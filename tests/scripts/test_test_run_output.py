@@ -76,6 +76,11 @@ class MatchesNoTestTest(unittest.TestCase):
     def test_a_filtered_run_that_ran_no_test_is_a_no_match(self):
         self.assertTrue(test_run_output.matches_no_test("npx vitest run -t totals", 0, NO_TEST_OUTPUTS["vitest"]))
 
+    def test_a_python_module_run_of_pytest_is_no_filter_even_when_every_test_skipped(self):
+        for command in ("python -m pytest", "python3 -m pytest tests"):
+            with self.subTest(command=command):
+                self.assertFalse(test_run_output.matches_no_test(command, 0, "===== 3 skipped in 0.12s ====="))
+
     def test_an_unfiltered_run_is_never_a_no_match(self):
         self.assertFalse(test_run_output.matches_no_test("npx vitest run", 0, NO_TEST_OUTPUTS["vitest"]))
 

@@ -64,15 +64,6 @@ def open_work_reason(open_dispatches):
     return OPEN_WORK_REASON.format(count=open_dispatches)
 
 
-def full_suite_in_ci(transcript, cwd):
-    """True when the repo the loop reviewed (else the repo holding cwd, the process cwd when empty) leaves its full
-    suite to CI."""
-    import full_check
-
-    repo = script_utils.repo_root(transcript.reviewed_root() or cwd or os.getcwd())
-    return repo is not None and full_check.full_suite_runs_in_ci(repo)
-
-
 def last_unchecked_step(session_id, agent_id):
     """The last code step the hook saw when it denied agent_id for an unchecked change, or None."""
     steps = [row.get("last_code_step", 0) for row in session_rows(session_id, UNCHECKED_KIND, agent_id)]
@@ -80,8 +71,8 @@ def last_unchecked_step(session_id, agent_id):
 
 
 def unchecked_code_reason(ungated, last_step, session_id, agent_id):
-    """The deny reason when `ungated` says the loop's transcript shows no passed full_check.py result after its last
-    code change (`last_step` is the line of that change), else None.
+    """`ungated`, the deny reason from loop_transcript.scan when no valid full-check receipt exists for the tree the
+    loop reviewed, else None (`ungated` is None). `last_step` is the transcript line of the loop's last code change.
     The denial is recorded with the last code step it saw and repeats only after a later code change, so a loop that
     hands back again on the same state passes."""
     if not ungated:
@@ -90,7 +81,7 @@ def unchecked_code_reason(ungated, last_step, session_id, agent_id):
     if denied_at is not None and last_step <= denied_at:
         return None
     record(session_id, UNCHECKED_KIND, agent_id=agent_id, last_code_step=last_step)
-    return loop_transcript.GATE_REASON
+    return ungated
 
 
 def hand_back_plan_edit_reason(transcript, packet):
@@ -135,7 +126,7 @@ def packet_gate_reason(transcript, packet, session_id, agent_id):
 
 def transcript_gate_reason(event, session_id, agent_id, message, packet):
     """The deny reason of the first gate that reads the loop's own transcript, in order: a background dispatch or
-    shell still open, no passed full check after the last code change, a plan file in the packet's files_touched,
+    shell still open, no valid full-check receipt for the tree, a plan file in the packet's files_touched,
     finding rows or a metrics line the packet owes and the loop did not log (the ledger reason, denied once per state).
     The transcript is read once. One that cannot be read never blocks, and a failed full-check scan skips the
     full-check gate only."""
@@ -149,8 +140,7 @@ def transcript_gate_reason(event, session_id, agent_id, message, packet):
     if open_work:
         return open_work
     try:
-        in_ci = full_suite_in_ci(transcript, event.get("cwd"))
-        ungated, _open_dispatches = loop_transcript.scan(transcript, message, in_ci)
+        ungated, _open_dispatches = loop_transcript.scan(transcript, message, event.get("cwd"))
         last_step = loop_transcript.last_code_step(transcript)
     except Exception as error:
         print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
@@ -204,10 +194,10 @@ def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back, or for kind `ran` the dispatch-ran row of a dispatch whose call ran.
     Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
-    unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no passed full_check.py
-    result follows the last code change, loop_transcript.PLAN_EDIT_REASON when the packet names the plan file, or the
-    ledger reason when the packet owes finding rows or a metrics line (once, until the loop makes another logger
-    call)."""
+    unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no valid full-check
+    receipt exists for the tree the loop reviewed, loop_transcript.PLAN_EDIT_REASON when the packet names the plan
+    file, or the ledger reason when the packet owes finding rows or a metrics line (once, until the loop makes another
+    logger call)."""
     session_id = event.get("session_id")
     if not session_id:
         return None

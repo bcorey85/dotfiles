@@ -287,6 +287,11 @@ def without_flag_values(words, value_flags):
     return kept_words
 
 
+def contains_word_run(words, run):
+    # True when the words hold the words of run next to each other, in order, anywhere in the list.
+    return any(words[start:start + len(run)] == run for start in range(len(words) - len(run) + 1))
+
+
 def command_after_wrappers(words, peel_containers=True):
     """The words of the command that a simple command finally runs, with the wrapper words, their flags and their
     values dropped: env (flags, NAME=value), sudo, doas, timeout (flags, duration), taskset (flags, CPU list), nice,
@@ -420,6 +425,12 @@ def and_steps(command):
     if any(operator not in ("", "&&") for operator, _step in steps):
         return None
     return [step.strip() for _operator, step in steps]
+
+
+def and_steps_or_whole(command):
+    """The stripped && steps of a command, or the stripped command as the one step when it joins its steps with any
+    other operator."""
+    return and_steps(command) or [command.strip()]
 
 
 def quoted_positions(command, unclosed_is_quoted=True):

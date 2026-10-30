@@ -245,6 +245,11 @@ def print_plan(context):
         step += 1
     else:
         lines.append(f"REVIEW: ran. {context['review']['reason']}. Skip the code-reviewer dispatch.")
+    full_check = context["fullCheck"]
+    if full_check["valid"]:
+        lines.append(f"FULL CHECK: valid for this tree ({full_check['reason']}).")
+    else:
+        lines.append(f"FULL CHECK: no valid receipt for this tree ({full_check['reason']}).")
     lines.append(f"STEP {step}: dispatch Agent subagent_type=plan-verifier (omit model), prompt exactly:")
     lines.append("  ---")
     lines.append("  scope: branch")
@@ -314,6 +319,7 @@ def main(argv):
                "gateEnv": gate_env,
                "baseRef": base_ref, "mergeBase": merge_base, "diff": diff, "criteria": criteria,
                "excludeRel": exclude_rel, "fingerprint": fingerprint, "review": review,
+               "fullCheck": vc.full_check_state(top),
                "reviewLoggedTree": review_logged_tree, "logged": False, "escapes": earlier_escapes}
     vc.save_context(state_path, context)
     print(print_plan(context))

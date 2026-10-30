@@ -106,7 +106,7 @@ def check_for_phase(check_command, plan_lines, phase_id):
     if check_command.strip() in commands:
         return None, [entry for entry in entries if entry["command"] == check_command.strip()]
 
-    steps = shell_command.and_steps(check_command) or [check_command.strip()]
+    steps = shell_command.and_steps_or_whole(check_command)
     kept = [step for step in steps if step not in commands]
     left_out = [entry for entry in entries if entry["command"] in steps]
     if not kept:

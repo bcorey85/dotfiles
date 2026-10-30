@@ -85,10 +85,10 @@ def read_hook_calls():
     tool_input = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
     calls = []
     for repo, state in hook_repo_states(event):
-        run_id = state.get("runId")
+        run_id = state.run_id
         if not run_id:
             continue
-        if session_id and state.get("sessionId") and session_id != state["sessionId"]:
+        if session_id and state.session_id and session_id != state.session_id:
             continue
         calls.append(HookCall(event, repo, state, run_id, session_id, tool_input))
     return calls
@@ -106,7 +106,7 @@ def is_pinned_fork_event(event, state):
     # or of a session /code did not pin, is not touched. The agent type is the only thing a hook event records about
     # the fork (its description is not in the event).
     session_id = event.get("session_id")
-    pinned_session = state.get("sessionId")
+    pinned_session = state.session_id
     return event.get("agent_type") == FORK_AGENT_TYPE and bool(session_id) and session_id == pinned_session
 
 
@@ -121,7 +121,7 @@ def open_fork_block(call, kind, limit, requires_dispatch=False):
     # the stage takes no hook, the event is not the pinned fork's, `limit` blocks of this kind were made, or no
     # dispatch is open. requires_dispatch also returns False when the run has no dispatch.
     repo, state = call.repo, call.state
-    if state.get("stage") not in HOOK_STAGES or not is_pinned_fork_event(call.event, state):
+    if state.stage not in HOOK_STAGES or not is_pinned_fork_event(call.event, state):
         return False
 
     standing = newest_dispatch_standing(repo, state)
@@ -132,12 +132,12 @@ def open_fork_block(call, kind, limit, requires_dispatch=False):
     if blocks_of_kind >= limit or not is_dispatch_open(repo, state):
         return False
 
-    log_event(repo, call.run_id, "fork-block", state.get("sessionId"), dispatch=standing["dispatch"]["id"], kind=kind)
+    log_event(repo, call.run_id, "fork-block", state.session_id, dispatch=standing["dispatch"]["id"], kind=kind)
     return True
 
 
 def log_handback_attempt(call):
-    if call.state.get("stage") == "done":
+    if call.state.stage == "done":
         return
 
     log_event(call.repo, call.run_id, "handback-attempt", call.session_id, agent_id=call.event.get("agent_id"),
@@ -159,20 +159,20 @@ def later_phase_edit_denial(call):
     # The reason to deny a coder's hand-back while the run's diff since its baseline edits a file that the plan names
     # only in a later open phase, or None.
     state = call.state
-    if call.event.get("agent_type") != CODER or state.get("stage") not in LATER_PHASE_GUARD_STAGES:
+    if call.event.get("agent_type") != CODER or state.stage not in LATER_PHASE_GUARD_STAGES:
         return None
-    if not state.get("plan") or not state.get("phase") or "baseline" not in state:
+    if not state.plan or not state.phase or state.baseline is None:
         return None
 
     repo_dir = pathlib.Path(call.repo)
-    base_head = state.get("baseHead")
+    base_head = state.base_head
     if head_left_phase_start(repo_dir, base_head):
         # Fail open when HEAD is off baseHead (a rebase, a reset, or a git failure): the diff since baseHead is not the
         # coder's work, and the hand-back's own stop names the off-line HEAD.
         return None
 
-    plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
-    later_files = set(expected_red.later_phase_paths(plan_lines, state["phase"]))
+    plan_lines = (repo_dir / state.plan).read_text().splitlines()
+    later_files = set(expected_red.later_phase_paths(plan_lines, state.phase))
     changed_files = coder_changed_files(repo_dir, state, file_hashes(repo_dir))
     edited = sorted(later_files.intersection(changed_files))
     if not edited:
@@ -200,7 +200,7 @@ def command_hook():
             try:
                 reason = later_phase_edit_denial(call)
             except Exception as error:
-                plan_name = call.state.get("plan")
+                plan_name = call.state.plan
                 print(f"code-step hook: the later-phase check of plan {plan_name} failed: {error}", file=sys.stderr)
                 continue
             if reason:
@@ -237,7 +237,7 @@ def command_log_hook():
     # the PreToolUse gates denied never reaches PostToolUse, so it is never logged.
     try:
         for call in read_hook_calls():
-            if call.state.get("stage") != "done":
+            if call.state.stage != "done":
                 log_tool_call(call)
     except Exception as error:
         print(f"code-step log-hook: {error}", file=sys.stderr)
@@ -345,7 +345,7 @@ def command_dispatch_hook():
 def dispatch_denial(call):
     # Denies the Agent call when it breaks the pending dispatch of the call's run. True when it denied. A call that
     # carries the marker of another run belongs to that run.
-    if call.event.get("tool_name") != "Agent" or call.state.get("stage") not in HOOK_STAGES:
+    if call.event.get("tool_name") != "Agent" or call.state.stage not in HOOK_STAGES:
         return False
     marker = dispatch_marker(call.tool_input.get("prompt"))
     if marker is not None and marker[0] != call.run_id:
@@ -353,7 +353,7 @@ def dispatch_denial(call):
 
     standing = dispatch_standing(read_events(call.repo, call.run_id))
     dispatch = standing["dispatch"]
-    if dispatch is None or dispatch.get("stage") != call.state["stage"]:
+    if dispatch is None or dispatch.get("stage") != call.state.stage:
         return False
     if time.time() - dispatch["ts"] > SAY_MAX_AGE_SECONDS:
         return False
@@ -407,15 +407,15 @@ def command_plan_hook():
             return
 
         for repo, state in hook_repo_states(event):
-            if not state.get("plan"):
+            if not state.plan:
                 continue
-            plan_path = pathlib.Path(repo) / state["plan"]
+            plan_path = pathlib.Path(repo) / state.plan
             if pathlib.Path(edited_path).resolve() != plan_path.resolve():
                 continue
 
             plan_lines = plan_path.read_text().splitlines()
             plan = plan_format.parse_plan_with_closing_phases(plan_lines)
-            failure = plan_write_failure(plan, plan_lines, state["plan"], pathlib.Path(repo))
+            failure = plan_write_failure(plan, plan_lines, state.plan, pathlib.Path(repo))
             if failure:
                 print(failure, file=sys.stderr)
                 sys.exit(2)

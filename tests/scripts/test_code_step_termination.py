@@ -160,6 +160,7 @@ code_step = importlib.util.module_from_spec(module_spec)
 with mock.patch.dict(os.environ, {"CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}):
     module_spec.loader.exec_module(code_step)
 import code_step_core
+import code_step_state
 
 RUN_COMMAND_MODULES = (code_step, sys.modules["code_step_start"], sys.modules["review_asks"])
 
@@ -626,7 +627,8 @@ class Failure:
 def user_answers(state):
     # What the user can say after a hand-back: each is one more entry verb into a new run.
     stage = state.get("stage")
-    reason = code_step_core.stop_kind(state)
+    run_state = code_step_state.RunState.from_json(state, "the saved state") if stage else None
+    reason = code_step_core.stop_kind(run_state)
     is_stopped = stage == "stopped"
     answers = [
         ("resume", ["resume"], None),
@@ -666,10 +668,10 @@ def user_answers(state):
         ]
     if is_stopped and reason in ("invalid-packet", "cap-reached", "critical-blocker", "setup-fault"):
         answers += [("review-again", ["review-again"], None)]
-    if is_stopped and code_step.awaits_resumed_review(state):
+    if is_stopped and code_step.awaits_resumed_review(run_state):
         answers += [("review-again", ["review-again"], None),
                     ("resume after SendMessage to the review-loop", ["resume"], send_message_to(REVIEW_AGENT_ID))]
-    if is_stopped and code_step.awaits_resumed_coder(state):
+    if is_stopped and code_step.awaits_resumed_coder(run_state):
         answers += [("resume after SendMessage to the coder", ["resume"], send_message_to(state["stop"]["agentId"]))]
     if is_stopped and reason in ("verification", "plan-format"):
         answers += [("verify (still failing)", ["verify"], None),
@@ -733,7 +735,7 @@ def children_of(node):
     if is_plan_edit:
         for name in PLAN_EDIT_OUTCOMES:
             def setup(repo, name=name):
-                apply_plan_edit_outcome(repo, name, state["plan"])
+                apply_plan_edit_outcome(repo, name, state.get("plan"))
                 save_report(repo, "coder", "plan edited")
             children.append((f"[plan-edit coder: {name}]", setup, ["resume"]))
     elif waiting_on == "coder" or (node.action == "dispatch" and node.agent == "coder"):

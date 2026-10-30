@@ -13,6 +13,7 @@ import toolkit_paths
 for folder in (toolkit_paths.LIB_DIR, toolkit_paths.REVIEW_DIR, toolkit_paths.CODE_DIR):
     sys.path.insert(0, str(folder))
 import code_step_boundary  # noqa: E402
+import code_step_state  # noqa: E402
 
 PLAN = "work/ABC-7-checks/spec.md"
 PLAN_TEXT = """# Plan
@@ -37,8 +38,8 @@ class CommitSubject(unittest.TestCase):
         (self.repo / PLAN).write_text(PLAN_TEXT)
 
     def message(self, phase, behavior):
-        state = {"plan": PLAN, "phase": phase, "title": f"title of the stage {phase}", "behavior": behavior,
-                 "branch": "main"}
+        state = code_step_state.RunState(stage="review", plan=PLAN, phase=phase, title=f"title of the stage {phase}",
+                                         behavior=behavior, branch="main")
         return code_step_boundary.commit_message(self.repo, state)
 
     def test_the_plan_named_commit_line_beats_the_coder_summary(self):
@@ -63,7 +64,7 @@ class CommitSubject(unittest.TestCase):
         self.assertEqual("ABC-7: adds a runner (plan ABC-7-checks)", self.message(None, ["adds a runner"]))
 
     def test_a_planless_run_keeps_the_bare_summary(self):
-        state = {"plan": None, "phase": None, "title": "t", "behavior": ["adds a runner"], "branch": "main"}
+        state = code_step_state.RunState(stage="review", title="t", behavior=["adds a runner"], branch="main")
 
         self.assertEqual("adds a runner", code_step_boundary.commit_message(self.repo, state))
 

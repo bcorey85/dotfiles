@@ -103,7 +103,7 @@ def already_done_ask_numbers(repo_dir, report):
 
 
 def every_accepted_ask_already_done(repo_dir, state, report):
-    accepted_asks = state.get("acceptedAsks")
+    accepted_asks = state.accepted_asks
     if not accepted_asks:
         return False
 

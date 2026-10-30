@@ -22,7 +22,7 @@ WORK_HOOKS = ("scripts/bash-safety-gate.sh", "scripts/block-credential-read.sh",
 CODE_STEP_MODULES = ("code_step_core.py", "code_step_boundary.py", "code_step_hooks.py", "code_step_gates.py",
                      "code_step_start.py", "code_step_report.py", "code_step_review.py", "code_step_closing.py",
                      "code_step_start_args.py", "code_step_concentration.py", "code_step_phase_end.py",
-                     "code_step_usage.py", "code_step_asks.py", "review_asks.py",
+                     "code_step_usage.py", "code_step_asks.py", "review_asks.py", "code_step_state.py",
                      "code_step_review_stops.py", "code_step_verification.py", "code_guidance.py")
 # The lib modules a copied coder_gate.py or code-step script imports.
 CODE_STEP_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "makefile_text.py", "test_run_output.py",

@@ -21,6 +21,7 @@ import toolkit_paths
 for folder in (toolkit_paths.LIB_DIR, toolkit_paths.REVIEW_DIR, toolkit_paths.CODE_DIR):
     sys.path.insert(0, str(folder))
 import code_step_boundary  # noqa: E402
+import code_step_state  # noqa: E402
 import handback  # noqa: E402
 import review_commit_gate  # noqa: E402
 import reviewed_tree  # noqa: E402
@@ -83,7 +84,7 @@ class CleanStatusOneOwnerTest(unittest.TestCase):
         return review_commit_gate.review_handed_back_since(SESSION, 0, str(self.repo))
 
     def clean_by_phase_gate(self):
-        state = {"stage": "review", "plan": None, "phase": None, "sessionId": SESSION}
+        state = code_step_state.RunState(stage="review", session_id=SESSION)
         with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(code_step_boundary, "save_state"):
             return code_step_boundary.mark_review_gate_clean(self.repo, state)
 

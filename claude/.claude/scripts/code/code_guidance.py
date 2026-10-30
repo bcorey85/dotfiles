@@ -3,18 +3,17 @@ state.json, so it survives a resume; every later coder and review dispatch carri
 the plan."""
 import script_utils
 
-GUIDANCE_KEY = "guidance"
 GUIDANCE_HEADING = "## Guidance from the main session"
 GUIDANCE_RULE = "Follow it within the task and the plan. It changes neither."
 
 
 def record_guidance(state, text):
-    state.setdefault(GUIDANCE_KEY, []).append(text.strip())
+    state.guidance = [*(state.guidance or []), text.strip()]
 
 
 def coder_guidance_lines(state):
     """The prompt section that carries the run's guidance to a coder, or [] when there is none."""
-    guidance = state.get(GUIDANCE_KEY) or []
+    guidance = state.guidance or []
     if not guidance:
         return []
     return ["", GUIDANCE_HEADING, "", GUIDANCE_RULE, ""] + [f"- {text}" for text in guidance]
@@ -23,7 +22,7 @@ def coder_guidance_lines(state):
 def guidance_header_line(state):
     """The review prompt's `guidance:` header line, or None when the run has no guidance. The header is one line per
     key, so each text is put on one line and the texts are joined with ` | `."""
-    guidance = state.get(GUIDANCE_KEY) or []
+    guidance = state.guidance or []
     if not guidance:
         return None
     one_line_texts = [script_utils.one_line(text, limit=None) for text in guidance]

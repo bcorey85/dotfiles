@@ -18,10 +18,10 @@ from code_step_core import emit, restart_instruction, save_state, script_command
 
 def open_criteria_texts(repo_dir, state):
     # The open Success Criteria lines of the closing phase, or [] when the plan cannot be read.
-    plan_path = repo_dir / state["plan"] if state.get("plan") else None
+    plan_path = repo_dir / state.plan if state.plan else None
     if plan_path is None or not plan_path.is_file():
         return []
-    items, _offset = phase_open_items(plan_path.read_text().split("\n"), state["phase"])
+    items, _offset = phase_open_items(plan_path.read_text().split("\n"), state.phase)
     return [item["text"] for item in items]
 
 
@@ -125,16 +125,16 @@ def record_closing_evidence(repo_dir, state, evidence, simplify_done_texts, reru
     # Writes each open item's evidence into the plan, and the simplify Done texts under the concentration-gate item.
     # Returns False, after a stop, when the evidence count does not match the open items or a simplify record has no
     # open concentration-gate item; nothing is written then.
-    plan_path = repo_dir / state["plan"]
+    plan_path = repo_dir / state.plan
     if not plan_path.is_file():
         return True
 
     plan_lines = plan_path.read_text().split("\n")
-    items, offset = phase_open_items(plan_lines, state["phase"])
+    items, offset = phase_open_items(plan_lines, state.phase)
 
     manual_gate_end = None
     if simplify_done_texts and concentration_gate_position(items) is None:
-        manual_gate_end = manual_gate_item_end(plan_lines, state["phase"])
+        manual_gate_end = manual_gate_item_end(plan_lines, state.phase)
     if manual_gate_end is None and stop_for_missing_gate_item(items, simplify_done_texts, rerun_command):
         return False
 

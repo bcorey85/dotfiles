@@ -7,6 +7,7 @@ code_step_closing, code_step_hooks, code_step_gates, code_step_start, code_step_
 A hand-back is one `handback` event in the run's events.jsonl, written by the log hook. A verb that waits for an agent
 looks for the newest hand-back event of the awaited agent's id after the time it was dispatched."""
 import contextlib
+import dataclasses
 import datetime
 import json
 import os
@@ -24,6 +25,7 @@ import plan_format
 import script_utils
 import worktree_snapshot
 from code_guidance import coder_guidance_lines
+from code_step_state import RunState, StateFileError, Stop
 from script_utils import git_output
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -109,10 +111,6 @@ def state_file(cwd):
     return state_dir(cwd) / STATE_FILE_NAME
 
 
-class StateFileError(Exception):
-    pass
-
-
 def load_state(cwd):
     directory = state_dir(cwd)
     if directory is None:
@@ -125,9 +123,10 @@ def read_state_file(directory):
     if not path.exists():
         return None
     try:
-        return migrate_old_state(json.loads(path.read_text()))
+        raw = json.loads(path.read_text())
     except ValueError:
         raise StateFileError(f"{path} is not readable JSON") from None
+    return RunState.from_json(raw, path)
 
 
 def load_aborted_plan_state(cwd):
@@ -141,13 +140,15 @@ def load_aborted_plan_state(cwd):
     if not archives:
         return None
 
+    newest = archives[0]
     try:
-        archived = migrate_old_state(json.loads(archives[0].read_text()))
-    except (OSError, ValueError):
+        raw = json.loads(newest.read_text())
+        archived = RunState.from_json(raw, newest)
+    except (OSError, ValueError, StateFileError):
         return None
-    if not isinstance(archived, dict) or not archived.get("plan"):
+    if not archived.plan:
         return None
-    if started_after_abort(directory, archived.get("runId")):
+    if started_after_abort(directory, archived.run_id):
         return None
     return archived
 
@@ -162,39 +163,31 @@ def started_after_abort(directory, archived_run_id):
 
 
 # ---------- stop record and snapshot ----------
-# A stopped run keeps stage "stopped" (printed texts and the verb guards name it) and one `stop` record:
-# {"kind": why it stopped or None, "at": when, "agentId": the coder it can resume,
-#  "coderStage": the stage that coder stopped at, "waitAt": first wait on a resumed agent}.
+# A stopped run keeps stage "stopped" (printed texts and the verb guards name it) and one Stop record.
 
 STOPPED = "stopped"
 CODER_RESUMABLE = "coder-resumable"
 REVIEW_RESUMABLE = "review-resumable"
-OLD_STOP_KEYS = ("stopReason", "resumableCoderAt", "resumableCoderId", "resumableReview", "resumeWaitAt")
-OLD_SNAPSHOT_KEYS = {"planEditBaseline": "planEdit", "asksBaseline": "asks", "followUpBefore": "followUp"}
 
 
 def set_stop(state, kind=None, *, at=None, agent_id=None, coder_stage=None):
     # The run stops here, whatever it was doing: the record replaces any earlier stop, its resume wait included.
     # coder_stage is the stage of the stopped coder, which a resume of that coder goes back to.
-    record = {"kind": kind, "at": time.time() if at is None else at}
-    if agent_id is not None:
-        record["agentId"] = agent_id
-    if coder_stage is not None:
-        record["coderStage"] = coder_stage
-    state["stage"] = STOPPED
-    state["stop"] = record
+    stopped_at = time.time() if at is None else at
+    state.stage = STOPPED
+    state.stop = Stop(kind, stopped_at, agent_id=agent_id, coder_stage=coder_stage)
 
 
 def clear_stop(state):
     # The caller sets the stage the run goes on at.
-    state.pop("stop", None)
+    state.stop = None
 
 
 def stop_record(state):
-    # The stop record of a stopped run, or None for a run that is not stopped.
-    if state.get("stage") != STOPPED:
+    # The stop record of a stopped run, or None for a run that is not stopped and for no run.
+    if state is None or state.stage != STOPPED:
         return None
-    return state.get("stop")
+    return state.stop
 
 
 def is_stopped(state):
@@ -203,13 +196,12 @@ def is_stopped(state):
 
 def stop_kind(state):
     record = stop_record(state)
-    return record["kind"] if record else None
+    return record.kind if record else None
 
 
 def note_resume_wait(state, wait_started):
-    # The first wait on an agent the user resumed after a stop counts the cap from here. The record is replaced, not
-    # edited: a copy of the state shares the old one.
-    state["stop"] = {**state["stop"], "waitAt": wait_started}
+    # The first wait on an agent the user resumed after a stop counts the cap from here.
+    state.stop = dataclasses.replace(state.stop, wait_at=wait_started)
 
 
 def end_review_wait(state):
@@ -217,79 +209,28 @@ def end_review_wait(state):
     record = stop_record(state)
     if record is None:
         return
-    kept = {key: value for key, value in record.items() if key != "waitAt"}
-    if kept["kind"] == REVIEW_RESUMABLE:
-        kept["kind"] = None
-    state["stop"] = kept
+    kind = None if record.kind == REVIEW_RESUMABLE else record.kind
+    state.stop = dataclasses.replace(record, kind=kind, wait_at=None)
 
 
 def snapshot_part(state, name):
-    return state.get("snapshot", {}).get(name)
+    return state.snapshot.get(name)
 
 
 def has_snapshot_part(state, name):
-    return name in state.get("snapshot", {})
+    return name in state.snapshot
 
 
 def record_snapshot(state, **parts):
     # The tree as the run left it at a dispatch: "planEdit" and "asks" hold file hashes, "followUp" a change snapshot.
-    state["snapshot"] = {**state.get("snapshot", {}), **parts}
+    state.snapshot = {**state.snapshot, **parts}
 
 
 def take_snapshot_part(state, name):
-    snapshot = dict(state.get("snapshot", {}))
+    snapshot = dict(state.snapshot)
     part = snapshot.pop(name, None)
-    state["snapshot"] = snapshot
+    state.snapshot = snapshot
     return part
-
-
-def old_stop_record(state):
-    # The stop record that the old stop keys of a state say, laid over the record it already has (an old state file
-    # may hold one of those keys alone). A resumable coder outranks a resumable review, which outranks a
-    # stop reason.
-    record = dict(state.get("stop") or {"kind": None, "at": None})
-    coder_at = state.get("resumableCoderAt")
-    review_at = state.get("resumableReview")
-    if coder_at is not None:
-        record = {**record, "kind": CODER_RESUMABLE, "at": coder_at}
-        if state.get("resumableCoderId") is not None:
-            record["agentId"] = state["resumableCoderId"]
-    elif review_at:
-        record = {**record, "kind": REVIEW_RESUMABLE, "at": review_at}
-    elif "stopReason" in state:
-        record = {"kind": state["stopReason"], "at": record["at"]}
-    if state.get("resumeWaitAt") is not None:
-        record["waitAt"] = state["resumeWaitAt"]
-    return record
-
-
-def migrate_old_state(state):
-    # The one place old keys become the new ones, on every read of the state file. Idempotent. Old stop keys of a run
-    # that is not stopped were never read, so they go.
-    if not isinstance(state, dict):
-        return state
-
-    has_old_stop_keys = any(key in state for key in OLD_STOP_KEYS)
-    is_stopped_without_record = state.get("stage") == STOPPED and "stop" not in state
-    if has_old_stop_keys or is_stopped_without_record:
-        record = old_stop_record(state)
-        for key in OLD_STOP_KEYS:
-            state.pop(key, None)
-        if state.get("stage") == STOPPED:
-            state["stop"] = record
-
-    old_snapshot_parts = {name: state.pop(key) for key, name in OLD_SNAPSHOT_KEYS.items() if key in state}
-    if state.pop("asksApplied", None) and "asks" not in old_snapshot_parts:
-        old_snapshot_parts["asks"] = None
-    if old_snapshot_parts:
-        record_snapshot(state, **old_snapshot_parts)
-    state.pop("packet", None)
-
-    # The asks coders' behavior was one flat list for all rounds; it reads as one earlier round.
-    old_ask_behavior = state.pop("askFixBehavior", None)
-    if old_ask_behavior and "askRounds" not in state:
-        state["askRounds"] = [list(old_ask_behavior)]
-    return state
 
 
 def branch_label(cwd):
@@ -299,9 +240,10 @@ def branch_label(cwd):
 
 def save_state(cwd, state):
     state_dir(cwd).mkdir(parents=True, exist_ok=True)
-    script_utils.write_text_atomically(state_file(cwd), json.dumps(state, indent=1))
+    state_text = json.dumps(state.to_json(), indent=1)
+    script_utils.write_text_atomically(state_file(cwd), state_text)
 
-    register_session_repo(cwd, state.get("sessionId"))
+    register_session_repo(cwd, state.session_id)
 
 
 def session_repos_file(session_id):
@@ -338,12 +280,12 @@ def register_session_repo(cwd, session_id):
 
 
 def is_run_open(state):
-    return state.get("stage") not in (None, "done")
+    return state is not None and state.stage != "done"
 
 
 def holds_open_run(repo, session_id):
     state = load_state(repo)
-    return state is not None and is_run_open(state) and state.get("sessionId") == session_id
+    return is_run_open(state) and state.session_id == session_id
 
 
 def session_open_run_repos(session_id):
@@ -379,7 +321,7 @@ def record_ruled_asks(cwd, state, outcomes, change_texts):
     # one. An ask with no proposed change of its own carries its question as its change, so that copy is no proposal.
     # A later ruling of the same plan, phase and ask replaces the earlier entry.
     ruled = read_ruled_asks(cwd)
-    for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=True):
+    for item, outcome, change_text in zip(state.asks, outcomes, change_texts, strict=True):
         question = str(item.get("question") or "")
         proposed = str(item.get("change") or "")
         if proposed.strip() == question.strip():
@@ -388,8 +330,8 @@ def record_ruled_asks(cwd, state, outcomes, change_texts):
         named_change = (change_text or "") if outcome == "modified" else proposed
         ask = script_utils.ask_text(item)
         ruled = [earlier for earlier in ruled if (earlier["plan"], earlier["phase"], earlier["ask"])
-                 != (state.get("plan"), state.get("phase"), ask)]
-        ruled.append({"plan": state.get("plan"), "phase": state.get("phase"), "file_line": item.get("file_line", ""),
+                 != (state.plan, state.phase, ask)]
+        ruled.append({"plan": state.plan, "phase": state.phase, "file_line": item.get("file_line", ""),
                       "ask": ask, "outcome": outcome, "change": named_change})
     state_dir(cwd).mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(ruled_asks_path(cwd), json.dumps(ruled, indent=1))
@@ -426,7 +368,7 @@ def session_pin():
 
 
 def run_session_id(state):
-    return state.get("sessionId") or session_pin() or ""
+    return state.session_id or session_pin() or ""
 
 
 def head_commit(repo_dir):
@@ -451,8 +393,8 @@ def committed_since_baseline(repo_dir, state):
     # The committed files whose content at HEAD differs from what they held when the phase started. A file the phase
     # began with dirty and a commit took unchanged, such as the earlier phase's commit made after this phase started,
     # is not this phase's work.
-    committed = committed_since(repo_dir, state.get("baseHead"))
-    baseline = state["baseline"]
+    committed = committed_since(repo_dir, state.base_head)
+    baseline = state.baseline
     dirty_at_start = [name for name in committed if name in baseline]
     head_hashes = script_utils.head_blob_hashes(repo_dir, dirty_at_start)
 
@@ -461,7 +403,7 @@ def committed_since_baseline(repo_dir, state):
 
 def uncommitted_files(repo_dir, previous):
     # The files of the previous phase's commit line that are still dirty.
-    files = previous.get("commitFiles") or []
+    files = previous.commit_files or []
     if not files:
         return []
     return git_names(repo_dir, "status", "--porcelain", "--", *files)
@@ -475,7 +417,7 @@ def file_hashes(repo_dir):
 
 def changed_since_baseline(state, changed_now):
     # The files of the working tree that differ from the run's baseline.
-    baseline = state["baseline"]
+    baseline = state.baseline
     return [name for name, digest in changed_now.items() if name not in baseline or baseline[name] != digest]
 
 
@@ -546,29 +488,29 @@ def dispatch_standing(events):
 
 
 def newest_dispatch_standing(repo_dir, state):
-    if not state.get("runId"):
+    if not state.run_id:
         return {"dispatch": None, "launched": None, "blocks": []}
-    return dispatch_standing(read_events(repo_dir, state["runId"]))
+    return dispatch_standing(read_events(repo_dir, state.run_id))
 
 
 def record_dispatch(repo_dir, state, agent_type, model, prompt):
     # Saves the dispatch prompt in the run's folder, ending with the marker line that the launch hook reads back, and
     # logs the dispatch. Returns the prompt with its marker and the path of the saved file.
-    run_id = state["runId"]
+    run_id = state.run_id
     dispatch_count = sum(1 for event in read_events(repo_dir, run_id) if event.get("event") == "dispatch")
     dispatch_id = f"d{dispatch_count + 1}"
     marked_prompt = f"{own_path(prompt).rstrip()}\n\n{DISPATCH_MARKER} {run_id}/{dispatch_id}"
     prompt_file = run_file_path(repo_dir, run_id, f"prompt-{dispatch_id}.txt")
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(marked_prompt + "\n")
-    log_event(repo_dir, run_id, "dispatch", session_pin(), id=dispatch_id, agent_type=agent_type, stage=state["stage"],
+    log_event(repo_dir, run_id, "dispatch", session_pin(), id=dispatch_id, agent_type=agent_type, stage=state.stage,
               model=model, prompt_file=str(prompt_file))
     return marked_prompt, prompt_file
 
 
 def prompt_with_gate_env(repo_dir, state, prompt):
     # The prompt, with the repo's gate env vars appended when it has any.
-    gate_env = plan_format.repo_gate_env(repo_dir, state.get("plan"))
+    gate_env = plan_format.repo_gate_env(repo_dir, state.plan)
     gate_env_text = plan_format.gate_env_text(gate_env)
     if not gate_env_text:
         return prompt
@@ -600,12 +542,12 @@ def emit_dispatch(repo_dir, state, *lines, prompt, agent, model=None):
 def open_dispatch(state):
     # A dispatch is open from here until the dispatched agent's hand-back event is newer than dispatchAt. The session
     # that opens it pins the run: a new session that resumes the run reads the events of the agents it launches.
-    state["dispatchAt"] = time.time()
+    state.dispatch_at = time.time()
     # A finished review script's pid would read as gone on the next wait; launch_review_script sets it after this.
-    state.pop("reviewScriptPid", None)
-    state["sessionId"] = session_pin() or state.get("sessionId")
-    if not state.get("runId"):
-        state["runId"] = script_utils.sortable_unique_id()
+    state.review_script_pid = None
+    state.session_id = session_pin() or state.session_id
+    if not state.run_id:
+        state.run_id = script_utils.sortable_unique_id()
 
 
 def abandon_open_dispatch(repo_dir, previous):
@@ -613,15 +555,15 @@ def abandon_open_dispatch(repo_dir, previous):
     # baseline stays, so a restart of the same phase keeps its own-files record. A review script still running,
     # including one a wait-cap stop left running, is killed; stopping it drops the pid and the stop's review
     # wait from the saved state.
-    abandoned = dict(previous)
+    abandoned = dataclasses.replace(previous)
     had_review_script = stop_review_script(abandoned) is not None
 
-    if abandoned.get("dispatchAt") is None or abandoned.get("stage") not in HOOK_STAGES:
+    if abandoned.dispatch_at is None or abandoned.stage not in HOOK_STAGES:
         if had_review_script:
             save_state(repo_dir, abandoned)
         return
 
-    abandoned.pop("dispatchAt")
+    abandoned.dispatch_at = None
     set_stop(abandoned)
     save_state(repo_dir, abandoned)
 
@@ -658,16 +600,16 @@ def awaits_resumed_review(state):
 def phase_code_in_place(state):
     # The phase's review converged and no coder works on it since, so `verify` may run its checks and close it.
     module, _import_error = load_handback()
-    if module is None or state.get("stage") in (*CODER_STAGES, "plan-coder", "skill", "done"):
+    if module is None or state.stage in (*CODER_STAGES, "plan-coder", "skill", "done"):
         return False
-    return state.get("reviewStatus") in module.CLEAN_STATUSES
+    return state.review_status in module.CLEAN_STATUSES
 
 
 def awaited_agent_id(repo_dir, state):
     # The agent the next verb waits for: the coder resumed after a stop, else the agent the newest dispatch launched
     # (a review-loop resumed with SendMessage keeps that id). None when no launch is logged yet.
     if awaits_resumed_coder(state):
-        return state["stop"].get("agentId")
+        return state.stop.agent_id
     launched = newest_dispatch_standing(repo_dir, state)["launched"]
     return launched.get("agent_id") if launched else None
 
@@ -675,10 +617,10 @@ def awaited_agent_id(repo_dir, state):
 def dispatch_since(state):
     # The time the agent that the next verb waits for was dispatched, or None when the state records none. A coder
     # resumed after a stop counts from the stop.
-    if state.get("dispatchAt") is not None:
-        return state["dispatchAt"]
+    if state.dispatch_at is not None:
+        return state.dispatch_at
     if awaits_resumed_coder(state):
-        return state["stop"]["at"]
+        return state.stop.at
     return None
 
 
@@ -700,7 +642,7 @@ def loop_stopped_after(state, handback, wait_for_stop):
     module, _import_error = load_handback()
     if module is None:
         return True
-    session_id = state.get("sessionId") or session_pin() or ""
+    session_id = state.session_id or session_pin() or ""
     stops = module.stop_rows_after(session_id, handback.get("agent_id"), handback["ts"])
     if any(not row.get("blocked") for row in stops):
         return True
@@ -712,10 +654,10 @@ def loop_stopped_after(state, handback, wait_for_stop):
 def newest_handback(repo_dir, state):
     # The newest hand-back event of the awaited agent after its dispatch, whether or not the loop stopped after it.
     since = dispatch_since(state)
-    if since is None or not state.get("runId"):
+    if since is None or not state.run_id:
         return None
 
-    events = read_events(repo_dir, state["runId"])
+    events = read_events(repo_dir, state.run_id)
     agent_id = awaited_agent_id(repo_dir, state)
     if agent_id is None:
         return finished_report_without_launch(events, state, since)
@@ -761,7 +703,7 @@ def take_handback(repo_dir, state, agent_type, missing_text):
 
     pin_session(repo_dir, state)
     refresh_phase_text(repo_dir, state)
-    state.pop("reviewScriptPid", None)
+    state.review_script_pid = None
     if awaits_resumed_coder(state):
         put_resumed_coder_back(repo_dir, state)
     elif awaits_resumed_review(state):
@@ -779,11 +721,11 @@ def current_phase_text(repo_dir, plan_rel, phase):
 def own_phase_text(repo_dir, state):
     # The plan's current section for the run's phase when the run's own agent may have left it: the plan reads, the
     # phase exists and its heading is the saved one. Otherwise None, and the stale check decides.
-    if state.get("phaseText") is None or not state.get("plan") or state.get("phase") is None:
+    if state.phase_text is None or not state.plan or state.phase is None:
         return None
 
     try:
-        current_text = current_phase_text(repo_dir, state["plan"], state["phase"])
+        current_text = current_phase_text(repo_dir, state.plan, state.phase)
     except OSError:
         return None
 
@@ -792,7 +734,7 @@ def own_phase_text(repo_dir, state):
 
     # Any heading change, including one the agent made, is treated as an outside edit (a phase inserted or reordered
     # leaves another phase under this number) and is left for the stale check.
-    saved_heading = state["phaseText"].split("\n", 1)[0].strip()
+    saved_heading = state.phase_text.split("\n", 1)[0].strip()
     if current_text.split("\n", 1)[0].strip() != saved_heading:
         return None
     return current_text
@@ -804,12 +746,12 @@ def refresh_phase_text(repo_dir, state):
     # caller saves the state.
     current_text = own_phase_text(repo_dir, state)
     if current_text is not None:
-        state["phaseText"] = current_text
+        state.phase_text = current_text
 
 
 def is_dispatch_open(cwd, state):
     # A dispatch is open from dispatchAt until the awaited agent's hand-back event.
-    since = state.get("dispatchAt")
+    since = state.dispatch_at
     if since is None or time.time() - since > SAY_MAX_AGE_SECONDS:
         return False
     return awaited_handback(cwd, state) is None
@@ -817,18 +759,18 @@ def is_dispatch_open(cwd, state):
 
 def pin_session(repo_dir, state):
     # A state with no pinned session takes the session of the launch event of its dispatch. The caller saves the state.
-    if state.get("sessionId"):
+    if state.session_id:
         return
     launched = newest_dispatch_standing(repo_dir, state)["launched"]
     if launched and launched.get("session_id"):
-        state["sessionId"] = launched["session_id"]
+        state.session_id = launched["session_id"]
 
 
 def sent_message_since(repo_dir, state, since, agent_id=None):
     # True when the log of the run holds a SendMessage after `since`, to `agentId` when one is given.
-    if not state.get("runId"):
+    if not state.run_id:
         return False
-    for event in read_events(repo_dir, state["runId"]):
+    for event in read_events(repo_dir, state.run_id):
         if event.get("event") != "resume" or not is_after(event, since):
             continue
         if agent_id is None or event.get("agent_id") == agent_id:
@@ -839,8 +781,8 @@ def sent_message_since(repo_dir, state, since, agent_id=None):
 def put_resumed_coder_back(repo_dir, state):
     # A coder resumed after the run stopped on its report is the same coder: its next hand-back goes to review. Its
     # dispatch time is the stop.
-    state["stage"] = state["stop"].get("coderStage", "coder")
-    state["dispatchAt"] = state["stop"]["at"]
+    state.stage = state.stop.coder_stage or "coder"
+    state.dispatch_at = state.stop.at
     clear_stop(state)
     save_state(repo_dir, state)
 
@@ -848,7 +790,7 @@ def put_resumed_coder_back(repo_dir, state):
 def put_resumed_review_back(repo_dir, state):
     # A review-loop resumed after the wait cap is the pending review again: its hand-back goes to the review step. It
     # keeps the dispatch time of the loop that went past the cap.
-    state["stage"] = "review"
+    state.stage = "review"
     clear_stop(state)
     save_state(repo_dir, state)
 
@@ -872,9 +814,9 @@ def phase_coder_reports(repo_dir, state):
     # order. The messages of an agent are every hand-back event it logged, oldest first; its attempts are every message
     # it tried to hand back, denied or not. An asks round keeps only the agents of the newest asks-coder dispatch: the
     # asks of an earlier round are ruled already. The phase coder stage keeps every agent.
-    if not state.get("runId"):
+    if not state.run_id:
         return []
-    events = read_events(repo_dir, state["runId"])
+    events = read_events(repo_dir, state.run_id)
     dispatch_stages = {event["id"]: event.get("stage") for event in events if event.get("event") == "dispatch"}
     asks_dispatches = [event["id"] for event in events
                        if event.get("event") == "dispatch" and event.get("stage") == "asks-coder"]
@@ -902,7 +844,7 @@ def next_after():
 
 
 def expected_agent(state):
-    return REVIEW_LOOP if state.get("stage") == "review" or awaits_resumed_review(state) else CODER
+    return REVIEW_LOOP if state.stage == "review" or awaits_resumed_review(state) else CODER
 
 
 def dispatch_time_text(since):
@@ -914,14 +856,14 @@ def dispatch_time_text(since):
 def unlaunched_dispatch(repo_dir, state, agent_type):
     # The newest dispatch of this run when its Agent call never left: no launch row, and older than the launch grace.
     # Only the dispatch the state is in can be waited for; a resumed agent has a launch row of its own.
-    if state.get("stage") not in HOOK_STAGES:
+    if state.stage not in HOOK_STAGES:
         return None
     standing = newest_dispatch_standing(repo_dir, state)
     dispatch = standing["dispatch"]
     if dispatch is None or standing["launched"] is not None:
         return None
 
-    if dispatch.get("stage") != state["stage"] or dispatch.get("agent_type") != agent_type:
+    if dispatch.get("stage") != state.stage or dispatch.get("agent_type") != agent_type:
         return None
 
     if time.time() - dispatch["ts"] < launch_grace_seconds():
@@ -960,10 +902,10 @@ def wait_clock_start(repo_dir, state, since, wait_started):
         if isinstance(launched_at, (int, float)):
             return max(since, launched_at)
         return since
-    if state["stop"].get("waitAt") is None:
+    if state.stop.wait_at is None:
         note_resume_wait(state, wait_started)
         save_state(repo_dir, state)
-    return state["stop"]["waitAt"]
+    return state.stop.wait_at
 
 
 def launch_has_no_agent_id(repo_dir, state):
@@ -980,7 +922,7 @@ def runs_review_script():
 
 
 def review_script_running(state):
-    pid = state.get("reviewScriptPid")
+    pid = state.review_script_pid
     if not pid:
         return False
     try:
@@ -994,7 +936,7 @@ def review_script_running(state):
 
 def review_script_progress_at(state):
     # The newest write to a running review loop script's progress files, or None.
-    log_path = state.get("reviewScriptLog")
+    log_path = state.review_script_log
     if not log_path or not review_script_running(state):
         return None
 
@@ -1017,9 +959,11 @@ def cap_clock_start(repo_dir, state, since, wait_started):
 
 def stop_review_script(state):
     # Kills the running review loop script and every claude call it started. The caller saves the state.
-    pid = state.pop("reviewScriptPid", None)
+    pid = state.review_script_pid
     if pid is None:
         return None
+
+    state.review_script_pid = None
     # A killed script leaves nothing to resume.
     end_review_wait(state)
     with contextlib.suppress(ProcessLookupError, PermissionError):
@@ -1030,7 +974,7 @@ def stop_review_script(state):
 def handback_or_unlaunched(repo_dir, state, agent_type, cap_spent):
     if awaited_handback(repo_dir, state, wait_for_stop=True):
         return "handback", None
-    if state.get("reviewScriptPid") and not review_script_running(state):
+    if state.review_script_pid and not review_script_running(state):
         # The script writes its hand-back, then exits: a hand-back that landed after the first read still counts.
         return ("handback", None) if awaited_handback(repo_dir, state, wait_for_stop=True) else ("script-gone", None)
     if launch_has_no_agent_id(repo_dir, state):
@@ -1111,10 +1055,10 @@ SCRIPT_LOG_TAIL_CHARS = 800
 
 
 def stop_on_gone_review_script(repo_dir, state):
-    log_path = state.get("reviewScriptLog", "")
-    script_pid = state.get("reviewScriptPid")
+    log_path = state.review_script_log or ""
+    script_pid = state.review_script_pid
     # A wait-cap stop before this one left the review resumable; a gone script has nothing left to resume.
-    state.pop("reviewScriptPid", None)
+    state.review_script_pid = None
     set_stop(state, "invalid-packet")
     save_state(repo_dir, state)
     agent_id = awaited_agent_id(repo_dir, state) or "(none logged)"
@@ -1144,9 +1088,9 @@ def stop_on_launch_without_agent_id(repo_dir, state, agent_type):
 
 def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     stopped_at = time.time()
-    if agent_type == REVIEW_LOOP and state.get("reviewScriptPid"):
+    if agent_type == REVIEW_LOOP and state.review_script_pid:
         set_stop(state, REVIEW_RESUMABLE, at=stopped_at)
-        resume_text = (f" The review loop runs as a script; its log is {state.get('reviewScriptLog', '')}. If the user "
+        resume_text = (f" The review loop runs as a script; its log is {state.review_script_log or ''}. If the user "
                        f"wants it to keep waiting, run {timed_command()}. If the user wants it killed and a "
                        f"new loop started on the same diff, run `{INSTALLED_COMMAND} review-again`.")
     elif agent_type == REVIEW_LOOP:
@@ -1162,7 +1106,7 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
                    f"{dispatch_time_text(clock_start)} (the cap is {total_cap:g}).")
     if review_script_running(state):
         progress_names = " or ".join(REVIEW_SCRIPT_PROGRESS_FILES)
-        silent_text += (f" Its script (pid {state['reviewScriptPid']}) is still running and has written no "
+        silent_text += (f" Its script (pid {state.review_script_pid}) is still running and has written no "
                         f"{progress_names} in that time.")
     else:
         silent_text += " It may have died or been stopped."
@@ -1172,8 +1116,8 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
 
 def carried_start_words(state):
     # The start flags a run passes on to its next phase and to a restart: its modifier and --headless.
-    modifier_words = [state["modifier"]] if state.get("modifier") else []
-    headless_words = ["--headless"] if state.get("headless") else []
+    modifier_words = [state.modifier] if state.modifier else []
+    headless_words = ["--headless"] if state.headless else []
     return modifier_words + headless_words
 
 
@@ -1181,8 +1125,8 @@ def restart_instruction(state, restart_command="start --restart"):
     # A restart with no task text resolves the branch's plan, which is the wrong work for a run that had no plan.
     # A plan run keeps its single phase, its modifier and --headless through the restart.
     modifier_words = carried_start_words(state)
-    if state.get("plan"):
-        phase_words = ["--phase", str(state["onlyPhase"])] if state.get("onlyPhase") else []
+    if state.plan:
+        phase_words = ["--phase", str(state.only_phase)] if state.only_phase else []
         return "run `" + " ".join([restart_command, *phase_words, *modifier_words]) + "`"
 
     planless_words = [restart_command, *modifier_words, "--task", "\"<the task text>\""]
@@ -1194,13 +1138,13 @@ def stale_phase_reason(repo_dir, state):
     # text to compare: a finished run, a planless run, a closing phase). A phase the run's own gates ticked is not
     # stale. It also returns None while a review script is still running, and at a plan-fix stop whose phase was
     # edited or whose plan cannot be read.
-    saved_text = state.get("phaseText")
-    if state["stage"] == "done" or not state.get("plan") or state.get("phase") is None or saved_text is None:
+    saved_text = state.phase_text
+    if state.stage == "done" or not state.plan or state.phase is None or saved_text is None:
         return None
 
     # These stages are the ones where the plan is edited on purpose: a plan-edit coder, a ruling on a plan change.
     # The run reads the plan again when it leaves them.
-    if state["stage"] in PLAN_EDIT_STAGES:
+    if state.stage in PLAN_EDIT_STAGES:
         return None
 
     # A review script still running is waited on, not dropped: a restart would kill it.
@@ -1212,12 +1156,12 @@ def stale_phase_reason(repo_dir, state):
     is_plan_fix_stop = stop_kind(state) in PLAN_EDIT_STOP_REASONS
 
     try:
-        current_text = current_phase_text(repo_dir, state["plan"], state["phase"])
+        current_text = current_phase_text(repo_dir, state.plan, state.phase)
     except OSError:
-        return None if is_plan_fix_stop else f"{state['plan']} cannot be read"
+        return None if is_plan_fix_stop else f"{state.plan} cannot be read"
 
     if current_text is None:
-        return f"Phase {state['phase']} is no longer in {state['plan']}"
+        return f"Phase {state.phase} is no longer in {state.plan}"
     if is_plan_fix_stop:
         return None
 
@@ -1228,7 +1172,7 @@ def stale_phase_reason(repo_dir, state):
 
     changed_lines = changed_wording_lines(saved_wording, current_wording)
     changed_lines_note = f" ({changed_lines})" if changed_lines else ""
-    return f"the text of Phase {state['phase']} in {state['plan']} changed since the run started{changed_lines_note}"
+    return f"the text of Phase {state.phase} in {state.plan} changed since the run started{changed_lines_note}"
 
 
 def changed_wording_lines(saved_wording, current_wording):
@@ -1253,7 +1197,7 @@ def stop_a_silent_coder(repo_dir, state, stopped_at):
     if agent_id:
         stopped_restart_text = restart_instruction(state, script_command("start --restart --coder-stopped"))
         restart_instruction_text = f"stop coder {agent_id} with TaskStop, then {stopped_restart_text}"
-    if state.get("stage") == "plan-coder":
+    if state.stage == "plan-coder":
         set_stop(state, "coder-cap", at=stopped_at)
         return (" The plan-edit coder cannot be resumed: only the phase coder and the asks coder can. To dispatch "
                 f"the phase coder again, {restart_instruction_text}.")
@@ -1263,9 +1207,9 @@ def stop_a_silent_coder(repo_dir, state, stopped_at):
         return (f" Its launch has no agent id, so it cannot be resumed: {restart_instruction_text} "
                 "to dispatch a new one.")
 
-    coder_stage = state["stop"].get("coderStage", "coder") if awaits_resumed_coder(state) else state["stage"]
+    coder_stage = (state.stop.coder_stage or "coder") if awaits_resumed_coder(state) else state.stage
     set_stop(state, CODER_RESUMABLE, at=stopped_at, agent_id=agent_id, coder_stage=coder_stage)
-    state.pop("dispatchAt", None)
+    state.dispatch_at = None
     return (f" If the user resumes coder {agent_id} with SendMessage, run {timed_command()}. To dispatch a "
             f"new coder instead, {restart_instruction_text}.")
 

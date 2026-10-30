@@ -255,9 +255,14 @@ class ReviewLoopScriptTest(unittest.TestCase):
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
 
-    def run_with_scoped_tests(self, gate_commands, scenario):
+    def save_gate_commands(self, gate_commands):
+        # The state file of a /code run whose phase names these gate commands.
         self.state_dir.mkdir()
-        (self.state_dir / "state.json").write_text(json.dumps({"gateCommands": gate_commands}))
+        saved_state = {"stage": "review", "gateCommands": gate_commands}
+        (self.state_dir / "state.json").write_text(json.dumps(saved_state))
+
+    def run_with_scoped_tests(self, gate_commands, scenario):
+        self.save_gate_commands(gate_commands)
         return self.run_script(scenario)
 
     def test_a_fix_the_full_check_did_not_verify_reruns_the_scoped_tests_before_the_hand_back(self):
@@ -954,8 +959,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
     def test_a_check_the_phase_declares_expected_red_whole_runs_the_scoped_tests(self):
         self.commit_files({"plan.md": self.EXPECTED_RED_PLAN})
-        self.state_dir.mkdir()
-        (self.state_dir / "state.json").write_text(json.dumps({"gateCommands": ["grep -q 'limit = 99' app.py"]}))
+        self.save_gate_commands(["grep -q 'limit = 99' app.py"])
 
         completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=self.RED_CHECK)
 
@@ -2088,8 +2092,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
                 self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
 
     def test_a_check_only_pass_in_a_ci_repo_runs_the_scoped_tests(self):
-        self.state_dir.mkdir()
-        (self.state_dir / "state.json").write_text(json.dumps({"gateCommands": ["grep -q 'limit = 99' app.py"]}))
+        self.save_gate_commands(["grep -q 'limit = 99' app.py"])
 
         completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
                                     claude_md="Quality check: `true`\nFull suite: CI\n")

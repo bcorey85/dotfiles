@@ -20,6 +20,7 @@ import test_code_step as base
 
 # isort: split
 import code_step_core
+import code_step_state
 
 FAKE_LOOP_SCRIPT = """import os
 import pathlib
@@ -171,7 +172,7 @@ class ReviewScriptTest(base.CodeStepTest):
         self.env["FAKE_LOOP_MODE"] = "hang"
         self.coder_round()
         first_pid = int(self.wait_for_file("started").read_text())
-        self.set_state(stage="stopped", stopReason="invalid-packet")
+        self.set_state(stage="stopped", stop={"kind": "invalid-packet", "at": time.time()})
 
         out = self.step("review-again")
 
@@ -416,8 +417,8 @@ class GoneReviewScriptTest(base.unittest.TestCase):
         self.addCleanup(temp_dir.cleanup)
         self.repo = pathlib.Path(temp_dir.name)
         self.log_path = self.repo / "script.log"
-        self.state = {"stage": "review", "reviewScriptPid": 4242, "reviewScriptLog": str(self.log_path),
-                      "resumableReview": 1.0}
+        self.state = code_step_state.RunState(stage="review", review_script_pid=4242,
+                                              review_script_log=str(self.log_path))
 
     def stop(self):
         core = base.code_step_core
@@ -433,7 +434,7 @@ class GoneReviewScriptTest(base.unittest.TestCase):
         goes_on, printed = self.stop()
 
         self.assertFalse(goes_on)
-        self.assertEqual(("stopped", "invalid-packet"), (self.state["stage"], self.state["stop"]["kind"]))
+        self.assertEqual(("stopped", "invalid-packet"), (self.state.stage, self.state.stop.kind))
         self.assertIn("pid 4242 is not running", printed)
         self.assertIn("loop-script-r-d1", printed)
         self.assertIn("run event not written, TypeError: boom", printed)

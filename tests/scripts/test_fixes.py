@@ -18,6 +18,7 @@ spec = importlib.util.spec_from_file_location("code_step", SCRIPT)
 code_step = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(code_step)
 import code_step_core  # noqa: E402
+import code_step_state  # noqa: E402
 
 PLAN = """# Plan
 
@@ -247,8 +248,9 @@ class GateFlagTest(unittest.TestCase):
         gate = {"coders": {"a1": {"result": "cap", "commands": {
             "pytest app/tests/test_y.py": {"outcome": "failed", "detail": ""},
             "pytest backend/app/tests/test_x.py": {"outcome": "command-error", "detail": missing_line}}}}}
+        run_state = code_step_state.RunState(stage="coder")
 
-        flagged = code_step.coder_flagged({}, gate, "", is_ask_fix=False)
+        flagged = code_step.coder_flagged(run_state, gate, "", is_ask_fix=False)
 
         self.assertEqual(["hand-back gate cap: pytest app/tests/test_y.py still failing after 3 denials",
                           "hand-back gate command error, not a code failure: `pytest backend/app/tests/test_x.py` "

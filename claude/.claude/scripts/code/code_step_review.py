@@ -1,4 +1,5 @@
 """The review half of code_step: plan-impact modal, plan-edit dispatch, review dispatch, review packet and asks."""
+import dataclasses
 import os
 import pathlib
 import subprocess
@@ -116,7 +117,7 @@ def guarded_verb_runs(verb, state):
         return False
 
     guard = STAGE_GUARDS[verb]
-    at_stage = state["stage"] in guard["stages"]
+    at_stage = state.stage in guard["stages"]
     reason_allowed = "stopReasons" not in guard or stop_kind(state) in guard["stopReasons"]
     if at_stage and reason_allowed:
         return True
@@ -179,10 +180,10 @@ def emit_plan_impact_modal(impact, repo_dir, carried=()):
 
 
 def record_deviation(repo_dir, state):
-    ruling = state["ruling"]
-    entry = plan_format.ruling_deviation(state["phase"], ruling["decision"], ruling["by"], ruling["at"],
-                                         ruling["words"], state["impact"])
-    plan_format.append_deviation(repo_dir / state["plan"], entry)
+    ruling = state.ruling
+    entry = plan_format.ruling_deviation(state.phase, ruling["decision"], ruling["by"], ruling["at"],
+                                         ruling["words"], state.impact)
+    plan_format.append_deviation(repo_dir / state.plan, entry)
 
 
 def split_decide_args(args):
@@ -198,7 +199,7 @@ def split_decide_args(args):
 def resolved_plan_impact(state):
     # review-loop reads a block that starts RESOLVED as settled, so it reviews against the ruling instead of
     # returning the question again.
-    ruling = state["ruling"]
+    ruling = state.ruling
     if ruling["byUser"]:
         resolved = "the user ruled on this disagreement"
     elif ruling["by"] == "the pre-set decision":
@@ -211,7 +212,7 @@ def resolved_plan_impact(state):
              "The ruling:"]
     lines += ["  " + line for line in ruling["words"].splitlines()]
     lines.append("The disagreement it settles:")
-    lines += ["  " + line for line in state["impact"].splitlines()]
+    lines += ["  " + line for line in state.impact.splitlines()]
     return "\n".join(lines)
 
 
@@ -226,7 +227,7 @@ def decision_for_word(repo_dir, state, word):
     if decision == "Discuss":
         return ask_user(repo_dir, "discuss this disagreement between the code and the plan with the user in plain "
                         f"words. When the user chooses, invoke Skill code with {decide_call('adopt')} or "
-                        f"{decide_call('keep')}. {plan_format.DECIDE_BY_NOTE}", state["impact"])
+                        f"{decide_call('keep')}. {plan_format.DECIDE_BY_NOTE}", state.impact)
     return decision
 
 
@@ -244,16 +245,16 @@ def ruling_problem(word, by, ruling_words):
 def record_ruling(repo_dir, state, decision, by, ruling_words, ruling_by):
     by_user = by == "user" and not ruling_by
     ruling_name = ruling_by or plan_format.ruling_owner(repo_dir, by)
-    state["ruling"] = {"decision": decision, "words": ruling_words, "by": ruling_name, "byUser": by_user,
-                       "at": time.strftime("%Y-%m-%d %H:%M")}
-    if not by_user and state.get("plan") and criteria_file(repo_dir, state):
+    state.ruling = {"decision": decision, "words": ruling_words, "by": ruling_name, "byUser": by_user,
+                    "at": time.strftime("%Y-%m-%d %H:%M")}
+    if not by_user and state.plan and criteria_file(repo_dir, state):
         print("The acceptance criteria stay as written: verify-branch reports any criterion the code now fails as "
               "failing.")
-    if state.get("plan"):
+    if state.plan:
         record_deviation(repo_dir, state)
-    state["planImpact"] = resolved_plan_impact(state)
+    state.plan_impact = resolved_plan_impact(state)
     # A ruling opens a new review: the round cap of the review that raised the question does not carry over.
-    state["iter"] = 0
+    state.iter = 0
 
 
 def command_decide(repo_dir, state, args, ruling_by=None):
@@ -265,8 +266,8 @@ def command_decide(repo_dir, state, args, ruling_by=None):
     problem = ruling_problem(word, by, ruling_words)
     if problem:
         return emit("stop", problem)
-    if state.get("plan") and not (repo_dir / state["plan"]).is_file():
-        return emit("stop", MISSING_PLAN_STOP.format(plan=state["plan"]))
+    if state.plan and not (repo_dir / state.plan).is_file():
+        return emit("stop", MISSING_PLAN_STOP.format(plan=state.plan))
 
     record_ruling(repo_dir, state, decision, by, ruling_words, ruling_by)
     if decision == plan_format.PLAN_IMPACT_OPTIONS[0]:
@@ -276,12 +277,12 @@ def command_decide(repo_dir, state, args, ruling_by=None):
 
 def planless_plan_edit_prompt(state):
     # A planless run has no plan file of its own: the coder finds the branch's plan docs the ruling overturns.
-    ruling = state["ruling"]
+    ruling = state.ruling
     ruled_by = "The user ruled" if ruling["byUser"] else "The ruling"
     return "\n".join([
         "No plan file is tied to this run. The review found that the code and this branch's plan docs disagree:",
         "",
-        state["impact"],
+        state.impact,
         "",
         f"{ruled_by} ({ruling['by']}, {ruling['at']}):",
         "",
@@ -302,15 +303,15 @@ def planless_plan_edit_prompt(state):
 
 
 def plan_edit_prompt(state, criteria_path):
-    ruling = state["ruling"]
+    ruling = state.ruling
     user_ruled = ruling["byUser"]
-    edit_scope = f"the plan file {state['plan']}"
+    edit_scope = f"the plan file {state.plan}"
     if criteria_path and user_ruled:
         edit_scope += f" and its acceptance criteria file {criteria_path}"
     lines = [
-        f"Edit only {edit_scope}. In Phase {state['phase']}, the code and the plan disagreed:",
+        f"Edit only {edit_scope}. In Phase {state.phase}, the code and the plan disagreed:",
         "",
-        state["impact"],
+        state.impact,
         "",
         (f"The user ruled ({ruling['by']}, {ruling['at']}):" if user_ruled
          else f"The ruling ({ruling['by']}, {ruling['at']}):"),
@@ -342,12 +343,12 @@ def plan_edit_prompt(state, criteria_path):
 def emit_plan_edit_dispatch(repo_dir, state):
     # An adopted change stays only in Plan Deviations unless the steps that contradict it change too, and the
     # reviewer then reads the old step and raises the same disagreement again.
-    ruling = state["ruling"]
-    has_plan = bool(state.get("plan"))
+    ruling = state.ruling
+    has_plan = bool(state.plan)
     criteria_path = criteria_file(repo_dir, state) if has_plan else None
     if has_plan and not ruling["byUser"]:
         save_criteria_guard(repo_dir, state)
-    state["stage"] = "plan-coder"
+    state.stage = "plan-coder"
     record_snapshot(state, planEdit=file_hashes(repo_dir), followUp=change_snapshot(repo_dir))
     open_dispatch(state)
     save_state(repo_dir, state)
@@ -374,12 +375,12 @@ def command_review_again(repo_dir, state, args):
     stop_review_script(state)
     is_capped_stop = stop_kind(state) == "cap-reached"
     if is_capped_stop:
-        state["iter"] = 0
+        state.iter = 0
     clear_stop(state)
     # A failed review that ran the structure pass runs it again; one that skipped it skips it again. A capped review
     # ran it on this diff already.
-    if not is_capped_stop and not state.get("structurePassSkipped"):
-        state.pop("reviewRan", None)
+    if not is_capped_stop and not state.structure_pass_skipped:
+        state.review_ran = None
     emit_review_dispatch(repo_dir, state)
 
 
@@ -388,21 +389,21 @@ def flag_stray_plan_edits(state, stray_files):
     if not stray_files:
         return
 
-    state["files"] += [name for name in stray_files if name not in state["files"]]
-    state["flagged"].append("the plan-edit coder also changed " + ", ".join(stray_files))
-    state["exception"] = True
+    state.files += [name for name in stray_files if name not in state.files]
+    state.flagged.append("the plan-edit coder also changed " + ", ".join(stray_files))
+    state.exception = True
 
 
 def settle_plan_edit(repo_dir, state, edited_files):
     # Flag the stray edits, refresh the phase text from the edited plan, and return the note for the user.
     criteria_path = criteria_file(repo_dir, state)
-    allowed_files = (state["plan"], criteria_path) if state["ruling"]["byUser"] else (state["plan"],)
+    allowed_files = (state.plan, criteria_path) if state.ruling["byUser"] else (state.plan,)
     flag_stray_plan_edits(state, [name for name in edited_files if name not in allowed_files])
 
-    state["phaseText"] = current_phase_text(repo_dir, state["plan"], state["phase"])
+    state.phase_text = current_phase_text(repo_dir, state.plan, state.phase)
 
-    plan_note = f"The plan {state['plan']} now states the ruling."
-    if criteria_path and criteria_path in edited_files and state["ruling"]["byUser"]:
+    plan_note = f"The plan {state.plan} now states the ruling."
+    if criteria_path and criteria_path in edited_files and state.ruling["byUser"]:
         plan_note += f" The acceptance criteria in {criteria_path} changed too: read them before you stage."
     return plan_note
 
@@ -416,7 +417,7 @@ def settle_planless_plan_edit(state, edited_files):
     # The edited plan docs join the review's files, any other edit is flagged; returns the note for the user.
     plan_docs = [name for name in edited_files if is_planless_plan_doc(name)]
     flag_stray_plan_edits(state, [name for name in edited_files if name not in plan_docs])
-    state["files"] += [name for name in plan_docs if name not in state["files"]]
+    state.files += [name for name in plan_docs if name not in state.files]
 
     if not plan_docs:
         return "The plan-edit coder changed no plan doc."
@@ -426,11 +427,11 @@ def settle_planless_plan_edit(state, edited_files):
 def command_after_plan_edit(repo_dir, state, args):
     if not wait_for_handback(repo_dir, state, RESUME_VERB):
         return
-    state["sessionId"] = session_pin() or state.get("sessionId")
+    state.session_id = session_pin() or state.session_id
     plan_edit_handback = awaited_handback(repo_dir, state) or {}
     open_choices = plan_edit_open_choices(plan_edit_handback.get("message", ""))
 
-    had_criteria_guard = state.get("criteriaGuard") is not None
+    had_criteria_guard = state.criteria_guard is not None
     criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
     if criteria_message:
         say(repo_dir, criteria_message)
@@ -442,7 +443,7 @@ def command_after_plan_edit(repo_dir, state, args):
     changed_now = file_hashes(repo_dir)
     edited_files = [name for name, digest in changed_now.items() if baseline.get(name) != digest]
 
-    if state.get("plan"):
+    if state.plan:
         plan_note = settle_plan_edit(repo_dir, state, edited_files)
     else:
         plan_note = settle_planless_plan_edit(state, edited_files)
@@ -456,40 +457,40 @@ def command_after_plan_edit(repo_dir, state, args):
 
 def handoff_block(repo_dir, state):
     lines = ["handoff:", "  files:"]
-    behavior_fallback = state["behavior"][0] if state.get("behavior") else None
-    for path in state["files"]:
+    behavior_fallback = state.behavior[0] if state.behavior else None
+    for path in state.files:
         lines.append(f"    - path: {path}")
-        lines.append(f"      change: {state['changes'].get(path) or behavior_fallback or 'changed by the coder'}")
-        notes = state["why"].get(path)
+        lines.append(f"      change: {state.changes.get(path) or behavior_fallback or 'changed by the coder'}")
+        notes = state.why.get(path)
         if notes:
             lines.append("      why:")
             for note in notes:
                 lines.append(f"        - lines: {note['lines']}")
                 lines.append(f"          note: {note['note']}")
-    if state.get("priorIssues"):
+    if state.prior_issues:
         lines.append("  prior-issues:")
-        for prior_issue in state["priorIssues"]:
+        for prior_issue in state.prior_issues:
             lines.append(f"    - issue: {prior_issue['issue']}")
             lines.append("      status: fixed")
             lines.append(f"      file: {prior_issue['file'] or '-'}")
-    ruled_asks = ruled_asks_lines(repo_dir, state.get("plan"))
+    ruled_asks = ruled_asks_lines(repo_dir, state.plan)
     if ruled_asks:
         lines.append("  ruled-asks:")
         lines += [f"    - {ruled_ask}" for ruled_ask in ruled_asks]
-    lines.append(f"  tests-run: {state['testsRun']}")
-    lines.append("  flagged: " + ("; ".join(state["flagged"]) if state["flagged"] else "none"))
-    plan_impact = state.get("planImpact", "none")
+    lines.append(f"  tests-run: {state.tests_run}")
+    lines.append("  flagged: " + ("; ".join(state.flagged) if state.flagged else "none"))
+    plan_impact = state.plan_impact
     if plan_impact == "none":
         lines.append("  plan_impact: none")
     else:
         lines.append("  plan_impact: |")
         lines += ["    " + line for line in plan_impact.splitlines()]
-    if state.get("carriedFindings"):
+    if state.carried_findings:
         lines.append("  carried-findings:  # left open by the last review round; review them too")
-        lines += [f"    - {carried}" for carried in state["carriedFindings"]]
-    lines.append(f"  iter: {state.get('iter', 0)}")
-    if state.get("spec_iter"):
-        lines.append(f"  spec_iter: {state['spec_iter']}")
+        lines += [f"    - {carried}" for carried in state.carried_findings]
+    lines.append(f"  iter: {state.iter}")
+    if state.spec_iter:
+        lines.append(f"  spec_iter: {state.spec_iter}")
     return "\n".join(lines)
 
 
@@ -514,7 +515,7 @@ def follow_up_is_small(before, after):
 
 def handoff_report(repo_dir, state):
     # The coders' last hand-back of this run: the phase coders', and the asks coders' after an asks round, joined.
-    stages = ["coder"] + (["asks-coder"] if state.get("coderStage") == "asks-coder" else [])
+    stages = ["coder"] + (["asks-coder"] if state.coder_stage == "asks-coder" else [])
     last_messages = [coder_message_without_gate_stamp(report["messages"][-1])
                      for report in phase_coder_reports(repo_dir, state)
                      if report["stage"] in stages and report["messages"]]
@@ -531,8 +532,8 @@ def behavior_text(behavior_lines):
 def later_phase_header_lines(repo_dir, state):
     # The review prompt's `later-phase files:` line: the files the plan names only in later open phases, which no
     # review coder edits. [] when there are none.
-    plan_lines = (pathlib.Path(repo_dir) / state["plan"]).read_text().splitlines()
-    later_files = expected_red.later_phase_paths(plan_lines, state["phase"])
+    plan_lines = (pathlib.Path(repo_dir) / state.plan).read_text().splitlines()
+    later_files = expected_red.later_phase_paths(plan_lines, state.phase)
     return [f"later-phase files: {', '.join(later_files)}"] if later_files else []
 
 
@@ -541,51 +542,51 @@ def emit_review_dispatch(repo_dir, state):
     untracked_text = git_output(repo_dir, "ls-files", "--others", "--exclude-standard") or ""
     untracked_files = set(untracked_text.split("\n"))
     # One behavior sentence describes one file. Across several files it tells the reviewer the wrong change.
-    is_one_file = len(state["files"]) == 1
-    behavior_fallback = state["behavior"][0] if state["behavior"] and is_one_file else None
-    state["changes"] = {path: change_line(report, path, state["files"], behavior_fallback, path in untracked_files)
-                        for path in state["files"]}
-    header = ["mode: review-first", "caller: code", f"lane: {state['lane']}",
+    is_one_file = len(state.files) == 1
+    behavior_fallback = state.behavior[0] if state.behavior and is_one_file else None
+    state.changes = {path: change_line(report, path, state.files, behavior_fallback, path in untracked_files)
+                     for path in state.files}
+    header = ["mode: review-first", "caller: code", f"lane: {state.lane}",
               f"repo: {repo_dir}"]
-    if state.get("plan"):
-        header.append(f"plan: {state['plan']}")
-        if state.get("phase"):
-            header.append(f"phase: {state['phase']}")
+    if state.plan:
+        header.append(f"plan: {state.plan}")
+        if state.phase:
+            header.append(f"phase: {state.phase}")
             header += later_phase_header_lines(repo_dir, state)
     guidance_line = guidance_header_line(state)
     if guidance_line:
         header.append(guidance_line)
-    if state.get("modifier"):
-        header.append(state["modifier"])
+    if state.modifier:
+        header.append(state.modifier)
     # The structure pass runs on the first review of a phase. A re-review after a ruling, or after a follow-up coder
     # whose own change is small, skips it. The review-loop round count (iter) is a separate matter.
     follow_up_before = take_snapshot_part(state, "followUp")
     is_small_follow_up = follow_up_before is None or follow_up_is_small(follow_up_before, change_snapshot(repo_dir))
-    state["structurePassSkipped"] = bool(state.get("reviewRan") and is_small_follow_up)
-    if state["structurePassSkipped"]:
+    state.structure_pass_skipped = bool(state.review_ran and is_small_follow_up)
+    if state.structure_pass_skipped:
         header.append("structure-pass: skip")
-    state["reviewRan"] = True
+    state.review_ran = True
     prompt = "\n".join(header) + "\n\n" + handoff_block(repo_dir, state)
-    state["stage"] = "review"
-    state.pop("carriedFindings", None)
+    state.stage = "review"
+    state.carried_findings = None
     open_dispatch(state)
-    state["lastReviewPrompt"] = prompt
-    state.pop("reviewStatus", None)
+    state.last_review_prompt = prompt
+    state.review_status = None
     save_state(repo_dir, state)
 
-    phase_behavior = behavior_text(state["behavior"])
-    ask_rounds = state.get("askRounds", [])
+    phase_behavior = behavior_text(state.behavior)
+    ask_rounds = state.ask_rounds
     if ask_rounds:
         # After an asks round the current asks coder's report leads; the phase coder's behavior is one line.
         summary = [ASK_CURRENT_LABEL + behavior_text(ask_rounds[-1])]
         for round_number, round_behavior in enumerate(ask_rounds[:-1], start=1):
             summary.append(f"Earlier ask-fix round {round_number}: " + behavior_text(round_behavior))
         summary.append("Phase coder's behavior (earlier): " + phase_behavior)
-        summary_why = state["summaryWhy"] if "summaryWhy" in state else state["why"]
+        summary_why = state.summary_why if state.summary_why is not None else state.why
     else:
         summary = ["Implemented: " + phase_behavior]
-        summary_why = state["why"]
-    summary.append("Flagged: " + ("; ".join(state["flagged"]) if state["flagged"] else "none."))
+        summary_why = state.why
+    summary.append("Flagged: " + ("; ".join(state.flagged) if state.flagged else "none."))
     for path, notes in summary_why.items():
         summary += [f"  {path}:{note['lines']} - {note['note']}" for note in notes]
     summary.append("Auto-dispatching review to check the implementation before committing.")
@@ -607,7 +608,7 @@ def launch_review_script(repo_dir, state, prompt):
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
     marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, REVIEW_LOOP, "script", prompt)
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
-    agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
+    agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state.run_id}-{dispatch_id}"
     session_id = run_session_id(state)
     handback_store.record(session_id, "dispatch", no_review=False, repo=module.reviewed_repo("", repo_dir))
 
@@ -618,15 +619,15 @@ def launch_review_script(repo_dir, state, prompt):
     prompt_file.write_text(prompt + "\n")
     log_path = script_dir / "script.log"
     command = [sys.executable, str(REVIEW_LOOP_SCRIPT), repo_dir, "--state-dir", str(code_step_dir),
-               "--session", session_id, "--run-id", state["runId"], "--agent-id", agent_id,
+               "--session", session_id, "--run-id", state.run_id, "--agent-id", agent_id,
                "--prompt-file", str(prompt_file)]
     with log_path.open("w") as log:
         process = subprocess.Popen(command, cwd=repo_dir, stdin=subprocess.DEVNULL, stdout=log,
                                    stderr=subprocess.STDOUT, start_new_session=True)
 
-    log_event(repo_dir, state["runId"], "launch", session_id, agent_id=agent_id, dispatch=dispatch_id)
-    state["reviewScriptPid"] = process.pid
-    state["reviewScriptLog"] = str(log_path)
+    log_event(repo_dir, state.run_id, "launch", session_id, agent_id=agent_id, dispatch=dispatch_id)
+    state.review_script_pid = process.pid
+    state.review_script_log = str(log_path)
     save_state(repo_dir, state)
     emit("wait", f"The review loop runs as a script; its log is {log_path}. Do not dispatch an agent. Run "
          f"{timed_command()} to wait for its hand-back.")
@@ -662,11 +663,12 @@ def route_review_plan_impact(repo_dir, state, module, packet):
             packet["plan_impact"], f"To run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.")
         return
 
-    state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
+    state.stage = "impact-review"
+    state.impact = packet["plan_impact"]
     save_state(repo_dir, state)
-    state["carriedFindings"] = module.carried_findings(packet)
+    state.carried_findings = module.carried_findings(packet)
     save_state(repo_dir, state)
-    emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
+    emit_plan_impact_modal(state.impact, repo_dir, state.carried_findings)
 
 
 def command_after_review(repo_dir, state, args):
@@ -690,17 +692,17 @@ def command_after_review(repo_dir, state, args):
 
     import handback_store  # after the load check: a missing hand-back module must stop the run, not crash the import
 
-    state["iter"] = packet["iter"]
+    state.iter = packet["iter"]
     if packet["spec_iter"] is not None:
-        state["spec_iter"] = packet["spec_iter"]
-    rewrote_edited = set(state.get("checkRewroteEdited") or []) | set(packet["check_rewrote_edited"])
-    created = set(state.get("checkCreated") or []) | set(packet["check_created"])
-    changed = set(state.get("checkChanged") or []) | set(packet["check_changed"])
+        state.spec_iter = packet["spec_iter"]
+    rewrote_edited = set(state.check_rewrote_edited or []) | set(packet["check_rewrote_edited"])
+    created = set(state.check_created or []) | set(packet["check_created"])
+    changed = set(state.check_changed or []) | set(packet["check_changed"])
     coder_edited = rewrote_edited | set(packet["files_touched"])
-    state["checkCreated"] = sorted(created - coder_edited)
-    state["checkChanged"] = sorted(changed - coder_edited)
-    state["checkRewroteEdited"] = sorted(rewrote_edited)
-    state["reviewStatus"] = packet["status"]
+    state.check_created = sorted(created - coder_edited)
+    state.check_changed = sorted(changed - coder_edited)
+    state.check_rewrote_edited = sorted(rewrote_edited)
+    state.review_status = packet["status"]
     if packet["status"] == "plan-impact":
         return route_review_plan_impact(repo_dir, state, module, packet)
     if stop_on_review_status(repo_dir, state, module, packet):
@@ -723,7 +725,7 @@ def command_after_review(repo_dir, state, args):
 
 def present_asks(repo_dir, state, asks):
     review_asks.run_nvim_jump(os.environ.get("CODE_STEP_NVIM_JUMP", "nvim-jump"), asks, repo_dir)
-    state["asks"] = asks
+    state.asks = asks
     preset_outcome = preset_ask_outcome(repo_dir)
     is_new_ask_after_asks_coder = preset_outcome and preset_outcome != "rejected" and has_snapshot_part(state, "asks")
     if is_new_ask_after_asks_coder:
@@ -748,14 +750,14 @@ def ask_the_user(repo_dir, state, asks):
         save_state(repo_dir, state)
         return
 
-    state["stage"] = "asks"
+    state.stage = "asks"
     save_state(repo_dir, state)
     open_findings_lines = []
     if is_open:
         cause = "The review cap was reached" if is_capped_review(state) else "The review stopped on a critical blocker"
         open_findings_lines = ["", f"{cause} with these still open. After asks-done, "
                                    "one more review-loop pass gets the rulings and these:",
-                               *[f"- {line}" for line in state["carriedFindings"]]]
+                               *[f"- {line}" for line in state.carried_findings]]
     ask_user(
         repo_dir,
         f"ask the user about each review ask below in plain text and wait for the answers. Each answer is accepted "
@@ -779,8 +781,8 @@ def ask_logger():
 
 def ask_log_context(repo_dir, state):
     # The run fields that an ask row and its outcome row share.
-    return {"branch": git_output(repo_dir, "branch", "--show-current") or "-", "lane": state["lane"],
-            "scope": "phase", "phase": state.get("phase"), "iter": state["iter"]}
+    return {"branch": git_output(repo_dir, "branch", "--show-current") or "-", "lane": state.lane,
+            "scope": "phase", "phase": state.phase, "iter": state.iter}
 
 
 def fill_review_ask_ids(repo_dir, state, module, handback, asks):
@@ -789,11 +791,11 @@ def fill_review_ask_ids(repo_dir, state, module, handback, asks):
     # place starts with none.
     wait_for_loop_stop(state, module, handback)
     handback_key = f"{handback.get('agent_id')}|{handback.get('ts')}"
-    if state.get("askIdsHandback") != handback_key:
-        state["askIdsHandback"] = handback_key
-        state["askIds"] = {}
+    if state.ask_ids_handback != handback_key:
+        state.ask_ids_handback = handback_key
+        state.ask_ids = {}
 
-    kept_ids = state["askIds"]
+    kept_ids = state.ask_ids
     keys = [f"{item.get('file_line')}|{item.get('question')}" for item in asks]
     for item, key in zip(asks, keys, strict=True):
         if key in kept_ids and not module.ask_finding_id(item):
@@ -815,7 +817,7 @@ def log_ask_outcomes(repo_dir, state, outcomes, decided_by="user"):
         return
 
     context = ask_log_context(repo_dir, state)
-    for item, outcome in zip(state["asks"], outcomes, strict=False):
+    for item, outcome in zip(state.asks, outcomes, strict=False):
         outcome_row = review_asks.log_ask_outcome(ask_logger(), context, item, outcome, decided_by, repo_dir)
         if outcome_row is None:
             continue
@@ -831,23 +833,25 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
     # the diff is docs only) before the phase can finish. After a review that left findings open (a cap or a critical
     # blocker), that review covers the whole phase and runs even on a docs-only diff, or when every ask was rejected
     # with no coder before it.
-    accepted_asks = accepted_asks_of(state["asks"], outcomes, change_texts)
+    accepted_asks = accepted_asks_of(state.asks, outcomes, change_texts)
     # Extra text the user gave alongside the outcomes is owed work too: it keeps a coder dispatched when every ask
     # was rejected.
     if not accepted_asks and not also_text and left_findings_open(state):
-        state["iter"] = 0
+        state.iter = 0
         return emit_review_dispatch(repo_dir, state)
     if not accepted_asks and not also_text:
-        state["stage"] = "review"
+        state.stage = "review"
         save_state(repo_dir, state)
         return finish_phase(repo_dir, state)
 
-    state.update({"stage": "asks-coder", "acceptedAsks": accepted_asks, "asksAlso": also_text,
-                  "rulings": {"outcomes": outcomes, "changes": change_texts}})
+    state.stage = "asks-coder"
+    state.accepted_asks = accepted_asks
+    state.asks_also = also_text
+    state.rulings = {"outcomes": outcomes, "changes": change_texts}
     record_snapshot(state, asks=file_hashes(repo_dir), followUp=change_snapshot(repo_dir))
     open_dispatch(state)
     save_state(repo_dir, state)
-    model = coder_model(state.get("modifier"))
+    model = coder_model(state.modifier)
     if left_findings_open(state):
         review_sentence = ("One more review of the whole phase runs after it, with the findings the last review "
                            "left open.")
@@ -865,10 +869,10 @@ def parse_rulings(state, args, refusal_action="stop"):
     if decided_by is None:
         decided_by = "user"
     outcomes, given_changes, also_text = split_asks_done_args(outcome_args)
-    if not plan_format.is_ruling_by(decided_by) or len(outcomes) != len(state["asks"]) \
+    if not plan_format.is_ruling_by(decided_by) or len(outcomes) != len(state.asks) \
             or any(outcome not in review_asks.ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
             or len(given_changes) != outcomes.count("modified"):
-        ask_count = len(state["asks"])
+        ask_count = len(state.asks)
         emit(refusal_action, f"{ASKS_DONE_USAGE} {ask_count} ask(s) wait: give {ask_count} outcome(s), in order.")
         return None
 
@@ -891,7 +895,7 @@ def command_asks_done(repo_dir, state, args):
 def command_correct_ruling(repo_dir, state, args):
     # Valid while an asks coder runs. The corrected rulings wait in the state until that coder reports; a correction
     # equal to the rulings the coder works from is dropped. Every refusal is a `go-on`: the run goes on.
-    if "rulings" not in state:
+    if state.rulings is None:
         return emit("go-on", "This run's asks coder started before corrections were supported, so the ruling cannot "
                     "be corrected in this run. Put the change in a new /code run.")
 
@@ -901,25 +905,25 @@ def command_correct_ruling(repo_dir, state, args):
 
     outcomes, change_texts, also_text, decided_by = rulings
     corrected = {"outcomes": outcomes, "changes": change_texts}
-    changed_indexes = changed_ruling_indexes(state["rulings"], corrected)
-    recorded = state.get("pendingCorrection") or state["rulings"]
+    changed_indexes = changed_ruling_indexes(state.rulings, corrected)
+    recorded = state.pending_correction or state.rulings
     logged_indexes = changed_ruling_indexes(recorded, corrected)
-    state.pop("pendingCorrection", None)
+    state.pending_correction = None
 
-    logged_state = {**state, "asks": [state["asks"][index] for index in logged_indexes]}
+    logged_state = dataclasses.replace(state, asks=[state.asks[index] for index in logged_indexes])
     logged_outcomes = [outcomes[index] for index in logged_indexes]
     logged_texts = [change_texts[index] for index in logged_indexes]
     log_ask_outcomes(repo_dir, logged_state, logged_outcomes, decided_by)
     record_ruled_asks(repo_dir, logged_state, logged_outcomes, logged_texts)
 
-    if not changed_indexes and also_text == state.get("asksAlso", ""):
+    if not changed_indexes and also_text == state.asks_also:
         save_state(repo_dir, state)
         drop_line = ("The corrected rulings equal the rulings the asks coder works from; any earlier "
                      "correction is dropped.")
         say(repo_dir, drop_line, replaces_blocks_starting=("The corrected rulings",))
         return emit("go-on", drop_line)
 
-    state["pendingCorrection"] = {**corrected, "also": also_text}
+    state.pending_correction = {**corrected, "also": also_text}
     save_state(repo_dir, state)
 
     saved_line = "The corrected rulings are saved. A correction coder applies them when the asks coder reports."
@@ -930,19 +934,22 @@ def command_correct_ruling(repo_dir, state, args):
 def dispatch_correction_coder(repo_dir, state):
     # One more asks coder, for the rulings corrected while the first ran. The asks snapshot stays the one taken at the
     # first dispatch, so the review that follows covers both coders' changes.
-    correction = state.pop("pendingCorrection")
-    changed_indexes = changed_ruling_indexes(state["rulings"], correction)
-    old_also_text = state.get("asksAlso", "")
+    correction = state.pending_correction
+    state.pending_correction = None
+    changed_indexes = changed_ruling_indexes(state.rulings, correction)
+    old_also_text = state.asks_also
     also_changed = correction["also"] != old_also_text
-    prompt = correction_coder_prompt(state["asks"], state["rulings"], correction, changed_indexes,
+    prompt = correction_coder_prompt(state.asks, state.rulings, correction, changed_indexes,
                                      correction["also"] if also_changed else "", old_also_text if also_changed else "")
 
-    accepted_asks = accepted_asks_of(state["asks"], correction["outcomes"], correction["changes"])
-    state.update({"acceptedAsks": accepted_asks, "asksAlso": correction["also"], "correctionCoder": True,
-                  "rulings": {"outcomes": correction["outcomes"], "changes": correction["changes"]}})
+    accepted_asks = accepted_asks_of(state.asks, correction["outcomes"], correction["changes"])
+    state.accepted_asks = accepted_asks
+    state.asks_also = correction["also"]
+    state.correction_coder = True
+    state.rulings = {"outcomes": correction["outcomes"], "changes": correction["changes"]}
     open_dispatch(state)
     save_state(repo_dir, state)
 
     emit_dispatch(repo_dir, state, "The user corrected a ruling while the asks coder worked. Dispatch a coder to "
                   "apply the correction. A review of the changes of both coders runs after it.",
-                  prompt=prompt, agent="coder", model=coder_model(state.get("modifier")))
+                  prompt=prompt, agent="coder", model=coder_model(state.modifier))

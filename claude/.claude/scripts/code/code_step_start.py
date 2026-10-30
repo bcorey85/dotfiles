@@ -1,5 +1,6 @@
 """The start verb of code_step: argument parsing, plan and phase choice, and the first coder dispatch."""
 import collections
+import dataclasses
 import os
 import pathlib
 import re
@@ -72,6 +73,7 @@ from code_step_start_args import (
     start_repo_path,
     starts_task_text,
 )
+from code_step_state import RunState
 from code_step_verification import run_verification_commands, verification_format_failure
 from script_utils import run_command
 
@@ -177,8 +179,8 @@ def parse_start_args(args):
 
 
 def phase_label(state):
-    plan_name = state.get("plan") or "a task with no plan"
-    return f"Phase {state['phase']} of {plan_name}" if state.get("phase") is not None else plan_name
+    plan_name = state.plan or "a task with no plan"
+    return f"Phase {state.phase} of {plan_name}" if state.phase is not None else plan_name
 
 
 def phase_words_as_flag(args):
@@ -250,8 +252,8 @@ def reopens_stopped_run(previous):
     # A run that stopped on the coder's report, in the session that now runs `start` again: the session has seen the
     # report and starts over on its own word.
     pinned = session_pin()
-    return (stop_kind(previous) == CODER_RESUMABLE and bool(previous["stop"].get("agentId"))
-            and pinned is not None and previous.get("sessionId") == pinned)
+    return (stop_kind(previous) == CODER_RESUMABLE and bool(previous.stop.agent_id)
+            and pinned is not None and previous.session_id == pinned)
 
 
 def drop_open_run(repo_dir, previous):
@@ -271,7 +273,7 @@ OPEN_RUN_CHOICES_NOTE = ("`resume` goes on with the open run. `start --restart` 
 
 def open_run_reason(repo_dir, previous):
     # The open run a refusal of new work names: its phase, its stage, and why it is stale when it is.
-    reason = f"a /code run is open here: {phase_label(previous)} at stage {previous['stage']}."
+    reason = f"a /code run is open here: {phase_label(previous)} at stage {previous.stage}."
     stale_reason = stale_phase_reason(repo_dir, previous)
     if stale_reason:
         reason += f" The run is stale: {stale_reason}."
@@ -279,7 +281,7 @@ def open_run_reason(repo_dir, previous):
 
 
 def is_run_of_another_session(previous):
-    started_by = previous.get("sessionId")
+    started_by = previous.session_id
     return bool(started_by and session_pin() and started_by != session_pin())
 
 
@@ -340,7 +342,8 @@ def resume_text_refusal(repo_dir, state, words):
 def stopped_run_coder_id(previous, events):
     # The agent id of the coder a stopped run left out: the coder the run stopped on (its report, or the wait cap with
     # a launch id), else, for a plan-edit coder at the cap, the newest launch's id. None when no id names it.
-    coder_id = (stop_record(previous) or {}).get("agentId")
+    record = stop_record(previous)
+    coder_id = record.agent_id if record else None
     if coder_id and coder_id != "unknown":
         return coder_id
     if stop_kind(previous) != "coder-cap":
@@ -360,10 +363,10 @@ def coder_still_out(events, coder_id):
 
 def out_coder_id(repo_dir, state):
     # The id of the stopped run's coder that has not handed back, or None.
-    if not is_stopped(state) or not state.get("runId"):
+    if not is_stopped(state) or not state.run_id:
         return None
 
-    events = read_events(repo_dir, state["runId"])
+    events = read_events(repo_dir, state.run_id)
     coder_id = stopped_run_coder_id(state, events)
     if coder_id is None or not coder_still_out(events, coder_id):
         return None
@@ -483,24 +486,24 @@ def resolve_plan(repo_dir, argument=None):
 def reusable_plan(previous, branch):
     # The saved plan serves a bare `start` only on the branch it was saved on, and not after a plan with no phases
     # finished.
-    if not previous.get("plan") or previous.get("branch") != branch:
+    if previous is None or not previous.plan or previous.branch != branch:
         return None
-    if previous.get("stage") == "done" and previous.get("phase") is None:
+    if previous.stage == "done" and previous.phase is None:
         return None
-    return previous["plan"]
+    return previous.plan
 
 
 def is_finished_single_phase_plan(repo_dir, previous, branch, resolved_plan):
     # A plan with no phases that finished on this branch is not run again when a bare `start` resolves to the same file.
-    if previous.get("stage") != "done" or previous.get("phase") is not None or previous.get("branch") != branch:
+    if previous is None or previous.stage != "done" or previous.phase is not None or previous.branch != branch:
         return False
-    if not previous.get("plan"):
+    if not previous.plan:
         return False
     try:
         resolved_rel = str(pathlib.Path(resolved_plan).resolve().relative_to(repo_dir))
     except ValueError:
         return False
-    return resolved_rel == previous["plan"]
+    return resolved_rel == previous.plan
 
 
 def without_blank_task_text(args):
@@ -516,14 +519,19 @@ def prepare_fresh_start(repo_dir, previous, branch, parsed):
     # What a new run does to the old one before it dispatches: settles the saved criteria copy, clears the old say text,
     # stops on a previous phase whose files are not committed yet, and abandons an open dispatch. False after a stop.
     # The state is saved only when a saved copy was restored or dropped, and then under this session.
+    if previous is None:
+        if parsed.task_text is not None:
+            clear_say(repo_dir)
+        return True
+
     criteria_message = None
-    if previous.get("criteriaGuard") is not None:
+    if previous.criteria_guard is not None:
         criteria_message = settle_criteria_guard(repo_dir, previous, branch)
-        previous["sessionId"] = session_pin()
+        previous.session_id = session_pin()
         save_state(repo_dir, previous)
 
-    is_auto_advance_text_pending = previous.get("stage") == "done" and previous.get("autoAdvance")
-    is_old_text_stale = previous.get("stage") is not None and not is_auto_advance_text_pending
+    is_auto_advance_text_pending = previous.stage == "done" and previous.auto_advance
+    is_old_text_stale = not is_auto_advance_text_pending
     if is_old_text_stale or parsed.task_text is not None:
         clear_say(repo_dir)
 
@@ -533,7 +541,7 @@ def prepare_fresh_start(repo_dir, previous, branch, parsed):
     if is_auto_advance_text_pending and uncommitted_files(repo_dir, previous):
         emit("stop", "The previous phase's files are not committed yet, so the next phase would take them as "
              f"its own. Run the commit line, then run `{INSTALLED_COMMAND} {RESUME_VERB}`:",
-             previous.get("commitLine", ""))
+             previous.commit_line)
         return False
 
     abandon_open_dispatch(repo_dir, previous)
@@ -552,7 +560,7 @@ def restart_text_as_run_notes(repo_dir, previous, branch, parsed):
     if not open_phases:
         return parsed
 
-    only_phase = previous.get("onlyPhase")
+    only_phase = previous.only_phase
     restart_phase = only_phase if is_run_open(previous) and only_phase in open_phases else None
     words = script_utils.words_of_arguments(parsed.positional_words)
     return parsed._replace(plan_args=[saved_plan], phase_id=restart_phase, task_text=None,
@@ -570,7 +578,7 @@ def command_start(args):
     os.chdir(repo_dir)
     args = without_blank_task_text(args)
     args = phase_words_as_flag(args)
-    previous = load_state(repo_dir) or {}
+    previous = load_state(repo_dir)
     branch = branch_label(repo_dir)
     parsed = carry_run_notes(parse_start_args(args), reusable_plan(previous, branch))
     parsed = restart_text_as_run_notes(repo_dir, previous, branch, parsed)
@@ -582,7 +590,7 @@ def command_start(args):
         return refuse(reason, *commands, notes=notes, stop=stop)
 
     start_command = script_command(shlex.join(["start", *args]))
-    if stop_while_plan_edit_coder_is_out(repo_dir, previous, start_command):
+    if previous is not None and stop_while_plan_edit_coder_is_out(repo_dir, previous, start_command):
         return
 
     if not prepare_fresh_start(repo_dir, previous, branch, parsed):
@@ -609,7 +617,7 @@ def resolve_bare_start(repo_dir, previous, branch):
     if plan_arg is None:
         return None
     if is_finished_single_phase_plan(repo_dir, previous, branch, plan_arg):
-        return emit("stop", f"The plan {previous['plan']} is complete. Tell the user the plan is complete. "
+        return emit("stop", f"The plan {previous.plan} is complete. Tell the user the plan is complete. "
                     + FOLLOW_UP_HINT)
     print(f"Resolved the task input: {plan_arg} (lane {lane}).")
     return plan_arg, lane
@@ -618,15 +626,15 @@ def resolve_bare_start(repo_dir, previous, branch):
 def resolve_start_plan(repo_dir, previous, branch, plan_args):
     # (plan path, lane) of the plan this `start` runs, or None after the stop or question it printed.
     plan_arg = plan_args[0] if plan_args else None
-    lane = previous.get("lane", "code")
     is_unknown_arg = plan_arg is not None and not os.path.isfile(plan_arg)
     if is_unknown_arg and (TICKET_ID.match(plan_arg) or os.path.isdir(plan_arg)):
         return resolve_named_task(repo_dir, plan_arg)
     if plan_arg is None and reusable_plan(previous, branch):
-        return previous["plan"], lane
+        return previous.plan, previous.lane
     if plan_arg is None:
         return resolve_bare_start(repo_dir, previous, branch)
-    return plan_arg, lane if previous.get("plan") == plan_arg else "code"
+    is_saved_plan = previous is not None and previous.plan == plan_arg
+    return plan_arg, previous.lane if is_saved_plan else "code"
 
 
 def load_start_plan(repo_dir, plan_arg, args):
@@ -734,7 +742,7 @@ def finish_passing_restart(repo_dir, previous, section):
     if unparsed or not results or has_failure:
         return False
 
-    restarted = {**previous, "phaseText": section}
+    restarted = dataclasses.replace(previous, phase_text=section)
     print("The phase's Automated Verification passes on the code in place, so no coder is dispatched; the phase goes "
           "to verify.")
     finish_phase(repo_dir, restarted, verification=(results, skipped))
@@ -746,20 +754,20 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     number = entry["number"] if entry else None
     use_packet = phase["has_phases"] and entry
     state_phase = number if use_packet else None
-    is_same_unfinished_phase = (previous.get("plan") == plan_rel and previous.get("phase") == state_phase
-                             and previous.get("stage") not in (None, "done") and previous.get("baseline") is not None)
+    is_same_unfinished_phase = (is_run_open(previous) and previous.plan == plan_rel and previous.phase == state_phase
+                                and previous.baseline is not None)
     # Run notes ask the coder for more work, so a restart that brings them always dispatches one.
     restarts_reviewed_phase = (parsed.restart and is_same_unfinished_phase and not parsed.run_notes
-                               and (previous.get("reviewRan") or previous.get("reviewStatus") is not None))
+                               and (previous.review_ran or previous.review_status is not None))
     if restarts_reviewed_phase and finish_passing_restart(repo_dir, previous, section):
         return
 
     # A rebase or reset left HEAD off the previous start commit: that commit can no longer mark where the phase began,
     # so the restart takes a fresh start commit. The file hashes stay: they mark what the phase changed.
-    previous_base_head = previous.get("baseHead")
+    previous_base_head = previous.base_head if previous else None
     is_off_start_commit = is_same_unfinished_phase and head_left_phase_start(repo_dir, previous_base_head)
     keeps_start = is_same_unfinished_phase and not is_off_start_commit
-    baseline = previous["baseline"] if is_same_unfinished_phase else file_hashes(repo_dir)
+    baseline = previous.baseline if is_same_unfinished_phase else file_hashes(repo_dir)
     base_head = previous_base_head if keeps_start and previous_base_head else head_commit(repo_dir)
 
     commands = derive_gate_commands(repo_dir, section) if entry else []
@@ -774,11 +782,11 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     prompt = (f"Implement {phase_description}. Read the plan phase-scoped.\n"
               f"{ENG_SPEC_BRIEF}\n\n" + packet_body).rstrip()
     prompt = "\n".join([prompt, *run_notes_lines(parsed.run_notes)])
-    state = {"stage": "coder", "plan": plan_rel, "lane": phase["lane"], "phase": state_phase, "branch": branch,
-             "modifier": parsed.modifier, "risk": entry["risk"] if entry else "high",
-             "title": entry["title"] if entry else "", "gateCommands": commands, "baseline": baseline,
-             "baseHead": base_head, "startedAt": time.time(), "phaseText": section if use_packet else None,
-             "onlyPhase": parsed.phase_id, "headless": parsed.headless, "sessionId": session_pin(), "runId": run_id}
+    state = RunState(stage="coder", plan=plan_rel, lane=phase["lane"], phase=state_phase, branch=branch,
+                     modifier=parsed.modifier, risk=entry["risk"] if entry else "high",
+                     title=entry["title"] if entry else "", gate_commands=commands, baseline=baseline,
+                     base_head=base_head, started_at=time.time(), phase_text=section if use_packet else None,
+                     only_phase=parsed.phase_id, headless=parsed.headless, session_id=session_pin(), run_id=run_id)
     open_dispatch(state)
     save_state(repo_dir, state)
     model = coder_model(parsed.modifier)
@@ -788,9 +796,8 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
 def start_planless(repo_dir, modifier, task_text, branch="-"):
     # A new task has no earlier rulings: the ones of a previous planless task do not carry over.
     ruled_asks_path(repo_dir).unlink(missing_ok=True)
-    state = {"stage": "coder", "plan": None, "lane": "code", "phase": None, "branch": branch, "modifier": modifier,
-             "risk": "high", "title": "", "gateCommands": [], "baseline": file_hashes(repo_dir),
-             "startedAt": time.time(), "sessionId": session_pin(), "runId": start_run(repo_dir)}
+    state = RunState(stage="coder", branch=branch, modifier=modifier, baseline=file_hashes(repo_dir),
+                     started_at=time.time(), session_id=session_pin(), run_id=start_run(repo_dir))
     open_dispatch(state)
     save_state(repo_dir, state)
     prompt = f"Implement: {task_text}\n{CODER_CHECKS_LINE} {ENG_SPEC_BRIEF}"
@@ -799,10 +806,10 @@ def start_planless(repo_dir, modifier, task_text, branch="-"):
 
 
 def start_closing_phase(repo_dir, plan_rel, lane, parsed, entry, skill, section, branch):
-    state = {"stage": "skill", "plan": plan_rel, "lane": lane, "phase": entry["number"], "branch": branch,
-             "modifier": parsed.modifier, "risk": entry["risk"], "title": entry["title"], "gateCommands": [],
-             "behavior": [], "baseline": file_hashes(repo_dir), "onlyPhase": parsed.phase_id,
-             "headless": parsed.headless, "sessionId": session_pin(), "runNotes": parsed.run_notes}
+    state = RunState(stage="skill", plan=plan_rel, lane=lane, phase=entry["number"], branch=branch,
+                     modifier=parsed.modifier, risk=entry["risk"], title=entry["title"], behavior=[],
+                     baseline=file_hashes(repo_dir), only_phase=parsed.phase_id, headless=parsed.headless,
+                     session_id=session_pin(), run_notes=parsed.run_notes)
     save_state(repo_dir, state)
     emit_closing_skill(repo_dir, plan_rel, entry["number"], entry["title"], skill, section, parsed.run_notes)
 

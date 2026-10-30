@@ -63,7 +63,7 @@ def criteria_rel(plan_rel):
 
 def criteria_file(repo_dir, state):
     # None when the plan has no criteria file.
-    criteria_path = criteria_rel(state["plan"])
+    criteria_path = criteria_rel(state.plan)
     if not (repo_dir / criteria_path).is_file():
         return None
     return criteria_path
@@ -72,10 +72,10 @@ def criteria_file(repo_dir, state):
 def save_criteria_guard(repo_dir, state):
     # Before a plan edit that the user did not rule: remember the criteria file's path and text, or None for "no
     # file", so that restore_criteria can put it back.
-    relative_criteria_path = criteria_rel(state["plan"])
+    relative_criteria_path = criteria_rel(state.plan)
     criteria_path = repo_dir / relative_criteria_path
     criteria_text = criteria_path.read_text() if criteria_path.is_file() else None
-    state["criteriaGuard"] = {"path": relative_criteria_path, "text": criteria_text}
+    state.criteria_guard = {"path": relative_criteria_path, "text": criteria_text}
 
 
 def save_replaced_criteria(repo_dir, criteria_name, text):
@@ -97,11 +97,11 @@ def save_replaced_criteria(repo_dir, criteria_name, text):
 
 def settle_criteria_guard(repo_dir, state, branch):
     # Resolve the saved criteria copy of a plan edit that the user did not rule. Returns the message for the user,
-    # or None when there was nothing to do. The caller saves the state: the guard is popped here.
-    if state.get("criteriaGuard") is None:
+    # or None when there was nothing to do. The caller saves the state: the guard is cleared here.
+    if state.criteria_guard is None:
         return None
-    if state.get("branch") != branch:
-        state.pop("criteriaGuard")
+    if state.branch != branch:
+        state.criteria_guard = None
         return ("The saved acceptance criteria belong to a plan edit on another branch, so the script dropped them "
                 "and restored nothing.")
     return restore_criteria(repo_dir, state)
@@ -110,7 +110,8 @@ def settle_criteria_guard(repo_dir, state, branch):
 def restore_criteria(repo_dir, state):
     # Put the folder back as it was at the save. The text of a file that differs, or that did not exist at the save,
     # goes to a copy under the git dir first. Returns the message for the user, or None when nothing changed.
-    guard = state.pop("criteriaGuard")
+    guard = state.criteria_guard
+    state.criteria_guard = None
     criteria_path = repo_dir / guard["path"]
     if not criteria_path.parent.is_dir():
         return (f"The saved acceptance criteria belong to {guard['path']}, whose folder is gone, so the script "
@@ -145,7 +146,7 @@ def delete_new_criteria(repo_dir, guard, criteria_path):
 def stop_while_plan_edit_coder_is_out(repo_dir, state, verb_text):
     # A restore or a drop of the saved criteria while the plan-edit coder is still out would leave its later write
     # unchecked. Returns True after printing the stop, with no state changed.
-    if state.get("stage") != "plan-coder" or not is_dispatch_open(repo_dir, state):
+    if state.stage != "plan-coder" or not is_dispatch_open(repo_dir, state):
         return False
     emit("stop", "The plan-edit coder has not reported yet, so the saved acceptance criteria stay as they are. Run "
          f"`! {INSTALLED_COMMAND} {RESUME_VERB}` from the repo root first: it waits for the "
@@ -158,7 +159,7 @@ def stop_while_plan_edit_coder_is_out(repo_dir, state, verb_text):
 def boundary_decision(state, entries, number):
     # A run started with --headless has no person to sign off a phase: it commits and goes on wherever block B waits.
     block, risk_label = sign_off_decision(state, entries, number)
-    if block == "B" and state.get("headless"):
+    if block == "B" and state.headless:
         return "A", f"{risk_label}, headless"
     return block, risk_label
 
@@ -169,14 +170,14 @@ def sign_off_decision(state, entries, number):
     # the run can do.
     open_others = [e for e in plan_format.ordered_pending(entries) if e["number"] != number]
     gated_ahead, next_ungated = plan_format.gate_blockers(open_others)
-    is_last = state.get("onlyPhase") == number or bool(gated_ahead) or next_ungated is None
+    is_last = state.only_phase == number or bool(gated_ahead) or next_ungated is None
     if is_last:
         return "C", "last phase"
     if number == "1":
-        return "B", "low - Phase 1 calibration" if state["risk"] == "low" else state["risk"]
-    if state.get("exception"):
-        return "B", "low - exception" if state["risk"] == "low" else state["risk"]
-    if state["risk"] == "low":
+        return "B", "low - Phase 1 calibration" if state.risk == "low" else state.risk
+    if state.exception:
+        return "B", "low - exception" if state.risk == "low" else state.risk
+    if state.risk == "low":
         return "A", "low"
     return "B", "high"
 
@@ -193,7 +194,7 @@ def mark_review_gate_clean(repo_dir, state):
         return False
     # The packet this run read is the record of how its loop ended. The shared hand-back store is keyed by session
     # and can hold an earlier converged hand-back, so it never overrules a packet that did not converge.
-    review_status = state.get("reviewStatus")
+    review_status = state.review_status
     if review_status is not None and review_status not in module.CLEAN_STATUSES:
         set_stop(state, "review-not-converged")
         save_state(repo_dir, state)
@@ -201,7 +202,7 @@ def mark_review_gate_clean(repo_dir, state):
              "committed and the review gate is not marked clean. Report to the user what the review waits on.")
         return False
     reviewing_session = run_session_id(state)
-    committing_session = session_pin() or state.get("sessionId") or "unknown"
+    committing_session = session_pin() or state.session_id or "unknown"
     # The tree the loop reviewed: a later coder dispatch that edits nothing leaves it unchanged, so its commit passes.
     reason, reviewed_repo = module.record_clean_review(reviewing_session, committing_session)
     if reason:
@@ -229,8 +230,8 @@ def diff_stat_rows(repo_dir, files):
 
 def ticket_prefix(state):
     # The ticket id the plan folder or the branch carries, as the commit subject's prefix; "" when neither has one.
-    plan_folder = pathlib.PurePosixPath(state["plan"]).parent.name if state.get("plan") else ""
-    for name in (plan_folder, state.get("branch") or ""):
+    plan_folder = pathlib.PurePosixPath(state.plan).parent.name if state.plan else ""
+    for name in (plan_folder, state.branch or ""):
         found = TICKET_IN_NAME.search(name)
         if found:
             return found.group(1) + ": "
@@ -243,8 +244,8 @@ EMPTY_SUMMARY = re.compile(r"none\b", re.IGNORECASE)
 
 def planned_commit_subject(repo_dir, state):
     # The subject a `Commit `...`` line in the phase's own plan section names, or "" when the phase has none.
-    plan_name = state.get("plan")
-    phase_id = state.get("phase")
+    plan_name = state.plan
+    phase_id = state.phase
     if not plan_name or phase_id is None:
         return ""
 
@@ -267,12 +268,12 @@ def planned_commit_subject(repo_dir, state):
 def spec_step_suffix(state, message):
     # " (phase A2)" for a plan run's phase, " (plan <folder>)" for a plan run with no phase; "" for a planless run or
     # a subject that already names the phase.
-    if not state.get("plan"):
+    if not state.plan:
         return ""
-    if state.get("phase") is None:
-        return f" (plan {pathlib.PurePosixPath(state['plan']).parent.name})"
+    if state.phase is None:
+        return f" (plan {pathlib.PurePosixPath(state.plan).parent.name})"
 
-    phase_name = f"phase {state['phase']}"
+    phase_name = f"phase {state.phase}"
     if phase_name.lower() in message.lower():
         return ""
     return f" ({phase_name})"
@@ -281,10 +282,10 @@ def spec_step_suffix(state, message):
 def commit_message(repo_dir, state):
     message = planned_commit_subject(repo_dir, state)
     if not message:
-        recorded_behavior = state.get("behavior") or []
+        recorded_behavior = state.behavior or []
         summary = recorded_behavior[0].strip() if recorded_behavior else ""
         has_summary = bool(summary) and not EMPTY_SUMMARY.match(summary)
-        message = summary if has_summary else (state.get("title") or "phase work")
+        message = summary if has_summary else (state.title or "phase work")
         message += spec_step_suffix(state, message)
 
     prefix = ticket_prefix(state)
@@ -300,13 +301,13 @@ def phase_commit(repo_dir, state):
     # takes only those files from the index and leaves anything the user staged by hand staged and uncommitted.
     # Returns (text for the user, the commit command line, the files it commits); the text and line are "" with no
     # files.
-    baseline = state.get("baseline") or {}
-    rewrote_edited_by_check = sorted(set(state.get("checkRewroteEdited") or []))
-    created_by_check = sorted(set(state.get("checkCreated") or []) - set(rewrote_edited_by_check))
-    changed_by_check = sorted(set(state.get("checkChanged") or []) - set(rewrote_edited_by_check))
+    baseline = state.baseline or {}
+    rewrote_edited_by_check = sorted(set(state.check_rewrote_edited or []))
+    created_by_check = sorted(set(state.check_created or []) - set(rewrote_edited_by_check))
+    changed_by_check = sorted(set(state.check_changed or []) - set(rewrote_edited_by_check))
     left_by_check = {*created_by_check, *changed_by_check}
     dirty_now = {name: digest for name, digest in file_hashes(repo_dir).items() if name not in left_by_check}
-    plan_name = state.get("plan")
+    plan_name = state.plan
     changed_since = [name for name in dirty_now if name in baseline and dirty_now[name] != baseline[name]]
     plan_had_earlier_edits = plan_name in changed_since
     own_files = [name for name in dirty_now if name not in baseline or name in changed_since]
@@ -367,7 +368,7 @@ def phase_commit(repo_dir, state):
 
 
 def finish_planless(repo_dir, state):
-    state["stage"] = "done"
+    state.stage = "done"
     save_state(repo_dir, state)
     commit_text, _, _ = phase_commit(repo_dir, state)
     if commit_text:
@@ -379,21 +380,21 @@ def finish_planless(repo_dir, state):
 def load_finishing_plan(repo_dir, state):
     # (plan path, plan lines, plan, phase section) of the plan the finished phase belongs to, or None after a stop: the
     # plan file is gone, its Phase Status does not parse, or the phase moved to another ticket while the coder ran.
-    plan_path = repo_dir / state["plan"]
+    plan_path = repo_dir / state.plan
     if not plan_path.is_file():
-        return emit("stop", MISSING_PLAN_STOP.format(plan=state["plan"]))
+        return emit("stop", MISSING_PLAN_STOP.format(plan=state.plan))
 
     plan_lines = plan_path.read_text().splitlines()
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
     if plan["failures"]:
-        return emit("stop", plan_format.plan_failure_message(plan, state["plan"]))
+        return emit("stop", plan_format.plan_failure_message(plan, state.plan))
 
-    number = state["phase"]
+    number = state.phase
     running_entry = next((e for e in plan["entries"] if e["number"] == number), None)
     if running_entry and running_entry["moved"]:
         set_stop(state)
         save_state(repo_dir, state)
-        return emit("stop", plan_format.moved_phase_stop(running_entry, state["plan"], coder_ran=True))
+        return emit("stop", plan_format.moved_phase_stop(running_entry, state.plan, coder_ran=True))
 
     section = plan_format.phase_text(plan_lines, number) if number is not None else "\n".join(plan_lines)
     return plan_path, plan_lines, plan, section or ""
@@ -402,9 +403,9 @@ def load_finishing_plan(repo_dir, state):
 def stop_for_unparsed_items(repo_dir, state, unparsed, ran_text):
     set_stop(state, "verification")
     save_state(repo_dir, state)
-    if state.get("phase"):
+    if state.phase:
         tick_text = (f" For a check that cannot be automated, the user can confirm it; on the user's word only, invoke "
-                     f"Skill code with `tick {state['phase']}` to mark the phase done.")
+                     f"Skill code with `tick {state.phase}` to mark the phase done.")
     else:
         tick_text = (" For a check that cannot be automated, the user can confirm it and mark the phase done with "
                      "`tick`.")
@@ -416,9 +417,9 @@ def stop_for_unparsed_items(repo_dir, state, unparsed, ran_text):
 
 def save_verification_output(repo_dir, state, failed):
     # The full output of every failed command, in the run's folder. The path comes back.
-    if not state.get("runId"):
-        state["runId"] = script_utils.sortable_unique_id()
-    output_file = run_file_path(repo_dir, state["runId"], VERIFICATION_OUTPUT_NAME)
+    if not state.run_id:
+        state.run_id = script_utils.sortable_unique_id()
+    output_file = run_file_path(repo_dir, state.run_id, VERIFICATION_OUTPUT_NAME)
     command_outputs = [(command, f"exit {code}", output) for command, code, output in failed]
     script_utils.write_command_outputs(output_file, command_outputs)
     return output_file
@@ -460,9 +461,9 @@ def run_phase_verification(repo_dir, state, section):
 
 def done_line_of(state, section, verify_results, skipped, reopened):
     # The one line that says what the phase's close ran.
-    number = state["phase"]
-    done_text = (f"Phase {number} marked done in {state['plan']}." if number is not None
-                 else f"The plan {state['plan']} is finished.")
+    number = state.phase
+    done_text = (f"Phase {number} marked done in {state.plan}." if number is not None
+                 else f"The plan {state.plan} is finished.")
     listed_items = [line for _, line in plan_format.automated_verification_rows(section.splitlines())
                     if not plan_format.NO_AUTOMATED_CHECK.match(line)]
     if not verify_results and not skipped and not listed_items:
@@ -482,7 +483,7 @@ def done_line_of(state, section, verify_results, skipped, reopened):
 
 def announce_boundary(repo_dir, state, boundary):
     # What the user and the session see once the phase is closed. Block A auto-advances; B and C wait for the user.
-    block, number = boundary["block"], state["phase"]
+    block, number = boundary["block"], state.phase
     done_line = boundary["done_line"]
     print(done_line)
     say(repo_dir, done_line)
@@ -528,7 +529,7 @@ def adopted_deviation_text(plan_path, number, is_run_end):
 
 def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verification):
     # Ticks the phase in the plan, decides which boundary block the user sees, saves the done state and announces.
-    number = state["phase"]
+    number = state.phase
     reopened = []
     if number is not None:
         is_closing = any(e["number"] == number and e["closing"] for e in plan["entries"])
@@ -539,10 +540,10 @@ def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verific
     block, risk_label = boundary_decision(state, entries, number)
     gated_ahead, next_ungated = plan_format.gate_blockers(plan_format.ordered_pending(entries))
     commit_text, commit_line, commit_files = phase_commit(repo_dir, state)
-    state["stage"] = "done"
-    state["autoAdvance"] = block == "A"
-    state["commitFiles"] = commit_files
-    state["commitLine"] = commit_line
+    state.stage = "done"
+    state.auto_advance = block == "A"
+    state.commit_files = commit_files
+    state.commit_line = commit_line
     clear_stop(state)
     save_state(repo_dir, state)
 
@@ -564,7 +565,7 @@ def finish_phase(repo_dir, state, skip_verification=False, verification=None):
     if not skip_verification and not mark_review_gate_clean(repo_dir, state):
         return
 
-    if not state.get("plan"):
+    if not state.plan:
         return finish_planless(repo_dir, state)
 
     loaded = load_finishing_plan(repo_dir, state)
@@ -580,7 +581,7 @@ def finish_phase(repo_dir, state, skip_verification=False, verification=None):
             return
 
     try:
-        manual_items = plan_format.phase_manual_items(plan_lines, state["phase"], state["plan"])
+        manual_items = plan_format.phase_manual_items(plan_lines, state.phase, state.plan)
     except plan_format.PlanFormatError as error:
         set_stop(state, "plan-format")
         save_state(repo_dir, state)
@@ -595,17 +596,17 @@ def tick_plan_stop(repo_dir, state, args):
     # The stop text when `tick` has no plan run to act on, or None.
     if len(args) != 1:
         return VERB_USAGES["tick"].splitlines()[0]
-    if state is None or not state.get("plan"):
+    if state is None or not state.plan:
         return "tick needs a plan run: there is no saved plan state. Run `start <plan>` first."
 
-    plan_path = repo_dir / state["plan"]
+    plan_path = repo_dir / state.plan
     if not plan_path.is_file():
-        return MISSING_PLAN_STOP.format(plan=state["plan"])
+        return MISSING_PLAN_STOP.format(plan=state.plan)
 
     plan = plan_format.parse_plan_with_closing_phases(plan_path.read_text().splitlines())
     if plan["failures"]:
-        return plan_format.plan_failure_message(plan, state["plan"])
-    return plan_format.phase_entry_stop(plan["entries"], args[0], state["plan"])
+        return plan_format.plan_failure_message(plan, state.plan)
+    return plan_format.phase_entry_stop(plan["entries"], args[0], state.plan)
 
 
 def stop_for_failed_tick_verification(number, failed):
@@ -622,7 +623,7 @@ def tick_verification_failures(repo_dir, state, number):
     # The failed (command, exit code, output) of the phase's Automated Verification commands, run now, and how many
     # commands ran. Whole-suite commands run too: after a stop or an abort nothing else ran the suite. An item that
     # names no command is left to the user, whose word `tick` is.
-    section = current_phase_text(repo_dir, state["plan"], number) or ""
+    section = current_phase_text(repo_dir, state.plan, number) or ""
     verify_results, _, _ = run_verification_commands(repo_dir, section, run_whole_suites=True)
     failed = [(command, code, output) for command, code, output in verify_results if code != 0]
     return failed, len(verify_results)
@@ -636,7 +637,7 @@ def command_tick(args):
     os.chdir(repo_dir)
     live_state = load_state(repo_dir)
     state = live_state or load_aborted_plan_state(repo_dir)
-    has_one_phase_arg = live_state is not None and live_state.get("plan") and len(args) == 1
+    has_one_phase_arg = live_state is not None and live_state.plan and len(args) == 1
     if has_one_phase_arg and stop_while_plan_edit_coder_is_out(repo_dir, state, "tick " + " ".join(args)):
         return
 
@@ -653,7 +654,7 @@ def command_tick(args):
     if criteria_message:
         say(repo_dir, criteria_message)
 
-    plan_path = repo_dir / state["plan"]
+    plan_path = repo_dir / state.plan
     plan_format.mark_phase_done(plan_path, number)
     if commands_run:
         verification_note = f"its {commands_run} Automated Verification command(s) passed at `tick`."
@@ -664,18 +665,22 @@ def command_tick(args):
     plan_format.append_deviation(plan_path, [f"- {time.strftime('%Y-%m-%d')} (Phase {number}): marked done with "
                                              f"`tick`, {scope_note}; {verification_note}"])
     clear_stop(state)
-    state.update({"stage": "done", "phase": number, "autoAdvance": False, "commitFiles": [], "commitLine": ""})
-    state.pop("dispatchAt", None)
+    state.stage = "done"
+    state.phase = number
+    state.auto_advance = False
+    state.commit_files = []
+    state.commit_line = ""
+    state.dispatch_at = None
     save_state(repo_dir, state)
-    emit("stop", f"Phase {number} is marked done in {state['plan']}. Run `resume` for the next phase when the user "
+    emit("stop", f"Phase {number} is marked done in {state.plan}. Run `resume` for the next phase when the user "
          "asks.")
 
 
 def command_verify(repo_dir, state, args):
     # The user's fix of the plan's verification lines is the phase text from here on, so a later stop does not call it
     # stale.
-    if state.get("plan") and state.get("phase") is not None:
+    if state.plan and state.phase is not None:
         with contextlib.suppress(OSError):
-            state["phaseText"] = current_phase_text(repo_dir, state["plan"], state["phase"])
+            state.phase_text = current_phase_text(repo_dir, state.plan, state.phase)
 
     finish_phase(repo_dir, state)

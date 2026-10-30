@@ -33,7 +33,7 @@ def block_heading(block, number, risk_label, state, has_open_gate):
         return f"Phase {number} complete. Risk: {risk_label}. Phase-level sign-off requested."
     if number is None:
         return "The plan is complete."
-    if state.get("onlyPhase") == number:
+    if state.only_phase == number:
         return f"Phase {number} complete (the phase this run was started for)."
     # Open gated phases mean the plan is not complete, so this phase is not the last one.
     return f"Phase {number} complete." if has_open_gate else f"Phase {number} complete (last phase)."
@@ -41,7 +41,7 @@ def block_heading(block, number, risk_label, state, has_open_gate):
 
 def block_sections(state, manual_groups):
     parts = []
-    behavior = state.get("behavior") or []
+    behavior = state.behavior or []
     if behavior:
         parts += ["Behavior delta (observable change + its proof, max 3 - no internals, no paths):",
                   *[f"- {line}" for line in behavior[:3]], ""]
@@ -94,5 +94,5 @@ def block_b_or_c(block, number, risk_label, state, manual_groups, next_number, g
     if block == "B":
         return "\n".join(parts + block_b_next_steps(number, next_number, manual_groups))
 
-    is_only_phase = number is not None and state.get("onlyPhase") == number
+    is_only_phase = number is not None and state.only_phase == number
     return "\n".join(parts + block_c_next_steps(is_only_phase, gate_block_message, moved_text))

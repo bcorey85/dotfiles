@@ -17,7 +17,8 @@ You also never write or edit `01-questions.md`. Repair is a re-dispatch.
 ## Dispatch inputs
 
 Path to `00-ticket.md`, and the task directory (`docs/plans/<slug>/`). Either
-missing → say which, and stop.
+missing → say which, and stop. Optionally, the path of the source
+ticket file, relative to the session working directory, when the ticket lives in the repo.
 
 ## Steps
 
@@ -42,9 +43,21 @@ File missing after the notice → say which step and stop.
    rewrite → **stop and return** survivors + verdicts. No step 4, no judging
    whether the leak matters.
 
-4. **`spec-research`** with the path to `01-questions.md` — **and nothing else.**
-   No ticket path, no slug, no task-directory listing, no word about what is
-   being built. It writes `02-research.md`.
+4. **`spec-research`** with the path to `01-questions.md` and one exclude line —
+   **and nothing else.** No ticket path outside that line, no task-directory
+   listing, no word about what is being built. It writes `02-research.md`.
+
+   The exclude line names the task directory and, when you got a source ticket
+   file, the folder that holds it, both relative to the session working
+   directory. Name the folder, never the file: a ticket's file name can describe
+   the change.
+
+   ```
+   exclude: !{docs/plans/<slug>/**,<source ticket folder>/**}
+   ```
+
+   With no source ticket file, or one at the top of the working directory:
+   `exclude: !{docs/plans/<slug>/**}`.
 
 ## Return
 

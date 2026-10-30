@@ -299,6 +299,26 @@ def repo_root(cwd, timeout=None):
     return pathlib.Path(top)
 
 
+def head_descends_from(cwd, commit):
+    """False when HEAD is not on the line that grows from `commit`, whether a rebase or reset moved it or git failed
+    (an unknown commit, no repo)."""
+    return git_output(cwd, "merge-base", "--is-ancestor", commit, "HEAD") is not None
+
+
+def head_blob_hashes(cwd, names):
+    """The blob hash of each of `names` at HEAD. A name HEAD does not have is left out."""
+    if not names:
+        return {}
+    listing = git_output(cwd, "ls-tree", "-z", "HEAD", "--", *names) or ""
+    hashes = {}
+    for entry in listing.split("\0"):
+        if not entry:
+            continue
+        meta, _tab, name = entry.partition("\t")
+        hashes[name] = meta.split()[2]
+    return hashes
+
+
 def current_branch(cwd, timeout=None):
     """The checked-out branch name: "" on a detached HEAD, None when git fails."""
     return git_output(cwd, "branch", "--show-current", timeout=timeout)

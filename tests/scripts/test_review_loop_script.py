@@ -23,6 +23,7 @@ sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import finding_record
 import handback
 import handback_store
+import plan_format
 import review_loop_findings
 import review_loop_packet
 
@@ -1640,6 +1641,89 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([row["actioned"] for row in self.finding_rows()], ["none"])
         self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
                          ["`app.py:2` the limit is wrong for `limit`"])
+
+    def test_a_one_lined_plan_impact_packet_carries_the_cause_of_the_block_it_was_read_from(self):
+        report = ("Cannot fix 1: the gate is wrong.\nPLAN-IMPACT:\n  assumed: the gate checks it\n"
+                  "  found: its base is old\n  cause: toolkit\nplan-impact: yes")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": report}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        self.assertNotIn("\n", packet["plan_impact"])
+        self.assertEqual(packet["plan_impact_cause"], "toolkit")
+
+    def test_a_stray_cause_line_outside_the_plan_impact_block_is_not_the_packet_cause(self):
+        report = ("Skipped 2: cause: toolkit is not what broke here.\nCannot fix 1: the column is missing.\n"
+                  "PLAN-IMPACT:\n  assumed: a column\n  found: none\n  cause: plan\nplan-impact: yes")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": report}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        self.assertEqual(packet["plan_impact_cause"], "plan")
+
+        reports = {
+            "a report that says PLAN-IMPACT: yes with no block": "Cannot fix 1: needs a column.\nPLAN-IMPACT: yes",
+            "a lowercase plan-impact: yes with no block and a stray cause line":
+                "Notes:\ncause: toolkit is not it\nCannot fix 1: needs a column.\nplan-impact: yes",
+        }
+        for name, no_block_report in reports.items():
+            with self.subTest(name):
+                outcome = {**review_loop_packet.EMPTY_OUTCOME, "status": "plan-change",
+                           "plan_change": [no_block_report], "plan_change_from_coder": True}
+
+                packet = json.loads(review_loop_packet.packet_message(outcome))
+
+                self.assertEqual(packet["plan_impact_cause"], "plan")
+
+    def test_several_plan_impact_blocks_each_read_their_own_cause_and_the_stopping_one_wins(self):
+        no_cause = "PLAN-IMPACT:\n  assumed: a column\n  found: none\n  cause:\n"
+        toolkit = "PLAN-IMPACT:\n  assumed: a gate\n  found: old base\n  cause: toolkit\n"
+        plan = "PLAN-IMPACT:\n  assumed: a column\n  found: none\n  cause: plan\n"
+        cases = {
+            "an empty cause stops as no cause line, not as the next block's cause": ([no_cause, toolkit],
+                                                                                     plan_format.NO_CAUSE_LINE),
+            "an empty cause after a plan block": ([plan, no_cause], plan_format.NO_CAUSE_LINE),
+            "a plan block next to a toolkit block": ([plan, toolkit], "toolkit"),
+            "a toolkit block first": ([toolkit, plan], "toolkit"),
+            "plan blocks only": ([plan, plan], "plan"),
+        }
+
+        for name, (blocks, cause) in cases.items():
+            with self.subTest(name):
+                outcome = {**review_loop_packet.EMPTY_OUTCOME, "status": "plan-change", "plan_change": blocks}
+
+                packet = json.loads(review_loop_packet.packet_message(outcome))
+
+                self.assertEqual(packet["plan_impact_cause"], cause)
+
+    def test_a_coder_plan_impact_with_no_cause_line_stops_as_unparsed_and_a_reviewer_ask_reads_as_plan(self):
+        report = ("Cannot fix 1: the column is missing.\nPLAN-IMPACT:\n  assumed: a column\n  found: none\n"
+                  "plan-impact: yes")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": report}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        self.assertIn("no `cause:` line", plan_format.cause_stop(packet["plan_impact_cause"]))
+
+        ask = {**review_loop_packet.EMPTY_OUTCOME, "status": "plan-change",
+               "plan_change": [f"the fix needs a new column. {PLAN_CHANGE_STATUS}"]}
+        ask_packet = json.loads(review_loop_packet.packet_message(ask))
+        self.assertEqual(ask_packet["plan_impact_cause"], "plan")
 
     def test_a_plan_change_ask_keeps_the_round_s_fix_findings_open(self):
         fix_and_plan_change = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\n- "

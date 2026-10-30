@@ -29,6 +29,7 @@ from code_step_core import (
     emit_dispatch,
     file_hashes,
     head_commit,
+    head_left_phase_start,
     is_run_open,
     is_stopped,
     load_state,
@@ -753,10 +754,13 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     if restarts_reviewed_phase and finish_passing_restart(repo_dir, previous, section):
         return
 
+    # A rebase or reset left HEAD off the previous start commit: that commit can no longer mark where the phase began,
+    # so the restart takes a fresh start commit. The file hashes stay: they mark what the phase changed.
+    previous_base_head = previous.get("baseHead")
+    is_off_start_commit = is_same_unfinished_phase and head_left_phase_start(repo_dir, previous_base_head)
+    keeps_start = is_same_unfinished_phase and not is_off_start_commit
     baseline = previous["baseline"] if is_same_unfinished_phase else file_hashes(repo_dir)
-    base_head = (
-        previous.get("baseHead") if is_same_unfinished_phase and previous.get("baseHead") else head_commit(repo_dir)
-    )
+    base_head = previous_base_head if keeps_start and previous_base_head else head_commit(repo_dir)
 
     commands = derive_gate_commands(repo_dir, section) if entry else []
     if entry:

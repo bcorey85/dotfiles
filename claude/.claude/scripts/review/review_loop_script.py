@@ -502,6 +502,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.skipped_fp, self.remaining, self.asks, self.nits, self.run_rows = [], [], [], [], []
         self.open_fixes = []  # the fix findings a plan-change stop leaves unapplied
         self.ask_gates = {}
+        self.plan_change_from_coder = False  # a coder's PLAN-IMPACT must name its cause; a reviewer ask's need not
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
                         "result": "PASS"}
         self.prior_issues = []
@@ -705,6 +706,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
                 finding["actioned"] = "fixed"
 
         self.open_fixes = [item for item in round_findings if item not in applied]
+        self.plan_change_from_coder = True
         self.stop("plan-change", [report.strip()])
 
     def fix_round(self, round_fix, round_nits):
@@ -784,6 +786,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "skipped_fp": self.skipped_fp,
             "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],
             "plan_change": self.remaining if self.status == "plan-change" else [],
+            "plan_change_from_coder": self.plan_change_from_coder,
             "open_fixes": self.open_fixes,
             "asks": self.asks,
             "ask_gates": self.ask_gates,

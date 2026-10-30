@@ -435,11 +435,28 @@ def head_commit(repo_dir):
 
 
 def committed_since(repo_dir, base_head):
-    # Files the coder committed itself since the phase started. A commit leaves no dirty file behind, so the dirty
+    # Files any commit changed between base_head and HEAD. A commit leaves no dirty file behind, so the dirty
     # list alone would call the phase empty.
     if not base_head or head_commit(repo_dir) in (None, base_head):
         return []
     return git_names(repo_dir, "diff", "--name-only", base_head, "HEAD")
+
+
+def head_left_phase_start(repo_dir, base_head):
+    # True when the phase has a start commit and HEAD no longer descends from it (a rebase, a reset, or a git failure).
+    return bool(base_head) and not script_utils.head_descends_from(repo_dir, base_head)
+
+
+def committed_since_baseline(repo_dir, state):
+    # The committed files whose content at HEAD differs from what they held when the phase started. A file the phase
+    # began with dirty and a commit took unchanged, such as the earlier phase's commit made after this phase started,
+    # is not this phase's work.
+    committed = committed_since(repo_dir, state.get("baseHead"))
+    baseline = state["baseline"]
+    dirty_at_start = [name for name in committed if name in baseline]
+    head_hashes = script_utils.head_blob_hashes(repo_dir, dirty_at_start)
+
+    return [name for name in committed if name not in baseline or head_hashes.get(name) != baseline[name]]
 
 
 def uncommitted_files(repo_dir, previous):
@@ -465,7 +482,7 @@ def changed_since_baseline(state, changed_now):
 def coder_changed_files(repo_dir, state, changed_now):
     # The files the phase changed since its baseline, and the files the coder committed itself.
     changed_files = changed_since_baseline(state, changed_now)
-    committed = committed_since(repo_dir, state.get("baseHead"))
+    committed = committed_since_baseline(repo_dir, state)
     return changed_files + [name for name in committed if name not in changed_files]
 
 

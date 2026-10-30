@@ -9,6 +9,8 @@ import time
 import test_code_step as base
 
 SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
+FIX_REMOVED_PACKET = ("status: fix-removed-change\niter: 1\nblockers:\n  - finding: the fix passes removed 9 of the "
+                      "10 source lines the change under review adds\n    file_line: none")
 BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
 UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
                      "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
@@ -101,6 +103,10 @@ class HandBackTest(base.CodeStepTest):
             ("setup fault", lambda: self.stop_after_review(SETUP_FAULT_PACKET),
              "the review's full check could not run here", ["no package.json"], ["review-again"],
              ["toolkit or environment fault, not a code failure"]),
+            ("fix removed the change", lambda: self.stop_after_review(FIX_REMOVED_PACKET),
+             "the review's fix passes removed the change under review",
+             ["the fix passes removed 9 of the 10 source lines the change under review adds - none"],
+             ["review-again"], []),
             ("review cap", lambda: self.stop_after_review(CAP_PACKET),
              "the review cap was reached with findings still open", [], ["a.ts:1"], []),
             ("coder wait cap", self.stop_on_the_coder_wait_cap, "The coder has not handed back in", [],

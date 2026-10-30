@@ -581,6 +581,7 @@ class ValidateTest(HandbackTestBase):
                         "a.ts:1}\n",
             "critical-blocker": "status: critical-blocker\niter: 1\nblockers:\n- bad thing\n",
             "setup-fault": "status: setup-fault\niter: 1\nblockers:\n- full check could not run\n",
+            "fix-removed-change": "status: fix-removed-change\niter: 1\nblockers:\n- the fix passes removed 9 of 10\n",
             "cap-reached": "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n",
             "plan-impact": "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n",
         }
@@ -597,6 +598,7 @@ class ValidateTest(HandbackTestBase):
                  "status: plan-impact\niter: 1\nplan_impact:\n",
                  "status: critical-blocker\niter: 1\nblockers: []\n",
                  "status: setup-fault\niter: 1\nblockers: []\n",
+                 "status: fix-removed-change\niter: 1\nblockers: []\n",
                  "status: cap-reached\niter: 2\n",
                  "status: cap-reached\niter: 2\nfindings_remaining: []\n",
                  "status: deferred\niter: 1\nfixed: []\nfindings_remaining: []\n"]

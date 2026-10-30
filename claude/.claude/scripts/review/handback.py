@@ -49,7 +49,10 @@ from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
 from plan_format import PLAN_CHANGE_MARK, plan_impact_cause
 from script_utils import first_number, one_line, unquote
 
-STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
+# The status for a loop that stopped because the fix passes removed the change under review.
+FIX_REMOVED_CHANGE = "fix-removed-change"
+STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault",
+            FIX_REMOVED_CHANGE]
 CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "files_touched",
@@ -72,7 +75,8 @@ ASK_JOINED_TEXT_KEYS = ("question", "change")
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
 STATUS_REQUIRES = {"plan-impact": ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
-                   "setup-fault": ("blockers", "empty"), "cap-reached": ("findings_remaining", "empty"),
+                   "setup-fault": ("blockers", "empty"), FIX_REMOVED_CHANGE: ("blockers", "empty"),
+                   "cap-reached": ("findings_remaining", "empty"),
                    "deferred": ("findings_remaining", "missing or empty")}
 BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
 ITEM_KEYS = [

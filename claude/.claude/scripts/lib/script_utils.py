@@ -22,7 +22,6 @@ INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
 PATH_TEXT = r"[\w@./-]+\.\w+"
 PATH_LINE = re.compile(rf"`?({PATH_TEXT}:\d+(?:[-,]\d+)*)`?")
 FILE_NAME = re.compile(rf"^{PATH_TEXT}(?::\d|$)")
-QUOTE_OPENERS = " :[{,\t\n"
 BACKTICKED = re.compile(r"`([^`]+)`")
 # Subagent types: the agents that change code, and the agents that review it (code-reviewer, perf-reviewer-deep, ...).
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
@@ -668,58 +667,10 @@ def sortable_unique_id(now=None):
     return stamp + "-" + uuid.uuid4().hex[:6]
 
 
-def unquote(text):
-    """The text without one pair of matching outer quotes."""
-    text = text.strip()
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
-        return text[1:-1]
-    return text
-
-
 def first_number(text):
     """The first run of digits in the text as an int, or None."""
     found = re.search(r"\d+", text or "")
     return int(found.group()) if found else None
-
-
-def quote_opens_at(text, position):
-    return text[position] in "\"'" and (position == 0 or text[position - 1] in QUOTE_OPENERS)
-
-
-def unquoted_mask(text):
-    """The text with every quoted span blanked, so a word inside a quoted value is not read as a key."""
-    masked = list(text)
-    quote = None
-    for position, character in enumerate(text):
-        if quote:
-            masked[position] = "x"
-            quote = None if character == quote else quote
-        elif quote_opens_at(text, position):
-            quote = character
-            masked[position] = "x"
-    return "".join(masked)
-
-
-def top_level_braces(text):
-    """The {...} groups of a flow list, split on depth-0 braces outside quotes."""
-    groups = []
-    depth = 0
-    quote = None
-    start = 0
-    for position, character in enumerate(text):
-        if quote:
-            quote = None if character == quote else quote
-        elif quote_opens_at(text, position):
-            quote = character
-        elif character == "{":
-            if depth == 0:
-                start = position
-            depth += 1
-        elif character == "}" and depth:
-            depth -= 1
-            if depth == 0:
-                groups.append(text[start:position + 1])
-    return groups
 
 
 def normalize_path(text):

@@ -38,17 +38,10 @@ PLAN = """# Plan
 - none
 """
 
-REVIEW_PACKET = """status: plan-impact
-iter: 1
-plan_impact: |
-    PLAN-IMPACT:
-      assumed: the CSV has a header row
-
-      found: the importer rejects a header row
-fixed: []
-
-The loop stopped on a plan question.
-"""
+REVIEW_PACKET = json.dumps({
+    "status": "plan-impact", "iter": 1,
+    "plan_impact": "PLAN-IMPACT:\n  assumed: the CSV has a header row\n\n  found: the importer rejects a header row",
+    "fixed": []})
 
 
 REAL_CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_REAL_CLAUDE") or toolkit_paths.CLAUDE_DIR)
@@ -278,7 +271,8 @@ class ReviewReportEdgeTest(unittest.TestCase):
         repo = make_repo(self)
         write_state(repo, coder_state(repo, ["a.py"]))
         save_report(repo, "review-loop", "review",
-                    'status: converged\niter: 1\nfixed: []\nask: {"file_line": ["a.py:1"], "question": "keep it?"}\n')
+                    json.dumps({"status": "converged", "iter": 1, "fixed": [],
+                                "ask": {"file_line": ["a.py:1"], "question": "keep it?"}}))
 
         output = run(repo, "resume")
 

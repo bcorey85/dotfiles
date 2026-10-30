@@ -20,8 +20,13 @@ ASYNC_LAUNCH = "Async agent launched"
 RESUMED_AGENT_ID = re.compile(r"resumedAgentId\W+([A-Za-z0-9-]+)")
 RESUMING_MESSAGE = re.compile(r"Resuming agent\s+([A-Za-z0-9-]+)")
 # The status line of the old free-text packet form, or the "status" key of a JSON packet (minified or indented).
-PLAN_IMPACT = re.compile(r'(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b'
-                         r'|"status"[ \t]*:[ \t]*"[ \t`\'*]*plan-impact\b')
+# The statuses whose protocol ends the loop for a human ruling in place of Step 6's full check,
+# so a hand-back with one owes no full check.
+UNVERIFIED_TREE_STATUSES = frozenset({"plan-impact", "setup-fault", "critical-blocker"})
+_UNVERIFIED_STATUS = "(?:" + "|".join(sorted(UNVERIFIED_TREE_STATUSES)) + ")"
+UNVERIFIED_TREE_STATUS = re.compile(
+    r'(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*' + _UNVERIFIED_STATUS + r'\b'
+    r'|"status"[ \t]*:[ \t]*"[ \t`\'*]*' + _UNVERIFIED_STATUS + r'\b')
 # One shell command ends at a ;, a | or && that joins the next command, or at a newline no backslash escapes.
 SEGMENT_END = re.compile(r"&&|\|\||[;|]|(?<!\\)\n")
 # A shell call that ran the review loop's full-check script, and the first line that script prints: its result.
@@ -348,8 +353,8 @@ def scan(transcript, final=None, full_suite_in_ci=False):
     last_step = last_code_step(transcript)
     last_full = max(transcript.full_checks, default=-1)
 
-    plan_impact = PLAN_IMPACT.search(transcript.last_text if final is None else final)
-    ungated = last_full < last_step and not plan_impact and not full_suite_in_ci
+    unverified_tree = UNVERIFIED_TREE_STATUS.search(transcript.last_text if final is None else final)
+    ungated = last_full < last_step and not unverified_tree and not full_suite_in_ci
     return ungated, transcript.open_dispatches()
 
 

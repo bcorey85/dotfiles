@@ -2347,7 +2347,8 @@ class CodeStepTest(unittest.TestCase):
 
         self.step("resume")
 
-        self.assertIn('`asks-done accepted modified --change "<text>" modified --change "<text>"`', self.said())
+        example = f'`asks-done --repo {self.repo.resolve()} accepted modified --change "<text>" modified'
+        self.assertIn(example + ' --change "<text>"`', self.said())
 
     def test_an_accepted_ask_sends_its_proposed_change_to_the_asks_coder(self):
         self.coder_round()
@@ -2469,7 +2470,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: ask-user", out)
         self.assert_marked_clean(out)
-        self.assertIn("`asks-done`", self.said())
+        self.assertIn(f"`asks-done --repo {self.repo.resolve()}`", self.said())
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         out = self.step("asks-done", "accepted")
         self.assertIn("ask_outcome=accepted", self.log.read_text())

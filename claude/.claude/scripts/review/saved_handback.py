@@ -10,8 +10,10 @@ import sys
 SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
 import code_step_core
+import code_step_store
 import handback_store
 from code_step_routes import STAGE_FACTS, StageFact
+from code_step_state import StateFileError
 from handback import PacketError
 
 
@@ -35,7 +37,7 @@ def code_run_at_review(session_id):
     to a different session does not count."""
     try:
         code_step = code_step_core.load_state(".")
-    except code_step_core.StateFileError:
+    except StateFileError:
         return None
     if code_step is None or StageFact.CODE_AGENT_OUT not in STAGE_FACTS[code_step.stage]:
         return None
@@ -46,7 +48,7 @@ def code_run_at_review(session_id):
 
 
 def code_step_owner(code_step):
-    return code_step_core.state_file("."), code_step.stage
+    return code_step_store.state_file("."), code_step.stage
 
 
 def active_code_step(session_id, hand_back_agent_id):

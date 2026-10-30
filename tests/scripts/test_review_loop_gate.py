@@ -1035,6 +1035,26 @@ class MetricsTimingTest(unittest.TestCase):
     def test_metrics_call_in_no_review_mode_passes_with_no_reviewer(self):
         self.assertEqual("", self.metrics_hook([user("no-review\nlane: code")]))
 
+    def test_a_no_review_result_passes_before_any_reviewer_dispatch(self):
+        for result_word in ('"result=NOT DISPATCHED"', "result=NOT_DISPATCHED"):
+            with self.subTest(result_word=result_word):
+                command = LOG_METRICS.replace("result=PASS", result_word)
+                self.assertEqual("", self.metrics_hook([user("mode: review-first"), bash("git status")],
+                                                       command=command))
+
+    def test_a_no_review_result_is_denied_while_a_reviewer_is_open(self):
+        command = LOG_METRICS.replace("result=PASS", '"result=NOT DISPATCHED"')
+        open_review = [user("mode: review-first"), dispatch("toolu_rev", "code-reviewer"),
+                       result("toolu_rev", ASYNC_RESULT)]
+        self.assert_denied(self.metrics_hook(open_review, command=command))
+
+    def test_an_unknown_or_missing_result_is_denied_before_any_reviewer_dispatch(self):
+        no_result = LOG_METRICS.replace(" result=PASS", "")
+        for command in (LOG_METRICS.replace("result=PASS", "result=SETUP_FAULT"), no_result,
+                        no_result + " note=result=NOT_DISPATCHED"):
+            with self.subTest(command=command):
+                self.assert_denied(self.metrics_hook([user("mode: review-first")], command=command))
+
     def test_a_call_that_logs_no_metrics_passes(self):
         self.assertEqual("", self.metrics_hook([user("mode: review-first")], command="git status"))
 

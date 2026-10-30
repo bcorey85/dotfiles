@@ -902,15 +902,9 @@ OPEN_WORK_REASON = ("{count} agent(s) or shell(s) you started in the background 
 UNCHECKED_KIND = "unchecked-code"
 
 
-def open_work_reason(event):
-    """OPEN_WORK_REASON when the loop's own transcript shows a background dispatch or shell that has not reported
-    back, else None. A transcript that cannot be read never blocks."""
-    try:
-        transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
-        open_dispatches = transcript.open_dispatches()
-    except Exception as error:
-        print(f"handback hook: open-work gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
-        return None
+def open_work_reason(open_dispatches):
+    """OPEN_WORK_REASON when the count of background dispatches or shells that have not reported back is above zero,
+    else None."""
     if not open_dispatches:
         return None
     return OPEN_WORK_REASON.format(count=open_dispatches)
@@ -931,19 +925,11 @@ def last_unchecked_step(session_id, agent_id):
     return max(steps, default=None)
 
 
-def unchecked_code_reason(event, session_id, agent_id, message):
-    """The deny reason when the loop's own transcript shows no passed full_check.py result after its last code
-    change, else None.
+def unchecked_code_reason(ungated, last_step, session_id, agent_id):
+    """The deny reason when `ungated` says the loop's transcript shows no passed full_check.py result after its last
+    code change (`last_step` is the line of that change), else None.
     The denial is recorded with the last code step it saw and repeats only after a later code change, so a loop that
-    hands back again on the same state passes. A transcript that cannot be read never blocks."""
-    try:
-        transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
-        in_ci = full_suite_in_ci(transcript, event.get("cwd"))
-        ungated, _open_dispatches = loop_transcript.scan(transcript, message, in_ci)
-        last_step = loop_transcript.last_code_step(transcript)
-    except Exception as error:
-        print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
-        return None
+    hands back again on the same state passes."""
     if not ungated:
         return None
     denied_at = last_unchecked_step(session_id, agent_id)
@@ -953,18 +939,38 @@ def unchecked_code_reason(event, session_id, agent_id, message):
     return loop_transcript.GATE_REASON
 
 
-def hand_back_plan_edit_reason(event, packet):
+def hand_back_plan_edit_reason(transcript, packet):
     """loop_transcript.PLAN_EDIT_REASON when the packet, of any status but plan-impact, has a files_touched that
-    names the plan file of the loop's dispatch prompt, else None. A transcript that cannot be read never blocks."""
+    names the plan file of the loop's dispatch prompt, else None."""
     if packet is None or packet["status"] == "plan-impact":
         return None
 
+    return loop_transcript.plan_edit_reason(transcript, packet)
+
+
+def transcript_gate_reason(event, session_id, agent_id, message, packet):
+    """The deny reason of the first gate that reads the loop's own transcript, in order: a background dispatch or
+    shell still open, no passed full check after the last code change, a plan file in the packet's files_touched.
+    The transcript is read once. One that cannot be read never blocks, and a failed full-check scan skips the
+    full-check gate only."""
     try:
         transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
+        open_dispatches = transcript.open_dispatches()
     except Exception as error:
-        print(f"handback hook: plan-file gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
+        print(f"handback hook: transcript gates skipped, {type(error).__name__}: {error}", file=sys.stderr)
         return None
-    return loop_transcript.plan_edit_reason(transcript, packet)
+    open_work = open_work_reason(open_dispatches)
+    if open_work:
+        return open_work
+    try:
+        in_ci = full_suite_in_ci(transcript, event.get("cwd"))
+        ungated, _open_dispatches = loop_transcript.scan(transcript, message, in_ci)
+        last_step = loop_transcript.last_code_step(transcript)
+    except Exception as error:
+        print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
+        return hand_back_plan_edit_reason(transcript, packet)
+    return (unchecked_code_reason(ungated, last_step, session_id, agent_id)
+            or hand_back_plan_edit_reason(transcript, packet))
 
 
 def handle_dispatch(event, session_id, tool_input):
@@ -1034,9 +1040,7 @@ def handle_hook(event, kind):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
-    gate_reason = (open_work_reason(event)
-                   or unchecked_code_reason(event, session_id, agent_id, message)
-                   or hand_back_plan_edit_reason(event, packet))
+    gate_reason = transcript_gate_reason(event, session_id, agent_id, message, packet)
     if gate_reason:
         return gate_reason
 

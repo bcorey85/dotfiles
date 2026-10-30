@@ -22,6 +22,7 @@ SIBLING_FOLDERS = ("code", "lib", "review", "telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in SIBLING_FOLDERS]
 import plan_format
 import script_utils
+import worktree_snapshot
 from code_guidance import coder_guidance_lines
 from script_utils import git_output
 
@@ -450,13 +451,9 @@ def uncommitted_files(repo_dir, previous):
 
 
 def file_hashes(repo_dir):
-    tracked = git_names(repo_dir, "diff", "--name-only", "HEAD")
-    untracked = git_names(repo_dir, "ls-files", "--others", "--exclude-standard")
-    hashes = {}
-    for name in sorted(set(tracked + untracked)):
-        # A deleted file has no content to hash: its hash is None, which still differs from a baseline that had it.
-        hashes[name] = git_output(repo_dir, "hash-object", name) if (repo_dir / name).exists() else None
-    return hashes
+    # A deleted file has no content to hash: its hash is None, which still differs from a baseline that had it.
+    changes = worktree_snapshot.working_tree_changes(repo_dir)
+    return {name: changes[name]["hash"] for name in sorted(changes)}
 
 
 def changed_since_baseline(state, changed_now):
@@ -1267,12 +1264,6 @@ def own_path(text):
 def say_file_in(directory):
     # say.md sits in the state folder, one level above the run folders.
     return directory / "say.md"
-
-
-def say_file(repo_dir):
-    # The real path of say.md for this repo.
-    directory = state_dir(repo_dir)
-    return say_file_in(directory) if directory is not None else pathlib.Path("say.md")
 
 
 def say(repo_dir, text, replaces_blocks_starting=None):

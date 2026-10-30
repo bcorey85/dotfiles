@@ -668,25 +668,6 @@ class RunRowTest(unittest.TestCase):
         with open(findings_file, encoding="utf-8") as handle:
             self.assertEqual(1, len(handle.readlines()))
 
-    def test_a_missing_telemetry_script_skips_the_row_with_a_stderr_line(self):
-        records = self.loop([dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))])
-        claude_dir = self.env["REVIEW_LOOP_GATE_CLAUDE_DIR"]
-        scripts_link = os.path.join(claude_dir, "scripts")
-        os.remove(scripts_link)
-        os.makedirs(scripts_link)
-        for name in os.listdir(SCRIPTS_ROOT):
-            if name != "telemetry":
-                os.symlink(os.path.join(SCRIPTS_ROOT, name), os.path.join(scripts_link, name))
-        telemetry_link = os.path.join(scripts_link, "telemetry")
-        os.makedirs(telemetry_link)
-        for name in os.listdir(os.path.join(SCRIPTS_ROOT, "telemetry")):
-            if name != "telemetry_enabled.sh":
-                os.symlink(os.path.join(SCRIPTS_ROOT, "telemetry", name), os.path.join(telemetry_link, name))
-        self.quiet = False
-        self.stop(records)
-        self.assertEqual([], self.rows())
-        self.assertIn("telemetry_enabled.sh is missing", self.stderr)
-
     def reviewed_worktree(self):
         """A git worktree on its own branch, outside the session cwd."""
         worktree = os.path.join(self.tmp.name, "shop-api-feature")

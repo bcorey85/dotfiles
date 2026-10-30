@@ -16,6 +16,7 @@ import time
 import plan_format
 import reviewed_tree
 import script_utils
+import worktree_snapshot
 from check_output import failing_test_quote
 from code_step_core import (
     INSTALLED_COMMAND,
@@ -48,7 +49,6 @@ from code_step_verification import (
     run_verification_commands,
     verification_item_problem,
 )
-from script_utils import git_output
 
 VERIFICATION_OUTPUT_NAME = "verification-output.txt"
 TICKET_IN_NAME = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])")
@@ -217,23 +217,14 @@ def mark_review_gate_clean(repo_dir, state):
     return True
 
 
-def count_lines(path):
-    try:
-        return len(path.read_text(errors="replace").splitlines())
-    except OSError:
-        return 0
-
-
 def diff_stat_rows(repo_dir, files):
-    # One "path | +added -deleted" row per file: git's numstat for tracked files, the line count for new ones.
-    numstat = {}
-    for row in (git_output(repo_dir, "diff", "--numstat", "HEAD", "--", *files) or "").splitlines():
-        added, deleted, name = row.split("\t", 2)
-        numstat[name] = (added, deleted)
+    # One "path | +added -deleted" row per file, from the working-tree scan: numstat for tracked files, the line count
+    # for new ones.
+    changes = worktree_snapshot.working_tree_changes(repo_dir)
     rows = []
     for name in files:
-        added, deleted = numstat.get(name) or (str(count_lines(repo_dir / name)), "0")
-        rows.append(f"{name} | +{added} -{deleted}")
+        change = changes.get(name) or {"added": 0, "deleted": 0}
+        rows.append(f"{name} | +{change['added']} -{change['deleted']}")
     return rows
 
 

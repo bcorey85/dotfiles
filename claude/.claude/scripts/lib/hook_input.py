@@ -134,19 +134,6 @@ def raw_text(value):
     return json.dumps(value)
 
 
-def jq_output(documents, extract, error_line):
-    """What `jq -r <extract>` leaves in a shell variable, over every document. A jq runtime error prints jq's message
-    with `error_line` as the input line and exits 5."""
-    pieces = []
-    for document in documents:
-        try:
-            pieces.append(raw_text(extract(document)))
-        except JqError as error:
-            sys.stderr.write(f"jq: error (at <stdin>:{error_line}): {error}\n")
-            sys.exit(5)
-    return "\n".join(pieces).rstrip("\n")
-
-
 def jq_str(value):
     """What `jq -r '.x // ""'` prints, with the trailing newlines a shell $(...) drops."""
     if value is None or value is False:

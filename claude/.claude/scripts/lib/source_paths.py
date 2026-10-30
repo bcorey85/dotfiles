@@ -47,3 +47,19 @@ def is_uncounted_path(path):
 
 def is_counted_source(path):
     return not is_test_path(path) and not is_uncounted_path(path)
+
+
+# A change that adds this many lines to files that count toward size (`counts_toward_size`) is large: it gets the
+# structure pass.
+LARGE_ADDED_LINES = 40
+
+
+def counts_toward_size(path):
+    """Whether a changed file's added lines count toward the LARGE_ADDED_LINES bar: counted source, and not a doc."""
+    return is_counted_source(path) and not path.endswith(".md")
+
+
+def is_large_change(added_lines, new_paths):
+    """Whether a change is large: it adds LARGE_ADDED_LINES lines to files that count toward size, or it creates a
+    new counted source file (untracked or added to the index)."""
+    return added_lines >= LARGE_ADDED_LINES or any(is_counted_source(path) for path in new_paths)

@@ -49,6 +49,7 @@ from pathlib import Path
 from stat import S_ISREG
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
+import numstat
 import script_utils
 import source_text
 
@@ -180,21 +181,7 @@ def sweep_matches(diff_text):
 
 def binary_paths(numstat_text):
     """Paths git reports as binary in `diff --numstat -z`."""
-    tokens = numstat_text.split("\0")
-    binary = set()
-    index = 0
-    while index < len(tokens) and tokens[index]:
-        added, _, rest = tokens[index].partition("\t")
-        _, _, path = rest.partition("\t")
-        if path == "":
-            new_path = tokens[index + 2]
-            index += 3
-        else:
-            new_path = path
-            index += 1
-        if added == "-":
-            binary.add(new_path)
-    return binary
+    return {path for added, _deleted, path in numstat.numstat_rows(numstat_text) if added is None}
 
 
 def labelled_span_files(span):

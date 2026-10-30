@@ -37,6 +37,18 @@ class PathIsUnderTest(unittest.TestCase):
         self.assertFalse(script_utils.path_is_under("tas", "task"))
 
 
+class StateFilePathTest(unittest.TestCase):
+    def test_every_character_outside_the_safe_set_becomes_an_underscore_and_the_suffix_is_added(self):
+        cases = [
+            ("session-1_a.b", ".jsonl", "/state/session-1_a.b.jsonl"),
+            ("shop/feature x", ".json", "/state/shop_feature_x.json"),
+            ("../escape", ".jsonl", "/state/.._escape.jsonl"),
+        ]
+        for name, suffix, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(pathlib.Path(expected), script_utils.state_file_path("/state", name, suffix))
+
+
 class DetailsWithOutcomeTest(unittest.TestCase):
     def test_only_the_entries_with_the_outcome_are_kept_in_map_order(self):
         outcomes = {"b": {"outcome": "x", "detail": "one"}, "a": {"outcome": "y", "detail": "two"},

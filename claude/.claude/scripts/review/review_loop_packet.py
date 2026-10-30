@@ -1,6 +1,7 @@
 """The review loop's hand-back: the packet (one JSON object) handback.py reads, the crash packet, and the rows a
 hand-back writes (run event, hand-back store row, stop row, reviewed tree, agent-usage row)."""
 
+import copy
 import json
 import os
 import pathlib
@@ -82,16 +83,22 @@ def packet_message(outcome):
     return json.dumps(fields, ensure_ascii=False)
 
 
+# Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
+EMPTY_OUTCOME = {
+    "status": "", "iter": 0, "fixed": [], "skipped_fp": [], "blockers": [], "plan_change": [], "open_fixes": [],
+    "asks": [], "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "", "full_check": "",
+    "full_check_command": "", "full_check_summaries": [], "check_changed": [], "check_rewrote_edited": [],
+    "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False, "scoped_tests": "",
+    "tool_fault": "",
+}
+
+
 def crash_outcome(progress, reason):
     # A crash is a tool fault, not a finding: tool_fault tells code_step to offer review-again.
     fixed = [item for item in progress["fixed"] if item.text.strip()]
-    return {"status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
-            "skipped_fp": [], "blockers": [reason], "plan_change": [], "open_fixes": [], "asks": [],
-            "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "none - the run ended in an error",
-            "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
-            "check_rewrote_edited": [], "check_created": [],
-            "files_touched": sorted(progress["files_touched"]), "nits": [],
-            "unreviewed_fix": False, "scoped_tests": "", "tool_fault": reason}
+    return {**copy.deepcopy(EMPTY_OUTCOME), "status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
+            "blockers": [reason], "class_closure": "none - the run ended in an error",
+            "files_touched": sorted(progress["files_touched"]), "tool_fault": reason}
 
 
 def report_write_failure(what, error):

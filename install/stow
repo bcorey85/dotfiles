@@ -98,6 +98,9 @@ if [ -n "$FAILED" ]; then
 fi
 print_success "Symlinks created"
 
+# Fail loudly when a script in the scripts package is left unlinked.
+"$DOTFILES_DIR/install/check-script-links" || LINKS_MISSING=1
+
 # macOS: Ghostty reads from Application Support, symlink to stow-managed config
 if [ "$PLATFORM" = "mac" ] && [ -d "$HOME/Library/Application Support/com.mitchellh.ghostty" ]; then
     GHOSTTY_MAC="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
@@ -128,3 +131,5 @@ if [ "$PLATFORM" = "mac" ]; then
         print_success "lazygit macOS symlink created"
     fi
 fi
+
+[ -z "${LINKS_MISSING:-}" ] || exit 1

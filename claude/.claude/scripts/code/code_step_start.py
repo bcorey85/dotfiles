@@ -1,5 +1,6 @@
 """The start verb of code_step: argument parsing, plan and phase choice, and the first coder dispatch."""
 import collections
+import contextlib
 import dataclasses
 import os
 import pathlib
@@ -8,6 +9,7 @@ import shlex
 import sys
 import time
 
+import coder_gate
 import plan_format
 import script_utils
 from code_step_boundary import criteria_rel, finish_phase, settle_criteria_guard, stop_while_plan_edit_coder_is_out
@@ -600,14 +602,40 @@ def command_start(args):
     if parsed.restart or reopens_stopped_run(previous):
         drop_open_run(repo_dir, previous)
 
-    # Every refusal that keeps an open run alive has returned above, and a restart dropped the open run, so no run here
-    # owns the older gate: a keyed one names an ended run, and one set by hand with no key would gate this start's
-    # coder. Clear either.
-    run_coder_gate(repo_dir, "clear")
+    with coder_gate_restored_on_failure(repo_dir):
+        # Every refusal that keeps an open run alive has returned above, and a restart dropped the open run, so no run
+        # here owns the older gate: a keyed one names an ended run, and one set by hand with no key would gate this
+        # start's coder. Clear either.
+        run_coder_gate(repo_dir, "clear")
 
-    if parsed.task_text is not None:
-        return start_planless(repo_dir, parsed.modifier, parsed.task_text, branch)
-    start_plan_run(repo_dir, previous, branch, parsed, start_command)
+        if parsed.task_text is not None:
+            return start_planless(repo_dir, parsed.modifier, parsed.task_text, branch)
+        start_plan_run(repo_dir, previous, branch, parsed, start_command)
+
+
+@contextlib.contextmanager
+def coder_gate_restored_on_failure(repo_dir):
+    # A verb that fails writes no state file, so the open run it would have dropped stays. Its gate stays with it: the
+    # gate file goes back to what it held before the block, or goes if there was none.
+    gate_file = coder_gate.gate_path(repo_dir)
+    saved_gate = gate_file.read_text() if gate_file.exists() else None
+    try:
+        yield
+    except SystemExit as exited:
+        if exited.code not in (None, 0):
+            restore_coder_gate(gate_file, saved_gate)
+        raise
+    except BaseException:
+        restore_coder_gate(gate_file, saved_gate)
+        raise
+
+
+def restore_coder_gate(gate_file, saved_gate):
+    if saved_gate is None:
+        gate_file.unlink(missing_ok=True)
+        return
+
+    script_utils.write_text_atomically(gate_file, saved_gate)
 
 
 def resolve_named_task(repo_dir, plan_arg):
@@ -785,14 +813,10 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     # The gate is for the run's first dispatch, the coder this start dispatches. The run's folder is wiped only after
     # the packet is built, so a failed packet leaves the open run's log in place.
     run_id = script_utils.sortable_unique_id()
+    # The packet reads whether the gate exists, so the gate is set first. A failed packet fails the verb, and
+    # command_start puts back the gate that was there before it.
     gate_note = set_gate_and_packet_note(repo_dir, plan_rel, commands, run_id)
-    try:
-        packet_body = packet_text(repo_dir, plan_rel, number, use_packet)
-    except SystemExit:
-        # The packet reads whether the gate exists, so the gate is set first. A failed packet starts no run, and the
-        # gate names a run that never starts: end it.
-        run_coder_gate(repo_dir, "clear")
-        raise
+    packet_body = packet_text(repo_dir, plan_rel, number, use_packet)
     start_run(repo_dir, run_id)
 
     phase_description = f"Phase {number} of `{plan_rel}`" if use_packet else f"`{plan_rel}`"

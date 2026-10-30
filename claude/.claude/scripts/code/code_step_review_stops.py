@@ -154,7 +154,7 @@ def stop_on_review_status(repo_dir, state, module, packet):
             repo_dir, question, [line[2:] for line in blocker_lines], blocker_stop_next_step(state), instruction,
             *blocker_lines, questions=ask_lines(packet))
         return True
-    if status in ("converged", "deferred") and full_check.is_unverified(packet["full_check"]):
+    if status in module.CLEAN_STATUSES and full_check.is_unverified(packet["full_check"]):
         # A check that exited 0 printed no test-runner summary, so the check did not show that any test ran: the phase
         # is not verified, so it does not finish.
         check_command = packet["full_check_command"] or "(not named)"
@@ -164,7 +164,7 @@ def stop_on_review_status(repo_dir, state, module, packet):
             repo_dir, state, packet, "check-unverified", why, check_command, fix,
             f"{why_sentence} The check ran: `{check_command}`.")
         return True
-    if status in ("converged", "deferred") and full_check.is_check_not_run(packet["full_check"]):
+    if status in module.CLEAN_STATUSES and full_check.is_check_not_run(packet["full_check"]):
         # The full check was owed and did not run, so the phase is not verified and does not finish.
         result = packet["full_check"]
         check_command = packet["full_check_command"] or "(not named)"

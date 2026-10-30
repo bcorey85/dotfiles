@@ -141,6 +141,9 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
     command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto"]
     if agent:
         command += ["--agent", agent]
+        skills_prompt = script_utils.preloaded_skills_prompt(agent)
+        if skills_prompt:
+            command += ["--append-system-prompt", skills_prompt]
     if model:
         command += ["--model", model]
     if tools:

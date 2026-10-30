@@ -1189,15 +1189,18 @@ def carried_start_words(state):
     return modifier_words + headless_words
 
 
+def plan_restart_command(state, restart_command):
+    # The restart of a plan run: it keeps its single phase, its modifier and --headless.
+    phase_words = ["--phase", str(state["onlyPhase"])] if state.get("onlyPhase") else []
+    return " ".join([restart_command, *phase_words, *carried_start_words(state)])
+
+
 def restart_instruction(state, restart_command="start --restart"):
     # A restart with no task text resolves the branch's plan, which is the wrong work for a run that had no plan.
-    # A plan run keeps its single phase, its modifier and --headless through the restart.
-    modifier_words = carried_start_words(state)
     if state.get("plan"):
-        phase_words = ["--phase", str(state["onlyPhase"])] if state.get("onlyPhase") else []
-        return "run `" + " ".join([restart_command, *phase_words, *modifier_words]) + "`"
+        return "run `" + plan_restart_command(state, restart_command) + "`"
 
-    planless_words = [restart_command, *modifier_words, "--task", "\"<the task text>\""]
+    planless_words = [restart_command, *carried_start_words(state), "--task", "\"<the task text>\""]
     return "ask the user for the task text, then run `" + " ".join(planless_words) + "`"
 
 

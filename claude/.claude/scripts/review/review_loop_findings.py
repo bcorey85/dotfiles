@@ -26,7 +26,8 @@ NONE_LINE = re.compile(r"\[?(none|n/a|omitted|empty)[^\]]*\]?\.?", re.I)
 NONE_OPENING = re.compile(r"[\[(*_`]*(?:none|n/a|omitted|empty)[\])*_`]*"
                           r"(?:[.:;,!]|\s+[\N{EM DASH}\N{EN DASH}-]|$)", re.I)
 # A finding's head: its file:line first, after an optional [blocker] tag and bold markup.
-FINDING_HEAD = re.compile(r"(?:\*{0,2}\[blocker\]\*{0,2}\s*)?[*_]*" + script_utils.PATH_LINE.pattern, re.I)
+FINDING_HEAD = re.compile(rf"(?:{script_utils.BLOCKER_TAG_PATTERN}\s*)?[*_]*" + script_utils.PATH_LINE.pattern,
+                          re.I)
 
 
 def section(text, name):

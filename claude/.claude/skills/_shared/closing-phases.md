@@ -17,7 +17,7 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
 2. **Test audit** (risk: high) — `/test-audit`: cull spam, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
 
 3. **Verify pass** (risk: high) — `/verify-branch` runs both checks, in order:
-   - **Branch-wide deep review** — ONE `code-reviewer` over the branch diff, unless one ran since the last change: the only fresh-eyes look at cross-phase interactions. Findings via `/review` routing, logged with `scope=branch-exit`.
+   - **Branch-wide deep review** — ONE `code-reviewer` over the branch diff, unless one ran since the last change: the only fresh-eyes look at cross-phase interactions. With no `[blocker]`, fix findings are logged deferred; with a blocker, the findings are fixed via `/review` routing, then logged. Logged with `scope=branch-exit`.
    - **Completeness** — reconcile the shipped diff against the ticket/plan
      (completeness), run the plan's Automated Verification commands (a failing command is a gap), and emit the
      **human smoke-test checklist** (all human-only Manual Verification items).
@@ -25,7 +25,7 @@ Every `/eng-spec` plan ends with these FOUR phases, in order after the last feat
 
        Match on **behavior, not markers** — no ids to grep; read and judged.
 
-   Success Criteria: deep review clean, reconciliation reports no missing work,
+   Success Criteria: no open blocker from the deep review (non-blocking fix findings logged deferred), reconciliation reports no missing work,
    every acceptance criterion mapped to a test or explicitly retired,
    smoke-test checklist delivered.
 

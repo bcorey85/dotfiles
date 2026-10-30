@@ -42,7 +42,6 @@ import datetime
 import json
 import os
 import pathlib
-import re
 import sys
 import time
 
@@ -513,11 +512,6 @@ STOP_STATUSES = {
 }
 
 
-# A class-closure receipt that says a class is still open. The receipt is free text, so this matches its words.
-OPEN_CLASS = re.compile(r"\b(not closed|unclosed|(still|left|remains?|stays?) open|open (class|members?))\b", re.I)
-# Words that turn an open-class clause into a closed one: "none left open", "open members: none", "was left open".
-NEGATED_CLASS = re.compile(r"\b(none|no|nothing|zero|0|was|were)\b", re.I)
-RECEIPT_CLAUSE = re.compile(r"[;,.\n()]")
 SCOPED_RERUN = ("The review cap was reached with a class still open. Report these findings. Another full review "
                 "would find one more member at a time, so do not offer one: the next run is a scoped review of the "
                 "files the capped run's fixes touched. When the user asks to go on, dispatch review-loop "
@@ -525,16 +519,10 @@ SCOPED_RERUN = ("The review cap was reached with a class still open. Report thes
                 "Do not run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.")
 
 
-def names_an_open_class(receipt):
-    """Whether a clause of the class-closure receipt says a class is still open and no word in it negates that."""
-    clauses = RECEIPT_CLAUSE.split(receipt)
-    return any(OPEN_CLASS.search(clause) and not NEGATED_CLASS.search(clause) for clause in clauses)
-
-
 def scoped_rerun_lines(packet, skill):
     """The dispatch that reviews only the files the capped run's fixes touched after a cap-reached with an open
-    class, or [] when the class is closed or the packet names no file the fix touched."""
-    if not names_an_open_class(packet["class_closure"]):
+    class, or [] when the packet's open_classes is empty or it names no file the fix touched."""
+    if not packet["open_classes"]:
         return []
     fix_files = [str(path) for path in packet["files_touched"]]
     if not fix_files:
@@ -543,7 +531,7 @@ def scoped_rerun_lines(packet, skill):
     lines = ["mode: review-first", f"caller: {skill}", "iter=0", "handoff:", "  files:"]
     for path in fix_files:
         lines += [f"    - path: {path}", "      change: touched by the capped run's fixes"]
-    lines += ["  tests-run: none", f"  flagged: the open class - {one_line(packet['class_closure'])}",
+    lines += ["  tests-run: none", f"  flagged: the open class - {one_line('; '.join(packet['open_classes']))}",
               "  prior-issues:"]
     for item in packet["findings_remaining"]:
         file_path, _line = split_location(item.get("file_line", ""))

@@ -480,7 +480,7 @@ class JsonPacketTest(HandbackTestBase):
             "ask entry has no file_line": json_packet(ask=[{**JSON_ASK, "file_line": ""}]),
             "status is 'done'": json_packet(status="done"),
             "iter is missing": json.dumps({"status": "converged", "fixed": []}),
-            "fixed entry has no finding": json_packet(fixed=[{"blocker": True}]),
+            "fixed[0] has no finding": json_packet(fixed=[{"blocker": True}]),
         }
         for problem, message in cases.items():
             with self.subTest(problem), self.assertRaises(handback.PacketError) as raised:
@@ -488,11 +488,44 @@ class JsonPacketTest(HandbackTestBase):
             self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],
                             raised.exception.problems)
 
-    def test_an_ask_with_no_question_finding_or_change_is_dropped_with_a_warning_in_json_too(self):
-        packet = handback.load(json_packet(ask=[{"question": "", "file_line": "unlocated", "gate": "code-reviewer"},
-                                                JSON_ASK]))
-        self.assertEqual([item["question"] for item in packet["ask"]], ["cap at 3?"])
-        self.assertIn("file_line unlocated, gate code-reviewer", packet["dropped_asks"][0])
+    def test_a_json_packet_with_n_asks_some_without_file_line_yields_n_asks(self):
+        asks = [{**JSON_ASK, "question": f"question {number}?"} for number in range(4)]
+        del asks[1]["file_line"]
+        del asks[3]["file_line"]
+        packet = handback.load(json_packet(ask=asks))
+        self.assertEqual([item["question"] for item in packet["ask"]], [f"question {number}?" for number in range(4)])
+        self.assertEqual([item["file_line"] for item in packet["ask"]],
+                         ["src/retry.ts:10", handback.UNLOCATED, "src/retry.ts:10", handback.UNLOCATED])
+        self.assertEqual(packet["dropped_asks"], [])
+
+    def test_a_json_ask_with_no_question_asks_its_finding_or_change_and_gets_the_defaults(self):
+        asks = [{"finding": "retries never stop", "file_line": "a.ts:1", "change": "cap at 3"},
+                {"file_line": "b.ts:2", "change": "read the limit from settings", "class": "ops"}]
+        packet = handback.load(json_packet(ask=asks))
+        self.assertEqual([item["question"] for item in packet["ask"]],
+                         ["retries never stop", "read the limit from settings"])
+        self.assertEqual(packet["ask"][1]["gate"], handback.DEFAULT_GATE)
+        self.assertEqual((packet["ask"][1]["class"], packet["ask"][1]["class_raw"]), ("other", "ops"))
+
+    def test_a_json_list_entry_that_is_not_a_mapping_or_lacks_its_text_field_is_a_problem_that_names_it(self):
+        cases = {
+            "ask[1] must be a JSON object, not a string": json_packet(ask=[JSON_ASK, "cap at 3? | a.ts:1"]),
+            "ask[0] has no question": json_packet(ask=[{"file_line": "a.ts:1"}]),
+            "fixed[0] must be a JSON object, not a string": json_packet(fixed=["removed the dead branch"]),
+            "findings_remaining[0] has no finding": json_packet(status="cap-reached", findings_remaining=[{}]),
+            "skipped_fp[0] has no item": json_packet(skipped_fp=[{"reason": "r"}]),
+            "open_classes must be a JSON list of strings": json_packet(open_classes=[{"class": "x"}]),
+        }
+        for problem, message in cases.items():
+            with self.subTest(problem), self.assertRaises(handback.PacketError) as raised:
+                handback.load(message)
+            self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],
+                            raised.exception.problems)
+
+    def test_a_json_packet_carries_its_open_classes_as_a_list(self):
+        packet = handback.load(json_packet(open_classes=["log with a trailing blank line"]))
+        self.assertEqual(packet["open_classes"], ["log with a trailing blank line"])
+        self.assertEqual(handback.load(json_packet())["open_classes"], [])
 
     def test_check_accepts_a_json_packet(self):
         code, out, _err = self.run_cli(["check"], json_packet(ask=[JSON_ASK]))

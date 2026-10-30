@@ -161,7 +161,7 @@ with mock.patch.dict(os.environ, {"CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}):
     module_spec.loader.exec_module(code_step)
 import code_step_core
 
-RUN_COMMAND_MODULES = (code_step, sys.modules["code_step_start"], sys.modules["review_asks"])
+RUN_COMMAND_MODULES = (code_step_core, sys.modules["code_step_start"], sys.modules["review_asks"])
 
 PLAN_DIR = "docs/plans/ORD-1-orders"
 PLAN_A = f"{PLAN_DIR}/spec.md"
@@ -1239,7 +1239,7 @@ class TerminationTest(unittest.TestCase):
     def test_a_staged_script_run_in_process_gives_what_its_process_gives(self):
         repo = build_template("template-in-process")
         gate_script = str(CLAUDE_STUB / "scripts" / "code" / "coder_gate.py")
-        real_run_command = code_step.run_command
+        real_run_command = code_step_core.run_command
 
         for gate_arguments in (["clear"], ["set"]):
             command = ["python3", gate_script, *gate_arguments]

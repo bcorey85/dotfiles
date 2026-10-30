@@ -4,7 +4,9 @@
 A sentence claims staging when it says `<is|are|were|was|now|all|been|left|remain|remains|stay|stays> staged`,
 `I staged`, `I've staged` or `I have staged`, and holds no `not`, `no`, `nothing`, `none`, `never` or
 `committed`, and no `if`, `once`, `when`, `after`, `before`, `until` or `unless` ahead of the claim in its own
-clause (clauses split at `,`, `;`, `:`, `and`, `but`, `so`).
+clause (clauses split at `,`, `;`, `:`, `and`, `but`, `so`), and no `row`, `record`, `diff` or `finding`
+(or plural) as the word just before the claim, in a clause that names no `file`, unless the sentence also names
+`index` or `git`: that is review data, not the index.
 The claim is checked against `git diff --cached --name-only` in the repo of each existing absolute path the
 sentence names, else in the repo of the session cwd. It blocks when that index is empty, or when a file the sentence
 names, and that exists in the repo, is not in it. A second stop in a row passes
@@ -26,6 +28,11 @@ COMMITTED = re.compile(r"\bcommitted\b", re.I)
 CONDITIONAL = re.compile(r"\b(?:if|once|when|after|before|until|unless)\b", re.I)
 # Where one clause ends and the next begins, so a conditional in an earlier clause does not hide the claim.
 CLAUSE_BREAK = re.compile(r"[,;:]|\s(?:and|but|so)\s", re.I)
+# A claim whose subject is review data ("two rows are staged") speaks of a ledger or a diff folder, not the git index.
+# The review noun must stand just before the claim, so "the diff of the file is staged" is still a claim.
+REVIEW_DATA_SUBJECT = re.compile(r"\b(?:rows?|records?|diffs?|findings?)\s*$", re.I)
+FILE_WORD = re.compile(r"\bfiles?\b", re.I)
+GIT_INDEX = re.compile(r"\b(?:index|git)\b", re.I)
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
 # A word that looks like a file path: `a.txt`, `docs/x.md`, `/abs/path`.
 PATH_WORD = re.compile(r"(?<![\w/.-])(?:/|\.{1,2}/)?[\w-]+(?:[./][\w-]+)+")
@@ -41,14 +48,22 @@ def work_tree_top(path):
 def claim_sentences(message):
     claims = []
     for sentence in SENTENCE_END.split(message):
-        claim = STAGED_CLAIM.search(sentence)
-        if not claim or NEGATION.search(sentence) or COMMITTED.search(sentence):
+        if NEGATION.search(sentence) or COMMITTED.search(sentence):
             continue
-        clauses = CLAUSE_BREAK.split(sentence[:claim.start()])
-        if CONDITIONAL.search(clauses[-1]):
-            continue
-        claims.append(sentence)
+        if any(is_index_claim(sentence, claim) for claim in STAGED_CLAIM.finditer(sentence)):
+            claims.append(sentence)
     return claims
+
+
+def is_index_claim(sentence, claim):
+    """Whether one staged-claim match speaks of the git index, judged by the clause just before it."""
+    clauses = CLAUSE_BREAK.split(sentence[:claim.start()])
+    clause = clauses[-1]
+    if CONDITIONAL.search(clause):
+        return False
+
+    names_review_data = REVIEW_DATA_SUBJECT.search(clause) and not FILE_WORD.search(clause)
+    return not names_review_data or bool(GIT_INDEX.search(sentence))
 
 
 def named_files(sentence, cwd):

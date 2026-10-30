@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "changed"
 title: "Code-step routes each verb through one typed transition table"
-description: "A /code run's state loads as one typed record, and every verb and every resume step comes from one table of saved state to next step, so a state the table does not name stops the verb instead of being routed wrong."
+description: "A /code run's state loads as one typed record, every verb and resume step comes from one table of saved state to next step, and each verb writes the state once at its end, so an unknown state stops the verb and a failed verb leaves the state as it was."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-30T03:44:47-05:00"}
 seq: 316
 kind: "fix"
@@ -34,9 +34,20 @@ unmeasured: ""
   `code_step_hooks`, `code_step.py` and `saved_handback`.
 - The stop texts for a critical blocker, a setup fault and a fix that removed a change no longer need the hand-back
   module to load, so every blocker row has its question.
+- A stop for a fix that removed the change under review always lets `review-again` run. Before, it did only when the
+  hand-back module loaded.
 - A stage set on the record becomes a `Stage` at once, so an unknown one raises where it is set.
 - A property test walks every row: each state has one row, each step has a handler, and each verb runs from the rows
   that name it and from no other.
+- Each verb writes `state.json` once, atomically, at its end, and only then prints what to do next. A verb that fails
+  part way or exits with an error writes nothing and prints nothing it held, so the saved state never runs ahead of a
+  crash.
+- A state file that changed on disk while a verb ran, as an `abort` from another shell does, is not written over: the
+  verb writes nothing, drops its output and stops with a line that names the file. A state file the verb dropped always
+  goes, so an abort always ends the run.
+- `abort` archives the run as it stood and drops its state file at the verb's end.
+- A verb that waits for a hand-back writes the state it holds just before the wait, so a wait killed part way keeps
+  the time a resumed agent's wait cap counts from.
 
 ## Evidence
 
@@ -44,13 +55,17 @@ Census of the code-step fix commits over 14 days: about 34 of 107 came from rout
 read an untyped 40-key dict, where a misspelt or stale key reads as a missing one. Read of `code_step_core.py`: the
 old-format migration ran on every load, and no run that old is still open. Read of the old route code: every route,
 guard and fallback maps to one row of the table, and the only behavior change is that a fix-removed-change stop always
-offers `review-again`.
+offers `review-again`. Read of the verbs: each saved the state part way through and printed after, so a crash between
+the two left a saved state the session was never told about, and a save after an `abort` brought the run back.
 
 ## Result
 
-The targeted code-step, review-loop-script and review-fix test modules, ruff, the code-step complexity check and the
+The full suite passes: 4557 tests in 111 files, 0 failed, run before the write before a wait was added. After it, the
+code-step, review-loop-script and review-fix test modules, ruff, the code-step complexity check and the
 duplicate-code check pass. A state file a run in progress wrote before this change loads and writes back unchanged.
-The route property test passes, and the walk of every verb path from each start finds no failing path in 3204 paths.
+A verb that crashes after its save leaves the state as it was, and a resumed coder's first wait time survives a wait
+killed part way. The route property test passes, and the walk of every verb path from each start finds no failing
+path in 3204 paths.
 
 ## Watch
 

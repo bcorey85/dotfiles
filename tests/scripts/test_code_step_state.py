@@ -1,13 +1,17 @@
 """code_step_state.py: the record of one /code run loads from state.json only as a code-step of this version wrote it,
-and writes back what it loaded.
+and writes back what it loaded. A verb writes the record once, at its end, or not at all.
 
 run: python3 -m unittest test_code_step_state
 """
+import contextlib
+import io
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 import toolkit_paths
 
@@ -141,6 +145,144 @@ class StateFileTest(unittest.TestCase):
         self.assertIs(code_step_state.Stage.ASKS, state.stage)
         with self.assertRaises(ValueError):
             state.stage = "paused"
+
+
+class VerbTransactionTest(unittest.TestCase):
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.repo = pathlib.Path(temp_dir.name)
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+
+        state_dirs = unittest.mock.patch.dict(code_step_core.STATE_DIRS, clear=True)
+        state_dirs.start()
+        self.addCleanup(state_dirs.stop)
+
+        code_step_core.save_state(self.repo, code_step_state.RunState("coder"))
+        self.state_path = code_step_core.state_file(self.repo)
+        self.saved_text = self.state_path.read_text()
+        self.printed = io.StringIO()
+
+    def run_verb(self, verb_body, *args):
+        with contextlib.redirect_stdout(self.printed), code_step_core.verb_transaction():
+            verb_body(*args)
+
+    def saved_stage(self):
+        saved_state = json.loads(self.state_path.read_text())
+        return saved_state["stage"]
+
+    def save_review_stage(self):
+        state = code_step_core.load_state(self.repo)
+        state.stage = "review"
+        code_step_core.save_state(self.repo, state)
+
+    def save_then_exit(self, exit_code):
+        self.save_review_stage()
+        print("ACTION: wait")
+        sys.exit(exit_code)
+
+    def test_a_verb_that_fails_part_way_writes_nothing_and_prints_nothing_it_held(self):
+        def save_then_fail():
+            self.save_review_stage()
+            print("ACTION: dispatch")
+            raise RuntimeError("the verb broke")
+
+        with self.assertRaises(RuntimeError):
+            self.run_verb(save_then_fail)
+
+        self.assertEqual(self.saved_text, self.state_path.read_text())
+        self.assertEqual("", self.printed.getvalue())
+
+    def test_a_load_inside_a_verb_sees_its_save_and_the_disk_changes_only_at_its_end(self):
+        stages_inside = []
+
+        def save_then_load():
+            self.save_review_stage()
+            loaded_state = code_step_core.load_state(self.repo)
+            stages_inside.extend([loaded_state.stage, self.saved_stage()])
+            print("ACTION: wait")
+
+        self.run_verb(save_then_load)
+
+        self.assertEqual([code_step_state.Stage.REVIEW, "coder"], stages_inside)
+        self.assertEqual("review", self.saved_stage())
+        self.assertEqual("ACTION: wait\n", self.printed.getvalue())
+
+    def test_a_verb_that_exits_cleanly_writes_and_prints_and_one_that_exits_with_an_error_does_neither(self):
+        exits = [(0, "review", "ACTION: wait\n"), (None, "review", "ACTION: wait\n"),
+                 ("code-step: the packet broke", "coder", "")]
+        for exit_code, stage_after, printed_after in exits:
+            with self.subTest(exit_code=exit_code):
+                code_step_core.save_state(self.repo, code_step_state.RunState("coder"))
+                self.printed = io.StringIO()
+
+                with self.assertRaises(SystemExit):
+                    self.run_verb(self.save_then_exit, exit_code)
+
+                self.assertEqual(stage_after, self.saved_stage())
+                self.assertEqual(printed_after, self.printed.getvalue())
+
+    def test_a_state_file_the_verb_drops_goes_only_at_its_end(self):
+        seen_inside = []
+
+        def drop():
+            code_step_core.drop_state(self.repo)
+            seen_inside.append(code_step_core.load_state(self.repo))
+            seen_inside.append(self.state_path.exists())
+
+        self.run_verb(drop)
+
+        self.assertEqual([None, True], seen_inside)
+        self.assertFalse(self.state_path.exists())
+
+    def test_a_state_file_an_abort_removed_while_the_verb_ran_stays_removed_and_the_verb_stops(self):
+        def save_across_an_abort():
+            state = code_step_core.load_state(self.repo)
+            self.state_path.unlink()
+            state.stage = "review"
+            code_step_core.save_state(self.repo, state)
+            print("ACTION: dispatch")
+
+        self.run_verb(save_across_an_abort)
+
+        self.assertFalse(self.state_path.exists())
+        self.assertIn("ACTION: stop", self.printed.getvalue())
+        self.assertIn("changed while this verb ran", self.printed.getvalue())
+        self.assertNotIn("ACTION: dispatch", self.printed.getvalue())
+
+    def test_a_write_before_a_wait_puts_the_staged_state_on_disk_and_the_verb_still_ends_cleanly(self):
+        stages_on_disk = []
+
+        def save_then_wait():
+            self.save_review_stage()
+            code_step_core.write_staged_state(self.repo)
+            stages_on_disk.append(self.saved_stage())
+            print("ACTION: wait")
+
+        self.run_verb(save_then_wait)
+
+        self.assertEqual(["review"], stages_on_disk)
+        self.assertEqual("ACTION: wait\n", self.printed.getvalue())
+
+    def test_a_write_before_a_wait_leaves_a_state_file_an_abort_removed(self):
+        def save_then_wait_across_an_abort():
+            self.save_review_stage()
+            self.state_path.unlink()
+            code_step_core.write_staged_state(self.repo)
+            print("ACTION: wait")
+
+        self.run_verb(save_then_wait_across_an_abort)
+
+        self.assertFalse(self.state_path.exists())
+        self.assertIn("changed while this verb ran", self.printed.getvalue())
+
+    def test_a_save_outside_a_verb_writes_at_once(self):
+        state = code_step_core.load_state(self.repo)
+        state.stage = "review"
+
+        code_step_core.save_state(self.repo, state)
+
+        self.assertEqual("review", self.saved_stage())
 
 
 if __name__ == "__main__":

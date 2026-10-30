@@ -317,6 +317,12 @@ def command_after_wrappers(words, peel_containers=True):
             return words
 
 
+def peeled_commands(simple_commands):
+    # The words of each simple command with its wrappers peeled; a command that is only wrappers is dropped.
+    unwrapped = (command_after_wrappers(words) for words in simple_commands)
+    return [words for words in unwrapped if words]
+
+
 def resolved_command_words(command):
     """The words of each simple command, quotes and escapes resolved and wrapper words (`builtin`, `command`, `{`)
     dropped; empty when shlex cannot read the command."""
@@ -324,8 +330,17 @@ def resolved_command_words(command):
         simple_commands = split_simple_commands(LINE_CONTINUATION.sub("", command))
     except ValueError:
         return []
-    unwrapped = (command_after_wrappers(words) for words in simple_commands)
-    return [words for words in unwrapped if words]
+    return peeled_commands(simple_commands)
+
+
+def step_words(command):
+    """The words of each step of the command with its wrappers peeled (env, nice, timeout, uv run, a docker exec).
+    Text shlex cannot read is cut on its operators and split on whitespace, so a step is still read."""
+    try:
+        simple_commands = split_simple_commands(command)
+    except ValueError:
+        simple_commands = [segment_words(step) for _operator, step in split_command_steps(command)]
+    return peeled_commands(simple_commands)
 
 
 def script_call_arguments(command, script_name):

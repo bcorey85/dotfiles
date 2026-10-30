@@ -2764,10 +2764,24 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("rename?", out)
         self.assertNotIn("keep?", out)
 
-    def test_correct_ruling_says_the_refusal_when_no_asks_coder_runs(self):
+    def test_correct_ruling_at_the_asks_stage_applies_the_asks_as_asks_done(self):
         self.coder_round()
         self.hook("review-loop", self.ASK)
         self.step("resume")
+
+        out = self.step("correct-ruling", "accepted", "--also", "add a log line")
+
+        self.assertIn("ACTION: dispatch", out)
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("The proposed change: export o as a const", out)
+        self.assertIn("add a log line", out)
+        self.assertEqual("asks-coder", self.state()["stage"])
+
+    def test_correct_ruling_says_the_refusal_when_no_asks_coder_runs(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("resume")
+        self.assertEqual("done", self.state()["stage"])
         state_before = self.state()
 
         out = self.step("correct-ruling", "rejected")
@@ -2776,7 +2790,30 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("No asks coder is running", out)
         self.assertIn("new /code run", out)
         self.assertEqual(state_before, self.state())
-        self.assertIn("keep?", (self.repo / ".git/code-step/question.md").read_text())
+
+    def test_correct_ruling_rejected_at_the_asks_stage_finishes_the_phase_without_a_coder(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+
+        out = self.step("correct-ruling", "rejected")
+
+        self.assertNotIn("AGENT: coder", out)
+        self.assertNotIn("ACTION: go-on", out)
+        self.assertIn("Phase 1 marked done", out)
+
+    def test_correct_ruling_rejected_at_the_asks_stage_of_a_planless_run_says_the_commit_command(self):
+        self.step("start", "--task", "add orders")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", self.CODER_REPORT)
+        self.step("resume")
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+
+        out = self.step("correct-ruling", "rejected")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("git add -- backend/src/orders.ts", out + self.said())
 
     def test_correct_ruling_says_the_refusal_at_a_stop_and_keeps_the_stop_question(self):
         self.begin_asks_coder("accepted")
@@ -7723,7 +7760,14 @@ class CodeForkToolsTest(unittest.TestCase):
         self.assertIn("starts with `asks-done`", skill_text)
         self.assertIn("code_step.py correct-ruling", skill_text)
         self.assertIn("- `go-on`:", skill_text)
-        self.assertIn("even when it printed `stop`", skill_text)
+        self.assertIn("the `stop` that lists several checkouts", skill_text)
+        self.assertIn("says another verb is running", skill_text)
+        self.assertIn("names no run", skill_text)
+        self.assertIn("is no git path", skill_text)
+        self.assertIn("names a state file to delete", skill_text)
+        self.assertIn("follow it under rule 2 instead and send nothing", skill_text)
+        self.assertIn("never this call's own args", skill_text)
+        self.assertNotIn("even when it printed `stop`", skill_text)
 
     def test_the_code_fork_hands_a_question_or_report_back_even_when_the_task_names_a_session(self):
         skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"

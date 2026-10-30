@@ -21,6 +21,12 @@ class GuidanceRulesTest(unittest.TestCase):
                 self.assertIn("zsh", text)
                 self.assertIn('files=(a b); for f in "${files[@]}"', text)
 
+    def test_the_code_fork_acts_on_a_stop_question_the_user_already_answered(self):
+        text = guidance_text("agents/code-fork.md")
+        self.assertIn("When the user already answered the run's last stop question in this conversation, run the "
+                      "verb that answer names in place of `resume`, or `resume \"<answer>\"` for a stopped coder, and "
+                      "never ask that question again.", text)
+
     def test_the_main_session_is_told_to_send_simple_commands_after_enter_worktree(self):
         text = guidance_text("orchestration.md")
         self.assertIn("After `EnterWorktree`, Claude Code's own worktree guard refuses", text)

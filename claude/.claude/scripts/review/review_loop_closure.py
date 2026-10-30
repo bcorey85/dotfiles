@@ -1,13 +1,17 @@
 """The review loop's class-closure check: the per-path stats of what the fix coder changed, and the model call that
 asks whether each fixed finding's class is closed."""
 
+import json
 import pathlib
+import re
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent)]
 from review_loop_findings import last_json_object
 
 NO_CLOSURE = "n/a - fixed[] empty"
+OPEN_KEY = re.compile(r'"open"\s*:\s*(?=\[)')
+RECEIPT_KEY = re.compile(r'^"receipt"\s*:\s*')
 
 CLOSURE_RULES = (
     'For each finding in fixed[], ask whether it is class-shaped: one member of an enumerable set of '
@@ -56,13 +60,42 @@ def closure_check(repo, out, fixed, claude_call):
         "regenerated.\n" + "\n".join(diff_stat_lines(FIX_DIFF_STATS))
         + '\n\nEnd your reply with one JSON object: {"receipt": "<the enumeration, or none plus each fixed finding '
         'and why it fits neither shape>", '
-        '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed.'
+        '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed. It must '
+        'parse as JSON: escape every double quote inside the receipt as \\".'
     )
     reply = claude_call("class-closure", prompt, repo, out, model="sonnet", tools="Read,Grep")
+
     parsed = last_json_object(reply, ("open",))
-    if parsed is not None:
-        parsed_open = parsed.get("open")
-        open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
-                         if isinstance(parsed_open, list) else [])
-        return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
-    raise ValueError(f'the class-closure reply holds no {{"receipt": .., "open": [..]}} object: {reply!r}')
+    if parsed is None:
+        parsed = closure_from_open_list(reply)
+    if parsed is None:
+        raise ValueError(f'the class-closure reply holds no {{"receipt": .., "open": [..]}} object: {reply!r}')
+
+    parsed_open = parsed.get("open")
+    open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
+                     if isinstance(parsed_open, list) else [])
+    return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
+
+
+def closure_from_open_list(reply):
+    """The receipt and open list of a closure reply whose object does not decode, as when the receipt holds a raw
+    double quote: decodes the list after the last `"open": [` and keeps the text after the `"receipt":` key, without
+    its wrapping quotes, as the receipt. None when no open list decodes."""
+    open_keys = list(OPEN_KEY.finditer(reply))
+    if not open_keys:
+        return None
+
+    last_open_key = open_keys[-1]
+    try:
+        parsed_open, _ = json.JSONDecoder().raw_decode(reply, last_open_key.end())
+    except json.JSONDecodeError:
+        return None
+
+    before_open = reply[:last_open_key.start()]
+    receipt_start = before_open.rfind('"receipt"')
+    receipt_text = RECEIPT_KEY.sub("", before_open[receipt_start:]) if receipt_start >= 0 else ""
+    receipt = receipt_text.strip().rstrip(",").strip()
+    if len(receipt) > 1 and receipt.startswith('"') and receipt.endswith('"'):
+        receipt = receipt[1:-1]
+
+    return {"receipt": receipt, "open": parsed_open}

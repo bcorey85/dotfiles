@@ -24,6 +24,7 @@ import finding_record
 import full_check
 import handback
 import handback_store
+import review_loop_closure
 import review_loop_findings
 import review_loop_packet
 
@@ -125,6 +126,48 @@ class LastJsonObjectTest(unittest.TestCase):
         for message, reply, keys, expected in cases:
             with self.subTest(message):
                 self.assertEqual(expected, review_loop_findings.last_json_object(reply, keys))
+
+
+class ClosureCheckTest(unittest.TestCase):
+    def closure(self, reply):
+        def claude_call(*_args, **_kwargs):
+            return reply
+
+        return review_loop_closure.closure_check(pathlib.Path("/repo"), pathlib.Path("/out"), ["app.py:3 - limit"],
+                                                 claude_call)
+
+    def test_a_receipt_with_a_raw_quote_still_reads_its_open_list(self):
+        cases = [
+            ("empty open list", 'Done.\n{"receipt": "load_state(repo)["stage"] re-read", "open": []}', [],
+             'load_state(repo)["stage"] re-read'),
+            ("one open member", '{"receipt": "a "b" c", "open": ["app.py:4 - same limit - fix it"]}',
+             ["app.py:4 - same limit - fix it"], 'a "b" c'),
+            ("receipt ending in an escaped quote", '{"receipt": "a "b" and \\"c\\"", "open": []}', [],
+             'a "b" and \\"c\\"'),
+            ("no receipt key", 'Done.\n{"open": [], "note": "a "b""}', [], ""),
+        ]
+        for message, reply, expected, expected_receipt in cases:
+            with self.subTest(message):
+                closure = self.closure(reply)
+
+                self.assertEqual(expected, closure["open"])
+                self.assertEqual(expected_receipt, closure["receipt"])
+
+    def test_an_open_list_that_does_not_decode_still_raises(self):
+        with self.assertRaises(ValueError):
+            self.closure('{"receipt": "a "b" c", "open": ["app.py:4 - unclosed]}')
+
+    def test_the_prompt_tells_the_model_to_escape_quotes_in_the_receipt(self):
+        prompts = []
+
+        def claude_call(_label, prompt, *_args, **_kwargs):
+            prompts.append(prompt)
+            return '{"receipt": "none", "open": []}'
+
+        review_loop_closure.closure_check(pathlib.Path("/repo"), pathlib.Path("/out"), ["app.py:3 - limit"],
+                                          claude_call)
+
+        self.assertIn('escape every double quote inside the receipt as \\"', prompts[0])
 
 
 class ReviewLoopScriptTest(unittest.TestCase):

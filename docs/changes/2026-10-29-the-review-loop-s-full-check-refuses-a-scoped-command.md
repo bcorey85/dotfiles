@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "The review loop's full check refuses a scoped command"
 description: "`full_check.run`, which the review loop calls, now refuses a command that names files or tests, or whose scope cannot be read, as `full_check.py` already did from the command line."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T20:00:00-05:00"}
-seq: 280
+seq: 294
 kind: "fix"
 components: ["script/full-check"]
 evidence: ["judgment"]
@@ -22,6 +22,8 @@ unmeasured: ""
   equals the `Quality check:` command; left out, a command that equals it or is && steps of it counts as declared.
 - `main()` passes `declared` and no longer refuses on its own. It now judges the scope of the command left after the
   Expected red steps are cut, as the review loop does: a scoped step that is not expected red is still refused.
+- The same bug was fixed again as seq 282, "the full check refuses a scoped command for every caller". The merged
+  code keeps this change's `declared` argument, and `base_run` passes `declared=True`.
 
 ## Evidence
 

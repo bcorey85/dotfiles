@@ -1,6 +1,5 @@
 """Shared helpers for verify-prep and verify-log: git, plan/ticket parsing, the review signal, the saved run context."""
 import functools
-import hashlib
 import json
 import os
 import pathlib
@@ -9,6 +8,7 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
 import plan_format
+import reviewed_tree
 import script_utils
 
 TOOLKIT_DIR = pathlib.Path(__file__).resolve().parents[2]
@@ -36,6 +36,7 @@ class VerifyError(Exception):
 
 
 run = functools.partial(script_utils.run_or_raise, error_type=VerifyError)
+tree_fingerprint = functools.partial(reviewed_tree.tree_fingerprint, error_type=VerifyError)
 
 
 def script_path(env_name, installed_relative):
@@ -145,35 +146,6 @@ def repo_relative(path, top):
         return None
 
 
-def is_under(name, exclude_rel):
-    return name == exclude_rel or name.startswith(exclude_rel.rstrip("/") + "/")
-
-
-def branch_fingerprint(top, merge_base, exclude_rel=None):
-    """Content fingerprint of the branch as it stands: `git diff <mergeBase>` plus the hash of each untracked file.
-
-    Equal fingerprints mean equal content, whatever the commits, mtimes or renames in between. `excludeRel` (a path
-    relative to the top level) leaves a file or directory out of both parts: the task dir, whose one allowed edit by
-    the plan verifier must not make a finished review stale."""
-    digest = hashlib.sha256()
-    diff_argv = ["git", "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", merge_base, "--", "."]
-    if exclude_rel:
-        diff_argv.append(f":(exclude,literal){exclude_rel}")
-    digest.update(run(diff_argv, cwd=top, check=True).stdout.encode())
-    listing = run(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=top, check=True).stdout
-    names = sorted(n for n in listing.split("\0") if n and not (exclude_rel and is_under(n, exclude_rel)))
-    if any("\n" in name for name in names):
-        raise VerifyError("an untracked file name holds a newline; rename it so the tree can be fingerprinted")
-    if names:
-        hashed = run(["git", "hash-object", "--stdin-paths"], cwd=top, check=True, stdin="\n".join(names) + "\n")
-        file_hashes = hashed.stdout.split()
-        if len(file_hashes) != len(names):
-            raise VerifyError(f"git hash-object returned {len(file_hashes)} hashes for {len(names)} untracked files")
-        for name, file_hash in zip(names, file_hashes, strict=False):
-            digest.update(f"\0untracked\0{name}\0{file_hash}".encode())
-    return "sha256:" + digest.hexdigest()
-
-
 def review_ran(repo, branch, fingerprint):
     """(ran, reason). A branch-exit code-reviewer run row that verify-log wrote (it carries REVIEW_MARKER and a tree
     fingerprint) counts when its fingerprint equals `fingerprint`. `ledger yield --review-trees` lists the
@@ -212,8 +184,7 @@ def review_state(repo, branch, fingerprint, logged_tree):
 
 def context_path(repo, branch):
     state_dir = pathlib.Path(os.environ.get("VERIFY_STATE_DIR") or STATE_ROOT / "verify-branch")
-    safe = re.sub(r"[^A-Za-z0-9._-]", "_", f"{repo}-{branch}")
-    return state_dir / f"{safe}.json"
+    return script_utils.state_file_path(state_dir, f"{repo}-{branch}", ".json")
 
 
 def save_context(path, context):

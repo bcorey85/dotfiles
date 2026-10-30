@@ -27,7 +27,7 @@ read what it runs, such as a make call with a NAME=value argument or a target no
 exception. A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">`
 or `summary: not found`. `run` with no command returns `not run (no check found; ...)`. `run`, which the review loop
 calls, refuses a scoped or unresolved command the same way; there a command that is && steps of the `Quality check:`
-command counts as that command.
+command counts as that command. `base_run` skips the refusal, since the head run has applied it.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
 (`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
@@ -329,9 +329,10 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
     runner's own summary lines), `changed` (tracked files the command rewrote) and `created` (files it created), all
     lists; both kinds of file are left in place. On a lint failure the lines are the failing step's lines, not the
     log's last lines. `on_start`, when given, is called with the pid of the process group
-    the check leads. A scoped or unresolved command is not run unless `declared`: True when the command, before its
-    Expected red steps were left out, equals the `Quality check:` command; None counts the command when it equals that
-    command or is && steps of it."""
+    the check leads. A scoped or unresolved command (it names files or tests, or its scope cannot be read) is not run
+    and returns `NOT_RUN_SCOPED` or `NOT_RUN_UNRESOLVED` unless `declared`: True when the command, before its
+    Expected red steps were left out, equals the `Quality check:` command, or when the caller already passed it
+    through the refusal (`base_run`); None counts the command when it equals that command or is && steps of it."""
     details = empty_details()
     configured = configured_check_command(repo)
     in_ci = full_suite_runs_in_ci(repo)
@@ -455,7 +456,8 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
     the repo's folder (an untracked one). The user's
     working tree is never touched. A cache the check writes through a linked folder lands in the user's folder.
     `live_trees`, when given, is a set that holds (repo root, worktree) while the worktree exists, so a signal
-    handler can remove it."""
+    handler can remove it. The caller must have run `check_command` through `run()` on the head tree first, so the
+    scope refusals have already passed: this run skips them (`declared=True`)."""
     root = script_utils.repo_root(repo)
     if root is None:
         return None
@@ -489,7 +491,8 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
                 return None
 
             link_dependency_folders(repo_path, base_repo)
-            result, _lines, _details = run(base_repo, check_command, log, timeout, env=env, on_start=on_start)
+            result, _lines, _details = run(base_repo, check_command, log, timeout, env=env, on_start=on_start,
+                                           declared=True)
         finally:
             remove_worktree(root, tree)
             if live_trees is not None:

@@ -814,7 +814,7 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
 
     commands = derive_gate_commands(repo_dir, section) if entry else []
     if entry:
-        stale_prose_script = pathlib.Path(__file__).resolve().parent / "stale_prose.py"
+        stale_prose_script = pathlib.Path(__file__).resolve().parent / coder_gate.STALE_PROSE_SCRIPT
         commands.append(f"python3 {stale_prose_script} --base {base_head}")
     # The gate is for the run's first dispatch, the coder this start dispatches. The run's folder is wiped only after
     # the packet is built, so a failed packet leaves the open run's log in place.

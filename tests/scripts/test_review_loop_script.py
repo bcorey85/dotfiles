@@ -112,6 +112,11 @@ FIX_THEN_CLEAN = {
 }
 
 
+# A stand-in for the stale-prose script, written under its real name: it prints a hit line and exits with the code
+# the test gives it (1 is a hit, 2 a fault of the script).
+STALE_PROSE_STAND_IN = "import sys\nprint('STALE app.py:1 names a changed symbol')\nsys.exit(int(sys.argv[1]))\n"
+
+
 def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
 
@@ -164,7 +169,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.env.pop("CLAUDE_SKIP_HOOKS", None)
         self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
         self.env["PATH"] = f"{claude.parent}{os.pathsep}{self.env['PATH']}"
-        self.state_dir = self.scratch / "state"
+        # /code starts the loop with its own state folder, the one that also holds the run events.
+        self.state_dir = pathlib.Path(git(self.repo, "rev-parse", "--path-format=absolute", "--git-path", "code-step"))
 
     def commit_files(self, files):
         for name, text in files.items():
@@ -257,6 +263,26 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((usage[0]["agent"], usage[0]["model"], usage[0]["driver"]),
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
+
+    def test_a_review_prompt_with_no_phase_logs_a_standalone_scope(self):
+        self.prompt_file_text = lambda header_extra="", footer="": (
+            "mode: review-first\ncaller: review\nlane: none\n\nhandoff:\n  files:\n    - path: app.py\n")
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        runs = fake_ledger.recorded_rows(self.env, "review_run")
+        self.assertEqual([run["scope"] for run in runs], ["standalone"])
+        scope_rows = fake_ledger.recorded_rows(self.env, "review_scope")
+        self.assertEqual([row["caller"] for row in scope_rows], ["review"])
+
+    def test_a_code_prompt_with_no_phase_logs_a_phase_scope(self):
+        self.prompt_file_text = lambda header_extra="", footer="": (
+            "mode: review-first\ncaller: code\nlane: code\n\nhandoff:\n  files:\n    - path: app.py\n")
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        runs = fake_ledger.recorded_rows(self.env, "review_run")
+        self.assertEqual([run["scope"] for run in runs], ["phase"])
 
     def start_with_a_twelve_line_change(self):
         added = "".join(f"mechanism = {number}\n" for number in range(12))
@@ -461,6 +487,112 @@ class ReviewLoopScriptTest(unittest.TestCase):
         log_path = self.state_dir / "loop-script" / AGENT_ID / "scoped-tests.log"
         self.assertEqual(packet["scoped_tests"], f"failed: grep -q 'limit = 99' app.py; full output: {log_path}")
         self.assertIn("grep -q 'limit = 99' app.py", packet["blockers"][0])
+
+    def stale_prose_command(self, exit_code):
+        script = self.scratch / "stale_prose.py"
+        script.write_text(STALE_PROSE_STAND_IN)
+        return f"python3 {script} {exit_code}"
+
+    def run_with_a_stale_prose_hit(self, prose_coder_reply, test_commands=(), **script_options):
+        scenario = {**FIX_THEN_CLEAN, "coder": [*FIX_THEN_CLEAN["coder"], prose_coder_reply]}
+        self.save_gate_commands([*test_commands, self.stale_prose_command(1)])
+        return self.run_script(scenario, **script_options)
+
+    def test_a_stale_prose_check_stops_the_loop_when_the_script_itself_fails(self):
+        completed = self.run_with_scoped_tests([self.stale_prose_command(2)], FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("stale-prose check failing", packet["blockers"][0])
+        self.assertEqual(1, [call["key"] for call in self.fake_calls()].count("coder"))
+
+    def test_a_stale_prose_check_that_cannot_run_is_named_in_the_scoped_tests_line(self):
+        completed = self.run_with_scoped_tests(["grep -q 'limit = 20' app.py", self.stale_prose_command(127)],
+                                               FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertIn("stale-prose check setup fault", packet["scoped_tests"])
+
+    def test_a_clean_stale_prose_check_leaves_the_scoped_tests_line_at_passed(self):
+        completed = self.run_with_scoped_tests(["grep -q 'limit = 20' app.py", self.stale_prose_command(0)],
+                                               FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual("passed", packet["scoped_tests"])
+
+    def test_a_prose_repair_that_breaks_the_full_check_stops_the_loop(self):
+        reply = {"result": "Fixed.", "edits": {"broken.flag": "x\n"}}
+
+        completed = self.run_with_a_stale_prose_hit(reply, quality_check="test ! -f broken.flag")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("failing after the stale-prose repair", packet["blockers"][0])
+
+    def test_a_prose_repair_in_a_ci_repo_is_followed_by_the_scoped_tests(self):
+        reply = {"result": "Fixed the claim.", "edits": {"app.py": APP_FIXED + "# corrected claim\n"}}
+
+        completed = self.run_with_a_stale_prose_hit(reply, ["! grep -q 'corrected claim' app.py"],
+                                                    claude_md="Quality check: `true`\nFull suite: CI\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("scoped tests failing after the last fix", packet["blockers"][0])
+        self.assertIn("corrected claim", packet["blockers"][0])
+
+    def test_a_stale_prose_hit_the_coder_fixes_converges_and_ends_on_an_unreviewed_fix(self):
+        reply = {"result": "Fixed the claim.", "edits": {"app.py": APP_FIXED + "# corrected claim\n"}}
+
+        completed = self.run_with_a_stale_prose_hit(reply)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
+        self.assertEqual(2, len(packet["fixed"]))
+        self.assertEqual(3, packet["iter"])
+        self.assertTrue(row["unreviewed_fix"])
+        self.assertIn("STALE app.py:1", json.dumps(self.fake_calls()))
+
+    def test_a_stale_prose_hit_whose_claims_hold_converges_with_no_unreviewed_fix(self):
+        completed = self.run_with_a_stale_prose_hit({"result": "Every claim still holds."})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
+        self.assertEqual((1, 1), (len(packet["fixed"]), len(packet["skipped_fp"])))
+        self.assertEqual(2, packet["iter"])
+        self.assertFalse(row["unreviewed_fix"])
+
+    def test_a_stale_prose_hit_report_over_the_tail_limit_reaches_the_coder_whole(self):
+        script = self.scratch / "stale_prose.py"
+        script.write_text("import sys\nprint('HEADER-OF-THE-REPORT')\nprint('x' * 13000)\nprint('LAST-HIT-LINE')\n"
+                          "sys.exit(1)\n")
+        self.save_gate_commands([f"python3 {script}"])
+        scenario = {**FIX_THEN_CLEAN, "coder": [*FIX_THEN_CLEAN["coder"], {"result": "Every claim still holds."}]}
+
+        completed = self.run_script(scenario)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        calls = json.dumps(self.fake_calls())
+        self.assertIn("HEADER-OF-THE-REPORT", calls)
+        self.assertIn("LAST-HIT-LINE", calls)
+
+    def test_a_red_scoped_test_stops_the_loop_before_a_stale_prose_hit_reaches_the_coder(self):
+        completed = self.run_with_scoped_tests(["grep -q 'limit = 99' app.py", self.stale_prose_command(1)],
+                                               FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertNotIn("STALE", packet["blockers"][0])
+        self.assertEqual(1, [call["key"] for call in self.fake_calls()].count("coder"))
 
     def test_a_red_scoped_test_names_the_failing_test_and_its_panic_text_and_keeps_the_full_output(self):
         fixture = pathlib.Path(__file__).resolve().parent / "fixtures" / "cargo_test_failed_assertion.txt"

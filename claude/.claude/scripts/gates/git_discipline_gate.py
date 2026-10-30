@@ -44,6 +44,10 @@ LINE_CONTINUATION = re.compile(r"\\\n")
 STASH_READS = {"list", "show"}
 AUTOSTASH_COMMANDS = {"pull", "rebase", "merge"}
 AUTOSTASH_KEYS = {"rebase.autostash", "merge.autostash"}
+# The path the stash and autostash denies name for bringing a base into unfinished work.
+MERGE_WITH_WORK_UNCOMMITTED = ("To bring a base into unfinished work, run `git merge <base>` with the work "
+                               "uncommitted: git stops and changes nothing when the merge touches an edited file. If "
+                               "it stops, commit the work once /review hands back converged or deferred, then merge.")
 FALSE_VALUES = {"false", "no", "off", "0"}
 # A path word holding one of these is a quoted string, a variable, a substitution or a glob the gate cannot read.
 CD_OPTIONS = ("-L", "-P", "-e", "-@", "--")
@@ -213,14 +217,14 @@ def run(raw):
 
     if any(is_stash(call) for call in calls):
         raise DenyError("[git-discipline-gate] git stash is blocked in every form, a tagged `git stash push -m <tag>` "
-                        "included: every worktree shares one stash stack, and a stash resets staged files. Set work "
-                        "aside with a temporary WIP commit on your branch. If stashing is genuinely needed, ask the "
-                        "user — they can run it themselves.")
+                        "included: every worktree shares one stash stack, and a stash resets staged files. "
+                        f"{MERGE_WITH_WORK_UNCOMMITTED} If stashing is genuinely needed, ask the user — they can run "
+                        "it themselves.")
 
     if any(is_autostash(call) for call in calls):
         raise DenyError("[git-discipline-gate] git autostash is blocked: it runs a git stash, which every worktree "
-                        "shares and which resets staged files. Commit or set your work aside with a temporary WIP "
-                        "commit first, or pass --no-autostash.")
+                        "shares and which resets staged files. Pass --no-autostash to the command, or do not set the "
+                        f"autostash config. {MERGE_WITH_WORK_UNCOMMITTED}")
 
     if any(call.subcommand == "commit" and "--amend" in call.arguments for call in calls):
         raise DenyError("[git-discipline-gate] git commit --amend is blocked: never rewrite history unless the user "

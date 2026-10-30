@@ -173,6 +173,7 @@ while IFS= read -r lockfile; do
         echo "herdr-worktree: ${install_cmd[0]} is not on PATH; install dependencies in $package_dir by hand" >&2
         continue
     fi
+    echo "herdr-worktree: installing dependencies in $package_dir" >&2
     (cd "$package_dir" && "${install_cmd[@]}") </dev/null >>"$install_log" 2>&1 \
         || echo "herdr-worktree: dependency install failed (output in $install_log); run in $package_dir: ${install_cmd[*]}" >&2
 done <<<"$lockfiles"

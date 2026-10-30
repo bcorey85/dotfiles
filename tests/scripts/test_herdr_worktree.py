@@ -156,6 +156,20 @@ echo '{CREATED_WORKSPACE}'""")
         self.assertNotIn("npm", finished.stdout + finished.stderr)
         self.assertNotIn("herdr-worktree-install.log", finished.stderr)
 
+    def test_each_install_prints_one_progress_line(self):
+        self.stub_installers()
+        self.commit_lockfiles("package-lock.json", "frontend/pnpm-lock.yaml")
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        worktree = self.root / "repo-new-thing"
+        progress_lines = [line for line in finished.stderr.splitlines() if "installing dependencies" in line]
+        self.assertEqual(sorted(progress_lines), [
+            f"herdr-worktree: installing dependencies in {worktree}",
+            f"herdr-worktree: installing dependencies in {worktree}/frontend",
+        ])
+
     def stub_fork(self, fork_pane):
         """The current pane runs claude; the new workspace's claude pane w1:p1 answers `pane get` with fork_pane."""
         write_stub(self.bin_dir / "herdr-api", f"""case "$1 $2" in

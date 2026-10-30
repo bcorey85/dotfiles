@@ -566,6 +566,11 @@ def has_whitespace(text):
     return re.search(r"\s", str(text)) is not None
 
 
+def is_existing_md_file(word):
+    """True when `word` names a Markdown file that exists."""
+    return word.endswith(".md") and os.path.isfile(word)
+
+
 def words_of_arguments(arguments):
     """The words of command-line text. One argument that holds spaces is split at them (the text came quoted as a
     whole); several arguments are kept as they were given."""
@@ -704,6 +709,20 @@ def preloaded_skills_prompt(agent, claude_home=None):
         skill_body = FRONTMATTER.sub("", skill_text, count=1).strip()
         skill_texts.append(f"Base directory for this skill: {skill_dir}\n\n{skill_body}")
     return "\n\n".join(skill_texts)
+
+
+def session_display_name(session_id):
+    """The name ListAgents shows for a live Claude Code session, read from its ~/.claude/sessions/<pid>.json entry.
+    None when no readable entry holds that session id with a non-empty name."""
+    sessions = pathlib.Path.home() / ".claude" / "sessions"
+    for entry_path in sessions.glob("*.json"):
+        try:
+            entry = json.loads(entry_path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(entry, dict) and entry.get("sessionId") == session_id and entry.get("name"):
+            return entry["name"]
+    return None
 
 
 def telemetry_switch_on():

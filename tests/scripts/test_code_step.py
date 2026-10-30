@@ -3921,13 +3921,11 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(f"Implement: {text}", out)
         self.assertNotIn("Phase 1 of", out)
 
-    def test_a_positional_argument_that_starts_with_a_real_plan_file_and_holds_text_is_refused_with_both_commands(self):
+    def test_a_positional_argument_that_starts_with_a_real_plan_file_and_holds_text_takes_the_text_as_run_notes(self):
         out = self.step("start", f"{self.plan} fix the typo")
-        self.assertIn("Refused: ", out)
-        self.assertIn("ACTION: stop", out)
-        self.assertIn(self.own_command(f"start {self.plan}"), out)
-        self.assertIn(self.own_command("start --task 'fix the typo'"), out)
-        self.assertNotIn("AGENT:", out)
+        self.assertIn(f"Implement Phase 1 of `{self.plan}`", out)
+        self.assertIn("Run notes from the user. They bind this run; the plan stays the spec:\nfix the typo", out)
+        self.assertNotIn("Refused: ", out)
 
     def test_a_positional_argument_with_whitespace_that_is_a_real_plan_file_is_a_plan_path(self):
         spaced_plan = "docs/plans/orders/spec copy.md"

@@ -169,8 +169,11 @@ class RunState:
     commit_files: list | None = None
     commit_line: str = ""
 
-    def __post_init__(self):
-        self.stage = Stage(self.stage)
+    def __setattr__(self, name, value):
+        # A stage set on the record is a Stage: an unknown one raises here, not when the state is saved or routed.
+        if name == "stage":
+            value = Stage(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def from_json(cls, raw, source):

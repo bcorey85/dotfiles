@@ -4,13 +4,13 @@ the phase end otherwise."""
 import script_utils
 from code_step_core import (
     REVIEW_AGAIN_INVOKE,
-    load_handback,
     restart_instruction,
     save_state,
     script_command,
     set_stop,
     stop_with_question,
 )
+from code_step_state import StopKind
 from script_utils import ask_text
 from test_run_output import runs_tests
 
@@ -35,21 +35,17 @@ ADD_QUALITY_CHECK_FIX = "add a Quality check: `<the command that runs the tests>
 
 def blocker_stop_text():
     # The statuses that stop on the packet's blockers: {status: (the question, the instruction to the caller)}.
-    module, _import_error = load_handback()
-    stops = {
-        "critical-blocker": ("the review found a critical blocker.",
-                             "Review found a critical blocker. Present these to the user. Do not mark the phase "
-                             "done."),
-        "setup-fault": ("the review's full check could not run here.",
-                        "The full check could not run here. This is a toolkit or environment fault, not a code "
-                        "failure. Present these to the user. Do not mark the phase done."),
+    return {
+        StopKind.CRITICAL_BLOCKER: ("the review found a critical blocker.",
+                                    "Review found a critical blocker. Present these to the user. Do not mark the "
+                                    "phase done."),
+        StopKind.SETUP_FAULT: ("the review's full check could not run here.",
+                               "The full check could not run here. This is a toolkit or environment fault, not a "
+                               "code failure. Present these to the user. Do not mark the phase done."),
+        StopKind.FIX_REMOVED_CHANGE: ("the review's fix passes removed the change under review.",
+                                      "The fix passes removed half or more of the change under review. Present these "
+                                      "to the user. Do not mark the phase done."),
     }
-    if module is not None:
-        stops[module.FIX_REMOVED_CHANGE] = (
-            "the review's fix passes removed the change under review.",
-            "The fix passes removed half or more of the change under review. Present these to the user. Do not "
-            "mark the phase done.")
-    return stops
 
 
 def blocker_stop_next_step(state):

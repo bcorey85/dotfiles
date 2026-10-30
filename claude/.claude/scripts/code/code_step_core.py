@@ -1,8 +1,9 @@
 """code_step_core.py: what every part of code_step.py shares: the constants, the git and state-file helpers, the
 event log of a run, the hand-back matcher and the printed output.
 
-Installed beside code_step.py. Imports run one way: code_step_core, code_step_verification, code_step_boundary,
-code_step_closing, code_step_hooks, code_step_gates, code_step_start, code_step_report, code_step_review, code_step.
+Installed beside code_step.py. Imports run one way: code_step_state, code_step_routes, code_step_core,
+code_step_verification, code_step_boundary, code_step_closing, code_step_hooks, code_step_gates, code_step_start,
+code_step_report, code_step_review, code_step.
 
 A hand-back is one `handback` event in the run's events.jsonl, written by the log hook. A verb that waits for an agent
 looks for the newest hand-back event of the awaited agent's id after the time it was dispatched."""
@@ -25,6 +26,7 @@ import plan_format
 import script_utils
 import worktree_snapshot
 from code_guidance import coder_guidance_lines
+from code_step_routes import ROUTES, STAGE_FACTS, StageFact, state_key
 from code_step_state import RunState, StateFileError, Stop
 from script_utils import git_output, run_command
 
@@ -45,8 +47,6 @@ HANDBACK_TOTAL_WAIT_MULTIPLE = 12
 HANDBACK_POLL_SECONDS = 2
 STOP_ROW_WAIT_SECONDS = 15
 LAUNCH_EXPECTED_SECONDS = 60
-PLAN_EDIT_STAGES = ("plan-coder", "impact-coder", "impact-review")
-PLAN_EDIT_STOP_REASONS = ("verification", "plan-format")
 MISSING_PLAN_STOP = "The plan file {plan} is missing (a branch switch?). Tell the user."
 BASH_TIMEOUT_MS = 600000
 CODER = "coder"
@@ -67,11 +67,6 @@ REVIEW_AGAIN_INVOKE = "invoke Skill code with `review-again`"
 REVIEW_SAME_DIFF_AGAIN_LINE = f"To review the same diff again, {REVIEW_AGAIN_INVOKE}."
 TICKET_ID = re.compile(r"^[A-Za-z]+-\d+$")
 SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
-HOOK_STAGES = ("coder", "review", "asks-coder", "plan-coder")
-# The stages in which the run owns its session's review-loop hand-backs, so review_fix.py `packet` refuses to read
-# their saved hand-back.
-REVIEW_HANDBACK_STAGES = ("coder", "review", "asks-coder")
-CODER_STAGES = ("coder", "asks-coder")
 FORK_AGENT_TYPE = script_utils.FORK_AGENT_TYPE
 SAY_MAX_AGE_SECONDS = 6 * 3600
 STATE_FILE_NAME = "state.json"
@@ -581,7 +576,7 @@ def abandon_open_dispatch(repo_dir, previous):
     abandoned = dataclasses.replace(previous)
     had_review_script = stop_review_script(abandoned) is not None
 
-    if abandoned.dispatch_at is None or abandoned.stage not in HOOK_STAGES:
+    if abandoned.dispatch_at is None or StageFact.AGENT_OUT not in STAGE_FACTS[abandoned.stage]:
         if had_review_script:
             save_state(repo_dir, abandoned)
         return
@@ -623,9 +618,17 @@ def awaits_resumed_review(state):
 def phase_code_in_place(state):
     # The phase's review converged and no coder works on it since, so `verify` may run its checks and close it.
     module, _import_error = load_handback()
-    if module is None or state.stage in (*CODER_STAGES, "plan-coder", "skill", "done"):
+    if module is None or StageFact.VERIFY_ON_CLEAN_REVIEW not in STAGE_FACTS[state.stage]:
         return False
     return state.review_status in module.CLEAN_STATUSES
+
+
+def guarded_verb_runs(verb, state):
+    # The saved run lets a guarded verb run: its row in the route table names the verb, or the verb is verify and the
+    # phase's review converged with no coder at work since.
+    if ROUTES[state_key(state)].verb == verb:
+        return True
+    return verb == "verify" and state is not None and phase_code_in_place(state)
 
 
 def awaited_agent_id(repo_dir, state):
@@ -879,7 +882,7 @@ def dispatch_time_text(since):
 def unlaunched_dispatch(repo_dir, state, agent_type):
     # The newest dispatch of this run when its Agent call never left: no launch row, and older than the launch grace.
     # Only the dispatch the state is in can be waited for; a resumed agent has a launch row of its own.
-    if state.stage not in HOOK_STAGES:
+    if StageFact.AGENT_OUT not in STAGE_FACTS[state.stage]:
         return None
     standing = newest_dispatch_standing(repo_dir, state)
     dispatch = standing["dispatch"]
@@ -1165,18 +1168,18 @@ def stale_phase_reason(repo_dir, state):
     if state.stage == "done" or not state.plan or state.phase is None or saved_text is None:
         return None
 
-    # These stages are the ones where the plan is edited on purpose: a plan-edit coder, a ruling on a plan change.
-    # The run reads the plan again when it leaves them.
-    if state.stage in PLAN_EDIT_STAGES:
+    # The plan is edited on purpose at a plan-edit coder and a ruling on a plan change. The run reads the plan again
+    # when it leaves them.
+    if StageFact.PLAN_EDITED in STAGE_FACTS[state.stage]:
         return None
 
     # A review script still running is waited on, not dropped: a restart would kill it.
     if review_script_running(state):
         return None
 
-    # A stop for a plan fix still goes on when the phase is edited, but not when the phase id is gone: a split or a
-    # renumber leaves nothing to verify. An unreadable plan goes on to the stop.
-    is_plan_fix_stop = stop_kind(state) in PLAN_EDIT_STOP_REASONS
+    # A stop for a plan fix, the stop `verify` clears, still goes on when the phase is edited, but not when the phase
+    # id is gone: a split or a renumber leaves nothing to verify. An unreadable plan goes on to the stop.
+    is_plan_fix_stop = ROUTES[state_key(state)].verb == "verify"
 
     try:
         current_text = current_phase_text(repo_dir, state.plan, state.phase)
@@ -1212,8 +1215,8 @@ def changed_wording_lines(saved_wording, current_wording):
 def stop_a_silent_coder(repo_dir, state, stopped_at):
     # The coder wait ran to the cap. A coder whose launch has an agent id can be resumed with SendMessage: the state
     # then reads like the stop on a coder's report. A coder that was resumed once keeps its id and its stage. Only
-    # the stages in CODER_STAGES are resumed this way: a plan-edit coder, and a launch with no agent id, leave only a
-    # restart.
+    # a phase coder and an asks coder are resumed this way: a plan-edit coder, and a launch with no agent id, leave
+    # only a restart.
     # A coder with an agent id may still run, so the restart stops it first.
     restart_instruction_text = restart_instruction(state, script_command("start --restart"))
     agent_id = awaited_agent_id(repo_dir, state)

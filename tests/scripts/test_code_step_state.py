@@ -133,6 +133,15 @@ class StateFileTest(unittest.TestCase):
             with self.subTest(label), self.assertRaises(code_step_state.StateFileError):
                 self.load(saved_state)
 
+    def test_a_stage_set_on_the_record_is_a_stage_and_an_unknown_one_raises(self):
+        state = code_step_state.RunState("coder")
+
+        state.stage = "asks"
+
+        self.assertIs(code_step_state.Stage.ASKS, state.stage)
+        with self.assertRaises(ValueError):
+            state.stage = "paused"
+
 
 if __name__ == "__main__":
     unittest.main()

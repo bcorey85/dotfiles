@@ -11,6 +11,7 @@ SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
 import code_step_core
 import handback_store
+from code_step_routes import STAGE_FACTS, StageFact
 from handback import PacketError
 
 
@@ -36,7 +37,7 @@ def code_run_at_review(session_id):
         code_step = code_step_core.load_state(".")
     except code_step_core.StateFileError:
         return None
-    if code_step is None or code_step.stage not in code_step_core.REVIEW_HANDBACK_STAGES:
+    if code_step is None or StageFact.CODE_AGENT_OUT not in STAGE_FACTS[code_step.stage]:
         return None
     if code_step.session_id != session_id:
         return None

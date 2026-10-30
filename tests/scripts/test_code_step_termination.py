@@ -691,10 +691,10 @@ def user_answers(state):
         ]
     if is_stopped and reason in ("invalid-packet", "cap-reached", "critical-blocker", "setup-fault"):
         answers += [("review-again", ["review-again"], None)]
-    if is_stopped and code_step.awaits_resumed_review(run_state):
+    if is_stopped and code_step_core.awaits_resumed_review(run_state):
         answers += [("review-again", ["review-again"], None),
                     ("resume after SendMessage to the review-loop", ["resume"], send_message_to(REVIEW_AGENT_ID))]
-    if is_stopped and code_step.awaits_resumed_coder(run_state):
+    if is_stopped and code_step_core.awaits_resumed_coder(run_state):
         answers += [("resume after SendMessage to the coder", ["resume"], send_message_to(state["stop"]["agentId"]))]
     if is_stopped and reason in ("verification", "plan-format"):
         answers += [("verify (still failing)", ["verify"], None),

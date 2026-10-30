@@ -131,6 +131,17 @@ def read_message():
     return stored_row["message"], hand_back_id(stored_row, session_id), unreviewed_in_a_row, unreviewed_fix
 
 
+def dispatched_repo():
+    """The repo this session's last review-loop dispatch reviewed, or None when the session or the dispatch names
+    none (a packet on stdin with no dispatch on record)."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if not session_id:
+        return None
+
+    last_dispatch = handback_store.latest(session_id)["dispatch"] or {}
+    return last_dispatch.get("repo")
+
+
 def dispatched_with_ruling():
     """Whether this session's last review-loop dispatch carried a resolved plan_impact line, as a re-dispatch after
     a ruling does. A packet on stdin with no dispatch on record never does."""

@@ -455,6 +455,18 @@ class ReviewLoopScriptTest(unittest.TestCase):
                          ("critical-blocker", ["boom:\n- line two"], "boom:\n- line two"))
         self.assertEqual(handback.load(message)["blockers"], ["boom:\n- line two"])
 
+    def test_the_crash_outcome_has_every_key_a_finished_loop_outcome_has(self):
+        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+        loop_script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loop_script)
+        progress = {"iter": 0, "fixed": [], "files_touched": set()}
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), progress)
+
+        finished = loop.outcome({}, [])
+        crashed = review_loop_packet.crash_outcome(progress, "boom")
+
+        self.assertEqual(set(), set(finished) - set(crashed))
+
     def test_failed_reviewer_call_is_a_critical_blocker_not_a_clean_review(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}],

@@ -758,6 +758,29 @@ def paths_named(*texts):
     return paths
 
 
+URL_TOKEN = re.compile(r"[A-Za-z][\w+.-]*://\S*")
+FIRST_ABSOLUTE_PATH = re.compile(r"(?<![\w.~:/-])/[^\s`'\"<>|;:,()]+")
+PATH_GOES_ON_AFTER_SPACE = re.compile(r" [\w.-]+/")
+
+
+def first_absolute_path(text):
+    """The first absolute path the text names, or None when it names none.
+
+    A path that does not exist and goes on after a space as another path segment was cut at the space, so it names
+    none: its head could lie in a different repo.
+    """
+    url_free_text = URL_TOKEN.sub(" ", text)
+    found = FIRST_ABSOLUTE_PATH.search(url_free_text)
+    if not found:
+        return None
+
+    path = found.group(0)
+    cut_at_space = PATH_GOES_ON_AFTER_SPACE.match(url_free_text, found.end())
+    if cut_at_space and not os.path.exists(path):
+        return None
+    return path
+
+
 def nearest_existing_folder(path):
     """The path itself when it is a folder, else the nearest parent that exists, so a file not yet written still
     has a folder to look from. Symlinks are resolved first, so a link points the search at its target."""

@@ -885,13 +885,16 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     structure_pass_skipped = header.get("structure-pass") == "skip"
     brief = reviewer_brief(header, handoff)
     gate_env = plan_format.gate_env_words_in(handoff)
-    scope_fields = ["scope=phase"] + ([f"phase={header['phase']}"] if header.get("phase") else [])
+    caller = header.get("caller", "code")
+    scope_fields = ["scope=standalone"]
+    if caller == "code":
+        scope_fields = ["scope=phase", f"phase={header['phase']}"] if header.get("phase") else ["scope=phase"]
     loop = LoopRun(repo, out, brief, gate_env, progress, header.get("plan", ""))
     loop.later_phase_files = set(filter(None, header.get("later-phase files", "").split(", ")))
     loop.guidance = header.get("guidance", "")
     loop.change_added = change_under_review(repo)
 
-    log_call(repo, [str(SKILLS / "review-scope"), "caller=code"])
+    log_call(repo, [str(SKILLS / "review-scope"), f"caller={caller}"])
     found_command = check_command_for(repo, out)
     plan = header.get("plan")
     plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
@@ -923,6 +926,21 @@ def stop_on_sigterm(_signal_number, _frame):
             os.killpg(pid, signal.SIGKILL)
     full_check_gate.remove_live_base_trees()
     os._exit(128 + signal.SIGTERM)
+
+
+def write_script_prompt(state_dir, agent_id, prompt):
+    """(prompt file, log file) of a script run under <state dir>/loop-script/<agent id>, with the prompt written."""
+    script_dir = pathlib.Path(state_dir) / "loop-script" / agent_id
+    script_dir.mkdir(parents=True, exist_ok=True)
+    prompt_file = script_dir / "prompt.txt"
+    prompt_file.write_text(prompt)
+    return prompt_file, script_dir / "script.log"
+
+
+def loop_script_command(loop_script, repo_dir, state_dir, session_id, run_id, agent_id, prompt_file):
+    """The argv that runs review_loop_script.py."""
+    return [sys.executable, str(loop_script), str(repo_dir), "--state-dir", str(state_dir), "--session", session_id,
+            "--run-id", run_id, "--agent-id", agent_id, "--prompt-file", str(prompt_file)]
 
 
 def parse_review_loop_arguments(argv):

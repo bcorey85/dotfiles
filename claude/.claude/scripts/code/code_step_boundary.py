@@ -626,10 +626,10 @@ def stop_for_failed_tick_verification(number, failed):
 
 def tick_verification_failures(repo_dir, state, number):
     # The failed (command, exit code, output) of the phase's Automated Verification commands, run now, and how many
-    # commands ran. Whole-suite commands run too: after a stop or an abort nothing else ran the suite. An item that
+    # commands ran. The configured check runs too: after a stop or an abort nothing else ran the suite. An item that
     # names no command is left to the user, whose word `tick` is.
     section = current_phase_text(repo_dir, state["plan"], number) or ""
-    verify_results, _, _ = run_verification_commands(repo_dir, section, run_whole_suites=True)
+    verify_results, _, _ = run_verification_commands(repo_dir, section, run_configured_check=True)
     failed = [(command, code, output) for command, code, output in verify_results if code != 0]
     return failed, len(verify_results)
 

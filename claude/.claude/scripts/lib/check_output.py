@@ -3,7 +3,8 @@ and which tests failed."""
 import pathlib
 import re
 
-from test_run_output import matches_no_test, prints_own_runner_summary, runner_summaries, runs_tests
+from check_scope import prints_own_runner_summary, runs_tests
+from test_run_output import matches_no_test, runner_summaries
 
 # What check_verdict returns.
 PASSED = "passed"

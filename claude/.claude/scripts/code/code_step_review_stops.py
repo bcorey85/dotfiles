@@ -2,6 +2,7 @@
 a full check that did not run and the review cap. Each prints its stop or question; the caller goes on to the asks or
 the phase end otherwise."""
 import script_utils
+from check_scope import runs_tests
 from code_step_core import (
     REVIEW_AGAIN_INVOKE,
     load_handback,
@@ -12,7 +13,6 @@ from code_step_core import (
     stop_with_question,
 )
 from script_utils import ask_text
-from test_run_output import runs_tests
 
 
 def is_capped_review(state):

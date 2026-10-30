@@ -10,10 +10,15 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import check_output
+import check_scope
+import code_step_gates
+import code_step_verification
 import criteria_verdict
 import full_check
 import script_utils
+import test_run_output
 
 CROSS = chr(0xD7)
 PASS, NOT_PASS, NOT_RUN = "pass", "not pass", "not run"
@@ -578,3 +583,178 @@ class CheckVerdictTest(unittest.TestCase):
                 if verdict == check_output.FAILED_EXIT_ZERO:
                     self.assertIsNone(item.flag)
                     self.assertIn(criteria_verdict.SUMMARY_FAILURE_NOTE, item.output)
+
+
+# (command, runs tests, runner families, is a check, command_check_scope). One row per kind of command the former
+# deciders judged by their own tables.
+COMMAND_ROWS = [
+    ("pytest", True, {"python"}, True, "whole"),
+    ("vitest", True, {"js"}, True, "whole"),
+    ("jest", True, {"js"}, True, "whole"),
+    ("npm test", True, {"js"}, True, "whole"),
+    ("npm run lint", False, set(), True, "whole"),
+    ("cargo test", True, {"cargo"}, True, "none"),
+    ("cargo test -p x", True, {"cargo"}, True, "targeted"),
+    ("cargo nextest run", True, {"cargo"}, True, "none"),
+    ("go test ./...", True, set(), True, "none"),
+    ("manage.py test app", True, {"python"}, True, "targeted"),
+    ("ruff check", False, set(), True, "whole"),
+    ("tsc", False, set(), True, "none"),
+    ("bash tests/run.sh", False, set(), False, "none"),
+    ("cat run.log", False, set(), False, "none"),
+    ("! pytest x", True, {"python"}, True, "targeted"),
+    ("cd a && pytest b.py", True, {"python"}, True, "targeted"),
+    ("npm test && git diff", True, {"js"}, True, "whole"),
+    ("mocha", True, {"js"}, True, "none"),
+    ("npx mocha", True, {"js"}, True, "none"),
+    ("make test-unit", True, set(), True, "unresolved"),
+    ("make -C x test", True, set(), True, "unresolved"),
+    ("just test", True, set(), True, "none"),
+    ("deno test", True, set(), True, "none"),
+    ("pnpm --filter api test", True, {"js"}, True, "none"),
+]
+
+
+class CommandClassificationTest(unittest.TestCase):
+    """check_scope answers every command question once; each former decider reads its answer."""
+
+    def setUp(self):
+        temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_directory.cleanup)
+        self.repo = pathlib.Path(temp_directory.name)
+
+    def ran_and_skipped_commands(self, command, configured, run_configured_check=False):
+        # What run_verification_commands does with a listed command when no one asked for the configured check to
+        # run and the repo's configured quality check is `configured`.
+        run_result = mock.Mock(return_value=(0, ""))
+        verdict = mock.Mock(code=0, output="", hits=None)
+        with mock.patch.object(code_step_verification, "verification_command", return_value=command), \
+                mock.patch.object(code_step_verification.plan_format, "automated_verification_rows",
+                                  return_value=[(0, "- [ ] **Check**: `x`")]), \
+                mock.patch.object(code_step_verification, "run_command", run_result), \
+                mock.patch.object(full_check, "configured_check_command", return_value=configured), \
+                mock.patch.object(code_step_verification, "item_verdict", return_value=verdict):
+            results, skipped, _unparsed = code_step_verification.run_verification_commands(
+                self.repo, "section", run_configured_check=run_configured_check)
+        ran_commands = [result[0] for result in results]
+        return ran_commands, skipped
+
+    def test_only_the_configured_check_is_skipped_and_run_configured_check_runs_it(self):
+        configured = "npm test && npm run lint"
+        for command in ("npm run test:e2e", "npm run lint:fix", "npm run build && node x.js"):
+            with self.subTest(runs=command):
+                ran_commands, skipped = self.ran_and_skipped_commands(command, configured)
+                self.assertEqual([command], ran_commands)
+                self.assertEqual([], skipped)
+        for command in ("npm test", "npm run lint", configured):
+            with self.subTest(skipped=command):
+                ran_commands, skipped = self.ran_and_skipped_commands(command, configured)
+                self.assertEqual([], ran_commands)
+                self.assertEqual([command], skipped)
+                ran_commands, skipped = self.ran_and_skipped_commands(command, configured, run_configured_check=True)
+                self.assertEqual([command], ran_commands)
+                self.assertEqual([], skipped)
+
+    def test_each_command_gets_one_answer_from_check_scope_and_every_former_decider_agrees(self):
+        for command, runs_tests, families, is_check, scope in COMMAND_ROWS:
+            with self.subTest(command=command):
+                self.assertEqual(runs_tests, check_scope.runs_tests(command))
+                self.assertEqual(families, check_scope.runner_family(command))
+                self.assertEqual(is_check, check_scope.is_check(command))
+                self.assertEqual(scope, check_scope.command_check_scope(command, self.repo))
+
+                runs_whole = scope == "whole"
+                self.assertEqual(runs_whole, check_scope.runs_whole_check(command, self.repo))
+                self.assertEqual(runs_tests and not runs_whole,
+                                 code_step_gates.takes_listed_test_command(command, self.repo))
+                self.assertEqual(families or {code_step_gates.UNKNOWN_FAMILY},
+                                 code_step_gates.test_command_families(command))
+                self.assertEqual(command != "cat run.log" and command != "! pytest x",
+                                 check_output.prints_own_runner_summary(command))
+
+    def test_only_a_command_with_a_test_runner_step_runs_tests(self):
+        not_runs = ("git grep -n test -- src", "ruff check tests/", "test -f out.txt", "npm run lint",
+                    "cd tests && ls", "ruff check test", "npx eslint test", "mypy test-utils", "npm install test-x",
+                    "npm i test-utils", "pnpm add test-helpers", "npm -D install test-x")
+        runs = ("npm run test:unit", "go test ./pkg/...", "FOO=1 vitest run a.test.ts", "npx mocha a.js",
+                "npm run typecheck && npm test", "cd pkg && npm test", "(cd pkg && pytest)", "a&&pytest",
+                "pipenv run python backend/manage.py test app.tests", "make test-consistency ARGS=a.test.ts",
+                "pnpm --filter api test", "make install test", "make update test", "just install test",
+                "pnpm --filter add test",
+                "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(widget_sorts)'")
+        for command in not_runs + runs:
+            with self.subTest(command=command):
+                self.assertEqual(command in runs, check_scope.runs_tests(command))
+
+    def test_only_a_command_with_a_step_that_can_print_a_summary_prints_its_own(self):
+        quotes = ("cat a.log", "cd tests && ls", "! pytest x", "FOO=1 cat a.log", "tail -5 run.log",
+                  "head run.log", "sed -n 1p run.log", "cat run.log | tail",
+                  "less run.log", "sort run.log | uniq", "awk 1 run.log", "wc -l run.log")
+        prints = ("bash tests/run.sh", "cd pkg && bash tests/run.sh", "cat a.log; pytest", 'cat "a',
+                  "pytest x | tail -5")
+        for command in quotes + prints:
+            with self.subTest(command=command):
+                self.assertEqual(command in prints, check_scope.prints_own_runner_summary(command))
+
+    def test_the_output_reader_asks_check_scope_whether_a_filtered_run_names_tests(self):
+        no_pass_output = "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out"
+        filtered = ("cargo test fault_codes", "cargo test -- fault_codes", "cargo +nightly test fault_codes",
+                    "pytest -k fault", "make test -k fault", "cargo test --skip foo")
+        whole = ("cargo test", "cargo test -p core", "cargo test --lib", "cargo test --features a --color always",
+                 "pytest", "cargo test --retries 2", 'echo "cargo test x"', "cargo test --",
+                 "cargo test 2>&1", "cargo test > log", "cargo test --lib 2>&1", "cargo test -E x")
+        for command in filtered:
+            with self.subTest(filtered=command):
+                self.assertTrue(check_scope.names_test_filter(command))
+                self.assertTrue(test_run_output.matches_no_test(command, 0, no_pass_output))
+        for command in whole:
+            with self.subTest(whole=command):
+                self.assertFalse(check_scope.names_test_filter(command))
+                self.assertFalse(test_run_output.matches_no_test(command, 0, no_pass_output))
+
+    def test_a_check_is_any_test_lint_typecheck_or_build_run_through_its_wrappers(self):
+        checks = ("python3 -m pytest", "uv run pytest", "time npx vitest run", "env A=1 cargo +nightly clippy",
+                  "cargo nextest run", "bundle exec rspec", "pnpm exec jest", "npm run test:unit", "yarn lint",
+                  "make typecheck", "go vet ./...", "./node_modules/.bin/jest", "ruff format --check",
+                  "bats", "bats tests/a.bats", "pyright", "pyright src", "mocha", "just test", 'pytest "a',
+                  "yarn jest", "pnpm vitest", "docker exec c pytest", "npm exec jest", "bun x vitest", "vim pytest",
+                  "python -c jest",
+                  "yarn test list", "bun test add", "pnpm test update", "npm test list", "npm test update",
+                  "bun test list", "pnpm test add", "yarn test info")
+        not_checks = ("git status", "cargo fmt", "npm install", "make deploy", "cargo build", "ls tests",
+                      "npm install jest", "npm i -D vitest", "pip install pytest", "uv add pytest", "which pytest",
+                      "python -m pip install pytest", "python3 -m pip show pytest", "uv pip install pytest",
+                      "cargo install nextest", "npm i test-utils",
+                      "npm install -D jest", "command -v pytest", "pip show pytest", "pip3 install pytest",
+                      "yarn add test-utils", "pnpm add test-helpers", "npm uninstall test-x", "cargo add nextest",
+                      "npm ls jest", "npm ci jest", "pipx install pytest", "pip download pytest",
+                      "brew install jest", "apt install pytest",
+                      "pnpm --filter api add jest", "npm --prefix x install jest", "pnpm -w add jest",
+                      "npm -w api install jest", "npm -D install test-x",
+                      "pnpm -F api add jest", "pnpm --dir x add jest", "apt-get install pytest",
+                      "dnf install pytest", "yum install pytest", "apk add pytest", "npm upgrade jest",
+                      "npm search jest", "yarn upgrade test-x", "npm up jest", "npm un jest", "npm why jest",
+                      "npm outdated jest", "yarn global add jest", "yarn workspace api add jest")
+        for command in checks:
+            with self.subTest(check=command):
+                self.assertTrue(check_scope.is_check(command))
+        for command in not_checks:
+            with self.subTest(not_check=command):
+                self.assertFalse(check_scope.is_check(command))
+
+    def test_a_cargo_test_names_a_target_only_by_a_test_target_or_a_name(self):
+        named = ("cargo test --lib", "cargo test --doc", "cargo test --test integration", "cargo test --bin=app",
+                 "cargo test --example demo", "cargo test --bench parse", "cargo test empty_input",
+                 "cargo test --release --features a empty_input", "cargo +nightly test empty_input",
+                 "cargo test -p core empty_input")
+        full = ("cargo test", "cargo test -p core", "cargo test --package=core", "cargo test --workspace",
+                "cargo test --all-targets empty_input", "cargo test --workspace --lib", "cargo test --tests",
+                "cargo test --exclude x", "cargo test -- empty_input", "cargo test -- --ignored",
+                "cargo test --features a --color always", "cargo test --retries 2", "cargo test --test-threads 4",
+                "cargo nextest run empty_input", "pytest tests/a.py")
+        for command in named:
+            with self.subTest(named=command):
+                self.assertTrue(check_scope.names_cargo_test_target(command))
+        for command in full:
+            with self.subTest(full=command):
+                self.assertFalse(check_scope.names_cargo_test_target(command))

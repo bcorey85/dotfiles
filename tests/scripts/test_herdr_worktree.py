@@ -247,6 +247,13 @@ esac""")
         self.assertEqual(pathlib.Path(prompt_file).read_text(), "Fix it.")
         self.assertTrue(claude_command.endswith(f"&& rm -f '{prompt_file}'"), claude_command)
 
+    def test_a_forked_session_is_named_for_its_worktree_not_its_parent(self):
+        finished = self.run_herdr_dev("s1")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        claude_command = finished.stdout.splitlines()[1]
+        self.assertTrue(claude_command.endswith(f"--fork-session --name {self.root.name}"), claude_command)
+
 
 if __name__ == "__main__":
     unittest.main()

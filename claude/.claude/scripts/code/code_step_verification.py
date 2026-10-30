@@ -15,7 +15,8 @@ from criteria_verdict import item_verdict, without_leading_cd_and_env, without_n
 from script_utils import run_command
 
 VERIFY_TIMEOUT_SECONDS = 600
-COMMAND_START = re.compile(r"^(?:" + script_utils.ENV_PREFIX.pattern + r")?"
+# `env` may lead the assignments (`env CI=1 cargo test`) or stand alone (`env cargo test`).
+COMMAND_START = re.compile(r"^(?:env\s+)?(?:" + script_utils.ENV_PREFIX.pattern + r")?"
                            r"(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
                            r"|cargo |go |deno |bun |uv |poetry |pipenv |pdm |tsc\b|eslint |vitest|jest|mvn |gradle |\./"
                            r"|dotnet |docker |just |rake |bundle |ruby |php |composer |mix |swift |sbt |bazel |tox\b"
@@ -88,11 +89,18 @@ def starts_like_a_program_here(span, repo_dir):
 
 def first_command_span(line, repo_dir):
     # The first backticked span that starts with a known program, after any leading NAME=value assignments, which the
-    # shell passes to the command; when none does, the first span that starts with a program of this machine. The
-    # line may continue after it ("`npm run build` exits 0.").
+    # shell passes to the command (or `env`, with or without assignments); when none does, the last span after the
+    # item's em dash that starts with a program of this machine, else the first such span of the line. The line may
+    # continue after it ("`npm run build` exits 0.").
     spans = [without_negation(span) for span in script_utils.backticked_spans(line)]
     for span in spans:
         if COMMAND_START.match(span):
+            return span
+
+    _, _, after_dash = line.partition(" — ")
+    spans_after_dash = [without_negation(span) for span in script_utils.backticked_spans(after_dash)]
+    for span in reversed(spans_after_dash):
+        if starts_like_a_program_here(span, repo_dir):
             return span
 
     for span in spans:

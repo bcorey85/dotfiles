@@ -122,8 +122,10 @@ from code_step_core import (
     head_left_phase_start,
     is_run_open,
     load_state,
+    newest_later_phase_deny_reason,
     own_phase_text,
     phase_coder_reports,
+    read_events,
     refuse,
     repo_root_or_exit,
     restart_instruction,
@@ -157,6 +159,7 @@ from code_step_hooks import (
     command_say_hook,
     command_stop_hook,
     expected_red_failure,
+    outside_scope_flags,
 )
 from code_step_report import (
     behavior_lines,
@@ -164,6 +167,7 @@ from code_step_report import (
     every_accepted_ask_already_done,
     first_plan_impact,
     gate_results,
+    impact_replaced,
     open_questions,
     recommends_eng_spec,
     resolve_report_paths,
@@ -409,7 +413,10 @@ def stop_when_head_left_base(repo_dir, state, report, handback):
 
 def coder_impact_stop_cause(impact):
     # A coder's block names its cause. A report that says PLAN-IMPACT: yes with no block to read has none to name, and
-    # goes to the user's modal.
+    # goes to the user's modal. A block about a code-step hook or gate (`TOOLKIT_WORD`) that names no plan step is a
+    # toolkit fault, whatever its cause line says.
+    if plan_format.names_only_toolkit(impact):
+        return plan_format.cause_stop("toolkit")
     return plan_format.plan_impact_stop_cause(impact, cause_required=True)
 
 
@@ -433,8 +440,16 @@ def route_coder_plan_impact(repo_dir, state, handback, coder_stage):
     state.stage = "impact-coder"
     state.impact = impact
     save_state(repo_dir, state)
-    emit_plan_impact_modal(impact, repo_dir)
+    replaced = coder_impact_was_replaced(repo_dir, state)
+    emit_plan_impact_modal(impact, repo_dir, replaced=replaced)
     return True
+
+
+def coder_impact_was_replaced(repo_dir, state):
+    # True when a hand-back of a coder at this stage dropped or changed the block that `state.impact` holds.
+    stage_reports = [report for report in phase_coder_reports(repo_dir, state)
+                     if report["stage"] == state.coder_stage]
+    return impact_replaced(stage_reports, state.impact)
 
 
 def end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_files):
@@ -490,6 +505,7 @@ def route_coder_report(repo_dir, state, handback):
     if not is_ask_fix:
         _code, gate_lines = run_coder_gate(repo_dir, "summary")
     state.flagged = coder_flagged(state, gate, report, is_ask_fix)
+    state.flagged += outside_scope_flags(read_events(repo_dir, state.run_id))
 
     changed_now = file_hashes(repo_dir)
     changed_files = coder_changed_files(repo_dir, state, changed_now)
@@ -556,6 +572,10 @@ def stopped_coder_report(repo_dir, state):
     for report in reversed(phase_coder_reports(repo_dir, state)):
         if report["agent_id"] == state.stop.agent_id and report["messages"]:
             return report["messages"][-1]
+
+    deny_reason = newest_later_phase_deny_reason(read_events(repo_dir, state.run_id), state.stop.agent_id)
+    if deny_reason:
+        return f"(no report saved; the hand-back gate denied an earlier attempt) {deny_reason}"
     return "(none saved)"
 
 
@@ -691,6 +711,11 @@ def go_on_after_done(repo_dir, state):
     return stop_for_finished_planless_run(repo_dir, state)
 
 
+def resume_impact_question(repo_dir, state):
+    replaced = state.stage == Stage.IMPACT_CODER and coder_impact_was_replaced(repo_dir, state)
+    return emit_plan_impact_modal(state.impact, repo_dir, state.carried_findings or [], replaced=replaced)
+
+
 # The step `resume` takes, by the name the route table gives it.
 STEPS = {
     "start": lambda repo_dir, state: command_start([]),
@@ -699,8 +724,7 @@ STEPS = {
     "after-review": lambda repo_dir, state: command_after_review(repo_dir, state, []),
     "after-plan-edit": lambda repo_dir, state: command_after_plan_edit(repo_dir, state, []),
     "review-again": lambda repo_dir, state: command_review_again(repo_dir, state, []),
-    "ask-impact": lambda repo_dir, state: emit_plan_impact_modal(state.impact, repo_dir,
-                                                                 state.carried_findings or []),
+    "ask-impact": resume_impact_question,
     "ask-asks": lambda repo_dir, state: ask_the_user(repo_dir, state, state.asks),
     "closing-skill": resume_closing_skill,
     "ask-coder": ask_about_stopped_coder, "ask-review-cap": ask_about_review_cap,

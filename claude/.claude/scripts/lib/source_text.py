@@ -35,6 +35,11 @@ COMMENT_STYLE_OF_SUFFIX = {
 }
 
 
+def indent_of(line):
+    """The number of leading whitespace characters of the line."""
+    return len(line) - len(line.lstrip())
+
+
 def comment_style_of(path):
     """The comment style (one of COMMENT_STYLES) of a source file by its suffix, or None for an unknown suffix."""
     return COMMENT_STYLE_OF_SUFFIX.get(os.path.splitext(path)[1])

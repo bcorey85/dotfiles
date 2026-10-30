@@ -18,7 +18,9 @@ AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
 ASYNC_LAUNCH = "Async agent launched"
 RESUMED_AGENT_ID = re.compile(r"resumedAgentId\W+([A-Za-z0-9-]+)")
 RESUMING_MESSAGE = re.compile(r"Resuming agent\s+([A-Za-z0-9-]+)")
-PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b")
+# The status line of the old free-text packet form, or the "status" key of a JSON packet (minified or indented).
+PLAN_IMPACT = re.compile(r'(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b'
+                         r'|"status"[ \t]*:[ \t]*"[ \t`\'*]*plan-impact\b')
 # One shell command ends at a ;, a | or && that joins the next command, or at a newline no backslash escapes.
 SEGMENT_END = re.compile(r"&&|\|\||[;|]|(?<!\\)\n")
 # A shell call that ran the review loop's full-check script, and the first line that script prints: its result.
@@ -49,7 +51,7 @@ SCOPE_CALL = re.compile(r"review-scope\b")
 SCOPE_ROOT = re.compile(r"(?m)^ROOT=(\S.*?)\s*$")
 PROMPT_REPO = prompt_field("repo", r"(\S+?)[`*]*[ \t]*$")
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
-                    "that edit, and return the finding that needs a plan change as `status: plan-impact`.")
+                    "that edit, and return the finding that needs a plan change with `status` set to `plan-impact`.")
 GATE_REASON = ("No passed full_check.py result follows the last code change in this phase. A scoped run, "
                "including the handoff's tests-run, does not count. If a full_check.py result already follows the "
                "last code change and was not passed, do not run it again: follow Step 6's route for that result "

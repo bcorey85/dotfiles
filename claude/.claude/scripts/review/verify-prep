@@ -14,6 +14,7 @@ import pathlib
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import numstat
 import plan_format
 import verify_common as vc
 
@@ -147,18 +148,7 @@ def read_criteria(mode, ticket_path, plan_path):
 
 def parse_numstat(raw):
     """[(added, removed, newPath)] from `git diff --numstat -z`; a rename lists its new path. Binary files count 0."""
-    fields = raw.split("\0")
-    changes = []
-    index = 0
-    while index < len(fields) and fields[index]:
-        added, removed, name = fields[index].split("\t", 2)
-        if name == "":
-            name = fields[index + 2]
-            index += 3
-        else:
-            index += 1
-        changes.append((0 if added == "-" else int(added), 0 if removed == "-" else int(removed), name))
-    return changes
+    return [(added or 0, removed or 0, name) for added, removed, name in numstat.numstat_rows(raw)]
 
 
 def parse_status(raw):
@@ -294,7 +284,7 @@ def main(argv):
         raise vc.VerifyError(f"diff vs {base_ref} is empty: nothing to verify")
 
     exclude_rel = excluded_from_fingerprint(mode, ticket_path, plan_path, top)
-    fingerprint = vc.branch_fingerprint(top, merge_base, exclude_rel)
+    fingerprint = vc.tree_fingerprint(top, merge_base, exclude_rel)
 
     state_path = vc.context_path(repo, branch)
     earlier_context = {}

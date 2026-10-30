@@ -700,6 +700,20 @@ def moved_phase_stop(entry, plan_name, coder_ran=False):
             f"{ran_text} Tell the user; the phase is worked under {entry['movedTo']}.")
 
 
+def phase_entry_stop(entries, phase_id, plan_name, done_tail="", unlisted_tail=""):
+    """The stop text when the Phase Status entry named phase_id cannot run or be ticked, or None when it can. The
+    tails close the not-listed and already-done stops, which differ by verb."""
+    entry = next((e for e in entries if e["number"] == phase_id), None)
+    if entry is None:
+        listed = ", ".join(e["number"] for e in entries) or "none"
+        return f"Phase {phase_id} is not in the Phase Status of {plan_name}. Listed phases: {listed}.{unlisted_tail}"
+    if entry["moved"]:
+        return moved_phase_stop(entry, plan_name)
+    if entry["done"]:
+        return f"Phase {phase_id} is already marked done in {plan_name}.{done_tail}"
+    return None
+
+
 def mark_phase_done(plan_path, number):
     """Check the phase's Phase Status line in the plan file when the phase is open."""
     plan_lines = plan_path.read_text().split("\n")
@@ -773,6 +787,18 @@ def ruling_owner(repo_dir, by):
     if by != "user":
         return SESSION_RULING_OWNER
     return script_utils.git_output(repo_dir, "config", "user.name") or "the user"
+
+
+PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
+DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
+DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
+                  "place of `--by user`. A session ruling never changes the acceptance criteria.")
+DECIDE_USAGE_STEM = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
+
+
+def is_ruling_by(by):
+    """True when a `--by` value names who ruled: the user or the session."""
+    return by in ("user", "session")
 
 
 def ruling_deviation(phase, decision, owner, ruled_at, ruling_words, disagreement):

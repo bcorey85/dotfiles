@@ -60,13 +60,9 @@ from script_utils import one_line, run_command, split_location
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
 SOURCES = ["conversation", "cc", "handoff"]
 ASK_LOGGER = CLAUDE_DIR / "skills/review/log-review-finding"
-PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
-DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 DECIDE_SCRIPT = "python3 ~/.claude/scripts/review/review_fix.py"
 PLAN_ARG_NOTE = "--plan <the plan path, when the handoff names one>"
-DECIDE_USAGE = f'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" {PLAN_ARG_NOTE}'
-DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
-                  "place of `--by user`. A session ruling never changes the acceptance criteria.")
+DECIDE_USAGE = f"{plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}"
 MARK_CLEAN = "~/.claude/scripts/review/review-gate-mark clean"
 MARK_DIRTY = "~/.claude/scripts/review/review-gate-mark dirty"
 KEEP_DIRTY = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
@@ -302,33 +298,15 @@ def present_plan_impact(packet, state):
         "end the turn and wait for the reply. Do not re-dispatch and do not triage this as an ask. Question: assumed, "
         "then found, then what changes, taken from this block:",
         packet["plan_impact"],
-        f"Options, in this order: {' / '.join(PLAN_IMPACT_OPTIONS)}.",
+        f"Options, in this order: {' / '.join(plan_format.PLAN_IMPACT_OPTIONS)}.",
         "Map the answer, picked or typed, to adopt, keep or discuss. For adopt or keep, put the user's words in "
         "--ruling; for discuss, run `decide discuss`.",
         f'Then run: {DECIDE_SCRIPT} decide <adopt|keep> --by user --ruling "<the decision in one line>" '
         f"{PLAN_ARG_NOTE}",
-        DECIDE_BY_NOTE,
+        plan_format.DECIDE_BY_NOTE,
         f"Counters held for the re-dispatch: iter={packet['iter']} "
         f"spec_iter={packet['spec_iter'] if packet['spec_iter'] is not None else 'absent'}",
     )
-
-
-def run_nvim_jump(asks):
-    command = os.environ.get("REVIEW_FIX_NVIM_JUMP", "nvim-jump")
-    arguments = []
-    for item in asks:
-        if not item.get("file_line"):
-            continue
-        path, line = split_location(item["file_line"])
-        arguments += ["--note", one_line(item["question"], 160), f"{path}:{line}" if line else path]
-    if not arguments:
-        return "no ask names a file:line: nothing to jump to."
-    code, output = run_command([command, *arguments])
-    if code == 2 or code == 127:
-        return "nvim-jump is not installed: skip jumping."
-    if code == 1:
-        return "no nvim owns this directory: anchors printed only."
-    return "jumped to the first ask: ]k and [k step the rest." if code == 0 else f"nvim-jump exit {code}: {output}"
 
 
 def gate_mark_line():
@@ -339,7 +317,7 @@ def save_packet_asks(packet, state):
     """Run nvim-jump once, save the packet's asks with stage `asks`, and return them."""
     asks = packet["ask"]
     if "jumped" not in state:
-        state["jumped"] = run_nvim_jump(asks)
+        state["jumped"] = review_asks.run_nvim_jump(os.environ.get("REVIEW_FIX_NVIM_JUMP", "nvim-jump"), asks)
     state.update({"stage": "asks", "asks": asks})
     save_fix_state(state)
     return asks
@@ -359,17 +337,6 @@ def asks_done_line(asks, state):
             "stored)")
 
 
-def ask_listing_lines(asks):
-    lines = []
-    for number, item in enumerate(asks, 1):
-        ask_class = item["class"] + (f" (was {item['class_raw']})" if item.get("class_raw") else "")
-        lines.append(f"{number}. {item.get('file_line') or 'no file:line'}  [{item['gate']}/{ask_class}]")
-        lines += script_utils.hanging_indent_lines("   ", item["question"])
-        if item.get("change"):
-            lines += script_utils.hanging_indent_lines("   Proposed change: ", item["change"])
-    return lines
-
-
 def present_packet_asks(packet, state):
     asks = save_packet_asks(packet, state)
     lines = [
@@ -379,7 +346,7 @@ def present_packet_asks(packet, state):
         "yourself and add `--by session` to asks-done; otherwise wait for the user.",
         asks_done_line(asks, state),
         gate_mark_line(),
-        *ask_listing_lines(asks),
+        *review_asks.numbered_ask_lines(asks, detail=True),
     ]
     print_action("present-asks", *lines)
 
@@ -477,7 +444,7 @@ def new_state(options, packet, packet_id):
     waiting_packets = [] if same_run else carried_waiting_packets(previous)
     fixed_paths = handback.fixed_paths(packet)
     state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
-             "spec_iter": packet["spec_iter"], "status": packet["status"], "repo": script_utils.repo_name("."),
+             "spec_iter": packet["spec_iter"], "status": packet["status"],
              "branch": script_utils.current_branch(".") or "-", "packet_id": packet_id,
              "source": options.source, "fixed_paths": fixed_paths}
     if same_run:
@@ -600,7 +567,8 @@ def stop_for_status(packet, options, state):
         entries += ["Dispatch lines (pass exactly these):", *rerun_lines]
     ask_lines = []
     if packet["ask"]:
-        ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state), *ask_listing_lines(packet["ask"])]
+        ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
+                     *review_asks.numbered_ask_lines(packet["ask"], detail=True)]
     print_action("stop", instruction, *entries, *ask_lines)
     if replies:
         print("AIKIDO REPLIES POSTED:")
@@ -777,7 +745,7 @@ def asks_done_options(argv):
     outcome_words, decided_by = script_utils.pop_option(argv, "--by")
     if decided_by is None:
         decided_by = "user"
-    if decided_by not in ("user", "session"):
+    if not plan_format.is_ruling_by(decided_by):
         raise UsageError(f"asks-done --by needs user or session, not {decided_by!r}")
 
     outcome_words, packet_id = script_utils.pop_option(outcome_words, "--packet")
@@ -833,7 +801,7 @@ def discuss_commands():
 
 def command_decide(argv):
     parser = argument_parser("decide")
-    parser.add_argument("decision", choices=sorted(DECISION_WORDS))
+    parser.add_argument("decision", choices=sorted(plan_format.DECISION_WORDS))
     parser.add_argument("--ruling", default="")
     parser.add_argument("--plan", default="")
     parser.add_argument("--by", nargs="?", const="", default=None)
@@ -843,10 +811,10 @@ def command_decide(argv):
         raise UsageError("no plan-impact is waiting.")
     if options.decision == "discuss":
         return print_action("discuss", "Discuss the plan impact with the user, then run one of these. Do not "
-                            "re-dispatch yet.", *discuss_commands(), DECIDE_BY_NOTE)
-    if options.by not in ("user", "session"):
+                            "re-dispatch yet.", *discuss_commands(), plan_format.DECIDE_BY_NOTE)
+    if not plan_format.is_ruling_by(options.by):
         raise UsageError(f"decide {options.decision} needs --by user or --by session. Usage: `{DECIDE_USAGE}`. "
-                         f"{DECIDE_BY_NOTE}")
+                         f"{plan_format.DECIDE_BY_NOTE}")
     if not options.ruling.strip():
         raise UsageError(f"decide {options.decision} needs --ruling. Usage: `{DECIDE_USAGE}`.")
     plan_path = pathlib.Path(options.plan) if options.plan else None
@@ -863,7 +831,7 @@ ADOPT_NO_PLAN_LINE = "Add these lines under ## Plan Deviations in the plan yours
 def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no_plan_line=NO_PLAN_LINE):
     """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds) and print the
     re-dispatch. `user_lines` go first, for the main session to show the user."""
-    choice = DECISION_WORDS[decision]
+    choice = plan_format.DECISION_WORDS[decision]
     owner = plan_format.ruling_owner(".", by)
     ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, state["plan_impact"])

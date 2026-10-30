@@ -9,6 +9,8 @@ kind: "behavior"
 components: ["skill/coder-core"]
 evidence: ["seeded round"]
 watches: []
+proof: ["2026-09-18-codercore-3"]
+impact: {"metric": "quality", "before": 5, "after": 1, "unit": "planted plan defects shipped with no flag (of 8 runs)", "finding": "2026-09-18-codercore-3", "better": "lower"}
 ---
 
 ## Change

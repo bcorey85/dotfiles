@@ -161,7 +161,7 @@ with mock.patch.dict(os.environ, {"CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}):
     module_spec.loader.exec_module(code_step)
 import code_step_core
 
-RUN_COMMAND_MODULES = (code_step, sys.modules["code_step_start"], sys.modules["code_step_review"])
+RUN_COMMAND_MODULES = (code_step, sys.modules["code_step_start"], sys.modules["review_asks"])
 
 PLAN_DIR = "docs/plans/ORD-1-orders"
 PLAN_A = f"{PLAN_DIR}/spec.md"

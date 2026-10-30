@@ -17,6 +17,10 @@ from shell_command import resolved_command_words
 from source_paths import SCRIPT_SUFFIXES, is_runnable_test_file
 
 CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
+# The scopes of a test, example or bench target, which the clippy step lints with no added `--tests`.
+TEST_TARGET_FLAGS = ("--test", "--example", "--bench")
+# One cargo target flag of a scope, with its name when it takes one: `--test orders`, `--bin tool`, `--lib`.
+CARGO_TARGET_FLAG = re.compile(r"--(?:test|bin|example|bench) \S+|\S+")
 UNKNOWN_FAMILY = "unknown"
 TEST_FAMILY_PATTERNS = {
     "js": re.compile(r"\b(?:vitest|jest|mocha)\b|\b(?:npm|pnpm|yarn|bun|npx)\b.*\btest\b"),
@@ -299,12 +303,7 @@ def cargo_test_scope(crate_dir, file_in_crate):
         return None
 
     if parts[0] == "tests":
-        if len(parts) == 2:
-            return f"--test {parts[1]}"
-
-        is_target_main_file = parts[2:] == ("main",)
-        is_test_target_directory = is_target_main_file or (crate_dir / "tests" / parts[1] / "main.rs").is_file()
-        return f"--test {parts[1]}" if is_test_target_directory else "--tests"
+        return target_directory_scope(crate_dir, parts, "--test", "--tests")
 
     if parts[0] != "src":
         return None
@@ -313,27 +312,104 @@ def cargo_test_scope(crate_dir, file_in_crate):
     if is_under_bin_directory:
         return f"--bin {parts[2]}"
 
+    return crate_unit_scope(crate_dir)
+
+
+def target_directory_scope(crate_dir, parts, single_flag, all_flag):
+    # The target of a file under a target folder such as `tests/`, given its path parts without the suffix:
+    # `<folder>/<name>` and any file of `<folder>/<name>/` that has a main.rs are the target `<name>` (single_flag);
+    # a file of a folder without one is a helper any target can include, so every target runs (all_flag).
+    if len(parts) == 2:
+        return f"{single_flag} {parts[1]}"
+
+    is_target_main_file = parts[2:] == ("main",)
+    is_target_directory = is_target_main_file or (crate_dir / parts[0] / parts[1] / "main.rs").is_file()
+    return f"{single_flag} {parts[1]}" if is_target_directory else all_flag
+
+
+def crate_unit_scope(crate_dir):
+    # The library and binaries (`--lib --bins`) of a crate with a `src/lib.rs`, the binaries (`--bins`) of one without.
     if (crate_dir / "src" / "lib.rs").is_file():
         return "--lib --bins"
     return "--bins"
 
 
+def crate_of_rust_path(repo_dir, path):
+    # (crate directory, path inside the crate, is a `.rs` file) for a `.rs` file or a `Cargo.toml` inside a crate;
+    # None for any other path or one outside every crate.
+    is_rust_file = path.endswith(".rs")
+    if not (is_rust_file or pathlib.PurePosixPath(path).name == "Cargo.toml"):
+        return None
+
+    crate_dir = nearest_directory_with(repo_dir, path, "Cargo.toml")
+    if crate_dir is None:
+        return None
+
+    return crate_dir, str((repo_dir / path).relative_to(crate_dir)), is_rust_file
+
+
+def example_or_bench_scope(crate_dir, path_in_crate):
+    # `--example <name>` for a file of `examples/<name>.rs` or `examples/<name>/main.rs`, `--bench <name>` likewise
+    # for `benches/`; `--examples` / `--benches` for a helper directory without a main.rs; else None. They add no
+    # cargo test, so only the clippy builder asks.
+    parts = pathlib.PurePosixPath(path_in_crate).with_suffix("").parts
+    if len(parts) < 2:
+        return None
+
+    target_flags = {"examples": ("--example", "--examples"), "benches": ("--bench", "--benches")}.get(parts[0])
+    if target_flags is None:
+        return None
+
+    single_flag, all_flag = target_flags
+    return target_directory_scope(crate_dir, parts, single_flag, all_flag)
+
+
+def scoped_clippy_commands(repo_dir, paths):
+    # One clippy per crate, on the targets the named files belong to, with warnings denied, for a phase whose listed
+    # cargo commands run no clippy. A manifest, or a file outside `src/`, `tests/`, `examples/` and `benches/`,
+    # lints the library and binaries. A scope that is no test, example or bench target also lints `--tests`, since
+    # clippy skips a `#[cfg(test)]` module unless it builds the test targets.
+    scopes_by_crate = {}
+    for path in paths:
+        crate_file = crate_of_rust_path(repo_dir, path)
+        if crate_file is None:
+            continue
+
+        crate_dir, path_in_crate, is_rust_file = crate_file
+        scope = None
+        if is_rust_file:
+            scope = example_or_bench_scope(crate_dir, path_in_crate) or cargo_test_scope(crate_dir, path_in_crate)
+
+        crate_scopes = scopes_by_crate.setdefault(crate_dir, [])
+
+        is_test_target_scope = scope is not None and scope.startswith(TEST_TARGET_FLAGS)
+        clippy_scope = scope or crate_unit_scope(crate_dir)
+        if not is_test_target_scope:
+            clippy_scope += " --tests"
+
+        target_flags = CARGO_TARGET_FLAG.findall(clippy_scope)
+        crate_scopes += [target_flag for target_flag in target_flags if target_flag not in crate_scopes]
+
+    commands = []
+    for crate_dir, crate_scopes in scopes_by_crate.items():
+        clippy = f"cargo clippy {' '.join(crate_scopes)} -- -D warnings"
+        crate_rel = script_utils.directory_relative_to(repo_dir, crate_dir)
+        commands.append(in_directory(clippy, crate_rel))
+    return commands
+
+
 def cargo_commands(repo_dir, paths, derives_tests):
     commands_by_crate = {}
     for path in paths:
-        is_rust_file = path.endswith(".rs")
-        if not (is_rust_file or pathlib.PurePosixPath(path).name == "Cargo.toml"):
+        crate_file = crate_of_rust_path(repo_dir, path)
+        if crate_file is None:
             continue
 
-        crate_dir = nearest_directory_with(repo_dir, path, "Cargo.toml")
-        if crate_dir is None:
-            continue
-
+        crate_dir, path_in_crate, is_rust_file = crate_file
         crate_commands = commands_by_crate.setdefault(crate_dir, [CARGO_CLIPPY])
         if not is_rust_file or not derives_tests:
             continue
 
-        path_in_crate = str((repo_dir / path).relative_to(crate_dir))
         scope = cargo_test_scope(crate_dir, path_in_crate)
         test_command = f"cargo test {scope}" if scope else None
         if test_command and test_command not in crate_commands:
@@ -371,6 +447,8 @@ def test_command_families(command):
 def derive_gate_commands(repo_dir, phase_section):
     # The phase's listed test commands that run less than a whole suite are the gate's test commands, verbatim, and no
     # test command is derived. A phase that lists none of those gets the test commands derived from the files it names.
+    # Listed cargo commands replace the derived ones; when none of them runs clippy, a clippy scoped to the named
+    # files' targets runs before them.
     paths = []
     for match in plan_format.PATH_IN_BACKTICKS.finditer(phase_section):
         if match.group(1) not in paths:
@@ -393,8 +471,15 @@ def derive_gate_commands(repo_dir, phase_section):
     for package_dir, package_paths in by_package.items():
         commands += script_package_commands(repo_dir, package_dir, package_paths, derives_js_tests)
     root_manifests = BARE_CARGO_MANIFEST.findall(phase_section)
+    cargo_paths = paths + root_manifests
     listed_cargo = [command for command in listed if runs_cargo(command)]
-    commands += listed_cargo or cargo_commands(repo_dir, paths + root_manifests, derives_cargo_tests)
+    lists_clippy = any(check_scope.runs_cargo_clippy(command) for command in listed_cargo)
+    if not listed_cargo:
+        commands += cargo_commands(repo_dir, cargo_paths, derives_cargo_tests)
+    elif lists_clippy:
+        commands += listed_cargo
+    else:
+        commands += scoped_clippy_commands(repo_dir, cargo_paths) + listed_cargo
     listed_runner = listed_python_runner(listed)
     listed_django = listed_django_test(listed)
     phase_lists_pytest = lists_pytest(listed)

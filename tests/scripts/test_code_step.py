@@ -39,6 +39,7 @@ def stage_script(source_root, name, destination_root):
 module_spec = importlib.util.spec_from_file_location("code_step", SCRIPT)
 code_step = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(code_step)
+import check_scope  # noqa: E402
 import code_step_boundary  # noqa: E402
 import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
@@ -592,13 +593,14 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("cd backend && npm run typecheck", gate["commands"])
         self.assertEqual({}, gate["env"])
 
-    def make_helper_phase_with_verification(self, verification_line, start_arguments=()):
+    def make_helper_phase_with_verification(self, verification_line, start_arguments=(),
+                                            rust_file="crate/tests/common/mod.rs"):
         (self.repo / "crate/src").mkdir(parents=True)
         (self.repo / "crate/tests/common").mkdir(parents=True)
         (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
         (self.repo / "crate/src/lib.rs").write_text("")
-        (self.repo / "crate/tests/common/mod.rs").write_text("")
-        helper_file = "**File**: `backend/src/orders.test.ts`\n**File**: `crate/tests/common/mod.rs`"
+        (self.repo / rust_file).write_text("")
+        helper_file = f"**File**: `backend/src/orders.test.ts`\n**File**: `{rust_file}`"
         plan_text = self.plan_text().replace("**File**: `backend/src/orders.test.ts`", helper_file)
         old = "- [ ] **Prohibition**: no console.log - `git grep -n --untracked console.log -- backend/src/orders.ts`"
         self.assertIn(old, plan_text)
@@ -611,7 +613,8 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual(1, commands.count("cargo test --test orders"))
         self.assertEqual([], [command for command in commands if "cargo test --tests" in command])
-        self.assertEqual([], [command for command in commands if "cargo clippy" in command])
+        self.assertEqual(["cd crate && cargo clippy --tests -- -D warnings"],
+                         [command for command in commands if "cargo clippy" in command])
         self.assertIn("cd backend && npx vitest run src/orders.test.ts", commands)
 
     def test_gate_takes_the_listed_cargo_commands_when_the_phase_is_started_with_the_phase_option(self):
@@ -623,7 +626,112 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("cargo test --test orders", commands)
         self.assertIn("cargo nextest run --test orders", commands)
         self.assertEqual([], [command for command in commands if "cargo test --tests" in command])
-        self.assertEqual([], [command for command in commands if "cargo clippy" in command])
+        self.assertEqual(["cd crate && cargo clippy --tests -- -D warnings"],
+                         [command for command in commands if "cargo clippy" in command])
+
+    def test_a_phase_that_lists_its_cargo_tests_gets_clippy_on_the_test_target_it_changed(self):
+        commands = self.make_helper_phase_with_verification("- [ ] Orders test passes: `cargo test --test orders`",
+                                                            rust_file="crate/tests/orders.rs")
+
+        self.assertEqual(["cd crate && cargo clippy --test orders -- -D warnings", "cargo test --test orders"],
+                         [command for command in commands if "cargo" in command])
+
+    def test_scoped_clippy_lints_each_named_target_of_a_crate_once_and_a_manifest_as_library_and_binaries(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        (self.repo / "crate/src/lib.rs").write_text("")
+        (self.repo / "tool").mkdir()
+        (self.repo / "tool/Cargo.toml").write_text('[package]\nname = "tool"\n')
+        paths = ["crate/tests/orders.rs", "crate/src/a.rs", "crate/tests/orders.rs", "crate/src/b.rs",
+                 "crate/tests/side_streams.rs", "crate/src/bin/tool.rs", "tool/Cargo.toml", "notes.md"]
+
+        commands = code_step_gates.scoped_clippy_commands(self.repo, paths)
+
+        # A src file adds --lib --bins --tests so its #[cfg(test)] module is linted through the test targets.
+        self.assertEqual(["cd crate && cargo clippy --test orders --lib --bins --tests --test side_streams --bin tool"
+                          " -- -D warnings",
+                          "cd tool && cargo clippy --bins --tests -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_changed_example_as_that_example(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+
+        commands = code_step_gates.scoped_clippy_commands(
+            self.repo, ["crate/examples/demo.rs", "crate/examples/wide/main.rs"])
+
+        self.assertEqual(["cd crate && cargo clippy --example demo --example wide -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_helper_directory_of_examples_and_benches_as_all_of_them(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+
+        commands = code_step_gates.scoped_clippy_commands(
+            self.repo, ["crate/examples/common/helpers.rs", "crate/benches/common/helpers.rs"])
+
+        self.assertEqual(["cd crate && cargo clippy --examples --benches -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_helper_file_in_an_example_or_bench_folder_as_that_target(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        target_folders = {"example": "examples", "bench": "benches"}
+        for folder in target_folders.values():
+            (self.repo / f"crate/{folder}/wide").mkdir(parents=True)
+            (self.repo / f"crate/{folder}/wide/main.rs").write_text("")
+
+        for kind, folder in target_folders.items():
+            with self.subTest(kind=kind):
+                commands = code_step_gates.scoped_clippy_commands(self.repo, [f"crate/{folder}/wide/args.rs"])
+
+                self.assertEqual([f"cd crate && cargo clippy --{kind} wide -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_lone_binary_source_file_with_the_test_targets(self):
+        (self.repo / "crate/src/bin").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+
+        commands = code_step_gates.scoped_clippy_commands(self.repo, ["crate/src/bin/tool.rs"])
+
+        self.assertEqual(["cd crate && cargo clippy --bin tool --tests -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_build_script_as_library_binaries_and_tests(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        (self.repo / "crate/src/lib.rs").write_text("")
+
+        commands = code_step_gates.scoped_clippy_commands(self.repo, ["crate/build.rs"])
+
+        self.assertEqual(["cd crate && cargo clippy --lib --bins --tests -- -D warnings"], commands)
+
+    def test_a_phase_that_lists_its_own_clippy_gets_no_derived_clippy(self):
+        listed_rows = ("- [ ] Orders test passes: `cargo test --test orders`\n"
+                       "- [ ] Orders lints clean: `cargo clippy --test orders -- -D warnings`")
+        commands = self.make_helper_phase_with_verification(listed_rows, rust_file="crate/tests/orders.rs")
+
+        self.assertEqual(["cargo test --test orders", "cargo clippy --test orders -- -D warnings"],
+                         [command for command in commands if "cargo" in command])
+
+    def test_a_quoted_cargo_clippy_inside_a_listed_command_is_no_clippy_run(self):
+        listed = "cargo test --test orders -- 'cargo clippy'"
+        commands = self.make_helper_phase_with_verification(f"- [ ] Orders test passes: `{listed}`",
+                                                            rust_file="crate/tests/orders.rs")
+
+        self.assertIn("cd crate && cargo clippy --test orders -- -D warnings", commands)
+
+    def test_runs_cargo_clippy_ignores_a_quoted_cargo_clippy_word(self):
+        quoted_commands = ["echo 'cargo clippy' && cargo test --test orders",
+                           "git grep -n 'cargo clippy' -- crate"]
+
+        for command in quoted_commands:
+            with self.subTest(command=command):
+                self.assertFalse(check_scope.runs_cargo_clippy(command))
+
+    def test_runs_cargo_clippy_sees_clippy_behind_wrappers_toolchains_and_global_flags(self):
+        commands = ["cd crate && nice -n 19 cargo +nightly clippy --lib",
+                    "cargo --locked clippy --lib",
+                    "cargo --manifest-path crate/Cargo.toml clippy"]
+
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertTrue(check_scope.runs_cargo_clippy(command))
 
     def test_gate_takes_the_listed_cargo_commands_behind_nice_env_and_taskset_wrappers(self):
         nextest = "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(orders_total)'"
@@ -631,13 +739,15 @@ class CodeStepTest(unittest.TestCase):
         listed_rows = f"- [ ] Orders total passes: `{nextest}`\n- [ ] Crate builds: `{check}`"
         commands = self.make_helper_phase_with_verification(listed_rows)
 
-        self.assertEqual([nextest, check], [command for command in commands if "cargo" in command])
+        self.assertEqual(["cd crate && cargo clippy --tests -- -D warnings", nextest, check],
+                         [command for command in commands if "cargo" in command])
 
     def test_gate_takes_a_listed_cargo_command_that_runs_after_a_cd(self):
         listed = "cd crate && cargo test --test orders"
         commands = self.make_helper_phase_with_verification(f"- [ ] Orders test passes: `{listed}`")
 
-        self.assertEqual([listed], [command for command in commands if "cargo" in command])
+        self.assertEqual(["cd crate && cargo clippy --tests -- -D warnings", listed],
+                         [command for command in commands if "cargo" in command])
 
     def test_gate_keeps_the_derived_cargo_commands_when_the_phase_lists_no_cargo_command(self):
         commands = self.make_helper_phase_with_verification("- [ ] No stray logging: `git grep -n TODO -- crate/src`")

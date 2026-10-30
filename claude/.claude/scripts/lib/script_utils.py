@@ -524,6 +524,11 @@ def visible_text(line, in_comment):
     return text, in_comment
 
 
+def is_blocker(item):
+    """True for a mapping whose `blocker` field reads true or yes."""
+    return isinstance(item, dict) and str(item.get("blocker", "")).strip().lower() in ("true", "yes")
+
+
 def one_line(text, limit=200):
     """The text on one line: runs of whitespace collapse to a space, cut at `limit` characters."""
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]

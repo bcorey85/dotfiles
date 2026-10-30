@@ -40,10 +40,7 @@ Run it by this path as one plain command. A worktree-isolated session refuses a 
 
 ## Loop ordering (GATE-CRITICAL — do not reorder)
 
-Only your caller may mark the session clean, by running `review-gate-mark
-clean` after it renders a packet whose `status` is `converged` or `deferred`.
-Your caller routes on `status`, so a dishonest `converged` becomes an unearned
-mark.
+Reviewed work earns the commit gate's credit only from a converged or deferred hand-back, or from a commit that concludes a merge, so a dishonest `converged` unlocks an unreviewed commit.
 
 ```
 each iteration:
@@ -347,7 +344,6 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 - **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, return `status` `critical-blocker` with the reason in `blockers`, and stop.
 - **Never write a ledger row anywhere but through its logger.** Call `~/.claude/skills/review/log-review-finding` by that full path; it is not on PATH. Write each call out with literal key=value arguments, one call per row; never build the arguments by splitting a string in a loop. If the call fails, add `ledger: <its error line>` to `nit` and go on; never write the row to a file of your own.
 - **Never put the plan file in `files_touched`, and never let a coder edit it.** The plan changes only through a plan-edit dispatch from the caller. A finding that needs a plan change returns as `status: plan-impact`. The hand-back hook denies a packet that names the plan file.
-- **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
 - **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**
 - **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation and a docs-only fix that ends the loop excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.

@@ -749,8 +749,18 @@ class StoreTest(HandbackTestBase):
                              os.path.realpath(named))
             self.assertEqual(handback.reviewed_repo("mode: review-first\n", cwd_repo), os.path.realpath(cwd_repo))
             self.assertIsNone(handback.reviewed_repo("mode: review-first\n", outside))
+            self.assertIsNone(handback.reviewed_repo("mode: review-first\nrepo: ../outside\n", cwd_repo))
             handoff_prompt = f"mode: review-first\nUncommitted changes in {named}/src/a.py (branch b)\n"
             self.assertEqual(handback.reviewed_repo(handoff_prompt, cwd_repo), os.path.realpath(named))
+
+    def test_a_first_path_in_no_work_tree_falls_back_to_the_cwd_repo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cwd_repo, outside = (os.path.join(folder, name) for name in ("cwd", "outside"))
+            subprocess.run(["git", "init", "-q", cwd_repo], check=True)
+            os.mkdir(outside)
+            prompt = f"mode: review-first\nRead the plan at {outside}/plan.md first.\n"
+            self.assertEqual(handback.reviewed_repo(prompt, cwd_repo), os.path.realpath(cwd_repo))
+            self.assertIsNone(handback.reviewed_repo(prompt, outside))
 
     def test_the_dispatch_hook_stores_the_repo_a_review_loop_dispatch_reviews(self):
         with tempfile.TemporaryDirectory() as folder:

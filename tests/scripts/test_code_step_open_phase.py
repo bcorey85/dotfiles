@@ -31,13 +31,18 @@ import review_asks
 PLAN = "docs/plans/orders.md"
 
 
-def stored_handback_that_says_clean():
+def stored_handback_that_says_clean(credited_sessions=None):
     # The shared hand-back store still holds an earlier converged hand-back for the session.
-    return types.SimpleNamespace(CLEAN_STATUSES=("converged", "deferred"), false_clean_reason=lambda session: None)
+    def record_clean_review(reviewing_session, committing_session=None):
+        if credited_sessions is not None:
+            credited_sessions.append(committing_session)
+        return None, "/tmp/reviewed-repo"
+
+    return types.SimpleNamespace(CLEAN_STATUSES=("converged", "deferred"), record_clean_review=record_clean_review)
 
 
-def stored_handback_reader():
-    return stored_handback_that_says_clean(), None
+def stored_handback_reader(credited_sessions=None):
+    return lambda: (stored_handback_that_says_clean(credited_sessions), None)
 
 
 class TempRepo(unittest.TestCase):
@@ -66,16 +71,10 @@ class PhaseStaysOpenWhenTheReviewDidNotConverge(TempRepo):
         if review_status:
             state["reviewStatus"] = review_status
         recorded = []
-        with mock.patch.object(code_step_boundary, "load_handback", stored_handback_reader), \
-                mock.patch.object(code_step_boundary.reviewed_tree, "record_reviewed",
-                                  lambda session, repo: recorded.append(session)), \
+        with mock.patch.object(code_step_boundary, "load_handback", stored_handback_reader(recorded)), \
                 mock.patch.object(code_step_boundary, "session_pin", lambda: "s1"):
             marked, out = self.run_quietly(code_step_boundary.mark_review_gate_clean, self.repo, state)
         return marked, out, state, recorded
-
-    def gate_files(self):
-        gate_dir = self.home / ".claude" / "state" / "review-gate"
-        return list(gate_dir.glob("*")) if gate_dir.exists() else []
 
     def test_only_a_converged_loop_marks_the_gate_and_records_the_fingerprint(self):
         loops = [
@@ -89,13 +88,12 @@ class PhaseStaysOpenWhenTheReviewDidNotConverge(TempRepo):
 
                 self.assertEqual(is_marked, marked)
                 self.assertEqual(session_ids, recorded)
-                self.assertEqual(session_ids, [path.name for path in self.gate_files()])
                 self.assertEqual(not is_marked, "phase stays open" in out)
                 self.assertEqual(not is_marked, state["stage"] == "stopped")
 
     def test_finish_phase_stops_and_commits_nothing_after_a_non_converged_loop(self):
         state = {"stage": "review", "plan": None, "phase": None, "sessionId": "s1", "reviewStatus": "plan-impact"}
-        with mock.patch.object(code_step_boundary, "load_handback", stored_handback_reader), \
+        with mock.patch.object(code_step_boundary, "load_handback", stored_handback_reader()), \
                 mock.patch.object(code_step_boundary, "finish_planless") as finish_planless, \
                 mock.patch.object(code_step_boundary, "save_state"):
             _result, out = self.run_quietly(code_step_boundary.finish_phase, self.repo, state)

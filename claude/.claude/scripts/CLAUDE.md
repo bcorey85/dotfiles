@@ -9,7 +9,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 ## Owners
 
 - Review converged or clean status: `review/handback.py` `CLEAN_STATUSES` and `false_clean_reason`. Read it; never re-derive it from packet text, a transcript or a session line.
-- Commit credit and the reviewed tree: `lib/reviewed_tree.py` (`record_reviewed`, `is_reviewed`). Fingerprint the repo that was reviewed, never the hook's cwd.
+- Commit credit and the reviewed tree: `lib/reviewed_tree.py` (`record_reviewed`, `is_reviewed`); the only writer of the record is `handback.record_clean_review`, fed the dispatch repo from the store. Fingerprint the repo that was reviewed, never the hook's cwd.
 - Tree identity: `lib/reviewed_tree.py` `tree_fingerprint`. Never hash a tree another way.
 - Hand-back rows (dispatch, hand-back, stop, step): `review/handback_store.py`.
 - Full-check result and scope: `review/full_check.py` owns the result values. `lib/check_scope.py` owns whether a command is whole or targeted.

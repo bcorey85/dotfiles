@@ -33,6 +33,7 @@ import textwrap
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import loop_transcript
+import reviewed_tree
 import script_utils
 from handback_store import (
     LOOP_WAITING,
@@ -868,6 +869,20 @@ def false_clean_reason(session_id):
     if seen["handback"].get("no_reviewer"):
         return "the review-loop handed back clean with no reviewer run"
     return None
+
+
+def record_clean_review(session_id, committing_session=None):
+    """Credit the tree of the repo the session's review-loop was dispatched on, when false_clean_reason finds the
+    session's review ended clean. The one writer of the reviewed-tree record. The credit goes to committing_session,
+    default the reviewing session. Returns (refusal, repo): the refusal text or None, and the repo the stored dispatch
+    names (None when it names none, and then no tree is recorded)."""
+    reason = false_clean_reason(session_id)
+    if reason:
+        return reason, None
+    repo = latest(session_id)["dispatch"].get("repo")
+    if repo:
+        reviewed_tree.record_reviewed(committing_session or session_id, repo)
+    return None, repo
 
 
 def loop_steps(session_id, agent_id):

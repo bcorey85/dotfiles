@@ -25,10 +25,12 @@ from code_step_core import (
     ask_user,
     branch_label,
     clear_say,
+    dispatch_id_at,
     emit,
     emit_dispatch,
     file_hashes,
     head_commit,
+    head_left_phase_start,
     is_run_open,
     is_stopped,
     load_state,
@@ -39,6 +41,7 @@ from code_step_core import (
     restart_instruction,
     ruled_asks_lines,
     ruled_asks_path,
+    run_coder_gate,
     save_state,
     say,
     script_command,
@@ -78,9 +81,9 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                '[--headless] [--coder-stopped] [<run notes>]\n'
                '       code_step.py start [--repo <path>] --task "<task text>"\n'
                '       code_step.py start [--repo <path>] --task-file <path>\n'
-               '--phase <id> starts the named phase; the text after a plan file or ticket id and its phase is the '
-               "run notes: the constraints for that run, given to its coder or, on a closing phase, to its skill. "
-               "Text that comes first, when there is no plan file, "
+               '--phase <id> starts the named phase; the text after a plan file inside the repo that has phases, or '
+               "after a plan file or ticket id and its phase, is the run notes: the constraints for that run, given "
+               "to its coder or, on a closing phase, to its skill. Text that comes first, when there is no plan file, "
                'ticket id or directory, is the task text. --task-file reads the task text from a file, as it is. A '
                'flag before the text, or after a plan, must be known. --restart drops an unfinished run and starts '
                'over. With --restart, text that comes first becomes the run notes of the saved plan when that plan '
@@ -193,7 +196,7 @@ def phase_words_as_flag(args):
         return args
 
     plan_word = words[plan_at]
-    if not (plan_word.endswith(".md") and os.path.isfile(plan_word)):
+    if not script_utils.is_existing_md_file(plan_word):
         return args
     return [*words[:plan_at + 1], "--phase", words[-1]]
 
@@ -403,8 +406,7 @@ def plan_inside_task_refusal(words, parsed, repo_flags):
     commands = [script_command(shlex.join(start_words))]
     # A word that is no plan file (a directory, a ticket id, a source file) may be the first word of the task, so
     # the task choice keeps it in the text.
-    has_word_that_is_no_plan_file = any(
-        not (os.path.isfile(plan_word) and plan_word.endswith(".md")) for plan_word in plan_words)
+    has_word_that_is_no_plan_file = any(not script_utils.is_existing_md_file(plan_word) for plan_word in plan_words)
     task_words = [*plan_words, *text_words] if has_word_that_is_no_plan_file else text_words
     if task_words:
         commands.append(task_command(task_words, parsed.modifier, *repo_flags))
@@ -590,6 +592,11 @@ def command_start(args):
     if parsed.restart or reopens_stopped_run(previous):
         drop_open_run(repo_dir, previous)
 
+    # Every refusal that keeps an open run alive has returned above, and a restart dropped the open run, so no run here
+    # owns the older gate: a keyed one names an ended run, and one set by hand with no key would gate this start's
+    # coder. Clear either.
+    run_coder_gate(repo_dir, "clear")
+
     if parsed.task_text is not None:
         return start_planless(repo_dir, parsed.modifier, parsed.task_text, branch)
     start_plan_run(repo_dir, previous, branch, parsed, start_command)
@@ -628,17 +635,19 @@ def resolve_start_plan(repo_dir, previous, branch, plan_args):
     return plan_arg, lane if previous.get("plan") == plan_arg else "code"
 
 
-def load_start_plan(repo_dir, plan_arg, args):
-    # (plan path in the repo, plan lines, parsed plan) of a plan that is fit to start, or None after a stop.
+def load_start_plan(repo_dir, plan_arg, args, run_notes=None):
+    # (plan path in the repo, plan lines, parsed plan) of a plan that is fit to start, or None after a stop. The
+    # question that asks for another plan names the run notes, so the next start keeps them.
+    notes_to_keep = f" Pass these run notes after it: {run_notes}" if run_notes else ""
     plan_path = pathlib.Path(plan_arg)
     if not os.path.isfile(plan_arg):
         return ask_user(repo_dir, f"no plan file is at {plan_arg}. Ask the user for the path. Then invoke Skill code "
-                        "with that path.")
+                        f"with that path.{notes_to_keep}")
     try:
         plan_rel = str(plan_path.resolve().relative_to(repo_dir))
     except ValueError:
         return ask_user(repo_dir, f"the plan {plan_arg} is outside the repo {repo_dir}. Ask the user for a plan inside "
-                        "the repo. Then invoke Skill code with that path.")
+                        f"the repo. Then invoke Skill code with that path.{notes_to_keep}")
 
     plan_lines = plan_path.read_text().splitlines()
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
@@ -703,7 +712,7 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
     plan_arg, lane = resolved
 
     args_for_resume = shlex.split(start_command)[len(shlex.split(script_command(""))):]
-    loaded = load_start_plan(repo_dir, plan_arg, args_for_resume[1:])
+    loaded = load_start_plan(repo_dir, plan_arg, args_for_resume[1:], parsed.run_notes)
     if loaded is None:
         return
     plan_rel, plan_lines, plan = loaded
@@ -753,18 +762,30 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     if restarts_reviewed_phase and finish_passing_restart(repo_dir, previous, section):
         return
 
+    # A rebase or reset left HEAD off the previous start commit: that commit can no longer mark where the phase began,
+    # so the restart takes a fresh start commit. The file hashes stay: they mark what the phase changed.
+    previous_base_head = previous.get("baseHead")
+    is_off_start_commit = is_same_unfinished_phase and head_left_phase_start(repo_dir, previous_base_head)
+    keeps_start = is_same_unfinished_phase and not is_off_start_commit
     baseline = previous["baseline"] if is_same_unfinished_phase else file_hashes(repo_dir)
-    base_head = (
-        previous.get("baseHead") if is_same_unfinished_phase and previous.get("baseHead") else head_commit(repo_dir)
-    )
+    base_head = previous_base_head if keeps_start and previous_base_head else head_commit(repo_dir)
 
     commands = derive_gate_commands(repo_dir, section) if entry else []
     if entry:
         stale_prose_script = pathlib.Path(__file__).resolve().parent / "stale_prose.py"
         commands.append(f"python3 {stale_prose_script} --base {base_head}")
-    gate_note = set_gate_and_packet_note(repo_dir, plan_rel, commands)
-    packet_body = packet_text(repo_dir, plan_rel, number, use_packet)
-    run_id = start_run(repo_dir)
+    # The gate is for the run's first dispatch, the coder this start dispatches. The run's folder is wiped only after
+    # the packet is built, so a failed packet leaves the open run's log in place.
+    run_id = script_utils.sortable_unique_id()
+    gate_note = set_gate_and_packet_note(repo_dir, plan_rel, commands, run_id)
+    try:
+        packet_body = packet_text(repo_dir, plan_rel, number, use_packet)
+    except SystemExit:
+        # The packet reads whether the gate exists, so the gate is set first. A failed packet starts no run, and the
+        # gate names a run that never starts: end it.
+        run_coder_gate(repo_dir, "clear")
+        raise
+    start_run(repo_dir, run_id)
 
     phase_description = f"Phase {number} of `{plan_rel}`" if use_packet else f"`{plan_rel}`"
     prompt = (f"Implement {phase_description}. Read the plan phase-scoped.\n"
@@ -851,15 +872,15 @@ def check_acceptance_criteria(repo_dir, plan_rel):
     return False
 
 
-def set_gate_and_packet_note(repo_dir, plan_rel, commands):
+def set_gate_and_packet_note(repo_dir, plan_rel, commands, run_id):
     if not commands:
         return "GATE: none derived; the coder runs its own checks (the packet says so)."
 
     # The gate runs the commands later, at each hand-back, so the repo's gate env goes into the stored gate.
     gate_env = plan_format.repo_gate_env(repo_dir, plan_rel)
     env_arguments = [argument for assignment in gate_env for argument in ("--env", assignment)]
-    gate_script = str(SCRIPTS_DIR / "code" / "coder_gate.py")
-    code, output = run_command(["python3", gate_script, "set", *env_arguments, *commands], repo_dir)
+    key_arguments = ["--run", run_id, "--dispatch", dispatch_id_at(1)]
+    code, output = run_coder_gate(repo_dir, "set", *env_arguments, *key_arguments, *commands)
     if code != 0:
         return f"GATE: not set ({output.splitlines()[0] if output else 'refused'}); the coder runs its own checks."
 

@@ -31,6 +31,9 @@ CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 REVIEWERS = re.compile(r"^([a-z]+-)*reviewer(-deep)?$")
 # The agent the /code skill forks into (its `agent:` line). It has no Edit or Write tool.
 FORK_AGENT_TYPE = "code-fork"
+# A markdown file's opening `---` frontmatter block, and one `- name` line of a block list in it.
+FRONTMATTER = re.compile(r"\A---\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
+FRONTMATTER_LIST_ITEM = re.compile(r"^\s+-\s+(.+?)\s*$")
 # The line that starts the stamp the coder gate appends to a hand-back message. Everything after it is the gate's text.
 HAND_BACK_GATE_MARKER = "\n\nHAND-BACK GATE:"
 TIMEOUT_EXIT_CODE = 124
@@ -102,6 +105,20 @@ JSON_TYPE_NAMES = ((str, "a string"), (bool, "a boolean"), (int, "a number"), (f
 def json_type_name(value):
     """The name of a decoded JSON value's type, as a phrase for an error message."""
     return next(name for kind, name in JSON_TYPE_NAMES if isinstance(value, kind))
+
+
+def is_string_list(value):
+    """Whether a decoded JSON value is a list whose every entry is a string."""
+    return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
+
+
+def json_string_list(text):
+    """The list of strings that the JSON text holds, or None when the text is not JSON or not a list of strings."""
+    try:
+        loaded = json.loads(text)
+    except ValueError:
+        return None
+    return loaded if is_string_list(loaded) else None
 
 
 def unfenced_text(text):
@@ -299,6 +316,26 @@ def repo_root(cwd, timeout=None):
     return pathlib.Path(top)
 
 
+def head_descends_from(cwd, commit):
+    """False when HEAD is not on the line that grows from `commit`, whether a rebase or reset moved it or git failed
+    (an unknown commit, no repo)."""
+    return git_output(cwd, "merge-base", "--is-ancestor", commit, "HEAD") is not None
+
+
+def head_blob_hashes(cwd, names):
+    """The blob hash of each of `names` at HEAD. A name HEAD does not have is left out."""
+    if not names:
+        return {}
+    listing = git_output(cwd, "ls-tree", "-z", "HEAD", "--", *names) or ""
+    hashes = {}
+    for entry in listing.split("\0"):
+        if not entry:
+            continue
+        meta, _tab, name = entry.partition("\t")
+        hashes[name] = meta.split()[2]
+    return hashes
+
+
 def current_branch(cwd, timeout=None):
     """The checked-out branch name: "" on a detached HEAD, None when git fails."""
     return git_output(cwd, "branch", "--show-current", timeout=timeout)
@@ -487,6 +524,11 @@ def visible_text(line, in_comment):
     return text, in_comment
 
 
+def is_blocker(item):
+    """True for a mapping whose `blocker` field reads true or yes."""
+    return isinstance(item, dict) and str(item.get("blocker", "")).strip().lower() in ("true", "yes")
+
+
 def one_line(text, limit=200):
     """The text on one line: runs of whitespace collapse to a space, cut at `limit` characters."""
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]
@@ -527,6 +569,11 @@ def names_path(path, text):
 def has_whitespace(text):
     """True when `text` holds any whitespace character: a space, tab or newline."""
     return re.search(r"\s", str(text)) is not None
+
+
+def is_existing_md_file(word):
+    """True when `word` names a Markdown file that exists."""
+    return word.endswith(".md") and os.path.isfile(word)
 
 
 def words_of_arguments(arguments):
@@ -613,6 +660,74 @@ def agent_transcript_path(hook):
     if named:
         return named
     return subagent_transcript_path(hook["transcript_path"], hook["agent_id"])
+
+
+def frontmatter_skills(agent_text):
+    """The skill names in an agent file's `skills:` frontmatter key: a block list of `- name` lines. An inline
+    value after `skills:` raises ValueError."""
+    frontmatter = FRONTMATTER.match(agent_text)
+    if not frontmatter:
+        return []
+
+    lines = frontmatter.group(1).splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith("skills:"):
+            continue
+        inline_value = line[len("skills:"):].strip()
+        if inline_value:
+            raise ValueError(f"`skills:` frontmatter has the inline value {inline_value!r}; expected a block list "
+                             "of `  - name` lines")
+        names = []
+        for item_line in lines[index + 1:]:
+            item = FRONTMATTER_LIST_ITEM.match(item_line)
+            if not item:
+                break
+            names.append(item.group(1).strip("'\""))
+        return names
+    return []
+
+
+def preloaded_skills_prompt(agent, claude_home=None):
+    """The skills `agent`'s `skills:` frontmatter preloads, as the Agent tool hands them to the agent: each SKILL.md
+    body without its frontmatter, under a `Base directory for this skill:` line. `claude -p --agent` loads none of
+    them, so a script that starts an agent that way appends this to its system prompt. Empty when the agent preloads
+    nothing or has no agent file. `claude_home` defaults to the toolkit folder this file sits in. A named skill with
+    no SKILL.md raises FileNotFoundError."""
+    claude_home = claude_home or pathlib.Path(__file__).resolve().parents[2]
+    agent_file = claude_home / "agents" / f"{agent}.md"
+    if not agent_file.is_file():
+        return ""
+
+    agent_text = agent_file.read_text()
+    try:
+        skill_names = frontmatter_skills(agent_text)
+    except ValueError as error:
+        raise ValueError(f"{agent_file}: {error}") from error
+
+    skill_texts = []
+    for name in skill_names:
+        skill_dir = claude_home / "skills" / name
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.is_file():
+            raise FileNotFoundError(f"{agent_file} preloads skill {name!r}, but {skill_file} does not exist")
+        skill_text = skill_file.read_text()
+        skill_body = FRONTMATTER.sub("", skill_text, count=1).strip()
+        skill_texts.append(f"Base directory for this skill: {skill_dir}\n\n{skill_body}")
+    return "\n\n".join(skill_texts)
+
+
+def session_display_name(session_id):
+    """The name ListAgents shows for a live Claude Code session, read from its ~/.claude/sessions/<pid>.json entry.
+    None when no readable entry holds that session id with a non-empty name."""
+    sessions = pathlib.Path.home() / ".claude" / "sessions"
+    for entry_path in sessions.glob("*.json"):
+        try:
+            entry = json.loads(entry_path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(entry, dict) and entry.get("sessionId") == session_id and entry.get("name"):
+            return entry["name"]
+    return None
 
 
 def telemetry_switch_on():

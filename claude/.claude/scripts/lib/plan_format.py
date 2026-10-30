@@ -57,6 +57,11 @@ PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{
 # A PLAN-IMPACT's `acceptance_criteria:` line: `none`, or the criteria the change would alter.
 AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", re.I)
 PLAN_IMPACT_OPENING = re.compile(r"plan[-_ ]?impact(?![*`_]*:[ \t*`_]*yes\b)", re.I)
+PLAN_IMPACT_CAUSE = re.compile(r"^[ \t>*`_-]*cause[*`_]*:[ \t*`_]*(.*?)[ \t*`_]*$", re.I | re.M)
+# plan: the plan and the code disagree. toolkit: a toolkit gate or script is at fault and nothing in the plan is wrong.
+PLAN_IMPACT_CAUSES = ("plan", "toolkit")
+# A packet's cause for a block that names none where one is required; never a cause a block can write.
+NO_CAUSE_LINE = "no-cause-line"
 BELOW_CRITERIA_RULING = ("No acceptance criterion changes, so the code wins: the plan follows the code. Adopted by "
                          "rule; no one was asked.")
 PLAN_IMPACT_HEADER_WORD = re.compile(r"[*`_]*plan[-_ ]?impact[*`_]*[ \t]*:", re.I)
@@ -418,10 +423,15 @@ GATE_ENV_HINT = "(Put these variables before every test, check or build command 
 NO_AUTOMATED_CHECK = re.compile(r"^- \[[ x]\]\s*(?:[*_`]*\s*(?:n/a|none)\b|\*\*[^*]+\*\*:?\s*n/a\b)", re.IGNORECASE)
 
 # An Automated Verification item that the code step never runs because the plan says another place does:
-# "- [ ] **CI-verified**: the pipeline runs it", "- [ ] Human-only: look at the page". A bold label may come first.
-DEFERRED_VERIFICATION = re.compile(r"^- \[[ x]\]\s*(?:\*\*[^*]+\*\*:?\s*)?[*_`]*\s*(?P<tag>ci-verified|human-only)\b",
-                                   re.IGNORECASE)
-DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only"}
+# "- [ ] **CI-verified**: the pipeline runs it", "- [ ] Human-only: look at the page", "- [ ] **Agent-run**: time the
+# import on the real data" (the session or the branch check runs it and records its output). A bold label may come
+# first.
+DEFERRED_VERIFICATION = re.compile(
+    r"^- \[[ x]\]\s*(?:\*\*[^*]+\*\*:?\s*)?[*_`]*\s*(?P<tag>ci-verified|human-only|agent-run)\b", re.IGNORECASE)
+AGENT_RUN_TAG = "agent-run"
+DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only", AGENT_RUN_TAG: AGENT_RUN_TAG}
+# The tags whose open box needs no evidence from the code step: another place or a person closes them.
+NO_EVIDENCE_TAGS = frozenset(DEFERRED_TAG_NAMES.values()) - {AGENT_RUN_TAG}
 
 
 def automated_verification_rows(lines, name="plan", first_line=1, strict=False):
@@ -496,14 +506,14 @@ def automated_item_text(line):
 
 
 def deferred_verification_tag(line):
-    """"CI-verified" or "human-only" for an Automated Verification item tagged that way, else None."""
+    """"CI-verified", "human-only" or "agent-run" for an Automated Verification item tagged that way, else None."""
     tag_match = DEFERRED_VERIFICATION.match(line)
     return DEFERRED_TAG_NAMES[tag_match.group("tag").lower()] if tag_match else None
 
 
 def runs_no_command(line):
     """True for an Automated Verification item that gets no command run: it says N/A or none, or it is left to CI or
-    a person."""
+    a person, or it is tagged Agent-run (the session or the branch check runs it, never the plan check)."""
     return bool(NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line))
 
 
@@ -517,7 +527,8 @@ def open_success_items(lines):
     """The `- [ ]` items under a phase's Success Criteria that need evidence, in file order, as {"index": the 0-based
     line of the item, "end": the index after its indented continuation lines, "text": the item's words with its
     continuation lines folded in}. Items under Manual Verification, tagged CI-verified or human-only, and N/A items are
-    left out, and so are items in fenced blocks. `lines` is one phase's section."""
+    left out, and so are items in fenced blocks. An open Agent-run item stays in: it needs evidence like an untagged
+    one. `lines` is one phase's section."""
     fenced = script_utils.fenced_line_indexes(lines)
     items = []
     inside = False
@@ -534,7 +545,9 @@ def open_success_items(lines):
         if line.strip() == "---":
             inside = False
             continue
-        if not (inside and OPEN_BOX.match(line)) or runs_no_command(line):
+        if not (inside and OPEN_BOX.match(line)):
+            continue
+        if NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line) in NO_EVIDENCE_TAGS:
             continue
 
         end = index + 1
@@ -557,7 +570,8 @@ def write_item_evidence(lines, items, evidence):
 
 def gate_env(plan_text):
     """The `NAME=value` words that the plan's Automated Verification commands start with, one per name, in file order.
-    An item that says N/A or is left to CI or a person is not a command that gets run, so it gives none."""
+    An item that says N/A or is left to CI, a person, or an agent (Agent-run) is not a command that gets run, so it
+    gives none."""
     verification_items = automated_verification_rows(plan_text.splitlines())
     runnable_items = [line for _, line in verification_items if not runs_no_command(line)]
     spans = [span for line in runnable_items for span in script_utils.backticked_spans(line)]
@@ -745,6 +759,55 @@ def changes_acceptance_criteria(impact):
     answers = [match.group(1).strip(" \t.`*_").lower() for match in AC_CHANGE_LINE.finditer(impact)]
     impacts = max(1, len(PLAN_IMPACT_OPENING.findall(impact)))
     return len(answers) < impacts or any(answer != "none" for answer in answers)
+
+
+def plan_impact_cause(block, missing="plan"):
+    """The block's `cause:` value, lowercased; `missing` when the block has no cause key. A value outside
+    PLAN_IMPACT_CAUSES comes back lowercased, for the caller to refuse."""
+    match = PLAN_IMPACT_CAUSE.search(block)
+    if not match:
+        return missing
+    return match.group(1).strip().lower()
+
+
+def block_must_name_cause(block):
+    """True for a readable PLAN-IMPACT block (header line, then its lines). A report that only says `PLAN-IMPACT: yes`
+    has no block to read, so it has no cause to name."""
+    return block.startswith("PLAN-IMPACT:\n")
+
+
+def plan_impact_stop_cause(block, cause_required=False):
+    """The words that finish the stopping sentence when the block's cause stops the run, as cause_stop words it.
+    A block with no cause key reads as `plan` unless `cause_required` and the block must name its cause (a coder's
+    block does), which refuses it."""
+    required = cause_required and block_must_name_cause(block)
+    return cause_stop(plan_impact_cause(block, missing="" if required else "plan"))
+
+
+def stopping_plan_impact_cause(blocks, cause_required=False):
+    """The one cause for several PLAN-IMPACT blocks, each read on its own so no block borrows another's line: the
+    first block whose cause stops the run, else `plan`. The cause comes back lowercased (cause_stop words it). With
+    `cause_required` a readable block with no cause key carries NO_CAUSE_LINE, which survives a packet field that
+    reads an empty cause as `plan`."""
+    for block in blocks:
+        required = cause_required and block_must_name_cause(block)
+        cause = plan_impact_cause(block, missing=NO_CAUSE_LINE if required else "plan")
+        if cause_stop(cause):
+            return cause or NO_CAUSE_LINE
+    return "plan"
+
+
+def cause_stop(cause):
+    """The words that finish the stopping sentence when a PLAN-IMPACT cause stops the run: a toolkit fault is fixed
+    in the toolkit, and a cause that is neither is refused. None when the cause goes on to the plan rewrite."""
+    if cause == "toolkit":
+        return "reported a toolkit gate or script fault with nothing wrong in the plan. Fix the toolkit, not the plan"
+    if not cause or cause == NO_CAUSE_LINE:
+        return f"wrote a PLAN-IMPACT with no `cause:` line: the cause is {' or '.join(PLAN_IMPACT_CAUSES)}"
+    if cause not in PLAN_IMPACT_CAUSES:
+        return (f"wrote a PLAN-IMPACT `cause: {cause}` that does not parse: the cause is "
+                f"{' or '.join(PLAN_IMPACT_CAUSES)}")
+    return None
 
 
 def below_criteria_summary(impact):

@@ -42,19 +42,20 @@ import datetime
 import json
 import os
 import pathlib
-import re
 import sys
 import time
 
 SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
+import capped_review
 import handback
 import plan_format
 import review_asks
 import script_utils
-from handback import PacketError, is_plan_impact_ask, item_text
+from capped_review import CAP_REACHED
+from handback import FIX_REMOVED_CHANGE, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
-from saved_handback import LoopWaitingError, NoHandbackError, dispatched_with_ruling, read_message
+from saved_handback import LoopWaitingError, NoHandbackError, dispatched_repo, dispatched_with_ruling, read_message
 from script_utils import one_line, run_command, split_location
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -507,17 +508,15 @@ STOP_STATUSES = {
     "setup-fault": ("The full check could not run in this environment. This is a toolkit or environment fault, not a "
                     "code failure. Present these lines and wait for direction. Do not re-dispatch. Do not run /fix. "
                     "Do not mark the gate.", blocker_lines),
-    "cap-reached": ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
+    FIX_REMOVED_CHANGE: ("The fix passes removed half or more of the change under review. Present these lines "
+                         "and wait for direction. Do not re-dispatch. Do not run /fix. Do not mark the gate.",
+                         blocker_lines),
+    CAP_REACHED: ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
                     "run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.",
                     remaining_lines),
 }
 
 
-# A class-closure receipt that says a class is still open. The receipt is free text, so this matches its words.
-OPEN_CLASS = re.compile(r"\b(not closed|unclosed|(still|left|remains?|stays?) open|open (class|members?))\b", re.I)
-# Words that turn an open-class clause into a closed one: "none left open", "open members: none", "was left open".
-NEGATED_CLASS = re.compile(r"\b(none|no|nothing|zero|0|was|were)\b", re.I)
-RECEIPT_CLAUSE = re.compile(r"[;,.\n()]")
 SCOPED_RERUN = ("The review cap was reached with a class still open. Report these findings. Another full review "
                 "would find one more member at a time, so do not offer one: the next run is a scoped review of the "
                 "files the capped run's fixes touched. When the user asks to go on, dispatch review-loop "
@@ -525,16 +524,10 @@ SCOPED_RERUN = ("The review cap was reached with a class still open. Report thes
                 "Do not run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.")
 
 
-def names_an_open_class(receipt):
-    """Whether a clause of the class-closure receipt says a class is still open and no word in it negates that."""
-    clauses = RECEIPT_CLAUSE.split(receipt)
-    return any(OPEN_CLASS.search(clause) and not NEGATED_CLASS.search(clause) for clause in clauses)
-
-
 def scoped_rerun_lines(packet, skill):
     """The dispatch that reviews only the files the capped run's fixes touched after a cap-reached with an open
-    class, or [] when the class is closed or the packet names no file the fix touched."""
-    if not names_an_open_class(packet["class_closure"]):
+    class, or [] when the packet's open_classes is empty or it names no file the fix touched."""
+    if not packet["open_classes"]:
         return []
     fix_files = [str(path) for path in packet["files_touched"]]
     if not fix_files:
@@ -543,7 +536,7 @@ def scoped_rerun_lines(packet, skill):
     lines = ["mode: review-first", f"caller: {skill}", "iter=0", "handoff:", "  files:"]
     for path in fix_files:
         lines += [f"    - path: {path}", "      change: touched by the capped run's fixes"]
-    lines += ["  tests-run: none", f"  flagged: the open class - {one_line(packet['class_closure'])}",
+    lines += ["  tests-run: none", f"  flagged: the open class - {one_line('; '.join(packet['open_classes']))}",
               "  prior-issues:"]
     for item in packet["findings_remaining"]:
         file_path, _line = split_location(item.get("file_line", ""))
@@ -561,7 +554,7 @@ def stop_for_status(packet, options, state):
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
     entries = entry_lines(packet)
-    rerun_lines = scoped_rerun_lines(packet, options.skill) if packet["status"] == "cap-reached" else []
+    rerun_lines = scoped_rerun_lines(packet, options.skill) if packet["status"] == CAP_REACHED else []
     if rerun_lines:
         instruction = SCOPED_RERUN
         entries += ["Dispatch lines (pass exactly these):", *rerun_lines]
@@ -587,6 +580,9 @@ def command_packet(argv):
         return wait_for_loop(options.skill, error.stop_ts)
     packet = handback.load(message)
     handback.print_dropped_asks(packet)
+    stored_status = packet["status"]
+    packet["status"] = capped_review.effective_status(packet, dispatched_repo())
+    capped_defer = packet["status"] != stored_status
     if unreviewed_in_a_row:
         return stop_for_unreviewed(options.skill, packet, unreviewed_in_a_row)
     state = new_state(options, packet, packet_id)
@@ -608,7 +604,7 @@ def command_packet(argv):
         present_packet_asks(packet, state)
     else:
         print_action("render-and-finish", gate_mark_line())
-    sections = packet_sections(packet, state, replies, unreviewed_fix)
+    sections = packet_sections(packet, state, replies, unreviewed_fix, capped_defer)
     print_user_block(handback.render(packet, options.skill, sections))
     print_logged(notes)
     if options.skill == "review" and not is_outstanding(packet):
@@ -616,8 +612,26 @@ def command_packet(argv):
     print("MODEL STILL DOES: " + model_duties(packet, options))
 
 
-def packet_sections(packet, state, replies, unreviewed_fix):
+def deferred_files_line(packet):
+    """One line that states the findings left open at the cap are deferred, then names the files the capped loop
+    touched: files_touched, else the paths fixed[] names."""
+    touched_paths = packet["files_touched"] or handback.fixed_paths(packet)
+    named_paths = ", ".join(touched_paths) or "none named in files_touched or fixed[]"
+    return f"The findings left open at the cap are deferred, not fixed. Files the loop touched: {named_paths}"
+
+
+def deferred_from_cap_section(packet):
+    """The (heading, lines) section for a packet that deferred from the cap."""
+    return ("Deferred at the review cap",
+            ["- The review capped with no blocker and a passed full check of the final tree, so its leftovers are "
+             "deferred to the branch-exit queue.",
+             "- " + deferred_files_line(packet)])
+
+
+def packet_sections(packet, state, replies, unreviewed_fix, capped_defer):
     sections = [("Aikido replies", replies)] if replies else []
+    if capped_defer:
+        sections.append(deferred_from_cap_section(packet))
     if state.get("adopted_deviations"):
         deviation_lines = [f"- {deviation_summary}" for deviation_summary in state["adopted_deviations"]]
         sections.append(("Plan deviations adopted (the code won; no acceptance criterion changed)", deviation_lines))

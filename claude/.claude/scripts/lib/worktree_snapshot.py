@@ -18,12 +18,14 @@ HASH_CHUNK_SIZE = 1000
 CHANGE_KINDS = ("changed", "rewrote_edited", "created")
 
 
-def status_codes(root):
-    """{path: two-letter status} of every dirty or untracked file, paths relative to the work tree root."""
+def status_entries(root):
+    """({path: two-letter status}, {new path: old path} of each rename or copy) of every dirty or untracked file,
+    paths relative to the work tree root."""
     output = git_output(root, "status", "--porcelain", "-z", "--find-renames",
                          "--untracked-files=all") or ""
     entries = output.split("\0")
     codes = {}
+    origins = {}
     index = 0
     while index < len(entries):
         entry = entries[index]
@@ -34,8 +36,14 @@ def status_codes(root):
         code, path = entry[:2], entry[3:]
         codes[path] = code
         if code[0] in RENAME_CODES or code[1] in RENAME_CODES:
+            origins[path] = entries[index]
             index += 1
-    return codes
+    return codes, origins
+
+
+def status_codes(root):
+    """{path: two-letter status} of every dirty or untracked file, paths relative to the work tree root."""
+    return status_entries(root)[0]
 
 
 def file_hash(root, path):

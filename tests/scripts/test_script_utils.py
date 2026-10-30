@@ -28,6 +28,39 @@ class TextBeforeMarkerTest(unittest.TestCase):
         self.assertEqual("", script_utils.text_before_marker("--stamp only", "--stamp"))
 
 
+class HeadCommitHelpersTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        self.env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+                    "GIT_COMMITTER_EMAIL": "t@t"}
+        self.git("init", "-q")
+        (self.repo / "a.txt").write_text("a\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "first")
+        self.first = self.git("rev-parse", "HEAD").strip()
+        (self.repo / "b.txt").write_text("b\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "second")
+
+    def git(self, *arguments):
+        return subprocess.run(["git", *arguments], cwd=self.repo, check=True, env=self.env, capture_output=True,
+                              text=True).stdout
+
+    def test_head_descends_from_an_ancestor_and_not_from_a_commit_it_was_reset_past_or_an_unknown_one(self):
+        second = self.git("rev-parse", "HEAD").strip()
+        self.assertTrue(script_utils.head_descends_from(self.repo, self.first))
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        self.assertFalse(script_utils.head_descends_from(self.repo, second))
+        self.assertFalse(script_utils.head_descends_from(self.repo, "0" * 40))
+
+    def test_head_blob_hashes_names_each_file_at_head_and_leaves_out_one_head_lacks(self):
+        hashes = script_utils.head_blob_hashes(self.repo, ["a.txt", "missing.txt"])
+        self.assertEqual({"a.txt": self.git("rev-parse", "HEAD:a.txt").strip()}, hashes)
+        self.assertEqual({}, script_utils.head_blob_hashes(self.repo, []))
+
+
 class PathIsUnderTest(unittest.TestCase):
     def test_a_path_is_under_its_prefix_or_equal_to_it_but_not_under_a_sibling_that_shares_the_start(self):
         self.assertTrue(script_utils.path_is_under("task", "task"))
@@ -1043,6 +1076,73 @@ class PopOptionTest(unittest.TestCase):
         for message, arguments, expected in cases:
             with self.subTest(message):
                 self.assertEqual(expected, script_utils.pop_repeated_option(arguments, "--e"))
+
+
+class PreloadedSkillsPromptTest(unittest.TestCase):
+    def claude_home(self, agent_text, skill_texts):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        home = pathlib.Path(folder.name)
+        (home / "agents").mkdir()
+        (home / "agents" / "coder.md").write_text(agent_text)
+        for name, skill_text in skill_texts.items():
+            (home / "skills" / name).mkdir(parents=True)
+            (home / "skills" / name / "SKILL.md").write_text(skill_text)
+        return home
+
+    def test_each_preloaded_skill_comes_without_its_frontmatter_under_its_base_directory(self):
+        skill_texts = {"coder-core": "---\nname: coder-core\n---\n\n# Core\nRule one.\n", "extra": "# Extra\n"}
+        home = self.claude_home("---\nname: coder\nskills:\n  - coder-core\n  - extra\n---\n\nBody.\n", skill_texts)
+
+        prompt = script_utils.preloaded_skills_prompt("coder", home)
+
+        self.assertEqual(f"Base directory for this skill: {home}/skills/coder-core\n\n# Core\nRule one.\n\n"
+                         f"Base directory for this skill: {home}/skills/extra\n\n# Extra", prompt)
+
+    def test_an_inline_skills_value_raises(self):
+        with self.assertRaises(ValueError):
+            script_utils.frontmatter_skills("---\nskills: [coder-core]\n---\n")
+
+    def test_an_inline_skills_value_raises_naming_the_agent_file(self):
+        home = self.claude_home("---\nname: coder\nskills: [coder-core]\n---\n\nBody.\n", {})
+
+        with self.assertRaises(ValueError) as raised:
+            script_utils.preloaded_skills_prompt("coder", home)
+
+        self.assertIn(str(home / "agents" / "coder.md"), str(raised.exception))
+
+    def test_a_missing_skill_raises_naming_the_agent_file_and_the_skill_path(self):
+        home = self.claude_home("---\nname: coder\nskills:\n  - gone\n---\n\nBody.\n", {})
+
+        with self.assertRaises(FileNotFoundError) as raised:
+            script_utils.preloaded_skills_prompt("coder", home)
+
+        self.assertIn(str(home / "agents" / "coder.md"), str(raised.exception))
+        self.assertIn(str(home / "skills" / "gone" / "SKILL.md"), str(raised.exception))
+
+    def test_no_skills_key_or_no_agent_file_gives_no_prompt(self):
+        home = self.claude_home("---\nname: coder\n---\n\nBody.\n", {})
+
+        self.assertEqual("", script_utils.preloaded_skills_prompt("coder", home))
+        self.assertEqual("", script_utils.preloaded_skills_prompt("code-reviewer", home))
+        self.assertEqual([], script_utils.frontmatter_skills("---\nname: coder\n---\n\nskills:\n  - body-text\n"))
+
+    def test_json_string_list_reads_only_a_json_list_of_strings(self):
+        self.assertEqual(["a", "b"], script_utils.json_string_list('["a", "b"]'))
+        self.assertEqual([], script_utils.json_string_list("[]"))
+        for text in ("not json", '["a", 1]', '{"a": "b"}', '"a"', "null"):
+            with self.subTest(text):
+                self.assertIsNone(script_utils.json_string_list(text))
+
+
+class IsBlockerTest(unittest.TestCase):
+    def test_a_mapping_is_a_blocker_only_when_its_blocker_field_reads_true_or_yes(self):
+        for value in (True, "true", "Yes", " YES "):
+            with self.subTest(value=value):
+                self.assertTrue(script_utils.is_blocker({"blocker": value}))
+        for item in ({"blocker": False}, {"blocker": "no"}, {}, "blocker: yes", None):
+            with self.subTest(item=item):
+                self.assertFalse(script_utils.is_blocker(item))
 
 
 if __name__ == "__main__":

@@ -2,11 +2,20 @@
 # Clear a settled Claude agent's conversation, then send it the next phase's
 # first prompt.
 #
-# Usage: herdr-phase-change [--timeout <seconds>] <agent> <prompt>
+# Usage: herdr-phase-change [--timeout <seconds>] [--watched] <agent> <prompt>
 #   agent      a live agent name or pane id.
 #   prompt     the new phase's first prompt, e.g. "/code docs/plans/x/plan.md".
+#              A /code prompt goes out as "/code --headless <rest>", so the run
+#              never waits at a sign-off gate in a pane nobody watches, unless
+#              --headless already follows /code. A bare /code and a /code verb
+#              prompt (resume, tick 2, ...) go out as given, and so does any
+#              other slash command. A prompt that is not a slash command goes
+#              out prefixed with "[from orchestrator pane <sending pane id>] ",
+#              so the receiver can tell the prompt came from another pane, not
+#              from the user.
 #   --timeout  seconds bounding each of the two waits: for /clear to take effect,
 #              then for the pane to settle. Defaults to 30.
+#   --watched  send a /code prompt without the --headless insert, for a pane a person watches.
 #
 # `herdr agent wait` returns at once on a pane already in `done`, so it is no
 # barrier between two prompts: a prompt sent too soon after /clear lands in the
@@ -24,6 +33,7 @@ usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 timeout_seconds=30
 target=""
 prompt=""
+watched=false
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help) usage; exit 0 ;;
@@ -33,6 +43,7 @@ while [ $# -gt 0 ]; do
             timeout_seconds="$2"
             shift
             ;;
+        --watched) watched=true ;;
         -*) echo "herdr-phase-change: unknown option: $1" >&2; usage >&2; exit 1 ;;
         *)
             if [ -z "$target" ]; then
@@ -49,6 +60,31 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$target" ] && [ -n "$prompt" ] || { usage >&2; exit 1; }
+
+# /code reads --headless only among the flags before the task text, so put it
+# first, where it always counts; a second copy does no harm. Kept as given: a prompt where --headless already follows /code,
+# a bare /code or one whose first word is a verb (/code picks the verb from that
+# word, and --headless first would turn it into a start), and any other phase.
+if [ "$watched" = false ] && [[ "$prompt" == "/code" || "$prompt" == "/code "* ]]; then
+    code_rest="${prompt#/code}"
+    code_rest="${code_rest# }"
+    code_first_word="${code_rest%% *}"
+    case "$code_first_word" in
+        ""|resume|continue|after-plan-edit|tick|verify|decide|asks-done|review-again|skill-done|abort) ;;
+        *)
+            if [[ "$prompt" != "/code --headless" && "$prompt" != "/code --headless "* ]]; then
+                prompt="/code --headless $code_rest"
+            fi
+            ;;
+    esac
+fi
+
+if [ "${prompt:0:1}" != "/" ]; then
+    sender_pane=$(herdr-api pane current 2>/dev/null | jq -r '.result.pane.pane_id // empty' || true)
+    [ -n "$sender_pane" ] \
+        || { echo "herdr-phase-change: cannot name the sending pane, so the prompt cannot be marked; sent nothing" >&2; exit 1; }
+    prompt="[from orchestrator pane $sender_pane] $prompt"
+fi
 
 agent_field() {
     herdr-api agent get "$target" | jq -r ".result.agent.$1 // empty" || true

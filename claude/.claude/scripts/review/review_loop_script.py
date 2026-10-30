@@ -732,7 +732,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
         for finding in self.round_fixes:
             skipped = any(finding["finding"].text in item.text for item in skipped_findings)
             finding["actioned"] = "skipped_fp" if skipped else "fixed"
-        self.fixed += [item for item in round_findings if item not in skipped_findings]
+        applied = [item for item in round_findings if item not in skipped_findings]
+        self.fixed += applied
         self.prior_issues = prior_issue_entries(round_findings, skips)
 
         self.files = scope(self.repo)
@@ -741,7 +742,10 @@ class LoopRun(full_check_gate.FullCheckSteps):
             fix_diff_file.write_text("\n\n".join(coder_diffs))
             self.round_two_fix_diff_path = str(fix_diff_file)
             self.dispatches = second_round_plan(round_fix, changed, skipped_findings, coder_diffs)
-        return not (changed and all(path.endswith(".md") for path in changed))
+        # A toolkit .md file is code, so only a docs-class fix that changes only .md files skips the re-review.
+        docs_only = (bool(applied) and all(item.finding_class == "docs" for item in applied)
+                     and all(path.endswith(".md") for path in changed))
+        return not docs_only
 
     def mark_repaired(self, findings, changed):
         """A repair's findings go to fixed when it changed a file, else to skipped_fp."""

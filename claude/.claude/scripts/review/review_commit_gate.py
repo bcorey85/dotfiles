@@ -87,6 +87,7 @@ from shell_command import (
     quoted_positions,
     redirection_writes_file,
     resolved_command_words,
+    script_call_arguments,
     split_command_steps,
     split_simple_commands,
     substitution_spans,
@@ -112,7 +113,8 @@ QUOTES_AND_BACKSLASHES = re.compile(r"[\"'\\]")
 OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 # For a command shlex cannot read: git, then only option-like words with an optional value each, then commit.
 UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_VALUE + r")?)*[ \t]+commit\b(?!-)")
-MARK = re.compile(r"review-gate-mark[ \t\n\r\f\v]+(clean|dirty)")
+MARK_SCRIPT = "review-gate-mark"
+MARK_STATES = ("clean", "dirty")
 GIT_TIMEOUT_SECONDS = 3
 NO_REVIEW_MARKER = "[no-review]"
 DOCS_FOLDER = "docs/"
@@ -676,8 +678,19 @@ def check_commit(command, root, state_file, session):
     )
 
 
-def apply_mark(mark, session, state_file, cwd):
-    """Record `review-gate-mark clean|dirty`. `clean` is denied without a converged or deferred hand-back."""
+def mark_in(command):
+    """The state (clean or dirty) a `review-gate-mark` call in the command sets, or None. Only a simple command
+    whose command word is the script counts, so a search or an echo that names it marks nothing."""
+    for arguments in script_call_arguments(command, MARK_SCRIPT):
+        if arguments and arguments[0] in MARK_STATES:
+            return arguments[0]
+    return None
+
+
+def apply_mark(mark, session, state_file):
+    """Record `review-gate-mark clean|dirty`. `clean` is denied without a converged or deferred hand-back, and
+    credits the tree of the repo the stored review dispatch ran on."""
+    reviewed_repo = None
     if mark == "clean":
         # Imported here, not at load: a missing module is an internal error on a `clean` mark only, and the
         # commit check and the dirty mark keep working.
@@ -688,12 +701,19 @@ def apply_mark(mark, session, state_file, cwd):
                 f"[review-commit-gate] Gate not marked clean: {reason}. Only a converged or deferred review "
                 "hand-back from this session allows clean."
             )
+        import handback_store
+        reviewed_repo = handback_store.latest(session)["dispatch"].get("repo")
     # A mark stands for every repo, so it replaces the events before it.
     line = mark if mark == "clean" else json.dumps({"kind": "dirty", "ts": time.time()})
     with open(state_file, "w") as handle:
         handle.write(line + "\n")
-    if mark == "clean" and cwd:
-        reviewed_tree.record_reviewed(session, cwd)
+    if mark != "clean":
+        return
+    if not reviewed_repo:
+        print("[review-commit-gate] The stored review dispatch names no repo, so no tree was recorded as "
+              "reviewed.", file=sys.stderr)
+        return
+    reviewed_tree.record_reviewed(session, reviewed_repo)
 
 
 def on_pre_tool_use(root, session, state_file):
@@ -702,9 +722,9 @@ def on_pre_tool_use(root, session, state_file):
     if is_commit_command(command):
         check_commit(command, root, state_file, session)
         return
-    marked = MARK.search(command)
+    marked = mark_in(command)
     if marked:
-        apply_mark(marked.group(1), session, state_file, jq_field(root, "cwd"))
+        apply_mark(marked, session, state_file)
 
 
 def run(raw, state):

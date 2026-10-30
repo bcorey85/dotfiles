@@ -42,10 +42,11 @@ class GateCase(unittest.TestCase):
             shutil.copy(str(source), str(self.scripts / folder / name))
         self.script = self.scripts / "review" / "review_commit_gate.py"
 
-    def seed_handback(self, status=None, session="s1", dispatches=1, handed_back=True):
-        """Rows as handback.py's hook stores them: dispatches first, then one hand-back."""
+    def seed_handback(self, status=None, session="s1", dispatches=1, handed_back=True, repo="not-a-repo"):
+        """Rows as handback.py's hook stores them: dispatches first, then one hand-back. `repo` is the top level
+        of the repo the review ran on, stored on each dispatch row."""
         self.store_dir.mkdir(parents=True, exist_ok=True)
-        rows = [{"kind": "dispatch", "session_id": session} for _ in range(dispatches)]
+        rows = [{"kind": "dispatch", "session_id": session, "repo": repo} for _ in range(dispatches)]
         if handed_back:
             rows.append({"kind": "handback", "session_id": session, "status": status, "message": ""})
         with open(str(self.store_dir / (session + ".jsonl")), "a") as handle:
@@ -727,9 +728,43 @@ class ReviewedWorkCommitTest(GateCase):
     def commit(self, command, cwd=None, **extra):
         return self.bash(command, cwd=str(cwd or self.repo), **extra)
 
-    def review_converged(self, repo=None):
-        self.seed_handback("converged")
-        self.assert_silent(self.bash("review-gate-mark clean", cwd=str(repo or self.repo)))
+    def review_converged(self, repo=None, mark_cwd=None):
+        """A converged review of repo (the top level of self.repo by default), marked clean from mark_cwd."""
+        reviewed = pathlib.Path(repo or self.repo)
+        self.seed_handback("converged", repo=str(reviewed.resolve()))
+        self.assert_silent(self.bash("review-gate-mark clean", cwd=str(mark_cwd or reviewed)))
+
+    def test_a_review_of_repo_b_from_a_session_in_repo_a_credits_b_and_not_a(self):
+        repo_b = self.make_repo("repo-b")
+        (self.repo / "base.py").write_text("changed in a\n")
+        (repo_b / "base.py").write_text("changed in b\n")
+        self.review_converged(repo=repo_b, mark_cwd=self.repo)
+        self.assert_silent(self.dispatch())
+        self.assert_silent(self.commit("git commit -a -m x", cwd=repo_b))
+        self.assert_commit_denied(self.commit("git commit -a -m x", cwd=self.repo))
+
+    def test_clean_with_no_dispatch_repo_in_the_store_records_no_tree_and_says_so(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_handback("converged", repo=None)
+        marked = self.bash("review-gate-mark clean", cwd=str(self.repo))
+        self.assertIn("no repo", marked.stderr)
+        self.assertEqual(marked.stdout, "")
+        self.assert_silent(self.dispatch())
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_search_that_names_the_mark_leaves_the_tree_unmarked(self):
+        self.seed_handback("converged", repo=str(self.repo.resolve()))
+        self.assert_silent(self.bash('rg "review-gate-mark clean" skills/', cwd=str(self.repo)))
+        self.assertEqual(self.state(), "dirty\n")
+        self.assert_silent(self.dispatch())
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_the_script_call_by_its_path_still_marks_the_tree(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_handback("converged", repo=str(self.repo.resolve()))
+        self.assert_silent(self.bash("~/.claude/scripts/review/review-gate-mark clean", cwd=str(self.repo)))
+        self.assert_silent(self.dispatch())
+        self.assert_silent(self.commit("git commit -a -m x"))
 
     def test_a_commit_of_a_tree_that_converged_review_covered_passes_after_a_later_coder_dispatch(self):
         (self.repo / "base.py").write_text("changed\n")

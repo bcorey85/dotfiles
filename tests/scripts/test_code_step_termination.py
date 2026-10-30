@@ -162,7 +162,7 @@ with mock.patch.dict(os.environ, {"CODE_STEP_CLAUDE_DIR": str(CLAUDE_STUB)}):
 import code_step_core
 import code_step_state
 
-RUN_COMMAND_MODULES = (code_step, sys.modules["code_step_start"], sys.modules["review_asks"])
+RUN_COMMAND_MODULES = (code_step_core, sys.modules["code_step_start"], sys.modules["review_asks"])
 
 PLAN_DIR = "docs/plans/ORD-1-orders"
 PLAN_A = f"{PLAN_DIR}/spec.md"
@@ -329,12 +329,35 @@ def send_message_to(agent_id):
     return setup
 
 
+def write_ledger_calls(transcript_file, message):
+    # The loop's own Bash calls that log what its packet lists: one finding row per entry and a metrics line. A packet
+    # that does not parse owes nothing, so its transcript stays empty.
+    try:
+        packet = handback.load(message)
+    except handback.PacketError:
+        return
+
+    commands = []
+    for key in handback.loop_transcript.PACKET_ROW_KEYS:
+        disposition = "nit" if key == "nit" else "fix"
+        commands += [f"log-review-finding kind=finding lane=code iter=1 gate=code-reviewer disposition={disposition}"
+                     for _ in packet.get(key) or []]
+    commands.append(f"log-review-metrics lane=code iter=1 fixed={len(packet.get('fixed') or [])} "
+                    f"skipped_fp={len(packet.get('skipped_fp') or [])} result=PASS")
+    lines = []
+    for number, command in enumerate(commands):
+        call = {"type": "tool_use", "id": f"ledger{number}", "name": "Bash", "input": {"command": command}}
+        lines.append(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [call]}}))
+    transcript_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def store_review_loop_report(repo, message, agent_id="a1"):
     # The shared hand-back store records a review-loop dispatch and its hand-back. A packet that does not parse is
-    # refused once and recorded when the agent hands back again, as the real hook does. The loop's own transcript is
-    # empty: it started no background work and changed no code.
+    # refused once and recorded when the agent hands back again, as the real hook does. The loop's own transcript
+    # holds only the ledger calls its packet owes: it started no background work and changed no code.
     loop_transcript = repo / ".git" / f"agent-{agent_id}.jsonl"
     loop_transcript.touch()
+    write_ledger_calls(loop_transcript, message)
     event = {"session_id": GIT_ENV["CLAUDE_CODE_SESSION_ID"], "agent_type": "review-loop", "agent_id": agent_id,
              "agent_transcript_path": str(loop_transcript), "tool_input": {"message": message}}
     with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(repo / ".git/handback-store")}):
@@ -1218,7 +1241,7 @@ class TerminationTest(unittest.TestCase):
     def test_a_staged_script_run_in_process_gives_what_its_process_gives(self):
         repo = build_template("template-in-process")
         gate_script = str(CLAUDE_STUB / "scripts" / "code" / "coder_gate.py")
-        real_run_command = code_step.run_command
+        real_run_command = code_step_core.run_command
 
         for gate_arguments in (["clear"], ["set"]):
             command = ["python3", gate_script, *gate_arguments]

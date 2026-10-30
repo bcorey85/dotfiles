@@ -62,6 +62,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 # The file in the loop's state folder that holds the whole output of a red scoped test run.
 SCOPED_TESTS_LOG = "scoped-tests.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
+import change_removal
 import code_step_core
 import coder_gate
 import full_check
@@ -299,6 +300,26 @@ def file_texts(repo):
     return texts
 
 
+def change_under_review(repo):
+    """{path: Counter of the source lines the working tree adds to HEAD}, for the files that count toward size. The
+    loop reads it at its start, as the change its fix passes must not remove, and after every coder pass, to see what
+    the tree still adds."""
+    added_by_file = {}
+    origins = worktree_snapshot.status_entries(repo)[1]
+    for path in scope(repo):
+        if not source_paths.counts_toward_size(path):
+            continue
+
+        target = pathlib.Path(repo) / path
+        tree_text = target.read_text(errors="replace") if target.is_file() else ""
+        head_path = origins.get(path, path)
+        head_text = script_utils.git_output(repo, "show", f"HEAD:{head_path}") or ""
+        added = change_removal.added_lines(head_text, tree_text)
+        if added:
+            added_by_file[path] = added
+    return added_by_file
+
+
 def added_source_lines(diffs):
     """Lines the given unified diffs add to files that count toward the size bar (`source_paths.counts_toward_size`)."""
     total, source = 0, False
@@ -313,6 +334,10 @@ def added_source_lines(diffs):
 
 class LaterPhaseEditError(RuntimeError):
     """A coder pass that edited a file the plan gives to a later phase."""
+
+
+class ChangeRemovedError(RuntimeError):
+    """A coder pass that removed half or more of the lines the change under review adds. The message is the blocker."""
 
 
 class CoderCallError(RuntimeError):
@@ -526,6 +551,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.scoped_tests = ""
         self.later_phase_files = set()  # the plan's later-phase files, which no coder pass may edit
         self.guidance = ""
+        self.change_added = {}  # the lines the change under review adds, which the fix passes must not remove
 
     def next_round(self):
         self.iter_count += 1
@@ -680,7 +706,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def repair(self, call_name, findings, nits=()):
         """One coder pass on the findings. Returns (report, diffs, changed files). Raises LaterPhaseEditError when the
-        pass edited a later-phase file."""
+        pass edited a later-phase file, and ChangeRemovedError when the passes so far removed half or more of the
+        lines the change under review adds."""
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, [finding.text for finding in findings], [nit.text for nit in nits],
                               list(before), self.gate_env, self.later_phase_files, self.guidance)
@@ -697,6 +724,11 @@ class LoopRun(full_check_gate.FullCheckSteps):
             self.files_touched.update(changed)
             raise LaterPhaseEditError(f"{call_name} edited files the plan gives to a later phase: "
                                       + ", ".join(later_phase_edits))
+
+        removed = change_removal.removed_by_file(self.change_added, change_under_review(self.repo))
+        if change_removal.is_gutted(self.change_added, removed):
+            self.files_touched.update(changed)
+            raise ChangeRemovedError(change_removal.removal_blocker(self.change_added, removed))
         return report, diffs, changed
 
     def stop_on_coder_plan_change(self, round_findings, skips, changed, report):
@@ -723,6 +755,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
         report, coder_diffs, changed = self.repair(f"coder{self.iter_count}", round_findings, round_nits)
         self.files_touched.update(changed)
+
         skips = skipped_issues(report, len(round_findings))
         if PLAN_CHANGE_YES.search(report.strip()):
             self.stop_on_coder_plan_change(round_findings, skips, changed, report)
@@ -774,6 +807,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.mark_repaired(open_findings, class_changed)
         if not class_changed:
             self.open_classes = closure["open"]
+
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")
 
@@ -842,6 +876,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     loop = LoopRun(repo, out, brief, gate_env, progress, header.get("plan", ""))
     loop.later_phase_files = set(filter(None, header.get("later-phase files", "").split(", ")))
     loop.guidance = header.get("guidance", "")
+    loop.change_added = change_under_review(repo)
 
     log_call(repo, [str(SKILLS / "review-scope"), "caller=code"])
     found_command = check_command_for(repo, out)
@@ -855,6 +890,8 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
         walk(loop, check_command, gate_commands)
     except LaterPhaseEditError as error:
         loop.stop("critical-blocker", [str(error)])
+    except ChangeRemovedError as error:
+        loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])
 
     every_actioned = [finding["actioned"] for row in loop.run_rows for finding in row["findings"]]
     loop.tallies["fixed"] = every_actioned.count("fixed") + loop.check_fixed

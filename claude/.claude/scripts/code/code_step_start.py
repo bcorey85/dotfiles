@@ -26,6 +26,7 @@ from code_step_core import (
     ask_user,
     branch_label,
     clear_say,
+    dispatch_id_at,
     emit,
     emit_dispatch,
     file_hashes,
@@ -41,6 +42,7 @@ from code_step_core import (
     restart_instruction,
     ruled_asks_lines,
     ruled_asks_path,
+    run_coder_gate,
     save_state,
     say,
     script_command,
@@ -599,6 +601,11 @@ def command_start(args):
     if parsed.restart or reopens_stopped_run(previous):
         drop_open_run(repo_dir, previous)
 
+    # Every refusal that keeps an open run alive has returned above, and a restart dropped the open run, so no run here
+    # owns the older gate: a keyed one names an ended run, and one set by hand with no key would gate this start's
+    # coder. Clear either.
+    run_coder_gate(repo_dir, "clear")
+
     if parsed.task_text is not None:
         return start_planless(repo_dir, parsed.modifier, parsed.task_text, branch)
     start_plan_run(repo_dir, previous, branch, parsed, start_command)
@@ -774,9 +781,18 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     if entry:
         stale_prose_script = pathlib.Path(__file__).resolve().parent / "stale_prose.py"
         commands.append(f"python3 {stale_prose_script} --base {base_head}")
-    gate_note = set_gate_and_packet_note(repo_dir, plan_rel, commands)
-    packet_body = packet_text(repo_dir, plan_rel, number, use_packet)
-    run_id = start_run(repo_dir)
+    # The gate is for the run's first dispatch, the coder this start dispatches. The run's folder is wiped only after
+    # the packet is built, so a failed packet leaves the open run's log in place.
+    run_id = script_utils.sortable_unique_id()
+    gate_note = set_gate_and_packet_note(repo_dir, plan_rel, commands, run_id)
+    try:
+        packet_body = packet_text(repo_dir, plan_rel, number, use_packet)
+    except SystemExit:
+        # The packet reads whether the gate exists, so the gate is set first. A failed packet starts no run, and the
+        # gate names a run that never starts: end it.
+        run_coder_gate(repo_dir, "clear")
+        raise
+    start_run(repo_dir, run_id)
 
     phase_description = f"Phase {number} of `{plan_rel}`" if use_packet else f"`{plan_rel}`"
     prompt = (f"Implement {phase_description}. Read the plan phase-scoped.\n"
@@ -862,15 +878,15 @@ def check_acceptance_criteria(repo_dir, plan_rel):
     return False
 
 
-def set_gate_and_packet_note(repo_dir, plan_rel, commands):
+def set_gate_and_packet_note(repo_dir, plan_rel, commands, run_id):
     if not commands:
         return "GATE: none derived; the coder runs its own checks (the packet says so)."
 
     # The gate runs the commands later, at each hand-back, so the repo's gate env goes into the stored gate.
     gate_env = plan_format.repo_gate_env(repo_dir, plan_rel)
     env_arguments = [argument for assignment in gate_env for argument in ("--env", assignment)]
-    gate_script = str(SCRIPTS_DIR / "code" / "coder_gate.py")
-    code, output = run_command(["python3", gate_script, "set", *env_arguments, *commands], repo_dir)
+    key_arguments = ["--run", run_id, "--dispatch", dispatch_id_at(1)]
+    code, output = run_coder_gate(repo_dir, "set", *env_arguments, *key_arguments, *commands)
     if code != 0:
         return f"GATE: not set ({output.splitlines()[0] if output else 'refused'}); the coder runs its own checks."
 

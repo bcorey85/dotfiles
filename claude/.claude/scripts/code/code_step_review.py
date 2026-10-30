@@ -78,7 +78,13 @@ from code_step_core import (
     wait_for_loop_stop,
 )
 from code_step_report import change_line, coder_message_without_gate_stamp, coder_model
-from code_step_review_stops import is_capped_review, left_findings_open, stop_on_review_status
+from code_step_review_stops import (
+    CHECK_STOPS,
+    carry_check_stop_fix,
+    is_capped_review,
+    left_findings_open,
+    stop_on_review_status,
+)
 from code_step_state import Stage
 from review_asks import numbered_ask_lines
 from script_utils import git_output
@@ -128,7 +134,13 @@ def carried_question_lines(carried):
             *[f"- {line}" for line in carried], ""]
 
 
-def emit_plan_impact_modal(impact, repo_dir, carried=()):
+REPLACED_IMPACT_LINE = ("A later hand-back of the same coder no longer carries this block. Read that hand-back "
+                        "and rule: run `decide keep` when the block is answered. Write the ruling text in your own "
+                        "or the user's words, never the coder's options. Nothing is recorded or dispatched before "
+                        "that `decide`.")
+
+
+def emit_plan_impact_modal(impact, repo_dir, carried=(), replaced=False):
     word = preset_decision(repo_dir)
     if word:
         print(f"PLAN-IMPACT answered by the pre-set decision '{word}'. No question to the user.")
@@ -136,14 +148,16 @@ def emit_plan_impact_modal(impact, repo_dir, carried=()):
         return command_decide(repo_dir, state, [word, "--by", "session", "--ruling",
                                                 f"pre-set decision '{word}'; no user was asked"],
                               ruling_by="the pre-set decision")
-    if not plan_format.changes_acceptance_criteria(impact):
+    if not replaced and not plan_format.changes_acceptance_criteria(impact):
         print("PLAN-IMPACT changes no acceptance criterion, so the plan follows the code. No question to the user.")
         state = load_state(repo_dir)
         return command_decide(repo_dir, state, ["adopt", "--by", "session", "--ruling",
                                                 plan_format.below_criteria_ruling(impact)])
+    replaced_lines = [REPLACED_IMPACT_LINE, ""] if replaced else []
     ask_user(repo_dir, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
              "answer. Then invoke Skill code with the args after the option the user chose, with the ruling in one "
              "line, in your own words, as the --ruling text. Do not quote the user.",
+             *replaced_lines,
              impact, "",
              *carried_question_lines(carried),
              f"1. {plan_format.PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "
@@ -181,14 +195,9 @@ def resolved_plan_impact(state):
         resolved = "the pre-set decision ruled on this disagreement, not the user"
     else:
         resolved = "the session ruled on this disagreement, not the user"
-    lines = [f"RESOLVED: {resolved}. Review the code against the ruling. It is not an open question.",
-             f"Decision: {ruling['decision']}",
-             f"Ruled by: {ruling['by']}, at {ruling['at']}",
-             "The ruling:"]
-    lines += ["  " + line for line in ruling["words"].splitlines()]
-    lines.append("The disagreement it settles:")
-    lines += ["  " + line for line in state.impact.splitlines()]
-    return "\n".join(lines)
+    return plan_format.resolved_block(
+        resolved, ruling["decision"], ruling["by"], ruling["at"], ruling["words"], state.impact
+    )
 
 
 def decision_for_word(repo_dir, state, word):
@@ -351,6 +360,8 @@ def command_review_again(repo_dir, state, args):
     is_capped_stop = stop_kind(state) == "cap-reached"
     if is_capped_stop:
         state.iter = 0
+    if stop_kind(state) in CHECK_STOPS:
+        carry_check_stop_fix(repo_dir, state)
     clear_stop(state)
     # A failed review that ran the structure pass runs it again; one that skipped it skips it again. A capped review
     # ran it on this diff already.
@@ -578,25 +589,20 @@ def launch_review_script(repo_dir, state, prompt):
     if module is None:
         return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
 
-    import handback_hook
-    import handback_store  # after the load check: a missing hand-back module must stop the run, not crash the import
+    import handback_hook  # after the load check: a missing hand-back module must stop the run, not crash the import
+    from review_loop_script import loop_script_command, write_script_prompt
 
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
     marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, REVIEW_LOOP, "script", prompt)
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state.run_id}-{dispatch_id}"
     session_id = run_session_id(state)
-    handback_store.record(session_id, "dispatch", no_review=False, repo=handback_hook.reviewed_repo("", repo_dir))
+    handback_hook.record_script_dispatch(session_id, repo_dir)
 
     code_step_dir = state_dir(repo_dir)
-    script_dir = code_step_dir / "loop-script" / agent_id
-    script_dir.mkdir(parents=True, exist_ok=True)
-    prompt_file = script_dir / "prompt.txt"
-    prompt_file.write_text(prompt + "\n")
-    log_path = script_dir / "script.log"
-    command = [sys.executable, str(REVIEW_LOOP_SCRIPT), repo_dir, "--state-dir", str(code_step_dir),
-               "--session", session_id, "--run-id", state.run_id, "--agent-id", agent_id,
-               "--prompt-file", str(prompt_file)]
+    prompt_file, log_path = write_script_prompt(code_step_dir, agent_id, prompt + "\n")
+    command = loop_script_command(REVIEW_LOOP_SCRIPT, repo_dir, code_step_dir, session_id, state.run_id, agent_id,
+                                  prompt_file)
     with log_path.open("w") as log:
         process = subprocess.Popen(command, cwd=repo_dir, stdin=subprocess.DEVNULL, stdout=log,
                                    stderr=subprocess.STDOUT, start_new_session=True)

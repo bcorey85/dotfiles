@@ -17,10 +17,11 @@ body of a heredoc is not read as commands unless it feeds a shell interpreter (`
 backtick spans of an unquoted heredoc body are. A command that names a program running code the parser does not read
 (a shell's `-c`, `eval`, `docker exec`, `ssh`; shell_command.CODE_RUNNERS) is also scanned as plain text for `>` and
 tee targets, quotes ignored: those targets are checked only against git-tracked files.
-A relative target resolves against the session cwd (`cwd` in the hook input) and, for rule 2, also against each
-folder a literal `cd` or `pushd` in command position moved to before it, cumulatively; a tracked file under any of
-them denies. A relative target after a `cd`, `pushd` or `popd` whose folder is not a literal is denied (rule 5), and
-in a coder a relative target after any of them is denied (rule 3).
+A relative target resolves against the session cwd (`cwd` in the hook input) and, for rules 2 and 4, also against
+each folder a literal `cd` or `pushd` in command position moved to before it, cumulatively; a tracked file under any
+of them denies. A script (rule 4) run after such a cd that writes a relative path denies naming the last cd folder;
+an absolute path in it resolves as written. A relative target after a `cd`, `pushd` or `popd` whose folder is not
+a literal is denied (rule 5), and in a coder a relative target after any of them is denied (rule 3).
 Escape for rules 1, 2, 4 and 5 in the main session: a trailing `#skip-shell-write-gate` comment. A subagent (agent_id in
 the hook input) or a coder cannot use it. Fails closed on internal error.
 """
@@ -30,6 +31,7 @@ import re
 import shlex
 import subprocess
 import sys
+from collections import Counter
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
@@ -39,7 +41,7 @@ from code_text import SP, receiver_text, split_arguments, tuple_fields, without_
 from hook_input import JqError, expand_env_names, is_under_temp_dir, jq_get, jq_str
 from hook_input import bash_basename as shell_basename
 from hook_input import bash_dirname as shell_dirname
-from shell_statements import SKIP_WORDS, strip_comments, strip_heredocs
+from shell_statements import strip_comments, strip_heredocs
 
 SPC = r"[ \t\r\f\v]"
 TARGET = r"[^ \t\r\f\v|&;<>()]+"
@@ -131,13 +133,9 @@ def resolve_target(raw, cwd):
     path = shell_command.path_word(trim(raw))
     if not path or path.startswith("-") or path.startswith("&") or path.startswith("/dev/"):
         return None
-    if not path.startswith("/"):
+    if not shell_command.path_word_is_absolute(raw):
         path = cwd + "/" + path
     return path
-
-
-def path_word_is_absolute(raw):
-    return shell_command.path_word(trim(raw)).startswith("/")
 
 
 def written_targets(core):
@@ -205,8 +203,6 @@ def directory_changes(step):
         return [None] if DIRECTORY_COMMAND_TEXT.search(step) else []
     folders = []
     for words, _redirections, _piped in commands:
-        while words and words[0] in SKIP_WORDS:
-            words = words[1:]
         words = shell_command.command_after_wrappers(words)
         if words and words[0] in DIRECTORY_COMMANDS:
             expanded_words = [expand_env_names(word, ("TMPDIR", "HOME")) for word in words]
@@ -214,12 +210,11 @@ def directory_changes(step):
     return folders
 
 
-def step_targets(code, cwd):
-    """(raw target, folders, unread_change) for every redirect and tee target of the command text, in order. folders
-    holds the session cwd, then each folder an earlier step, or the step itself, moved to with a literal `cd` or
-    `pushd`, each resolved against the one before. unread_change is True once one moved to a folder that is not a
-    literal."""
-    targets = []
+def step_folders(code, cwd):
+    """(step, folders, unread_change) for every step of the command text, in order. folders holds the session cwd,
+    then each folder an earlier step, or the step itself, moved to with a literal `cd` or `pushd`, each resolved
+    against the one before. unread_change is True once one moved to a folder that is not a literal."""
+    steps = []
     folders = [cwd]
     unread_change = False
     for _operator, step in shell_command.split_command_steps(code):
@@ -229,8 +224,15 @@ def step_targets(code, cwd):
                 continue
             folder_path = os.path.join(folders[-1], os.path.expanduser(folder))
             folders = [*folders, os.path.normpath(folder_path)]
-        targets += [(raw, folders, unread_change) for raw in written_targets(step)]
-    return targets
+        steps.append((step, folders, unread_change))
+    return steps
+
+
+def step_targets(code, cwd):
+    """(raw target, folders, unread_change) for every redirect and tee target of the command text, in order, with
+    the folders step_folders gives its step."""
+    return [(raw, folders, unread_change) for step, folders, unread_change in step_folders(code, cwd)
+            for raw in written_targets(step)]
 
 
 def code_texts(code):
@@ -274,9 +276,9 @@ def run(raw):
 
     code = strip_comments(strip_heredocs(command))
     texts = code_texts(code)
-    segments = [segment for text in texts
-                for _operator, step in shell_command.split_command_steps(text)
-                for segment in simple_command_texts(step)]
+    segment_folders = [(segment, folders) for text in texts for step, folders, _unread in step_folders(text, cwd)
+                       for segment in simple_command_texts(step)]
+    segments = [segment for segment, _folders in segment_folders]
     targets = [target for text in texts for target in step_targets(text, cwd)]
     text_targets = [target for text in texts if shell_command.names_code_runner(text)
                     for target in regex_written_targets(text, skip_quoted=False)]
@@ -286,12 +288,20 @@ def run(raw):
         return
 
     written_paths = {resolve_target(raw_target, cwd) for raw_target, _folders, _unread in targets} - {None}
-    for segment in segments:
-        target = interpreter_written_target(segment, cwd, written_paths, command)
-        if target:
-            raise DenyError(deny_text("a script that writes " + target + " bypasses the Write/Edit hook pipeline. "
-                                      "Keep any scratch script in the scratchpad, never in the repo tree.",
+    for segment, folders in segment_folders:
+        written = interpreter_written_target(segment, folders, written_paths, command)
+        if written is None:
+            continue
+
+        raw_target, target = written
+        if len(folders) > 1 and not shell_command.path_word_is_absolute(raw_target):
+            raise DenyError(deny_text("a script run after a cd to " + folders[-1] + " writes the relative path "
+                                      + raw_target + ", which is git-tracked under the session cwd or a cd folder. "
+                                      + DIRECTORY_CHANGE_HINT,
                                       cannot_skip))
+        raise DenyError(deny_text("a script that writes " + target + " bypasses the Write/Edit hook pipeline. "
+                                  "Keep any scratch script in the scratchpad, never in the repo tree.",
+                                  cannot_skip))
 
     if not PRECHECK.search(command):
         return
@@ -482,9 +492,9 @@ def binding_texts(code, name):
 
 
 def assigned_texts(code, word):
-    """The right side of each assignment to the (regex-escaped) name `word`."""
-    assignment = re.compile(rf"(?:^|[;{{:])[ \t]*(?:(?:const|let|var|my|our)\s+)?\$?{word}\s*(?::[^=\n]*)?=(?![=>])",
-                            re.M)
+    """The right side of each assignment, augmented assignment included, to the (regex-escaped) name `word`."""
+    assignment = re.compile(rf"(?:^|[;{{:])[ \t]*(?:(?:const|let|var|my|our)\s+)?\$?{word}\s*(?::[^=\n]*)?"
+                            r"[-+*/%|&^]*=(?![=>])", re.M)
     return [",".join(split_arguments(code, match.end())) for match in assignment.finditer(code)]
 
 
@@ -508,21 +518,60 @@ def path_candidates(text):
     return literals + joined
 
 
+def absolute_root(code, target):
+    """The absolute folder a write target joins onto (`R / 'a'`, `T + f`, `os.path.join(R, 'a')`), else None. The
+    root is the target's first name that is not called or followed by a `.`, followed by a join operator, and whose
+    every binding (an assignment, an augmented assignment, a loop or a call argument) is only one string
+    literal (a call head or attribute may surround it, no other name), an absolute path, the same one in all of
+    them. A name bound to different paths, to a relative one, or to a join with another name is no root. The name
+    scan does not skip quoted text, so a target whose first name sits inside a leading string literal
+    (`Path('/tmp/x') / 'a'`, `'/tmp/x/' + R`, `'sub/' + R`) has no root."""
+    for match in CODE_NAME.finditer(target):
+        if re.match(r"\s*[(.]", target[match.end():]):
+            continue
+        if not re.match(r"\s*\)?\s*[/+,]", target[match.end():]):
+            return None
+        bindings = binding_texts(code, match.group())
+        literals = [[literal.group(2) for literal in STRING_LITERAL.finditer(text)] for text in bindings]
+        if not literals or any(len(found) != 1 or not found[0].startswith("/") for found in literals):
+            return None
+        if len({found[0] for found in literals}) != 1:
+            return None
+        for text in bindings:
+            rest = STRING_LITERAL.sub("", text)
+            if any(not re.match(r"\s*[(.]", rest[name.end():]) for name in CODE_NAME.finditer(rest)):
+                return None
+        return literals[0][0]
+    return None
+
+
 def written_candidates(code):
     """The path texts code's file writes name: each literal in a write statement, and each literal its target is
-    bound to."""
-    writes = write_statements(code)
-    literals = [match.group(2) for statement, _target in writes for match in STRING_LITERAL.finditer(statement)]
-    named = [candidate for _statement, target in writes for text in named_texts(code, target)
-             for candidate in path_candidates(text)]
-    return literals + named
+    bound to. When a write's target joins onto an absolute_root, the target's own literals and the names it reads are
+    joined onto that root; other literals of the statement stay relative."""
+    candidates = []
+    for statement, target in write_statements(code):
+        literals = [match.group(2) for match in STRING_LITERAL.finditer(statement)]
+        named = [candidate for text in named_texts(code, target) for candidate in path_candidates(text)]
+        root = absolute_root(code, target)
+        if root is None:
+            candidates += literals + named
+            continue
+        own = [match.group(2) for match in STRING_LITERAL.finditer(target)]
+        other = list((Counter(literals) - Counter(own)).elements())
+        candidates += other + [literal if literal.startswith("/") else root.rstrip("/") + "/" + literal
+                               for literal in own + named]
+    return candidates
 
 
-def interpreter_written_target(segment, cwd, written_paths, command):
-    """The git-tracked file an interpreter step opens for writing, else None: code with a file write whose statement
-    names a tracked file as a string literal, whose target is a name bound (through assignments, for loops and
-    function calls) to a tracked file's literal or to literals that join into one, or a tracked file passed as an
-    argument. A path the code builds any other way is not seen."""
+def interpreter_written_target(segment, folders, written_paths, command):
+    """(raw path, path) of the git-tracked file an interpreter step opens for writing, else None: code with a file
+    write whose statement names a tracked file as a string literal, whose target is a name bound (through
+    assignments, for loops and function calls) to a tracked file's literal or to literals that join into one, or a
+    tracked file passed as an argument. folders holds the session cwd, then each literal cd folder before the step,
+    and a relative path counts when it names a tracked file under any of them. A path the code builds any other way
+    is not seen."""
+    cwd = folders[0]
     found = interpreter_code(segment, cwd, written_paths, command)
     if found is None:
         return None
@@ -537,9 +586,12 @@ def interpreter_written_target(segment, cwd, written_paths, command):
     for code in dict.fromkeys((raw_code, without_comments(raw_code))):
         candidates += written_candidates(code)
     for candidate in candidates + arguments:
-        path = resolve_target(candidate, cwd)
-        if path and os.path.isfile(path) and is_git_tracked(path):
-            return path
+        candidate_folders = [cwd] if shell_command.path_word_is_absolute(candidate) else folders
+        for folder in candidate_folders:
+            path = resolve_target(candidate, folder)
+            path = os.path.normpath(path) if path else path
+            if path and os.path.isfile(path) and is_git_tracked(path):
+                return candidate, path
     return None
 
 
@@ -567,7 +619,7 @@ def check_written_target(raw_target, folders, unread_change, cannot_skip, coder)
     first, then each folder a literal `cd` or `pushd` moved to before the write."""
     cwd = folders[0]
     expanded = expand_env_names(raw_target, ("TMPDIR", "HOME"))
-    relative = not path_word_is_absolute(expanded)
+    relative = not shell_command.path_word_is_absolute(expanded)
     after_directory_change = relative and (unread_change or len(folders) > 1)
 
     for folder in folders if relative else [cwd]:

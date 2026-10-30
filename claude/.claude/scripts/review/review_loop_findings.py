@@ -12,6 +12,7 @@ import plan_format
 import script_utils
 from finding_record import combine, parse_finding
 from plan_format import PLAN_CHANGE_MARK
+from source_text import indent_of
 
 UNLOCATED = handback.UNLOCATED
 
@@ -36,10 +37,6 @@ def section(text, name):
     if not match:
         return None
     return re.sub(r"\A(?:[ \t]*\n)+", "", match.group(1)).rstrip()
-
-
-def indent_of(line):
-    return len(line) - len(line.lstrip())
 
 
 def is_bare_finding_head(line):

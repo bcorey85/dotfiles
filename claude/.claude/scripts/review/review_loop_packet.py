@@ -114,9 +114,13 @@ def report_write_failure(what, error):
 def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
     # The driver's skipped re-reviews are its benched routes, so a clean row never sets no_reviewer;
     # a coder pass after the last reviewer round sets unreviewed_fix.
+    # Only a /code run folder takes the run event: a /review launch keeps its state elsewhere, and a run folder it
+    # wrote under /code's state would read as a later start after /code abort.
     try:
-        code_step_core.log_event(repo, args.run_id, "handback", args.session, agent_id=args.agent_id,
-                                 agent_type=handback.REVIEW_LOOP, message=message)
+        code_state = code_step_core.state_dir(repo)
+        if code_state is not None and pathlib.Path(args.state_dir).resolve() == pathlib.Path(code_state).resolve():
+            code_step_core.log_event(repo, args.run_id, "handback", args.session, agent_id=args.agent_id,
+                                     agent_type=handback.REVIEW_LOOP, message=message)
     except Exception as error:
         report_write_failure("run event", error)
     try:

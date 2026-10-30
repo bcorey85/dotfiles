@@ -1,5 +1,4 @@
 """Checks for review_commit_gate.py: a coder dispatch obligates /review before a commit."""
-import importlib.util
 import json
 import os
 import pathlib
@@ -24,9 +23,11 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("lib", "full_check_receipt.py"), ("lib", "pytest_config.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
-                 "the commit ships only Markdown files under the repo's top-level docs/ folder, run it as a "
+                 "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
+                 "in the repo's .claude/notes-paths, run it as a "
                  "plain `git commit` (with `git add` of single named files if needed) from the repo root in its "
-                 "own Bash call, with no `cd`, `env` or `git -C`, because the gate passes that form.")
+                 "own Bash call, with no `cd`, `env` or `git -C`, because the gate passes that form. A commit "
+                 "after a `cd` earns no credit even when a review converged: run it as `git -C <dir> commit`.")
 
 
 class GateCase(unittest.TestCase):
@@ -66,11 +67,11 @@ class GateCase(unittest.TestCase):
         self.assertIn(reason_part, decision["permissionDecisionReason"])
         self.assertEqual(decision["permissionDecisionReason"].count("\n"), 0)
 
-    def fire_raw(self, stdin, env_extra=None):
+    def fire_raw(self, stdin, env_extra=None, cwd=None):
         env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.tmp)}
         env.update(env_extra or {})
         return subprocess.run([sys.executable, str(self.script)], input=stdin, capture_output=True, text=True, env=env,
-                              cwd=str(self.tmp))
+                              cwd=str(cwd or self.tmp))
 
     def dispatch(self, subagent="coder", session="s1", **extra):
         payload = {"hook_event_name": "PostToolUse", "tool_name": "Agent", "session_id": session,
@@ -102,6 +103,9 @@ class GateCase(unittest.TestCase):
         self.assertEqual(finished.stderr, "")
         self.assertEqual(json.loads(finished.stdout), {"hookSpecificOutput": {
             "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": COMMIT_DENIED}})
+
+    def assert_lost_credit_denied(self, finished):
+        self.assert_denies(finished, "Do not run /review again")
 
     def assert_internal_error_asks(self, finished, exit_code, stderr=""):
         reason = f"[review-commit-gate] internal error (exit {exit_code}). Allow to run the command anyway."
@@ -418,6 +422,99 @@ class NotesOnlyCommitTest(GateCase):
         self.stage("src/a.py")
         self.assert_commit_denied(self.commit_in('git commit -q -m "code"'))
         self.assertEqual(self.state(), "dirty\n")
+
+    def commit_notes_list(self, text="# queue notes\nqueue/\n\nQUEUE.md\n", repo=None):
+        """Commit `.claude/notes-paths` in the test repo, so HEAD holds the list."""
+        repo = repo or self.repo
+        self.stage(".claude/notes-paths", repo=repo)
+        (repo / ".claude" / "notes-paths").write_text(text)
+        self.git(repo, "add", "--", ".claude/notes-paths")
+        self.git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "list")
+
+    def test_a_commit_of_listed_notes_is_not_denied_in_a_dirty_session(self):
+        self.commit_notes_list()
+        self.stage("queue/item.md", "QUEUE.md", "docs/x.md")
+        self.assert_silent(self.commit_in('git commit -q -m "queue"'))
+        self.assertEqual(self.state(), "dirty\n")
+
+    def test_a_listed_folder_with_a_non_markdown_file_is_denied(self):
+        self.commit_notes_list()
+        self.stage("queue/item.txt")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "queue"'))
+
+    def test_an_unlisted_markdown_path_is_denied(self):
+        self.commit_notes_list()
+        self.stage("other/item.md")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "other"'))
+
+        for path in ("queue-old/item.md", "src/queue/item.md", "src/QUEUE.md", "QUEUE.md/item.md"):
+            with self.subTest(path=path):
+                repo = self.make_repo("unlisted-" + path.replace("/", "-"))
+                self.commit_notes_list(repo=repo)
+                self.stage(path, repo=repo)
+                self.assert_commit_denied(self.commit_in('git commit -q -m "other"', repo))
+
+    def test_no_list_in_head_denies_a_queue_note(self):
+        self.stage("queue/item.md")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "queue"'))
+
+    def test_a_list_edited_only_in_the_working_tree_grants_nothing(self):
+        self.commit_notes_list("# nothing listed\n")
+        self.stage("queue/item.md")
+        (self.repo / ".claude" / "notes-paths").write_text("queue/\n")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "queue"'))
+
+    def test_a_commit_that_ships_the_list_itself_is_denied(self):
+        self.commit_notes_list("queue/\n.claude/\n.claude/notes-paths\n")
+        (self.repo / ".claude" / "notes-paths").write_text("queue/\n.claude/\n.claude/notes-paths\n# edited\n")
+        self.git(self.repo, "add", "--", ".claude/notes-paths")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "list"'))
+
+    def test_a_list_entry_that_is_not_a_normalized_literal_denies_and_names_its_line(self):
+        for entry in ("/queue/", "./queue/", "queue/*.md", "queue/../x.md", "../x.md", "./", "queue//",
+                      "queue/./a.md", "../queue/", "."):
+            with self.subTest(entry=entry):
+                repo = self.make_repo("bad-" + entry.replace("/", "-").replace("*", "x"))
+                self.commit_notes_list(f"# notes\n{entry}\n", repo=repo)
+                self.stage("queue/item.md", repo=repo)
+                finished = self.commit_in('git commit -q -m "queue"', repo)
+                self.assert_denies(finished, f".claude/notes-paths:2: entry {entry!r}")
+
+    def test_the_check_verb_prints_each_bad_entry_with_its_line_and_exits_1(self):
+        list_file = self.tmp / "list"
+        list_file.write_text("# notes\nqueue/\n/queue/\nQUEUE.md\n")
+        finished = subprocess.run([sys.executable, str(self.script), "check", str(list_file)], capture_output=True,
+                                  text=True)
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn(f"{list_file}:3: entry '/queue/'", finished.stderr)
+        list_file.write_text("queue/\nQUEUE.md\n")
+        finished = subprocess.run([sys.executable, str(self.script), "check", str(list_file)], capture_output=True,
+                                  text=True)
+        self.assertEqual((finished.returncode, finished.stderr), (0, ""))
+
+    def test_a_bad_list_does_not_change_the_verdict_of_a_code_or_docs_only_commit(self):
+        self.commit_notes_list("/queue/\n")
+        self.stage("src/a.py")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "code"'))
+        repo = self.make_repo("bad-list-docs")
+        self.commit_notes_list("/queue/\n", repo=repo)
+        self.stage("docs/a.md", repo=repo)
+        self.assert_silent(self.commit_in('git commit -q -m "docs"', repo))
+
+    def test_a_bad_list_does_not_replace_the_review_deny_of_code_mixed_with_a_note(self):
+        self.commit_notes_list("/queue/\n")
+        self.stage("src/a.py", "queue/item.md")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "mixed"'))
+
+    def test_the_check_verb_with_a_wrong_argument_count_prints_usage_and_exits_2(self):
+        finished = subprocess.run([sys.executable, str(self.script), "check"], capture_output=True, text=True)
+        self.assertEqual(finished.returncode, 2)
+        self.assertIn("usage: review_commit_gate.py check <file>", finished.stderr)
+
+    def test_a_listed_note_mixed_with_code_is_denied(self):
+        self.commit_notes_list()
+        self.stage("queue/item.md", "src/a.py")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "mixed"'))
 
     def test_add_then_commit_of_a_notes_file_is_not_denied_with_an_empty_or_a_docs_index(self):
         command = f'git add {self.NOTES} && git commit -q -m "notes"'
@@ -878,7 +975,7 @@ class ReviewedWorkCommitTest(GateCase):
         (self.repo / "base.py").write_text("changed\n")
         self.review_converged()
         self.assert_silent(self.dispatch())
-        self.assert_commit_denied(self.commit(f"git --git-dir={self.repo}/.git commit -a -m x", cwd=self.tmp))
+        self.assert_lost_credit_denied(self.commit(f"git --git-dir={self.repo}/.git commit -a -m x", cwd=self.tmp))
 
     def test_a_commit_that_concludes_a_merge_passes(self):
         self.git(self.repo, "checkout", "-q", "-b", "side")
@@ -926,24 +1023,101 @@ class ReviewedWorkCommitTest(GateCase):
 
     def coder_transcript(self, agent_id, *edited_files):
         """The session transcript path, with a subagent transcript in which agent_id edited edited_files."""
+        return self.coder_tool_transcript(agent_id, *[("Edit", "file_path", edited) for edited in edited_files])
+
+    def coder_tool_transcript(self, agent_id, *edits):
+        """Like coder_transcript, for edits given as (tool name, input key, file) triples."""
         session_transcript = self.tmp / "session.jsonl"
         session_transcript.write_text("")
         subagents = self.tmp / "session" / "subagents"
         subagents.mkdir(parents=True, exist_ok=True)
         calls = [{"type": "assistant", "message": {"role": "assistant", "content": [
-            {"type": "tool_use", "id": f"t{index}", "name": "Edit", "input": {"file_path": str(edited)}}]}}
-            for index, edited in enumerate(edited_files)]
+            {"type": "tool_use", "id": f"t{index}", "name": tool, "input": {key: str(edited)}}]}}
+            for index, (tool, key, edited) in enumerate(edits)]
         (subagents / f"agent-{agent_id}.jsonl").write_text("".join(json.dumps(call) + "\n" for call in calls))
         return str(session_transcript)
 
-    def test_coder_work_in_one_repo_denies_a_commit_in_any_repo(self):
+    def test_each_edit_tool_in_the_commits_repo_denies_it_while_an_edit_elsewhere_does_not_clear_it(self):
+        other = self.make_repo("other")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        for tool, key in (("MultiEdit", "file_path"), ("Write", "file_path"), ("NotebookEdit", "notebook_path")):
+            with self.subTest(tool=tool):
+                transcript = self.coder_tool_transcript("a1", (tool, key, self.repo / "base.py"),
+                                                        ("Edit", "file_path", other / "base.py"))
+                self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=self.repo, session="s2",
+                                                      transcript_path=transcript))
+
+    def test_a_git_dash_c_commit_in_the_edited_repo_is_denied_from_another_cwd(self):
         other = self.make_repo("other")
         transcript = self.coder_transcript("a1", self.repo / "base.py")
         self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
-        for cwd in (other, self.repo):
-            with self.subTest(cwd=cwd):
-                self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=cwd, session="s2",
-                                                      transcript_path=transcript))
+
+        self.assert_commit_denied(self.commit(f"git -C {self.repo} commit --allow-empty -m x", cwd=other,
+                                              session="s2", transcript_path=transcript))
+
+    def test_a_coder_that_edited_only_a_file_outside_every_repo_denies_a_commit_in_any_repo(self):
+        other = self.make_repo("other")
+        loose = self.tmp / "loose.txt"
+        loose.write_text("loose\n")
+        transcript = self.coder_transcript("a1", loose)
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_commit_in_a_folder_that_is_no_repo_is_denied_while_readable_coder_edits_exist(self):
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=elsewhere, session="s2",
+                                              transcript_path=transcript))
+
+    def test_coder_work_in_one_repo_denies_a_commit_there_and_lets_one_in_another_repo_through(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=self.repo, session="s2",
+                                              transcript_path=transcript))
+        self.assert_silent(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
+                                       transcript_path=transcript))
+
+    def test_a_coder_whose_edits_cannot_be_read_denies_a_commit_in_any_repo(self):
+        other = self.make_repo("other")
+        no_edits = self.coder_transcript("a1")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        for transcript in (no_edits, "/no/such/transcript.jsonl"):
+            for cwd in (other, self.repo):
+                with self.subTest(transcript=transcript, cwd=cwd):
+                    self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=cwd, session="s2",
+                                                          transcript_path=transcript))
+
+    def test_a_dirty_mark_still_denies_a_commit_in_any_repo(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        self.assert_silent(self.bash("review-gate-mark dirty", session="s2", cwd=str(self.repo)))
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_commit_that_concludes_a_conflicted_merge_passes_a_dirty_session(self):
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        self.git(self.repo, "checkout", "-q", "-b", "base-update")
+        (self.repo / "base.py").write_text("base moved\n")
+        self.git(self.repo, "commit", "-q", "-am", "base moved")
+        self.git(self.repo, "checkout", "-q", "main")
+        (self.repo / "base.py").write_text("lane edit\n")
+        self.git(self.repo, "commit", "-q", "-am", "lane")
+        merge = self.git(self.repo, "merge", "base-update")
+        merge_head = self.git(self.repo, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+        self.assertNotEqual(merge.returncode, 0)
+        self.assertEqual(merge_head.returncode, 0)
+
+        self.assert_silent(self.commit("git commit -a -m merge", session="s2", transcript_path=transcript))
 
     def test_a_coder_with_no_agent_id_gets_no_hand_back_credit(self):
         (self.repo / "base.py").write_text("changed\n")
@@ -968,12 +1142,173 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_silent(self.dispatch())
         self.assert_commit_denied(self.commit("git commit -a -m x"))
 
-    def seed_repo_handback(self, repo):
-        """A converged hand-back, stored now, answering a review-loop dispatch of repo."""
+    def seed_repo_handback(self, repo, status="converged", session="s1"):
+        """A hand-back, stored now, answering a review-loop dispatch of repo."""
         self.store_dir.mkdir(parents=True, exist_ok=True)
-        rows = [{"kind": "dispatch", "session_id": "s1", "ts": time.time(), "repo": os.path.realpath(repo)},
-                {"kind": "handback", "session_id": "s1", "status": "converged", "message": "", "ts": time.time()}]
-        (self.store_dir / "s1.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+        rows = [{"kind": "dispatch", "session_id": session, "ts": time.time(), "repo": os.path.realpath(repo)},
+                {"kind": "handback", "session_id": session, "status": status, "message": "", "ts": time.time()}]
+        (self.store_dir / f"{session}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+    def seed_repo_dispatch_only(self, repo, session="s1"):
+        """A review-loop dispatch of repo that has no hand-back."""
+        self.store_dir.mkdir(parents=True, exist_ok=True)
+        row = {"kind": "dispatch", "session_id": session, "ts": time.time(), "repo": os.path.realpath(repo)}
+        (self.store_dir / f"{session}.jsonl").write_text(json.dumps(row) + "\n")
+
+    def test_a_review_of_a_repo_without_coder_work_that_never_handed_back_credits_nothing(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        for label, seed in (("blocked", lambda: self.seed_repo_handback(other, status="blocked", session="s2")),
+                            ("no hand-back", lambda: self.seed_repo_dispatch_only(other, session="s2"))):
+            with self.subTest(case=label):
+                seed()
+                self.assert_commit_denied(self.commit(f"cd {self.repo} && git commit -a -m x", session="s2",
+                                                      transcript_path=transcript))
+
+    def test_a_clean_other_repo_cwd_does_not_clear_a_commit_in_the_edited_repo(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2", "cwd": str(other),
+                   "transcript_path": transcript, "tool_input": {"command": f"cd {self.repo} && git commit -a -m x"}}
+        finished = self.fire_raw(json.dumps(payload), cwd=other)
+        self.assert_commit_denied(finished)
+
+    def test_a_cd_into_a_converged_repo_without_coder_work_is_denied_by_name_and_the_named_form_passes(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        self.seed_repo_handback(other, session="s2")
+
+        finished = self.commit(f"cd {other} && git commit -a -m x", session="s2", transcript_path=transcript)
+        self.assert_denies(finished, f"covers {other.resolve()}")
+        self.assert_silent(self.commit(f"git -C {other.resolve()} commit -a -m x", session="s2",
+                                       transcript_path=transcript))
+
+    def test_every_credited_repo_is_named_with_its_own_git_c_form(self):
+        other = self.make_repo("other")
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        self.assert_silent(self.bash("review-gate-mark clean", cwd=str(self.repo)))
+        self.seed_repo_handback(other)
+
+        finished = self.commit(f"cd {self.tmp / 'gone'} && git commit -a -m x", cwd=self.tmp)
+        self.assert_denies(finished, f"`git -C {self.repo.resolve()} commit`")
+        self.assert_denies(finished, f"`git -C {other.resolve()} commit`")
+
+    def test_a_deferred_hand_back_credits_a_commit_of_its_repo(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo, status="deferred")
+        self.assert_silent(self.commit(f"git -C {self.repo} commit -a -m x", cwd=self.tmp))
+
+    def test_a_chained_add_of_a_file_named_for_a_commit_keeps_the_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        for command in ("git add src/review-commit-gate-fix.py && git commit -m x",
+                        f"git -C {self.repo} add commit-notes.md && git -C {self.repo} commit -m x",
+                        "git log --grep commit && git commit -a -m x"):
+            with self.subTest(command=command):
+                self.assert_silent(self.commit(command))
+
+    def test_a_commit_message_or_a_path_holding_a_folder_word_keeps_the_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        for command in ('git commit -a -m "name the cd form in the deny"',
+                        'git commit -a -m "fix (the cd form); eval too"',
+                        "git commit -a -m 'source of GIT_DIR'",
+                        "git add cd && git commit -m x",
+                        "git commit -a -m \"$(cat <<'EOF'\nrun cd first\nEOF\n)\"",
+                        "git commit -a -m \"$(cat <<'EOF'\nfix \"a\ncd b\" c\nEOF\n)\"",
+                        "git commit -a -m \"$(cat <<'EOF'\nfix \"a\n. y\" c\nEOF\n)\"",
+                        '/usr/bin/git commit -a -m "cd form"',
+                        f'git -C {self.repo} commit -a -m "name the cd form"',
+                        f"git -C {self.repo} commit -a -m \"$(cat <<'EOF'\nrun cd first\nEOF\n)\""):
+            with self.subTest(command=command):
+                self.assert_silent(self.commit(command))
+
+    def test_a_folder_change_beside_a_message_or_outside_a_first_word_earns_no_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        for command in ('cd . && git commit -a -m "cd"',
+                        "if true; then cd .; fi; git commit -a -m x",
+                        "GIT_DIR=x git commit -a -m x",
+                        "git commit -a -m x && sh -c 'git -C /tmp/other commit -m y'",
+                        "git --git-dir=x status && git commit -a -m x",
+                        "{ . /other/x; } && git commit -a -m x",
+                        "if true; then . /other/x; fi; git commit -a -m x",
+                        "if . /other/x; then true; fi; git commit -a -m x",
+                        "! . /other/x; git commit -a -m x",
+                        "echo 'git -C /other commit -a -m y' | sh; git commit -a -m x",
+                        "printf 'git -C /other commit -am y' | bash && git commit -a -m x",
+                        "bash <<< 'git -C /other commit -am y'; git commit -a -m x",
+                        "export \"$(cat <<'X'\nGIT_DIR=/other/.git\nX\n)\" && git commit -a -m x",
+                        "\"$(cat <<'X'\ncd\nX\n)\" /other && git commit -a -m x",
+                        "sh -c \"$(cat <<'X'\ngit -C /other commit -am y\nX\n)\" && git commit -a -m x",
+                        "git add \"x\" ; \"c\"d /other ; git commit -m \"y\"",
+                        "\".\" /other/x && git commit -a -m x",
+                        "'p'ushd /other && git commit -a -m x",
+                        "while . /other/x; do true; done; git commit -a -m x",
+                        "until . /other/x; do true; done; git commit -a -m x",
+                        "for i in a; do . /other/x; done; git commit -a -m x",
+                        "if false; then true; else . /other/x; fi; git commit -a -m x",
+                        "if false; then true; elif . /other/x; then true; fi; git commit -a -m x",
+                        "cat <<< \"$(cat <<'EOF'\nbody\nEOF\n)\"; git commit -m m"):
+            with self.subTest(command=command):
+                self.assert_lost_credit_denied(self.commit(command))
+
+    def test_a_command_over_more_than_one_line_earns_no_credit_and_the_deny_names_the_fix(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        for command in ("git add base.py # it's\ncd /tmp # it's\ngit commit -a -m x",
+                        "git add base.py # it's\npushd /tmp # it's\ngit commit -a -m x",
+                        "git add base.py # note \\\ncd /other\ngit commit -a -m x",
+                        "git add base.py # it's \\\np\\ushd /other # it's\ngit commit -a -m x",
+                        "git add base.py\\\\\ncd /tmp\ngit commit -a -m x",
+                        "git add base.py # it's\n. /other/x\n# it's\ngit commit -a -m x",
+                        "git add base.py # it's\n{ . /other/x; } # it's\ngit commit -a -m x",
+                        "git add base.py\ngit commit -a -m x",
+                        "git add base.py && \\\n  git commit -a -m x",
+                        'git commit -a -m "fix it\n\nsecond line"'):
+            with self.subTest(command=command):
+                finished = self.commit(command)
+                self.assert_lost_credit_denied(finished)
+                self.assert_denies(finished, "on one line")
+                self.assert_denies(finished, "-m \"$(cat <<'EOF'")
+
+    def test_a_command_with_a_trailing_newline_or_a_comment_on_its_one_line_keeps_the_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        for command in ("git commit -a -m x\n",
+                        "git commit -a -m x # done"):
+            with self.subTest(command=command):
+                self.assert_silent(self.commit(command))
+
+    def test_a_cd_commit_with_a_review_on_record_names_the_cd_and_git_c(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        finished = self.commit(f"cd {self.repo} && git commit -a -m x", cwd=self.tmp)
+        self.assert_denies(finished, f"`git -C {os.path.realpath(self.repo)} commit`")
+        self.assert_denies(finished, "Do not run /review again")
+
+    def test_a_cd_commit_with_a_reviewed_tree_on_record_names_the_cd_and_git_c(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        self.assert_silent(self.bash("review-gate-mark clean", cwd=str(self.repo)))
+        self.seed_repo_handback(self.make_repo("other"))
+        self.assert_silent(self.dispatch())
+        finished = self.commit(f"cd {self.repo} && git commit -a -m x", cwd=self.tmp)
+        self.assert_denies(finished, "Do not run /review again")
+        self.assert_denies(finished, f"`git -C {self.repo.resolve()} commit`")
+
+    def test_a_cd_commit_with_only_a_stale_or_missing_review_keeps_the_review_deny(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        self.assert_silent(self.dispatch())
+        self.assert_commit_denied(self.commit(f"cd {self.repo} && git commit -a -m x"))
+        reviewed_file = self.state_dir / "s1.reviewed"
+        reviewed_file.write_text(json.dumps({str(self.tmp / "gone"): "sha256:x"}))
+        self.assert_commit_denied(self.commit(f"cd {self.repo} && git commit -a -m x"))
 
     def test_a_hand_back_of_another_repo_gives_this_repo_no_credit(self):
         other = self.make_repo("other")
@@ -987,10 +1322,19 @@ class ReviewedWorkCommitTest(GateCase):
         (self.repo / "base.py").write_text("changed\n")
         self.seed_repo_handback(self.repo)
         self.assert_silent(self.commit("git commit -a -m a"))
-        for command in (f"git commit -a -m a && git -C {other} commit -a -m b",
-                        f"git commit -a -m a && env -C {other} git commit -a -m b"):
-            with self.subTest(command=command):
-                self.assert_commit_denied(self.commit(command))
+        self.assert_commit_denied(self.commit(f"git commit -a -m a && git -C {other} commit -a -m b"))
+        self.assert_lost_credit_denied(self.commit(f"git commit -a -m a && env -C {other} git commit -a -m b"))
+
+    def test_a_missing_handback_store_module_denies_the_commit_and_names_the_import(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        (self.scripts / "review" / "handback_store.py").unlink()
+        finished = self.commit("cd . && git commit -a -m x")
+        self.assertEqual(finished.returncode, 0)
+        self.assertIn("cannot import handback_store", finished.stderr)
+        output = json.loads(finished.stdout)["hookSpecificOutput"]
+        self.assertEqual(output["permissionDecision"], "deny")
+        self.assertEqual(output["permissionDecisionReason"], COMMIT_DENIED)
 
     def test_a_folder_change_or_an_unknown_target_earns_no_credit(self):
         (self.repo / "base.py").write_text("changed\n")
@@ -1008,9 +1352,18 @@ class ReviewedWorkCommitTest(GateCase):
                         f"export GIT_DIR={self.repo}/.git ; git commit -a -m x",
                         f"git $(echo -C {self.repo}) commit -a -m x; git commit -a -m y",
                         "git `echo -C x` commit -a -m x; git commit -a -m y",
+                        "git --work-tree=/other commit -a -m x",
+                        "git --work-tree /other commit -a -m x",
+                        "git --git-dir /other/.git commit -a -m x",
+                        "git -c core.worktree=/other commit -a -m x",
+                        "git --work-tree=/other add . && git commit -m x",
+                        "git -c core.worktree=/other add . && git commit -m x",
+                        "git --frob commit -a -m x",
+                        "git --config-env=core.worktree=V commit -a -m x",
+                        "export GIT_WORK_TREE=/other ; git commit -a -m x",
                         f"cd {self.repo} && git commit -a -m \"$(cat <<'EOF'\nmsg\nEOF\n)\""):
             with self.subTest(command=command):
-                self.assert_commit_denied(self.commit(command))
+                self.assert_lost_credit_denied(self.commit(command))
         for command in ("git commit -a -m x",
                         "git commit -a -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
                         "git commit -a -m 'fix `foo`'"):
@@ -1018,13 +1371,9 @@ class ReviewedWorkCommitTest(GateCase):
                 self.assert_silent(self.commit(command))
 
     def test_a_folder_option_emptied_with_a_heredoc_message_earns_no_credit(self):
-        spec = importlib.util.spec_from_file_location("review_commit_gate_under_test",
-                                                      str(SCRIPTS_DIR / "review" / "review_commit_gate.py"))
-        gate = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(gate)
-        verb = "com" + "mit"
-        command = f"git -C \"$(cat <<'EOF'\n/tmp/other\nEOF\n)\" {verb} -m x"
-        self.assertEqual([None], gate.credit_repo_dirs(command, str(self.repo)))
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        self.assert_lost_credit_denied(self.commit("git -C \"$(cat <<'EOF'\n/tmp/other\nEOF\n)\" commit -m x"))
 
     def test_a_dispatch_row_without_a_repo_gives_no_hand_back_credit(self):
         (self.repo / "base.py").write_text("changed\n")

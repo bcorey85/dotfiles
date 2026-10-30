@@ -88,6 +88,21 @@ def read_task_file(args, flag_position):
 TASK_FILE_REPO_LINE = re.compile(r"^Repo(?: root)?:[ \t]*(\S.*?)[ \t]*$")
 
 
+def split_task_file_repo_line(task_text):
+    # (the path on the `Repo:` or `Repo root:` line that opens the task text, the text after that line), or
+    # (None, the whole text) when the first non-blank line is no such line. The line must start at column 0.
+    lines = task_text.splitlines(keepends=True)
+    first_position = next((position for position, line in enumerate(lines) if line.strip()), None)
+    if first_position is None:
+        return None, task_text
+
+    repo_line = TASK_FILE_REPO_LINE.match(lines[first_position].rstrip("\r\n"))
+    if repo_line is None:
+        return None, task_text
+
+    return repo_line.group(1), "".join(lines[first_position + 1:])
+
+
 def split_quoted_flags(args):
     # The args /code receives as one string, `--task "<text>"` or `+deep --task <text>`, as the words the shell would
     # have given. Any other args come back as they were.
@@ -112,9 +127,8 @@ def task_file_repo(args):
     except TaskFileError:
         return None
 
-    first_line = next((line for line in task_text.splitlines() if line.strip()), "")
-    repo_line = TASK_FILE_REPO_LINE.match(first_line)
-    return repo_line.group(1) if repo_line else None
+    repo_path, _ = split_task_file_repo_line(task_text)
+    return repo_path
 
 
 def start_repo_path(args):
@@ -173,8 +187,10 @@ def split_plan_words(words, parsed):
 
 
 def leading_phase_words(words):
-    # (phase id, the words after it) for words that start with `Phase <id>`; (None, the words) for any other.
-    is_phase_words = len(words) >= 2 and words[0].lower() == "phase" and re.fullmatch(plan_format.PHASE_ID, words[1])
+    # (phase id, the words after it) for words that start with `Phase <id>` or `--phase <id>`; (None, the words) for
+    # any other.
+    is_phase_word = len(words) >= 2 and words[0].lower() in ("phase", "--phase")
+    is_phase_words = is_phase_word and re.fullmatch(plan_format.PHASE_ID, words[1])
     if not is_phase_words:
         return None, words
 
@@ -197,9 +213,9 @@ def is_plan_reference(word):
 
 def is_plan_file_in_repo(word):
     # A plan file inside the current directory (`start` has moved to the repo) that parses to Phase Status entries.
-    # With no phase, a plan outside the repo is not carried: the refusal that says the text after the plan is not
-    # task text keeps it. With a phase it is carried, and the question that asks for a plan inside the repo names
-    # the notes.
+    # In positional text with no phase, a plan outside the repo is not carried: the refusal that says the text after
+    # the plan is not task text keeps it. With a phase it is carried, and the question that asks for a plan inside
+    # the repo names the notes.
     if not script_utils.is_existing_md_file(word):
         return False
 
@@ -210,12 +226,58 @@ def is_plan_file_in_repo(word):
     return has_phase_status_entries(word)
 
 
+def carry_task_file_plan(parsed):
+    # A task file whose text opens with a plan reference (after a `Repo:` line) runs that plan under the positional
+    # rule, except that a plan outside the repo is carried with no phase. The rest of the file, line breaks kept, is
+    # the run notes; the `Repo:` line is not.
+    _, text_after_repo_line = split_task_file_repo_line(parsed.task_text)
+    text = text_after_repo_line.lstrip()
+
+    plan_match = re.match(r"(\S+)\s*(.*)", text, re.DOTALL)
+    if plan_match is None:
+        return parsed
+
+    plan_word, notes = plan_match.groups()
+    phase_id = parsed.phase_id
+    if phase_id is None:
+        # The third element is the unsplit remainder, so the notes keep their line breaks.
+        lead_phase_id, rest_words = leading_phase_words(notes.split(maxsplit=2))
+        if lead_phase_id is not None:
+            phase_id, notes = lead_phase_id, " ".join(rest_words)
+
+    # A plan outside the repo is carried too, so its run stops at the question that asks for a plan inside the repo.
+    if script_utils.is_existing_md_file(plan_word) and has_phase_status_entries(plan_word):
+        return with_plan_and_notes(parsed, plan_word, phase_id, notes)
+
+    return carry_plan_with_notes(parsed, plan_word, phase_id, notes)
+
+
+def with_plan_and_notes(parsed, plan_word, phase_id, notes):
+    return parsed._replace(plan_args=[plan_word], phase_id=phase_id, task_text=None, positional_words=None,
+                           run_notes=notes.rstrip() or None)
+
+
+def carry_plan_with_notes(parsed, plan_word, phase_id, notes):
+    # `parsed` with the plan, the phase and the notes set and no task text, or `parsed` as it is when the word is no
+    # plan reference, or names a plan outside the repo or without phases and no phase is given.
+    if not is_plan_reference(plan_word):
+        return parsed
+    if phase_id is None and not is_plan_file_in_repo(plan_word):
+        return parsed
+
+    return with_plan_and_notes(parsed, plan_word, phase_id, notes)
+
+
 def carry_run_notes(parsed, saved_plan=None):
     # A phase run's text after the plan is its run notes. `<plan file or ticket id> [--phase <id> | Phase <id>] <text>`
     # comes back with the plan, the phase and the notes set and no task text.
     # `<plan file inside the repo that has phases> <text>` with no phase does the same for the plan's next phase; a
     # ticket id with no phase may be the first word of a task, so its text stays task text.
+    # A task file's text is read the same way from its first word, through carry_task_file_plan, except that a plan
+    # outside the repo is carried with no phase.
     # An explicit `--phase <id>` with no plan named takes the saved plan. Any other text stays task text.
+    if parsed.is_task_file and not parsed.plan_args:
+        return carry_task_file_plan(parsed)
     if not parsed.positional_words:
         return parsed
 
@@ -226,14 +288,10 @@ def carry_run_notes(parsed, saved_plan=None):
     if phase_id is None:
         phase_id, text_words = leading_phase_words(text_words)
 
-    if len(plan_words) != 1 or not is_plan_reference(plan_words[0]):
-        return parsed
-    if phase_id is None and not is_plan_file_in_repo(plan_words[0]):
+    if len(plan_words) != 1:
         return parsed
 
-    run_notes = " ".join(text_words) or None
-    return parsed._replace(plan_args=plan_words, phase_id=phase_id, task_text=None, positional_words=None,
-                           run_notes=run_notes)
+    return carry_plan_with_notes(parsed, plan_words[0], phase_id, " ".join(text_words))
 
 
 def run_notes_lines(run_notes):

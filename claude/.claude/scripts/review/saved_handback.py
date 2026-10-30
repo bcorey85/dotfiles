@@ -139,8 +139,7 @@ def dispatched_repo():
     if not session_id:
         return None
 
-    last_dispatch = handback_store.latest(session_id)["dispatch"] or {}
-    return last_dispatch.get("repo")
+    return handback_store.repo_of_latest_dispatch(session_id)
 
 
 def dispatched_with_ruling():

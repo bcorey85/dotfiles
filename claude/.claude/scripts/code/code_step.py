@@ -8,7 +8,9 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 unfinished run first; `--restart <text>` over a saved plan with open
                                                 phases makes the text run notes (use --task for planless work).
   code_step.py start --task "<text>"           planless work: the coder dispatch without gate or packet
-  code_step.py start --task-file <path>        the same, with the text read from a file
+  code_step.py start --task-file <path>        the same, with the text read from a file; a file whose text opens with
+                                                a plan file inside the repo, or a plan file or ticket id followed by
+                                                a phase, runs that plan with the rest as run notes
   code_step.py start --repo <path> ...         run in that checkout, not the current directory (a `Repo: <path>` first
                                                 line in the task file does the same)
   code_step.py resume                           do the next step of the saved run, whatever stage or stop it is in
@@ -27,7 +29,8 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
   code_step.py correct-ruling [--repo <path>] [--by <user|session>] [--also "<text>"] <outcome>...
                                                 --repo: as for asks-done;
                                                 while the asks coder runs: save corrected rulings; a correction coder
-                                                applies them when the asks coder reports, before the review
+                                                applies them when the asks coder reports, before the review; at the
+                                                asks stage it applies them as asks-done
   code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...
                                                 a closing phase's skill returned: mark it done (pass) or stop (fail);
                                                 at pass, give one --evidence per open Success Criteria item and the
@@ -92,6 +95,7 @@ from code_step_boundary import (
     command_verify,
     finish_phase,
     settle_criteria_guard,
+    stop_for_finished_planless_run,
 )
 from code_step_closing import command_skill_done_with_question
 from code_step_core import (
@@ -118,8 +122,10 @@ from code_step_core import (
     head_left_phase_start,
     is_run_open,
     load_state,
+    newest_later_phase_deny_reason,
     own_phase_text,
     phase_coder_reports,
+    read_events,
     refuse,
     repo_root_or_exit,
     restart_instruction,
@@ -153,6 +159,7 @@ from code_step_hooks import (
     command_say_hook,
     command_stop_hook,
     expected_red_failure,
+    outside_scope_flags,
 )
 from code_step_report import (
     behavior_lines,
@@ -160,6 +167,7 @@ from code_step_report import (
     every_accepted_ask_already_done,
     first_plan_impact,
     gate_results,
+    impact_replaced,
     open_questions,
     recommends_eng_spec,
     resolve_report_paths,
@@ -405,7 +413,10 @@ def stop_when_head_left_base(repo_dir, state, report, handback):
 
 def coder_impact_stop_cause(impact):
     # A coder's block names its cause. A report that says PLAN-IMPACT: yes with no block to read has none to name, and
-    # goes to the user's modal.
+    # goes to the user's modal. A block about a code-step hook or gate (`TOOLKIT_WORD`) that names no plan step is a
+    # toolkit fault, whatever its cause line says.
+    if plan_format.names_only_toolkit(impact):
+        return plan_format.cause_stop("toolkit")
     return plan_format.plan_impact_stop_cause(impact, cause_required=True)
 
 
@@ -429,8 +440,16 @@ def route_coder_plan_impact(repo_dir, state, handback, coder_stage):
     state.stage = "impact-coder"
     state.impact = impact
     save_state(repo_dir, state)
-    emit_plan_impact_modal(impact, repo_dir)
+    replaced = coder_impact_was_replaced(repo_dir, state)
+    emit_plan_impact_modal(impact, repo_dir, replaced=replaced)
     return True
+
+
+def coder_impact_was_replaced(repo_dir, state):
+    # True when a hand-back of a coder at this stage dropped or changed the block that `state.impact` holds.
+    stage_reports = [report for report in phase_coder_reports(repo_dir, state)
+                     if report["stage"] == state.coder_stage]
+    return impact_replaced(stage_reports, state.impact)
 
 
 def end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_files):
@@ -486,6 +505,7 @@ def route_coder_report(repo_dir, state, handback):
     if not is_ask_fix:
         _code, gate_lines = run_coder_gate(repo_dir, "summary")
     state.flagged = coder_flagged(state, gate, report, is_ask_fix)
+    state.flagged += outside_scope_flags(read_events(repo_dir, state.run_id))
 
     changed_now = file_hashes(repo_dir)
     changed_files = coder_changed_files(repo_dir, state, changed_now)
@@ -552,6 +572,10 @@ def stopped_coder_report(repo_dir, state):
     for report in reversed(phase_coder_reports(repo_dir, state)):
         if report["agent_id"] == state.stop.agent_id and report["messages"]:
             return report["messages"][-1]
+
+    deny_reason = newest_later_phase_deny_reason(read_events(repo_dir, state.run_id), state.stop.agent_id)
+    if deny_reason:
+        return f"(no report saved; the hand-back gate denied an earlier attempt) {deny_reason}"
     return "(none saved)"
 
 
@@ -679,16 +703,28 @@ def ask_about_coder_cap(repo_dir, state):
              f"its launch has no agent id. To dispatch the phase coder again, {restart_instruction_text}.")
 
 
+def go_on_after_done(repo_dir, state):
+    # A finished planless run stops on its own branch: a bare resume there must not open the branch's plan.
+    if state.plan or state.branch != branch_label(repo_dir):
+        return command_start(carried_start_words(state))
+
+    return stop_for_finished_planless_run(repo_dir, state)
+
+
+def resume_impact_question(repo_dir, state):
+    replaced = state.stage == Stage.IMPACT_CODER and coder_impact_was_replaced(repo_dir, state)
+    return emit_plan_impact_modal(state.impact, repo_dir, state.carried_findings or [], replaced=replaced)
+
+
 # The step `resume` takes, by the name the route table gives it.
 STEPS = {
     "start": lambda repo_dir, state: command_start([]),
-    "done": lambda repo_dir, state: command_start(carried_start_words(state)),
+    "done": go_on_after_done,
     "after-coder": lambda repo_dir, state: command_after_coder(repo_dir, state, []),
     "after-review": lambda repo_dir, state: command_after_review(repo_dir, state, []),
     "after-plan-edit": lambda repo_dir, state: command_after_plan_edit(repo_dir, state, []),
     "review-again": lambda repo_dir, state: command_review_again(repo_dir, state, []),
-    "ask-impact": lambda repo_dir, state: emit_plan_impact_modal(state.impact, repo_dir,
-                                                                 state.carried_findings or []),
+    "ask-impact": resume_impact_question,
     "ask-asks": lambda repo_dir, state: ask_the_user(repo_dir, state, state.asks),
     "closing-skill": resume_closing_skill,
     "ask-coder": ask_about_stopped_coder, "ask-review-cap": ask_about_review_cap,
@@ -914,6 +950,11 @@ def verb_lock(repo, verb):
         yield True
 
 
+def is_waiting_at_asks(repo):
+    state = load_state(repo)
+    return state is not None and state.stage == Stage.ASKS
+
+
 def run_verb(verb, handler, args):
     try:
         named_repo = None
@@ -923,6 +964,9 @@ def run_verb(verb, handler, args):
             return
 
         repo = repo_root_or_exit()
+        if verb == "correct-ruling" and is_waiting_at_asks(repo):
+            # No asks coder runs yet, so there is nothing to correct: the words are the rulings themselves.
+            verb, handler = "asks-done", command_asks_done
         with verb_lock(repo, verb) as holds_lock:
             if not holds_lock:
                 return

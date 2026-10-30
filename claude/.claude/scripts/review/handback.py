@@ -46,7 +46,7 @@ from handback_store import (
     was_recorded,
 )
 from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
-from plan_format import PLAN_CHANGE_MARK
+from plan_format import PLAN_CHANGE_MARK, plan_impact_cause
 from script_utils import first_number, one_line, unquote
 
 STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
@@ -55,10 +55,12 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "files_touched",
                "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean", "tool_fault",
                "blocked_agents", "scoped_tests"]
+# Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
+SCRIPT_PACKET_KEYS = ["plan_impact_cause"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
              "check_rewrote_edited", "check_created", "blocked_agents"]
 SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "full_check_command", "full_check_summary",
-               "load_bearing_clean", "tool_fault", "scoped_tests")
+               "load_bearing_clean", "tool_fault", "scoped_tests", "plan_impact_cause")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
 # The free-text fields of an ask that a continuation mapping joins to the lead ask's;
@@ -151,7 +153,7 @@ def parse_json_packet(text):
     packet = {}
     trailer = []
     for key, value in loaded.items():
-        if key not in PACKET_KEYS:
+        if key not in PACKET_KEYS and key not in SCRIPT_PACKET_KEYS:
             value_text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
             trailer.append(f"{key}: {value_text}")
             continue
@@ -526,6 +528,10 @@ def read_header(raw):
     if raw.get("spec_iter", "").strip() and spec_iter is None:
         problems.append("spec_iter has no number")
 
+    plan_impact = raw.get("plan_impact", "").strip()
+    # The review-loop script one-lines the block and sends its cause; a reviewer agent's block keeps its lines and
+    # a block with no cause reads as plan.
+    cause = raw.get("plan_impact_cause", "").strip().lower() or plan_impact_cause(plan_impact)
     header = {"status": status, "iter": iter_round, "spec_iter": spec_iter,
               "class_closure": raw.get("class_closure", "").strip(),
               "full_check": raw.get("full_check", "").strip(),
@@ -534,7 +540,7 @@ def read_header(raw):
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "tool_fault": raw.get("tool_fault", "").strip(),
               "scoped_tests": raw.get("scoped_tests", "").strip(),
-              "plan_impact": raw.get("plan_impact", "").strip()}
+              "plan_impact": plan_impact, "plan_impact_cause": cause}
     return header, problems
 
 

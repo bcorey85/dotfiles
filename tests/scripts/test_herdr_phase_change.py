@@ -40,6 +40,10 @@ case "$1 $2" in
         fi
         echo '{"result":{}}'
         ;;
+    "pane current")
+        [ -f "$state/no-current-pane" ] && exit 1
+        echo '{"result":{"pane":{"pane_id":"wS:pA9"}}}'
+        ;;
     "agent wait")
         echo "$@" >> "$state/wait-args"
         [ -f "$state/wait-fails" ] && exit 1
@@ -88,6 +92,31 @@ class HerdrPhaseChangeTest(unittest.TestCase):
         self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md"])
         self.assertEqual((self.state_dir / "session").read_text().strip(), "s2")
         self.assertIn("--until idle --until done", (self.state_dir / "wait-args").read_text())
+
+    def test_a_plain_prompt_goes_out_marked_with_the_sending_pane(self):
+        (self.state_dir / "clear-delay").write_text("0\n")
+
+        finished = self.run_phase_change("worker", "Option 2. Go on.")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.submitted_prompts(), ["/clear", "[from orchestrator pane wS:pA9] Option 2. Go on."])
+
+    def test_a_slash_prompt_goes_out_byte_for_byte(self):
+        (self.state_dir / "clear-delay").write_text("0\n")
+
+        finished = self.run_phase_change("worker", "/code docs/plans/x/plan.md +fast")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md +fast"])
+
+    def test_a_plain_prompt_with_no_sending_pane_sends_nothing(self):
+        (self.state_dir / "no-current-pane").write_text("")
+
+        finished = self.run_phase_change("worker", "Option 2. Go on.")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertEqual(self.submitted_prompts(), [])
+        self.assertIn("cannot name the sending pane", finished.stderr)
 
     def test_a_pane_that_does_not_settle_after_clear_gets_no_prompt(self):
         (self.state_dir / "clear-delay").write_text("0\n")

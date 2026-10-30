@@ -117,6 +117,18 @@ class TreeFingerprint(unittest.TestCase):
                                side_effect=reviewed_tree.TreeFingerprintError("boom")):
             self.assertIsNone(reviewed_tree.fingerprint(self.top))
 
+    def test_fingerprint_base_is_the_head_commit_in_a_repo_with_a_commit(self):
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.top, check=True, capture_output=True,
+                              text=True).stdout.strip()
+        self.assertEqual(reviewed_tree.fingerprint_base(self.top), (head, head))
+
+    def test_fingerprint_base_is_the_empty_tree_in_a_repo_with_no_commit(self):
+        with tempfile.TemporaryDirectory() as bare:
+            git(bare, "init", "-q")
+            empty_tree = subprocess.run(["git", "hash-object", "-t", "tree", os.devnull], cwd=bare, check=True,
+                                        capture_output=True, text=True).stdout.strip()
+            self.assertEqual(reviewed_tree.fingerprint_base(bare), ("unborn", empty_tree))
+
 
 if __name__ == "__main__":
     unittest.main()

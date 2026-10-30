@@ -71,6 +71,20 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
     return "sha256:" + digest.hexdigest()
 
 
+def fingerprint_base(top, timeout=None):
+    """(head, base) for fingerprinting the work tree at `top`: HEAD's commit as both, or "unborn" and the empty tree
+    for a repo with no commit yet. A failed HEAD lookup counts as no commit; None only when git cannot name the
+    empty tree."""
+    head = script_utils.git_output(top, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+    if head is not None:
+        return head, head
+
+    empty_tree = script_utils.git_output(top, "hash-object", "-t", "tree", os.devnull, timeout=timeout)
+    if empty_tree is None:
+        return None
+    return "unborn", empty_tree
+
+
 def fingerprint(repo_dir):
     """(repo top level, fingerprint of its working tree against HEAD), or None when repo_dir is not in a work tree,
     has no commit yet, git fails, or an untracked file name holds a newline (so record_reviewed returns False and

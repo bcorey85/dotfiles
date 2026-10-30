@@ -31,13 +31,6 @@ SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
 PATH_WORD = re.compile(r"(?<![\w/.-])(?:/|\.{1,2}/)?[\w-]+(?:[./][\w-]+)+")
 
 
-def work_tree_top(path):
-    """The real path of the work tree that holds path, a file or a directory, or None outside one."""
-    directory = path if os.path.isdir(path) else os.path.dirname(path)
-    top = script_utils.repo_root(directory)
-    return os.path.realpath(top) if top else None
-
-
 def claim_sentences(message):
     claims = []
     for sentence in SENTENCE_END.split(message):
@@ -66,7 +59,8 @@ def sentence_problems(sentence, cwd):
     files = named_files(sentence, cwd)
     absolute = [os.path.realpath(word) for word in PATH_WORD.findall(sentence)
                 if word.startswith("/") and os.path.exists(word)]
-    tops = {top for top in map(work_tree_top, absolute) if top} or {work_tree_top(cwd)} - {None}
+    named_tops = {top for top in map(script_utils.work_tree_top, absolute) if top}
+    tops = named_tops or {script_utils.work_tree_top(cwd)} - {None}
 
     problems = []
     for top in sorted(tops):

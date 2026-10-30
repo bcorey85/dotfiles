@@ -188,8 +188,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(CONVERGED)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
-        self.assertIn("`~/.claude/scripts/review/review-gate-mark clean`", output)
-        self.assertNotIn("bash ~/.claude/scripts/review/review-gate-mark", output)
+        self.assertNotIn("review-gate-mark", output)
         self.assertIn("Fixed 2, nits 1, skipped 1", output)
         for listed in ("### Fixed", "### Nits", "### Skipped", "orders query lacked", "guarded two lines above",
                        "rename tmp"):
@@ -242,32 +241,32 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("No issues found that warrant auto-fix. Ready for `/commit`.", output)
         self.assertIn("Fixed 0, nits 0, skipped 0", output)
 
-    def test_deferred_packet_lists_remaining_findings_and_asks_for_the_mark(self):
+    def test_deferred_packet_lists_remaining_findings_and_asks_for_no_mark(self):
         code, output = self.packet(DEFERRED)
         self.assertEqual(code, 0, output)
         self.assertIn("### Deferred to branch exit", output)
         self.assertIn("needs the shared helper", output)
-        self.assertIn("review-gate-mark clean", output)
+        self.assertNotIn("review-gate-mark", output)
 
-    def test_critical_blocker_stops_without_a_mark(self):
+    def test_critical_blocker_stops_without_a_mark_line(self):
         code, output = self.packet(BLOCKER)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: stop", output)
         self.assertIn("auth bypass needs a design decision", output)
         self.assertIn("public API field rename", output)
-        self.assertIn("Do not mark the gate", output)
+        self.assertNotIn("review-gate-mark", output)
         self.assertNotIn("render-and-finish", output)
 
-    def test_a_setup_fault_stops_without_a_mark_and_says_it_is_not_a_code_failure(self):
+    def test_a_setup_fault_stops_and_says_it_is_not_a_code_failure(self):
         code, output = self.packet(SETUP_FAULT)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: stop", output)
         self.assertIn("no package.json", output)
         self.assertIn("toolkit or environment fault, not a code failure", output)
-        self.assertIn("Do not mark the gate", output)
+        self.assertNotIn("review-gate-mark", output)
         self.assertNotIn("render-and-finish", output)
 
-    def test_cap_reached_stops_and_keeps_the_gate_dirty(self):
+    def test_cap_reached_stops_and_keeps_the_commit_blocked(self):
         code, output = self.packet(CAP)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: stop", output)
@@ -505,6 +504,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                 self.assertEqual(code, 2)
                 self.assertIn("ACTION: stop-usage", output)
                 self.assertIn(f"decide {decision} needs --ruling", output)
+                self.assertNotIn("review-gate-mark", output)
                 self.assertEqual(stage_before, self.stored_stage())
                 self.assertEqual("# Plan\n", plan_file.read_text())
 
@@ -537,6 +537,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                 self.assertEqual(code, 2)
                 for text in expected:
                     self.assertIn(text, output)
+                self.assertNotIn("review-gate-mark", output)
                 self.assertEqual(stage_before, self.stored_stage())
                 self.assertEqual("# Plan\n", plan_file.read_text())
 
@@ -569,6 +570,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["decide", "adopt"])
         self.assertEqual(code, 2)
         self.assertIn("stop-usage", output)
+        self.assertNotIn("review-gate-mark", output)
 
     # ---------- asks ----------
 
@@ -630,7 +632,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("2. src/db.ts:5  [perf-reviewer/perf]", output)
         self.assertIn("Proposed change: add the index", output)
         self.assertIn("asks-done <outcome> x2", output)
-        self.assertNotIn("review-gate-mark clean", output)
+        self.assertNotIn("review-gate-mark", output)
 
         code, output = self.run_script(["asks-done", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
@@ -912,7 +914,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-parse-failure", output)
         self.assertIn(expected, output)
-        self.assertIn("`~/.claude/scripts/review/review-gate-mark dirty`", output)
+        self.assertNotIn("review-gate-mark", output)
         self.assertNotIn("render-and-finish", output)
         self.assertEqual(self.ledger_writes(), [])
 
@@ -1091,6 +1093,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-no-reviewer", output)
         self.assertNotIn("render-and-finish", output)
+        self.assertNotIn("review-gate-mark", output)
 
     def test_a_hand_back_with_no_reviewer_run_re_dispatches_with_the_round_count_kept(self):
         self.unreviewed_loop("a1", CONVERGED.replace("iter: 1", "iter: 2"))
@@ -1098,6 +1101,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("Re-dispatch review-loop once", output)
         self.assertIn("\niter=2\n", output)
+        self.assertNotIn("review-gate-mark", output)
 
     def test_a_second_unreviewed_hand_back_in_a_row_says_stop_and_no_re_dispatch(self):
         self.unreviewed_loop("a1", CONVERGED.replace("iter: 1", "iter: 2"))
@@ -1109,6 +1113,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("2 times in a row", output)
         self.assertIn("Do not re-dispatch again", output)
         self.assertNotIn("Re-dispatch review-loop once", output)
+        self.assertNotIn("review-gate-mark", output)
 
     def test_a_converged_hand_back_ending_on_a_fix_finishes_and_names_the_unreviewed_fix_files(self):
         self.dispatch()
@@ -1149,7 +1154,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("no review-loop dispatch on record", output)
-        self.assertIn("`~/.claude/scripts/review/review-gate-mark dirty`", output)
+        self.assertNotIn("review-gate-mark", output)
 
     def test_another_sessions_hand_back_is_never_taken_as_current(self):
         self.seed(CONVERGED, session=OTHER_SESSION)
@@ -1180,6 +1185,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: stop-no-handback", output)
         self.assertIn("Re-dispatch review-loop once", output)
         self.assertNotIn("stop-parse-failure", output)
+        self.assertNotIn("review-gate-mark", output)
         self.assertEqual(self.saved_stage(), "asks")
 
     def test_a_second_miss_in_a_row_says_stop_and_show_the_final_text(self):
@@ -1193,6 +1199,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: stop-no-handback", output)
         self.assertIn("Show the user the loop's final text", output)
         self.assertNotIn("Re-dispatch review-loop once", output)
+        self.assertNotIn("review-gate-mark", output)
         self.assertEqual(self.saved_stage(), "asks")
 
     def stop_row(self, open_dispatches, session=SESSION, ts=1000.5, ask_rows=None):
@@ -1662,9 +1669,11 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60006"])
 
-    def test_present_asks_prints_the_gate_mark_line(self):
-        _code, output = self.packet(WITH_ASK)
-        self.assertIn("review-gate-mark clean", output)
+    def test_present_asks_prints_no_gate_mark_line(self):
+        code, output = self.packet(WITH_ASK)
+        self.assertEqual(code, 0, output)
+        self.assertIn("asks-done", output)
+        self.assertNotIn("review-gate-mark", output)
 
     def test_present_asks_names_each_proposed_change_and_what_each_outcome_does(self):
         code, output = self.packet(WITH_ASK)

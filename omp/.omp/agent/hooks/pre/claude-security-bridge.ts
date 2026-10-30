@@ -22,8 +22,7 @@
  *   custom    — stderr message + exit 2; no bridged gate uses it today
  *
  * Session id: a per-session UUID that review-commit-gate keys its dirty/clean
- * state to; `review-gate-mark clean` runs through this bridge in the same
- * session.
+ * state and its hand-back credit to.
  *
  * Known gaps (inherent to bridging, not fixable here):
  *   - omp's eval tool executes arbitrary JS/Python with no bash string to

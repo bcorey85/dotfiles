@@ -9,6 +9,8 @@ kind: "behavior"
 components: ["agent/review-loop", "skill/branch-recap"]
 evidence: ["seeded round", "census", "judgment"]
 watches: []
+proof: ["2026-09-20-loopnit-1"]
+impact: {"metric": "quality", "before": 4, "after": 1, "unit": "real small defects left uncorrected (of 4)", "finding": "2026-09-20-loopnit-1", "better": "lower"}
 ---
 
 ## Change

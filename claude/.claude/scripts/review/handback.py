@@ -2,7 +2,8 @@
 """handback.py: the one reader of the review-loop hand-back packet. The per-session store is handback_store.py.
 
   handback.py check < packet            exit 0 and one `ok` line for a packet that parses and validates; exit 1 and the
-                                        problems on stderr for a bad one
+                                        problems on stderr for a bad one. A packet is one JSON object; the old
+                                        free-text `key: value` form still parses, with a stderr note
   handback.py hook dispatch|handback < hook event JSON
                                         PreToolUse hook. Matcher Agent records each review-loop dispatch; matcher
                                         SubagentHandback validates and records each review-loop hand-back, and denies a
@@ -113,6 +114,74 @@ class PacketError(Exception):
 
 # ---------- parsing ----------
 
+INTEGER_KEYS = ("iter", "spec_iter")
+
+
+def json_packet_text(message):
+    """The message without whitespace around it and without one wrapping code fence, when what is left opens a JSON
+    object; None for any other message."""
+    text = script_utils.unfenced_text(message)
+    return text if text.startswith("{") else None
+
+
+def json_field_problem_or_text(key, value):
+    """(problem, text) of one JSON field: the raw text validate reads, or why the value has the wrong shape."""
+    if key in LIST_KEYS:
+        if not isinstance(value, list):
+            return f"{key} must be a JSON list, not {script_utils.json_type_name(value)}", None
+        return None, json.dumps(value)
+    if isinstance(value, str):
+        return None, value
+    is_integer = isinstance(value, int) and not isinstance(value, bool)
+    if key in INTEGER_KEYS and is_integer:
+        return None, str(value)
+    allowed = "a JSON string or integer" if key in INTEGER_KEYS else "a JSON string"
+    return f"{key} must be {allowed}, not {script_utils.json_type_name(value)}", None
+
+
+def parse_json_packet(text):
+    """The packet's raw fields from a JSON object, in the shape parse_free_text returns."""
+    try:
+        loaded = json.loads(text)
+    except ValueError as error:
+        raise PacketError([f"the packet is not valid JSON: {error}"]) from error
+    if not isinstance(loaded, dict):
+        raise PacketError([f"the packet must be one JSON object, not {script_utils.json_type_name(loaded)}"])
+    problems = []
+    packet = {}
+    trailer = []
+    for key, value in loaded.items():
+        if key not in PACKET_KEYS:
+            value_text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
+            trailer.append(f"{key}: {value_text}")
+            continue
+        problem, field_text = json_field_problem_or_text(key, value)
+        if problem:
+            problems.append(problem)
+            continue
+        packet[key] = field_text
+    if problems:
+        raise PacketError(problems)
+    packet["trailer"] = "\n".join(trailer)
+    return packet
+
+
+def parse(message):
+    """The packet's raw fields as text, plus `trailer` (prose outside any field). The packet is one JSON object; a
+    message that is not one is read as the old free-text form."""
+    json_text = json_packet_text(message)
+    if json_text is not None:
+        return parse_json_packet(json_text)
+    packet = parse_free_text(message)
+    if len(packet) > 1:
+        print("handback: parsed an old free-text packet; hand back one JSON object", file=sys.stderr)
+    return packet
+
+
+# ---------- the old free-text form ----------
+# Everything from here to the end of read_list reads the old `key: value` packet form. It is kept for one release and
+# removed after it. read_list's first branch (a JSON list) also serves the JSON path.
+
 def is_block_scalar(value_lines):
     return BLOCK_INDICATOR.match(value_lines[0].strip()) is not None
 
@@ -150,7 +219,7 @@ def packet_value(value_lines):
     return rest.strip("\n")
 
 
-def parse(message):
+def parse_free_text(message):
     """The packet's raw fields as text, plus `trailer` (prose outside any field)."""
     lines = [line.rstrip() for line in message.splitlines() if not line.strip().startswith(FENCE_OPEN)]
     text_lines = textwrap.dedent("\n".join(lines)).splitlines()
@@ -833,15 +902,9 @@ OPEN_WORK_REASON = ("{count} agent(s) or shell(s) you started in the background 
 UNCHECKED_KIND = "unchecked-code"
 
 
-def open_work_reason(event):
-    """OPEN_WORK_REASON when the loop's own transcript shows a background dispatch or shell that has not reported
-    back, else None. A transcript that cannot be read never blocks."""
-    try:
-        transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
-        open_dispatches = transcript.open_dispatches()
-    except Exception as error:
-        print(f"handback hook: open-work gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
-        return None
+def open_work_reason(open_dispatches):
+    """OPEN_WORK_REASON when the count of background dispatches or shells that have not reported back is above zero,
+    else None."""
     if not open_dispatches:
         return None
     return OPEN_WORK_REASON.format(count=open_dispatches)
@@ -862,19 +925,11 @@ def last_unchecked_step(session_id, agent_id):
     return max(steps, default=None)
 
 
-def unchecked_code_reason(event, session_id, agent_id, message):
-    """The deny reason when the loop's own transcript shows no passed full_check.py result after its last code
-    change, else None.
+def unchecked_code_reason(ungated, last_step, session_id, agent_id):
+    """The deny reason when `ungated` says the loop's transcript shows no passed full_check.py result after its last
+    code change (`last_step` is the line of that change), else None.
     The denial is recorded with the last code step it saw and repeats only after a later code change, so a loop that
-    hands back again on the same state passes. A transcript that cannot be read never blocks."""
-    try:
-        transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
-        in_ci = full_suite_in_ci(transcript, event.get("cwd"))
-        ungated, _open_dispatches = loop_transcript.scan(transcript, message, in_ci)
-        last_step = loop_transcript.last_code_step(transcript)
-    except Exception as error:
-        print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
-        return None
+    hands back again on the same state passes."""
     if not ungated:
         return None
     denied_at = last_unchecked_step(session_id, agent_id)
@@ -884,18 +939,38 @@ def unchecked_code_reason(event, session_id, agent_id, message):
     return loop_transcript.GATE_REASON
 
 
-def hand_back_plan_edit_reason(event, packet):
+def hand_back_plan_edit_reason(transcript, packet):
     """loop_transcript.PLAN_EDIT_REASON when the packet, of any status but plan-impact, has a files_touched that
-    names the plan file of the loop's dispatch prompt, else None. A transcript that cannot be read never blocks."""
+    names the plan file of the loop's dispatch prompt, else None."""
     if packet is None or packet["status"] == "plan-impact":
         return None
 
+    return loop_transcript.plan_edit_reason(transcript, packet)
+
+
+def transcript_gate_reason(event, session_id, agent_id, message, packet):
+    """The deny reason of the first gate that reads the loop's own transcript, in order: a background dispatch or
+    shell still open, no passed full check after the last code change, a plan file in the packet's files_touched.
+    The transcript is read once. One that cannot be read never blocks, and a failed full-check scan skips the
+    full-check gate only."""
     try:
         transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
+        open_dispatches = transcript.open_dispatches()
     except Exception as error:
-        print(f"handback hook: plan-file gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
+        print(f"handback hook: transcript gates skipped, {type(error).__name__}: {error}", file=sys.stderr)
         return None
-    return loop_transcript.plan_edit_reason(transcript, packet)
+    open_work = open_work_reason(open_dispatches)
+    if open_work:
+        return open_work
+    try:
+        in_ci = full_suite_in_ci(transcript, event.get("cwd"))
+        ungated, _open_dispatches = loop_transcript.scan(transcript, message, in_ci)
+        last_step = loop_transcript.last_code_step(transcript)
+    except Exception as error:
+        print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
+        return hand_back_plan_edit_reason(transcript, packet)
+    return (unchecked_code_reason(ungated, last_step, session_id, agent_id)
+            or hand_back_plan_edit_reason(transcript, packet))
 
 
 def handle_dispatch(event, session_id, tool_input):
@@ -956,7 +1031,8 @@ def handle_hook(event, kind):
     if problems and not was_recorded(session_id, agent_id, "rejected"):
         record(session_id, "rejected", agent_id=agent_id, problems=problems)
         return ("The review-loop packet does not parse: " + "; ".join(problems) +
-                ". Fix the packet to the schema in your instructions and hand back again.")
+                ". Hand back one JSON object alone (no fence, no prose around it) with the keys and rules of the "
+                "Return packet section in your instructions.")
     steps = loop_steps(session_id, agent_id)
     unreviewed = (status in CLEAN_STATUSES and "reviewer" not in steps
                   and not claim_no_review(session_id, agent_id))
@@ -964,9 +1040,7 @@ def handle_hook(event, kind):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
-    gate_reason = (open_work_reason(event)
-                   or unchecked_code_reason(event, session_id, agent_id, message)
-                   or hand_back_plan_edit_reason(event, packet))
+    gate_reason = transcript_gate_reason(event, session_id, agent_id, message, packet)
     if gate_reason:
         return gate_reason
 

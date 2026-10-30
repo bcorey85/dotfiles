@@ -49,10 +49,10 @@ def is_gate_counted(path):
 
 
 def branch_numstat(repo_dir, base=None):
-    # `git diff --numstat <base>...HEAD` text against `base` when given, else against the base ref the toolkit's
+    # `git diff --numstat -z <base>...HEAD` text against `base` when given, else against the base ref the toolkit's
     # branch-base resolver names; None when there is none or git fails.
     if base:
-        return git_output(repo_dir, "diff", "--numstat", "--no-renames", f"{base}...HEAD")
+        return git_output(repo_dir, "diff", "--numstat", "-z", "--no-renames", f"{base}...HEAD")
 
     try:
         resolved = subprocess.run([str(BRANCH_BASE)], cwd=repo_dir, stdin=subprocess.DEVNULL, capture_output=True,
@@ -64,7 +64,7 @@ def branch_numstat(repo_dir, base=None):
     if resolved.returncode != 0 or not words:
         return None
 
-    return git_output(repo_dir, "diff", "--numstat", "--no-renames", f"{words[0]}...HEAD")
+    return git_output(repo_dir, "diff", "--numstat", "-z", "--no-renames", f"{words[0]}...HEAD")
 
 
 def concentration_gate(repo_dir, base=None):

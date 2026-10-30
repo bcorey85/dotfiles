@@ -4,7 +4,7 @@ change_type: "security"
 title: "An orchestrator's pane prompts are marked, and it never answers a worker's question for the user"
 description: "herdr-phase-change prefixes a plain-text prompt with the sending pane, and orchestration.md forbids typing an answer to a question put to the user into another session's input box."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T22:30:00-05:00"}
-seq: 282
+seq: 295
 kind: "fix"
 components: ["script/herdr-phase-change", "rule/orchestration"]
 evidence: ["judgment"]

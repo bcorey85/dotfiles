@@ -79,6 +79,8 @@ LOOP_TARGETS = r"[\w\s,()\[\]]*?"
 MAX_SCRIPT_BYTES = 1_000_000
 DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
 DIRECTORY_COMMAND_TEXT = re.compile(r"(^|[\s;&|(){`])(cd|pushd|popd)(\s|$|[;&|)])")
+DIRECTORY_CHANGE_HINT = ("This gate resolves a relative path against the session cwd, not the cd target; use an "
+                         "absolute path for the file you mean.")
 ESCAPE_HINT = (" If this deny is wrong (for example a command wrapper this gate does not recognize), re-run the "
                "command with a trailing #skip-shell-write-gate comment — it disarms this gate for that one command.")
 
@@ -239,10 +241,6 @@ def is_git_tracked(path):
     return git_path_check(path, "ls-files", "--error-unmatch")
 
 
-def is_git_ignored(path):
-    return git_path_check(path, "check-ignore", "-q")
-
-
 def run(raw):
     if raw.strip() == "":
         return
@@ -377,7 +375,12 @@ def interpreter_code(segment, cwd, written_paths, command):
         script = resolve_target(word, cwd)
         if script in written_paths:
             return command, arguments[index:]
-        if script is None or not os.path.isfile(script) or is_git_tracked(script) or is_git_ignored(script):
+        if (
+            script is None
+            or not os.path.isfile(script)
+            or is_git_tracked(script)
+            or script_utils.is_git_ignored(script)
+        ):
             return None
         try:
             if os.path.getsize(script) > MAX_SCRIPT_BYTES:
@@ -535,8 +538,11 @@ def check_written_target(raw_target, cwd, cannot_skip, coder, after_directory_ch
         if resolved and os.path.exists(shell_dirname(resolved)):
             path = resolved
     if is_git_tracked(path):
-        raise DenyError(deny_text(path + " is git-tracked. Shell writes bypass the Write/Edit hook pipeline "
-                                  "(comment/prose/budget gates).", cannot_skip))
+        subject = (path + " is git-tracked. Shell writes bypass the Write/Edit hook pipeline "
+                   "(comment/prose/budget gates).")
+        if after_directory_change and not path_word_is_absolute(raw_target):
+            subject += " " + DIRECTORY_CHANGE_HINT
+        raise DenyError(deny_text(subject, cannot_skip))
     if not coder:
         return
     expanded = expand_env_names(raw_target, ("TMPDIR", "HOME"))

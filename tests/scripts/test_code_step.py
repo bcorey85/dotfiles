@@ -2106,6 +2106,295 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Phase 1 marked done", out)
         self.assertIn("- [x] Phase 1:", self.plan_text())
 
+    def begin_asks_coder(self, *outcomes):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+        return self.step("asks-done", *outcomes)
+
+    def test_a_ruling_corrected_while_the_asks_coder_runs_goes_to_a_correction_coder_before_the_review(self):
+        self.begin_asks_coder("accepted")
+        dispatches_before = len(self.events_named("dispatch"))
+
+        out = self.step("correct-ruling", "rejected")
+
+        self.assertNotIn("ACTION: dispatch", out)
+        self.assertIn("correction", self.said())
+        self.assertEqual(dispatches_before, len(self.events_named("dispatch")))
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        out = self.step("resume")
+
+        self.assertIn("ACTION: dispatch", out)
+        self.assertIn("AGENT: coder", out)
+        self.assertNotIn("review-loop", out)
+        self.assertIn("keep?", out)
+        self.assertIn("Old ruling: accepted", out)
+        self.assertIn("New ruling: rejected", out)
+        self.assertIn("undo", out)
+        self.assertEqual("asks-coder", self.state()["stage"])
+        self.assertNotIn("pendingCorrection", self.state())
+        self.assertEqual(["rejected"], self.state()["rulings"]["outcomes"])
+        self.assertEqual([], self.state()["acceptedAsks"])
+        self.hook("coder", "BEHAVIOR: undid the ask")
+        out = self.step("resume")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertEqual([["applied the ask"], ["undid the ask"]], self.state()["askRounds"])
+
+    def test_a_correction_coder_that_undoes_the_whole_asks_change_finishes_the_phase_without_review(self):
+        self.begin_asks_coder("accepted")
+        self.step("correct-ruling", "rejected")
+
+        out = self.restore_orders_after_a_first_edit("BEHAVIOR: undid the ask")
+
+        self.assertNotIn("review-loop", out)
+        self.assertNotIn("no reviewable change", out)
+        self.assertIn("After the correction no ask stays accepted", self.said())
+        self.assertIn("Phase 1 marked done", out)
+
+    def restore_orders_after_a_first_edit(self, correction_report):
+        orders = self.repo / "backend/src/orders.ts"
+        original = orders.read_text()
+        orders.write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        self.step("resume")
+        orders.write_text(original)
+        self.hook("coder", correction_report)
+        return self.step("resume")
+
+    def test_a_correction_that_keeps_one_of_two_asks_accepted_stops_when_the_tree_is_restored(self):
+        self.accept_two_asks()
+        self.step("correct-ruling", "accepted", "rejected")
+
+        out = self.restore_orders_after_a_first_edit("BEHAVIOR: restored the file")
+
+        self.assertNotIn("Phase 1 marked done", out)
+        self.assertIn("no reviewable change", out)
+
+    def test_a_correction_with_new_also_text_stops_when_the_tree_is_restored(self):
+        self.begin_asks_coder("accepted")
+        self.step("correct-ruling", "--also", "add a log line", "rejected")
+
+        out = self.restore_orders_after_a_first_edit("BEHAVIOR: restored the file")
+
+        self.assertNotIn("Phase 1 marked done", out)
+        self.assertIn("no reviewable change", out)
+
+    def test_a_correction_coder_that_recommends_eng_spec_after_undoing_stops_on_the_recommendation(self):
+        self.begin_asks_coder("accepted")
+        self.step("correct-ruling", "rejected")
+
+        out = self.restore_orders_after_a_first_edit("BEHAVIOR: undid the ask\nRECOMMEND: eng-spec")
+
+        self.assertIn("recommended /eng-spec", out)
+        self.assertNotIn("Phase 1 marked done", out)
+
+    def test_an_undone_correction_after_a_review_that_left_findings_open_still_gets_a_review(self):
+        self.begin_asks_coder("accepted")
+        self.set_state(reviewStatus="cap-reached")
+        self.step("correct-ruling", "rejected")
+
+        out = self.restore_orders_after_a_first_edit("BEHAVIOR: undid the ask")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("Phase 1 marked done", out)
+
+    def test_a_correction_saved_before_the_first_coder_reports_no_change_is_kept_for_the_resumed_coder(self):
+        self.begin_asks_coder("accepted")
+        self.step("correct-ruling", "rejected")
+        self.hook("coder", "BEHAVIOR: none\nstill blocked")
+        self.step("resume")
+
+        self.assertIn("A corrected ruling is saved", self.said())
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        out = self.step("resume")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("New ruling: rejected", out)
+
+    def test_a_correction_coder_that_leaves_any_line_changed_still_gets_a_review(self):
+        self.begin_asks_coder("accepted")
+        self.step("correct-ruling", "rejected")
+        orders = self.repo / "backend/src/orders.ts"
+        orders.write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        self.step("resume")
+        orders.write_text("export const o = 3\n")
+        self.hook("coder", "BEHAVIOR: undid the ask")
+
+        out = self.step("resume")
+
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("Phase 1 marked done", out)
+
+    def test_the_correction_coder_keeps_the_first_asks_coders_notes_in_the_summary(self):
+        self.begin_asks_coder("accepted")
+        self.step("correct-ruling", "rejected")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask\nWHY: backend/src/orders.ts 1-2 — first coder note")
+        self.step("resume")
+        self.hook("coder", "BEHAVIOR: undid the ask")
+        self.step("resume")
+
+        notes = self.state()["summaryWhy"]["backend/src/orders.ts"]
+
+        self.assertIn("first coder note", str(notes))
+
+    def test_a_correction_that_changes_only_the_change_text_of_a_modified_ask_goes_to_a_correction_coder(self):
+        self.begin_asks_coder("modified", "--change", "first text")
+
+        self.step("correct-ruling", "modified", "--change", "second text")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        out = self.step("resume")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("Old ruling: modified (the user's change: first text)", out)
+        self.assertIn("New ruling: modified (the user's change: second text)", out)
+
+    def test_a_correction_undone_by_a_second_correction_leaves_no_correction_coder(self):
+        self.begin_asks_coder("accepted")
+
+        self.step("correct-ruling", "rejected")
+        self.step("correct-ruling", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        out = self.step("resume")
+
+        self.assertNotIn("pendingCorrection", self.state())
+        self.assertIn("AGENT: review-loop", out)
+        ruled = json.loads((self.repo / ".git/code-step/ruled-asks.json").read_text())
+        self.assertEqual(1, len(ruled), ruled)
+        self.assertEqual(["accepted"], [entry["outcome"] for entry in ruled])
+        outcome_lines = [line for line in self.log.read_text().splitlines() if "ask_outcome=" in line]
+        self.assertIn("ask_outcome=accepted", outcome_lines[-1])
+        self.assertNotIn("A correction coder applies them", self.said())
+
+    def test_a_correction_that_changes_only_the_also_text_still_goes_to_a_correction_coder(self):
+        self.begin_asks_coder("accepted")
+
+        self.step("correct-ruling", "--also", "add a log line", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        out = self.step("resume")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("add a log line", out)
+
+    def test_a_correction_that_drops_the_also_text_tells_the_correction_coder_to_undo_it(self):
+        self.begin_asks_coder("--also", "add a log line", "accepted")
+
+        self.step("correct-ruling", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        out = self.step("resume")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("The user dropped the instruction given alongside the asks:\nadd a log line\nUndo the work done "
+                      "for it.", out)
+        self.assertEqual("", self.state()["asksAlso"])
+
+    def test_a_correction_that_replaces_the_also_text_gives_the_correction_coder_both_instructions(self):
+        self.begin_asks_coder("--also", "A", "accepted")
+
+        self.step("correct-ruling", "--also", "B", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        out = self.step("resume")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("Old instruction:\nA\nNew instruction:\nB\nUndo the old instruction's work where the new one "
+                      "drops it, and do the new instruction.", out)
+        self.assertEqual("B", self.state()["asksAlso"])
+
+    def test_a_correction_selects_only_the_changed_asks(self):
+        self.accept_two_asks()
+
+        self.step("correct-ruling", "accepted", "rejected")
+        log_text = self.log.read_text()
+        self.assertEqual(1, log_text.count("ask_outcome=rejected"))
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the asks")
+        out = self.step("resume")
+
+        log_text = self.log.read_text()
+        self.assertEqual(1, log_text.count("ask_outcome=rejected"))
+        self.assertEqual(2, log_text.count("ask_outcome=accepted"))
+        self.assertIn("rename?", out)
+        self.assertNotIn("keep?", out)
+
+    def test_correct_ruling_says_the_refusal_when_no_asks_coder_runs(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+        state_before = self.state()
+
+        out = self.step("correct-ruling", "rejected")
+
+        self.assertIn("ACTION: go-on", out)
+        self.assertIn("No asks coder is running", out)
+        self.assertIn("new /code run", out)
+        self.assertEqual(state_before, self.state())
+        self.assertIn("keep?", (self.repo / ".git/code-step/question.md").read_text())
+
+    def test_correct_ruling_says_the_refusal_at_a_stop_and_keeps_the_stop_question(self):
+        self.begin_asks_coder("accepted")
+        self.hook("coder", "BEHAVIOR: none\nstill blocked")
+        self.step("resume")
+        question_before = (self.repo / ".git/code-step/question.md").read_text()
+        state_before = self.state()
+
+        out = self.step("correct-ruling", "rejected")
+
+        self.assertIn("ACTION: go-on", out)
+        self.assertIn("No asks coder is running", out)
+        self.assertEqual(state_before, self.state())
+        self.assertEqual(question_before, (self.repo / ".git/code-step/question.md").read_text())
+        self.assertIn("produced no reviewable change", question_before)
+
+    def test_correct_ruling_says_the_refusal_when_the_asks_coder_started_before_corrections_existed(self):
+        self.begin_asks_coder("accepted")
+        state_path = self.repo / ".git/code-step/state.json"
+        saved_state = json.loads(state_path.read_text())
+        del saved_state["rulings"]
+        state_path.write_text(json.dumps(saved_state))
+        state_before = self.state()
+
+        out = self.step("correct-ruling", "rejected")
+
+        self.assertIn("ACTION: go-on", out)
+        self.assertIn("before corrections were supported", out)
+        self.assertEqual(state_before, self.state())
+
+    def test_a_correction_equal_to_the_ruling_sends_the_coder_report_straight_to_the_review(self):
+        self.begin_asks_coder("accepted")
+
+        self.step("correct-ruling", "accepted")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 2\n")
+        self.hook("coder", "BEHAVIOR: applied the ask")
+        out = self.step("resume")
+
+        self.assertIn("AGENT: review-loop", out)
+
+    def test_correct_ruling_with_the_wrong_outcome_count_says_the_refusal_and_keeps_the_state(self):
+        self.begin_asks_coder("accepted")
+        state_before = self.state()
+
+        out = self.step("correct-ruling", "rejected", "accepted")
+
+        self.assertIn("ACTION: go-on", out)
+        self.assertEqual(state_before, self.state())
+
+    def test_the_ask_question_names_how_to_correct_a_ruling(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+
+        self.assertIn("SendMessage", self.said())
+        self.assertIn("asks coder runs", self.said())
+
     def test_an_ask_fix_coder_s_behavior_stays_off_the_phase_implemented_line(self):
         self.coder_round()
         self.hook("review-loop", self.ASK)
@@ -3698,6 +3987,16 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [x] Phase 1:", self.plan_text())
         self.assertIn("already in the code", self.said())
         self.assertIn("The ask was already built", self.said())
+
+    def test_asks_coder_that_changed_nothing_keeps_a_pending_correction(self):
+        self.apply_first_ask()
+        self.step("correct-ruling", "rejected")
+        self.hook("coder", self.ALREADY_DONE_REPORT)
+        out = self.step("resume")
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("New ruling: rejected", out)
+        self.assertNotIn("Phase 1 marked done", out)
+        self.assertNotIn("pendingCorrection", self.state())
 
     def test_asks_coder_that_changed_nothing_stops_when_the_verification_fails(self):
         self.set_verification('- [ ] **Check**: fails - `test -f no-such.flag`')
@@ -6767,6 +7066,14 @@ class CodeForkToolsTest(unittest.TestCase):
         disallowed_tools = {tool.strip() for tool in disallowed.split(",")}
         self.assertNotIn("SendMessage", disallowed_tools)
         self.assertIn("takes no scope change mid-run", skill.read_text())
+
+    def test_the_code_fork_runs_a_message_starting_with_asks_done_as_a_ruling_correction(self):
+        skill_text = (REAL_CLAUDE / "skills" / "code" / "SKILL.md").read_text()
+
+        self.assertIn("starts with `asks-done`", skill_text)
+        self.assertIn("code_step.py correct-ruling", skill_text)
+        self.assertIn("- `go-on`:", skill_text)
+        self.assertIn("even when it printed `stop`", skill_text)
 
     def test_the_code_fork_hands_a_question_or_report_back_even_when_the_task_names_a_session(self):
         skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"

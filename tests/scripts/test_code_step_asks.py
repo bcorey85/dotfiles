@@ -245,5 +245,44 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
         self.assertEqual(self.state["stage"], "done")
 
 
+class AskListingAndJump(unittest.TestCase):
+    def test_jump_anchor_args_keep_only_one_well_formed_anchor_per_ask(self):
+        asks = [
+            {"file_line": "src/a.ts:10", "question": "cap\nit?"},
+            {"file_line": "src/b.ts:3-9", "question": "q2"},
+            {"file_line": "src/c.ts:1,188", "question": "list"},
+            {"file_line": "src/d.ts", "question": "bare"},
+            {"question": "none"},
+        ]
+
+        self.assertEqual(["--note", "cap it?", "src/a.ts:10", "--note", "q2", "src/b.ts:3-9"],
+                         review_asks.jump_anchor_args(asks))
+
+    def test_jump_anchor_args_cut_the_note_at_160_characters(self):
+        arguments = review_asks.jump_anchor_args([{"file_line": "a.py:1", "question": "x" * 200}])
+
+        self.assertEqual("x" * 160, arguments[1])
+
+    def test_run_nvim_jump_says_nothing_to_jump_to_without_an_anchor_and_when_not_installed(self):
+        self.assertIn("nothing to jump to", review_asks.run_nvim_jump("true", [{"question": "q"}]))
+        self.assertIn("not installed", review_asks.run_nvim_jump("/nonexistent/nvim-jump",
+                                                                  [{"file_line": "a.py:1", "question": "q"}]))
+
+    def test_numbered_ask_lines_list_the_ask_and_its_change_for_code(self):
+        ask = {"finding": "no cap", "question": "cap it?", "change": "cap at 3\nlog it", "gate": "g", "class": "bug"}
+
+        self.assertEqual(["1. no cap - cap it?", "   Proposed change: cap at 3", "   log it"],
+                         review_asks.numbered_ask_lines([ask]))
+
+    def test_numbered_ask_lines_with_detail_add_location_gate_and_class(self):
+        asks = [{"file_line": "a.py:1", "question": "q1", "gate": "code-reviewer", "class": "smell",
+                 "class_raw": "nit", "change": "c1"},
+                {"question": "q2\nmore", "gate": "perf-reviewer", "class": "perf"}]
+
+        self.assertEqual(["1. a.py:1  [code-reviewer/smell (was nit)]", "   q1", "   Proposed change: c1",
+                          "2. no file:line  [perf-reviewer/perf]", "   q2", "   more"],
+                         review_asks.numbered_ask_lines(asks, detail=True))
+
+
 if __name__ == "__main__":
     unittest.main()

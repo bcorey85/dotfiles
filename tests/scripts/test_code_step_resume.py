@@ -21,6 +21,8 @@ SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no p
 BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
 UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
                      "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
+CHECK_NOT_RUN_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
+                        "full_check: not run (timeout)\nfull_check_command: npm test")
 
 
 class ResumeTest(base.CodeStepTest):
@@ -1375,6 +1377,8 @@ class ResumeTest(base.CodeStepTest):
              "the review's full check could not run here", review_again),
             ("check unverified", UNVERIFIED_PACKET, "check-unverified",
              "with stop reason check-unverified.", "When the cause is fixed, run `review-again`."),
+            ("check not run", CHECK_NOT_RUN_PACKET, "check-not-run",
+             "with stop reason check-not-run.", "When the cause is fixed, run `review-again`."),
         ]
         for label, packet, stop_reason, said_text, resumed_question in stops:
             with self.subTest(label):

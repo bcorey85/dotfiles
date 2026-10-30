@@ -540,6 +540,13 @@ def is_unverified(result):
     return result.startswith("unverified")
 
 
+def is_check_not_run(result):
+    # True when the check was owed and did not run: it timed out, or the command was scoped or unresolved. Every
+    # other `not run` result proceeds: CI runs the suite, the repo names no check, the plan expects the check red, or
+    # the check hit a check-command error or an environment gap.
+    return result in (NOT_RUN_TIMEOUT, NOT_RUN_SCOPED, NOT_RUN_UNRESOLVED)
+
+
 def summary_text(result, summaries):
     """The summary line's text for a passed or unverified result: the runner's summary lines joined, or `not found`
     when there are none. None for any other result, which carries no summary."""

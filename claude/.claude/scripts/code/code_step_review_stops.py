@@ -1,5 +1,6 @@
-"""The review statuses that end a code_step run: a tool fault, a critical blocker, a setup fault, an unverified check
-and the review cap. Each prints its stop or question; the caller goes on to the asks or the phase end otherwise."""
+"""The review statuses that end a code_step run: a tool fault, a critical blocker, a setup fault, an unverified check,
+a full check that did not run and the review cap. Each prints its stop or question; the caller goes on to the asks or
+the phase end otherwise."""
 import script_utils
 from code_step_core import (
     REVIEW_AGAIN_INVOKE,
@@ -27,6 +28,9 @@ def review_stop_next_step(state):
     # The command after a review stop: the phase started over, once the user has ruled on the findings.
     return f"after the user rules on the findings, {restart_instruction(state)} to start the phase over."
 
+
+# The fix a check stop names when the repo's CLAUDE.md names no check.
+ADD_QUALITY_CHECK_FIX = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
 
 # The statuses that stop on the packet's blockers: (the question, the instruction to the caller).
 BLOCKER_STOP_TEXT = {
@@ -75,8 +79,35 @@ def unverified_check_why_and_fix(configured):
     else:
         why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
                "test ran.")
-        fix = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
+        fix = ADD_QUALITY_CHECK_FIX
     return why, fix
+
+
+def not_run_fix(result, configured):
+    # The fix a check-not-run stop names: a timeout's, else a scoped or unresolved command's, by whether the repo
+    # names its check.
+    # Imported here: review/ joins sys.path when code_step_core loads, which sorted top-level imports would precede.
+    import full_check
+    if result == full_check.NOT_RUN_TIMEOUT:
+        return "make the check finish under the time limit"
+    if configured:
+        # The repo already names its check, so a Quality check line would change nothing: the loop passed another
+        # command.
+        return (f"make the review loop run the configured check (`{configured}`) as written, not the other command "
+                "it passed")
+    return ADD_QUALITY_CHECK_FIX
+
+
+def stop_on_unrun_check(repo_dir, state, packet, kind, question, check_command, fix, instruction_head):
+    # The stop for a converged or deferred review whose full check did not verify the phase.
+    set_stop(state, kind)
+    save_state(repo_dir, state)
+    fix_sentence = fix[0].upper() + fix[1:]
+    stop_with_question(
+        repo_dir, question, [check_command],
+        f"{fix}, then run `{script_command('review-again')}` to review the same diff again.",
+        f"{instruction_head} {fix_sentence}, then run review-again. Do not mark the phase done.",
+        questions=ask_lines(packet))
 
 
 def stop_on_review_status(repo_dir, state, module, packet):
@@ -115,18 +146,23 @@ def stop_on_review_status(repo_dir, state, module, packet):
     if status in ("converged", "deferred") and full_check.is_unverified(packet["full_check"]):
         # A check that exited 0 printed no test-runner summary, so the check did not show that any test ran: the phase
         # is not verified, so it does not finish.
-        set_stop(state, "check-unverified")
-        save_state(repo_dir, state)
         check_command = packet["full_check_command"] or "(not named)"
         why, fix = unverified_check_why_and_fix(full_check.configured_check_command(repo_dir))
         why_sentence = why[0].upper() + why[1:]
-        fix_sentence = fix[0].upper() + fix[1:]
-        stop_with_question(
-            repo_dir, why, [check_command],
-            f"{fix}, then run `{script_command('review-again')}` to review the same diff again.",
-            f"{why_sentence} The check ran: `{check_command}`. {fix_sentence}, then run "
-            "review-again. Do not mark the phase done.",
-            questions=ask_lines(packet))
+        stop_on_unrun_check(
+            repo_dir, state, packet, "check-unverified", why, check_command, fix,
+            f"{why_sentence} The check ran: `{check_command}`.")
+        return True
+    if status in ("converged", "deferred") and full_check.is_check_not_run(packet["full_check"]):
+        # The full check was owed and did not run, so the phase is not verified and does not finish.
+        result = packet["full_check"]
+        check_command = packet["full_check_command"] or "(not named)"
+        configured = full_check.configured_check_command(repo_dir)
+        fix = not_run_fix(result, configured)
+        stop_on_unrun_check(
+            repo_dir, state, packet, "check-not-run",
+            f"the review's full check (`{check_command}`) returned `{result}`.", check_command, fix,
+            f"The full check did not run: {result}. The check command: `{check_command}`.")
         return True
     if status == "cap-reached":
         # The first cap of a phase sends the open findings to one more review-loop pass with a fresh round budget.

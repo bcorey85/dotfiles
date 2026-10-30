@@ -670,6 +670,33 @@ class ShellWriteGateTest(unittest.TestCase):
         script.write_text("import sys\nwith open(sys.argv[1], 'w') as f:\n    f.write('y')\n")
         self.assert_denied(f"python3 {script} tracked.txt")
 
+    def test_untracked_script_whose_write_target_comes_from_argv_is_denied(self):
+        scripts = {
+            "rewrite.py": "import sys\nsrc, dst = sys.argv[1:3]\nopen(dst, 'w').write(open(src).read())\n",
+            "parsed.py": "import argparse\nparser = argparse.ArgumentParser()\nparser.add_argument('out')\n"
+                         "args = parser.parse_args()\nopen(args.out, 'w').write('y')\n",
+            "main.py": "import sys\ndef main(argv):\n    out = argv[1]\n    open(out, 'w').write('y')\n\n"
+                       "main(sys.argv)\n",
+            "inplace.py": "import fileinput\nfor line in fileinput.input(inplace=True):\n    print(line, end='')\n",
+            "rewrite.pl": "my ($out) = @ARGV;\nopen(my $f, '>', $out);\n",
+            "rewrite.js": "const [, , out] = process.argv;\nrequire('fs').writeFileSync(out, 'y');\n",
+        }
+        for name, code in scripts.items():
+            with self.subTest(script=name):
+                script = self.tmp / name
+                script.write_text(code)
+                interpreter = {".py": "python3", ".pl": "perl", ".js": "node"}[script.suffix]
+                self.assert_denied(f"{interpreter} {script} untracked.txt tracked.txt")
+
+    def test_untracked_script_that_reads_a_tracked_argument_and_writes_its_own_file_passes(self):
+        script = self.tmp / "start.py"
+        script.write_text("import pathlib\nimport sys\n\ndef main(argv):\n    plan = argv[1]\n"
+                          "    text = pathlib.Path(plan).read_text()\n    repo = pathlib.Path.cwd()\n"
+                          "    pid_file = repo / '.git/run/pid'\n    pid_file.write_text('1')\n"
+                          "    prompt_file, log_path = make_files(repo)\n    with log_path.open('w') as log:\n"
+                          "        log.write(text)\n\nmain(sys.argv)\n")
+        self.assert_allowed(f"python3 {script} tracked.txt", agent="coder")
+
     def test_inline_code_with_operator_characters_that_writes_a_tracked_file_is_denied(self):
         commands = (
             "python3 -c \"import pathlib; pathlib.Path('tracked.txt').write_text('y')\"",

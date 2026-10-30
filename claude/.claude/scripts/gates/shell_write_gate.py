@@ -80,6 +80,15 @@ FUNCTION_DEFINITION = re.compile(r"\b(?:def|function)\s+(\w+)\s*\(([^)]*)\)")
 # A name the code uses, not an attribute after a `.`.
 CODE_NAME = re.compile(r"(?<![\w.$])\$?[A-Za-z_]\w*")
 MAX_NAME_HOPS = 4
+# An assignment to a list of target names: `src, dst = ...`, `my ($out) = ...`, `const [, out] = ...`.
+UNPACKING = re.compile(r"(?:^|[;{])[ \t]*(?:(?:const|let|var|my|our)\s+)?"
+                       r"(?P<targets>\[[\w$, \t]*\]|\([\w$, \t]*\)|[\w$, \t]*,[\w$, \t]*)\s*=(?![=>])", re.M)
+# Text through which a write target reads the command line: argv itself, perl's `shift`, an argument parser's
+# result, or fileinput's in-place mode, which rewrites the files argv names.
+ARGV_SOURCE = re.compile(r"\b(argv|ARGV|ARGF|shift|parse_args|parse_known_args|parseArgs)\b|\bDeno\.args\b"
+                         r"|\bfileinput\b")
+# A parser that binds the command line to a function's parameters, so no call in the code shows the binding.
+DECORATOR_ARGUMENT_PARSER = re.compile(r"^\s*(import|from)\s+(click|typer|fire)\b", re.M)
 # The other names a for loop's target list may hold beside the traced one (`for path, old, new in EDITS`).
 LOOP_TARGETS = r"[\w\s,()\[\]]*?"
 MAX_SCRIPT_BYTES = 1_000_000
@@ -498,7 +507,21 @@ def assigned_texts(code, word):
     return [",".join(split_arguments(code, match.end())) for match in assignment.finditer(code)]
 
 
-def named_texts(code, text):
+def unpacked_texts(code, name):
+    """The right side of each UNPACKING assignment that names `name` among its targets."""
+    texts = []
+    for match in UNPACKING.finditer(code):
+        targets = [target.strip(" \t[]()$") for target in match.group("targets").split(",")]
+        if name.lstrip("$") in targets:
+            texts.append(",".join(split_arguments(code, match.end())))
+    return texts
+
+
+def argv_bindings(code, name):
+    return binding_texts(code, name) + unpacked_texts(code, name)
+
+
+def named_texts(code, text, bindings=binding_texts):
     """`text` plus the text that binds each name it uses, followed through MAX_NAME_HOPS bindings."""
     texts = [text]
     frontier = [text]
@@ -506,9 +529,23 @@ def named_texts(code, text):
     for _hop in range(MAX_NAME_HOPS):
         names = {name for part in frontier for name in CODE_NAME.findall(part)} - seen
         seen |= names
-        frontier = [bound for name in sorted(names) for bound in binding_texts(code, name)]
+        frontier = [bound for name in sorted(names) for bound in bindings(code, name)]
         texts += frontier
     return texts
+
+
+def writes_reach_argv(code):
+    """Whether a file write's target can come from the command line: its statement, or a text bound to its target
+    (an unpacking assignment included), reads argv; or a decorator parser binds argv where no call shows it."""
+    if DECORATOR_ARGUMENT_PARSER.search(code):
+        return True
+
+    for statement, target in write_statements(code):
+        if ARGV_SOURCE.search(statement):
+            return True
+        if any(ARGV_SOURCE.search(text) for text in named_texts(code, target, argv_bindings)):
+            return True
+    return False
 
 
 def path_candidates(text):
@@ -568,9 +605,9 @@ def interpreter_written_target(segment, folders, written_paths, command):
     """(raw path, path) of the git-tracked file an interpreter step opens for writing, else None: code with a file
     write whose statement names a tracked file as a string literal, whose target is a name bound (through
     assignments, for loops and function calls) to a tracked file's literal or to literals that join into one, or a
-    tracked file passed as an argument. folders holds the session cwd, then each literal cd folder before the step,
-    and a relative path counts when it names a tracked file under any of them. A path the code builds any other way
-    is not seen."""
+    tracked file passed as an argument when a write's target can come from argv. folders holds the session cwd, then
+    each literal cd folder before the step, and a relative path counts when it names a tracked file under any of them.
+    A path the code builds any other way is not seen."""
     cwd = folders[0]
     found = interpreter_code(segment, cwd, written_paths, command)
     if found is None:
@@ -582,10 +619,15 @@ def interpreter_written_target(segment, folders, written_paths, command):
 
     # A bracket or quote inside a comment cuts a literal, and a `#` that starts no comment (a JS regex, perl's
     # `s/a #b/`) cuts real code, so trace the code both with and without comments.
+    codes = dict.fromkeys((raw_code, without_comments(raw_code)))
     candidates = []
-    for code in dict.fromkeys((raw_code, without_comments(raw_code))):
+    for code in codes:
         candidates += written_candidates(code)
-    for candidate in candidates + arguments:
+
+    # A tracked file the code only reads from argv is no write target.
+    if any(writes_reach_argv(code) for code in codes):
+        candidates += arguments
+    for candidate in candidates:
         candidate_folders = [cwd] if shell_command.path_word_is_absolute(candidate) else folders
         for folder in candidate_folders:
             path = resolve_target(candidate, folder)

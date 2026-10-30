@@ -65,7 +65,9 @@ class GitDisciplineGateTest(unittest.TestCase):
                         "echo $(git stash)", "echo \"$(git stash pop)\"", "echo `git stash`",
                         "bash -c 'git stash push'", "eval \"git stash\"", "git \\\n  stash push"):
             with self.subTest(command=command):
-                self.assert_denied(command, "[git-discipline-gate] git stash is blocked in every form")
+                reason = self.assert_denied(command, "[git-discipline-gate] git stash is blocked in every form")
+                self.assertIn("To bring a base into unfinished work, run `git merge <base>` with the work uncommitted",
+                              reason)
         for command in ("git stash list", "git stash show -p", "git stash  list", "git -C x stash list"):
             self.assert_allowed(command)
 
@@ -85,9 +87,13 @@ class GitDisciplineGateTest(unittest.TestCase):
                         "git config --global merge.autoStash on", "bash -c 'git pull --autostash'"):
             with self.subTest(command=command):
                 reason = self.assert_denied(command, "[git-discipline-gate] git autostash is blocked")
-        self.assertEqual(reason, "[git-discipline-gate] git autostash is blocked: it runs a git stash, which every "
-                                 "worktree shares and which resets staged files. Commit or set your work aside with a "
-                                 "temporary WIP commit first, or pass --no-autostash.")
+                self.assertEqual(reason, "[git-discipline-gate] git autostash is blocked: it runs a git stash, which "
+                                         "every worktree shares and which resets staged files. Pass "
+                                         "--no-autostash to the command, or do not set the autostash config. "
+                                         "To bring a base into unfinished work, run `git merge <base>` with the work "
+                                         "uncommitted: git stops and changes nothing when the merge touches an "
+                                         "edited file. If it stops, commit the work once /review hands back "
+                                         "converged or deferred, then merge.")
         for command in ("git pull --rebase", "git pull --rebase --no-autostash",
                         "git rebase --autostash --no-autostash",
                         "git -c rebase.autoStash=false pull --rebase", "git config --get rebase.autoStash",

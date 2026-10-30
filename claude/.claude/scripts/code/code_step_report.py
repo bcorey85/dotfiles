@@ -78,6 +78,21 @@ def first_plan_impact(messages, handled=None):
     return None
 
 
+def impact_replaced(reports, block):
+    # True when a coder of this stage handed back or tried to hand back `block` and its newest hand-back carries a
+    # different block or none: the coder answered the question the block raised, so the block is not its last word.
+    for report in reports:
+        attempted_blocks = [plan_impact_block(coder_message_without_gate_stamp(coder_message))
+                            for coder_message in report["attempts"] + report["messages"]]
+        if not report["messages"]:
+            continue
+        if block not in attempted_blocks:
+            continue
+        if plan_impact_block(coder_message_without_gate_stamp(report["messages"][-1])) != block:
+            return True
+    return False
+
+
 ALREADY_DONE_LINE = re.compile(
     r"^[ \t>*`_-]*ALREADY-DONE[*`_]*:[ \t]*(?:ask[ \t]*)?(\d+)[ \t]*(?:—|–|--?)[ \t]*(.*)$", re.M
 )

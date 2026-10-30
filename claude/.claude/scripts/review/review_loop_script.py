@@ -9,12 +9,14 @@ scope, first-round reviewers (code, plus smell and test reviewers on a large dif
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py. In a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
-calls run the changed files' tests, it runs only the `Quality check:` command, as a check with no tests; it runs none
-in a repo where no check is found. A check past full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process
+calls run the changed files' tests, it runs only the `Quality check:` command; a run with no runner summary is
+`passed (check only; CI runs the full suite)`; it runs none in a repo where no check is found. A check past
+full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process
 group, and a check whose step stops on a missing path is a check-command error. A check that fails on a missing
 module the repo declares as a dependency is an environment gap. None is a failure: the packet's `full_check` says
 `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
-`not run (check-command error: ...)` or `not run (environment gap: ...)`. An exit 0 with no runner summary is no
+`not run (check-command error: ...)`, `not run (environment gap: ...)` or, when the phase's Expected red lines leave out
+the whole check, `not run (expected red until Phase <id>[, <id>...])`. An exit 0 with no runner summary is no
 failure either: it says `unverified (exit 0, no runner summary)`. So is a failure that the check shows the same way
 on HEAD without the diff: it says `pre-existing failure (...)` and did not verify the diff. To tell, a failed check is
 rerun once per loop (the base run) in a detached worktree of HEAD, up to full_check_gate.CHECK_TIMEOUT_SECONDS. A
@@ -86,6 +88,7 @@ from review_loop_findings import (
     still_fixed,
 )
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
+from review_loop_prompts import coder_prompt, reviewer_prompt
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
@@ -102,31 +105,6 @@ TERMINAL_PANE_ENV = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_S
 CHILD_ENV = {**{name: value for name, value in os.environ.items() if name not in TERMINAL_PANE_ENV},
              "CLAUDE_FORMAT_HOOK_OFF": "1"}
 
-FENCE = (
-    'Fix only the issues listed below. Do not refactor surrounding code. Do not "improve" things you '
-    "notice along the way. Do not rename, restructure, or add abstractions that aren't required by the "
-    'fix itself. A focused 5-line fix is the right output, not a 50-line cleanup PR.\n'
-    '\n'
-    'After fixing each issue, check all callers and consumers of the changed code. If a fix changes a '
-    'method signature, return type, or behavioral contract, update every caller in the same pass. Do not '
-    'leave callers out of sync.\n'
-    '\n'
-    'If a listed issue turns out to be a false positive on inspection, skip it and report why. Do not '
-    '"fix" issues that aren\'t actually broken just because the reviewer flagged them.'
-)
-
-SCOPED_TESTS = (
-    "Run only the tests for the files you changed. Do not run lint suites, the full test suite or other repo-wide "
-    "checks: the loop runs the full check after your pass."
-)
-
-SMALL_ITEMS = (
-    "Small items follow the issues. They are the reviewer's optional notes, not findings. Apply a small "
-    'item only when it names wrong behavior, or a false statement in a doc or a comment, and one '
-    'correction is clear. Skip every other small item, and report each skip with its reason. A small '
-    'item never widens the change: no rename, no restructure, no new abstraction.'
-)
-
 CHECK_FINDER = (
     'Repo root: {repo}\n\n'
     'Name the one shell command, run from the repo root, that runs this repo\'s full quality check: the lint, type '
@@ -139,9 +117,6 @@ CHECK_FINDER = (
     'End your reply with one JSON object: {{"command": "<shell command>"}}, or {{"command": null, "reason": '
     '"<what is missing>"}} when the files name no check.'
 )
-
-CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, right after its file:line, or first when "
-                  "it names none. One of: " + " ".join(f"[{name}]" for name in handback.CLASSES) + ".")
 
 CALLS = []
 CALLS_LOCK = threading.Lock()
@@ -287,42 +262,6 @@ def second_round_plan(round_fix, changed, skipped_findings, coder_diffs):
     return dispatches
 
 
-def review_scope_lines(repo, owned, prior_issues, open_asks):
-    lines = [f"Repo root: {repo}", "Review scope (this round):", "  owned files:"]
-    for path in owned:
-        lines.append(f"    - {path}")
-    if prior_issues:
-        lines.append("  prior issues:")
-    for item in prior_issues:
-        lines.append(f"    - issue: {json.dumps(item['issue'])}")
-        lines.append(f"      status: {item['status']}")
-        lines.append(f"      file: {item['file']}")
-        if item.get("reason"):
-            lines.append(f"      reason: {json.dumps(item['reason'])}")
-    if open_asks:
-        lines.append("  open asks (do not re-raise):")
-    for ask in open_asks:
-        lines.append(f"    - {json.dumps(ask)}")
-    return lines
-
-
-def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief=""):
-    # The fix diff goes in a file the reviewer reads: inlined, a large diff runs the call past its prompt limit.
-    lines = review_scope_lines(repo, owned, prior_issues, open_asks)
-    lines.append("Your scope is the owned files listed under Review scope (this round).")
-    lines.append(CLASS_TAG_RULE)
-    if fix_diff_path:
-        lines.append("Round-one fix diff (what the coder changed since the first review; read it, and review only "
-                     "the owned files under Review scope (this round)): " + fix_diff_path)
-    if agent == "test-reviewer":
-        lines.append("Source under test: the diff's non-test files.")
-    if agent == "smell-reviewer":
-        lines.append("Bound: the round-one fix diff." if fix_diff_path else "Bound: the diff under first review.")
-    if brief:
-        lines.append(brief)
-    return "\n".join(lines)
-
-
 def disposition_call(text, repo, out):
     prompt = (
         "Below is a code reviewer's output. Copy each finding into one of three lists without changing its words: "
@@ -336,21 +275,6 @@ def disposition_call(text, repo, out):
         raise ValueError(f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}')
     return finding_records({"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []),
                             "assessment": ""})
-
-
-def coder_prompt(repo, findings, small_items, files, gate_env=()):
-    body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
-    body += [f"{index}. {finding}" for index, finding in enumerate(findings, 1)]
-    body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
-                 "where n is the issue number above. When you stop on a PLAN-IMPACT, write that line for each issue "
-                 "you left unapplied.", "", SCOPED_TESTS]
-    if small_items:
-        body += ["", "## Small items", "", SMALL_ITEMS, ""] + [f"- {item}" for item in small_items]
-    body += ["", "Files in scope: " + ", ".join(files)]
-    gate_env_text = plan_format.gate_env_text(list(gate_env))
-    if gate_env_text:
-        body += ["", gate_env_text]
-    return "\n".join(body)
 
 
 def check_command_for(repo, out):
@@ -396,6 +320,10 @@ def added_source_lines(diffs):
             elif line.startswith("+") and source:
                 total += 1
     return total
+
+
+class LaterPhaseEditError(RuntimeError):
+    """A coder pass that edited a file the plan gives to a later phase."""
 
 
 class CoderCallError(RuntimeError):
@@ -602,8 +530,11 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.round_fixes = []  # the fix entries this round's reviewers filed, for fix_round to mark
         self.check_fixed = 0  # findings the full check and the class closure fixed, which file no finding row
         self.last_pass = ""
-        self.untested_fix = False  # a coder pass that no passed full check ran after
+        # a change (a coder pass, or a whole expected-red not-run) that no passed full check ran after
+        self.untested_fix = False
         self.scoped_tests = ""
+        self.later_phase_files = set()  # the plan's later-phase files, which no coder pass may edit
+        self.guidance = ""
 
     def next_round(self):
         self.iter_count += 1
@@ -757,17 +688,25 @@ class LoopRun(full_check_gate.FullCheckSteps):
         return round_fix, round_nits
 
     def repair(self, call_name, findings, nits=()):
-        """One coder pass on the findings. Returns (report, diffs, changed files)."""
+        """One coder pass on the findings. Returns (report, diffs, changed files). Raises LaterPhaseEditError when the
+        pass edited a later-phase file."""
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, [finding.text for finding in findings], [nit.text for nit in nits],
-                              list(before), self.gate_env)
+                              list(before), self.gate_env, self.later_phase_files, self.guidance)
         self.last_pass = "coder"
         self.untested_fix = True
         try:
-            return coder_call(call_name, prompt, self.repo, self.out)
+            report, diffs, changed = coder_call(call_name, prompt, self.repo, self.out)
         except CoderCallError as error:
             self.files_touched.update(error.changed)
             raise
+
+        later_phase_edits = sorted(set(changed) & self.later_phase_files)
+        if later_phase_edits:
+            self.files_touched.update(changed)
+            raise LaterPhaseEditError(f"{call_name} edited files the plan gives to a later phase: "
+                                      + ", ".join(later_phase_edits))
+        return report, diffs, changed
 
     def stop_on_coder_plan_change(self, round_findings, skips, changed, report):
         """A coder that reports a plan change keeps the edits it made. The issues it did not skip go to fixed when it
@@ -874,21 +813,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
         }
 
 
-def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
-    """Walks the graph. Returns the outcome mapping. `progress` holds what a crash still reports: iter, fixed and
-    files_touched, updated in place as the loop goes."""
-    lane = header["lane"]
-    structure_pass_skipped = header.get("structure-pass") == "skip"
-    brief = reviewer_brief(header, handoff)
-    gate_env = plan_format.gate_env_words_in(handoff)
-    scope_fields = ["scope=phase"] + ([f"phase={header['phase']}"] if header.get("phase") else [])
-    loop = LoopRun(repo, out, brief, gate_env, progress, header.get("plan", ""))
-
-    log_call(repo, [str(SKILLS / "review-scope"), "caller=code"])
-    check_command = check_command_for(repo, out)
-
-    loop.files = scope(repo)
-    loop.dispatches = first_round_plan(loop.files, structure_pass_skipped)
+def walk(loop, check_command, gate_commands):
+    """The review rounds, then the full check, the class closure and the scoped tests while the loop converges."""
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
         loop.next_round()
         round_fix, round_nits = loop.review_round()
@@ -903,6 +829,32 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
         loop.class_closure_pass(check_command)
     if loop.status == "converged" and loop.untested_fix:
         loop.scoped_tests_pass(list(gate_commands))
+
+
+def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
+    """Walks the graph. Returns the outcome mapping. `progress` holds what a crash still reports: iter, fixed and
+    files_touched, updated in place as the loop goes."""
+    lane = header["lane"]
+    structure_pass_skipped = header.get("structure-pass") == "skip"
+    brief = reviewer_brief(header, handoff)
+    gate_env = plan_format.gate_env_words_in(handoff)
+    scope_fields = ["scope=phase"] + ([f"phase={header['phase']}"] if header.get("phase") else [])
+    loop = LoopRun(repo, out, brief, gate_env, progress, header.get("plan", ""))
+    loop.later_phase_files = set(filter(None, header.get("later-phase files", "").split(", ")))
+    loop.guidance = header.get("guidance", "")
+
+    log_call(repo, [str(SKILLS / "review-scope"), "caller=code"])
+    found_command = check_command_for(repo, out)
+    plan = header.get("plan")
+    plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
+    check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, header.get("phase"))
+
+    loop.files = scope(repo)
+    loop.dispatches = first_round_plan(loop.files, structure_pass_skipped)
+    try:
+        walk(loop, check_command, gate_commands)
+    except LaterPhaseEditError as error:
+        loop.stop("critical-blocker", [str(error)])
 
     every_actioned = [finding["actioned"] for row in loop.run_rows for finding in row["findings"]]
     loop.tallies["fixed"] = every_actioned.count("fixed") + loop.check_fixed

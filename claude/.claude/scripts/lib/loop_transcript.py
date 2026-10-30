@@ -7,6 +7,7 @@ import os
 import re
 import shlex
 
+import expected_red
 import script_utils
 
 FINDING_ID_HEX_LEN = 16
@@ -117,7 +118,9 @@ class LoopTranscript:
         self.finding_calls = {}  # Bash tool_use_id -> the key=value fields of each `kind=finding` call, in order
         self.ask_rows = []  # {file, line, finding_id} of each `actioned=ask` row whose id the log helper printed
         self.full_check_calls = {}  # Bash tool_use_id -> (transcript line, full_check.py calls in it)
-        self.full_checks = []  # the transcript lines of the full_check.py calls whose result is `full check: passed`
+        # the transcript lines of the full_check.py calls whose result is exactly `passed` (not `passed (check only;
+        # ...)`), or starts with `not run (expected red until Phase ` (a check the Expected red lines leave out whole)
+        self.full_checks = []
         with open(path, encoding="utf-8") as fh:
             for n, line in enumerate(fh):
                 self.read_record(n, json.loads(line))
@@ -173,7 +176,9 @@ class LoopTranscript:
         if tool_use_id in self.full_check_calls:
             line, call_count = self.full_check_calls[tool_use_id]
             full_check_results = [found.strip() for found in FULL_CHECK_RESULT.findall(text_of(block.get("content")))]
-            if len(full_check_results) >= call_count and all(found == "passed" for found in full_check_results):
+            counted = [found for found in full_check_results
+                       if found == "passed" or found.startswith(expected_red.NOT_RUN_PREFIX)]
+            if len(full_check_results) >= call_count and len(counted) == len(full_check_results):
                 self.full_checks.append(line)
         if tool_use_id in self.finding_calls:
             self.read_printed_finding_ids(block)

@@ -5,7 +5,7 @@ import pathlib
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent)]
-from review_loop_findings import last_json_object
+from review_loop_findings import reply_with_one_retry
 
 NO_CLOSURE = "n/a - fixed[] empty"
 
@@ -58,11 +58,9 @@ def closure_check(repo, out, fixed, claude_call):
         'and why it fits neither shape>", '
         '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed.'
     )
-    reply = claude_call("class-closure", prompt, repo, out, model="sonnet", tools="Read,Grep")
-    parsed = last_json_object(reply, ("open",))
-    if parsed is not None:
-        parsed_open = parsed.get("open")
-        open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
-                         if isinstance(parsed_open, list) else [])
-        return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
-    raise ValueError(f'the class-closure reply holds no {{"receipt": .., "open": [..]}} object: {reply!r}')
+    parsed = reply_with_one_retry(claude_call, "class-closure", prompt, repo, out, ("open",),
+                                  '{"receipt": .., "open": [..]}', model="sonnet", tools="Read,Grep")
+    parsed_open = parsed.get("open")
+    open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
+                     if isinstance(parsed_open, list) else [])
+    return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}

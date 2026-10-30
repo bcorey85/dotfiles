@@ -108,6 +108,19 @@ class StagedClaimGateTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_blocked(message)
 
+    def test_staged_review_data_passes_with_an_empty_index(self):
+        for message in ("The fix diffs are staged under fix-diffs.", "Two rows are staged for the ledger."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_review_data_in_the_git_index_and_plain_files_still_block(self):
+        for message in ("The diffs are staged in the git index.", "All files are staged.",
+                        "Two rows are staged, and all files are staged.",
+                        "The rows are staged. All files are staged.",
+                        "The diff of the file is staged.", "The file for each finding is staged."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
     def test_a_negation_in_one_sentence_does_not_hide_a_claim_in_another(self):
         for message in ("The files are staged. No tests failed.", "I staged the fix.\nNothing else changed."):
             with self.subTest(message=message):

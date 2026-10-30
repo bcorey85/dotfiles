@@ -115,6 +115,7 @@ from code_step_core import (
     dispatch_since,
     emit,
     file_hashes,
+    is_run_open,
     load_state,
     own_phase_text,
     phase_coder_reports,
@@ -651,7 +652,10 @@ def command_resume(args):
         return ask_about_stale_phase(repo_dir, state)
 
     # An agent stopped with TaskStop never hands back, so the wait for it would only run out the cap.
-    stopped_agent_id = stopped_awaited_agent_id(repo_dir, state) if state is not None else None
+    # A finished run has nothing to restart, and a verify-ready run goes on through `verify`: neither is redirected.
+    is_redirectable = state is not None and is_run_open(state) and not guarded_verb_runs("verify", state)
+    stopped_agent_id = stopped_awaited_agent_id(repo_dir, state) if is_redirectable else None
+    # A stale run gets the stale question first; its `start --restart` drops the run and needs no --coder-stopped rerun.
     if stopped_agent_id and route != "ask-stale-phase":
         return restart_over_stopped_agent(repo_dir, state, stopped_agent_id)
 

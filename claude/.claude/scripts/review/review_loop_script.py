@@ -85,6 +85,7 @@ from review_loop_findings import (
     near_title,
     parse_review,
     plan_change_items,
+    pointer_ask_split,
     reported_again,
     ruled_plan_split,
     still_fixed,
@@ -506,6 +507,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.skipped_fp, self.remaining, self.asks, self.nits, self.run_rows = [], [], [], [], []
         self.open_fixes = []  # the fix findings a plan-change stop leaves unapplied
         self.ask_gates = {}
+        self.pointer_asks = []  # the asks that only pointed back to another ask, dropped before the packet
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
                         "result": "PASS"}
         self.prior_issues = []
@@ -601,8 +603,12 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def split_review(self, tree_paths, review):
         """(the review without its absent-file findings, its fixes, its [design-decision] fixes, its absent-file
-        findings). The fixes a plan ruling covers move to the review's asks."""
+        findings). The fixes a plan ruling covers move to the review's asks. An ask that only points back to another
+        ask leaves the review for the packet's dropped asks."""
         parsed, absent = absent_file_split(self.repo, tree_paths, review)
+        parsed["ask"], pointer_asks = pointer_ask_split(parsed["ask"], self.asks)
+        self.pointer_asks += [ask for ask in pointer_asks if ask not in self.pointer_asks]
+
         design = [item for item in parsed["fix"] if "[design-decision]" in item.text.lower()]
         fixes = [item for item in parsed["fix"] if item not in design]
         fixes, ruled = ruled_plan_split(self.repo, self.plan, fixes)
@@ -787,6 +793,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "open_fixes": self.open_fixes,
             "asks": self.asks,
             "ask_gates": self.ask_gates,
+            "pointer_asks": self.pointer_asks,
             "ask_ids": ask_ids,
             "ask_rows": ask_rows,
             "class_closure": self.class_closure,

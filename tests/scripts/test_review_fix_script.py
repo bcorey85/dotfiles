@@ -587,6 +587,23 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn(f"no packet was processed in {other_repo}/.git/review-fix", output)
         self.assertIn("run this call there", output)
 
+    def test_a_packet_rerun_from_another_repo_does_not_offer_asks_already_logged(self):
+        other_repo = self.temp_root / "otherrepo"
+        other_repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=other_repo, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+        self.packet(WITH_ASK)
+        self.run_script(["asks-done", "accepted", "rejected"])
+        logged_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["packet", "--skill", "review"], WITH_ASK, cwd=other_repo)
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertIn(os.path.realpath(self.repo), output)
+        self.assertNotIn("present-asks", output)
+        self.assertEqual(len(self.ledger_writes()), logged_before)
+
     def test_asks_are_jumped_listed_and_logged_with_their_outcomes(self):
         code, output = self.packet(WITH_ASK, "--scope", "branch-exit")
         self.assertEqual(code, 0, output)

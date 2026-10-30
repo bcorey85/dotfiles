@@ -4,11 +4,13 @@ Checks that the next phase's prompt goes out only after /clear has taken effect.
 """
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import tempfile
 import unittest
 
+import toolkit_paths
 from stubs import write_stub
 
 HERDR_PHASE_CHANGE = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "herdr-phase-change"
@@ -151,6 +153,23 @@ class HerdrPhaseChangeTest(unittest.TestCase):
                 self.assertEqual(finished.returncode, 1)
                 self.assertEqual(self.submitted_prompts(), [])
                 self.assertIn(f"worker is {status}", finished.stderr)
+
+    def test_the_code_verbs_the_script_keeps_are_the_ones_the_code_skill_names(self):
+        script_text = HERDR_PHASE_CHANGE.read_text()
+        verb_alternatives = [line.strip().split(")")[0] for line in script_text.splitlines()
+                             if line.strip().startswith('""|')]
+        self.assertEqual(len(verb_alternatives), 1, "expected one case line that starts with the empty prompt")
+        script_verbs = set(verb_alternatives[0].split("|")) - {'""'}
+
+        skill_text = (toolkit_paths.CLAUDE_DIR / "skills" / "code" / "SKILL.md").read_text()
+        skill_lines = [line for line in skill_text.splitlines() if line.startswith("1. If the task text")]
+        self.assertEqual(len(skill_lines), 1, "expected one step 1 line in the code skill")
+        verbs_part = skill_lines[0].split("Otherwise run")[0]
+        backticked_words = re.findall(r"`([^`]*)`", verbs_part)
+        skill_verbs = {word for word in backticked_words if re.fullmatch(r"[a-z]+(-[a-z]+)*", word)}
+
+        self.assertEqual(script_verbs, skill_verbs)
+        self.assertIn("task text is empty", skill_lines[0])
 
 
 if __name__ == "__main__":

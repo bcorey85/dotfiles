@@ -5742,6 +5742,22 @@ class CodeStepTest(unittest.TestCase):
         command = code_step_verification.verification_command(item)
         self.assertEqual("PARITY_PATH=/x/y.py cargo test --test watch_parity", command)
 
+    def test_an_env_prefixed_command_wins_over_a_prose_program_span_before_it(self):
+        item = "- [ ] **Env**: lists them with `ls -la` - `env CARGO_BUILD_JOBS=4 cargo test --test watch_parity`"
+
+        command = code_step_verification.verification_command(item)
+        self.assertEqual("env CARGO_BUILD_JOBS=4 cargo test --test watch_parity", command)
+
+    def test_env_with_no_assignment_leads_a_command_start(self):
+        self.assertTrue(code_step_verification.COMMAND_START.match("env cargo test"))
+        self.assertIsNone(code_step_verification.COMMAND_START.match("env nosuchprogram hi"))
+
+    def test_the_last_program_span_after_the_em_dash_wins_over_prose_spans_before_it(self):
+        item = "- [ ] **Check**: `ls -la` lists them — run `wc -l` then `stat -c %s`"
+
+        command = code_step_verification.verification_command(item)
+        self.assertEqual("stat -c %s", command)
+
     def test_a_quoted_assignment_value_with_spaces_is_kept_in_the_command(self):
         item = "- [ ] **Env**: `GREETING=\"a b\" echo hi`"
 

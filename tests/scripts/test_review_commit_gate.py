@@ -20,7 +20,8 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("lib", "shell_command.py"), ("lib", "plan_format.py"), ("lib", "loop_transcript.py"),
                 ("lib", "expected_red.py"), ("review", "full_check.py"), ("lib", "check_scope.py"),
                 ("lib", "check_output.py"), ("lib", "linked_installs.py"), ("lib", "test_run_output.py"),
-                ("lib", "worktree_snapshot.py"), ("lib", "numstat.py"), ("lib", "makefile_text.py"))
+                ("lib", "worktree_snapshot.py"), ("lib", "numstat.py"), ("lib", "makefile_text.py"),
+                ("lib", "full_check_receipt.py"), ("lib", "pytest_config.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder, run it as a "

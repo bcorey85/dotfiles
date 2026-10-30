@@ -18,6 +18,7 @@ import unittest.mock
 from typing import ClassVar
 
 import fake_ledger
+import receipt_repo
 import toolkit_paths
 from in_process import process_exit_code
 
@@ -5796,15 +5797,72 @@ class CodeStepTest(unittest.TestCase):
             with self.subTest(span=span):
                 self.assertIsNone(code_step_verification.COMMAND_START.match(span))
 
+    CONFIGURED_CHECK_SECTION = ("#### Automated Verification:\n\n- [ ] **All**: `npm test`\n\n"
+                                "#### Manual Verification:\n")
+
+    def declare_quality_check_and_plant_receipt(self, **receipt):
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npm test`\n")
+        receipt_repo.plant_receipt(str(self.repo), **receipt)
+
     def test_a_whole_suite_command_with_a_variable_prefix_runs(self):
         section = "#### Automated Verification:\n\n- [ ] **All**: `CI=1 npm test`\n\n#### Manual Verification:\n"
+        self.declare_quality_check_and_plant_receipt()
 
-        with unittest.mock.patch.object(full_check, "configured_check_command", return_value="npm test"), \
-                unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+        with unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
             results, skipped, unparsed = code_step_verification.run_verification_commands(self.repo, section)
 
         self.assertEqual(([], []), (skipped, unparsed))
         self.assertEqual(1, len(results))
+
+    def test_the_configured_check_command_is_skipped_when_a_valid_receipt_covers_the_tree(self):
+        self.declare_quality_check_and_plant_receipt()
+
+        results, skipped, unparsed = code_step_verification.run_verification_commands(
+            self.repo, self.CONFIGURED_CHECK_SECTION)
+
+        self.assertEqual(([], ["npm test"], []), (results, skipped, unparsed))
+
+    def test_the_configured_check_command_runs_when_no_valid_receipt_covers_the_tree(self):
+        self.declare_quality_check_and_plant_receipt()
+        (self.repo / "edited-after-the-check.txt").write_text("x\n")
+
+        with unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+            results, skipped, unparsed = code_step_verification.run_verification_commands(
+                self.repo, self.CONFIGURED_CHECK_SECTION)
+
+        self.assertEqual(([], []), (skipped, unparsed))
+        self.assertEqual(["npm test"], [result[0] for result in results])
+
+    def test_the_configured_check_command_runs_when_the_valid_receipt_is_of_a_run_that_found_no_check(self):
+        self.declare_quality_check_and_plant_receipt(
+            result="not run (no check found; the coder's scoped tests stand)")
+
+        with unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+            results, skipped, _unparsed = code_step_verification.run_verification_commands(
+                self.repo, self.CONFIGURED_CHECK_SECTION)
+
+        self.assertEqual([], skipped)
+        self.assertEqual(["npm test"], [result[0] for result in results])
+
+    def test_the_configured_check_command_is_skipped_when_the_valid_receipt_is_of_a_ci_or_expected_red_run(self):
+        for result in ("not run (CI)", "not run (expected red until Phase 3)"):
+            with self.subTest(result=result):
+                self.declare_quality_check_and_plant_receipt(result=result)
+
+                results, skipped, _unparsed = code_step_verification.run_verification_commands(
+                    self.repo, self.CONFIGURED_CHECK_SECTION)
+
+                self.assertEqual(([], ["npm test"]), (results, skipped))
+
+    def test_the_configured_check_command_runs_when_the_caller_asks_for_whole_suites_even_with_a_valid_receipt(self):
+        self.declare_quality_check_and_plant_receipt()
+
+        with unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+            results, skipped, _unparsed = code_step_verification.run_verification_commands(
+                self.repo, self.CONFIGURED_CHECK_SECTION, run_whole_suites=True)
+
+        self.assertEqual([], skipped)
+        self.assertEqual(["npm test"], [result[0] for result in results])
 
     @staticmethod
     def verification_section(command):
@@ -6463,7 +6521,10 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_phase_that_lists_commands_keeps_the_green_count_in_the_done_line(self):
         (self.repo / "CLAUDE.md").write_text("- Quality check: `npx vitest run`\n")
-        self.finish_phase_one()
+        self.coder_round()
+        receipt_repo.plant_receipt(str(self.repo))
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("resume")
         done = next(line for line in self.said().splitlines() if line.startswith("Phase 1 marked done"))
         self.assertIn("Verification run: 1 command(s) green (git grep -n --untracked console.log", done)
         self.assertIn("skipped as covered by the review loop: 1.", done)

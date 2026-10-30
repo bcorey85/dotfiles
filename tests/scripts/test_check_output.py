@@ -1,15 +1,82 @@
 """Tests for check_output.py: which check failures are setup faults, and which lines name a failed test."""
+import importlib.util
 import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import check_output
+import check_scope
+import code_step_gates
+import code_step_verification
+import criteria_verdict
+import full_check
+import script_utils
+import test_run_output
 
 CROSS = chr(0xD7)
+PASS, NOT_PASS, NOT_RUN = "pass", "not pass", "not run"
+NO_TESTS_RAN_FLAG = criteria_verdict.NO_TEST_MATCHED_FLAG
+# (name, command, exit code, output, verdict, full_check result or None to skip it, coder_gate result). One row per
+# kind of run that the pass rules once judged differently.
+VERDICT_ROWS = [
+    ("a pass", "pytest tests/", 0, "===== 3 passed in 0.10s =====", check_output.PASSED, full_check.PASSED,
+     "pass"),
+    ("a plain failure", "pytest tests/", 1, "FAILED tests/a.py::t - boom\n===== 1 failed, 2 passed in 0.1s =====",
+     check_output.FAILED, None, "failed"),
+    ("exit 0 with a failing summary", "npm test", 0, " Test Files  1 failed (1)\n      Tests  1 failed | 2 passed (3)",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a runner piped into a tail", "pytest tests/ | tail -5", 0, "1 failed, 2 passed in 0.1s",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a Django run of 0 tests", "python manage.py test app", 0,
+     "Found 0 test(s).\nRan 0 tests in 0.000s\n\nNO TESTS RAN", check_output.NO_TESTS_RAN, full_check.UNVERIFIED,
+     "setup-fault"),
+    ("a filtered pytest run that matched no test", "pytest tests/ -k nothing", 0, "===== 42 deselected in 0.20s =====",
+     check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "failed"),
+    ("a filtered vitest run that matched no test", "npx vitest run -t totals", 0,
+     " Test Files  1 skipped (1)\n      Tests  7 skipped (7)", check_output.NO_TESTS_RAN, full_check.UNVERIFIED,
+     "failed"),
+    ("a filtered cargo run that matched no test", "cargo test fault_codes", 0,
+     "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out", check_output.NO_TESTS_RAN,
+     full_check.UNVERIFIED, "failed"),
+    ("a chained run where one runner ran no test", "python manage.py test app && pytest tests/", 0,
+     "Ran 0 tests in 0.000s\n\nOK\n===== 3 passed in 0.10s =====", check_output.NO_TESTS_RAN, full_check.UNVERIFIED,
+     "setup-fault"),
+    ("a passing run that logs the phrase", "pytest tests/", 0, "no tests ran\n===== 3 passed in 0.10s =====",
+     check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "setup-fault"),
+    ("a non-test command that prints the phrase", "cat ci.log", 0, "no tests ran\n===== 3 passed in 0.10s =====",
+     check_output.PASSED, full_check.PASSED, "pass"),
+    ("a filtered run with a failing summary", "pytest tests/ -k totals", 0, "===== 1 failed in 0.10s =====",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a file print that holds a failing summary", "cat run.log", 0, "1 failed, 2 passed in 0.1s",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a script wrapper that swallowed a failing summary", "bash tests/run.sh", 0, "1 failed, 2 passed in 0.1s",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a negated runner that prints a failed summary and exits zero", "! pytest new_test.py", 0,
+     "1 failed, 2 passed in 0.1s", check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a negated filtered runner that prints a failed summary and exits zero", "! pytest t.py::test_new", 0,
+     "1 failed in 0.10s", check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a tail of a log that holds a failing summary", "tail -5 run.log", 0, "1 failed, 2 passed in 0.1s",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a tail with a line count of a log that holds a failing summary", "tail -n 50 run.log", 0,
+     "1 failed, 2 passed in 0.1s", check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a timeout", "pytest tests/", None, "", check_output.NOT_RUN, full_check.NOT_RUN_TIMEOUT, "timeout"),
+]
+COARSE_OUTCOME = {check_output.PASSED: PASS, check_output.FAILED: NOT_PASS, check_output.FAILED_EXIT_ZERO: NOT_PASS,
+                  check_output.NO_TESTS_RAN: NOT_PASS, check_output.NOT_RUN: NOT_RUN}
+
+
+def load_coder_gate():
+    spec = importlib.util.spec_from_file_location("coder_gate_for_verdict", toolkit_paths.CODE_DIR / "coder_gate.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class CheckOutputTest(unittest.TestCase):
@@ -438,3 +505,284 @@ class CheckOutputTest(unittest.TestCase):
         for name, (log_lines, expected_details) in cases.items():
             with self.subTest(name):
                 self.assertEqual(expected_details, check_output.failing_block_details(log_lines))
+
+
+class CheckVerdictTest(unittest.TestCase):
+    """check_verdict and the three pass rules that call it read every row the same way."""
+
+    def test_a_negated_filtered_run_that_matched_no_test_passes_the_verdict_but_reads_red_for_a_criterion(self):
+        # full_check reads no passed summary as unverified, so this row stays out of VERDICT_ROWS.
+        command = "! pytest t.py -k nothing"
+        output = "===== 42 deselected in 0.20s ====="
+
+        self.assertEqual(check_output.PASSED, check_output.check_verdict(command, 0, output))
+        self.assertEqual("RED", criteria_verdict.judge_item(command, f"`{command}` exits 0", 0, output).outcome)
+
+    def test_a_search_that_names_a_runner_is_not_read_for_no_tests_ran(self):
+        # criteria_verdict bans an exit-0 search, so this command stays out of VERDICT_ROWS.
+        verdict = check_output.check_verdict("rg -t py pytest scripts/", 0, "no tests ran")
+
+        self.assertEqual(check_output.PASSED, verdict)
+
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name)
+        self.log = self.repo / "check.log"
+        self.coder_gate = load_coder_gate()
+
+    def full_check_outcome(self, command, code, output):
+        def fake_check_command(_repo, _command, log, _timeout, _env, _on_start):
+            pathlib.Path(log).write_text(output)
+            return code
+
+        with mock.patch.object(full_check, "run_check_command", fake_check_command):
+            result, _tail, _details = full_check.run(self.repo, command, self.log, 60, declared=True)
+
+        if result == full_check.PASSED:
+            return PASS, result
+        if result == full_check.NOT_RUN_TIMEOUT:
+            return NOT_RUN, result
+        return NOT_PASS, result
+
+    def coder_gate_outcome(self, command, code, output):
+        with mock.patch.object(script_utils, "run_process", return_value=(code, output, "")):
+            failures, _skipped, timed_out, _not_started = self.coder_gate.run_commands(
+                {"repoRoot": str(self.repo), "commands": [command]})
+
+        with mock.patch.object(self.coder_gate, "changed_files", return_value=[]):
+            real_failures, setup_faults, command_errors = self.coder_gate.sort_failures(failures, str(self.repo))
+
+        gate_result = self.coder_gate.gate_outcome(real_failures, command_errors, setup_faults, timed_out)
+        if timed_out:
+            return NOT_RUN, gate_result, failures
+        return (NOT_PASS if failures else PASS), gate_result, failures
+
+    def criteria_outcome(self, command, code, output):
+        verdict = criteria_verdict.judge_item(command, f"`{command}` exits 0", code, output)
+        return (PASS if verdict.outcome == "GREEN" else NOT_PASS), verdict
+
+    def test_check_verdict_and_every_pass_rule_agree_on_each_command_and_output(self):
+        for name, command, code, output, verdict, full_check_result, gate_result in VERDICT_ROWS:
+            with self.subTest(name):
+                expected = COARSE_OUTCOME[verdict]
+
+                self.assertEqual(verdict, check_output.check_verdict(command, code, output))
+                full_check_outcome, result = self.full_check_outcome(command, code, output)
+                self.assertEqual(expected, full_check_outcome)
+                if full_check_result is not None:
+                    self.assertEqual(full_check_result, result)
+                gate_coarse, gate_actual, gate_failures = self.coder_gate_outcome(command, code, output)
+                self.assertEqual(expected, gate_coarse)
+                self.assertEqual(gate_result, gate_actual)
+                if verdict == check_output.FAILED_EXIT_ZERO:
+                    self.assertIn(check_output.SUMMARY_FAILURE_NOTE, gate_failures[0][2])
+                    self.assertIn(check_output.SUMMARY_FAILURE_NOTE, self.coder_gate.denial(gate_failures))
+                if verdict == check_output.NO_TESTS_RAN:
+                    self.assertIn(check_output.NO_TEST_MATCHED_NOTE, gate_failures[0][2])
+                    self.assertIn(check_output.NO_TEST_MATCHED_NOTE, self.coder_gate.denial(gate_failures))
+                # A timeout reaches the plan-criteria rule as exit code 124, never as None.
+                if code is None:
+                    continue
+
+                criteria_result, item = self.criteria_outcome(command, code, output)
+                self.assertEqual(expected, criteria_result)
+                if verdict == check_output.NO_TESTS_RAN:
+                    self.assertEqual(NO_TESTS_RAN_FLAG, item.flag)
+                    self.assertIn(criteria_verdict.NO_TEST_MATCHED_NOTE, item.output)
+                if verdict == check_output.FAILED_EXIT_ZERO:
+                    self.assertIsNone(item.flag)
+                    self.assertIn(criteria_verdict.SUMMARY_FAILURE_NOTE, item.output)
+
+
+# (command, runs tests, runner families, is a check, command_check_scope). One row per kind of command the former
+# deciders judged by their own tables.
+COMMAND_ROWS = [
+    ("pytest", True, {"python"}, True, "whole"),
+    ("vitest", True, {"js"}, True, "whole"),
+    ("jest", True, {"js"}, True, "whole"),
+    ("npm test", True, {"js"}, True, "whole"),
+    ("npm run lint", False, set(), True, "whole"),
+    ("cargo test", True, {"cargo"}, True, "none"),
+    ("cargo test -p x", True, {"cargo"}, True, "targeted"),
+    ("cargo nextest run", True, {"cargo"}, True, "none"),
+    ("go test ./...", True, set(), True, "none"),
+    ("manage.py test app", True, {"python"}, True, "targeted"),
+    ("ruff check", False, set(), True, "whole"),
+    ("tsc", False, set(), True, "none"),
+    ("bash tests/run.sh", False, set(), False, "none"),
+    ("cat run.log", False, set(), False, "none"),
+    ("! pytest x", True, {"python"}, True, "targeted"),
+    ("cd a && pytest b.py", True, {"python"}, True, "targeted"),
+    ("npm test && git diff", True, {"js"}, True, "whole"),
+    ("mocha", True, {"js"}, True, "none"),
+    ("npx mocha", True, {"js"}, True, "none"),
+    ("make test-unit", True, set(), True, "unresolved"),
+    ("make -C x test", True, set(), True, "unresolved"),
+    ("just test", True, set(), True, "none"),
+    ("deno test", True, set(), True, "none"),
+    ("pnpm --filter api test", True, {"js"}, True, "none"),
+]
+
+
+class CommandClassificationTest(unittest.TestCase):
+    """check_scope answers every command question once; each former decider reads its answer."""
+
+    def setUp(self):
+        temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_directory.cleanup)
+        self.repo = pathlib.Path(temp_directory.name)
+
+    def ran_and_skipped_commands(self, command, configured, run_whole_suites=False):
+        # What run_verification_commands does with a listed command when no one asked for the configured check to
+        # run and the repo's configured quality check is `configured`.
+        run_result = mock.Mock(return_value=(0, ""))
+        verdict = mock.Mock(code=0, output="", hits=None)
+        with mock.patch.object(code_step_verification, "verification_command", return_value=command), \
+                mock.patch.object(code_step_verification.plan_format, "automated_verification_rows",
+                                  return_value=[(0, "- [ ] **Check**: `x`")]), \
+                mock.patch.object(code_step_verification, "run_command", run_result), \
+                mock.patch.object(full_check, "configured_check_command", return_value=configured), \
+                mock.patch.object(code_step_verification, "item_verdict", return_value=verdict):
+            results, skipped, _unparsed = code_step_verification.run_verification_commands(
+                self.repo, "section", run_whole_suites=run_whole_suites)
+        ran_commands = [result[0] for result in results]
+        return ran_commands, skipped
+
+    def test_only_the_configured_check_is_skipped_and_run_whole_suites_runs_it(self):
+        configured = "npm test && npm run lint"
+        for command in ("npm run test:e2e", "npm run lint:fix", "npm run build && node x.js"):
+            with self.subTest(runs=command):
+                ran_commands, skipped = self.ran_and_skipped_commands(command, configured)
+                self.assertEqual([command], ran_commands)
+                self.assertEqual([], skipped)
+        for command in ("npm test", "npm run lint", configured):
+            with self.subTest(skipped=command):
+                ran_commands, skipped = self.ran_and_skipped_commands(command, configured)
+                self.assertEqual([], ran_commands)
+                self.assertEqual([command], skipped)
+                ran_commands, skipped = self.ran_and_skipped_commands(command, configured, run_whole_suites=True)
+                self.assertEqual([command], ran_commands)
+                self.assertEqual([], skipped)
+
+    def test_each_command_gets_one_answer_from_check_scope_and_every_former_decider_agrees(self):
+        for command, runs_tests, families, is_check, scope in COMMAND_ROWS:
+            with self.subTest(command=command):
+                self.assertEqual(runs_tests, check_scope.runs_tests(command))
+                self.assertEqual(families, check_scope.runner_family(command))
+                self.assertEqual(is_check, check_scope.is_check(command))
+                self.assertEqual(scope, check_scope.command_check_scope(command, self.repo))
+
+                runs_whole = scope == "whole"
+                self.assertEqual(runs_whole, check_scope.runs_whole_check(command, self.repo))
+                self.assertEqual(runs_tests and not runs_whole,
+                                 code_step_gates.takes_listed_test_command(command, self.repo))
+                self.assertEqual(families or {code_step_gates.UNKNOWN_FAMILY},
+                                 code_step_gates.test_command_families(command))
+                self.assertEqual(command != "cat run.log" and command != "! pytest x",
+                                 check_output.prints_own_runner_summary(command))
+
+    def test_only_a_command_with_a_test_runner_step_runs_tests(self):
+        not_runs = ("git grep -n test -- src", "ruff check tests/", "test -f out.txt", "npm run lint",
+                    "cd tests && ls", "ruff check test", "npx eslint test", "mypy test-utils", "npm install test-x",
+                    "npm i test-utils", "pnpm add test-helpers", "npm -D install test-x")
+        runs = ("npm run test:unit", "go test ./pkg/...", "FOO=1 vitest run a.test.ts", "npx mocha a.js",
+                "npm run typecheck && npm test", "cd pkg && npm test", "(cd pkg && pytest)", "a&&pytest",
+                "pipenv run python backend/manage.py test app.tests", "make test-consistency ARGS=a.test.ts",
+                "pnpm --filter api test", "make install test", "make update test", "just install test",
+                "pnpm --filter add test",
+                "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(widget_sorts)'")
+        for command in not_runs + runs:
+            with self.subTest(command=command):
+                self.assertEqual(command in runs, check_scope.runs_tests(command))
+
+    def test_only_a_command_with_a_step_that_can_print_a_summary_prints_its_own(self):
+        quotes = ("cat a.log", "cd tests && ls", "! pytest x", "FOO=1 cat a.log", "tail -5 run.log",
+                  "head run.log", "sed -n 1p run.log", "cat run.log | tail",
+                  "less run.log", "sort run.log | uniq", "awk 1 run.log", "wc -l run.log")
+        prints = ("bash tests/run.sh", "cd pkg && bash tests/run.sh", "cat a.log; pytest", 'cat "a',
+                  "pytest x | tail -5")
+        for command in quotes + prints:
+            with self.subTest(command=command):
+                self.assertEqual(command in prints, check_scope.prints_own_runner_summary(command))
+
+    def test_the_output_reader_asks_check_scope_whether_a_filtered_run_names_tests(self):
+        no_pass_output = "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out"
+        filtered = ("cargo test fault_codes", "cargo test -- fault_codes", "cargo +nightly test fault_codes",
+                    "pytest -k fault", "make test -k fault", "cargo test --skip foo")
+        whole = ("cargo test", "cargo test -p core", "cargo test --lib", "cargo test --features a --color always",
+                 "pytest", "cargo test --retries 2", 'echo "cargo test x"', "cargo test --",
+                 "cargo test 2>&1", "cargo test > log", "cargo test --lib 2>&1", "cargo test -E x")
+        for command in filtered:
+            with self.subTest(filtered=command):
+                self.assertTrue(check_scope.names_test_filter(command))
+                self.assertTrue(test_run_output.matches_no_test(command, 0, no_pass_output))
+        for command in whole:
+            with self.subTest(whole=command):
+                self.assertFalse(check_scope.names_test_filter(command))
+                self.assertFalse(test_run_output.matches_no_test(command, 0, no_pass_output))
+
+    def test_the_value_of_each_cargo_flag_is_no_test_filter(self):
+        no_pass_output = "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out"
+        flag_commands = {"-A": "cargo test -A warnings", "-W": "cargo test -W unused",
+                         "-D": "cargo test -D warnings", "--retries": "cargo test --retries 2",
+                         "--test-threads": "cargo test --test-threads 4"}
+        for flag, command in flag_commands.items():
+            with self.subTest(flag=flag):
+                self.assertFalse(check_scope.names_test_filter(command))
+                self.assertFalse(test_run_output.matches_no_test(command, 0, no_pass_output))
+
+    def test_a_cargo_test_in_a_quoted_string_of_another_step_runs_no_test(self):
+        command = 'echo "cargo test x"'
+
+        self.assertFalse(check_scope.runs_tests(command))
+        self.assertEqual("none", check_scope.command_check_scope(command, self.repo))
+        self.assertFalse(check_scope.runs_whole_check(command, self.repo))
+        self.assertFalse(check_scope.names_test_filter(command))
+
+    def test_a_check_is_any_test_lint_typecheck_or_build_run_through_its_wrappers(self):
+        checks = ("python3 -m pytest", "uv run pytest", "time npx vitest run", "env A=1 cargo +nightly clippy",
+                  "cargo nextest run", "bundle exec rspec", "pnpm exec jest", "npm run test:unit", "yarn lint",
+                  "make typecheck", "go vet ./...", "./node_modules/.bin/jest", "ruff format --check",
+                  "bats", "bats tests/a.bats", "pyright", "pyright src", "mocha", "just test", 'pytest "a',
+                  "yarn jest", "pnpm vitest", "docker exec c pytest", "npm exec jest", "bun x vitest", "vim pytest",
+                  "python -c jest",
+                  "yarn test list", "bun test add", "pnpm test update", "npm test list", "npm test update",
+                  "bun test list", "pnpm test add", "yarn test info")
+        not_checks = ("git status", "cargo fmt", "npm install", "make deploy", "cargo build", "ls tests",
+                      "npm install jest", "npm i -D vitest", "pip install pytest", "uv add pytest", "which pytest",
+                      "python -m pip install pytest", "python3 -m pip show pytest", "uv pip install pytest",
+                      "cargo install nextest", "npm i test-utils",
+                      "npm install -D jest", "command -v pytest", "pip show pytest", "pip3 install pytest",
+                      "yarn add test-utils", "pnpm add test-helpers", "npm uninstall test-x", "cargo add nextest",
+                      "npm ls jest", "npm ci jest", "pipx install pytest", "pip download pytest",
+                      "brew install jest", "apt install pytest",
+                      "pnpm --filter api add jest", "npm --prefix x install jest", "pnpm -w add jest",
+                      "npm -w api install jest", "npm -D install test-x",
+                      "pnpm -F api add jest", "pnpm --dir x add jest", "apt-get install pytest",
+                      "dnf install pytest", "yum install pytest", "apk add pytest", "npm upgrade jest",
+                      "npm search jest", "yarn upgrade test-x", "npm up jest", "npm un jest", "npm why jest",
+                      "npm outdated jest", "yarn global add jest", "yarn workspace api add jest")
+        for command in checks:
+            with self.subTest(check=command):
+                self.assertTrue(check_scope.is_check(command))
+        for command in not_checks:
+            with self.subTest(not_check=command):
+                self.assertFalse(check_scope.is_check(command))
+
+    def test_a_cargo_test_names_a_target_only_by_a_test_target_or_a_name(self):
+        named = ("cargo test --lib", "cargo test --doc", "cargo test --test integration", "cargo test --bin=app",
+                 "cargo test --example demo", "cargo test --bench parse", "cargo test empty_input",
+                 "cargo test --release --features a empty_input", "cargo +nightly test empty_input",
+                 "cargo test -p core empty_input")
+        full = ("cargo test", "cargo test -p core", "cargo test --package=core", "cargo test --workspace",
+                "cargo test --all-targets empty_input", "cargo test --workspace --lib", "cargo test --tests",
+                "cargo test --exclude x", "cargo test -- empty_input", "cargo test -- --ignored",
+                "cargo test --features a --color always", "cargo test --retries 2", "cargo test --test-threads 4",
+                "cargo nextest run empty_input", "pytest tests/a.py")
+        for command in named:
+            with self.subTest(named=command):
+                self.assertTrue(check_scope.names_cargo_test_target(command))
+        for command in full:
+            with self.subTest(full=command):
+                self.assertFalse(check_scope.names_cargo_test_target(command))

@@ -54,7 +54,7 @@ class FullCheckTest(unittest.TestCase):
 
         completed = self.check("python3", env={**os.environ, "PYENV_ROOT": str(pyenv_root)})
 
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: unverified (exit 0, no runner summary)",
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: unverified (exit 0, no test result shown)",
                          completed.stdout)
         self.assertEqual(self.log.read_text(), "pinned python3\n")
 
@@ -137,8 +137,8 @@ class FullCheckTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.splitlines(),
-                         ["full check: unverified (exit 0, no runner summary)", "summary: not found"])
-        self.assertTrue(full_check.is_unverified("unverified (exit 0, no runner summary)"))
+                         ["full check: unverified (exit 0, no test result shown)", "summary: not found"])
+        self.assertTrue(full_check.is_unverified("unverified (exit 0, no test result shown)"))
         self.assertFalse(full_check.is_unverified("passed"))
 
     def test_a_chained_command_prints_each_summary_joined_with_a_bar(self):
@@ -413,7 +413,7 @@ class FullCheckTest(unittest.TestCase):
             "node test": "printf '# tests 5\\n# pass 3\\n# fail 2\\n'",
             "playwright": "printf '  2 failed\\n  3 passed (5.2s)\\n'",
             "go": "printf 'ok  \\texample.com/a\\t0.1s\\nFAIL\\texample.com/b\\t0.2s\\n'",
-            "dotfiles suite": "echo '9 tests in 2 files, wall-clock 1.0s, sum of per-file seconds 1.5s, 1 failed'",
+            "dotfiles suite": "printf '9 tests in 2 files, wall-clock 1.0s, sum of per-file seconds 1.5s, 1 failed\\n'",
         }
         for runner, command in cases.items():
             with self.subTest(runner):

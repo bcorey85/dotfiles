@@ -69,8 +69,8 @@ class FullCheckSteps:
 
     def full_check_pass(self, check_command):
         """The full check, with one coder repair when it fails outside a spec file. A check that did not run, in CI
-        or past its time limit, and one that exited 0 with no runner summary, is no failure and gets no repair; one the
-        environment could not run stops as `setup-fault`."""
+        or past its time limit, and one that exited 0 with no runner summary or ran no test, is no failure and gets no
+        repair; one the environment could not run stops as `setup-fault`."""
         tail = self.run_check(check_command)
         if full_check.is_setup_fault_result(self.full_check):
             self.stop_on_setup_fault(check_command, tail)

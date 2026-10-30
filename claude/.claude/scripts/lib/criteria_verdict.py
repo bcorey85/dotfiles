@@ -4,13 +4,11 @@ import re
 from typing import NamedTuple
 
 import script_utils
-from test_run_output import matches_no_test
+from check_output import FAILED_EXIT_ZERO, NO_TEST_MATCHED_NOTE, NO_TESTS_RAN, SUMMARY_FAILURE_NOTE, check_verdict
 
-# A filtered test run that exits 0 but reports no passed test did not run the phase's test: it fails the box.
+# A run that exits 0 but ran no test, or whose runner summary reports failures, fails the box.
 NO_TEST_MATCHED_EXIT_CODE = 1
-NO_TEST_MATCHED_NOTE = "\nthe test filter matched no test: the run exits 0 but reports no passed test\n"
-NO_TEST_MATCHED_FLAG = ("matches no test: the run exits 0 but reports no passed test, so it reads RED until a test "
-                        "exists")
+NO_TEST_MATCHED_FLAG = "matches no test: the run exits 0 but ran no test, so it reads RED until a test exists"
 # An rg, grep or git grep line is a ban (exit 1, no match, holds it) unless its text, outside the command, says it
 # checks presence (exit 0 passes). Ban wording on the same line wins. A search wrapped in another command, such as
 # `test -n "$(git grep ...)"`, is judged by its own exit code.
@@ -112,7 +110,11 @@ def judge_item(command, line, code, output):
 
         return ItemVerdict(outcome, verdict, output, hits, None)
 
-    if matches_no_test(command, code, output):
+    verdict = check_verdict(command, code, output)
+    if verdict == NO_TESTS_RAN:
         return ItemVerdict("RED", NO_TEST_MATCHED_EXIT_CODE, output + NO_TEST_MATCHED_NOTE, None, NO_TEST_MATCHED_FLAG)
+
+    if verdict == FAILED_EXIT_ZERO:
+        return ItemVerdict("RED", NO_TEST_MATCHED_EXIT_CODE, output + SUMMARY_FAILURE_NOTE, None, None)
 
     return ItemVerdict("GREEN" if code == 0 else "RED", code, output, None, None)

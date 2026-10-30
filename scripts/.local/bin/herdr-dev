@@ -8,7 +8,8 @@
 #                   running inside herdr or tuios). herdr-project-open passes it
 #                   explicitly so the layout lands in the workspace it just made.
 #   claude_session  a Claude session id; the claude pane opens a fork of that
-#                   conversation instead of a fresh one (herdr-worktree --fork).
+#                   conversation instead of a fresh one (herdr-worktree --fork),
+#                   named for the directory's folder.
 #   start_prompt    free text; with claude_session, the forked session starts
 #                   working on it at once. Any text up to 128 KiB is safe: it
 #                   reaches the pane through a temp file, not the typed command
@@ -107,7 +108,10 @@ herdr-api tab rename "$code_tab" code >/dev/null
 herdr-api pane rename "$agent" claude >/dev/null
 claude_cmd="claude"
 if [ -n "$claude_session" ]; then
-    claude_cmd="claude --resume $claude_session --fork-session"
+    # A fork keeps its parent's session name unless given one, so peers would
+    # see two sessions under one name. The worktree folder name is unique.
+    printf -v session_name '%q' "$(basename "$dir")"
+    claude_cmd="claude --resume $claude_session --fork-session --name $session_name"
     if [ -n "$start_prompt" ]; then
         # The pane shell would expand quotes, $ and backticks typed into it, so
         # the text travels in a file; the text is never re-parsed.

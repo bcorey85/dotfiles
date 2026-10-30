@@ -392,7 +392,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         # runs after the script, as when the /code run ended before the loop handed back.
         store = self.scratch / "handback"
         store.mkdir()
-        (store / f"{SESSION}.jsonl").write_text(json.dumps({"kind": "dispatch", "session_id": SESSION}) + "\n")
+        (store / f"{SESSION}.jsonl").write_text(json.dumps({"kind": "dispatch", "session_id": SESSION,
+                                                                 "repo": str(self.repo)}) + "\n")
         gate_dir = self.scratch / "home" / ".claude" / "state" / "review-gate"
         gate_dir.mkdir(parents=True)
         (gate_dir / SESSION).write_text("dirty\n")

@@ -14,7 +14,6 @@ import full_check
 import handback
 import handback_store
 import review_loop_gate
-import reviewed_tree
 import script_utils
 from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED
 
@@ -124,8 +123,9 @@ def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
     # The /code run that launched this loop can end before the loop hands back, and then nothing marks the gate. So
     # the loop records the tree it ended clean on itself, under the same rule as `review-gate-mark clean`.
     try:
-        if handback.false_clean_reason(args.session) is None:
-            reviewed_tree.record_reviewed(args.session, repo)
+        reason, reviewed_repo = handback.record_clean_review(args.session)
+        if not reason and not reviewed_repo:
+            report_write_failure("reviewed tree", ValueError("the stored review dispatch names no repo"))
     except Exception as error:
         report_write_failure("reviewed tree", error)
 

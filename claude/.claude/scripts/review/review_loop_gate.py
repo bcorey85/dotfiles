@@ -35,6 +35,8 @@
   PreToolUse (Agent): a review-loop dispatch whose prompt says `caller: code` must carry a
       `handoff:` line. A review-loop dispatch from a subagent other than the /code fork is refused: the
       nested loop cannot ask for permission or wake on its reviewer's report, so it never hands back.
+      A reviewer dispatch from a review-loop whose reviewed repo (LoopTranscript.reviewed_repo) is not its cwd's
+      work tree is refused unless the reviewer prompt names that repo on a `Repo root: <path>` line.
 
   SubagentStop (review-loop), when the stop passes and no background dispatch is open: writes one
     `kind=run` row per reviewer dispatch (`*-reviewer`, `*-reviewer-deep`) through log-review-finding,
@@ -59,7 +61,16 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import handback
 import handback_store
 import script_utils
-from loop_transcript import GATE_REASON, LoopTranscript, plan_edit_reason, prompt_field, scan
+from loop_transcript import (
+    GATE_REASON,
+    GIT_TIMEOUT_SECONDS,
+    PROMPT_REPO_ROOT,
+    LoopTranscript,
+    plan_edit_reason,
+    prompt_field,
+    prompt_path_work_tree,
+    scan,
+)
 
 OWN_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2]
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
@@ -107,6 +118,8 @@ HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. B
                   "~/.claude/skills/_shared/handoff-block.md and dispatch again.")
 NESTED_REASON = ("Run /review from the main session: a review-loop that a subagent dispatches cannot ask for "
                  "permission or wake on its reviewer's report, so it ends with no hand-back.")
+REVIEWER_REPO_REASON = ("This loop reviews {repo}, not your cwd. Put the line `Repo root: {repo}` in the "
+                        "{reviewer} prompt and dispatch again.")
 
 
 def reasons_for(scanned):
@@ -356,8 +369,28 @@ def dispatch_deny_reason(hook):
     return None
 
 
+def reviewer_repo_deny_reason(hook):
+    """Why a review-loop's reviewer dispatch is refused, or None: a loop on a repo other than its cwd's work tree
+    must name that repo on a `Repo root:` line of each reviewer prompt."""
+    tool_input = hook.get("tool_input") or {}
+    reviewer = tool_input.get("subagent_type") or ""
+    if hook.get("agent_type") != "review-loop" or not RUN_GATES.search(reviewer):
+        return None
+
+    cwd = hook.get("cwd")
+    transcript = LoopTranscript(script_utils.agent_transcript_path(hook))
+    repo = transcript.reviewed_repo(cwd)
+    if not repo or repo == script_utils.work_tree_top(cwd, timeout=GIT_TIMEOUT_SECONDS):
+        return None
+
+    named = PROMPT_REPO_ROOT.search(tool_input.get("prompt") or "")
+    if named and prompt_path_work_tree(named, cwd) == repo:
+        return None
+    return REVIEWER_REPO_REASON.format(repo=repo, reviewer=reviewer)
+
+
 def check_dispatch(hook):
-    reason = dispatch_deny_reason(hook)
+    reason = dispatch_deny_reason(hook) or reviewer_repo_deny_reason(hook)
     if reason:
         script_utils.pre_tool_use_deny(reason)
 

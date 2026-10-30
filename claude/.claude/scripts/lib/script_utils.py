@@ -305,6 +305,16 @@ def repo_root(cwd, timeout=None):
     return pathlib.Path(top)
 
 
+def work_tree_top(path, timeout=None):
+    """The real path of the work tree that holds path, an existing file or a directory, as a string; None for no path
+    or outside a work tree."""
+    if not path:
+        return None
+    directory = os.path.dirname(path) if os.path.isfile(path) else path
+    top = repo_root(directory, timeout=timeout)
+    return os.path.realpath(top) if top else None
+
+
 def current_branch(cwd, timeout=None):
     """The checked-out branch name: "" on a detached HEAD, None when git fails."""
     return git_output(cwd, "branch", "--show-current", timeout=timeout)

@@ -850,8 +850,8 @@ def settled_stop_row(session_id, agent_id, since):
 
 
 def false_clean_reason(session_id):
-    """Why `review-gate-mark clean` is refused for the session, or None when its latest review-loop hand-back is
-    current and converged or deferred. Takes the hook event's session_id, the value of CLAUDE_CODE_SESSION_ID in a Bash
+    """Why the session's review earns no commit credit, or None when its latest review-loop hand-back is current and
+    converged or deferred. Takes the hook event's session_id, the value of CLAUDE_CODE_SESSION_ID in a Bash
     call. An empty session id is refused."""
     seen = latest(session_id)
     gap = hand_back_gap(seen)
@@ -988,21 +988,23 @@ def handle_dispatch(event, session_id, tool_input):
 
 
 def reviewed_repo(prompt, cwd):
-    """The top level of the repo a review-loop dispatch reviews, by the rule the loop itself follows: the prompt's
-    `repo:` line, read from cwd, else the first absolute path the prompt names, else cwd. None when that lies in no
-    work tree."""
+    """The top level of the repo a review-loop dispatch reviews: the prompt's `repo:` line, read from cwd, else
+    the first absolute path the prompt names, else cwd. A first path in no work tree falls back to cwd (review-loop.md's
+    `repo:` line, else the first absolute path the prompt names, else the cwd). None when the `repo:` line, or cwd,
+    lies in no work tree."""
     named = REPO_LINE.search(prompt)
-    first_path = ABSOLUTE_PATH.search(prompt)
     if named:
-        directory = os.path.join(cwd or "", os.path.expanduser(named.group(1)))
-    elif first_path:
-        directory = script_utils.nearest_existing_folder(first_path.group(0))
-    else:
-        directory = cwd
-    if not directory:
-        return None
-    top = script_utils.repo_root(directory, timeout=GIT_TIMEOUT_SECONDS)
-    return str(top) if top else None
+        named_dir = os.path.expanduser(named.group(1))
+        named_path = os.path.join(cwd or "", named_dir)
+        return script_utils.work_tree_top(named_path, timeout=GIT_TIMEOUT_SECONDS)
+
+    first_path = ABSOLUTE_PATH.search(prompt)
+    if first_path:
+        path_folder = script_utils.nearest_existing_folder(first_path.group(0))
+        path_top = script_utils.work_tree_top(path_folder, timeout=GIT_TIMEOUT_SECONDS)
+        if path_top:
+            return path_top
+    return script_utils.work_tree_top(cwd, timeout=GIT_TIMEOUT_SECONDS)
 
 
 def handle_hook(event, kind):

@@ -586,25 +586,20 @@ def launch_review_script(repo_dir, state, prompt):
     if module is None:
         return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
 
-    import handback_hook
-    import handback_store  # after the load check: a missing hand-back module must stop the run, not crash the import
+    import handback_hook  # after the load check: a missing hand-back module must stop the run, not crash the import
+    from review_loop_script import loop_script_command, write_script_prompt
 
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
     marked_prompt, _dispatch_prompt_file = record_dispatch(repo_dir, state, REVIEW_LOOP, "script", prompt)
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state.run_id}-{dispatch_id}"
     session_id = run_session_id(state)
-    handback_store.record(session_id, "dispatch", no_review=False, repo=handback_hook.reviewed_repo("", repo_dir))
+    handback_hook.record_script_dispatch(session_id, repo_dir)
 
     code_step_dir = state_dir(repo_dir)
-    script_dir = code_step_dir / "loop-script" / agent_id
-    script_dir.mkdir(parents=True, exist_ok=True)
-    prompt_file = script_dir / "prompt.txt"
-    prompt_file.write_text(prompt + "\n")
-    log_path = script_dir / "script.log"
-    command = [sys.executable, str(REVIEW_LOOP_SCRIPT), repo_dir, "--state-dir", str(code_step_dir),
-               "--session", session_id, "--run-id", state.run_id, "--agent-id", agent_id,
-               "--prompt-file", str(prompt_file)]
+    prompt_file, log_path = write_script_prompt(code_step_dir, agent_id, prompt + "\n")
+    command = loop_script_command(REVIEW_LOOP_SCRIPT, repo_dir, code_step_dir, session_id, state.run_id, agent_id,
+                                  prompt_file)
     with log_path.open("w") as log:
         process = subprocess.Popen(command, cwd=repo_dir, stdin=subprocess.DEVNULL, stdout=log,
                                    stderr=subprocess.STDOUT, start_new_session=True)

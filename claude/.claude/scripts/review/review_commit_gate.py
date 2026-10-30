@@ -8,8 +8,9 @@
                       `clean` is denied unless this session's latest stored review-loop hand-back (handback.py) is
                       converged or deferred.
 
-A coder dispatch or a `dirty` mark makes the session dirty, whatever repo the coder changed: every commit in any repo
-is judged.
+A coder dispatch makes dirty each repo its transcript shows it edited through the EDIT_TOOL_PATH_KEYS tools, and every
+repo when no edited file lies in a repo, its transcript cannot be read or it has no agent id. A `dirty` mark makes
+every repo dirty. A commit is judged when a repo it commits in is dirty.
 
 A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
 under the repo's top-level docs/ folder: the paths already staged (`git diff --cached`, run in the hook input's
@@ -120,6 +121,9 @@ GIT_TIMEOUT_SECONDS = 3
 NO_REVIEW_MARKER = "[no-review]"
 DOCS_FOLDER = "docs/"
 NOTES_SUFFIX = ".md"
+# The input key that names the edited file, for each tool a coder edits with.
+EDIT_TOOL_PATH_KEYS = {"Edit": "file_path", "MultiEdit": "file_path", "Write": "file_path",
+                       "NotebookEdit": "notebook_path"}
 # Characters a shell or git would expand in a pathspec, and a newline.
 EXPANDING_CHARS = set("*?[]{}$`~\\\n")
 READ_ONLY_GIT = ("status", "diff", "log", "show", "rev-parse")
@@ -450,18 +454,66 @@ def worked_until(transcript_path, agent_id):
         return 0
 
 
-def dirty_since(events, transcript_path):
-    """When the session became dirty: the latest dirty mark or coder dispatch. A coder counts from its dispatch or
-    its transcript's last change, whichever is later, since a background coder edits after its dispatch is
-    recorded. A coder with no agent id on record counts as dirty now, since its last edit cannot be read."""
+def edited_repos(transcript_path, agent_id, top_by_dir):
+    """The top levels of the repos a coder agent edited through the EDIT_TOOL_PATH_KEYS tools, read from its
+    transcript, or None when no edited file lies in a repo or the transcript cannot be read. A file outside every
+    repo is left out. top_by_dir caches each folder's repo top, shared across agents."""
+    agent_transcript = subagent_transcript(transcript_path, agent_id)
+    if agent_transcript is None:
+        return None
+    edited_dirs = set()
+    try:
+        with open(agent_transcript, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                edited_dirs.update(edited_dirs_in(line))
+    except OSError:
+        return None
+
+    for folder in edited_dirs:
+        if folder not in top_by_dir:
+            top_by_dir[folder] = (script_utils.repo_root(folder, timeout=GIT_TIMEOUT_SECONDS)
+                                  if os.path.isdir(folder) else None)
+
+    repo_tops = {top_by_dir[folder] for folder in edited_dirs}
+    repo_tops.discard(None)
+    return {str(top) for top in repo_tops} or None
+
+
+def edited_dirs_in(line):
+    """The folders of the files one transcript line's calls to the EDIT_TOOL_PATH_KEYS tools name."""
+    edited_dirs = set()
+    for tool_name, tool_input in script_utils.tool_use_calls(line):
+        path_key = EDIT_TOOL_PATH_KEYS.get(tool_name)
+        edited = tool_input.get(path_key) if path_key else None
+        if isinstance(edited, str) and os.path.isabs(edited):
+            edited_dirs.add(os.path.dirname(edited))
+    return edited_dirs
+
+
+def edited_repos_by_agent(events, transcript_path):
+    """edited_repos for each coder agent id the dispatch events name, read once."""
+    top_by_dir = {}
+    return {event["agent"]: edited_repos(transcript_path, event["agent"], top_by_dir) for event in events
+            if event.get("kind") == "dispatch" and isinstance(event.get("agent"), str) and event["agent"]}
+
+
+def dirty_since(events, transcript_path, repo_top, edited_by_agent):
+    """When the work in repo_top became dirty: the latest dirty mark, or coder dispatch that edited repo_top, or None
+    when none did. A dirty mark stands for every repo. A coder counts for the repos its transcript shows it edited,
+    and for every repo when edited_repos names none. It counts from its dispatch or its transcript's last change,
+    whichever is later, since a background coder edits after its dispatch is recorded. A coder with no agent id on
+    record counts as dirty now, in every repo, since its edits cannot be read."""
     dirty_times = []
     for event in events:
         if event.get("kind") != "dispatch":
             dirty_times.append(event["ts"])
             continue
         agent_id = event.get("agent")
-        if not agent_id:
+        if not isinstance(agent_id, str) or not agent_id:
             dirty_times.append(time.time())
+            continue
+        edited = edited_by_agent[agent_id]
+        if repo_top is not None and edited is not None and repo_top not in edited:
             continue
         dirty_times.append(max(event["ts"], worked_until(transcript_path, agent_id)))
     return max(dirty_times, default=None)
@@ -641,22 +693,35 @@ def review_handed_back_since(session, dirty_at, repo_top):
     return isinstance(handed_back_at, (int, float)) and handed_back_at > dirty_at
 
 
-def earns_credit(repo_dir, dirty_at, session):
+def earns_credit(repo_dir, repo_top, dirty_at, session):
     """True when a commit in repo_dir concludes a merge, commits the tree a converged review covered, or follows a
-    converged hand-back of that repo stored after dirty_at. A repo_dir of None, or one outside a work tree, earns
-    none."""
+    converged hand-back of that repo stored after dirty_at. repo_top is repo_dir's top level as a string, or None.
+    A repo_dir of None, or one outside a work tree, earns none."""
     if repo_dir is None:
         return False
     if concludes_merge(repo_dir) or reviewed_tree.is_reviewed(session, repo_dir):
         return True
 
+    return review_handed_back_since(session, dirty_at, repo_top)
+
+
+def is_clear(repo_dir, events, transcript_path, session, edited_by_agent):
+    """True when a commit in repo_dir owes no review: no dirty mark or coder work of the session touched its repo,
+    or the commit earns credit there. A repo_dir of None is never clear."""
+    if repo_dir is None:
+        return False
+
     repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
-    return review_handed_back_since(session, dirty_at, str(repo_top) if repo_top else None)
+    repo_top_name = str(repo_top) if repo_top else None
+    dirty_at = dirty_since(events, transcript_path, repo_top_name, edited_by_agent)
+    if dirty_at is None:
+        return True
+    return earns_credit(repo_dir, repo_top_name, dirty_at, session)
 
 
 def check_commit(command, root, state_file, session):
-    """Deny a commit while the session holds unreviewed coder work in any repo, unless the user ordered it without
-    review, every directory it commits in earns credit, or it ships only notes."""
+    """Deny a commit while the session holds unreviewed coder work in a repo it commits in, unless the user ordered
+    it without review, every directory it commits in earns credit, or it ships only notes."""
     events = gate_events(state_file)
     if not events:
         return
@@ -664,9 +729,13 @@ def check_commit(command, root, state_file, session):
         return
 
     cwd = jq_field(root, "cwd")
-    dirty_at = dirty_since(events, jq_field(root, "transcript_path"))
-    if all(earns_credit(repo_dir, dirty_at, session) for repo_dir in credit_repo_dirs(command, cwd)):
-        return
+    transcript_path = jq_field(root, "transcript_path")
+    repo_dirs = credit_repo_dirs(command, cwd)
+    if None not in repo_dirs:
+        edited_by_agent = edited_repos_by_agent(events, transcript_path)
+        if all(is_clear(repo_dir, events, transcript_path, session, edited_by_agent)
+               for repo_dir in repo_dirs):
+            return
     if ships_only_notes(command, cwd):
         return
     raise DenyError(

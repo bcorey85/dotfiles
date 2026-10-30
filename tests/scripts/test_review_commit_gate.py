@@ -738,6 +738,22 @@ class ReviewedWorkCommitTest(GateCase):
         self.assertEqual(self.state(), "dirty\n")
         self.assert_silent(self.commit("git commit -a -m x"))
 
+    def test_a_reviewed_record_in_the_earlier_bare_hex_form_is_stale_until_the_tree_is_recorded_again(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        self.assert_silent(self.dispatch())
+        reviewed_file = self.state_dir / "s1.reviewed"
+        recorded = json.loads(reviewed_file.read_text())
+        self.assertEqual(1, len(recorded))
+        bare_hex = {top: value.removeprefix("sha256:") for top, value in recorded.items()}
+        reviewed_file.write_text(json.dumps(bare_hex) + "\n")
+
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+        self.review_converged()
+        self.assert_silent(self.dispatch())
+        self.assert_silent(self.commit("git commit -a -m x"))
+
     def test_a_tree_edited_after_the_converged_review_is_denied(self):
         (self.repo / "base.py").write_text("changed\n")
         self.review_converged()

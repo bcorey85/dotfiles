@@ -1,6 +1,8 @@
 """The review statuses that end a code_step run: a tool fault, a critical blocker, a setup fault, an unverified check,
 a full check that did not run and the review cap. Each prints its stop or question; the caller goes on to the asks or
 the phase end otherwise."""
+import time
+
 import script_utils
 from check_scope import runs_tests
 from code_step_core import (
@@ -12,7 +14,8 @@ from code_step_core import (
     stop_with_question,
 )
 from code_step_state import StopKind
-from script_utils import ask_text
+from plan_format import resolved_block
+from script_utils import ask_text, git_output
 
 
 def is_capped_review(state):
@@ -32,6 +35,34 @@ def review_stop_next_step(state):
 
 # The fix a check stop names when the repo's CLAUDE.md names no check.
 ADD_QUALITY_CHECK_FIX = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
+
+# The stops that a CLAUDE.md edit may answer, and what the next review reads when that file changed.
+CHECK_STOPS = (StopKind.CHECK_UNVERIFIED, StopKind.CHECK_NOT_RUN)
+CHECK_STOP_DECISION = "an uncommitted change to the repo's CLAUDE.md answers that check stop"
+CHECK_STOP_RULING_WORDS = ("The repo's CLAUDE.md has an uncommitted change. That edit is taken to answer the check "
+                           "stop, so it is not plan drift.")
+CHECK_STOP_DISAGREEMENT = "The repo's CLAUDE.md has an uncommitted change, and the plan may not name that file."
+
+
+def carry_check_stop_fix(repo_dir, state):
+    # The plan may not name the CLAUDE.md line, so without this ruling the next review asks about the fix the stop
+    # itself named. A CLAUDE.md with no change has no line to rule on.
+    if f"Decision: {CHECK_STOP_DECISION}" in state.plan_impact:
+        return
+
+    claude_md_change = git_output(repo_dir, "status", "--porcelain", "--", "CLAUDE.md")
+    if not claude_md_change:
+        return
+
+    ruling = resolved_block("the check stop rule settled this disagreement, not the user or the session",
+                            CHECK_STOP_DECISION, "the check stop rule", time.strftime("%Y-%m-%d %H:%M"),
+                            CHECK_STOP_RULING_WORDS, CHECK_STOP_DISAGREEMENT)
+    if state.plan_impact == "none":
+        state.plan_impact = ruling
+        return
+
+    state.plan_impact += "\n" + ruling
+
 
 def blocker_stop_text():
     # The statuses that stop on the packet's blockers: {status: (the question, the instruction to the caller)}.

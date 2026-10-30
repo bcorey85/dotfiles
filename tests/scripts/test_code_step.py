@@ -7128,6 +7128,19 @@ class CodeStepTest(unittest.TestCase):
         reviewed = self.step("resume")
         self.assertIn("AGENT: review-loop", reviewed)
 
+    def test_a_launch_is_logged_when_the_session_cwd_holds_a_state_file_this_code_cannot_load(self):
+        # A branch's newer code left a state key this checkout's code does not know.
+        session_cwd = self.home / "session-checkout"
+        self.make_other_checkout(session_cwd)
+        (session_cwd / ".git/code-step/state.json").write_text(json.dumps({"stage": "done", "keyFromANewerBranch": 1}))
+        out = self.start_phase_one()
+        self.pass_coder_gate()
+
+        result = self.launch_agent(self.printed_prompt(out), cwd=str(session_cwd))
+
+        self.assertEqual(1, len(self.events_named("launch")))
+        self.assertIn(f"skipped {session_cwd}", result.stderr)
+
     def make_other_checkout(self, session_cwd):
         # A git checkout that holds the state of a finished run of this session, as the session's own cwd can.
         session_cwd.mkdir()

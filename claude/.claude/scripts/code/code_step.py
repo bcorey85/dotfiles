@@ -111,6 +111,7 @@ from code_step_core import (
     clear_question,
     clear_say,
     coder_changed_files,
+    current_phase_text,
     dispatch_since,
     emit,
     file_hashes,
@@ -572,8 +573,7 @@ def ask_about_unrecorded_state(repo_dir, state):
 
 def resume_closing_skill(repo_dir, state):
     # A closing phase that outlives its session: a resume invokes its skill again, with the phase's plan section.
-    plan_lines = (repo_dir / state["plan"]).read_text().split("\n")
-    section = plan_format.phase_text(plan_lines, state["phase"])
+    section = current_phase_text(repo_dir, state["plan"], state["phase"])
     skill = plan_format.closing_skill(state["title"])
     emit_closing_skill(repo_dir, state["plan"], state["phase"], state["title"], skill, section, state.get("runNotes"))
 

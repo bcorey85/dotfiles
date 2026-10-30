@@ -1068,6 +1068,37 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
     def test_every_row_logged_passes(self):
         self.assertEqual(self.stop_with_packet(self.loop(FINDING_ROW, METRICS_ROW, plan="other.md"), "b.py"), "")
 
+    def test_a_finding_row_with_root_before_kind_counts_so_the_loop_is_not_told_to_log_it_again(self):
+        root_first = FINDING_ROW.replace("kind=finding", "root=/home/u/repo kind=finding")
+
+        self.assertEqual(self.stop_with_packet(self.loop(root_first, METRICS_ROW, plan="other.md"), "b.py"), "")
+
+    def test_a_semicolon_inside_a_quoted_argument_before_kind_does_not_end_the_row(self):
+        quoted = ('~/.claude/skills/review/log-review-finding desc="null; guard" kind=finding lane=code '
+                  'disposition=fix class=bug file=a.py line=3 actioned=fixed')
+
+        self.assertEqual(self.stop_with_packet(self.loop(quoted, METRICS_ROW, plan="other.md"), "b.py"), "")
+
+    def test_an_escaped_quote_and_semicolon_inside_a_quoted_argument_do_not_end_the_row(self):
+        escaped = ('~/.claude/skills/review/log-review-finding desc="say \\"x; y\\"" kind=finding lane=code '
+                   'disposition=fix class=bug file=a.py line=3 actioned=fixed')
+
+        self.assertEqual(self.stop_with_packet(self.loop(escaped, METRICS_ROW, plan="other.md"), "b.py"), "")
+
+    def test_an_unclosed_quote_in_one_command_does_not_hang_the_count_of_a_later_command(self):
+        unclosed = '~/.claude/skills/review/log-review-finding desc="oops ' + 'x; ' * 2000
+
+        records = self.loop(unclosed, FINDING_ROW, METRICS_ROW, plan="other.md")
+
+        self.assertEqual(self.stop_with_packet(records, "b.py"), "")
+
+    def test_a_run_row_with_root_first_is_no_finding_row(self):
+        run_row = "~/.claude/skills/review/log-review-finding root=/home/u/repo kind=run lane=code n_findings=1"
+
+        reason = json.loads(self.stop_with_packet(self.loop(run_row, METRICS_ROW, plan="other.md"), "b.py"))["reason"]
+
+        self.assertIn("only 0 per-finding", reason)
+
     def test_a_metrics_line_logged_before_the_last_reviewer_round_is_blocked(self):
         records = [user("review loop\nlane: code\nplan: other.md"), bash(METRICS_ROW),
                    dispatch("t_verify", "code-reviewer"), result("t_verify", "ok"),

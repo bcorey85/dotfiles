@@ -24,6 +24,7 @@ spec = importlib.util.spec_from_file_location("handback_under_test", str(SCRIPT)
 handback = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(handback)
 import handback_store  # noqa: E402
+import loop_transcript  # noqa: E402
 
 CONVERGED = """status: converged
 iter: 1
@@ -739,19 +740,19 @@ class RenderTest(HandbackTestBase):
 
 
 class StoreTest(HandbackTestBase):
-    def test_a_dispatch_row_names_the_repo_its_prompt_or_cwd_holds(self):
+    def test_reviewed_repo_names_the_repo_its_prompt_or_cwd_holds(self):
         with tempfile.TemporaryDirectory() as folder:
             named, cwd_repo, outside = (os.path.join(folder, name) for name in ("named", "cwd", "outside"))
             for repo in (named, cwd_repo):
                 subprocess.run(["git", "init", "-q", repo], check=True)
             os.mkdir(outside)
-            self.assertEqual(handback.reviewed_repo("mode: review-first\nrepo: ../named\n", cwd_repo),
-                             os.path.realpath(named))
-            self.assertEqual(handback.reviewed_repo("mode: review-first\n", cwd_repo), os.path.realpath(cwd_repo))
-            self.assertIsNone(handback.reviewed_repo("mode: review-first\n", outside))
-            self.assertIsNone(handback.reviewed_repo("mode: review-first\nrepo: ../outside\n", cwd_repo))
+            reviewed_repo = loop_transcript.reviewed_repo
+            self.assertEqual(reviewed_repo("mode: review-first\nrepo: ../named\n", cwd_repo), os.path.realpath(named))
+            self.assertEqual(reviewed_repo("mode: review-first\n", cwd_repo), os.path.realpath(cwd_repo))
+            self.assertIsNone(reviewed_repo("mode: review-first\n", outside))
+            self.assertIsNone(reviewed_repo("mode: review-first\nrepo: ../outside\n", cwd_repo))
             handoff_prompt = f"mode: review-first\nUncommitted changes in {named}/src/a.py (branch b)\n"
-            self.assertEqual(handback.reviewed_repo(handoff_prompt, cwd_repo), os.path.realpath(named))
+            self.assertEqual(reviewed_repo(handoff_prompt, cwd_repo), os.path.realpath(named))
 
     def test_a_first_path_in_no_work_tree_falls_back_to_the_cwd_repo(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -759,23 +760,95 @@ class StoreTest(HandbackTestBase):
             subprocess.run(["git", "init", "-q", cwd_repo], check=True)
             os.mkdir(outside)
             prompt = f"mode: review-first\nRead the plan at {outside}/plan.md first.\n"
-            self.assertEqual(handback.reviewed_repo(prompt, cwd_repo), os.path.realpath(cwd_repo))
-            self.assertIsNone(handback.reviewed_repo(prompt, outside))
+            self.assertEqual(loop_transcript.reviewed_repo(prompt, cwd_repo), os.path.realpath(cwd_repo))
+            self.assertIsNone(loop_transcript.reviewed_repo(prompt, outside))
 
-    def test_the_dispatch_hook_stores_the_repo_a_review_loop_dispatch_reviews(self):
+    def test_a_url_before_the_first_path_does_not_hide_the_path(self):
         with tempfile.TemporaryDirectory() as folder:
             named, cwd_repo = (os.path.join(folder, name) for name in ("named", "cwd"))
             for repo in (named, cwd_repo):
                 subprocess.run(["git", "init", "-q", repo], check=True)
-            cases = (("repo: ../named\n", named), ("mode: review-first\n", cwd_repo))
-            for prompt, expected_repo in cases:
-                with self.subTest(prompt=prompt):
-                    event = {"session_id": SESSION, "cwd": cwd_repo,
+            prompt = f"mode: review-first\nSee https://github.com/o/r/pull/3 then {named}/plan.md\n"
+            self.assertEqual(loop_transcript.reviewed_repo(prompt, cwd_repo), os.path.realpath(named))
+
+    def test_a_url_query_string_holding_a_path_does_not_name_the_repo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            named, cwd_repo = (os.path.join(folder, name) for name in ("named", "cwd"))
+            for repo in (named, cwd_repo):
+                subprocess.run(["git", "init", "-q", repo], check=True)
+            prompt = f"mode: review-first\nSee https://h/p?x={named}/inner.py and nothing\n"
+            self.assertEqual(loop_transcript.reviewed_repo(prompt, cwd_repo), os.path.realpath(cwd_repo))
+
+    def test_a_first_path_cut_at_a_space_falls_back_to_the_cwd_repo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            outer, cwd_repo = (os.path.join(folder, name) for name in ("outer", "cwd"))
+            spaced = os.path.join(outer, "my repo")
+            for repo in (outer, spaced, cwd_repo):
+                subprocess.run(["git", "init", "-q", repo], check=True)
+            prompt = f"mode: review-first\nUncommitted changes in {spaced}/src/a.py\n"
+            self.assertEqual(loop_transcript.reviewed_repo(prompt, cwd_repo), os.path.realpath(cwd_repo))
+
+    def test_a_repo_line_with_a_trailing_parenthetical_names_the_repo_before_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            named, cwd_repo = (os.path.join(folder, name) for name in ("named", "cwd"))
+            for repo in (named, cwd_repo):
+                subprocess.run(["git", "init", "-q", repo], check=True)
+            prompt = "mode: review-first\nrepo: ../named (branch b)\n"
+            self.assertEqual(loop_transcript.reviewed_repo(prompt, cwd_repo), os.path.realpath(named))
+
+    def test_the_dispatch_row_and_the_loop_transcript_name_the_same_reviewed_repo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            named, cwd_repo, outside = (os.path.join(folder, name) for name in ("named", "cwd", "outside"))
+            for repo in (named, cwd_repo):
+                subprocess.run(["git", "init", "-q", repo], check=True)
+            os.mkdir(outside)
+            linked = os.path.join(folder, "linked")
+            os.symlink(named, linked)
+            spaced = os.path.join(folder, "my repo")
+            subprocess.run(["git", "init", "-q", spaced], check=True)
+            cases = (("repo: ../named\n", cwd_repo, named),
+                     (f"repo: {spaced}\n", cwd_repo, spaced),
+                     ("repo: ../missing\n", cwd_repo, None),
+                     ("mode: review-first\n", cwd_repo, cwd_repo),
+                     ("mode: review-first\n", outside, None),
+                     (f"repo: {linked}\n", cwd_repo, named),
+                     (f"Uncommitted changes in {linked}/src/a.py\n", cwd_repo, named))
+            for prompt, cwd, expected_repo in cases:
+                with self.subTest(prompt=prompt, cwd=cwd):
+                    shutil.rmtree(self.store, ignore_errors=True)
+                    event = {"session_id": SESSION, "cwd": cwd,
                              "tool_input": {"subagent_type": "review-loop", "prompt": prompt}}
                     code, _, _ = self.run_cli(["hook", "dispatch"], json.dumps(event))
                     self.assertEqual(code, 0)
+
+                    transcript_path = os.path.join(folder, "loop.jsonl")
+                    prompt_record = {"type": "user", "message": {"role": "user", "content": prompt}}
+                    pathlib.Path(transcript_path).write_text(json.dumps(prompt_record) + "\n")
+                    transcript = loop_transcript.LoopTranscript(transcript_path)
+
                     dispatch_row = handback_store.latest(SESSION)["dispatch"]
-                    self.assertEqual(dispatch_row["repo"], os.path.realpath(expected_repo))
+                    if expected_repo is None:
+                        self.assertIsNone(dispatch_row["repo"])
+                        self.assertIsNone(transcript.reviewed_repo(cwd))
+                        continue
+                    expected = os.path.realpath(expected_repo)
+                    self.assertEqual(dispatch_row["repo"], expected)
+                    self.assertEqual(transcript.reviewed_repo(cwd), expected)
+
+    def test_a_scope_root_in_no_work_tree_names_no_repo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cwd_repo, plain_folder = (os.path.join(folder, name) for name in ("cwd", "plain"))
+            subprocess.run(["git", "init", "-q", cwd_repo], check=True)
+            os.mkdir(plain_folder)
+            self.assertIsNone(loop_transcript.reviewed_repo("mode: review-first\n", cwd_repo, scope_root=plain_folder))
+
+    def test_the_scope_root_wins_over_the_prompt_repo_line(self):
+        with tempfile.TemporaryDirectory() as folder:
+            scoped, named, cwd_repo = (os.path.join(folder, name) for name in ("scoped", "named", "cwd"))
+            for repo in (scoped, named, cwd_repo):
+                subprocess.run(["git", "init", "-q", repo], check=True)
+            repo_found = loop_transcript.reviewed_repo(f"repo: {named}\n", cwd_repo, scope_root=scoped)
+            self.assertEqual(repo_found, os.path.realpath(scoped))
 
     def test_latest_reports_dispatch_handback_and_pending(self):
         self.assertEqual(handback_store.latest(SESSION),
@@ -1276,6 +1349,14 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
     def test_a_hand_back_for_a_reviewed_repo_without_the_ci_line_is_denied_though_the_cwd_has_it(self):
         prompt, other = self.make_repos("# Repo\n", "- Full suite: CI\n")
+
+        out = self.hand_back([prompt, full_check_run("t1"), coder_step("t2")], cwd=other)
+        self.assertIn("Step 6 execution gate", json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_a_ci_repo_named_only_by_a_prompt_path_does_not_exempt_the_full_check(self):
+        _, other = self.make_repos("- Full suite: CI\n", "# Other repo\n")
+        reviewed = self.tmp / "reviewed-repo"
+        prompt = {"type": "user", "message": {"role": "user", "content": f"review loop\nRead {reviewed}/plan.md"}}
 
         out = self.hand_back([prompt, full_check_run("t1"), coder_step("t2")], cwd=other)
         self.assertIn("Step 6 execution gate", json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"])

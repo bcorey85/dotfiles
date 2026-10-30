@@ -6,6 +6,7 @@ import sys
 import time
 
 import expected_red
+import loop_transcript
 import plan_format
 import review_asks
 import script_utils
@@ -595,8 +596,8 @@ def emit_review_dispatch(repo_dir, state):
 def launch_review_script(repo_dir, state, prompt):
     # The review loop runs as review_loop_script.py, detached. The dispatch and launch rows stand in for the Agent
     # call's, and the store gets the dispatch row the Agent hook writes for a review-loop, so the clean mark finds it.
-    module, import_error = load_handback()
-    if module is None:
+    _, import_error = load_handback()
+    if import_error:
         return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
 
     import handback_store  # after the load check: a missing hand-back module must stop the run, not crash the import
@@ -606,7 +607,8 @@ def launch_review_script(repo_dir, state, prompt):
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
     session_id = run_session_id(state)
-    handback_store.record(session_id, "dispatch", no_review=False, repo=module.reviewed_repo("", repo_dir))
+    reviewed_repo = loop_transcript.reviewed_repo(prompt="", cwd=repo_dir)
+    handback_store.record(session_id, "dispatch", no_review=False, repo=reviewed_repo)
 
     code_step_dir = state_dir(repo_dir)
     script_dir = code_step_dir / "loop-script" / agent_id
@@ -792,8 +794,8 @@ def fill_review_ask_ids(repo_dir, state, module, handback, asks):
 
 
 def log_ask_outcomes(repo_dir, state, outcomes, decided_by="user"):
-    module, import_error = load_handback()
-    if module is None:
+    _, import_error = load_handback()
+    if import_error:
         print(f"code-step: ask outcomes not logged: {import_error}", file=sys.stderr)
         return
 

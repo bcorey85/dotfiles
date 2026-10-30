@@ -684,7 +684,8 @@ class RunRowTest(unittest.TestCase):
         scope_call = [bash(f"~/.claude/skills/review/review-scope caller=review root={worktree}", "t_scope"),
                       result("t_scope", f"ROOT={worktree}\nMODE=worktree\n")]
         cases = {"the review-scope ROOT= line": ([user("review loop\nlane: code")], scope_call),
-                 "the prompt's repo: line": ([user(f"review loop\nlane: code\nrepo: {worktree}")], [])}
+                 "the prompt's repo: line": ([user(f"review loop\nlane: code\nrepo: {worktree}")], []),
+                 "the prompt's first path": ([user(f"review loop\nlane: code\nChanges in {worktree}/src/a.py")], [])}
         for case, (prompt, scope) in cases.items():
             with self.subTest(case=case):
                 state_dir = os.path.join(self.tmp.name, "state")

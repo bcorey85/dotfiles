@@ -28,7 +28,6 @@ from code_step_core import (
     branch_label,
     clear_say,
     dispatch_id_at,
-    drop_state,
     emit,
     emit_dispatch,
     file_hashes,
@@ -77,6 +76,7 @@ from code_step_start_args import (
     starts_task_text,
 )
 from code_step_state import RunState, Stage, StopKind
+from code_step_store import drop_state
 from code_step_verification import run_verification_commands, verification_format_failure
 from script_utils import run_command
 

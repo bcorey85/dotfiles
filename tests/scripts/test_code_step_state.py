@@ -19,6 +19,7 @@ for folder in (toolkit_paths.LIB_DIR, toolkit_paths.REVIEW_DIR, toolkit_paths.CO
     sys.path.insert(0, str(folder))
 import code_step_core  # noqa: E402
 import code_step_state  # noqa: E402
+import code_step_store  # noqa: E402
 
 # The state file of a run in progress, with every key the code-step before the typed record wrote except the stop
 # record's waitAt, which loads and is dropped.
@@ -98,7 +99,7 @@ class StateFileTest(unittest.TestCase):
 
     def load(self, saved_state):
         (self.state_dir / "state.json").write_text(json.dumps(saved_state))
-        return code_step_core.read_state_file(self.state_dir)
+        return code_step_store.read_state_file(self.state_dir)
 
     def test_the_state_file_of_a_run_in_progress_loads_and_writes_back_unchanged(self):
         state = self.load(CURRENT_STATE)
@@ -149,12 +150,12 @@ class VerbTransactionTest(unittest.TestCase):
         self.repo = pathlib.Path(temp_dir.name)
         subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
 
-        state_dirs = unittest.mock.patch.dict(code_step_core.STATE_DIRS, clear=True)
+        state_dirs = unittest.mock.patch.dict(code_step_store.STATE_DIRS, clear=True)
         state_dirs.start()
         self.addCleanup(state_dirs.stop)
 
         code_step_core.save_state(self.repo, code_step_state.RunState("coder"))
-        self.state_path = code_step_core.state_file(self.repo)
+        self.state_path = code_step_store.state_file(self.repo)
         self.saved_text = self.state_path.read_text()
         self.printed = io.StringIO()
 
@@ -221,7 +222,7 @@ class VerbTransactionTest(unittest.TestCase):
         seen_inside = []
 
         def drop():
-            code_step_core.drop_state(self.repo)
+            code_step_store.drop_state(self.repo)
             seen_inside.append(code_step_core.load_state(self.repo))
             seen_inside.append(self.state_path.exists())
 
@@ -232,7 +233,7 @@ class VerbTransactionTest(unittest.TestCase):
 
     def test_a_state_file_the_verb_drops_goes_even_when_another_verb_rewrote_it_meanwhile(self):
         def drop_across_a_rewrite():
-            code_step_core.drop_state(self.repo)
+            code_step_store.drop_state(self.repo)
             self.state_path.write_text(json.dumps({"stage": "review"}))
             print("ACTION: stop")
 

@@ -475,6 +475,21 @@ class FullCheckSideEffectsTest(unittest.TestCase):
         self.assertEqual(tree_lines, [f"tree: {expected}"])
         self.assertNotEqual(expected, before)
 
+    def test_a_repo_with_no_commit_still_gets_a_tree_line(self):
+        unborn = self.repo.parent / "unborn"
+        unborn.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=unborn, check=True)
+        (unborn / "staged.txt").write_text("staged\n")
+        subprocess.run(["git", "add", "staged.txt"], cwd=unborn, check=True)
+        argv = [sys.executable, "-B", str(SCRIPT), str(unborn), "--log", str(self.log), "--timeout", "60"]
+
+        completed = subprocess.run([*argv, "--", PASSING_SUITE], capture_output=True, text=True, timeout=60)
+
+        tree_lines = [line for line in completed.stdout.splitlines() if line.startswith("tree: ")]
+        expected = full_check.checked_tree_fingerprint(str(unborn), str(self.log))
+        self.assertIsNotNone(expected, completed.stderr)
+        self.assertEqual(tree_lines, [f"tree: {expected}"])
+
     def test_a_tracked_file_the_check_rewrote_and_a_file_it_created_are_named_and_left_in_place(self):
         command = f"echo generated v2 > generated.ts; mkdir dist; echo built > dist/out.js; {PASSING_SUITE}"
 

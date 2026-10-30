@@ -1,0 +1,42 @@
+#!/bin/bash
+# Report every script in scripts/.local/bin that is not linked from ~/.local/bin.
+# `stow -R scripts` links them all, so a gap means stow skipped the file on purpose
+# (a name on its default ignore list, such as foo~ or #foo#) or this checkout
+# is not the one ~/.local/bin links to, or the script was added after the last
+# install/stow; rerun install/stow.
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# Get the dotfiles root (parent of install/)
+DOTFILES_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+SOURCE_DIR="$DOTFILES_DIR/scripts/.local/bin"
+TARGET_DIR="$HOME/.local/bin"
+
+UNLINKED=()
+for script in "$SOURCE_DIR"/*; do
+    [ -f "$script" ] || continue
+    name="$(basename "$script")"
+    linked="$TARGET_DIR/$name"
+    if [ ! "$linked" -ef "$script" ]; then
+        UNLINKED+=("$name")
+    fi
+done
+
+if [ "${#UNLINKED[@]}" -gt 0 ]; then
+    for name in "${UNLINKED[@]}"; do
+        print_error "$name is not linked from $TARGET_DIR"
+    done
+    print_info "Stow skips names on its default ignore list (foo~, #foo#), or ~/.local/bin links to another checkout, or the script was added after the last install/stow; rerun install/stow."
+    exit 1
+fi
+
+print_success "Every script in scripts/.local/bin is linked"

@@ -543,6 +543,10 @@ def is_unverified(result):
     return result.startswith("unverified")
 
 
+def is_not_run(result):
+    return result.startswith("not run")
+
+
 def is_check_not_run(result):
     # True when the check was owed and did not run: it timed out, or the command was scoped or unresolved. Every
     # other `not run` result proceeds: CI runs the suite, the repo names no check, the plan expects the check red, or

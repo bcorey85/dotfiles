@@ -5,19 +5,29 @@ import re
 import coder_gate
 import script_utils
 
-
-def coder_flags(report):
-    flagged = []
-    for line in report.splitlines():
-        mentions_open_point = re.search(r"\bambigu(ous|ity|ities)\b|open question", line, re.I)
-        denies_open_point = re.search(r"\b(no|none)\b", line, re.I)
-        if mentions_open_point and not denies_open_point:
-            flagged.append(line.strip())
-    return flagged
+OPEN_QUESTIONS_LINE = re.compile(r"^[ \t>*`_-]*OPEN QUESTIONS[*`_]*:[*`_]*[ \t]*(.*)$", re.M)
+UNREADABLE_QUOTE_LIMIT = 120
 
 
+def open_questions(report):
+    # The strings of the report's `OPEN QUESTIONS: <JSON list of strings>` line. `none` or no such line means none. Any
+    # other value that is not a JSON list of strings comes back as one flagged item. Only the first such line is read.
+    found = OPEN_QUESTIONS_LINE.search(report)
+    if not found:
+        return []
+    value = found.group(1).strip()
+    if value.lower() == "none":
+        return []
+    questions = script_utils.json_string_list(value)
+    if questions is not None:
+        return questions
+    quoted = script_utils.one_line(value, UNREADABLE_QUOTE_LIMIT)
+    return [f"the OPEN QUESTIONS line could not be read as a JSON list of strings: {quoted}"]
+
+
+PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
 PLAN_IMPACT_HEADER = re.compile(r"^[ \t>*`_-]*PLAN-IMPACT[*`_]*:?[*`_]*[ \t]*$")
-PLAN_IMPACT_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes|acceptance_criteria)[*`_]*:", re.I)
+PLAN_IMPACT_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes|acceptance_criteria|cause)[*`_]*:", re.I)
 
 
 def plan_impact_body(lines_after_header):
@@ -46,16 +56,24 @@ def plan_impact_block(report):
             continue
         body = plan_impact_body(lines[index + 1:])
         if body:
-            return "PLAN-IMPACT:\n" + "\n".join(body)
+            return PLAN_IMPACT_BLOCK_HEADER + "\n".join(body)
     if re.search(r"^PLAN-IMPACT:\s*yes\s*$", report, re.M):
         return "PLAN-IMPACT: yes (block not found in the report; read the report)"
     return None
 
 
-def first_plan_impact(messages):
+def has_plan_impact_block(report):
+    # True when the report holds a found block, not the `PLAN-IMPACT: yes (block not found…)` fallback.
+    block = plan_impact_block(report)
+    return block is not None and block.startswith(PLAN_IMPACT_BLOCK_HEADER)
+
+
+def first_plan_impact(messages, handled=None):
+    # `handled` holds the blocks the run already stopped on; none of them is found again.
+    handled = handled or []
     for message in messages:
         block = plan_impact_block(message)
-        if block:
+        if block and block not in handled:
             return block
     return None
 
@@ -180,6 +198,7 @@ def tests_run_text(gate, state):
             coder_gate.TIMED_OUT: "timed out at the hand-back gate, no test result",
             coder_gate.SETUP_FAULT: "could not run at the hand-back gate (setup fault), no test result",
             coder_gate.COMMAND_ERROR: "command error at the hand-back gate (missing path), no test result",
+            coder_gate.NOT_STARTED: "not started at the hand-back gate (time budget used up), no test result",
             coder_gate.SKIPPED: "skipped, no changed files",
         }
         for command in gate["commands"]:

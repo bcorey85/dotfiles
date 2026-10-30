@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "A denied review dispatch earns no commit credit"
 description: "A review-loop dispatch row counts only once a PostToolUse row shows its call ran, so a dispatch another hook denied no longer makes a good hand-back stale."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-30T01:05:05-05:00"}
-seq: 308
+seq: 335
 kind: "fix"
 components: ["script/handback"]
 evidence: ["judgment"]
@@ -17,14 +17,14 @@ unmeasured: "No intake number counts denied dispatches; the defect was found by 
 
 ## Change
 
-`handback.py hook dispatch` writes the review-loop dispatch row at PreToolUse with the call's `tool_use_id`. The new
-`handback.py hook ran`, a PostToolUse hook on Agent, writes a `dispatch-ran` row for the same call. `handback_store`
+`handback.py hook dispatch` (handled in `handback_hook.py`) writes the review-loop dispatch row at PreToolUse with the
+call's `tool_use_id`. The new `handback.py hook ran`, a PostToolUse hook on Agent, writes a `dispatch-ran` row for the same call. `handback_store`
 counts a dispatch row that names its call only once a `dispatch-ran` row names it too; a row with no call id (a
 script wrote it) counts as before. `latest()` clears the stop row on every dispatch row, run or not, so a foreground
 loop never reads an earlier loop's stop as its own. Hand-back rows count as written: no sibling hook denies a
 review-loop hand-back, and `handback.py`'s own deny stores nothing.
 
-Needs a `PostToolUse` entry in `claude/.claude/settings.json` (matcher `Agent`, command
+`claude/.claude/settings.json` gains the `PostToolUse` entry (matcher `Agent`, command
 `sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/handback.py hook ran`). Without it no dispatch made
 by the hook counts, and commit credit stops.
 

@@ -69,15 +69,20 @@ PLAN-IMPACT:
   found: <what the code actually does — file:line>
   changes: <what in the plan this invalidates and the options you see>
   acceptance_criteria: <none, or the criteria this changes>
+  cause: <plan, or toolkit>
 ```
 
 Write `acceptance_criteria: none` only when every acceptance criterion holds either way. Then the plan change is adopted and logged under Plan Deviations without asking the user. Any other value asks the user.
+
+Write `cause: toolkit` when a toolkit gate, hook or script is wrong and nothing in the plan is. The run then stops for the main session and no plan rewrite runs. Otherwise write `cause: plan`.
 
 ## Review handoff (last lines of your report)
 
 `BEHAVIOR: <what the system now does differently>`, 1–3 lines, no paths, or `BEHAVIOR: none`.
 
 `WHY: <path> <startLine>-<endLine> — <why this block looks the way it does>`, one line per note, for a choice the diff cannot explain, with new-file line numbers, or `WHY: none`.
+
+`OPEN QUESTIONS: <JSON list of strings>`, one line, each a point only the user or the plan can settle, or `OPEN QUESTIONS: []`.
 
 `REFACTOR CANDIDATES: <pre-existing smell in a file you touched that you did NOT fix — location, smell, refactor, blast radius>` or `REFACTOR CANDIDATES: none`.
 

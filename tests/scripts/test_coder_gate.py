@@ -21,6 +21,7 @@ GIT_IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GI
 sys.path.insert(0, str(GATE_SCRIPT.parent.parent / "lib"))
 import check_scope  # noqa: E402
 import script_utils  # noqa: E402
+import toolkit_paths  # noqa: E402
 
 
 def commands_with(coder, outcome):
@@ -51,6 +52,13 @@ class CoderGateEnvironmentTests(unittest.TestCase):
 
     def stored_gate(self):
         return json.loads((self.repo / ".git/coder-gate.json").read_text())
+
+    def test_the_hook_lets_a_coder_through_silently_when_no_gate_is_set(self):
+        done = self.gate_hook()
+
+        self.assertEqual(0, done.returncode)
+        self.assertEqual("", done.stdout)
+        self.assertEqual("", done.stderr)
 
     def test_set_stores_each_variable_with_its_value_unquoted(self):
         done = self.gate_set("--env", "A=1", "--env", 'B="two words"', "--env", "C='x y'", "--env", "D=",
@@ -163,7 +171,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual("allow", output["permissionDecision"])
         message = output["updatedInput"]["message"]
         self.assertIn(f"`{command}`", message)
-        self.assertIn("timed out after 1 s with no test result", message)
+        self.assertIn(f"`{command}`, timed out after 1 s", message)
+        self.assertIn("timed out with no test result", message)
         self.assertIn("they are not among the failures", message)
         self.assertIn("FAILED test_one", message)
         cleared = subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "clear"], cwd=self.repo, env=self.env,
@@ -180,6 +189,156 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual(["exit 3"], commands_with(coder, "failed"))
         self.assertEqual(["sleep 5"], commands_with(coder, "timed-out"))
         self.assertEqual("deny", json.loads(printed)["hookSpecificOutput"]["permissionDecision"])
+
+    def gate_hook_with_budget(self, budget_seconds, min_command_seconds=1):
+        # Runs the hook in this process with a gate budget and a smallest start; returns what it printed.
+        gate = load_gate_module()
+        gate.GATE_BUDGET_SECONDS = budget_seconds
+        gate.MIN_COMMAND_SECONDS = min_command_seconds
+        event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo),
+                 "tool_input": {"message": "BEHAVIOR: done"}}
+        printed = io.StringIO()
+        with mock.patch.dict(os.environ, self.env), mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event))), \
+                contextlib.redirect_stdout(printed):
+            gate.run_hook()
+        return printed.getvalue()
+
+    def test_a_run_over_the_time_budget_names_the_commands_it_did_not_start_and_ends_with_a_verdict(self):
+        self.gate_set("sleep 10", "echo second", "echo third")
+        started = time.monotonic()
+
+        printed = self.gate_hook_with_budget(2)
+
+        self.assertLess(time.monotonic() - started, 8)
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("timeout", coder["result"])
+        self.assertEqual(["sleep 10"], commands_with(coder, "timed-out"))
+        self.assertEqual(["echo second", "echo third"], commands_with(coder, "not-started"))
+        output = json.loads(printed)["hookSpecificOutput"]
+        self.assertEqual("allow", output["permissionDecision"])
+        message = output["updatedInput"]["message"]
+        self.assertIn("HAND-BACK GATE TIME BUDGET", message)
+        self.assertIn("`sleep 10`, timed out after 2 s", message)
+        self.assertIn("`echo second`", message)
+        self.assertIn("`echo third`", message)
+        cleared = subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "clear"], cwd=self.repo, env=self.env,
+                                 capture_output=True, text=True)
+        self.assertIn("not started (time budget used up): echo second, echo third", cleared.stdout)
+
+    def test_a_command_the_budget_leaves_no_time_for_is_not_started_and_none_timed_out(self):
+        self.gate_set("sleep 2", "echo second")
+
+        printed = self.gate_hook_with_budget(4, min_command_seconds=3)
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("timeout", coder["result"])
+        self.assertEqual(["echo second"], commands_with(coder, "not-started"))
+        self.assertEqual([], commands_with(coder, "timed-out"))
+        self.assertEqual("allow", json.loads(printed)["hookSpecificOutput"]["permissionDecision"])
+
+    def test_the_gate_budget_ends_before_the_hook_timeout_with_margin(self):
+        gate = load_gate_module()
+        settings = json.loads((toolkit_paths.CLAUDE_DIR / "settings.json").read_text())
+        timeouts = [handler["timeout"]
+                    for group in settings["hooks"]["PreToolUse"] if group.get("matcher") == "SubagentHandback"
+                    for handler in group["hooks"] if "coder_gate.py hook" in handler.get("command", "")]
+
+        self.assertEqual([gate.HOOK_TIMEOUT_SECONDS], timeouts)
+        self.assertGreaterEqual(gate.HOOK_TIMEOUT_SECONDS - gate.GATE_BUDGET_SECONDS, 600)
+
+    def test_a_gate_cleared_during_the_lock_wait_lets_the_hand_back_through(self):
+        gate = load_gate_module()
+        self.gate_set("echo first")
+        event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo),
+                 "tool_input": {"message": "BEHAVIOR: done"}}
+        gate_file = self.repo / ".git/coder-gate.json"
+
+        def clear_while_waiting(lock_file, operation):
+            gate_file.unlink()
+
+        printed = io.StringIO()
+        with mock.patch.dict(os.environ, self.env), \
+                mock.patch.object(gate.fcntl, "flock", side_effect=clear_while_waiting), \
+                mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event))), \
+                contextlib.redirect_stdout(printed):
+            gate.run_hook()
+
+        self.assertEqual("", printed.getvalue())
+        self.assertFalse(gate_file.exists())
+
+    def test_a_gate_set_again_during_the_lock_wait_lets_the_hand_back_through(self):
+        gate = load_gate_module()
+        event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo),
+                 "tool_input": {"message": "BEHAVIOR: done"}}
+        gate_file = self.repo / ".git/coder-gate.json"
+
+        for changed_key, new_value in (("setAt", time.time() + 5), ("dispatchId", "other"), ("runId", "other")):
+            with self.subTest(changed_key=changed_key):
+                self.gate_set("echo first")
+
+                def set_again_while_waiting(lock_file, operation, key=changed_key, value=new_value):
+                    rewritten = json.loads(gate_file.read_text())
+                    rewritten[key] = value
+                    gate_file.write_text(json.dumps(rewritten))
+
+                printed = io.StringIO()
+                with mock.patch.dict(os.environ, self.env), \
+                        mock.patch.object(gate.fcntl, "flock", side_effect=set_again_while_waiting), \
+                        mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event))), \
+                        contextlib.redirect_stdout(printed):
+                    gate.run_hook()
+
+                self.assertEqual("", printed.getvalue())
+                self.assertEqual({}, self.stored_gate()["coders"])
+
+    def test_set_refuses_a_key_flag_with_no_value_or_after_the_command(self):
+        cases = ((("true", "--run", "R"), "--run goes before the command"),
+                 (("--run",), "--run needs a value"),
+                 (("--run", "R", "true", "--dispatch"), "--dispatch goes before the command"))
+
+        for arguments, message in cases:
+            with self.subTest(arguments=arguments):
+                done = self.gate_set(*arguments)
+
+                self.assertNotEqual(0, done.returncode)
+                self.assertIn(message, done.stderr)
+
+    def write_launch(self, run_id, agent_id, dispatch_id):
+        events_file = self.repo / ".git/code-step/runs" / run_id / "events.jsonl"
+        events_file.parent.mkdir(parents=True, exist_ok=True)
+        row = {"v": 1, "ts": time.time(), "event": "launch", "session_id": "s", "agent_id": agent_id,
+               "dispatch": dispatch_id}
+        with events_file.open("a") as log_file:
+            log_file.write(json.dumps(row) + "\n")
+
+    def test_a_keyed_gate_gates_only_the_coder_launched_for_its_run_and_dispatch(self):
+        self.write_launch("run-1", "a1", "d1")
+        self.write_launch("run-1", "a2", "d2")
+        self.write_launch("run-2", "a3", "d1")
+        cases = (("a1", True, "launched for the gate's dispatch"),
+                 ("a1", True, "the same coder resumed, handing back a second time"),
+                 ("a2", False, "launched for another dispatch of the run"),
+                 ("a3", False, "launched for another run"),
+                 ("a4", False, "no launch on record"))
+        done = self.gate_set("--run", "run-1", "--dispatch", "d1", "true")
+        self.assertEqual(0, done.returncode, done.stderr)
+
+        for agent_id, is_gated, reason in cases:
+            with self.subTest(reason):
+                event = {"agent_type": "coder", "agent_id": agent_id, "cwd": str(self.repo),
+                         "tool_input": {"message": "BEHAVIOR: done"}}
+                hook = subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "hook"], cwd=self.repo, env=self.env,
+                                      input=json.dumps(event), capture_output=True, text=True)
+
+                self.assertEqual(0, hook.returncode, hook.stderr)
+                self.assertEqual(is_gated, agent_id in self.stored_gate()["coders"], reason)
+                self.assertEqual(is_gated, bool(hook.stdout.strip()), reason)
+
+    def test_set_refuses_a_run_without_a_dispatch(self):
+        done = self.gate_set("--run", "run-1", "true")
+
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn("--run and --dispatch go together", done.stderr)
 
     def test_a_missing_program_is_a_setup_fault_that_allows_the_hand_back_and_names_the_command(self):
         command = "no-such-runner-for-the-gate pytest tests/test_one.py"
@@ -424,7 +583,7 @@ class RunCommandsTests(unittest.TestCase):
         return self.gate.run_commands({"repoRoot": str(self.repo), "commands": list(commands), "env": env or {}})
 
     def test_a_failing_command_reports_its_exit_code_and_both_streams(self):
-        failures, skipped, _ = self.run_gate_commands("echo to-stdout; echo to-stderr >&2; exit 3")
+        failures, skipped, _, _ = self.run_gate_commands("echo to-stdout; echo to-stderr >&2; exit 3")
 
         self.assertEqual([], skipped)
         (_command, outcome, output), = failures
@@ -433,7 +592,7 @@ class RunCommandsTests(unittest.TestCase):
         self.assertIn("to-stderr", output)
 
     def test_the_gate_variables_reach_the_command(self):
-        failures, _, _ = self.run_gate_commands('test "$GATE_PROBE" = set', env={"GATE_PROBE": "set"})
+        failures, _, _, _ = self.run_gate_commands('test "$GATE_PROBE" = set', env={"GATE_PROBE": "set"})
 
         self.assertEqual([], failures)
 
@@ -444,12 +603,13 @@ class RunCommandsTests(unittest.TestCase):
 
         command = f"echo before; (sleep 3; touch {marker}) & wait"
 
-        failures, _, timed_out = self.run_gate_commands(command)
+        failures, _, timed_out, _ = self.run_gate_commands(command)
 
         self.assertLess(time.monotonic() - started, 3)
         self.assertEqual([], failures)
-        (timed_out_command, output), = timed_out
+        (timed_out_command, output, command_timeout), = timed_out
         self.assertEqual(command, timed_out_command)
+        self.assertEqual(1, command_timeout)
         self.assertIn("before", output)
         time.sleep(3)
         self.assertFalse(marker.exists())

@@ -10,6 +10,8 @@ import toolkit_paths
 
 HOOK_SCRIPT = re.compile(r"scripts/[\w/-]+\.py")
 HANDBACK = toolkit_paths.REVIEW_DIR / "handback.py"
+# handback.py is the registered hook command; it hands `hook ...` to handback_hook.py, which imports it back.
+DISPATCHED_HOOKS = {"handback": ("handback_hook",)}
 
 
 def hook_modules():
@@ -17,7 +19,8 @@ def hook_modules():
     settings = json.loads((toolkit_paths.CLAUDE_DIR / "settings.json").read_text())
     commands = [hook.get("command", "") for entries in settings.get("hooks", {}).values()
                 for entry in entries for hook in entry.get("hooks", [])]
-    return {pathlib.Path(script).stem for command in commands for script in HOOK_SCRIPT.findall(command)}
+    modules = {pathlib.Path(script).stem for command in commands for script in HOOK_SCRIPT.findall(command)}
+    return modules | {"handback_hook"}
 
 
 def imported_modules(path):
@@ -61,8 +64,11 @@ class HookModuleImportTest(unittest.TestCase):
         roots = [HANDBACK, *toolkit_paths.LIB_DIR.glob("*.py")]
         importers = sorted(import_closure(roots, hooks))
 
-        offenders = [f"{path.name} imports {module}" for path in importers
-                     for module in sorted(imported_modules(path) & (hooks - {path.stem}))]
+        offenders = []
+        for path in importers:
+            exempt_hooks = {path.stem, *DISPATCHED_HOOKS.get(path.stem, ())}
+            offenders += [f"{path.name} imports {module}"
+                          for module in sorted(imported_modules(path) & (hooks - exempt_hooks))]
 
         self.assertEqual([], offenders)
 

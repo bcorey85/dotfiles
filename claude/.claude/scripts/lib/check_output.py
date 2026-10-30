@@ -302,21 +302,21 @@ def is_django_settings_fault(command, output, changed_file_list):
 
 def check_verdict(command, code, output):
     """The one pass judgement on a finished check command: PASSED, FAILED (non-zero exit), FAILED_EXIT_ZERO (exit 0
-    while a runner summary reports failures, from a command with a step that can print its own summary
-    (`prints_own_runner_summary`): a wrapper swallowed the runner's exit code), NO_TESTS_RAN (exit 0 from a
-    test command whose output says no test ran: a filter that matched nothing, or `Ran 0 tests`) or NOT_RUN (`code`
-    None: the command timed out). It judges the exit code and the output only; whether a failure is a setup fault or
-    a defect is for the caller."""
+    while a runner summary reports failures, whatever the command: a wrapper swallowed the runner's exit code, or the
+    command printed a log), NO_TESTS_RAN (exit 0 from a test command whose output says no test ran: a filter that
+    matched nothing, judged only for a command with a step that can print its own summary
+    (`prints_own_runner_summary`), or `Ran 0 tests`) or NOT_RUN (`code` None: the command
+    timed out). It judges the exit code and the output only; whether a failure is a setup fault or a defect is for the
+    caller."""
     if code is None:
         return NOT_RUN
     if code != 0:
         return FAILED
 
     summaries = runner_summaries(output, limit=None)
-    prints_summary = prints_own_runner_summary(command)
-    if prints_summary and SUMMARY_FAILURE.search("\n".join(summaries)):
+    if SUMMARY_FAILURE.search("\n".join(summaries)):
         return FAILED_EXIT_ZERO
-    if prints_summary and matches_no_test(command, code, output):
+    if prints_own_runner_summary(command) and matches_no_test(command, code, output):
         return NO_TESTS_RAN
     if runs_tests(command) and NO_TESTS_RAN_OUTPUT.search(output):
         return NO_TESTS_RAN

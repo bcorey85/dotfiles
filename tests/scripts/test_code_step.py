@@ -49,6 +49,7 @@ import code_step_state  # noqa: E402
 import code_step_verification  # noqa: E402
 import coder_gate  # noqa: E402
 import criteria_verdict  # noqa: E402
+import full_check  # noqa: E402
 import plan_format  # noqa: E402
 import reviewed_tree  # noqa: E402
 
@@ -4097,10 +4098,12 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
     def test_other_test_scripts_are_run_not_skipped(self):
-        for command in ("npm run test:e2e", "npm run lint:fix", "npx vitest run src/a.test.ts"):
-            self.assertIsNone(code_step_verification.WHOLE_SUITE.match(command), command)
-        for command in ("cd backend && npm test", "npm run lint", "npx vitest run", "pytest", "ruff check"):
-            self.assertIsNotNone(code_step_verification.WHOLE_SUITE.match(command), command)
+        configured = "npm test && npm run lint"
+        for command in ("npm run test:e2e", "npm run lint:fix", "npm run build && node x.js",
+                        "npx vitest run src/a.test.ts"):
+            self.assertFalse(full_check.is_configured_check(command, configured), command)
+        for command in ("npm test", "npm run lint", "npm test && npm run lint"):
+            self.assertTrue(full_check.is_configured_check(command, configured), command)
         self.env["CODE_STEP_VERIFY_TIMEOUT"] = "5"
         self.set_verification("- [ ] **E2E**: `python3 -c 'raise SystemExit(3)'`")
         self.coder_round()
@@ -4984,6 +4987,23 @@ class CodeStepTest(unittest.TestCase):
         stop = {**self.state()["stop"], **record}
         self.set_state(stop=stop)
 
+    def age_first_wait(self, seconds):
+        # Moves the logged first wait of a resumed agent back in time, so the wait cap counts from there.
+        rows = self.run_events()
+        for row in rows:
+            if row["event"] == "resume-wait":
+                row["ts"] -= seconds
+        self.events_file().write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+    def log_aged_first_wait(self, seconds=100):
+        # Logs the first wait of a resumed agent as it stood `seconds` ago, for the stop the saved run holds now.
+        state = self.state()
+        events_file = self.events_file()
+        row = {"v": 1, "ts": time.time() - seconds, "event": "resume-wait", "session_id": state["sessionId"],
+               "stop_at": state["stop"]["at"]}
+        with events_file.open("a") as events:
+            events.write(json.dumps(row) + "\n")
+
     def set_gate_result(self, result):
         gate_path = self.repo / ".git/coder-gate.json"
         gate = json.loads(gate_path.read_text())
@@ -5213,6 +5233,7 @@ class CodeStepTest(unittest.TestCase):
     def test_tick_runs_a_whole_suite_command_and_refuses_when_it_fails(self):
         self.start_phase_one()
         self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npx vitest run`\n")
         self.put_failing_npx_first_on_path(["boom"])
 
         out = self.step("tick", "1")
@@ -5762,12 +5783,15 @@ class CodeStepTest(unittest.TestCase):
             with self.subTest(span=span):
                 self.assertIsNone(code_step_verification.COMMAND_START.match(span))
 
-    def test_a_whole_suite_command_with_a_variable_prefix_is_still_skipped(self):
+    def test_a_whole_suite_command_with_a_variable_prefix_runs(self):
         section = "#### Automated Verification:\n\n- [ ] **All**: `CI=1 npm test`\n\n#### Manual Verification:\n"
 
-        results, skipped, unparsed = code_step_verification.run_verification_commands(self.repo, section)
+        with unittest.mock.patch.object(full_check, "configured_check_command", return_value="npm test"), \
+                unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+            results, skipped, unparsed = code_step_verification.run_verification_commands(self.repo, section)
 
-        self.assertEqual(([], ["CI=1 npm test"], []), (results, skipped, unparsed))
+        self.assertEqual(([], []), (skipped, unparsed))
+        self.assertEqual(1, len(results))
 
     @staticmethod
     def verification_section(command):
@@ -5782,7 +5806,7 @@ class CodeStepTest(unittest.TestCase):
         (ran_command, code, output), = results
         self.assertEqual(command, ran_command)
         self.assertNotEqual(0, code)
-        self.assertIn("test filter matched no test", output)
+        self.assertIn("the run exits 0 but ran no test", output)
 
     def test_each_search_line_holds_or_fails_by_its_wording_and_whether_the_search_hits(self):
         ban_note = "unless its text says it checks presence"
@@ -5936,26 +5960,29 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: wait", out)
         self.assertNotIn("has not handed back in", out)
-        self.assertIsNotNone(self.state()["stop"].get("waitAt"))
+        first_waits = self.events_named("resume-wait")
+        self.assertEqual([self.state()["stop"]["at"]], [event["stop_at"] for event in first_waits])
+        self.assertGreater(first_waits[0]["ts"], self.state()["stop"]["at"])
 
     def test_repeated_waits_on_a_resumed_coder_end_in_the_cap_stop(self):
         self.stop_the_coder_on_a_blocked_report()
         self.send_message("a1")
         self.wait_env(1, "0.2", waits=3)
         self.step("resume")
-        self.update_stop(waitAt=time.time() - 100)
+        self.age_first_wait(100)
         out = self.step("resume")
         self.assertIn("ACTION: stop", out)
         self.assertIn("has not handed back in", out)
 
-    def test_the_first_wait_time_of_a_resumed_coder_is_saved_once(self):
+    def test_the_first_wait_time_of_a_resumed_coder_is_logged_once(self):
         self.stop_the_coder_on_a_blocked_report()
         self.send_message("a1")
         self.wait_env(1, "0.2")
         self.step("resume")
-        first_wait_at = self.state()["stop"]["waitAt"]
+        first_wait_at = self.events_named("resume-wait")[0]["ts"]
         self.step("resume")
-        self.assertEqual(first_wait_at, self.state()["stop"]["waitAt"])
+        first_waits = self.events_named("resume-wait")
+        self.assertEqual([first_wait_at], [event["ts"] for event in first_waits])
 
     def test_the_first_wait_time_of_a_resumed_coder_survives_a_kill_during_the_wait(self):
         self.stop_the_coder_on_a_blocked_report()
@@ -5968,20 +5995,29 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual(1, done.returncode)
         self.assertIn("killed during the wait", done.stderr)
-        self.assertIsNotNone(self.state()["stop"].get("waitAt"))
+        self.assertEqual([self.state()["stop"]["at"]], [event["stop_at"] for event in self.events_named("resume-wait")])
 
-    def test_the_hand_back_of_a_resumed_coder_clears_the_saved_first_wait_time(self):
+    def test_the_hand_back_of_a_resumed_coder_ends_its_first_wait_and_a_later_resume_logs_a_new_one(self):
         self.stop_the_coder_on_a_blocked_report()
         self.send_message("a1")
         self.wait_env(1, "0.2")
         self.step("resume")
-        self.assertIsNotNone(self.state()["stop"].get("waitAt"))
+        first_stop_at = self.state()["stop"]["at"]
+        self.assertEqual([first_stop_at], [event["stop_at"] for event in self.events_named("resume-wait")])
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
         self.assertIn("AGENT: review-loop", self.step("resume"))
         state = self.state()
         self.assertEqual("review", state["stage"])
         self.assertNotIn("stop", state)
+
+        self.set_state(stage="stopped", stop={"kind": "coder-resumable", "at": time.time(), "agentId": "a1",
+                                              "coderStage": "coder"})
+        self.send_message("a1")
+        self.step("resume")
+
+        stop_ats = [event["stop_at"] for event in self.events_named("resume-wait")]
+        self.assertEqual([first_stop_at, self.state()["stop"]["at"]], stop_ats)
 
     def test_after_coder_says_the_resumed_coder_has_not_handed_back_when_it_runs_with_no_wait(self):
         self.stop_the_coder_on_a_blocked_report()
@@ -6120,21 +6156,23 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: wait", waiting_out)
         self.assertNotIn("no review pending", waiting_out)
         self.assertEqual("stopped", self.state()["stage"])
-        first_wait_at = self.state()["stop"]["waitAt"]
+        first_wait_at = self.events_named("resume-wait")[0]["ts"]
         self.assertIn("ACTION: wait", self.step("resume"))
-        self.assertEqual(first_wait_at, self.state()["stop"]["waitAt"])
+        self.assertEqual([first_wait_at], [event["ts"] for event in self.events_named("resume-wait")])
 
-        self.update_stop(waitAt=time.time() - 100)
+        self.age_first_wait(100)
         cap_stop_out = self.step("resume")
         self.assertIn("ACTION: stop", cap_stop_out)
         self.assertIn("has not handed back in", cap_stop_out)
-        self.assertNotIn("waitAt", self.state()["stop"])
 
         self.send_message("r1")
         again_out = self.step("resume")
         self.assertIn("ACTION: wait", again_out)
         self.assertNotIn("has not handed back in", again_out)
-        self.assertIn("waitAt", self.state()["stop"])
+        first_waits = self.events_named("resume-wait")
+        self.assertEqual(2, len(first_waits))
+        self.assertEqual(self.state()["stop"]["at"], first_waits[-1]["stop_at"])
+        self.assertGreater(first_waits[-1]["ts"], first_waits[0]["ts"] + 99)
 
         self.hook("review-loop", self.LOOP_OK, agent_id="r1")
         out = self.step("resume")
@@ -6411,6 +6449,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("0 command(s) green", done)
 
     def test_a_phase_that_lists_commands_keeps_the_green_count_in_the_done_line(self):
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npx vitest run`\n")
         self.finish_phase_one()
         done = next(line for line in self.said().splitlines() if line.startswith("Phase 1 marked done"))
         self.assertIn("Verification run: 1 command(s) green (git grep -n --untracked console.log", done)
@@ -6457,13 +6496,16 @@ class CodeStepTest(unittest.TestCase):
         self.send_message("a1")
         self.wait_env(1, "0.2", waits=3)
         self.step("resume")
-        self.update_stop(waitAt=time.time() - 100)
+        self.age_first_wait(100)
         self.assertIn("has not handed back in", self.step("resume"))
-        self.assertNotIn("waitAt", self.state()["stop"])
+        spent_wait_at = self.events_named("resume-wait")[0]["ts"]
         self.send_message("a1")
         out = self.step("resume")
         self.assertIn("ACTION: wait", out)
         self.assertNotIn("has not handed back in", out)
+        new_first_wait = self.events_named("resume-wait")[-1]
+        self.assertEqual(self.state()["stop"]["at"], new_first_wait["stop_at"])
+        self.assertGreater(new_first_wait["ts"], spent_wait_at + 99)
 
     # ---------- a stale save that undid the hook's flip does not lose the resumed coder's report ----------
 
@@ -6494,8 +6536,11 @@ class CodeStepTest(unittest.TestCase):
 
     HOOK_FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 
+    def events_file(self):
+        return self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
+
     def run_events(self):
-        events_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
+        events_file = self.events_file()
         return [json.loads(line) for line in events_file.read_text().splitlines()] if events_file.exists() else []
 
     def events_named(self, event_name):

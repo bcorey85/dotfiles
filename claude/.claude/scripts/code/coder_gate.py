@@ -32,14 +32,16 @@ or a test hangs. The whole run has a time budget (GATE_BUDGET_SECONDS) under the
 still ends with a verdict: a command gets at most the budget left, and one that cannot start in what is left is stored
 as not-started, apart from failed, and never denies the call (a run with no failure, command error or setup fault then
 has the result "timeout"). A failure that shows the environment cannot run the check (exit 126 or 127, a runner that
-cannot start the program, no package manifest where it ran, a run that found no test to run, a `manage.py test` run
-that exits 0 after running none, a package-manager or engine version mismatch, a missing module from outside the repo
-with no failed test, or, under pytest, a Django settings error with no failed test unless the coder changed a settings
-module or an app config) is a setup fault: it never denies the call or counts toward the cap, a run with only setup
-faults has the result "setup-fault", and the stamp names each one with its output tail. A denial lists the failing
-tests above the output tail. With no gate, a gate older than 6 hours, another agent type, or a keyed gate that the
-coder was not launched for (another run, another dispatch, or no launch on record), the hand-back goes through
-untouched. Parallel coders take turns.
+cannot start the program, no package manifest where it ran, a run that found no test to run, an exit 0 from a test
+command or from a command that names `manage.py test`, with `Ran 0 tests` or no tests ran output, a
+package-manager or engine version mismatch, a missing module
+from outside the repo with no failed test, or, under pytest, a Django settings error with no failed test unless the
+coder changed a settings module or an app config) is a setup fault: it never denies the call or counts toward the
+cap, a run with only setup faults has the result "setup-fault", and the stamp names each one with its output tail.
+Two exit-0 runs still deny: one whose runner summary counts failures, and a filtered run that matched no test. A
+denial lists the failing tests above the output tail. With no gate, a gate older than 6 hours, another agent type, or
+a keyed gate that the coder was not launched for (another run, another dispatch, or no launch on record), the
+hand-back goes through untouched. Parallel coders take turns.
 A failure whose output names a path that does not exist where the command ran (pytest's `file or directory not
 found`, python's `can't open file`, a shell or `cd` error) is a command error: the command is wrong, not the code. It
 never denies the call or counts toward the cap, a run whose only failures are command errors has the result
@@ -54,6 +56,7 @@ import sys
 import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
+import check_output
 import script_utils
 from check_output import (
     failing_test_lines,
@@ -63,7 +66,7 @@ from check_output import (
     missing_path,
     tail_with_failing_tests,
 )
-from check_scope import scanned_command
+from check_scope import names_django_test_run, scanned_command
 from source_paths import is_runnable_test_file
 
 MAX_DENIES = 3
@@ -91,9 +94,6 @@ WHOLE_PACKAGE_REASON = ("This command runs a whole test suite, lints a whole pac
                         "typecheck, and lint and tests for only the files you changed. The review loop runs the full "
                         "check once, at its end.")
 FILES_PLACEHOLDER = re.compile(r"\{(files|tests|jest-tests)(?::([^{}]*))?\}")
-# manage.py test exits 0 when its labels hold no Django tests, as pytest-style tests do: that run gave no test result.
-DJANGO_TEST_COMMAND = re.compile(r"\bmanage\.py\s+test\b")
-DJANGO_RAN_NO_TESTS = re.compile(r"^Ran 0 tests\b", re.MULTILINE)
 # What a command did at the gate. A coder's stored "commands" map holds {command: {"outcome": ..., "detail": ...}} for
 # each command that did not pass: the detail is the output tail of a timeout or setup fault, the missing-path line of a
 # command error, else "".
@@ -308,14 +308,16 @@ def run_commands(gate, budget_seconds=None):
 
         code, stdout, stderr = script_utils.run_process(filled_command, gate["repoRoot"], env=environment,
                                                         timeout=command_timeout)
-        if code is None:
+        verdict = check_output.check_verdict(command, code, stdout + stderr)
+        if verdict == check_output.NOT_RUN:
             timed_out.append((command, stdout + stderr, command_timeout))
-            continue
-        if code != 0:
+        elif verdict == check_output.FAILED:
             failures.append((command, f"exit {code}", stdout + stderr))
-            continue
-
-        if DJANGO_TEST_COMMAND.search(command) and DJANGO_RAN_NO_TESTS.search(stdout + stderr):
+        elif verdict == check_output.FAILED_EXIT_ZERO:
+            failures.append((command, "exit 0", stdout + stderr + check_output.SUMMARY_FAILURE_NOTE))
+        elif verdict == check_output.NO_TESTS_RAN:
+            failures.append((command, "exit 0", stdout + stderr + check_output.NO_TEST_MATCHED_NOTE))
+        elif names_django_test_run(command) and check_output.NO_TESTS_RAN_OUTPUT.search(stdout + stderr):
             failures.append((command, "exit 0", stdout + stderr))
     return failures, skipped, timed_out, not_started
 

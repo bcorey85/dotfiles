@@ -455,7 +455,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
 
     def test_a_manage_py_test_run_that_exits_0_after_running_no_test_is_a_setup_fault_not_a_pass(self):
-        command = """echo manage.py test; echo "Ran 0 tests in 0.000s"; exit 0"""
+        (self.repo / "manage.py").write_text('print("Ran 0 tests in 0.000s")\n')
+        command = "python3 manage.py test app.tests"
         self.gate_set(command)
 
         hook = self.gate_hook()
@@ -464,6 +465,23 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual("setup-fault", coder["result"])
         self.assertEqual([command], commands_with(coder, "setup-fault"))
         self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+
+    def test_a_command_that_only_names_manage_py_test_and_prints_ran_0_tests_is_a_setup_fault(self):
+        (self.repo / "manage.py").write_text('print("Ran 0 tests in 0.000s")\n')
+        commands = {
+            "echo": """echo manage.py test; echo "Ran 0 tests in 0.000s"; exit 0""",
+            "no tests ran": """echo manage.py test; echo "no tests ran in 0.01s"; exit 0""",
+            "bash -c wrapper": "bash -c 'python3 manage.py test app.tests'",
+        }
+        for name, command in commands.items():
+            with self.subTest(name):
+                self.gate_set(command)
+
+                self.gate_hook()
+
+                coder = self.stored_gate()["coders"]["a1"]
+                self.assertEqual("setup-fault", coder["result"])
+                self.assertEqual([command], commands_with(coder, "setup-fault"))
 
     def test_a_manage_py_test_run_that_ran_tests_passes(self):
         command = """echo manage.py test; echo "Ran 10 tests in 0.1s"; exit 0"""

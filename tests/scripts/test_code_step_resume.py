@@ -827,7 +827,8 @@ class ResumeTest(base.CodeStepTest):
     def test_a_resumed_coder_that_reaches_the_cap_again_keeps_the_resume_text_and_has_no_stop_reason(self):
         self.stop_the_coder_at_the_wait_cap(launched_as="c1")
         self.send_message("c1")
-        self.update_stop(kind="coder-resumable", at=time.time() - 100, waitAt=time.time() - 100)
+        self.update_stop(kind="coder-resumable", at=time.time() - 100)
+        self.log_aged_first_wait()
         self.wait_env(1, "0.2")
 
         out = self.step("resume")
@@ -847,7 +848,8 @@ class ResumeTest(base.CodeStepTest):
         self.wait_env(1, "0.2")
         self.assertIn("ACTION: stop", self.step("resume"))
         self.send_message("ask1")
-        self.update_stop(kind="coder-resumable", at=time.time() - 100, waitAt=time.time() - 100)
+        self.update_stop(kind="coder-resumable", at=time.time() - 100)
+        self.log_aged_first_wait()
 
         self.assertIn("ACTION: stop", self.step("resume"))
 
@@ -1058,6 +1060,18 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("ACTION: stop", out)
         self.assertIn("has keys this code-step does not know: resumableCoderId, stopReason", out)
         self.assertEqual(before, self.state_bytes())
+
+    def test_a_stop_record_with_the_wait_at_key_of_the_earlier_code_step_loads_drops_it_and_resumes(self):
+        self.stop_the_coder_at_the_wait_cap(launched_as="a1")
+        self.send_message("a1")
+        self.update_stop(kind="coder-resumable", at=time.time() - 100, agentId="a1", waitAt=time.time() - 50)
+        self.wait_env(1, "0.2")
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: wait", out)
+        self.assertNotIn("waitAt", self.state()["stop"])
+        self.assertEqual(1, len(self.events_named("resume-wait")))
 
     # ---------- a stale phase ----------
 

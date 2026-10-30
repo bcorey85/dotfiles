@@ -83,6 +83,19 @@ class QualityCheckCapTest(unittest.TestCase):
                                           "edited since."), reason)
         self.assertNotIn("#skip-quality-cap", reason)
 
+    def test_a_check_check_scope_reads_through_a_wrapper_or_by_crate_is_capped(self):
+        for command in ("python3 -m pytest", "cargo nextest run", "cargo test -p core", "cargo test --tests",
+                        "npm test update"):
+            with self.subTest(command=command):
+                self.post(command)
+                self.assert_denied(self.pre(command))
+
+    def test_a_cargo_test_that_names_a_test_target_is_not_capped(self):
+        for command in ("cargo test --lib", "cargo test empty_input", "cargo test --test integration"):
+            with self.subTest(command=command):
+                self.post(command)
+                self.assert_allowed(self.pre(command))
+
     def test_a_subagents_first_run_is_allowed_after_another_agents_run_on_the_same_tree(self):
         self.post("cargo test", agent_id="coder-1", agent_type="coder")
         self.assert_denied(self.pre("cargo test", agent_id="coder-1", agent_type="coder"))

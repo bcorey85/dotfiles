@@ -47,8 +47,10 @@ def without_negation(span):
 
 
 def without_leading_cd_and_env(command):
-    """The command with any NAME=value words and a `cd <dir> &&` it starts with taken off, for judging what it is."""
-    unassigned = script_utils.without_leading_env_assignments(command)
+    """The command with a leading `env`, any NAME=value words and a `cd <dir> &&` it starts with taken off, for judging
+    what it is."""
+    without_env = re.sub(r"^env\s+", "", command.strip())
+    unassigned = script_utils.without_leading_env_assignments(without_env)
     return re.sub(r"^cd \S+ && ", "", unassigned)
 
 

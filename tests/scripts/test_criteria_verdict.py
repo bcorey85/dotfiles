@@ -61,6 +61,11 @@ class ItemVerdictTest(unittest.TestCase):
         line = "- [ ] **Prohibition**: no match, the call must not exist - `git grep -n x -- src`"
         self.assertTrue(criteria_verdict.is_search_ban("git grep -n x -- src", line))
 
+    def test_a_search_behind_env_with_assignments_is_a_ban(self):
+        command = "env LC_ALL=C rg -n foo src/"
+        line = f"- [ ] **B**: no hits — `{command}`"
+        self.assertTrue(criteria_verdict.is_search_ban(command, line))
+
 
 if __name__ == "__main__":
     unittest.main()

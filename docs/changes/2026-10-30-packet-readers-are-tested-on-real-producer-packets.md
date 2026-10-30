@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-- `tests/scripts/fixtures/packets/` holds 15 captures: review-loop hand-backs (converged clean, fixed and with
+- `tests/scripts/fixtures/packets/` holds 13 captures: review-loop hand-backs (converged clean, fixed and with
   asks, cap reached, critical blocker, plan impact), full-check results (passed, failed, unverified, not run) and
   coder reports (behavior, why, plan impact). Each is kept as captured, with home paths replaced by `/home/captured`.
 - `test_producer_packets.py` runs `handback.load`, the review-fix packet route, the full-check result readers and

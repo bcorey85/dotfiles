@@ -8,7 +8,11 @@ file, found with `git grep` in tracked files; files under docs/plans/ are never 
 declaration lines are left out. A `changed` symbol (declared on a removed and an added line) whose removed and added
 declaration lines are equal once number and string literals are masked changed only in a literal value: only the
 prose lines that also hold, as a whole word, a literal of the removed line that the added line lacks are listed.
-Renamed, removed and body-changed symbols, and every other changed symbol, keep all their lines.
+Renamed, removed and body-changed symbols, and every other changed symbol, keep all their lines. A declaring hunk side
+whose non-blank lines appear, stripped and in order with none between them, on the other side of one hunk only moved,
+unless its hunk declares different names on its two sides: its names count as unchanged, and its hunk header does too
+when both sides of the hunk only moved and each starts, at its first declaration, at or above the header's own indent
+(a whole moved symbol; a reorder inside the header's symbol starts deeper).
 
 Exit 0: no hit, or every hit was shown on an earlier run. Exit 1: some hit is new (hits are printed up to 60 lines,
 the symbols with a new hit first, and inside each the new ones first, marked; the rest are counted and come back on
@@ -107,11 +111,11 @@ def declared_names(line, suffix):
     return names
 
 
-def declared_in(file_diff, side, suffix, comment_numbers):
+def declared_in(hunks, side, suffix, comment_numbers):
     """{name: [declaration lines]} for the names declared on the `removed` or `added` lines of a file's hunks. A
     comment line of its file, or a string line of a Python file (its number is in comment_numbers), declares
     nothing."""
-    lines = [text for hunk in file_diff.hunks for number, text in getattr(hunk, side) if number not in comment_numbers]
+    lines = [text for hunk in hunks for number, text in getattr(hunk, side) if number not in comment_numbers]
     declarations = {}
     for text in lines:
         for name in declared_names(text, suffix):
@@ -136,6 +140,50 @@ def old_literals_of_value_only_change(removed_lines, added_lines):
     removed_literals = {literal for text in removed_lines for literal in source_text.literals_of(text) if literal}
     added_literals = {literal for text in added_lines for literal in source_text.literals_of(text)}
     return sorted(removed_literals - added_literals)
+
+
+def stripped_run(side_lines):
+    """The stripped non-blank lines of a hunk side as one string, each line closed by a newline and the first opened by
+    one, so a substring search matches whole lines only."""
+    texts = [text.strip() for _, text in side_lines if text.strip()]
+    return "\n" + "".join(f"{text}\n" for text in texts)
+
+
+def side_runs(diff_files, side):
+    """The stripped run of every hunk's `removed` or `added` side in the diff."""
+    return [stripped_run(getattr(hunk, side)) for file_diff in diff_files for hunk in file_diff.hunks]
+
+
+def only_moved(side_lines, suffix, other_side_runs):
+    """True when one side of a hunk edited nothing: it has no text, or it declares a name and all its text, doc lines
+    included, appears in order with no line between on the other side of one hunk. A side that declares nothing is no
+    moved symbol, so a lone `return` that reappears elsewhere stays an edit."""
+    run = stripped_run(side_lines)
+    if run == "\n":
+        return True
+
+    if not any(declared_names(text, suffix) for _, text in side_lines):
+        return False
+
+    return any(run in other_run for other_run in other_side_runs)
+
+
+def renames_in_place(hunk, suffix):
+    """True when both sides of a hunk declare and the names differ: two functions that swap names over their bodies
+    show as such hunks, whose lines each reappear in the other."""
+    removed_names = {name for _, text in hunk.removed for name in declared_names(text, suffix)}
+    added_names = {name for _, text in hunk.added for name in declared_names(text, suffix)}
+    return bool(removed_names and added_names and removed_names != added_names)
+
+
+def declares_no_deeper(side_lines, suffix, header_indent):
+    """True when the first declaring line of the side sits at or above the hunk header's indent, or the side declares
+    nothing. A whole moved symbol starts there, whatever it nests; a body reorder starts deeper, in the header's own
+    symbol."""
+    for _, text in side_lines:
+        if declared_names(text, suffix):
+            return source_text.indent_of(text) <= header_indent
+    return True
 
 
 def comment_numbers_of_text(text, path):
@@ -164,29 +212,61 @@ def comment_lines_of_side(root, base, path, side):
     return comment_numbers_of_text(text, path)
 
 
+def classify_hunk(hunk, suffix, comments, side_runs_of_diff):
+    """(the names a hunk edited, the names of its header that count as body changed). `comments` and
+    `side_runs_of_diff` are (removed, added) pairs. A side that only moved edits nothing; the header's names are
+    left out when both sides only moved and start at or above the header's indent."""
+    removed_comments, added_comments = comments
+    removed_runs, added_runs = side_runs_of_diff
+    renamed = renames_in_place(hunk, suffix)
+    removal_moved = not renamed and only_moved(hunk.removed, suffix, added_runs)
+    addition_moved = not renamed and only_moved(hunk.added, suffix, removed_runs)
+
+    edited = set()
+    if not removal_moved:
+        edited.update(declared_in([hunk], "removed", suffix, removed_comments))
+    if not addition_moved:
+        edited.update(declared_in([hunk], "added", suffix, added_comments))
+
+    header_indent = source_text.indent_of(hunk.context)
+    moved_beside_header = (removal_moved and addition_moved
+                           and declares_no_deeper(hunk.removed, suffix, header_indent)
+                           and declares_no_deeper(hunk.added, suffix, header_indent))
+    header_names = [] if moved_beside_header else declared_names(hunk.context, suffix)
+
+    return edited, header_names
+
+
 def changed_symbols(diff_files, root, base):
     """{name: how it changed} for the diff's code files. `removed`: declared on a removed line and on no added
     line of any of the diff's files. `changed`: declared on both. `body changed`: named by a hunk header. The removed
-    and added names are pooled over all the files, so a symbol moved from one file to another is `changed`. A
-    declaration on a comment or string line is no declaration. A name keeps the label that comes first in
-    SYMBOL_ORDER. Names shorter than MIN_NAME_LENGTH are left out. Also {name: old literals} for each `changed` name
-    whose removed and added declaration lines differ only in their literal values."""
+    and added names are pooled over all the files, so a symbol moved from one file to another and edited is `changed`;
+    one that only moved has no label, and neither does the name in the header of a hunk that only moved and starts at
+    or above the header's indent. A declaration on a comment or string line is no declaration. A name keeps the label
+    that comes first in SYMBOL_ORDER. Names shorter than MIN_NAME_LENGTH are left out. Also {name: old literals} for
+    each `changed` name whose removed and added declaration lines differ only in their literal values."""
     removed = {}
     added = {}
+    edited = set()
     body_changed = set()
+    removed_runs = side_runs(diff_files, "removed")
+    added_runs = side_runs(diff_files, "added")
     for file_diff in diff_files:
         suffix = suffix_of(file_diff.path)
         if suffix not in DECLARATION_PATTERNS:
             continue
 
-        merge_declarations(removed, declared_in(file_diff, "removed", suffix,
-                                                comment_lines_of_side(root, base, file_diff.path, "removed")))
-        merge_declarations(added, declared_in(file_diff, "added", suffix,
-                                              comment_lines_of_side(root, base, file_diff.path, "added")))
+        removed_comments = comment_lines_of_side(root, base, file_diff.path, "removed")
+        added_comments = comment_lines_of_side(root, base, file_diff.path, "added")
+        merge_declarations(removed, declared_in(file_diff.hunks, "removed", suffix, removed_comments))
+        merge_declarations(added, declared_in(file_diff.hunks, "added", suffix, added_comments))
         for hunk in file_diff.hunks:
-            body_changed.update(declared_names(hunk.context, suffix))
+            hunk_edited, header_names = classify_hunk(hunk, suffix, (removed_comments, added_comments),
+                                                      (removed_runs, added_runs))
+            edited.update(hunk_edited)
+            body_changed.update(header_names)
 
-    both = removed.keys() & added.keys()
+    both = removed.keys() & added.keys() & edited
     labels = {}
     for label, names in (("body changed", body_changed), ("changed", both), ("removed", removed.keys() - added.keys())):
         labels.update(dict.fromkeys(names, label))

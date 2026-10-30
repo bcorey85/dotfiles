@@ -58,6 +58,7 @@ import time
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
 import check_output
 import script_utils
+import shell_command
 from check_output import (
     failing_test_lines,
     failing_test_quote,
@@ -89,6 +90,10 @@ TIMEOUT_TAIL_CHARS = 600
 GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
 # The gate's state file, kept in the repo's git dir.
 CODER_GATE_FILE = "coder-gate.json"
+STALE_PROSE_SCRIPT = "stale_prose.py"
+# The outcome of a stale-prose command that found a hit, and the scoped result of a run that passed.
+STALE_PROSE_HIT_OUTCOME = "exit 1"
+SCOPED_PASSED = "passed"
 
 WHOLE_PACKAGE_REASON = ("This command runs a whole test suite, lints a whole package or runs a build. Run the "
                         "typecheck, and lint and tests for only the files you changed. The review loop runs the full "
@@ -402,12 +407,16 @@ def run_scoped_tests(repo_root, commands, gate_env, log_path):
     if failures or timed_out:
         timed_out_outputs = [(command, "timeout", output) for command, output, _timeout in timed_out]
         script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
-    log_note = f"; full output: {log_path}"
     failures, setup_faults, command_errors = sort_failures(failures, repo_root)
+    return scoped_result(failures, command_errors, setup_faults, timed_out, skipped, commands, log_path)
 
-    outcome = gate_outcome(failures, command_errors, setup_faults, timed_out)
+
+def scoped_result(real_failures, command_errors, setup_faults, timed_out, skipped, commands, log_path):
+    # (one-line result, the real failures' tails) of a sorted scoped run.
+    log_note = f"; full output: {log_path}"
+    outcome = gate_outcome(real_failures, command_errors, setup_faults, timed_out)
     if outcome == RESULT_FAILED:
-        return scoped_test_failure(failures, log_path)
+        return scoped_test_failure(real_failures, log_path)
     if outcome == RESULT_COMMAND_ERROR:
         command_error_text = "; ".join(f"{command} ({line})" for command, line in command_errors)
         return "command error: " + command_error_text + log_note, []
@@ -417,7 +426,25 @@ def run_scoped_tests(repo_root, commands, gate_env, log_path):
         return "not run (timeout): " + "; ".join(command for command, _output, _timeout in timed_out) + log_note, []
     if len(skipped) == len(commands):
         return "not run (no changed file matches)", []
-    return "passed", []
+    return SCOPED_PASSED, []
+
+
+def run_stale_prose_check(repo_root, commands, gate_env, log_path):
+    # (result, hit outputs, script failure tails). A hit is a command that exited 1, its whole output kept: it asks
+    # for a reading, not a code fix. The result and the tails come from every other outcome, as run_scoped_tests
+    # reports them.
+    gate = {"commands": commands, "repoRoot": repo_root,
+            "env": script_utils.environment_from_assignments(gate_env)}
+    failures, skipped, timed_out, _not_started = run_commands(gate)
+    if failures or timed_out:
+        timed_out_outputs = [(command, "timeout", output) for command, output, _timeout in timed_out]
+        script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
+    hit_outputs = [output for _command, outcome, output in failures if outcome == STALE_PROSE_HIT_OUTCOME]
+    other_failures = [failure for failure in failures if failure[1] != STALE_PROSE_HIT_OUTCOME]
+    real_failures, setup_faults, command_errors = sort_failures(other_failures, repo_root)
+    result, script_failure_tails = scoped_result(real_failures, command_errors, setup_faults, timed_out, skipped,
+                                                 commands, log_path)
+    return result, hit_outputs, script_failure_tails
 
 
 def scoped_test_failure(failures, log_path):
@@ -434,6 +461,13 @@ def scoped_test_failure(failures, log_path):
     if failing_tests:
         result += "; failing tests: " + " | ".join(failing_tests)
     return f"{result}; full output: {log_path}", tails
+
+
+def is_stale_prose_check(command):
+    # The gate command that lists prose naming a changed symbol: a hit asks for a reading, not a code fix. It runs the
+    # script as `python3 <dir>/stale_prose.py --base <sha>`, so a word of the command must be the script's own file.
+    simple_commands = shell_command.resolved_command_words(command)
+    return any(pathlib.PurePath(word).name == STALE_PROSE_SCRIPT for words in simple_commands for word in words)
 
 
 def denial(failures):

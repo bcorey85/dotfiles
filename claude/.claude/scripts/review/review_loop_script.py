@@ -65,7 +65,7 @@ SCOPED_TESTS_LOG = "scoped-tests.log"
 STALE_PROSE_LOG = "stale-prose.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import change_removal
-import code_step_core
+import code_step_store
 import coder_gate
 import full_check
 import full_check_gate
@@ -967,7 +967,7 @@ def main(argv=None):
     outcome = None
     try:
         header, handoff = read_prompt(args.prompt_file)
-        run_state = code_step_core.read_state_file(pathlib.Path(args.state_dir))
+        run_state = code_step_store.read_state_file(pathlib.Path(args.state_dir))
         gate_commands = run_state.gate_commands if run_state else []
         outcome = run_loop(repo, out, args.session, header, handoff, progress, gate_commands)
         message = packet_message(outcome)

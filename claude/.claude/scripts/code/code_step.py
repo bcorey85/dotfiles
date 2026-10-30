@@ -102,7 +102,6 @@ from code_step_core import (
     CODER,
     RESUME_VERB,
     REVIEW_AGAIN_INVOKE,
-    StateFileError,
     ask_user,
     awaited_agent_id,
     awaited_handback,
@@ -114,7 +113,6 @@ from code_step_core import (
     coder_changed_files,
     current_phase_text,
     dispatch_since,
-    drop_state,
     emit,
     file_hashes,
     guarded_verb_runs,
@@ -141,7 +139,6 @@ from code_step_core import (
     snapshot_part,
     stale_phase_reason,
     state_dir,
-    state_text,
     stop_kind,
     stop_review_script,
     stop_with_question,
@@ -197,7 +194,8 @@ from code_step_start import (
     resume_text_refusal,
     stopped_run_restart_instruction,
 )
-from code_step_state import Stage, StopKind
+from code_step_state import Stage, StateFileError, StopKind
+from code_step_store import drop_state, state_text
 from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
 from code_step_verification import verification_format_failure
 

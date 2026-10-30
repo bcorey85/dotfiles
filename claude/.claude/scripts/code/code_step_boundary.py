@@ -1,8 +1,9 @@
 """code_step_boundary.py: the part of code_step.py that guards the plan's acceptance criteria and ends a phase: the
 saved criteria copy, the phase boundary and the closing verbs tick and verify.
 
-Imports run one way: code_step_state, code_step_routes, code_step_core, code_step_verification, code_step_boundary,
-code_step_closing, code_step_hooks, code_step_gates, code_step_start, code_step_report, code_step_review, code_step.
+Imports run one way: code_step_state, code_step_routes, code_step_store, code_step_core, code_step_verification,
+code_step_boundary, code_step_closing, code_step_hooks, code_step_gates, code_step_start, code_step_report,
+code_step_review, code_step.
 The phase-end block text is in code_step_phase_end; the Automated Verification reader is in code_step_verification,
 and skill-done in code_step_closing."""
 import contextlib
@@ -31,7 +32,6 @@ from code_step_core import (
     emit,
     file_hashes,
     is_dispatch_open,
-    load_aborted_plan_state,
     load_handback,
     load_state,
     repo_root_or_exit,
@@ -45,6 +45,7 @@ from code_step_core import (
 )
 from code_step_phase_end import block_a, block_b_or_c, manual_groups_of
 from code_step_state import Stage
+from code_step_store import load_aborted_plan_state
 from code_step_usage import VERB_USAGES
 from code_step_verification import (
     VERIFICATION_ITEM_SHAPE,

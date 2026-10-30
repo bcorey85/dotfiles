@@ -24,7 +24,7 @@ CODE_STEP_MODULES = ("code_step_core.py", "code_step_boundary.py", "code_step_ho
                      "code_step_start_args.py", "code_step_concentration.py", "code_step_phase_end.py",
                      "code_step_usage.py", "code_step_asks.py", "review_asks.py", "code_step_state.py",
                      "code_step_review_stops.py", "code_step_verification.py", "code_guidance.py",
-                     "code_step_routes.py")
+                     "code_step_routes.py", "code_step_store.py")
 # The lib modules a copied coder_gate.py or code-step script imports.
 CODE_STEP_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "makefile_text.py", "test_run_output.py",
                          "check_output.py", "check_scope.py", "numstat.py", "source_paths.py", "linked_installs.py",

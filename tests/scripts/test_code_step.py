@@ -47,6 +47,7 @@ import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
 import code_step_state  # noqa: E402
+import code_step_store  # noqa: E402
 import code_step_verification  # noqa: E402
 import coder_gate  # noqa: E402
 import criteria_verdict  # noqa: E402
@@ -132,7 +133,7 @@ def run_in_process(cwd, env, args, stdin):
     try:
         with contextlib.ExitStack() as patches:
             patches.enter_context(unittest.mock.patch.dict(os.environ, env, clear=True))
-            patches.enter_context(unittest.mock.patch.dict(code_step_core.STATE_DIRS, clear=True))
+            patches.enter_context(unittest.mock.patch.dict(code_step_store.STATE_DIRS, clear=True))
             toolkit_names = (
                 ("CLAUDE_DIR", claude_dir),
                 ("SCRIPTS_DIR", claude_dir / "scripts"),

@@ -24,7 +24,8 @@ codeStepFiles=(claude/.claude/scripts/code/code_step.py claude/.claude/scripts/c
     claude/.claude/scripts/code/code_step_gates.py claude/.claude/scripts/code/code_step_start.py
     claude/.claude/scripts/code/code_step_report.py claude/.claude/scripts/code/code_step_review.py
     claude/.claude/scripts/code/code_step_review_stops.py claude/.claude/scripts/code/code_step_state.py
-    claude/.claude/scripts/code/code_step_routes.py claude/.claude/scripts/lib/plan_format.py)
+    claude/.claude/scripts/code/code_step_routes.py claude/.claude/scripts/code/code_step_store.py
+    claude/.claude/scripts/lib/plan_format.py)
 reviewFlowFiles=(claude/.claude/scripts/review/review_fix.py claude/.claude/scripts/review/handback.py
     claude/.claude/scripts/review/review_loop_gate.py claude/.claude/scripts/review/review_commit_gate.py
     claude/.claude/scripts/review/review_loop_script.py claude/.claude/scripts/review/review_loop_findings.py

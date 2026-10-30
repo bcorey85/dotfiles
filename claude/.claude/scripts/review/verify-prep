@@ -33,6 +33,9 @@ VERIFIER_RUN_RULES = (
     "server, a watcher) is human-only: do not start it.",
     "Delete, move or kill nothing. Create no file yourself: your only write is a Manual Verification "
     "checkbox line.",
+    "An `Agent-run` item is yours: run it as its text says and record pass/fail with its output; never mark it "
+    "human-only. Start that row's `item` with the plan line's words from the tag on, for example "
+    "`**Agent-run**: time the import`.",
 )
 UNTRACKED_LISTED = 20
 

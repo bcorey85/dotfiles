@@ -102,6 +102,7 @@ VERB_REFUSALS = {
     "correct-ruling": ("No asks coder is running, so the ruling cannot be corrected in this run. Put the change in a "
                        "new /code run."),
     "skill-done": "skill-done ran with no closing-phase skill pending.",
+    "session-done": "session-done ran with no session phase pending.",
     "verify": ("verify ran with no converged review, failed Automated Verification or unparsed Manual Verification "
                "pending."),
 }

@@ -34,6 +34,8 @@ PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-
 FILE_ENTRY = re.compile(r"^\s*(?:[-*]\s+)?\*\*Files?\*\*:?")
 TOP_LEVEL_BULLET = re.compile(r"^[-*]\s+")
 PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"
+# "same as Phase N" in a phase's text: the phase reuses that phase's steps.
+SAME_AS_PHASE = re.compile(rf"\bsame as (?:the )?Phase ({PHASE_ID})", re.IGNORECASE)
 PHASE_HEADING = re.compile(rf"^(#{{2,4}})\s+Phase\s+({PHASE_ID})(?![A-Za-z0-9])")
 MANUAL_HEADING = re.compile(r"^(#{1,6})\s+manual verification\b(.*)$", re.I)
 SUCCESS_GROUP_HEADING = re.compile(r"^#{1,6}\s+(?:success criteria|automated verification|manual verification)\b", re.I)
@@ -652,6 +654,49 @@ CLOSING_PHASES = [
 def closing_skill(title):
     """The skill a closing phase's title names (`Verify pass` names /verify-branch), or None for any other title."""
     return next((skill for pattern, skill in CLOSING_PHASES if pattern.search(title)), None)
+
+
+# The plan line that marks a phase only the /code session can run: `**Session phase**: <agent>`, the agent's name
+# optionally in backticks, on a line of its own like a **File**: entry.
+SESSION_PHASE_LINE = re.compile(r"^[ \t]*(?:[-*][ \t]+)?\*\*Session phase\*\*:[ \t]*`?([A-Za-z][A-Za-z0-9-]*)`?[ \t]*$")
+
+
+def session_only_agent(section_text):
+    """The agent named by the section's `**Session phase**: <agent>` line, or None. None too when the section also
+    has a **File**: or **Files**: entry, and when the agent is a coder (it keeps the coder path and its review)."""
+    section_lines = section_text.split("\n")
+    fenced = script_utils.fenced_line_indexes(section_lines)
+    unfenced_lines = [line for index, line in enumerate(section_lines) if index not in fenced]
+    marker = next((match for match in map(SESSION_PHASE_LINE.match, unfenced_lines) if match), None)
+    if marker is None:
+        return None
+
+    if any(FILE_ENTRY.match(line) for line in unfenced_lines):
+        return None
+
+    agent = marker.group(1)
+    agent_name = agent.lower()
+    if script_utils.CODERS.match(agent_name) or agent_name.endswith("-coder"):
+        return None
+    return agent
+
+
+def cited_phases(plan_lines, phase_id, phase_text):
+    """(id, start, end) of each other phase that the phase text reuses with 'same as Phase N', directly or through
+    another cited phase's own citation, start 1-based."""
+    cited = []
+    seen = {phase_id}
+    pending = [phase_text]
+    while pending:
+        for match in SAME_AS_PHASE.finditer(pending.pop()):
+            cited_id = match.group(1)
+            section = phase_section(plan_lines, cited_id)
+            if section is None or cited_id in seen:
+                continue
+            seen.add(cited_id)
+            cited.append((cited_id, section["start"] + 1, section["end"]))
+            pending.append("\n".join(plan_lines[section["start"]:section["end"]]))
+    return cited
 
 
 def parse_plan_with_closing_phases(plan_lines):

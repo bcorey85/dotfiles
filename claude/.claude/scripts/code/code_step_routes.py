@@ -61,6 +61,7 @@ ROUTES = {
     (Stage.IMPACT_REVIEW, None): Route("ask-impact", "decide"),
     (Stage.ASKS, None): Route("ask-asks", "asks-done"),
     (Stage.SKILL, None): Route("closing-skill", "skill-done"),
+    (Stage.SESSION, None): Route("session-phase", "session-done"),
     (Stage.DONE, None): Route("done"),
     # A stop with no kind, or one no command clears, prints the saved state and how to start the phase over.
     (Stage.STOPPED, None): Route("ask-status"),
@@ -122,6 +123,7 @@ STAGE_FACTS = {
     Stage.IMPACT_REVIEW: (StageFact.PLAN_EDITED, StageFact.RESUME_CLEARS_SAY, StageFact.VERIFY_ON_CLEAN_REVIEW),
     Stage.ASKS: (StageFact.RESUME_CLEARS_SAY, StageFact.VERIFY_ON_CLEAN_REVIEW),
     Stage.SKILL: (StageFact.RESUME_CLEARS_SAY,),
+    Stage.SESSION: (StageFact.RESUME_CLEARS_SAY,),
     Stage.DONE: (),
     Stage.STOPPED: (StageFact.RESUME_CLEARS_SAY, StageFact.VERIFY_ON_CLEAN_REVIEW),
 }

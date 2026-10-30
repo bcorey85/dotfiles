@@ -100,7 +100,7 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                'stopped run, which never handed back, was stopped.')
 FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: invoke Skill code with "
                   "`start --task \"<text>\"`.")
-VERB_WORDS_THAT_CARRY_INPUT = ("review-again", "decide", "asks-done", "skill-done", "tick", "verify")
+VERB_WORDS_THAT_CARRY_INPUT = ("review-again", "decide", "asks-done", "skill-done", "session-done", "tick", "verify")
 
 
 def usage_error(message):
@@ -772,6 +772,10 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
 
     if not check_acceptance_criteria(repo_dir, plan_rel):
         return
+    session_agent = plan_format.session_only_agent(section) if entry else None
+    if session_agent:
+        return start_session_phase(repo_dir, previous, branch, parsed, session_agent, {
+            "plan_rel": plan_rel, "plan_lines": plan_lines, "lane": lane, "entry": entry, "section": section})
     start_phase_coder(repo_dir, previous, branch, parsed, {
         "plan_rel": plan_rel, "lane": lane, "entry": entry, "section": section, "has_phases": bool(plan["sections"])})
 
@@ -791,6 +795,18 @@ def finish_passing_restart(repo_dir, previous, section):
     return True
 
 
+def carried_phase_start(repo_dir, previous, is_same_unfinished_phase):
+    """The (file hashes, start commit) a phase starts from. A restart of the same unfinished phase keeps the file
+    hashes, which mark what the phase changed, and the start commit unless a rebase or reset left HEAD off it: that
+    commit can no longer mark where the phase began, so the restart takes a fresh one. Any other start is fresh."""
+    previous_base_head = previous.base_head if previous else None
+    is_off_start_commit = is_same_unfinished_phase and head_left_phase_start(repo_dir, previous_base_head)
+    keeps_start = is_same_unfinished_phase and not is_off_start_commit
+    baseline = previous.baseline if is_same_unfinished_phase else file_hashes(repo_dir)
+    base_head = previous_base_head if keeps_start and previous_base_head else head_commit(repo_dir)
+    return baseline, base_head
+
+
 def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     plan_rel, entry, section = phase["plan_rel"], phase["entry"], phase["section"]
     number = entry["number"] if entry else None
@@ -804,13 +820,7 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     if restarts_reviewed_phase and finish_passing_restart(repo_dir, previous, section):
         return
 
-    # A rebase or reset left HEAD off the previous start commit: that commit can no longer mark where the phase began,
-    # so the restart takes a fresh start commit. The file hashes stay: they mark what the phase changed.
-    previous_base_head = previous.base_head if previous else None
-    is_off_start_commit = is_same_unfinished_phase and head_left_phase_start(repo_dir, previous_base_head)
-    keeps_start = is_same_unfinished_phase and not is_off_start_commit
-    baseline = previous.baseline if is_same_unfinished_phase else file_hashes(repo_dir)
-    base_head = previous_base_head if keeps_start and previous_base_head else head_commit(repo_dir)
+    baseline, base_head = carried_phase_start(repo_dir, previous, is_same_unfinished_phase)
 
     commands = derive_gate_commands(repo_dir, section) if entry else []
     if entry:
@@ -852,13 +862,42 @@ def start_planless(repo_dir, modifier, task_text, branch="-"):
     emit_dispatch(repo_dir, state, prompt=prompt, agent="coder", model=model)
 
 
-def start_closing_phase(repo_dir, plan_rel, lane, parsed, entry, skill, section, branch):
-    state = RunState(stage="skill", plan=plan_rel, lane=lane, phase=entry["number"], branch=branch,
+def save_phase_state(repo_dir, plan_rel, lane, parsed, entry, branch, baseline=None, **extras):
+    state = RunState(plan=plan_rel, lane=lane, phase=entry["number"], branch=branch,
                      modifier=parsed.modifier, risk=entry["risk"], title=entry["title"], behavior=[],
-                     baseline=file_hashes(repo_dir), only_phase=parsed.phase_id, headless=parsed.headless,
-                     session_id=session_pin(), run_notes=parsed.run_notes)
+                     baseline=file_hashes(repo_dir) if baseline is None else baseline,
+                     only_phase=parsed.phase_id, headless=parsed.headless,
+                     session_id=session_pin(), run_notes=parsed.run_notes, **extras)
     save_state(repo_dir, state)
+
+
+def start_closing_phase(repo_dir, plan_rel, lane, parsed, entry, skill, section, branch):
+    save_phase_state(repo_dir, plan_rel, lane, parsed, entry, branch, stage="skill")
     emit_closing_skill(repo_dir, plan_rel, entry["number"], entry["title"], skill, section, parsed.run_notes)
+
+
+def start_session_phase(repo_dir, previous, branch, parsed, agent, phase):
+    # A phase with a `Session phase` line: a coder has no Agent tool and may not commit, so the session that ran
+    # /code does the phase's steps and closes it with `session-done`. The baseline is what that verb's commit
+    # line is computed against; a restart of the open phase keeps the earlier one so its edits stay in that line.
+    plan_rel, entry = phase["plan_rel"], phase["entry"]
+    is_same_unfinished_phase = (is_run_open(previous) and previous.plan == plan_rel
+                                and previous.phase == entry["number"] and previous.baseline is not None)
+    baseline, base_head = carried_phase_start(repo_dir, previous, is_same_unfinished_phase)
+    save_phase_state(repo_dir, plan_rel, phase["lane"], parsed, entry, branch, baseline=baseline, stage="session",
+                     no_review=True, base_head=base_head)
+    emit_session_phase(plan_rel, phase["plan_lines"], entry, agent, phase["section"], parsed.run_notes)
+
+
+def emit_session_phase(plan_rel, plan_lines, entry, agent, section, run_notes):
+    number = entry["number"]
+    cited_lines = [f"The plan lines of Phase {cited_id}, which Phase {number} reuses: {plan_rel} lines {start}-{end}."
+                   for cited_id, start, end in plan_format.cited_phases(plan_lines, number, section)]
+    emit("stop", f"Phase {number} ({entry['title']}) is a session phase: it carries a `Session phase` line, so its "
+         f"steps run in this session, not in a coder. Dispatch the `{agent}` agent yourself and do the phase's steps, "
+         f"leaving out its commit. Then invoke Skill code with `session-done {number}`: it runs the phase's "
+         "Automated Verification, marks the phase done and prints the commit command for you to run. The phase's "
+         "plan section follows:", section, *cited_lines, *run_notes_lines(run_notes))
 
 
 def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section, run_notes):

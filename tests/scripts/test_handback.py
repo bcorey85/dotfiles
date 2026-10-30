@@ -1514,6 +1514,20 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertEqual(self.hand_back(steps), "")
         self.assertEqual(len(self.handback_rows()), 1)
 
+    def test_a_hand_back_with_three_of_five_rows_is_denied_when_the_transcript_repeats_each_call_in_a_blob(self):
+        fixed = [{"finding": f"bug {number}", "file_line": f"a.py:{number}", "blocker": False} for number in range(5)]
+        message = json.dumps({"status": "converged", "iter": 1, "fixed": fixed, "skipped_fp": [], "ask": []})
+        metrics = METRICS_ROW.replace("fix=1", "fix=5").replace("fixed=1", "fixed=5")
+        logged_calls = [ledger_call("tl1", FINDING_ROW), ledger_call("tl2", FINDING_ROW),
+                        ledger_call("tl3", FINDING_ROW), ledger_call("tl4", metrics)]
+        blob_copies = [{**call, "type": "api-request-blob"} for call in logged_calls]
+
+        out = self.hand_back([*logged_calls, *blob_copies], message=message, ledger=False)
+
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("5 finding(s)", reason)
+        self.assertIn("only 3 per-finding row(s)", reason)
+
     def test_a_hand_back_that_dispatched_no_reviewer_and_logged_only_a_not_dispatched_metrics_line_passes(self):
         not_dispatched = ('~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 '
                           'result="NOT DISPATCHED"')

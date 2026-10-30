@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""review_fix.py: the fixed steps of /review and /fix as a script. The main session dispatches review-loop, runs
-`packet`, and does exactly what the ACTION lines say. The script reads the packet through handback.py, routes on status,
-renders the packet, logs the rows, posts the Aikido replies, and prints what the model still judges.
+"""review_fix.py: the fixed steps of /review and /fix as a script. /review with no
+handoff: block, base=, file path, +fast/+deep or iter= runs `launch`, which runs the review loop as a script; /fix
+still dispatches the review-loop agent. Either way the main session runs `packet` and does exactly what the ACTION
+lines say. The script reads the packet through handback.py, routes on status, renders the packet, logs the rows,
+posts the Aikido replies, and prints what the model still judges.
 
   review_fix.py packet --skill review|fix [options] [< packet]
       --scope branch-exit|standalone   scope of the ask rows (review passes branch-exit when it dispatched with base=)
@@ -10,8 +12,9 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
       --source conversation|cc|handoff (fix) where the findings came from; escapes log only for conversation
       --escape "file=<p>|class=<c>|severity=<s>|gate_missed=<g>|guard=<r>|desc=<one line>"   (fix, repeatable)
       --aikido "<path>:<line>=<comment_id>"                                                 (fix, repeatable)
-      With empty stdin, `packet` reads this session's latest review-loop hand-back, which handback.py's hook stored,
-      and refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
+      With empty stdin, `packet` reads this session's latest review-loop hand-back: the loop script stores it
+      itself (write_handback_rows) after `launch`, and handback.py's hook stores it for a dispatched agent. It
+      refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
       `ACTION: stop-no-handback` and leaves the saved state alone: re-dispatch once, then stop and show the user the
       loop's final text on a second miss. When the loop's latest stop left a background agent or shell running (the
       stop row review_loop_gate.py stores), it prints `ACTION: wait-for-loop` and exits 3: do not re-dispatch, end the
@@ -21,6 +24,14 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
+  review_fix.py launch [--repo <abs path>]
+                                         run the scripted review loop (review_loop_script.py) in the foreground, as a
+                                         review-first run for /review, and print its log path first. Records the
+                                         session's dispatch row, writes the prompt file (lane none; review the working
+                                         tree against HEAD), and keeps its state under
+                                         <git dir>/review-script. It exits when the loop script exits, after it has
+                                         handed back or crashed; run `packet --skill review` next either way. Exits 2
+                                         when CLAUDE_CODE_SESSION_ID is not set.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review_fix.py asks-done [--by <user|session>] [--packet <packet_id>] <outcome>...
                                          one outcome per ask, in order: accepted | rejected | modified, optional
@@ -35,13 +46,14 @@ renders the packet, logs the rows, posts the Aikido replies, and prints what the
 
 State lives in <git dir>/review-fix/state.json. A packet that does not parse stops with exit 2 and an instruction to
 mark the gate dirty. Env REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH
-override the nvim-jump and gh commands; HANDBACK_STORE_DIR overrides the hand-back store;
-CLAUDE_CODE_SESSION_ID names the session."""
+override the nvim-jump and gh commands; REVIEW_FIX_LOOP_SCRIPT overrides the loop script `launch` runs;
+HANDBACK_STORE_DIR overrides the hand-back store; CLAUDE_CODE_SESSION_ID names the session."""
 import argparse
 import datetime
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import time
 
@@ -49,12 +61,15 @@ SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
 import capped_review
 import handback
+import handback_hook
 import plan_format
 import review_asks
 import script_utils
 from capped_review import CAP_REACHED
+from code_step_core import REVIEW_LOOP_SCRIPT
 from handback import FIX_REMOVED_CHANGE, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
+from review_loop_script import loop_script_command, write_script_prompt
 from saved_handback import LoopWaitingError, NoHandbackError, dispatched_repo, dispatched_with_ruling, read_message
 from script_utils import one_line, run_command, split_location
 
@@ -72,6 +87,11 @@ LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
 PLAN_IMPACT = "plan-impact"
 NEW_FINDING_ID = "new-finding-id"
+LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_LOOP_SCRIPT", REVIEW_LOOP_SCRIPT))
+LAUNCH_STATE_NAME = "review-script"
+# Not code_step_core.REVIEW_SCRIPT_AGENT_PREFIX: a /code run reads that prefix as its own review script.
+LAUNCH_AGENT_PREFIX = "review-script-"
+DEFAULT_HANDOFF = "Review the working tree against HEAD."
 # Exit code of `wait-for-loop`: non-zero so no caller reads it as a finished run, and not 2, the code of a real stop.
 WAIT_EXIT_CODE = 3
 
@@ -234,7 +254,9 @@ def stop_for_missing_hand_back(skill, last_hand_back_id):
         print_action("stop-no-handback",
                      "The review-loop ended without calling SubagentHandback, so no packet is stored. Nothing was "
                      "routed, logged or posted, and the earlier run's state is untouched.",
-                     "Re-dispatch review-loop once with the same arguments, then run `packet` again.",
+                     "Re-dispatch review-loop once with the same arguments"
+                     + ("" if skill == "fix" else " (run `launch` again when the script started it)")
+                     + ", then run `packet` again.",
                      KEEP_DIRTY)
         return
     print_action("stop-no-handback",
@@ -656,6 +678,43 @@ def model_duties(packet, options):
     return "; ".join(duties) + "."
 
 
+def launch_arguments(argv):
+    parser = argument_parser("launch")
+    parser.add_argument("--repo")
+    return parser.parse_args(argv)
+
+
+def command_launch(argv):
+    # Runs the loop script the way /code's launcher does, minus the /code run state, and waits for it: the skill runs
+    # this verb as a background command, so its completion is the wake-up.
+    options = launch_arguments(argv)
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if not session_id:
+        raise UsageError("CLAUDE_CODE_SESSION_ID is not set, so the review loop cannot be tied to this session. "
+                         "Nothing was launched. Tell the user.")
+
+    repo = script_utils.repo_root(options.repo or os.getcwd())
+    if repo is None:
+        raise UsageError(f"{options.repo or os.getcwd()} is not inside a git work tree")
+
+    repo = repo.resolve()
+    state_dir = script_utils.git_path(repo, LAUNCH_STATE_NAME)
+    run_id = script_utils.sortable_unique_id()
+    agent_id = f"{LAUNCH_AGENT_PREFIX}{run_id}"
+    prompt = f"mode: review-first\ncaller: review\nlane: none\n\n{DEFAULT_HANDOFF}\n"
+    prompt_file, log_path = write_script_prompt(state_dir, agent_id, prompt)
+    print(f"The review loop runs as a script; its log is {log_path}")
+    sys.stdout.flush()
+
+    handback_hook.record_script_dispatch(session_id, repo)
+    command = loop_script_command(LOOP_SCRIPT, repo, state_dir, session_id, run_id, agent_id, prompt_file)
+    with log_path.open("w") as log:
+        finished = subprocess.run(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+
+    print(f"The review loop script exited {finished.returncode}. Run `{DECIDE_SCRIPT} packet --skill review` now.")
+    return 0
+
+
 def command_escape(argv):
     parser = argument_parser("escape")
     parser.add_argument("--escape", action="append", default=[])
@@ -888,8 +947,8 @@ def adopt_code_side_for_review(state):
 
 def main():
     arguments = sys.argv[1:]
-    handlers = {"packet": command_packet, "escape": command_escape, "asks-done": command_asks_done,
-                "decide": command_decide}
+    handlers = {"packet": command_packet, "launch": command_launch, "escape": command_escape,
+                "asks-done": command_asks_done, "decide": command_decide}
     if not arguments or arguments[0] not in handlers:
         print(__doc__)
         return 2

@@ -1319,6 +1319,43 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("Edit only the plan file", out)
         self.assertNotIn("## Plan Deviations", self.plan_text())
 
+    def test_a_plan_impact_about_a_hook_with_no_plan_step_stops_whatever_its_cause_line_says(self):
+        report = ("PLAN-IMPACT:\n  assumed: the hand-back hook lets the coder through\n  found: it denies every try\n"
+                  "  changes: nothing\n  acceptance_criteria: none\n  cause: plan\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
+    def test_a_plan_impact_naming_a_phase_and_a_hook_still_goes_to_the_rule(self):
+        report = ("PLAN-IMPACT:\n  assumed: Phase 2 adds the hand-back hook\n  found: the hook exists already\n"
+                  "  changes: C\n  acceptance_criteria: none\n  cause: plan\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("Edit only the plan file", out)
+
+    def test_a_plan_impact_that_a_later_hand_back_dropped_asks_instead_of_adopting_by_rule(self):
+        block = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n  cause: plan"
+        self.start_phase_one()
+        self.hook("coder", block + "\nPLAN-IMPACT: yes")
+        self.assertIn("ACTION: stop", self.step("resume"))
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("no longer carries this block", self.said())
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertEqual("impact-coder", self.state()["stage"])
+        self.assertIn("no longer carries this block", self.said())
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
     def test_a_plan_impact_with_an_unknown_cause_stops_and_names_both_causes(self):
         report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
                   "  cause: gate\nPLAN-IMPACT: yes")
@@ -2727,10 +2764,24 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("rename?", out)
         self.assertNotIn("keep?", out)
 
-    def test_correct_ruling_says_the_refusal_when_no_asks_coder_runs(self):
+    def test_correct_ruling_at_the_asks_stage_applies_the_asks_as_asks_done(self):
         self.coder_round()
         self.hook("review-loop", self.ASK)
         self.step("resume")
+
+        out = self.step("correct-ruling", "accepted", "--also", "add a log line")
+
+        self.assertIn("ACTION: dispatch", out)
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("The proposed change: export o as a const", out)
+        self.assertIn("add a log line", out)
+        self.assertEqual("asks-coder", self.state()["stage"])
+
+    def test_correct_ruling_says_the_refusal_when_no_asks_coder_runs(self):
+        self.coder_round()
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("resume")
+        self.assertEqual("done", self.state()["stage"])
         state_before = self.state()
 
         out = self.step("correct-ruling", "rejected")
@@ -2739,7 +2790,30 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("No asks coder is running", out)
         self.assertIn("new /code run", out)
         self.assertEqual(state_before, self.state())
-        self.assertIn("keep?", (self.repo / ".git/code-step/question.md").read_text())
+
+    def test_correct_ruling_rejected_at_the_asks_stage_finishes_the_phase_without_a_coder(self):
+        self.coder_round()
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+
+        out = self.step("correct-ruling", "rejected")
+
+        self.assertNotIn("AGENT: coder", out)
+        self.assertNotIn("ACTION: go-on", out)
+        self.assertIn("Phase 1 marked done", out)
+
+    def test_correct_ruling_rejected_at_the_asks_stage_of_a_planless_run_says_the_commit_command(self):
+        self.step("start", "--task", "add orders")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", self.CODER_REPORT)
+        self.step("resume")
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+
+        out = self.step("correct-ruling", "rejected")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("git add -- backend/src/orders.ts", out + self.said())
 
     def test_correct_ruling_says_the_refusal_at_a_stop_and_keeps_the_stop_question(self):
         self.begin_asks_coder("accepted")
@@ -5742,6 +5816,22 @@ class CodeStepTest(unittest.TestCase):
         command = code_step_verification.verification_command(item)
         self.assertEqual("PARITY_PATH=/x/y.py cargo test --test watch_parity", command)
 
+    def test_an_env_prefixed_command_wins_over_a_prose_program_span_before_it(self):
+        item = "- [ ] **Env**: lists them with `ls -la` - `env CARGO_BUILD_JOBS=4 cargo test --test watch_parity`"
+
+        command = code_step_verification.verification_command(item)
+        self.assertEqual("env CARGO_BUILD_JOBS=4 cargo test --test watch_parity", command)
+
+    def test_env_with_no_assignment_leads_a_command_start(self):
+        self.assertTrue(code_step_verification.COMMAND_START.match("env cargo test"))
+        self.assertIsNone(code_step_verification.COMMAND_START.match("env nosuchprogram hi"))
+
+    def test_the_last_program_span_after_the_em_dash_wins_over_prose_spans_before_it(self):
+        item = "- [ ] **Check**: `ls -la` lists them — run `wc -l` then `stat -c %s`"
+
+        command = code_step_verification.verification_command(item)
+        self.assertEqual("stat -c %s", command)
+
     def test_a_quoted_assignment_value_with_spaces_is_kept_in_the_command(self):
         item = "- [ ] **Env**: `GREETING=\"a b\" echo hi`"
 
@@ -7075,6 +7165,19 @@ class CodeStepTest(unittest.TestCase):
         reviewed = self.step("resume")
         self.assertIn("AGENT: review-loop", reviewed)
 
+    def test_a_launch_is_logged_when_the_session_cwd_holds_a_state_file_this_code_cannot_load(self):
+        # A branch's newer code left a state key this checkout's code does not know.
+        session_cwd = self.home / "session-checkout"
+        self.make_other_checkout(session_cwd)
+        (session_cwd / ".git/code-step/state.json").write_text(json.dumps({"stage": "done", "keyFromANewerBranch": 1}))
+        out = self.start_phase_one()
+        self.pass_coder_gate()
+
+        result = self.launch_agent(self.printed_prompt(out), cwd=str(session_cwd))
+
+        self.assertEqual(1, len(self.events_named("launch")))
+        self.assertIn(f"skipped {session_cwd}", result.stderr)
+
     def make_other_checkout(self, session_cwd):
         # A git checkout that holds the state of a finished run of this session, as the session's own cwd can.
         session_cwd.mkdir()
@@ -7657,7 +7760,14 @@ class CodeForkToolsTest(unittest.TestCase):
         self.assertIn("starts with `asks-done`", skill_text)
         self.assertIn("code_step.py correct-ruling", skill_text)
         self.assertIn("- `go-on`:", skill_text)
-        self.assertIn("even when it printed `stop`", skill_text)
+        self.assertIn("the `stop` that lists several checkouts", skill_text)
+        self.assertIn("says another verb is running", skill_text)
+        self.assertIn("names no run", skill_text)
+        self.assertIn("is no git path", skill_text)
+        self.assertIn("names a state file to delete", skill_text)
+        self.assertIn("follow it under rule 2 instead and send nothing", skill_text)
+        self.assertIn("never this call's own args", skill_text)
+        self.assertNotIn("even when it printed `stop`", skill_text)
 
     def test_the_code_fork_hands_a_question_or_report_back_even_when_the_task_names_a_session(self):
         skill = REAL_CLAUDE / "skills" / "code" / "SKILL.md"

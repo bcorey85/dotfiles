@@ -10,6 +10,7 @@ import shlex
 
 import full_check_receipt
 import script_utils
+import shell_command
 
 FINDING_ID_HEX_LEN = 16
 FINDING_ID_PATTERN = re.compile(rf"[0-9a-f]{{{FINDING_ID_HEX_LEN}}}")
@@ -45,8 +46,6 @@ def prompt_field(key, value):
 
 PROMPT_PLAN = prompt_field("plan", r"(\S+?)[`*]*[ \t]*$")
 HELPER_ASSIGNMENT = re.compile(r"(?:^|[\s;&|])(\w+)=[\"']?[^\s;&|\"']*log-review-finding[\"']?(?=[\s;&|]|$)")
-FINDING_CALL_TAIL = r"\s+kind=finding\b"
-FINDING_CALL_ARGUMENTS_TAIL = rf"\s+(kind=finding\b(?:(?!{SEGMENT_END.pattern}).)*)"
 SHELL_VARIABLE_DIRECTORY = re.compile(r"^\$\{?\w+\}?/")
 NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
 METRICS_CALL = re.compile(r"log-review-metrics\b")
@@ -83,11 +82,23 @@ def text_of(content):
     return " ".join(b.get("text", "") for b in content or [] if isinstance(b, dict))
 
 
-def finding_call_pattern(command, tail):
-    """A pattern for a call of the log helper followed by `tail`, in the command's own spelling: the helper's name, or
-    a shell variable the command set to a path that ends in it (`L=<skills dir>/review/log-review-finding`)."""
-    variables = [rf"\$(?:\{{{re.escape(name)}\}}|{re.escape(name)}\b)" for name in HELPER_ASSIGNMENT.findall(command)]
-    return re.compile("(?:" + "|".join(["log-review-finding", *variables]) + ")" + tail)
+def finding_rows(command):
+    """The key=value fields of each `kind=finding` call of the log helper in one command, in order, wherever `kind`
+    stands among its arguments. The helper is called by its name, a path that ends in it, or a shell variable the
+    command set to such a path (`L=<skills dir>/review/log-review-finding`)."""
+    names = HELPER_ASSIGNMENT.findall(command)
+    helper_variables = {f"${name}" for name in names} | {f"${{{name}}}" for name in names}
+
+    rows = []
+    for words in shell_command.step_words(command):
+        if not words:
+            continue
+        if os.path.basename(words[0]) != "log-review-finding" and words[0] not in helper_variables:
+            continue
+        fields = dict(word.split("=", 1) for word in words[1:] if "=" in word)
+        if fields.get("kind") == "finding":
+            rows.append(fields)
+    return rows
 
 
 def finding_call_fields(arguments):
@@ -150,6 +161,11 @@ class LoopTranscript:
         carrier = text_of(content) if rec.get("type") == "user" else ""
         carrier += " " + str((rec.get("attachment") or {}).get("prompt") or "")
         self.read_reports(n, carrier)
+
+        # An api-request-blob record repeats the turn's blocks, so skip it: each call counts once. No other record
+        # type carries tool blocks.
+        if rec.get("type") not in ("user", "assistant"):
+            return
 
         blocks = [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
         for block in blocks:
@@ -247,15 +263,13 @@ class LoopTranscript:
 
     def read_command(self, n, tool_use_id, command):
         command = command.replace("\\\n", " ")
-        finding_rows = len(finding_call_pattern(command, FINDING_CALL_TAIL).findall(command))
-        self.finding_rows_logged += finding_rows
-        arguments_pattern = finding_call_pattern(command, FINDING_CALL_ARGUMENTS_TAIL)
-        finding_calls = [finding_call_fields(arguments) for arguments in arguments_pattern.findall(command)]
+        finding_calls = finding_rows(command)
+        self.finding_rows_logged += len(finding_calls)
         if finding_calls:
             self.finding_calls[tool_use_id] = finding_calls
         logged_metrics = [(n, fields, tool_use_id) for fields in metrics_calls(command)]
         self.metrics_calls += logged_metrics
-        self.ledger_calls_attempted += finding_rows + len(logged_metrics)
+        self.ledger_calls_attempted += len(finding_calls) + len(logged_metrics)
         if SCOPE_CALL.search(command):
             self.scope_calls.add(tool_use_id)
 

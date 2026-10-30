@@ -1132,5 +1132,43 @@ class CommandCheckScopeTests(unittest.TestCase):
         self.assertEqual("", done.stderr)
 
 
+class StaleProseCheckTests(unittest.TestCase):
+    def test_only_the_stale_prose_script_command_is_the_stale_prose_check(self):
+        gate = load_gate_module()
+        cases = [
+            ("the gate's own command", "python3 /home/u/.claude/scripts/code/stale_prose.py --base abc123", True),
+            ("a test of the script", "python3 tests/parallel_tests.py test_stale_prose.py", False),
+            ("a test file run directly", "python3 -m unittest tests/scripts/test_stale_prose.py", False),
+            ("an unparseable command", "echo 'stale_prose.py", False),
+        ]
+        for message, command, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, gate.is_stale_prose_check(command))
+
+    def test_run_stale_prose_check_sorts_each_outcome_of_the_command(self):
+        gate = load_gate_module()
+        command = "python3 stale_prose.py --base abc123"
+        missing_path_output = "ERROR: file or directory not found: nope.py\n"
+        hit_with_missing_path_text = "No such file or directory: x\ndocs/a.md:1: moveMe\n"
+        cases = [
+            ("a clean run", ([], [], [], []), "passed", [], False),
+            ("a timeout", ([], [], [(command, "partial", 60)], []), "not run (timeout)", [], True),
+            ("a missing path", ([(command, "exit 2", missing_path_output)], [], [], []), "command error:", [], True),
+            ("a hit whose output has a missing-path line",
+             ([(command, "exit 1", hit_with_missing_path_text)], [], [], []), "passed",
+             [hit_with_missing_path_text], True),
+        ]
+        for message, run_result, result_start, hit_outputs, log_written in cases:
+            with self.subTest(message), tempfile.TemporaryDirectory() as scratch:
+                log_path = pathlib.Path(scratch) / "logs" / "stale-prose.log"
+
+                with mock.patch.object(gate, "run_commands", return_value=run_result):
+                    result, hits, _tails = gate.run_stale_prose_check(scratch, [command], [], log_path)
+
+                self.assertTrue(result.startswith(result_start), result)
+                self.assertEqual(hit_outputs, hits)
+                self.assertEqual(log_written, log_path.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

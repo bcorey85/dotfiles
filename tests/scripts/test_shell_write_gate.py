@@ -554,6 +554,71 @@ class ShellWriteGateTest(unittest.TestCase):
                 reason = self.assert_denied(f"python3 {script}", agent="coder")
                 self.assertIn("scratchpad", reason)
 
+    def test_relative_write_joined_to_an_absolute_root_resolves_under_that_root(self):
+        scratch = self.tmp / "scratch"
+        scripts = {
+            "path join": f"from pathlib import Path\nR = Path('{scratch}')\n(R / 'tracked.txt').write_text('y')\n",
+            "string concat": f"T = '{scratch}/'\nf = 'tracked.txt'\nopen(T + f, 'w').write('y')\n",
+            "os.path.join": f"import os\nR = '{scratch}'\nopen(os.path.join(R, 'tracked.txt'), 'w').write('y')\n",
+        }
+        for shape, code in scripts.items():
+            with self.subTest(shape=shape):
+                script = self.tmp / "probe.py"
+                script.write_text(code)
+                self.assert_allowed(f"python3 {script}", agent="coder")
+
+    def test_relative_write_joined_to_a_root_in_the_repo_or_a_rebound_root_is_denied(self):
+        scripts = {
+            "repo root": f"from pathlib import Path\nR = Path('{self.repo}')\n(R / 'tracked.txt').write_text('y')\n",
+            "rebound root": f"from pathlib import Path\nR = Path('{self.tmp}')\nR = Path('.')\n"
+                            "(R / 'tracked.txt').write_text('y')\n",
+            "rebound to the repo": f"from pathlib import Path\nR = Path('{self.tmp}')\nR = Path('{self.repo}')\n"
+                                   "(R / 'tracked.txt').write_text('y')\n",
+            "two call arguments": f"def w(R):\n    open(R + 'tracked.txt', 'w')\n\nw('{self.tmp}/')\n"
+                                  f"w('{self.repo}/')\n",
+            "augmented assignment": f"R = '{self.tmp}/'\nR += '../repo/'\nopen(R + 'tracked.txt', 'w')\n",
+            "root joined to a name": f"BASE = '../repo/'\nR = '{self.tmp}/' + BASE\nopen(R + 'tracked.txt', 'w')\n",
+            "missing folder and a parent escape": f"R = '{self.tmp}/scratch/nonexist/'\n"
+                                                  "open(R + '../../repo/tracked.txt', 'w')\n",
+        }
+        for shape, code in scripts.items():
+            with self.subTest(shape=shape):
+                script = self.tmp / "probe.py"
+                script.write_text(code)
+                self.assertIn(f"{self.repo}/tracked.txt", self.assert_denied(f"python3 {script}", agent="coder"))
+
+    def test_relative_write_beside_a_write_under_an_absolute_root_is_denied(self):
+        code = (f"from pathlib import Path\nR = Path('{self.tmp}')\n"
+                "with open(R / 'out.txt', 'w') as f, open('tracked.txt', 'w') as g:\n    pass\n")
+        script = self.tmp / "probe.py"
+        script.write_text(code)
+        self.assertIn(f"{self.repo}/tracked.txt", self.assert_denied(f"python3 {script}", agent="coder"))
+
+    def test_relative_write_by_a_script_run_after_a_cd_is_denied_naming_the_cd(self):
+        tree = self.tmp / "tree"
+        tree.mkdir()
+        subprocess.run(["git", "init", "-q", str(tree)], check=True)
+        (tree / "inner.txt").write_text("x\n")
+        subprocess.run(["git", "-C", str(tree), "add", "inner.txt"], check=True)
+        for written in ("tracked.txt", "inner.txt"):
+            with self.subTest(written=written):
+                script = self.tmp / "probe.py"
+                command = (f"cd {tree} && cat > {script} <<'PY'\nopen('{written}', 'w').write('y')\nPY\n"
+                           f"python3 {script}")
+                reason = self.assert_denied(command, agent="coder")
+                self.assertIn(f"after a cd to {tree} writes the relative path " + written, reason)
+                self.assertIn("cd folder", reason)
+
+    def test_absolute_write_by_a_script_run_after_a_cd_is_denied_as_a_script_write(self):
+        tree = self.tmp / "tree"
+        tree.mkdir()
+        script = self.tmp / "probe.py"
+        command = (f"cd {tree} && cat > {script} <<'PY'\nopen('{self.repo}/tracked.txt', 'w').write('y')\nPY\n"
+                   f"python3 {script}")
+        reason = self.assert_denied(command, agent="coder")
+        self.assertIn("scratchpad", reason)
+        self.assertNotIn("after a cd", reason)
+
     def test_untracked_node_script_that_writes_a_tracked_file_through_a_name_is_denied(self):
         scripts = {
             "const": "const fs = require('fs');\nconst p = 'tracked.txt';\nfs.writeFileSync(p, 'y');\n",

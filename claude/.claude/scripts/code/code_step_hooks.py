@@ -31,6 +31,7 @@ from code_step_core import (
     expected_agent,
     file_hashes,
     head_left_phase_start,
+    is_after,
     is_dispatch_open,
     log_event,
     newest_dispatch_standing,
@@ -65,9 +66,16 @@ def hook_repo_dirs(event):
 
 
 def hook_repo_states(event):
-    # (repo, state) for each repo hook_repo_dirs reaches that holds state.
+    # (repo, state) for each repo hook_repo_dirs reaches that holds state. A repo whose state file is unreadable JSON
+    # or a state this code does not know is skipped with its error on stderr, so one stale file never hides the
+    # session's other repos.
     for repo, directory in hook_repo_dirs(event):
-        state = read_state_file(directory)
+        try:
+            state = read_state_file(directory)
+        except StateFileError as error:
+            print(f"code-step hook: skipped {repo}: {error}", file=sys.stderr)
+            continue
+
         if state:
             yield repo, state
 
@@ -155,8 +163,9 @@ def deny_handback_attempt(call):
 
 
 def later_phase_edit_denial(call):
-    # The reason to deny a coder's hand-back while the run's diff since its baseline edits a file that the plan names
-    # only in a later open phase, or None.
+    # The reason to deny a coder's hand-back when the run's diff since its baseline edits a file that the plan names
+    # only in a later open phase, or None. Each file is denied once per agent; the repeat goes through and the run flags
+    # it.
     state = call.state
     if call.event.get("agent_type") != CODER or StageFact.CODE_AGENT_OUT not in STAGE_FACTS[state.stage]:
         return None
@@ -176,14 +185,53 @@ def later_phase_edit_denial(call):
     edited = sorted(later_files.intersection(changed_files))
     if not edited:
         return None
-    return (f"Do not hand back yet. Your edits touch files the plan gives to a later phase: {', '.join(edited)}. "
-            "Undo your edits to them, then hand back. If an issue needs one of them, leave that issue unapplied "
-            "and report it as a PLAN-IMPACT.")
+
+    agent_id = call.event.get("agent_id")
+    denied_before = later_phase_denied_files(read_events(call.repo, call.run_id), agent_id)
+    new_files = [name for name in edited if name not in denied_before]
+    if not new_files:
+        # The coder was told once and hands back again: the file is not its edit, or it cannot undo it. The run flags
+        # the file for the main session in place of looping the coder.
+        log_event(call.repo, call.run_id, "later-phase-pass", call.session_id, agent_id=agent_id, files=edited)
+        return None
+
+    reason = (f"Do not hand back yet. Your edits touch files the plan gives to a later phase: {', '.join(new_files)}. "
+              "Undo only the edits you made to them, and never revert a file you did not edit. If you did not edit a "
+              "listed file, hand back again unchanged: the run flags that file for the main session. If an issue "
+              "needs one of them, leave that issue unapplied and report it as a PLAN-IMPACT. A problem with this gate "
+              "is `cause: toolkit`, never `cause: plan`.")
+    log_event(call.repo, call.run_id, "later-phase-deny", call.session_id, agent_id=agent_id, files=new_files,
+              reason=reason)
+    return reason
+
+
+def later_phase_denied_files(events, agent_id):
+    # The files named in the later-phase denials that this agent id logged.
+    files = set()
+    for event in events:
+        if event.get("event") == "later-phase-deny" and event.get("agent_id") == agent_id:
+            files.update(event.get("files") or [])
+    return files
+
+
+def outside_scope_flags(events):
+    # One flagged line per agent whose hand-back went through a later-phase denial, from the newest dispatch on.
+    since = dispatch_standing(events)["dispatch"]["ts"]
+    passed_by_agent = {}
+    for event in events:
+        if event.get("event") != "later-phase-pass" or not is_after(event, since):
+            continue
+        passed_by_agent.setdefault(event.get("agent_id"), set()).update(event.get("files") or [])
+
+    return [f"changed outside the coder's scope, left in place at hand-back: {', '.join(sorted(files))}. The coder "
+            "was denied once and handed back again; check who edited them."
+            for files in passed_by_agent.values()]
 
 
 def command_hook():
     # PreToolUse on SubagentHandback: every attempt is logged, then the pinned fork's early hand-back is denied once
-    # per dispatch, and a coder's hand-back is denied while the diff edits a later phase's file. Claude Code runs the
+    # per dispatch, and a coder's hand-back is denied once per file per agent when the diff edits a later phase's file;
+    # the repeat goes through and the run flags it. Claude Code runs the
     # hooks of one matcher side by side, so this one sees an attempt that the other gates deny. Only a hand-back that
     # went through (PostToolUse) ends a wait. One denial answers the call.
     try:
@@ -421,7 +469,7 @@ def command_plan_hook():
             return
     except ValueError:
         return
-    except (OSError, StateFileError) as error:
+    except OSError as error:
         print(f"code-step plan-hook: {error}", file=sys.stderr)
 
 

@@ -195,9 +195,10 @@ gets a coder. The cap stops a third full review and nothing else. A deferred
 finding is not discarded: it moves to the branch-exit queue, where it is read
 once, in one place, against the whole branch instead of one phase of it.
 
-**What may defer.** Only a `class` or `scoped` `fix` finding defers: a class
-member that Step 6 finds open at `iter >= 2`, or a finding of the scoped
-reviewer at the cap exit (below). Step 6 returns `cap-reached`. A blocker
+**What may defer.** Only a `scoped` `fix` finding defers the status: a finding
+of the scoped reviewer at the cap exit (below). A class member that Step 6 finds
+open at `iter >= 2` logs `actioned=deferred` but keeps `cap-reached`, because it
+stays in `open_classes`. A blocker
 never leaves on `deferred` or `converged`: it carries `blocker: yes` and the
 status is `cap-reached`.
 
@@ -218,8 +219,8 @@ the `fix` findings of a gate failure get one coder per invocation: after the
 repair, run the gate once more; a second failure returns `status: critical-blocker`, or `status: setup-fault` when the gate could not run.
 Exception to "no full review": when any coder (a second-round fix coder, or a gate-repair coder before its gate re-run)
 changed files after the last reviewer, dispatch one reviewer scoped to the changed files (not a full review). Its `fix`
-findings get no coder: they go to `findings_remaining` with `blocker: yes` on each blocker, log with `source=scoped actioned=deferred`, and the status is `cap-reached`. If that reviewer cannot run,
-return `status: cap-reached` with `findings_remaining` naming the unreviewed files.
+findings get no coder: they go to `findings_remaining` with `blocker: yes` on each blocker and log with `source=scoped actioned=deferred`, and the status is `cap-reached`. If that reviewer cannot run,
+return `status: cap-reached` with `findings_remaining` naming the unreviewed files, each with `blocker: yes`, and `unrun_reviewer` saying why.
 
 ## Step 6: Convergence — the execution gate
 
@@ -312,6 +313,7 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
   "full_check": "passed",
   "full_check_command": "<the exact command full_check.py ran>",
   "full_check_summary": "<the script's summary: line>",
+  "full_check_tree": "<the script's tree: line value, or omit the key>",
   "files_touched": ["<path>"],
   "check_changed": ["<path>"],
   "check_rewrote_edited": ["<path>"],
@@ -320,7 +322,8 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
   "load_bearing_clean": "<one line, or omit the key>",
   "tool_fault": "<what failed, or omit the key>",
   "blocked_agents": ["<agent>: <step it skipped> (<the refused call>)"],
-  "scoped_tests": "<see below, or omit the key>"
+  "scoped_tests": "<see below, or omit the key>",
+  "unrun_reviewer": "<see below, or omit the key>"
 }
 ```
 
@@ -336,7 +339,9 @@ Every value is a JSON string, a list, or (for `iter` and `spec_iter`) an integer
 - `ask`: never auto-fixed; the user answers these. question is never empty: an ask with no question takes its finding, or else its change, as its question. `change` is the one edit an accepted answer makes. `gate` and `class` ride along so the caller can log the outcome. Log each ask row with the same file and line as its `file_line`; the caller reads the id from that row, so leave `finding_id` out.
 - `full_check`: the Step 6 result, one of: passed | unverified (exit 0, no runner summary) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | passed (check only; CI runs the full suite) | not run (timeout) | not run (scoped command: it names files or tests, so it is no full check) | not run (unresolved command: what it runs cannot be read, so it is no full check) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | not run (expected red until Phase <id>[, <id>...]) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only).
 - `full_check_summary`: passed | unverified only (not for passed (check only; CI runs the full suite)).
+- `full_check_tree`: the value of the `tree:` line right after the result line of the last full_check.py run, whatever the result; omit it when the script printed none.
 - `scoped_tests`: optional; the scoped test rerun after a fix no passed full check followed: passed | failed: <cmds>[; failing tests: <lines>]; full output: <log path> | setup fault / not run (timeout): <cmds>; full output: <log path> | command error: <cmd> (<line>)[; ...]; full output: <log path> | not run (<reason>).
+- `unrun_reviewer`: set only when the Step 5c scoped reviewer could not run and you returned `cap-reached` for it: one line saying why. Omit it otherwise.
 - `check_changed`, `check_rewrote_edited`, `check_created`: the paths of the `changed by the check:`, `rewrote edited files:` and `created by the check:` lines from every full_check.py run in this invocation.
 - `nit`: a small item ends `applied` or `skipped: <reason>`.
 - `blocked_agents`: one string per entry, `<agent>: <step it skipped> (<the refused call>)`: each reviewer report's `Blocked:` line, and any other refusal a subagent reports; omitted when none.
@@ -354,6 +359,6 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
 - **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**
-- **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation and a docs-only fix that ends the loop excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.
+- **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation and a docs-only fix that ends the loop excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files, each with `blocker: yes`, and `unrun_reviewer` set when the reviewer could not run. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.
 - **Never poll for a dispatched subagent.** After the launch stub, end your response. The result arrives as a notification that re-invokes you. No `sleep`, no `until` loop, no `echo waiting`.
 - **Independent tool calls go in one response.** Batch them whenever neither call's input depends on the other's output — every log call of Steps 7 and 7b in one response.

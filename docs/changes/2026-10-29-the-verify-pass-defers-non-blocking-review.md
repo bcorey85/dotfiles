@@ -4,7 +4,7 @@ change_type: "changed"
 title: "The verify pass defers non-blocking review findings and goes on to the plan check"
 description: "When the branch-wide review in /verify-branch reports no blocker, its fix findings are logged as deferred and the run goes on to the plan-verifier, so the pass no longer stops on each fresh set of small findings; a blocker still stops the pass until it is fixed."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T20:23:55-05:00"}
-seq: 295
+seq: 328
 kind: "fix"
 components: ["script/verify-prep", "script/verify-log", "skill/verify-branch", "shared/closing-phases"]
 evidence: ["judgment"]

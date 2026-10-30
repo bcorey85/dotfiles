@@ -8,11 +8,14 @@
 #              A /code prompt goes out as "/code --headless <rest>", so the run
 #              never waits at a sign-off gate in a pane nobody watches, unless
 #              --headless already follows /code. A bare /code and a /code verb
-#              prompt (resume, tick 2, ...) go out as given. Any other prompt
-#              goes out as given.
+#              prompt (resume, tick 2, ...) go out as given, and so does any
+#              other slash command. A prompt that is not a slash command goes
+#              out prefixed with "[from orchestrator pane <sending pane id>] ",
+#              so the receiver can tell the prompt came from another pane, not
+#              from the user.
 #   --timeout  seconds bounding each of the two waits: for /clear to take effect,
 #              then for the pane to settle. Defaults to 30.
-#   --watched  send the prompt as given, for a pane a person watches.
+#   --watched  send a /code prompt without the --headless insert, for a pane a person watches.
 #
 # `herdr agent wait` returns at once on a pane already in `done`, so it is no
 # barrier between two prompts: a prompt sent too soon after /clear lands in the
@@ -74,6 +77,13 @@ if [ "$watched" = false ] && [[ "$prompt" == "/code" || "$prompt" == "/code "* ]
             fi
             ;;
     esac
+fi
+
+if [ "${prompt:0:1}" != "/" ]; then
+    sender_pane=$(herdr-api pane current 2>/dev/null | jq -r '.result.pane.pane_id // empty' || true)
+    [ -n "$sender_pane" ] \
+        || { echo "herdr-phase-change: cannot name the sending pane, so the prompt cannot be marked; sent nothing" >&2; exit 1; }
+    prompt="[from orchestrator pane $sender_pane] $prompt"
 fi
 
 agent_field() {

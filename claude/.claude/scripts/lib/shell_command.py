@@ -1,5 +1,6 @@
 """Read a shell command line as steps joined by operators, without running or fully parsing it."""
 import os
+import posixpath
 import re
 import shlex
 
@@ -26,7 +27,7 @@ DOCKER_VALUE_OPTIONS = {
     "-m", "--memory", "--cpus", "--gpus", "--shm-size", "--ulimit", "--tmpfs", "--device", "--restart", "--pull",
     "--security-opt", "--log-opt", "--index", "--ansi", "--progress",
 }
-GROUP_WORDS = {"{", "!"}
+GROUP_WORDS = {"{", "!", "if", "then", "elif", "else", "while", "until", "do"}
 SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
 # A command text that names one of these as a word may run code the parser does not read: a shell's `-c` text, an
 # `eval` argument, a command run through another program or on another host. A quoted mention counts, except a
@@ -259,6 +260,11 @@ def git_options(words):
     return options, index
 
 
+def is_git_word(word):
+    """True when the word's base name is `git`, so a path to git counts."""
+    return posixpath.basename(word) == "git"
+
+
 def git_subcommand(words):
     """The subcommand of the git call in the words, after git's own options; None when it names none."""
     _options, index = git_options(words)
@@ -295,9 +301,9 @@ def contains_word_run(words, run):
 def command_after_wrappers(words, peel_containers=True):
     """The words of the command that a simple command finally runs, with the wrapper words, their flags and their
     values dropped: env (flags, NAME=value), sudo, doas, timeout (flags, duration), taskset (flags, CPU list), nice,
-    nohup, time, command, exec, builtin, uv/poetry/pipenv run, a leading `{` or `!` and, unless peel_containers is
-    False, a docker exec or run call. Words that name no wrapper come back as they are; an empty list when the
-    wrappers name no command."""
+    nohup, time, command, exec, builtin, uv/poetry/pipenv run, a leading group word (GROUP_WORDS) and, unless
+    peel_containers is False, a docker exec or run call. Words that name no wrapper come back as they are; an empty
+    list when the wrappers name no command."""
     while True:
         words = without_assignments(words)
         if not words:
@@ -307,7 +313,7 @@ def command_after_wrappers(words, peel_containers=True):
         container_command = unwrap_docker(words) if peel_containers else None
         if container_command is not None:
             words = container_command
-        elif name in GROUP_WORDS:
+        elif words[0] in GROUP_WORDS:
             words = words[1:]
         elif name in RUNNER_WRAPPERS:
             if len(words) < 2 or words[1] != "run":

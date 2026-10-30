@@ -21,6 +21,7 @@ from shell_command import (
     contains_word_run,
     docker_forwarded_variables,
     docker_set_variables,
+    is_git_word,
     names_code_runner,
     parse_simple_commands,
     path_word,
@@ -37,6 +38,14 @@ from shell_command import (
     unwrap_docker,
     without_assignments,
 )
+
+
+class IsGitWordTest(unittest.TestCase):
+    def test_a_bare_git_or_a_path_to_git_counts_and_another_name_does_not(self):
+        self.assertTrue(is_git_word("git"))
+        self.assertTrue(is_git_word("/usr/bin/git"))
+        self.assertFalse(is_git_word("git-lfs"))
+        self.assertFalse(is_git_word("/usr/bin/gitk"))
 
 
 class CdFolderTest(unittest.TestCase):
@@ -431,6 +440,16 @@ class CommandAfterWrappersTest(unittest.TestCase):
             "taskset 0x3 tee f": ["tee", "f"],
             "unbuffer tee f": ["tee", "f"],
             "{ sh": ["sh"],
+            "! sh": ["sh"],
+            "if sh": ["sh"],
+            "then sh": ["sh"],
+            "elif sh": ["sh"],
+            "else sh": ["sh"],
+            "while sh": ["sh"],
+            "until sh": ["sh"],
+            "do sh": ["sh"],
+            "./do x": ["./do", "x"],
+            "bin/until cargo test": ["bin/until", "cargo", "test"],
             "uv pip install x": ["uv", "pip", "install", "x"],
             "timeout": [],
         }

@@ -26,6 +26,7 @@ import code_step_boundary
 import code_step_core
 import code_step_review
 import code_step_start
+import code_step_state
 import review_asks
 
 PLAN = "docs/plans/orders.md"
@@ -67,9 +68,7 @@ class TempRepo(unittest.TestCase):
 
 class PhaseStaysOpenWhenTheReviewDidNotConverge(TempRepo):
     def mark(self, review_status):
-        state = {"stage": "review", "plan": None, "phase": None, "sessionId": "s1"}
-        if review_status:
-            state["reviewStatus"] = review_status
+        state = code_step_state.RunState(stage="review", session_id="s1", review_status=review_status)
         recorded = []
         with mock.patch.object(code_step_boundary, "load_handback", stored_handback_reader(recorded)), \
                 mock.patch.object(code_step_boundary, "session_pin", lambda: "s1"):
@@ -89,10 +88,10 @@ class PhaseStaysOpenWhenTheReviewDidNotConverge(TempRepo):
                 self.assertEqual(is_marked, marked)
                 self.assertEqual(session_ids, recorded)
                 self.assertEqual(not is_marked, "phase stays open" in out)
-                self.assertEqual(not is_marked, state["stage"] == "stopped")
+                self.assertEqual(not is_marked, state.stage == "stopped")
 
     def test_finish_phase_stops_and_commits_nothing_after_a_non_converged_loop(self):
-        state = {"stage": "review", "plan": None, "phase": None, "sessionId": "s1", "reviewStatus": "plan-impact"}
+        state = code_step_state.RunState(stage="review", session_id="s1", review_status="plan-impact")
         with mock.patch.object(code_step_boundary, "load_handback", stored_handback_reader()), \
                 mock.patch.object(code_step_boundary, "finish_planless") as finish_planless, \
                 mock.patch.object(code_step_boundary, "save_state"):
@@ -100,7 +99,7 @@ class PhaseStaysOpenWhenTheReviewDidNotConverge(TempRepo):
 
         finish_planless.assert_not_called()
         self.assertIn("phase stays open", out)
-        self.assertNotEqual("done", state["stage"])
+        self.assertNotEqual("done", state.stage)
 
 
 class AskOutcomesReachLaterPasses(TempRepo):
@@ -109,7 +108,7 @@ class AskOutcomesReachLaterPasses(TempRepo):
         "gate": "code-reviewer", "class": "bug"})
 
     def rule(self, outcome, change=None):
-        state = {"stage": "asks", "plan": PLAN, "phase": "2", "asks": [dict(self.ASK)], "lane": "code", "iter": 1}
+        state = code_step_state.RunState(stage="asks", plan=PLAN, phase="2", asks=[dict(self.ASK)], iter=1)
         change_args = ["--change", change] if change else []
         with mock.patch.object(code_step_review, "log_ask_outcomes"), \
                 mock.patch.object(code_step_review, "apply_asks_or_finish") as apply:
@@ -117,8 +116,8 @@ class AskOutcomesReachLaterPasses(TempRepo):
         apply.assert_called_once()
 
     def handoff(self, plan=PLAN):
-        state = {"plan": plan, "phase": "4", "files": [], "changes": {}, "why": {}, "testsRun": "none",
-                 "flagged": [], "iter": 0}
+        state = code_step_state.RunState(stage="review", plan=plan, phase="4", files=[], changes={}, why={},
+                                         tests_run="none")
         return code_step_review.handoff_block(self.repo, state)
 
     def ruled_asks_entries(self):

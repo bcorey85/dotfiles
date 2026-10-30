@@ -21,6 +21,7 @@ loaded_review_fix = importlib.util.spec_from_file_location("review_fix", SCRIPTS
 review_fix = importlib.util.module_from_spec(loaded_review_fix)
 loaded_review_fix.loader.exec_module(review_fix)
 import code_step_review
+import code_step_state
 import review_asks
 
 # log-review-finding mints ids as 16 lowercase hex chars; review-fix logs no other shape.
@@ -49,7 +50,7 @@ class LogAskOutcomes(unittest.TestCase):
         code_step_review.git_output = self.original_git_output
 
     def log(self, asks, outcomes, phase="1"):
-        state = {"asks": asks, "lane": "code", "phase": phase, "iter": 2}
+        state = code_step_state.RunState(stage="asks", asks=asks, phase=phase, iter=2)
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             code_step_review.log_ask_outcomes(pathlib.Path("/tmp/some-repo"), state, outcomes)

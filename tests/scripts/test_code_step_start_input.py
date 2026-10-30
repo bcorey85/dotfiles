@@ -39,7 +39,8 @@ class StartInputTest(base.CodeStepTest):
 
     def stop_the_coder_on_its_report(self):
         self.start_phase_one()
-        self.set_state(stage="stopped", resumableCoderId="a1", resumableCoderAt=time.time(), dispatchAt=None)
+        self.set_state(stage="stopped", stop={"kind": "coder-resumable", "at": time.time(), "agentId": "a1"},
+                       dispatchAt=None)
 
     # ---------- --task-file ----------
 
@@ -250,7 +251,7 @@ class StartInputTest(base.CodeStepTest):
 
                 self.assertIn("AGENT: coder", out)
                 self.assertIn("Implement: fix the typo", out)
-                self.assertIsNone(self.state()["plan"])
+                self.assertIsNone(self.state().get("plan"))
 
     # ---------- --phase with run notes and no plan ----------
 

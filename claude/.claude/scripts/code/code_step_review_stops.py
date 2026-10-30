@@ -15,13 +15,13 @@ from test_run_output import runs_tests
 
 
 def is_capped_review(state):
-    return state.get("reviewStatus") == "cap-reached"
+    return state.review_status == "cap-reached"
 
 
 def left_findings_open(state):
     # The review ended with findings open (a cap, or a critical blocker with asks): its rulings go to one more review
     # of the whole phase, and the review gate stays dirty until that review ends clean.
-    return state.get("reviewStatus") in ("cap-reached", "critical-blocker")
+    return state.review_status in ("cap-reached", "critical-blocker")
 
 
 def review_stop_next_step(state):
@@ -126,11 +126,11 @@ def stop_on_review_status(repo_dir, state, module, packet):
             "Tool fault: " + packet["tool_fault"],
             f"To run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.")
         return True
-    if status == "critical-blocker" and packet["ask"] and not state.get("blockerCarried"):
+    if status == "critical-blocker" and packet["ask"] and not state.blocker_carried:
         # With asks, the asks route takes the rulings first, as after a cap: the blockers go to the review after it.
         # Only the first blocker stop of a phase takes it, so a preset ruling cannot loop with no human.
-        state["blockerCarried"] = True
-        state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
+        state.blocker_carried = True
+        state.carried_findings = module.carried_findings(packet, include_asks=False)
         return False
     if status in BLOCKER_STOP_TEXT:
         question, instruction = BLOCKER_STOP_TEXT[status]
@@ -168,16 +168,16 @@ def stop_on_review_status(repo_dir, state, module, packet):
         # The first cap of a phase sends the open findings to one more review-loop pass with a fresh round budget.
         # With asks, the asks route takes the rulings first. A cap after that pass stops for a restart.
         # The packet's iter stays on the state: the ask rows of this round log it. The next review dispatch resets it.
-        is_second_cap = state.get("capCarried", False)
-        state["capCarried"] = True
+        is_second_cap = state.cap_carried
+        state.cap_carried = True
         if packet["ask"] and not is_second_cap:
-            state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
+            state.carried_findings = module.carried_findings(packet, include_asks=False)
             return False
 
         if is_second_cap:
             set_stop(state)
         else:
-            state["carriedFindings"] = module.carried_findings(packet)
+            state.carried_findings = module.carried_findings(packet)
             set_stop(state, "cap-reached")
 
         next_step = review_stop_next_step(state)

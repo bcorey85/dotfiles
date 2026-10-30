@@ -34,7 +34,7 @@ def concentration_gate_position(items):
 
 
 def is_refactor_phase(state):
-    return plan_format.closing_skill(state.get("title") or "") == REFACTOR_SKILL
+    return plan_format.closing_skill(state.title or "") == REFACTOR_SKILL
 
 
 def module_of(path):

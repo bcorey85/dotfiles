@@ -44,6 +44,7 @@ import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_gates  # noqa: E402
 import code_step_report  # noqa: E402
+import code_step_state  # noqa: E402
 import code_step_verification  # noqa: E402
 import coder_gate  # noqa: E402
 import criteria_verdict  # noqa: E402
@@ -2662,14 +2663,6 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("other matters", said)
         self.assertNotIn("order matters", said)
 
-    def test_an_old_flat_ask_fix_behavior_state_reads_as_one_earlier_round(self):
-        old_state = {"stage": "review", "askFixBehavior": ["one", "two"]}
-
-        migrated = code_step_core.migrate_old_state(old_state)
-
-        self.assertEqual([["one", "two"]], migrated["askRounds"])
-        self.assertNotIn("askFixBehavior", migrated)
-
     def test_rejected_asks_finish_the_phase_without_a_coder(self):
         self.coder_round()
         self.hook("review-loop", self.ASK)
@@ -2799,7 +2792,7 @@ class CodeStepTest(unittest.TestCase):
     def test_planless_task(self):
         out = self.step("start", "--task", "add a flag")
         self.assertIn("Implement: add a flag", out)
-        self.assertEqual(self.state()["plan"], None)
+        self.assertIsNone(self.state().get("plan"))
 
 
     # ---------- defects from the code review ----------
@@ -3643,7 +3636,7 @@ class CodeStepTest(unittest.TestCase):
         self.coder_round(source="console.log(1)\n")
         self.hook("review-loop", self.LOOP_OK)
         self.step("resume")
-        self.set_state(stopReason="tool-fault")
+        self.set_state(stage="stopped", stop={"kind": "tool-fault", "at": time.time()})
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
 
         out = self.step("verify")
@@ -4731,6 +4724,11 @@ class CodeStepTest(unittest.TestCase):
                 state[key] = value
         state_file.write_text(json.dumps(state))
 
+    def update_stop(self, **record):
+        # Lays these stop record keys over the saved run's stop record.
+        stop = {**self.state()["stop"], **record}
+        self.set_state(stop=stop)
+
     def set_gate_result(self, result):
         gate_path = self.repo / ".git/coder-gate.json"
         gate = json.loads(gate_path.read_text())
@@ -4763,7 +4761,7 @@ class CodeStepTest(unittest.TestCase):
 
     def leave_run_of_another_session(self, stage, stop_reason, age_kind, age_seconds):
         self.start_phase_one()
-        changes = {"stage": stage, "stopReason": stop_reason, "sessionId": "other-session"}
+        changes = {"stage": stage, "stop": {"kind": stop_reason, "at": time.time()}, "sessionId": "other-session"}
         if age_kind == "dispatch":
             changes["dispatchAt"] = time.time() - age_seconds
         self.set_state(**changes)
@@ -5259,7 +5257,7 @@ class CodeStepTest(unittest.TestCase):
     def test_a_file_the_full_check_created_stays_out_of_the_commit_line_and_is_named_with_a_delete_hint(self):
         (self.repo / "backend/src/fresh.ts").write_text("export const fresh = 1\n")
         (self.repo / "dist-out.js").write_text("built by the check\n")
-        state = {"baseline": {}, "plan": None, "checkCreated": ["dist-out.js"]}
+        state = code_step_state.RunState(stage="review", baseline={}, check_created=["dist-out.js"])
 
         text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
 
@@ -5272,7 +5270,7 @@ class CodeStepTest(unittest.TestCase):
     def test_a_tracked_file_the_full_check_changed_stays_out_of_the_commit_line_and_is_named_with_a_restore_hint(self):
         (self.repo / "backend/src/fresh.ts").write_text("export const fresh = 1\n")
         (self.repo / "generated.ts").write_text("rewritten by the check\n")
-        state = {"baseline": {}, "plan": None, "checkChanged": ["generated.ts"]}
+        state = code_step_state.RunState(stage="review", baseline={}, check_changed=["generated.ts"])
 
         text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
 
@@ -5284,7 +5282,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_file_the_coder_edited_and_the_check_rewrote_stays_in_the_commit_with_a_warning_and_no_restore_hint(self):
         (self.repo / "generated.ts").write_text("edited by the coder, then rewritten by the check\n")
-        state = {"baseline": {}, "plan": None, "checkRewroteEdited": ["generated.ts"]}
+        state = code_step_state.RunState(stage="review", baseline={}, check_rewrote_edited=["generated.ts"])
 
         text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
 
@@ -5296,8 +5294,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_file_named_both_changed_and_rewrote_edited_by_the_check_stays_in_the_commit_without_a_restore_hint(self):
         (self.repo / "generated.ts").write_text("edited by the coder, then rewritten by the check\n")
-        state = {"baseline": {}, "plan": None, "checkChanged": ["generated.ts"],
-                 "checkRewroteEdited": ["generated.ts"]}
+        state = code_step_state.RunState(stage="review", baseline={}, check_changed=["generated.ts"],
+                                         check_rewrote_edited=["generated.ts"])
 
         text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
 
@@ -5314,9 +5312,9 @@ class CodeStepTest(unittest.TestCase):
         self.hook("review-loop", self.LOOP_OK + '\ncheck_changed: ["generated.ts"]\ncheck_created: ["dist/out.js"]'
                   '\ncheck_rewrote_edited: ["edited.ts"]')
         self.step("resume")
-        state = self.state()
+        state = code_step_core.load_state(self.repo)
         self.assertEqual((["generated.ts"], ["dist/out.js"], ["edited.ts"]),
-                         (state["checkChanged"], state["checkCreated"], state["checkRewroteEdited"]))
+                         (state.check_changed, state.check_created, state.check_rewrote_edited))
 
         text, commit_line, own_files = code_step_boundary.phase_commit(self.repo, state)
 
@@ -5342,12 +5340,15 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(([], []), (state["checkChanged"], state["checkCreated"]))
         self.assertEqual([], state["checkRewroteEdited"])
 
+    def ticket_prefix_of(self, plan, branch=None):
+        state = code_step_state.RunState(stage="review", plan=plan, branch=branch)
+        return code_step_boundary.ticket_prefix(state)
+
     def test_the_commit_subject_carries_the_ticket_id_of_the_plan_folder_or_branch(self):
-        self.assertEqual("LED-15: ", code_step_boundary.ticket_prefix({"plan": "docs/plans/LED-15-recap/spec.md"}))
-        self.assertEqual("LED-15: ", code_step_boundary.ticket_prefix({"plan": "docs/plans/orders/spec.md",
-                                                               "branch": "brandon/LED-15-recap"}))
-        self.assertEqual("", code_step_boundary.ticket_prefix({"plan": "docs/plans/orders/spec.md", "branch": "main"}))
-        self.assertEqual("", code_step_boundary.ticket_prefix({"plan": None, "branch": "main"}))
+        self.assertEqual("LED-15: ", self.ticket_prefix_of("docs/plans/LED-15-recap/spec.md"))
+        self.assertEqual("LED-15: ", self.ticket_prefix_of("docs/plans/orders/spec.md", "brandon/LED-15-recap"))
+        self.assertEqual("", self.ticket_prefix_of("docs/plans/orders/spec.md", "main"))
+        self.assertEqual("", self.ticket_prefix_of(None, "main"))
 
     def test_a_phase_flag_run_ends_after_that_phase_even_with_an_earlier_phase_open(self):
         self.step("start", self.plan, "--phase", "2")
@@ -5411,9 +5412,8 @@ class CodeStepTest(unittest.TestCase):
     def test_a_word_dash_number_in_a_plan_folder_or_branch_is_not_a_ticket_id(self):
         for name in ("upgrade-node-20", "oauth-2", "fix-1", "phase-2", "python-3", "led-15"):
             with self.subTest(name=name):
-                self.assertEqual("", code_step_boundary.ticket_prefix({"plan": f"work/{name}/spec.md", "branch": name}))
-        self.assertEqual("ABC2-7: ", code_step_boundary.ticket_prefix({"plan": "work/upgrade-node-20/spec.md",
-                                                               "branch": "brandon/ABC2-7-upgrade"}))
+                self.assertEqual("", self.ticket_prefix_of(f"work/{name}/spec.md", name))
+        self.assertEqual("ABC2-7: ", self.ticket_prefix_of("work/upgrade-node-20/spec.md", "brandon/ABC2-7-upgrade"))
 
     def test_an_automated_verification_section_of_only_not_applicable_items_is_empty(self):
         for item in ("- [ ] N/A — docs only", "- [ ] **N/A**: nothing to run", "- [x] none"):
@@ -5673,7 +5673,7 @@ class CodeStepTest(unittest.TestCase):
     def test_the_wait_cap_for_a_resumed_coder_counts_from_the_first_wait_not_from_the_old_stop(self):
         self.stop_the_coder_on_a_blocked_report()
         self.send_message("a1")
-        self.set_state(resumableCoderAt=time.time() - 100)
+        self.update_stop(kind="coder-resumable", at=time.time() - 100)
         events_file = self.repo / ".git/code-step/runs" / self.state()["runId"] / "events.jsonl"
         kept_lines = [line for line in events_file.read_text().splitlines() if json.loads(line)["event"] != "handback"]
         events_file.write_text("\n".join(kept_lines) + "\n")
@@ -5688,7 +5688,7 @@ class CodeStepTest(unittest.TestCase):
         self.send_message("a1")
         self.wait_env(1, "0.2", waits=3)
         self.step("resume")
-        self.set_state(resumeWaitAt=time.time() - 100)
+        self.update_stop(waitAt=time.time() - 100)
         out = self.step("resume")
         self.assertIn("ACTION: stop", out)
         self.assertIn("has not handed back in", out)
@@ -5743,18 +5743,18 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("review", self.state()["stage"])
 
     def test_save_state_leaves_the_old_state_file_whole_when_the_write_fails_midway(self):
-        code_step.save_state(self.repo, {"stage": "coder", "filler": "x" * 1000})
+        code_step.save_state(self.repo, code_step_state.RunState(stage="coder", title="x" * 1000))
         state_file = code_step.state_dir(self.repo) / "state.json"
         old_text = state_file.read_text()
 
         with unittest.mock.patch("os.replace", side_effect=OSError("disk full")), self.assertRaises(OSError):
-            code_step.save_state(self.repo, {"stage": "review"})
+            code_step.save_state(self.repo, code_step_state.RunState(stage="review"))
 
         self.assertEqual(old_text, state_file.read_text())
         self.assertEqual([state_file.name], sorted(path.name for path in state_file.parent.glob("state.json*")))
 
     def test_a_reader_polling_the_state_file_never_sees_a_partial_write(self):
-        big_state = {"stage": "coder", "filler": "x" * 2_000_000}
+        big_state = code_step_state.RunState(stage="coder", title="x" * 2_000_000)
         code_step.save_state(self.repo, big_state)
         state_file = code_step.state_dir(self.repo) / "state.json"
         stop_polling = threading.Event()
@@ -5856,7 +5856,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: wait", self.step("resume"))
         self.assertEqual(first_wait_at, self.state()["stop"]["waitAt"])
 
-        self.set_state(resumeWaitAt=time.time() - 100)
+        self.update_stop(waitAt=time.time() - 100)
         cap_stop_out = self.step("resume")
         self.assertIn("ACTION: stop", cap_stop_out)
         self.assertIn("has not handed back in", cap_stop_out)
@@ -5880,8 +5880,8 @@ class CodeStepTest(unittest.TestCase):
         self.start_phase_one()
         self.launch_the_pending_dispatch("a1", "coder")
         self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C")
-        state = self.state()
-        run_id = state["runId"]
+        state = code_step_core.load_state(self.repo)
+        run_id = state.run_id
         for dispatch_id, agent_id in (("d2", "ask1"), ("d3", "ask2")):
             code_step_core.log_event(self.repo, run_id, "dispatch", self.SESSION, id=dispatch_id,
                                      agent_type="coder", stage="asks-coder")
@@ -5897,18 +5897,18 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(["report of ask2"], reports[1]["messages"])
 
     def test_a_dispatch_opened_on_a_state_with_no_run_id_starts_a_new_run_at_its_first_dispatch(self):
-        state = {"stage": "coder"}
+        state = code_step_state.RunState(stage="coder")
         code_step_core.open_dispatch(state)
-        run_id = state["runId"]
+        run_id = state.run_id
         self.assertTrue(run_id)
-        self.assertIsNotNone(state["dispatchAt"])
+        self.assertIsNotNone(state.dispatch_at)
 
         marked_prompt, _prompt_file = code_step_core.record_dispatch(self.repo, state, "coder", None,
                                                                      "the prompt")
         self.assertTrue(marked_prompt.endswith(f"code-step-dispatch: {run_id}/d1"))
 
         code_step_core.open_dispatch(state)
-        self.assertEqual(run_id, state["runId"])
+        self.assertEqual(run_id, state.run_id)
 
     # ---------- start on a finished plan names the follow-up command ----------
 
@@ -6189,7 +6189,7 @@ class CodeStepTest(unittest.TestCase):
         self.send_message("a1")
         self.wait_env(1, "0.2", waits=3)
         self.step("resume")
-        self.set_state(resumeWaitAt=time.time() - 100)
+        self.update_stop(waitAt=time.time() - 100)
         self.assertIn("has not handed back in", self.step("resume"))
         self.assertNotIn("waitAt", self.state()["stop"])
         self.send_message("a1")

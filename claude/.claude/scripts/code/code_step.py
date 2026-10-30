@@ -259,8 +259,10 @@ def asks_coder_changed_files(changed_now, asks_baseline):
 
 def finish_without_review(repo_dir, state, changed_files, coder_stage, say_text):
     # No review has anything to cover: run the phase's verification commands and tick, as after a clean review.
-    state.update({"files": changed_files, "coderStage": coder_stage, "stage": "review"})
-    state.pop("correctionCoder", None)
+    state.files = changed_files
+    state.coder_stage = coder_stage
+    state.stage = "review"
+    state.correction_coder = None
     save_state(repo_dir, state)
     say(repo_dir, say_text)
     return finish_phase(repo_dir, state)
@@ -269,7 +271,7 @@ def finish_without_review(repo_dir, state, changed_files, coder_stage, say_text)
 def coder_flagged(state, gate, report, is_ask_fix):
     # The report's open points, with the hand-back gate's cap, its command errors and the flags an asks-coder
     # inherits. A command error is no code failure, so it is flagged apart from the cap.
-    flagged = list(state.get("flagged", [])) if is_ask_fix else []
+    flagged = list(state.flagged) if is_ask_fix else []
     coders = (gate or {"coders": {}})["coders"].values()
     for coder in coders:
         coder_commands = coder.get("commands", {})
@@ -288,7 +290,7 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     # does it or the check that passed; "recommended-eng-spec" for a report whose marker line recommends /eng-spec;
     # "undone" when a correction coder put the tree back where the asks round began and no ask stays accepted;
     # "no-change" for a report with no reviewable change (a failed edit, a blocked hook, a question); else None.
-    is_ask_fix = state["stage"] == "asks-coder"
+    is_ask_fix = state.stage == "asks-coder"
     asks_coder_changed_nothing = is_ask_fix and changed_now == snapshot_part(state, "asks")
     escalates = recommends_eng_spec(report)
     report_raises_blocker = escalates or bool(first_plan_impact([report])) or bool(open_questions(report))
@@ -296,8 +298,8 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
             repo_dir, state, report):
         return "converged"
 
-    nothing_left_to_apply = not state.get("acceptedAsks") and not state.get("asksAlso")
-    if asks_coder_changed_nothing and not report_raises_blocker and state.get("correctionCoder") \
+    nothing_left_to_apply = not state.accepted_asks and not state.asks_also
+    if asks_coder_changed_nothing and not report_raises_blocker and state.correction_coder \
             and nothing_left_to_apply:
         return "undone"
     if escalates:
@@ -316,16 +318,16 @@ def stop_on_coder_report(repo_dir, state, report, agent_id, cause_text, restart_
     # The run stops on the coder's report: the user answers it, and the coder resumed with SendMessage goes on.
     # cause_text finishes the sentence "The coder ...". restart_only names the restart as the one way out, for a
     # stop where the coder cannot go on.
-    set_stop(state, CODER_RESUMABLE, agent_id=agent_id or "unknown", coder_stage=state["stage"])
-    state.pop("dispatchAt", None)
+    set_stop(state, CODER_RESUMABLE, agent_id=agent_id or "unknown", coder_stage=state.stage)
+    state.dispatch_at = None
     save_state(repo_dir, state)
-    tick_text = (f" If the user says Phase {state['phase']} is already done, invoke Skill code with `tick "
-                f"{state['phase']}`; do that only on the user's word." if state.get("plan") and state.get("phase")
+    tick_text = (f" If the user says Phase {state.phase} is already done, invoke Skill code with `tick "
+                f"{state.phase}`; do that only on the user's word." if state.plan and state.phase
                 else "")
     resume_text = (" If the user answers the coder's blocker, resume that coder with SendMessage, then run "
                   f"{timed_command()}.")
     report_lines = [line for line in report.splitlines() if line.strip()][:CODER_REPORT_STOP_LINES]
-    if "pendingCorrection" in state:
+    if state.pending_correction is not None:
         report_lines.append("A corrected ruling is saved; a correction coder applies it when the asks coder's work "
                             "goes on.")
     next_step = (f"if the user answers the coder's blocker, resume that coder with SendMessage, then run "
@@ -346,31 +348,38 @@ def record_coder_report(repo_dir, state, report, gate, changed_files, asks_chang
     # replaces the earlier notes of asks_changed_files (the files the asks coder changed; the files it wrote notes
     # for when no asks snapshot exists), while changed_files is the review scope. A correction coder replaces only
     # the paths in its own why_groups.
-    coder_stage = state["stage"]
+    coder_stage = state.stage
     is_ask_fix = coder_stage == "asks-coder"
     behavior = behavior_lines(report)
     why_groups = resolve_report_paths(why_by_file(report), changed_files)
     tests_run = tests_run_text(gate, state)
     if is_ask_fix:
         # The ask-fix coder's behavior stays off the phase's own behavior (its Implemented line and Behavior delta).
-        state["askRounds"] = [*state.get("askRounds", []), behavior]
-        behavior = list(state.get("behavior", []))
+        state.ask_rounds = [*state.ask_rounds, behavior]
+        behavior = list(state.behavior or [])
         # The summary shows the asks coder's notes for the files it changed and the earlier notes for the rest. The
-        # reviewer's notes (state["why"]) keep the phase coder's notes for a changed file ahead of the asks coder's.
-        earlier_summary_why = state["summaryWhy"] if "summaryWhy" in state else state["why"]
-        is_correction = state.pop("correctionCoder", False)
+        # reviewer's notes (state.why) keep the phase coder's notes for a changed file ahead of the asks coder's.
+        earlier_summary_why = state.summary_why if state.summary_why is not None else state.why
+        is_correction = bool(state.correction_coder)
+        state.correction_coder = None
         replaced_paths = why_groups if is_correction or asks_changed_files is None else asks_changed_files
         kept_earlier_why = {path: notes for path, notes in earlier_summary_why.items() if path not in replaced_paths}
-        state["summaryWhy"] = {**kept_earlier_why, **why_groups}
-        for path, notes in state["why"].items():
+        state.summary_why = {**kept_earlier_why, **why_groups}
+        for path, notes in state.why.items():
             if path in changed_files:
                 why_groups[path] = notes + why_groups.get(path, [])
-        tests_run = state["testsRun"] + "; ask-fix coder -> ran its own checks"
-        state.update({"iter": 0, "spec_iter": 0, "priorIssues": prior_issues(state["acceptedAsks"])})
+        tests_run = state.tests_run + "; ask-fix coder -> ran its own checks"
+        state.iter = 0
+        state.spec_iter = 0
+        state.prior_issues = prior_issues(state.accepted_asks)
     else:
-        state.pop("summaryWhy", None)
-    state.update({"behavior": behavior, "exception": bool(state["flagged"]), "files": changed_files,
-                  "why": why_groups, "testsRun": tests_run, "coderStage": coder_stage})
+        state.summary_why = None
+    state.behavior = behavior
+    state.exception = bool(state.flagged)
+    state.files = changed_files
+    state.why = why_groups
+    state.tests_run = tests_run
+    state.coder_stage = coder_stage
 
 
 def stage_plan_impact(repo_dir, state, coder_stage):
@@ -380,11 +389,11 @@ def stage_plan_impact(repo_dir, state, coder_stage):
     messages = [coder_message_without_gate_stamp(message)
                 for report in phase_coder_reports(repo_dir, state) if report["stage"] == coder_stage
                 for message in report["attempts"] + report["messages"]]
-    return first_plan_impact(messages, state.get("handledImpacts"))
+    return first_plan_impact(messages, state.handled_impacts)
 
 
 def stop_when_head_left_base(repo_dir, state, report, handback):
-    base_head = state.get("baseHead")
+    base_head = state.base_head
     if not head_left_phase_start(repo_dir, base_head):
         return False
 
@@ -406,7 +415,7 @@ def coder_impact_stop_cause(impact):
 def stop_on_plan_impact_cause(repo_dir, state, handback, impact, stop_cause):
     # The stop leaves the stage at the coder; the block is marked so the resumed coder's hand-back is not stopped on
     # it again.
-    state["handledImpacts"] = [*state.get("handledImpacts", []), impact]
+    state.handled_impacts = [*(state.handled_impacts or []), impact]
     stop_on_coder_report(repo_dir, state, impact, handback.get("agent_id"), stop_cause)
 
 
@@ -420,7 +429,8 @@ def route_coder_plan_impact(repo_dir, state, handback, coder_stage):
         stop_on_plan_impact_cause(repo_dir, state, handback, impact, stop_cause)
         return True
 
-    state.update({"stage": "impact-coder", "impact": impact})
+    state.stage = "impact-coder"
+    state.impact = impact
     save_state(repo_dir, state)
     emit_plan_impact_modal(impact, repo_dir)
     return True
@@ -429,9 +439,9 @@ def route_coder_plan_impact(repo_dir, state, handback, coder_stage):
 def end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_files):
     # Ends the step on a report with nothing to review: the asks coder found every ask already done, a correction put
     # the tree back, or the coder stopped on a blocker. True when it ended the step.
-    coder_stage = state["stage"]
+    coder_stage = state.stage
     is_open = left_findings_open(state)
-    has_pending_correction = coder_stage == "asks-coder" and "pendingCorrection" in state
+    has_pending_correction = coder_stage == "asks-coder" and state.pending_correction is not None
     if outcome == "converged" and not is_open and not has_pending_correction:
         finish_without_review(
             repo_dir, state, changed_files, coder_stage,
@@ -447,7 +457,7 @@ def end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_
         return True
     if outcome in CODER_STOP_CAUSES:
         # A report that blames the toolkit, or names no cause, stops on that cause even when it changed no file.
-        impact = first_plan_impact([report], state.get("handledImpacts"))
+        impact = first_plan_impact([report], state.handled_impacts)
         stop_cause = coder_impact_stop_cause(impact) if impact else None
         if stop_cause:
             stop_on_plan_impact_cause(repo_dir, state, handback, impact, stop_cause)
@@ -458,7 +468,7 @@ def end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_
 
 
 def review_coder_report(repo_dir, state, handback):
-    coder_stage = state["stage"]
+    coder_stage = state.stage
     is_ask_fix = coder_stage == "asks-coder"
     report = coder_message_without_gate_stamp(handback.get("message", ""))
 
@@ -466,10 +476,10 @@ def review_coder_report(repo_dir, state, handback):
         return
 
     gate = None if is_ask_fix else gate_results(repo_dir)
-    gate_lines = state.get("gateLines", "")
+    gate_lines = state.gate_lines
     if not is_ask_fix:
         _code, gate_lines = run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), "clear"], repo_dir)
-    state["flagged"] = coder_flagged(state, gate, report, is_ask_fix)
+    state.flagged = coder_flagged(state, gate, report, is_ask_fix)
 
     changed_now = file_hashes(repo_dir)
     changed_files = coder_changed_files(repo_dir, state, changed_now)
@@ -478,7 +488,7 @@ def review_coder_report(repo_dir, state, handback):
         return
 
     is_open = left_findings_open(state)
-    has_pending_correction = is_ask_fix and "pendingCorrection" in state
+    has_pending_correction = is_ask_fix and state.pending_correction is not None
     asks_baseline = snapshot_part(state, "asks")
     asks_changed_files = None
     if is_ask_fix and asks_baseline is not None:
@@ -497,17 +507,17 @@ def review_coder_report(repo_dir, state, handback):
                                          "The asks coder changed only docs files. No review runs on them.")
 
     record_coder_report(repo_dir, state, report, gate, changed_files, asks_changed_files)
-    state["gateLines"] = gate_lines
+    state.gate_lines = gate_lines
     if route_coder_plan_impact(repo_dir, state, handback, coder_stage):
         return
 
-    state["planImpact"] = "none"
+    state.plan_impact = "none"
     save_state(repo_dir, state)
     emit_review_dispatch(repo_dir, state)
 
 
 def command_after_coder(repo_dir, state, args):
-    if state["stage"] not in CODER_STAGES and not awaits_resumed_coder(state):
+    if state.stage not in CODER_STAGES and not awaits_resumed_coder(state):
         return refuse("no coder dispatch is pending any more.", script_command(RESUME_VERB))
     if not wait_for_handback(repo_dir, state, RESUME_VERB):
         return
@@ -536,7 +546,7 @@ def run_guarded_verb(verb, handler, args):
 def stopped_coder_report(repo_dir, state):
     # The last message of the coder the run stopped on, or a note that none was saved.
     for report in reversed(phase_coder_reports(repo_dir, state)):
-        if report["agent_id"] == state["stop"].get("agentId") and report["messages"]:
+        if report["agent_id"] == state.stop.agent_id and report["messages"]:
             return report["messages"][-1]
     return "(none saved)"
 
@@ -546,8 +556,8 @@ def coder_answer_sent(repo_dir, state):
     # stop.
     if awaited_handback(repo_dir, state) is not None:
         return True
-    coder_id = state["stop"].get("agentId")
-    return sent_message_since(repo_dir, state, state["stop"]["at"], None if coder_id == "unknown" else coder_id)
+    coder_id = state.stop.agent_id
+    return sent_message_since(repo_dir, state, state.stop.at, None if coder_id == "unknown" else coder_id)
 
 
 def review_answer_sent(repo_dir, state):
@@ -556,14 +566,14 @@ def review_answer_sent(repo_dir, state):
     if launch_id is None:
         return False
     return (awaited_handback(repo_dir, state) is not None
-            or sent_message_since(repo_dir, state, state["stop"]["at"], launch_id))
+            or sent_message_since(repo_dir, state, state.stop.at, launch_id))
 
 
 def stopped_route(repo_dir, state):
     if awaits_resumed_coder(state):
         return "after-coder" if coder_answer_sent(repo_dir, state) else "ask-coder"
     if awaits_resumed_review(state):
-        if state.get("reviewScriptPid"):
+        if state.review_script_pid:
             return "after-review"
         return "after-review" if review_answer_sent(repo_dir, state) else "ask-review-cap"
 
@@ -594,7 +604,7 @@ def resume_route(repo_dir, state):
 
 def saved_run_route(repo_dir, state):
     # The step that comes next for the saved run by its stage and stop reason alone; it does not check the plan.
-    stage = state["stage"]
+    stage = state.stage
     if stage in HOOK_STAGES and dispatch_since(state) is None:
         return "ask-unknown"
     if stage == "stopped":
@@ -604,11 +614,11 @@ def saved_run_route(repo_dir, state):
 
 def ask_about_stopped_coder(repo_dir, state, answer=None):
     # With the user's answer from `resume <answer>`, the question tells the main session to send that answer on.
-    phase_tick = (f" If the user says Phase {state['phase']} is done, run `tick {state['phase']}`."
-                 if state.get("plan") and state.get("phase") else "")
+    phase_tick = (f" If the user says Phase {state.phase} is done, run `tick {state.phase}`."
+                 if state.plan and state.phase else "")
     report = stopped_coder_report(repo_dir, state)
     restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
-    coder_id = state["stop"]["agentId"]
+    coder_id = state.stop.agent_id
     if answer is None:
         send_step = f"Send the user's answer to agent {coder_id} with SendMessage, then run resume."
     else:
@@ -624,7 +634,7 @@ def ask_about_stopped_coder(repo_dir, state, answer=None):
 
 def ask_about_unrecorded_state(repo_dir, state):
     # The fallback stop for a saved state that no route covers: it prints the state and the command that goes on.
-    stage = state["stage"]
+    stage = state.stage
     if stage == "skill":
         return resume_closing_skill(repo_dir, state)
 
@@ -645,9 +655,9 @@ def ask_about_unrecorded_state(repo_dir, state):
 
 def resume_closing_skill(repo_dir, state):
     # A closing phase that outlives its session: a resume invokes its skill again, with the phase's plan section.
-    section = current_phase_text(repo_dir, state["plan"], state["phase"])
-    skill = plan_format.closing_skill(state["title"])
-    emit_closing_skill(repo_dir, state["plan"], state["phase"], state["title"], skill, section, state.get("runNotes"))
+    section = current_phase_text(repo_dir, state.plan, state.phase)
+    skill = plan_format.closing_skill(state.title)
+    emit_closing_skill(repo_dir, state.plan, state.phase, state.title, skill, section, state.run_notes)
 
 
 def ask_about_review_cap(repo_dir, state):
@@ -665,8 +675,8 @@ def ask_about_critical_blocker(repo_dir, state):
 def ask_about_stale_phase(repo_dir, state):
     # The plan moved under the saved run: going on would run the old phase. Dropping the run starts the plan's next open
     # phase.
-    modifier_words = [state["modifier"]] if state.get("modifier") else []
-    restart_command = script_command(" ".join(["start --restart", state["plan"], *modifier_words]))
+    modifier_words = [state.modifier] if state.modifier else []
+    restart_command = script_command(" ".join(["start --restart", state.plan, *modifier_words]))
     ask_user(repo_dir, f"The saved run is stale: {stale_phase_reason(repo_dir, state)}. Ask the user whether to drop "
              f"the stale run and start the plan's next open phase. If so, run `{restart_command}`. The working tree "
              "stays as it is.")
@@ -686,9 +696,9 @@ RESUME_HANDLERS = {
     "after-review": lambda repo_dir, state: command_after_review(repo_dir, state, []),
     "after-plan-edit": lambda repo_dir, state: command_after_plan_edit(repo_dir, state, []),
     "review-again": lambda repo_dir, state: command_review_again(repo_dir, state, []),
-    "ask-impact": lambda repo_dir, state: emit_plan_impact_modal(state["impact"], repo_dir,
-                                                                 state.get("carriedFindings", [])),
-    "ask-asks": lambda repo_dir, state: ask_the_user(repo_dir, state, state["asks"]),
+    "ask-impact": lambda repo_dir, state: emit_plan_impact_modal(state.impact, repo_dir,
+                                                                 state.carried_findings or []),
+    "ask-asks": lambda repo_dir, state: ask_the_user(repo_dir, state, state.asks),
     "ask-coder": ask_about_stopped_coder, "ask-review-cap": ask_about_review_cap,
     "ask-coder-cap": ask_about_coder_cap, "ask-stale-phase": ask_about_stale_phase,
     "ask-critical-blocker": ask_about_critical_blocker,
@@ -713,7 +723,7 @@ def command_resume(args):
         reason, commands, notes, stop = resume_text_refusal(repo_dir, state, args)
         return refuse(reason, *commands, notes=notes, stop=stop)
 
-    if state is not None and (state["stage"] == "stopped" or state["stage"] in WAITING_STAGES):
+    if state is not None and (state.stage == "stopped" or state.stage in WAITING_STAGES):
         clear_say(repo_dir)
 
     if args:
@@ -725,7 +735,7 @@ def abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_
                        review_script_was_running):
     # What `abort` tells the user it dropped, one line each. The dispatch line reads the launch log, so call it before
     # the state moves.
-    lines = [f"Dropped the /code run: {phase_label(state)} at stage {state['stage']}."]
+    lines = [f"Dropped the /code run: {phase_label(state)} at stage {state.stage}."]
     if criteria_message:
         lines.append(criteria_message)
 
@@ -733,12 +743,12 @@ def abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_
         lines.append(f"Killed the review loop script (pid {script_pid}) and its claude calls.")
     elif script_pid is not None:
         lines.append(f"The review loop script (pid {script_pid}) had already exited.")
-    elif state.get("dispatchAt") is not None:
+    elif state.dispatch_at is not None:
         agent_id = awaited_agent_id(repo_dir, state)
         agent_text = f"agent {agent_id}" if agent_id else "an agent whose launch was not logged"
         lines.append(f"A dispatch was still open: {agent_text} may still be running. The user can stop it.")
 
-    if state.get("baseline") is not None:
+    if state.baseline is not None:
         left_files = changed_since_baseline(state, file_hashes(repo_dir))
         if left_files:
             lines.append("The run left these uncommitted files in the working tree. Abort did not touch them: "
@@ -755,11 +765,11 @@ def command_abort(args):
         return refuse("abort takes no arguments.", script_command("abort"))
 
     state = load_state(repo_dir)
-    if state is None or state.get("stage") in (None, "done"):
+    if state is None or state.stage == "done":
         return emit("stop", "No /code run is open here. Nothing was dropped.")
 
     criteria_message = None
-    if state.get("criteriaGuard") is not None:
+    if state.criteria_guard is not None:
         criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
         save_state(repo_dir, state)
 
@@ -785,7 +795,7 @@ def command_guide(args):
         return emit("go-on", "The guidance was not recorded: no text was given to guide.")
 
     state = load_state(repo_dir)
-    if state is None or state.get("stage") in (None, "done"):
+    if state is None or state.stage == "done":
         return emit("go-on", "The guidance was not recorded: no /code run is open here.")
 
     record_guidance(state, text)
@@ -795,7 +805,12 @@ def command_guide(args):
 
 def command_status():
     state = load_state(repo_root_or_exit())
-    print(json.dumps(state, indent=1) if state else "no code-step state")
+    if state is None:
+        print("no code-step state")
+        return
+
+    state_text = json.dumps(state.to_json(), indent=1)
+    print(state_text)
 
 
 def enter_run_checkout():

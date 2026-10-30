@@ -36,16 +36,16 @@ def code_run_at_review(session_id):
         code_step = code_step_core.load_state(".")
     except code_step_core.StateFileError:
         return None
-    if code_step is None or code_step.get("stage") not in code_step_core.REVIEW_HANDBACK_STAGES:
+    if code_step is None or code_step.stage not in code_step_core.REVIEW_HANDBACK_STAGES:
         return None
-    if code_step.get("sessionId") != session_id:
+    if code_step.session_id != session_id:
         return None
-    events = code_step_core.read_events(".", code_step.get("runId")) if code_step.get("runId") else []
+    events = code_step_core.read_events(".", code_step.run_id) if code_step.run_id else []
     return code_step, events
 
 
 def code_step_owner(code_step):
-    return code_step_core.state_file("."), code_step["stage"]
+    return code_step_core.state_file("."), code_step.stage
 
 
 def active_code_step(session_id, hand_back_agent_id):

@@ -4,7 +4,7 @@
   handback.py check < packet            exit 0 and one `ok` line for a packet that parses and validates; exit 1 and the
                                         problems on stderr for a bad one. A packet is one JSON object; the old
                                         free-text `key: value` form still parses, with a stderr note
-  handback.py hook dispatch|handback < hook event JSON
+  handback.py hook dispatch|handback|ran < hook event JSON
                                         PreToolUse hook. Matcher Agent records each review-loop dispatch; matcher
                                         SubagentHandback validates and records each review-loop hand-back, and denies a
                                         bad packet once per agent so the loop can repair it, denies a hand-back (any
@@ -16,7 +16,9 @@
                                         per-finding rows or a metrics line the loop did not log (a `ledger` row;
                                         it repeats once only: a second hand-back with no new logger call goes
                                         through), and denies any call from an agent whose
-                                        report is already stored. Any other argument does nothing.
+                                        report is already stored. `ran` is the PostToolUse hook (matcher
+                                        Agent): it records a `dispatch-ran` row for a review-loop dispatch whose
+                                        call ran. Any other argument does nothing.
 
 Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths and
 unreviewed_fix_section; the hook (handle_hook, full_suite_in_ci, reviewed_repo) is in handback_hook.py. They read
@@ -45,6 +47,7 @@ from handback_store import (
     hand_back_gap,
     latest,
     session_rows,
+    settled_stop,
 )
 from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
 from plan_format import PLAN_CHANGE_MARK, plan_impact_cause
@@ -905,7 +908,7 @@ def settled_stop_row(session_id, agent_id, since):
     """The newest stop row of agent_id written at or after `since` that the gate did not block, or None. The hand-back
     row lands before the stop row of the same loop, so a reader of the hand-back looks here for the stop that
     follows it."""
-    settled = [row for row in stop_rows_after(session_id, agent_id, since) if not row.get("blocked")]
+    settled = [row for row in stop_rows_after(session_id, agent_id, since) if settled_stop(row)]
     return settled[-1] if settled else None
 
 

@@ -9,9 +9,10 @@ after the result line. When they leave out the whole command, nothing runs and t
 `not run (expected red until Phase <id>[, <id>...])`.
 
 Runs the command, given as one quoted word or as plain words, through the shell in the repo, output to the log, and
-prints `full check: <result>` first: `passed`, `unverified (exit 0, no runner summary)` when the command exited 0 but
-printed no test runner's own summary line, `failed (exit N)` with the failing step's lines after it (on a lint
-error, each lint error with its file:line, the FAIL and ERROR lines, vitest's leading-space FAIL and \xd7 lines and the
+prints `full check: <result>` first: `passed`, `unverified (exit 0, no test result shown)` when the command exited 0 but
+printed no test runner's own summary line or ran no test, `failed (exit N)` with the failing step's lines after it
+(on a lint error, each lint error with its file:line, the FAIL and ERROR lines, vitest's leading-space FAIL and \xd7
+lines and the
 `FAILED: <steps>` step-summary lines; else the failing tests and the log's last lines), `setup fault (exit N)` with
 the same when the environment could not run the check (no program, a runner that cannot start, no package manifest,
 no test found, a package-manager or engine version mismatch), `not run (check-command error: <line>)` when a step of
@@ -20,7 +21,7 @@ default; a path the diff removed or moved is a failure), `not run (timeout)` whe
 `not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and the command does not equal its
 `Quality check:` command or one of its && steps (the command does not run then, scoped or not),
 `passed (check only; CI runs the full suite)` when the command equals that repo's `Quality check:` command, or is
-&& steps of it, and exits 0 with no runner summary, `not run (scoped command: ...)` when the command
+&& steps of it, and exits 0 with no runner summary or ran no test, `not run (scoped command: ...)` when the command
 runs tests or lint on named files or tests, or with a changed-files flag, and its text does not equal the CLAUDE.md
 `Quality check:` command (it does not run then), or `not run (unresolved command: ...)` when lib/check_scope cannot
 read what it runs, such as a make call with a NAME=value argument or a target no Makefile names, under the same
@@ -59,6 +60,7 @@ import tomllib
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 
+import check_output
 import check_scope
 import expected_red
 import reviewed_tree
@@ -84,15 +86,12 @@ QUALITY_CHECK_LINE = re.compile(r"^\s*[-*]?\s*Quality check:\s*`([^`]+)`", re.I 
 UNFILLED_LOG_NAME = re.compile(r"\.\.\.|[<>]")
 SUMMARY_SEPARATOR = " | "
 PASSED = "passed"
-# Exit 0 with no test runner's summary in the output: the command may have run no test, or the wrong ones.
-UNVERIFIED = "unverified (exit 0, no runner summary)"
+# Exit 0 with no test result shown: no runner summary in the output, or a run that ran no test.
+UNVERIFIED = "unverified (exit 0, no test result shown)"
 # Exit 0 of the declared check of a repo whose full suite runs in CI: a compile or format check that runs no test.
 CHECK_ONLY_PASSED = "passed (check only; CI runs the full suite)"
 # Exit 0 whose runner summary still counts failures: a wrapper that swallowed the runner's exit code.
 FAILED_EXIT_ZERO = "failed (exit 0, summary reports failures)"
-SUMMARY_FAILURE = re.compile(
-    r"\b[1-9]\d* (?:failed|failing|errors?)\b|FAILED \(|^[1-9]\d* fail$|^(?:#|\N{INFORMATION SOURCE}) fail [1-9]\d*$"
-    r"|^FAIL\t", re.MULTILINE)
 NOT_RUN_CI = "not run (CI)"
 NOT_RUN_TIMEOUT = "not run (timeout)"
 # The check could not run here: no program, a runner that cannot start, no package manifest, no test found, or a
@@ -362,13 +361,14 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
     tail = "\n".join(output.splitlines()[-TAIL_LINES:])
     all_summaries = runner_summaries(output, limit=None)
     details["summaries"] = all_summaries[:MAX_RUNNER_SUMMARIES]
-    if exit_code is None:
+    verdict = check_output.check_verdict(check_command, exit_code, output)
+    if verdict == check_output.NOT_RUN:
         return NOT_RUN_TIMEOUT, tail, details
-    if exit_code == 0 and SUMMARY_FAILURE.search("\n".join(all_summaries)):
+    if verdict == check_output.FAILED_EXIT_ZERO:
         return FAILED_EXIT_ZERO, tail_with_failing_tests(output, tail), details
-    if exit_code == 0 and all_summaries:
+    if verdict == check_output.PASSED and all_summaries:
         return PASSED, tail, details
-    if exit_code == 0:
+    if verdict in (check_output.PASSED, check_output.NO_TESTS_RAN):
         return (CHECK_ONLY_PASSED if in_ci else UNVERIFIED), tail, details
 
     result, failure_lines = failed_run_result(repo, base, exit_code, output, tail)

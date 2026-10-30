@@ -1,9 +1,9 @@
 """code_step_state.py: the record of one /code run, as <git dir>/code-step/state.json holds it.
 
 Installed beside code_step.py and imported by code_step_core. A state file loads only when it names a stage and stop
-kind this code-step knows and holds no key the record does not name, so a file another version of code-step wrote
-stops the verb instead of being read wrong. A field holds its JSON value as it is: the ask, ruling and snapshot
-payloads stay dicts."""
+kind this code-step knows and holds no key the record does not name, except a stop record's waitAt, which loads and is
+dropped. A file another version of code-step wrote stops the verb instead of being read wrong. A field holds its JSON
+value as it is: the ask, ruling and snapshot payloads stay dicts."""
 import dataclasses
 import enum
 import re
@@ -63,6 +63,14 @@ def record_values(record_type, raw, source):
     return {field_names[key]: value for key, value in raw.items()}
 
 
+def without_dropped_stop_keys(raw_stop):
+    # The stop record without waitAt, which the code-step before the typed record wrote: a resumed agent's first wait
+    # is now a run-log event.
+    if not isinstance(raw_stop, dict):
+        return raw_stop
+    return {key: value for key, value in raw_stop.items() if key != "waitAt"}
+
+
 def present_values(record):
     # Every field of the record that holds a value, by its state.json key.
     values = {json_key(field): getattr(record, field.name) for field in dataclasses.fields(record)}
@@ -71,13 +79,11 @@ def present_values(record):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Stop:
-    # A stopped run's record. agent_id is the coder the user can resume, coder_stage the stage that coder stopped at,
-    # and wait_at the first wait on an agent the user resumed, which the wait cap counts from.
+    # A stopped run's record. agent_id is the coder the user can resume, coder_stage the stage that coder stopped at.
     kind: StopKind | None
     at: float
     agent_id: str | None = None
     coder_stage: str | None = None
-    wait_at: float | None = None
 
     def __post_init__(self):
         if self.kind is not None:
@@ -152,7 +158,7 @@ class RunState:
 
     # The asks.
     asks: list | None = None
-    ask_ids: list | None = None
+    ask_ids: dict | None = None
     ask_ids_handback: str | None = None
     accepted_asks: list | None = None
     asks_also: str = ""
@@ -180,7 +186,8 @@ class RunState:
         values = record_values(cls, raw, source)
         try:
             if values.get("stop") is not None:
-                values["stop"] = Stop(**record_values(Stop, values["stop"], f"{source} (stop record)"))
+                raw_stop = without_dropped_stop_keys(values["stop"])
+                values["stop"] = Stop(**record_values(Stop, raw_stop, f"{source} (stop record)"))
             return cls(**values)
         except (TypeError, ValueError) as error:
             raise StateFileError(f"{source} does not load: {error}") from None

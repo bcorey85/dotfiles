@@ -1,8 +1,9 @@
 """code_step_routes.py: the one table that routes a /code run.
 
 Installed beside code_step.py and imported by code_step_core. A run's row is its stage, and its stop kind when it is
-stopped. The row names the step `resume` takes next and the one guarded verb the run accepts there; `start`, `tick`,
-`abort`, `guide` and `status` run at any state. A step that hangs on what the run's log shows names that observation
+stopped. The row names the step `resume` takes next and the one guarded verb the run accepts there (and `verify` once
+the phase's review converged, at a stage marked VERIFY_ON_CLEAN_REVIEW); `start`, `tick`, `abort`, `guide` and `status`
+run at any state. A step that hangs on what the run's log shows names that observation
 and the step for each answer. The stage facts tell the rest of code-step what a stage means."""
 import dataclasses
 import enum
@@ -34,7 +35,8 @@ class Observed:
 
 @dataclasses.dataclass(frozen=True)
 class Route:
-    # The step `resume` takes from a row, and the guarded verb the row accepts (None: only the verbs that run anywhere).
+    # The step `resume` takes from a row, and the guarded verb the row accepts (None: only the verbs that run anywhere,
+    # and verify once the phase's review converged, at a stage marked VERIFY_ON_CLEAN_REVIEW).
     step: str | Observed
     verb: str | None = None
 
@@ -45,7 +47,8 @@ REVIEW_HANDBACK = Observed("dispatch-recorded", "after-review", "ask-status")
 PLAN_EDIT_HANDBACK = Observed("dispatch-recorded", "after-plan-edit", "ask-status")
 # A stopped coder's hand-back is waited for once the user's answer reached it.
 CODER_ANSWERED = Observed("coder-answer-sent", "after-coder", "ask-coder")
-# A review-loop the wait cap stopped on is waited for again while its script runs or once the user resumed it.
+# A review-loop the wait cap stopped on is waited for again while a review script is on record (after-review stops on
+# one that has gone) or once the user resumed it.
 REVIEW_GOES_ON = Observed("review-goes-on", "after-review", "ask-review-cap")
 
 ROUTES = {
@@ -80,7 +83,8 @@ ROUTES = {
     (Stage.STOPPED, StopKind.SETUP_FAULT): Route("ask-critical-blocker", "review-again"),
     (Stage.STOPPED, StopKind.FIX_REMOVED_CHANGE): Route("ask-critical-blocker", "review-again"),
 }
-# The verbs that run only from a row that names them.
+# The verbs that run only from a row that names them (and verify once the phase's review converged, at a stage marked
+# VERIFY_ON_CLEAN_REVIEW).
 GUARDED_VERBS = frozenset(route.verb for route in ROUTES.values() if route.verb)
 
 
@@ -103,7 +107,7 @@ class StageFact(enum.Enum):
     CODE_AGENT_OUT = "code-agent-out"
     # The plan is edited on purpose here, so a changed phase does not make the run stale.
     PLAN_EDITED = "plan-edited"
-    # The run waits on the user: the text say.md holds was handed back already, so a resume clears it.
+    # The text say.md holds was handed back already, so a resume clears it.
     RESUME_CLEARS_SAY = "resume-clears-say"
     # No coder works on the phase: once its review converged, `verify` may run its checks and close it.
     VERIFY_ON_CLEAN_REVIEW = "verify-on-clean-review"

@@ -14,7 +14,6 @@ from code_step_boundary import criteria_rel, finish_phase, settle_criteria_guard
 from code_step_closing import evidence_command_shape, evidence_request_lines
 from code_step_concentration import REFACTOR_SKILL, concentration_gate, gate_lines, simplify_option
 from code_step_core import (
-    CODER_RESUMABLE,
     INSTALLED_COMMAND,
     RESUME_LINE,
     RESUME_VERB,
@@ -75,7 +74,7 @@ from code_step_start_args import (
     start_repo_path,
     starts_task_text,
 )
-from code_step_state import RunState
+from code_step_state import RunState, Stage, StopKind
 from code_step_verification import run_verification_commands, verification_format_failure
 from script_utils import run_command
 
@@ -255,7 +254,7 @@ def reopens_stopped_run(previous):
     # A run that stopped on the coder's report, in the session that now runs `start` again: the session has seen the
     # report and starts over on its own word.
     pinned = session_pin()
-    return (stop_kind(previous) == CODER_RESUMABLE and bool(previous.stop.agent_id)
+    return (stop_kind(previous) == StopKind.CODER_RESUMABLE and bool(previous.stop.agent_id)
             and pinned is not None and previous.session_id == pinned)
 
 
@@ -490,14 +489,14 @@ def reusable_plan(previous, branch):
     # finished.
     if previous is None or not previous.plan or previous.branch != branch:
         return None
-    if previous.stage == "done" and previous.phase is None:
+    if previous.stage == Stage.DONE and previous.phase is None:
         return None
     return previous.plan
 
 
 def is_finished_single_phase_plan(repo_dir, previous, branch, resolved_plan):
     # A plan with no phases that finished on this branch is not run again when a bare `start` resolves to the same file.
-    if previous is None or previous.stage != "done" or previous.phase is not None or previous.branch != branch:
+    if previous is None or previous.stage != Stage.DONE or previous.phase is not None or previous.branch != branch:
         return False
     if not previous.plan:
         return False
@@ -532,7 +531,7 @@ def prepare_fresh_start(repo_dir, previous, branch, parsed):
         previous.session_id = session_pin()
         save_state(repo_dir, previous)
 
-    is_auto_advance_text_pending = previous.stage == "done" and previous.auto_advance
+    is_auto_advance_text_pending = previous.stage == Stage.DONE and previous.auto_advance
     is_old_text_stale = not is_auto_advance_text_pending
     if is_old_text_stale or parsed.task_text is not None:
         clear_say(repo_dir)

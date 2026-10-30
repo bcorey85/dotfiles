@@ -10,7 +10,6 @@ import tomllib
 import check_scope
 import plan_format
 import script_utils
-import test_run_output
 from code_step_verification import verification_command
 from linked_installs import VENV_FOLDERS
 from shell_command import resolved_command_words
@@ -22,11 +21,6 @@ TEST_TARGET_FLAGS = ("--test", "--example", "--bench")
 # One cargo target flag of a scope, with its name when it takes one: `--test orders`, `--bin tool`, `--lib`.
 CARGO_TARGET_FLAG = re.compile(r"--(?:test|bin|example|bench) \S+|\S+")
 UNKNOWN_FAMILY = "unknown"
-TEST_FAMILY_PATTERNS = {
-    "js": re.compile(r"\b(?:vitest|jest|mocha)\b|\b(?:npm|pnpm|yarn|bun|npx)\b.*\btest\b"),
-    "python": re.compile(r"\bpytest\b|\bmanage\.py\s+test\b"),
-    "cargo": re.compile(r"\bcargo\s+(?:test|nextest)\b"),
-}
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
 BARE_CARGO_MANIFEST = re.compile(r"`(Cargo\.toml)`")
 PYTHON_RUNNERS = (("uv.lock", ["uv", "run"]), ("poetry.lock", ["poetry", "run"]), ("pdm.lock", ["pdm", "run"]),
@@ -427,7 +421,7 @@ def cargo_commands(repo_dir, paths, derives_tests):
 
 def takes_listed_test_command(command, repo_dir):
     # A listed test command the gate can store: `coder_gate.py set` refuses one that runs a whole suite.
-    return test_run_output.runs_tests(command) and not check_scope.runs_whole_check(command, str(repo_dir))
+    return check_scope.runs_tests(command) and not check_scope.runs_whole_check(command, str(repo_dir))
 
 
 def runs_cargo(command):
@@ -440,8 +434,7 @@ def runs_cargo(command):
 def test_command_families(command):
     # The runner families a listed test command runs: "js", "python" or "cargo", read from its text. A command that
     # names none of them, such as `make test-consistency` or `just test`, is the UNKNOWN_FAMILY.
-    families = {family for family, runs_family in TEST_FAMILY_PATTERNS.items() if runs_family.search(command)}
-    return families or {UNKNOWN_FAMILY}
+    return check_scope.runner_family(command) or {UNKNOWN_FAMILY}
 
 
 def derive_gate_commands(repo_dir, phase_section):

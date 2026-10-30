@@ -1212,6 +1212,20 @@ def full_check_run(tool_use_id):
     return {"type": "assistant", "message": {"role": "assistant", "content": [call, printed]}}
 
 
+FINDING_ROW = ("~/.claude/skills/review/log-review-finding kind=finding lane=code scope=phase iter=1 "
+               "gate=code-reviewer disposition=fix class=bug file=src/orders.ts line=42 actioned=fixed")
+METRICS_ROW = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=1 ask=0 nit=0 fixed=1 result=PASS"
+
+
+def ledger_call(tool_use_id, command):
+    return transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Bash", "input": {"command": command}})
+
+
+def refused_logger_result(tool_use_id):
+    return transcript_line({"type": "tool_result", "tool_use_id": tool_use_id, "is_error": True,
+                            "content": [{"type": "text", "text": "log-review-metrics: failed"}]}, "user")
+
+
 def background_reviewer_launch(tool_use_id, agent_id):
     """A code-reviewer dispatch and the result that says it runs in the background."""
     launch = transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Agent",
@@ -1244,7 +1258,11 @@ class OneCheckedHandBackTest(HandbackTestBase):
                  "tool_input": {"message": message}}
         return self.run_cli(["hook", "handback"], json.dumps(event))
 
-    def hand_back(self, steps, agent_id="a1", message=CONVERGED, cwd=None):
+    def hand_back(self, steps, agent_id="a1", message=CONVERGED, cwd=None, ledger=True):
+        """Hand back after `steps`. The ledger rows CONVERGED owes (one finding row and a metrics line) follow them
+        unless `ledger` is False."""
+        if ledger:
+            steps = [*steps, ledger_call("tl1", FINDING_ROW), ledger_call("tl2", METRICS_ROW)]
         self.transcript.write_text("".join(json.dumps(step) + "\n" for step in steps), encoding="utf-8")
         _code, out, _err = self.send_hand_back(agent_id, message, cwd)
         return out
@@ -1271,7 +1289,8 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
     def test_a_plan_impact_hand_back_with_a_code_change_after_the_last_full_check_passes(self):
         message = "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n"
-        out = self.hand_back([full_check_run("t1"), coder_step("t2")], message=message)
+        metrics = ledger_call("tl1", METRICS_ROW.replace("fixed=1", "fixed=0"))
+        out = self.hand_back([full_check_run("t1"), coder_step("t2"), metrics], message=message, ledger=False)
         self.assertEqual(out, "")
         self.assertEqual(len(self.handback_rows()), 1)
 
@@ -1369,6 +1388,56 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         self.assertEqual(self.hand_back(steps), "")
         self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_fix_first_hand_back_with_fixed_entries_and_no_finding_rows_is_denied_until_the_rows_are_logged(self):
+        prompt = {"type": "user", "message": {"role": "user", "content": "review loop\nmode: fix-first"}}
+        steps = [prompt, coder_step("t1"), full_check_run("t2")]
+
+        out = self.hand_back(steps, ledger=False)
+
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("1 finding(s)", reason)
+        self.assertIn("only 0 per-finding row(s)", reason)
+        self.assertIn("no metrics line", reason)
+        self.assertIn("then return the packet.", reason)
+        self.assertEqual(self.handback_rows(), [])
+
+        self.assertEqual(self.hand_back(steps), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_hand_back_whose_metrics_call_failed_is_denied_once_and_the_second_passes(self):
+        steps = [coder_step("t1"), full_check_run("t2"), ledger_call("tl1", FINDING_ROW),
+                 ledger_call("tl2", METRICS_ROW), refused_logger_result("tl2")]
+
+        first = self.hand_back(steps, ledger=False)
+
+        reason = json.loads(first)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn('result="NOT DISPATCHED"', reason)
+        self.assertEqual(self.handback_rows(), [])
+
+        self.assertEqual(self.hand_back(steps, ledger=False), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_hand_back_is_denied_again_when_the_loop_made_another_logger_call_that_also_failed(self):
+        steps = [coder_step("t1"), full_check_run("t2"), ledger_call("tl1", FINDING_ROW),
+                 ledger_call("tl2", METRICS_ROW), refused_logger_result("tl2")]
+        self.hand_back(steps, ledger=False)
+
+        retry = [*steps, ledger_call("tl3", METRICS_ROW), refused_logger_result("tl3")]
+        out = self.hand_back(retry, ledger=False)
+
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("no metrics line", reason)
+        self.assertEqual(self.handback_rows(), [])
+
+    def test_a_hand_back_whose_metrics_line_has_other_counts_than_the_packet_is_denied(self):
+        steps = [coder_step("t1"), full_check_run("t2"), ledger_call("tl1", FINDING_ROW),
+                 ledger_call("tl2", METRICS_ROW.replace("fixed=1", "fixed=0"))]
+
+        out = self.hand_back(steps, ledger=False)
+
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("fixed=1, skipped_fp=0", reason)
 
     def test_a_failed_full_check_scan_skips_only_the_full_check_gate_and_the_plan_edit_gate_still_denies(self):
         steps = [{"type": "user", "message": {"role": "user", "content": "review loop\nplan: docs/plans/orders.md"}},

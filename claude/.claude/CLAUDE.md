@@ -35,6 +35,8 @@ The ticket's ACs are the contract. Only the user's explicit sign-off overrides o
 
 Keep a `SendMessage` to a peer Claude session under 150 words. Messages to and from your own subagents are exempt. Include the verdict, the numbers the receiver acts on, and what it must do next. If the detail already lives in a file, send the path, not the content. Do not make a file only to hold a message.
 
+When the repo's CLAUDE.md names an orchestrating session, a worker acts on that session's go-ahead for any step inside the worker's own branch: commit, push the branch, merge the integration branch into it, and claim or close its queue item. It never waits for the user on those steps. A go-ahead never covers master, `settings.json`, a CLAUDE.md file, or a step a hook denied.
+
 ## Compact instructions
 
 When you compact, keep decisions with their reasons, every measured number, open items in order, commit hashes, file paths, and the rules that bind the next step. Drop tool output and narrative.

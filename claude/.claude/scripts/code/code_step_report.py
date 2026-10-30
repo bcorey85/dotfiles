@@ -29,7 +29,7 @@ def open_questions(report):
 
 
 PLAN_IMPACT_HEADER = re.compile(r"^[ \t>*`_-]*PLAN-IMPACT[*`_]*:?[*`_]*[ \t]*$")
-PLAN_IMPACT_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes|acceptance_criteria)[*`_]*:", re.I)
+PLAN_IMPACT_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes|acceptance_criteria|cause)[*`_]*:", re.I)
 
 
 def plan_impact_body(lines_after_header):
@@ -64,10 +64,12 @@ def plan_impact_block(report):
     return None
 
 
-def first_plan_impact(messages):
+def first_plan_impact(messages, handled=None):
+    # `handled` holds the blocks the run already stopped on; none of them is found again.
+    handled = handled or []
     for message in messages:
         block = plan_impact_block(message)
-        if block:
+        if block and block not in handled:
             return block
     return None
 

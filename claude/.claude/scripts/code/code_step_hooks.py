@@ -31,6 +31,7 @@ from code_step_core import (
     dispatch_standing,
     expected_agent,
     file_hashes,
+    head_left_phase_start,
     is_dispatch_open,
     log_event,
     newest_dispatch_standing,
@@ -164,6 +165,12 @@ def later_phase_edit_denial(call):
         return None
 
     repo_dir = pathlib.Path(call.repo)
+    base_head = state.get("baseHead")
+    if head_left_phase_start(repo_dir, base_head):
+        # Fail open when HEAD is off baseHead (a rebase, a reset, or a git failure): the diff since baseHead is not the
+        # coder's work, and the hand-back's own stop names the off-line HEAD.
+        return None
+
     plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
     later_files = set(expected_red.later_phase_paths(plan_lines, state["phase"]))
     changed_files = coder_changed_files(repo_dir, state, file_hashes(repo_dir))

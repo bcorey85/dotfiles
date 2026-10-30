@@ -31,6 +31,7 @@ from code_step_core import (
     MISSING_PLAN_STOP,
     PLAN_EDIT_STOP_REASONS,
     RESUME_VERB,
+    REVIEW_AGAIN_INVOKE,
     REVIEW_LOOP,
     REVIEW_LOOP_SCRIPT,
     REVIEW_SAME_DIFF_AGAIN_LINE,
@@ -70,6 +71,7 @@ from code_step_core import (
     state_dir,
     stop_kind,
     stop_review_script,
+    stop_with_question,
     take_handback,
     take_snapshot_part,
     timed_command,
@@ -92,11 +94,11 @@ STAGE_GUARDS = {
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
     "review-again": {"stages": ("stopped",),
                      "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "tool-fault", "critical-blocker",
-                                     "setup-fault", "check-unverified",
-                                     "check-not-run"),
+                                     "setup-fault", "check-unverified", "check-not-run", "plan-impact-cause"),
                      "message": "review-again ran with no unreadable review packet, capped review, crashed review "
                                 "call, unmarked review gate, critical blocker, setup fault, a full check that showed "
-                                "no test run or did not run, or silent review-loop pending."},
+                                "no test run or did not run, silent review-loop pending, or a plan impact stop on a "
+                                "toolkit, unparseable or missing cause."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
     "correct-ruling": {"stages": ("asks-coder",), "goOnRefusal": True,
                        "message": "No asks coder is running, so the ruling cannot be corrected in this run. Put the "
@@ -648,6 +650,25 @@ def load_review_packet(repo_dir, state, message):
     return module, packet
 
 
+def route_review_plan_impact(repo_dir, state, module, packet):
+    stop_cause = plan_format.cause_stop(packet["plan_impact_cause"])
+    if stop_cause:
+        set_stop(state, "plan-impact-cause")
+        save_state(repo_dir, state)
+        stop_with_question(
+            repo_dir, f"the review {stop_cause}.", [packet["plan_impact"]],
+            f"to run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.",
+            f"The review {stop_cause}. Do not dispatch a plan rewrite. Do not mark the phase done.",
+            packet["plan_impact"], f"To run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.")
+        return
+
+    state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
+    save_state(repo_dir, state)
+    state["carriedFindings"] = module.carried_findings(packet)
+    save_state(repo_dir, state)
+    emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
+
+
 def command_after_review(repo_dir, state, args):
     if not wait_for_handback(repo_dir, state, RESUME_VERB):
         return
@@ -681,12 +702,7 @@ def command_after_review(repo_dir, state, args):
     state["checkRewroteEdited"] = sorted(rewrote_edited)
     state["reviewStatus"] = packet["status"]
     if packet["status"] == "plan-impact":
-        state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
-        save_state(repo_dir, state)
-        state["carriedFindings"] = module.carried_findings(packet)
-        save_state(repo_dir, state)
-        emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
-        return
+        return route_review_plan_impact(repo_dir, state, module, packet)
     if stop_on_review_status(repo_dir, state, module, packet):
         return
 

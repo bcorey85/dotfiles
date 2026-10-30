@@ -28,6 +28,39 @@ class TextBeforeMarkerTest(unittest.TestCase):
         self.assertEqual("", script_utils.text_before_marker("--stamp only", "--stamp"))
 
 
+class HeadCommitHelpersTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        self.env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+                    "GIT_COMMITTER_EMAIL": "t@t"}
+        self.git("init", "-q")
+        (self.repo / "a.txt").write_text("a\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "first")
+        self.first = self.git("rev-parse", "HEAD").strip()
+        (self.repo / "b.txt").write_text("b\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "second")
+
+    def git(self, *arguments):
+        return subprocess.run(["git", *arguments], cwd=self.repo, check=True, env=self.env, capture_output=True,
+                              text=True).stdout
+
+    def test_head_descends_from_an_ancestor_and_not_from_a_commit_it_was_reset_past_or_an_unknown_one(self):
+        second = self.git("rev-parse", "HEAD").strip()
+        self.assertTrue(script_utils.head_descends_from(self.repo, self.first))
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        self.assertFalse(script_utils.head_descends_from(self.repo, second))
+        self.assertFalse(script_utils.head_descends_from(self.repo, "0" * 40))
+
+    def test_head_blob_hashes_names_each_file_at_head_and_leaves_out_one_head_lacks(self):
+        hashes = script_utils.head_blob_hashes(self.repo, ["a.txt", "missing.txt"])
+        self.assertEqual({"a.txt": self.git("rev-parse", "HEAD:a.txt").strip()}, hashes)
+        self.assertEqual({}, script_utils.head_blob_hashes(self.repo, []))
+
+
 class PathIsUnderTest(unittest.TestCase):
     def test_a_path_is_under_its_prefix_or_equal_to_it_but_not_under_a_sibling_that_shares_the_start(self):
         self.assertTrue(script_utils.path_is_under("task", "task"))

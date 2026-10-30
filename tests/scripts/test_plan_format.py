@@ -36,6 +36,24 @@ def parse(text):
     return plan_format.manual_verification(text, "plan.md")
 
 
+class BlockCauseTest(unittest.TestCase):
+    def test_a_missing_cause_reads_as_plan_unless_it_is_required_and_a_toolkit_or_unknown_cause_stops(self):
+        cases = {
+            "toolkit": ("PLAN-IMPACT:\n  found: B\n  cause: toolkit", False, "toolkit gate or script fault"),
+            "unknown": ("PLAN-IMPACT:\n  found: B\n  cause: gate", False, "`cause: gate` that does not parse"),
+            "plan": ("PLAN-IMPACT:\n  found: B\n  cause: plan", True, None),
+            "missing, reviewer": ("PLAN-IMPACT:\n  found: B", False, None),
+            "missing, required": ("PLAN-IMPACT:\n  found: B", True, "no `cause:` line"),
+        }
+        for name, (block, cause_required, expected) in cases.items():
+            with self.subTest(name):
+                found = plan_format.plan_impact_stop_cause(block, cause_required=cause_required)
+                if expected is None:
+                    self.assertIsNone(found)
+                else:
+                    self.assertIn(expected, found)
+
+
 class SectionShapeTest(unittest.TestCase):
     def test_template_items_carry_phase_text_checked_state_and_line(self):
         items = parse(TEMPLATE)

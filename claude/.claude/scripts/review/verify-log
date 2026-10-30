@@ -11,6 +11,7 @@ writes nothing. The same holds for each ticket criterion, with or without a crit
 starts with its `Ticket #n` label (as verify-prep numbers them; leading markdown emphasis or code marks are allowed).
 verdict is done|partial|missing|failed-check|needs-manual|overridden. partial, missing, failed-check and an
 overridden row with no `signoff` are gaps. `line` is an integer or a range like "12-20" (the first number is kept).
+A `done` row whose `item` starts with the Agent-run tag and has empty `evidence` exits 2.
 Empty rows are an error unless --result NA, which logs a run row with no result and exits 3.
 --escapes-only logs the escape rows of a run that was already logged in full; an escape logged once is not logged again.
 
@@ -35,6 +36,7 @@ import re
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import plan_format
 import script_utils
 import verify_common as vc
 
@@ -54,6 +56,15 @@ def is_gap(row):
     if row["verdict"] in ("partial", "missing", "failed-check"):
         return True
     return row["verdict"] == "overridden" and not str(row.get("signoff") or "").strip()
+
+
+def is_done_without_output(row):
+    """True for a `done` row of an Agent-run item whose `evidence` is empty: such a row is never logged without output.
+    Fail-closed: the run stops before anything is written."""
+    if row["verdict"] != "done":
+        return False
+    is_agent_run = plan_format.deferred_verification_tag(f"- [ ] {row['item']}") == plan_format.AGENT_RUN_TAG
+    return is_agent_run and not str(row.get("evidence") or "").strip()
 
 
 def ids_without_verdict_row(rows, context):
@@ -120,6 +131,9 @@ def load_rows(source):
     for index, row in enumerate(rows):
         if not isinstance(row, dict) or row.get("verdict") not in VERDICTS or not row.get("item"):
             raise vc.VerifyError(f"row {index} needs `item` and a verdict in {', '.join(VERDICTS)}")
+        if is_done_without_output(row):
+            raise vc.VerifyError(f"row {index}: the Agent-run item `{log_text(row['item'], 120)}` is marked done with "
+                                 "no command output in `evidence`; run it and paste its output, or use another verdict")
         row["line"] = normalize_line(row.get("line"), f"row {index}")
     return rows
 

@@ -29,7 +29,8 @@ unmeasured: ""
   whose coder packet fails clears the gate it set.
 - A gate run has a total budget, `GATE_BUDGET_SECONDS`, 600 s under the hook's 3600 s timeout. A command that cannot
   start with at least 60 s left is recorded as `not-started`, and a run with no other failure ends with a `timeout`
-  verdict whose stamp names it. Before, three slow commands outlasted the hook, Claude Code killed it, and the hand-back passed with no verdict.
+  verdict whose stamp names it. Before, three slow commands outlasted the hook, Claude Code killed it, and the
+  hand-back passed with no verdict.
 - The TIMED_OUT stamp prints each command's own timeout. Its heading drops "after {timeout_seconds} s", and
   `timed_out` holds a third field per command.
 

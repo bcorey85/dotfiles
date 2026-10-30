@@ -423,10 +423,15 @@ GATE_ENV_HINT = "(Put these variables before every test, check or build command 
 NO_AUTOMATED_CHECK = re.compile(r"^- \[[ x]\]\s*(?:[*_`]*\s*(?:n/a|none)\b|\*\*[^*]+\*\*:?\s*n/a\b)", re.IGNORECASE)
 
 # An Automated Verification item that the code step never runs because the plan says another place does:
-# "- [ ] **CI-verified**: the pipeline runs it", "- [ ] Human-only: look at the page". A bold label may come first.
-DEFERRED_VERIFICATION = re.compile(r"^- \[[ x]\]\s*(?:\*\*[^*]+\*\*:?\s*)?[*_`]*\s*(?P<tag>ci-verified|human-only)\b",
-                                   re.IGNORECASE)
-DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only"}
+# "- [ ] **CI-verified**: the pipeline runs it", "- [ ] Human-only: look at the page", "- [ ] **Agent-run**: time the
+# import on the real data" (the session or the branch check runs it and records its output). A bold label may come
+# first.
+DEFERRED_VERIFICATION = re.compile(
+    r"^- \[[ x]\]\s*(?:\*\*[^*]+\*\*:?\s*)?[*_`]*\s*(?P<tag>ci-verified|human-only|agent-run)\b", re.IGNORECASE)
+AGENT_RUN_TAG = "agent-run"
+DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only", AGENT_RUN_TAG: AGENT_RUN_TAG}
+# The tags whose open box needs no evidence from the code step: another place or a person closes them.
+NO_EVIDENCE_TAGS = frozenset(DEFERRED_TAG_NAMES.values()) - {AGENT_RUN_TAG}
 
 
 def automated_verification_rows(lines, name="plan", first_line=1, strict=False):
@@ -501,14 +506,14 @@ def automated_item_text(line):
 
 
 def deferred_verification_tag(line):
-    """"CI-verified" or "human-only" for an Automated Verification item tagged that way, else None."""
+    """"CI-verified", "human-only" or "agent-run" for an Automated Verification item tagged that way, else None."""
     tag_match = DEFERRED_VERIFICATION.match(line)
     return DEFERRED_TAG_NAMES[tag_match.group("tag").lower()] if tag_match else None
 
 
 def runs_no_command(line):
     """True for an Automated Verification item that gets no command run: it says N/A or none, or it is left to CI or
-    a person."""
+    a person, or it is tagged Agent-run (the session or the branch check runs it, never the plan check)."""
     return bool(NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line))
 
 
@@ -522,7 +527,8 @@ def open_success_items(lines):
     """The `- [ ]` items under a phase's Success Criteria that need evidence, in file order, as {"index": the 0-based
     line of the item, "end": the index after its indented continuation lines, "text": the item's words with its
     continuation lines folded in}. Items under Manual Verification, tagged CI-verified or human-only, and N/A items are
-    left out, and so are items in fenced blocks. `lines` is one phase's section."""
+    left out, and so are items in fenced blocks. An open Agent-run item stays in: it needs evidence like an untagged
+    one. `lines` is one phase's section."""
     fenced = script_utils.fenced_line_indexes(lines)
     items = []
     inside = False
@@ -539,7 +545,9 @@ def open_success_items(lines):
         if line.strip() == "---":
             inside = False
             continue
-        if not (inside and OPEN_BOX.match(line)) or runs_no_command(line):
+        if not (inside and OPEN_BOX.match(line)):
+            continue
+        if NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line) in NO_EVIDENCE_TAGS:
             continue
 
         end = index + 1
@@ -562,7 +570,8 @@ def write_item_evidence(lines, items, evidence):
 
 def gate_env(plan_text):
     """The `NAME=value` words that the plan's Automated Verification commands start with, one per name, in file order.
-    An item that says N/A or is left to CI or a person is not a command that gets run, so it gives none."""
+    An item that says N/A or is left to CI, a person, or an agent (Agent-run) is not a command that gets run, so it
+    gives none."""
     verification_items = automated_verification_rows(plan_text.splitlines())
     runnable_items = [line for _, line in verification_items if not runs_no_command(line)]
     spans = [span for line in runnable_items for span in script_utils.backticked_spans(line)]

@@ -654,6 +654,29 @@ def subagent_transcript_path(session_transcript, agent_id):
     return os.path.join(os.path.splitext(session_transcript)[0], "subagents", f"agent-{agent_id}.jsonl")
 
 
+def tool_use_calls(line):
+    """The (tool name, input dict) of each tool call one transcript line makes, in order; empty when the line is
+    not JSON or makes none."""
+    if '"tool_use"' not in line:
+        return []
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return []
+    message = record.get("message") if isinstance(record, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return []
+
+    calls = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        tool_input = block.get("input")
+        calls.append((block.get("name"), tool_input if isinstance(tool_input, dict) else {}))
+    return calls
+
+
 def agent_transcript_path(hook):
     """The calling subagent's transcript: the path the hook event names, else the one under the session transcript."""
     named = hook.get("agent_transcript_path")

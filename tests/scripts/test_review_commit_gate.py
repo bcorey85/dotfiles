@@ -926,24 +926,101 @@ class ReviewedWorkCommitTest(GateCase):
 
     def coder_transcript(self, agent_id, *edited_files):
         """The session transcript path, with a subagent transcript in which agent_id edited edited_files."""
+        return self.coder_tool_transcript(agent_id, *[("Edit", "file_path", edited) for edited in edited_files])
+
+    def coder_tool_transcript(self, agent_id, *edits):
+        """Like coder_transcript, for edits given as (tool name, input key, file) triples."""
         session_transcript = self.tmp / "session.jsonl"
         session_transcript.write_text("")
         subagents = self.tmp / "session" / "subagents"
         subagents.mkdir(parents=True, exist_ok=True)
         calls = [{"type": "assistant", "message": {"role": "assistant", "content": [
-            {"type": "tool_use", "id": f"t{index}", "name": "Edit", "input": {"file_path": str(edited)}}]}}
-            for index, edited in enumerate(edited_files)]
+            {"type": "tool_use", "id": f"t{index}", "name": tool, "input": {key: str(edited)}}]}}
+            for index, (tool, key, edited) in enumerate(edits)]
         (subagents / f"agent-{agent_id}.jsonl").write_text("".join(json.dumps(call) + "\n" for call in calls))
         return str(session_transcript)
 
-    def test_coder_work_in_one_repo_denies_a_commit_in_any_repo(self):
+    def test_each_edit_tool_in_the_commits_repo_denies_it_while_an_edit_elsewhere_does_not_clear_it(self):
+        other = self.make_repo("other")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        for tool, key in (("MultiEdit", "file_path"), ("Write", "file_path"), ("NotebookEdit", "notebook_path")):
+            with self.subTest(tool=tool):
+                transcript = self.coder_tool_transcript("a1", (tool, key, self.repo / "base.py"),
+                                                        ("Edit", "file_path", other / "base.py"))
+                self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=self.repo, session="s2",
+                                                      transcript_path=transcript))
+
+    def test_a_git_dash_c_commit_in_the_edited_repo_is_denied_from_another_cwd(self):
         other = self.make_repo("other")
         transcript = self.coder_transcript("a1", self.repo / "base.py")
         self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
-        for cwd in (other, self.repo):
-            with self.subTest(cwd=cwd):
-                self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=cwd, session="s2",
-                                                      transcript_path=transcript))
+
+        self.assert_commit_denied(self.commit(f"git -C {self.repo} commit --allow-empty -m x", cwd=other,
+                                              session="s2", transcript_path=transcript))
+
+    def test_a_coder_that_edited_only_a_file_outside_every_repo_denies_a_commit_in_any_repo(self):
+        other = self.make_repo("other")
+        loose = self.tmp / "loose.txt"
+        loose.write_text("loose\n")
+        transcript = self.coder_transcript("a1", loose)
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_commit_in_a_folder_that_is_no_repo_is_denied_while_readable_coder_edits_exist(self):
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=elsewhere, session="s2",
+                                              transcript_path=transcript))
+
+    def test_coder_work_in_one_repo_denies_a_commit_there_and_lets_one_in_another_repo_through(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=self.repo, session="s2",
+                                              transcript_path=transcript))
+        self.assert_silent(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
+                                       transcript_path=transcript))
+
+    def test_a_coder_whose_edits_cannot_be_read_denies_a_commit_in_any_repo(self):
+        other = self.make_repo("other")
+        no_edits = self.coder_transcript("a1")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        for transcript in (no_edits, "/no/such/transcript.jsonl"):
+            for cwd in (other, self.repo):
+                with self.subTest(transcript=transcript, cwd=cwd):
+                    self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=cwd, session="s2",
+                                                          transcript_path=transcript))
+
+    def test_a_dirty_mark_still_denies_a_commit_in_any_repo(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        self.assert_silent(self.bash("review-gate-mark dirty", session="s2", cwd=str(self.repo)))
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_commit_that_concludes_a_conflicted_merge_passes_a_dirty_session(self):
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        self.git(self.repo, "checkout", "-q", "-b", "base-update")
+        (self.repo / "base.py").write_text("base moved\n")
+        self.git(self.repo, "commit", "-q", "-am", "base moved")
+        self.git(self.repo, "checkout", "-q", "main")
+        (self.repo / "base.py").write_text("lane edit\n")
+        self.git(self.repo, "commit", "-q", "-am", "lane")
+        merge = self.git(self.repo, "merge", "base-update")
+        merge_head = self.git(self.repo, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+        self.assertNotEqual(merge.returncode, 0)
+        self.assertEqual(merge_head.returncode, 0)
+
+        self.assert_silent(self.commit("git commit -a -m merge", session="s2", transcript_path=transcript))
 
     def test_a_coder_with_no_agent_id_gets_no_hand_back_credit(self):
         (self.repo / "base.py").write_text("changed\n")

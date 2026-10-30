@@ -49,6 +49,7 @@ import code_step_state  # noqa: E402
 import code_step_verification  # noqa: E402
 import coder_gate  # noqa: E402
 import criteria_verdict  # noqa: E402
+import full_check  # noqa: E402
 import plan_format  # noqa: E402
 import reviewed_tree  # noqa: E402
 
@@ -2360,7 +2361,8 @@ class CodeStepTest(unittest.TestCase):
 
         self.step("resume")
 
-        self.assertIn('`asks-done accepted modified --change "<text>" modified --change "<text>"`', self.said())
+        example = f'`asks-done --repo {self.repo.resolve()} accepted modified --change "<text>" modified'
+        self.assertIn(example + ' --change "<text>"`', self.said())
 
     def test_an_accepted_ask_sends_its_proposed_change_to_the_asks_coder(self):
         self.coder_round()
@@ -2482,7 +2484,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: ask-user", out)
         self.assert_marked_clean(out)
-        self.assertIn("`asks-done`", self.said())
+        self.assertIn(f"`asks-done --repo {self.repo.resolve()}`", self.said())
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         out = self.step("asks-done", "accepted")
         self.assertIn("ask_outcome=accepted", self.log.read_text())
@@ -4109,10 +4111,12 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
     def test_other_test_scripts_are_run_not_skipped(self):
-        for command in ("npm run test:e2e", "npm run lint:fix", "npx vitest run src/a.test.ts"):
-            self.assertIsNone(code_step_verification.WHOLE_SUITE.match(command), command)
-        for command in ("cd backend && npm test", "npm run lint", "npx vitest run", "pytest", "ruff check"):
-            self.assertIsNotNone(code_step_verification.WHOLE_SUITE.match(command), command)
+        configured = "npm test && npm run lint"
+        for command in ("npm run test:e2e", "npm run lint:fix", "npm run build && node x.js",
+                        "npx vitest run src/a.test.ts"):
+            self.assertFalse(full_check.is_configured_check(command, configured), command)
+        for command in ("npm test", "npm run lint", "npm test && npm run lint"):
+            self.assertTrue(full_check.is_configured_check(command, configured), command)
         self.env["CODE_STEP_VERIFY_TIMEOUT"] = "5"
         self.set_verification("- [ ] **E2E**: `python3 -c 'raise SystemExit(3)'`")
         self.coder_round()
@@ -5225,6 +5229,7 @@ class CodeStepTest(unittest.TestCase):
     def test_tick_runs_a_whole_suite_command_and_refuses_when_it_fails(self):
         self.start_phase_one()
         self.set_state(stage="stopped", stop={"kind": "critical-blocker", "at": 0})
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npx vitest run`\n")
         self.put_failing_npx_first_on_path(["boom"])
 
         out = self.step("tick", "1")
@@ -5774,12 +5779,15 @@ class CodeStepTest(unittest.TestCase):
             with self.subTest(span=span):
                 self.assertIsNone(code_step_verification.COMMAND_START.match(span))
 
-    def test_a_whole_suite_command_with_a_variable_prefix_is_still_skipped(self):
+    def test_a_whole_suite_command_with_a_variable_prefix_runs(self):
         section = "#### Automated Verification:\n\n- [ ] **All**: `CI=1 npm test`\n\n#### Manual Verification:\n"
 
-        results, skipped, unparsed = code_step_verification.run_verification_commands(self.repo, section)
+        with unittest.mock.patch.object(full_check, "configured_check_command", return_value="npm test"), \
+                unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+            results, skipped, unparsed = code_step_verification.run_verification_commands(self.repo, section)
 
-        self.assertEqual(([], ["CI=1 npm test"], []), (results, skipped, unparsed))
+        self.assertEqual(([], []), (skipped, unparsed))
+        self.assertEqual(1, len(results))
 
     @staticmethod
     def verification_section(command):
@@ -5794,7 +5802,7 @@ class CodeStepTest(unittest.TestCase):
         (ran_command, code, output), = results
         self.assertEqual(command, ran_command)
         self.assertNotEqual(0, code)
-        self.assertIn("test filter matched no test", output)
+        self.assertIn("the run exits 0 but ran no test", output)
 
     def test_each_search_line_holds_or_fails_by_its_wording_and_whether_the_search_hits(self):
         ban_note = "unless its text says it checks presence"
@@ -6423,6 +6431,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("0 command(s) green", done)
 
     def test_a_phase_that_lists_commands_keeps_the_green_count_in_the_done_line(self):
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npx vitest run`\n")
         self.finish_phase_one()
         done = next(line for line in self.said().splitlines() if line.startswith("Phase 1 marked done"))
         self.assertIn("Verification run: 1 command(s) green (git grep -n --untracked console.log", done)

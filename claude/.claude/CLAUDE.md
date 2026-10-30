@@ -14,6 +14,8 @@ Only the main session hands the user a command. A subagent never writes a comman
 
 Never wrap text for the user to paste (a comment, message or reply) in a Markdown blockquote (`>`): the terminal renders it with a `▎` bar on every line, which the copy picks up. Give it as plain text.
 
+In zsh, `path` is tied to `PATH`: never name a shell variable `path`. Assigning it (`path=…` or `for path in …`) replaces the command search path, and later commands fail with "command not found". Name the variable for what it holds, such as `log_file`.
+
 ## Quality Checks
 
 Coders run only the tests for the files they changed. The full suite runs once, at the end of review.
@@ -32,6 +34,8 @@ The ticket's ACs are the contract. Only the user's explicit sign-off overrides o
 ## Messages to Other Sessions
 
 Keep a `SendMessage` to a peer Claude session under 150 words. Messages to and from your own subagents are exempt. Include the verdict, the numbers the receiver acts on, and what it must do next. If the detail already lives in a file, send the path, not the content. Do not make a file only to hold a message.
+
+When the repo's CLAUDE.md names an orchestrating session, a worker acts on that session's go-ahead for any step inside the worker's own branch: commit, push the branch, merge the integration branch into it, and claim or close its queue item. It never waits for the user on those steps. A go-ahead never covers master, `settings.json`, a CLAUDE.md file, or a step a hook denied.
 
 ## Compact instructions
 

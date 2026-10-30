@@ -39,6 +39,7 @@ import sys
 import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import check_scope
 import hook_input
 import reviewed_tree
 import script_utils
@@ -57,10 +58,6 @@ from shell_statements import strip_comments, strip_heredocs
 SIGNAL_EXIT_CODES = range(129, 193)
 WS ="[ \t\n\r\f\v]"
 SP = " \t\n\r\f\v"
-CHECKS = ("(npm|pnpm|yarn|bun)( run)? (test|lint|typecheck|type-check|check|build)|jest|vitest|pytest|tsc|eslint|"
-          "ruff|mypy|go (test|vet)|golangci-lint|cargo (test|clippy|check)|make (test|lint|check|typecheck)|"
-          "(bundle exec )?rspec|phpunit|dotnet test|mvn test|gradle test|shellcheck|luacheck|stylua")
-CHECK_START = re.compile("^(" + CHECKS + ")(" + WS + "|$)")
 FORMATTERS = ("cargo fmt|rustfmt|black|gofmt|go fmt|ruff format|prettier|biome (format|check)|eslint|dotnet format|"
               "(npx )?stylelint|rubocop|php-cs-fixer")
 FORMATTER_START = re.compile("^(" + FORMATTERS + ")(" + WS + "|$)")
@@ -70,11 +67,6 @@ FORMATTER_WRITES_BY_DEFAULT = re.compile("^(cargo fmt|rustfmt|black|ruff format|
 # The git subcommands that rewrite the work tree.
 GIT_TREE_REWRITE_SUBCOMMANDS = {"merge", "checkout", "switch", "reset", "pull", "rebase", "restore", "cherry-pick",
                                 "revert", "am", "apply", "clean", "rm", "mv"}
-CARGO_TEST = re.compile("^cargo test(" + WS + "|$)")
-CARGO_TARGET_FLAGS = ("--test", "--bin", "--example", "--bench")
-CARGO_WHOLE_TREE_FLAGS = ("--workspace", "--all", "--all-targets")
-CARGO_VALUE_FLAGS = ("-p", "--package", "--features", "-F", "--target", "--manifest-path", "-j", "--jobs",
-                     "--profile", "--color", "--target-dir", "--exclude", "--message-format", "--config", "-Z")
 HELP_FLAGS = ("--help", "-h", "--version", "-V")
 LOOP_HEADER = re.compile("^(for|while|until)" + WS)
 LOOP_BODY_START = re.compile("^(do|then|else)(" + WS + "+|$)")
@@ -382,35 +374,6 @@ def writes_files(segment):
     return bool(FORMATTER_WRITES.search(segment) or FORMATTER_WRITES_BY_DEFAULT.search(segment))
 
 
-def is_scoped_cargo_test(segment):
-    """True when a `cargo test` names its target: --lib, --doc, --test/--bin/--example/--bench <name>, or a test-name
-    filter. A run over the whole workspace or with no scope is the full suite and stays capped."""
-    if not CARGO_TEST.search(segment):
-        return False
-    try:
-        words = shlex.split(segment)
-    except ValueError:
-        words = segment.split()
-    words = words[2:]
-    if "--" in words:
-        words = words[:words.index("--")]
-    if any(word in CARGO_WHOLE_TREE_FLAGS for word in words):
-        return False
-    skip_value = False
-    for word in words:
-        if skip_value:
-            skip_value = False
-            continue
-        if word in ("--lib", "--doc") or word in CARGO_TARGET_FLAGS or word.split("=")[0] in CARGO_TARGET_FLAGS:
-            return True
-        if word in CARGO_VALUE_FLAGS:
-            skip_value = True
-            continue
-        if not word.startswith("-"):
-            return True
-    return False
-
-
 def is_help_probe(segment):
     """True when the check step asks for usage or the version (`--help`, `-h`, `--version`, `-V` as a whole word of
     this step) and so runs nothing."""
@@ -535,16 +498,16 @@ def run(raw, state):
         if writes_files(segment):
             format_indexes.append(index)
             continue
-        if not CHECK_START.search(segment):
+        if not check_scope.is_check(segment):
             continue
 
         if is_help_probe(segment):
             continue
 
-        if is_scoped_cargo_test(normalize(segment)):
+        norm = normalize(segment)
+        if check_scope.names_cargo_test_target(norm):
             continue
 
-        norm = normalize(segment)
         key = str(cksum((norm + "\n" + cwd).encode("utf-8", "surrogateescape")))
         run_file = run_file_for(state_dir, key, agent_id)
         in_repeat_loop = bool(loop_kinds) and loop_kinds[-1] == "repeat"

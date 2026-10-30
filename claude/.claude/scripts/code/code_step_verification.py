@@ -14,8 +14,6 @@ from criteria_verdict import item_verdict, without_leading_cd_and_env, without_n
 from script_utils import run_command
 
 VERIFY_TIMEOUT_SECONDS = 600
-WHOLE_SUITE = re.compile(r"^(?:(?:cd \S+ && )?(?:npm|pnpm|yarn) (?:run )?(?:test|lint)"
-                         r"|(?:cd \S+ && )?npx (?:vitest|jest)(?: run)?|(?:python3 -m )?pytest|ruff check)$")
 COMMAND_START = re.compile(r"^(?:" + script_utils.ENV_PREFIX.pattern + r")?"
                            r"(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
                            r"|cargo |go |deno |bun |uv |poetry |pipenv |pdm |tsc\b|eslint |vitest|jest|mvn |gradle |\./"
@@ -200,11 +198,15 @@ def log_prohibition_scan(repo_dir, command, verdict):
 
 
 def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
-    # A whole-suite command is left to the review loop's own run unless the caller says nothing else will run it.
+    # The repo's configured `Quality check:` command is left to the review loop's own run unless the caller says
+    # nothing else will run it. Every other command runs, and a repo with no configured check skips nothing.
     results = []
     skipped = []
     unparsed = []
     timeout = int(os.environ.get("CODE_STEP_VERIFY_TIMEOUT", VERIFY_TIMEOUT_SECONDS))
+    # Imported here: review/ joins sys.path when code_step_core loads, which sorted top-level imports would precede.
+    import full_check
+    configured_check = full_check.configured_check_command(repo_dir)
     for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
         if plan_format.runs_no_command(line):
             continue
@@ -212,8 +214,8 @@ def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
         if command is None:
             unparsed.append(line.strip())
             continue
-        is_whole_suite = WHOLE_SUITE.match(script_utils.without_leading_env_assignments(command))
-        if is_whole_suite and not run_whole_suites:
+        is_configured_check_command = full_check.is_configured_check(command, configured_check)
+        if is_configured_check_command and not run_whole_suites:
             skipped.append(command)
             continue
         code, output = run_command(command, repo_dir, timeout=timeout)

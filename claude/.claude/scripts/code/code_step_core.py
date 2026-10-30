@@ -805,9 +805,11 @@ def loop_stopped_after(state, handback, wait_for_stop):
     module, _import_error = load_handback()
     if module is None:
         return True
+    from handback_store import settled_stop  # beside handback.py, which loaded above
+
     session_id = state.session_id or session_pin() or ""
     stops = module.stop_rows_after(session_id, handback.get("agent_id"), handback["ts"])
-    if any(not row.get("blocked") for row in stops):
+    if any(settled_stop(row) for row in stops):
         return True
     if stops:
         return False

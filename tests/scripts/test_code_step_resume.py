@@ -909,6 +909,27 @@ class ResumeTest(base.CodeStepTest):
         self.assertIn("agent c1 of the open run, or the fork that launched it, was stopped with TaskStop", refused)
         self.assertEqual(before, self.state_bytes())
 
+    def test_resume_over_a_finished_run_with_a_stopped_launch_is_not_redirected_to_a_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.set_state(stage="done")
+
+        out = self.step("resume")
+
+        self.assertFalse(out.startswith("Refused: "), out)
+        self.assertNotIn("--coder-stopped", out)
+
+    def test_resume_over_a_verify_ready_run_with_a_stopped_launch_is_not_redirected_to_a_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.set_state(stage="review", reviewStatus="converged")
+
+        out = self.step("resume")
+
+        self.assertNotIn("--coder-stopped", out)
+
     def test_resume_over_a_stopped_coder_of_a_planless_run_asks_for_the_task_text(self):
         self.step("start", "--task", "fix the totals")
         self.launch_the_pending_dispatch("c1", "coder")

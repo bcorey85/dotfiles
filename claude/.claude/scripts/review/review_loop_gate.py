@@ -36,9 +36,11 @@
       `handoff:` line. A review-loop dispatch from a subagent other than the /code fork is refused: the
       nested loop cannot ask for permission or wake on its reviewer's report, so it never hands back.
   PreToolUse (Bash), a review-loop agent: a shell call of log-review-metrics is refused while the loop's transcript
-      holds no reviewer dispatch (`*-reviewer`, `*-reviewer-deep`), unless its prompt is a no-review mode, and while a
-      reviewer dispatch has not reported back. The loop logs the line once, with the final counts, right before it
-      hands back. Register with matcher `Bash`; the agent_type check guards every other caller.
+      holds no reviewer dispatch (`*-reviewer`, `*-reviewer-deep`), unless its prompt is a no-review mode or the
+      call's `result=` field is NOT DISPATCHED (a loop that ends before any reviewer runs), and while a
+      reviewer dispatch has not reported back (`result=` never skips that wait).
+      The loop logs the line once, with the final counts, at Step 7, after the last reviewer reports.
+      Register with matcher `Bash` and `if: Bash(*log-review-metrics*)`; the agent_type check guards every other caller.
 
   SubagentStop (review-loop), when the stop passes and no background dispatch is open: writes one
     `kind=run` row per reviewer dispatch (`*-reviewer`, `*-reviewer-deep`) through log-review-finding,
@@ -117,11 +119,14 @@ RETURN_TAIL = "then return the packet."
 DELIVERED_TAIL = "then stop: the packet was already delivered, and a second hand-back is denied."
 HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. Build it per "
                   "~/.claude/skills/_shared/handoff-block.md and dispatch again.")
+# The exact `result=` spellings the gate lets through before any reviewer dispatch: a run that ended with no reviewer.
+NO_REVIEW_METRICS_RESULTS = frozenset({"NOT DISPATCHED", "NOT_DISPATCHED"})
 METRICS_EARLY_REASON = ("No reviewer has been dispatched yet, so the Step 7 metrics line would log counts before "
                         "any review. Dispatch the reviewer first, wait for its report, then log the metrics line "
-                        "once, with the final counts, right before you hand back.")
+                        "once, with the final counts, at Step 7, after the last reviewer reports. A loop that ends "
+                        "before any reviewer runs logs it with result=\"NOT DISPATCHED\".")
 METRICS_OPEN_REASON = ("A reviewer dispatch has not reported yet. Wait for the reviewer's report, then log the "
-                       "Step 7 metrics line once, with the final counts, right before you hand back.")
+                       "Step 7 metrics line once, with the final counts, at Step 7, after the last reviewer reports.")
 NESTED_REASON = ("Run /review from the main session: a review-loop that a subagent dispatches cannot ask for "
                  "permission or wake on its reviewer's report, so it ends with no hand-back.")
 
@@ -378,17 +383,21 @@ def check_dispatch(hook):
 
 def metrics_deny_reason(hook):
     """Why a review-loop's log-review-metrics call is refused, or None: the Step 7 row carries the final counts, so
-    it waits until a reviewer has been dispatched (not in a no-review prompt) and has reported."""
+    it waits until a reviewer has been dispatched (not in a no-review prompt) and has reported. A loop that ends
+    before any reviewer runs (setup fault, critical blocker, plan impact) may log its row with a no-review
+    `result=`; once any reviewer has been dispatched, `result=` never skips the wait."""
     command = str((hook.get("tool_input") or {}).get("command") or "")
-    if not metrics_calls(command.replace("\\\n", " ")):
+    calls = metrics_calls(command.replace("\\\n", " "))
+    if not calls:
         return None
 
     transcript = LoopTranscript(script_utils.agent_transcript_path(hook))
     if NO_REVIEW_MODE.search(transcript.prompt or ""):
         return None
 
-    reviewers = [kind for kind in transcript.kinds.values() if RUN_GATES.search(kind)]
-    if not reviewers:
+    if not any(RUN_GATES.search(kind) for kind in transcript.kinds.values()):
+        if all(call.get("result") in NO_REVIEW_METRICS_RESULTS for call in calls):
+            return None
         return METRICS_EARLY_REASON
     if transcript.open_kinds(RUN_GATES):
         return METRICS_OPEN_REASON
@@ -396,11 +405,7 @@ def metrics_deny_reason(hook):
 
 
 def check_metrics(hook):
-    try:
-        reason = metrics_deny_reason(hook)
-    except Exception as e:
-        print(f"review-loop-gate: metrics check skipped, {type(e).__name__}: {e}", file=sys.stderr)
-        return
+    reason = metrics_deny_reason(hook)
     if reason:
         script_utils.pre_tool_use_deny(reason)
 

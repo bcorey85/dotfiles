@@ -200,6 +200,11 @@ def reviewed_repo(prompt, cwd):
     return str(top) if top else None
 
 
+def record_script_dispatch(session_id, repo_dir):
+    """The dispatch row the Agent hook writes for a review-loop, for a loop that runs as a script instead."""
+    record(session_id, "dispatch", no_review=False, repo=reviewed_repo("", str(repo_dir)))
+
+
 def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back, or for kind `ran` the dispatch-ran row of a dispatch whose call ran.
     Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an

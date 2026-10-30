@@ -177,7 +177,7 @@ def require_current_review(context, top):
     """Exit 2 unless the tree is the one verify-prep measured and a branch-wide review row covers it."""
     if "fingerprint" not in context:
         raise vc.VerifyError("the saved verify-prep context has no tree fingerprint: rerun verify-prep")
-    fingerprint = vc.branch_fingerprint(top, context["mergeBase"], context["excludeRel"])
+    fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
     if fingerprint != context["fingerprint"]:
         raise vc.VerifyError("the tree changed since verify-prep measured it: rerun verify-prep")
     review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"))
@@ -202,7 +202,7 @@ def log_review(args, context, top):
     if declared is None and "--rows" not in options:
         raise vc.VerifyError("review needs --rows (a JSON list; [] when the reviewer found nothing)")
 
-    fingerprint = vc.branch_fingerprint(top, context["mergeBase"], context["excludeRel"])
+    fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
     review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"))
     if review["ran"]:
         raise vc.VerifyError(f"a branch-wide review row already covers this tree ({review['reason']}): nothing to "

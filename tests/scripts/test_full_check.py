@@ -363,6 +363,27 @@ class FullCheckTest(unittest.TestCase):
                                 completed.stdout)
                 self.assertFalse(marker.exists())
 
+    def test_run_refuses_a_scoped_command_for_a_caller_that_does_not_go_through_main(self):
+        marker = self.repo / "ran"
+
+        result, tail, details = full_check.run(self.repo, f"touch {marker}; cargo test -p core", self.log, 60)
+
+        self.assertEqual(result, full_check.NOT_RUN_SCOPED)
+        self.assertEqual(tail, "")
+        self.assertEqual(details, full_check.empty_details())
+        self.assertFalse(marker.exists())
+        self.assertFalse(self.log.exists())
+
+    def test_run_still_runs_the_declared_command_when_it_names_a_tests_folder(self):
+        marker = self.repo / "ran"
+        declared = f"touch {marker}; pytest tests/"
+        (self.repo / "CLAUDE.md").write_text(f"Quality check: `{declared}`\n")
+
+        result, _, _ = full_check.run(self.repo, declared, self.log, 60)
+
+        self.assertNotEqual(result, full_check.NOT_RUN_SCOPED)
+        self.assertTrue(marker.exists())
+
     def test_the_command_the_claude_md_declares_runs_even_when_it_names_a_tests_folder(self):
         marker = self.repo / "ran"
         declared = f"touch {marker}; pytest tests/"
@@ -534,6 +555,14 @@ class BaseComparisonTest(unittest.TestCase):
         check = "grep -q 'limit = 1' app.py || { echo 'FAIL: test_new'; exit 1; }"
 
         self.assertIsNone(self.base_lines(check))
+
+    def test_a_base_run_of_a_declared_scoped_looking_command_is_not_refused_when_the_claude_md_is_untracked(self):
+        declared = "echo 'FAIL: test_old'; pytest tests/; exit 1"
+        (self.repo / "CLAUDE.md").write_text(f"Quality check: `{declared}`\n")
+
+        base = self.base_lines(declared)
+
+        self.assertEqual((base.result, base.failing_lines), ("failed (exit 1)", {"FAIL: test_old"}))
 
     def test_a_base_run_that_hits_a_setup_fault_has_no_base_failure(self):
         self.assertIsNone(self.base_lines("echo 'ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND'; exit 1"))

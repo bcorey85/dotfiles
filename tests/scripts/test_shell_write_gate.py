@@ -174,6 +174,29 @@ class ShellWriteGateTest(unittest.TestCase):
                         "(cd sub; echo x > tracked.txt)", "pushd sub && echo x | tee tracked.txt"):
             reason = self.assert_denied(command)
             self.assertIn(f"{self.repo}/tracked.txt is git-tracked", reason)
+            self.assertIn("session cwd, not the cd target", reason, command)
+
+    def test_a_deny_after_a_directory_change_says_a_relative_path_follows_the_session_cwd(self):
+        scratch = self.tmp / "scratch"
+        scratch.mkdir()
+        for command in (f"cd {scratch} && echo y >> tracked.txt", f"pushd {scratch} && echo y | tee tracked.txt",
+                        f"(cd {scratch}; echo y >> tracked.txt)"):
+            reason = self.assert_denied(command)
+            self.assertIn("is git-tracked", reason, command)
+            self.assertIn("This gate resolves a relative path against the session cwd, not the cd target; use an "
+                          "absolute path for the file you mean.", reason, command)
+
+    def test_a_deny_without_a_directory_change_before_the_write_has_no_cwd_hint(self):
+        for command in ("echo y >> tracked.txt", "echo cd sub; echo y >> tracked.txt",
+                        f"echo y >> tracked.txt && cd {self.tmp}"):
+            reason = self.assert_denied(command)
+            self.assertNotIn("session cwd", reason, command)
+
+    def test_a_deny_for_an_absolute_target_after_a_directory_change_has_no_cwd_hint(self):
+        scratch = self.tmp / "scratch"
+        scratch.mkdir()
+        reason = self.assert_denied(f"cd {scratch} && echo y >> {self.repo}/tracked.txt")
+        self.assertNotIn("session cwd", reason)
 
     def test_a_coder_new_file_rule_is_skipped_for_a_relative_target_after_a_directory_change(self):
         outside = self.make_outside_dir()

@@ -93,6 +93,29 @@ def fenced_line_indexes(lines):
     return fenced
 
 
+JSON_TYPE_NAMES = ((str, "a string"), (bool, "a boolean"), (int, "a number"), (float, "a number"), (list, "a list"),
+                   (dict, "an object"), (type(None), "null"))
+
+
+def json_type_name(value):
+    """The name of a decoded JSON value's type, as a phrase for an error message."""
+    return next(name for kind, name in JSON_TYPE_NAMES if isinstance(value, kind))
+
+
+def unfenced_text(text):
+    """The text without whitespace around it and without one wrapping code fence."""
+    text = text.strip()
+    opener = FENCE_OPEN.match(text)
+    if not opener:
+        return text
+    fence = opener.group(1)
+    fenced_lines = text.splitlines()[1:]
+    closer = fenced_lines[-1].strip() if fenced_lines else ""
+    if closer and set(closer) == {fence[0]} and len(closer) >= len(fence):
+        fenced_lines = fenced_lines[:-1]
+    return "\n".join(fenced_lines).strip()
+
+
 def heading_section_indexes(lines, heading_text):
     """0-based indexes of the lines under every markdown heading whose text is exactly heading_text, the heading line
     itself left out. A section runs to the next heading of its own level or a higher one; a deeper heading stays inside
@@ -217,6 +240,11 @@ def text_before_marker(text, marker):
     return text.split(marker, 1)[0]
 
 
+def path_is_under(path, prefix):
+    # True when path is prefix itself or lies below it, compared as text so "ab" is not under "a".
+    return path == prefix or path.startswith(prefix.rstrip("/") + "/")
+
+
 def details_with_outcome(outcomes, outcome):
     # {key: detail} for each entry of an {key: {"outcome": ..., "detail": ...}} map that has this outcome, in map order.
     return {key: entry["detail"] for key, entry in outcomes.items() if entry["outcome"] == outcome}
@@ -238,11 +266,12 @@ def run_command(command, cwd=None, stdin=None, timeout=None):
     return code, output
 
 
-def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None):
-    """Run argv and return the CompletedProcess, its output decoded as UTF-8 with no newline translation. Raise
-    error_type when argv cannot start or runs past `timeout` seconds and, with check, when its exit code is not in
-    ok_codes, naming the command and its stderr, or its stdout when stderr is empty."""
-    stdin_bytes = None if stdin is None else stdin.encode()
+def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None, as_bytes=False):
+    """Run argv and return the CompletedProcess, its output decoded as UTF-8 with no newline translation (with
+    as_bytes, stdin is bytes and stdout stays raw bytes). Raise error_type when argv cannot start or runs past
+    `timeout` seconds and, with check, when its exit code is not in ok_codes, naming the command and its stderr, or
+    its stdout when stderr is empty."""
+    stdin_bytes = stdin if as_bytes or stdin is None else stdin.encode()
     try:
         finished = subprocess.run(argv, cwd=cwd, input=stdin_bytes, capture_output=True, timeout=timeout)
     except OSError as error:
@@ -250,10 +279,12 @@ def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(
     except subprocess.TimeoutExpired as error:
         raise error_type(f"`{' '.join(argv)}` ran past {timeout} seconds") from error
 
-    finished.stdout = finished.stdout.decode("utf-8", "replace")
+    if not as_bytes:
+        finished.stdout = finished.stdout.decode("utf-8", "replace")
     finished.stderr = finished.stderr.decode("utf-8", "replace")
     if check and finished.returncode not in ok_codes:
-        detail = finished.stderr.strip() or finished.stdout.strip()
+        stdout_text = finished.stdout.decode("utf-8", "replace") if as_bytes else finished.stdout
+        detail = finished.stderr.strip() or stdout_text.strip()
         raise error_type(f"`{' '.join(argv)}` failed: {detail}")
     return finished
 
@@ -717,6 +748,16 @@ def inside_git_work_tree(path, timeout_seconds=2):
     return answer.strip() == "true"
 
 
+def is_git_ignored(path, timeout_seconds=2):
+    """True only when git reports path (a file that may not exist yet) as ignored. A tracked file is never ignored,
+    whatever a .gitignore pattern says. A path outside a repo, a git that cannot run, times out or errors all give
+    False."""
+    real_path = os.path.realpath(path)
+    folder = nearest_existing_folder(real_path)
+    answer = git_output(folder, "check-ignore", "-q", "--", real_path, timeout=timeout_seconds)
+    return answer is not None
+
+
 def _is_bare_repo(folder):
     return (os.path.isfile(os.path.join(folder, "HEAD")) and os.path.isdir(os.path.join(folder, "objects"))
             and os.path.isdir(os.path.join(folder, "refs")))
@@ -764,6 +805,13 @@ def append_jsonl(path, row):
         os.write(descriptor, line)
     finally:
         os.close(descriptor)
+
+
+def state_file_path(state_dir, name, suffix):
+    """`name` plus `suffix` in `state_dir`, with every character outside letters, digits, dot, dash and underscore in
+    `name` replaced by an underscore, so an id from a hook event or a branch name is one safe file name."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(name))
+    return pathlib.Path(state_dir) / (safe + suffix)
 
 
 def read_jsonl(path):

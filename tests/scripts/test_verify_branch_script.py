@@ -1,5 +1,7 @@
 import glob
 import importlib
+import importlib.machinery
+import importlib.util
 import json
 import os
 import pathlib
@@ -257,6 +259,26 @@ class VerifyBranchBase(unittest.TestCase):
 class PrepTest(VerifyBranchBase):
     GATED_SPEC = SPEC + ("\n## Phase 1: Work\n\n#### Automated Verification:\n\n"
                          "- [ ] **Test-verified**: passes - `LEDGER_EDIT_WATCH_PY=/x/edit_watch.py cargo test`\n")
+
+    def test_parse_numstat_counts_a_binary_file_as_zero_and_lists_a_rename_under_its_new_path(self):
+        load_common()
+        loader = importlib.machinery.SourceFileLoader("verify_prep_under_test", str(PREP))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        prep = importlib.util.module_from_spec(spec)
+        loader.exec_module(prep)
+        raw = "-\t-\tlogo.png\0" "2\t1\t\0old.py\0new.py\0" "3\t0\tplain.py\0"
+
+        self.assertEqual([(0, 0, "logo.png"), (2, 1, "new.py"), (3, 0, "plain.py")], prep.parse_numstat(raw))
+
+    def test_parse_numstat_skips_a_malformed_row_and_a_rename_row_missing_its_new_path(self):
+        load_common()
+        loader = importlib.machinery.SourceFileLoader("verify_prep_under_test", str(PREP))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        prep = importlib.util.module_from_spec(spec)
+        loader.exec_module(prep)
+        raw = "garbage\0" "3\t0\tplain.py\0" "1\t2\t\0old.py"
+
+        self.assertEqual([(3, 0, "plain.py")], prep.parse_numstat(raw))
 
     def verifier_prompt(self, out):
         return out.split("STEP 2: dispatch Agent subagent_type=plan-verifier", 1)[1]
@@ -788,6 +810,10 @@ class TicketOnlyLogTest(VerifyBranchBase):
 class ReviewGateTest(VerifyBranchBase):
     """verify-log refuses to write unless a marked branch review covers the tree prep measured."""
 
+    # What verify-prep saved for this class's base repo and task dir before the tree fingerprint moved to
+    # reviewed_tree: a context written then must still match the unchanged tree.
+    EARLIER_FINGERPRINT = "sha256:a6badc15fc873e85a88eec3363cf8d7e76e146e26e29f2aed7d19f8463914782"
+
     def setUp(self):
         super().setUp()
         self.task_dir()
@@ -845,6 +871,15 @@ class ReviewGateTest(VerifyBranchBase):
         self.git("checkout", "--", "src/a.py")
         self.write("late.txt", "x\n")
         self.assertEqual(self.log("--rows", "-", stdin=self.rows()).returncode, 2)
+
+    def test_prep_of_an_unchanged_tree_stores_the_earlier_fingerprint_and_passes_the_tree_check(self):
+        self.assertEqual(self.EARLIER_FINGERPRINT, self.context()["fingerprint"])
+        self.assertEqual(self.log_review().returncode, 0)
+
+        done = self.log("--rows", "-", stdin=self.rows())
+
+        self.assertNotIn("changed since verify-prep", done.stderr)
+        self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_review_logged_for_a_new_tree_without_a_new_prep_exits_2(self):
         self.write("src/a.py", "print(2)\n")

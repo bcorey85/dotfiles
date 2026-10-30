@@ -22,6 +22,7 @@ SIBLING_FOLDERS = ("code", "lib", "review", "telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in SIBLING_FOLDERS]
 import plan_format
 import script_utils
+import worktree_snapshot
 from code_guidance import coder_guidance_lines
 from script_utils import git_output
 
@@ -44,6 +45,7 @@ STOP_ROW_WAIT_SECONDS = 15
 LAUNCH_EXPECTED_SECONDS = 60
 PLAN_EDIT_STAGES = ("plan-coder", "impact-coder", "impact-review")
 PLAN_EDIT_STOP_REASONS = ("verification", "plan-format")
+MISSING_PLAN_STOP = "The plan file {plan} is missing (a branch switch?). Tell the user."
 BASH_TIMEOUT_MS = 600000
 CODER = "coder"
 REVIEW_LOOP = "review-loop"
@@ -375,6 +377,7 @@ def record_ruled_asks(cwd, state, outcomes, change_texts):
     # impact or refactor pass of the same plan reads it so that it does not raise the same ask again. `change` holds
     # the change the ruling names: the ask's proposal for an accepted or rejected ask, the user's change for a modified
     # one. An ask with no proposed change of its own carries its question as its change, so that copy is no proposal.
+    # A later ruling of the same plan, phase and ask replaces the earlier entry.
     ruled = read_ruled_asks(cwd)
     for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=True):
         question = str(item.get("question") or "")
@@ -383,8 +386,11 @@ def record_ruled_asks(cwd, state, outcomes, change_texts):
             proposed = ""
 
         named_change = (change_text or "") if outcome == "modified" else proposed
+        ask = script_utils.ask_text(item)
+        ruled = [earlier for earlier in ruled if (earlier["plan"], earlier["phase"], earlier["ask"])
+                 != (state.get("plan"), state.get("phase"), ask)]
         ruled.append({"plan": state.get("plan"), "phase": state.get("phase"), "file_line": item.get("file_line", ""),
-                      "ask": script_utils.ask_text(item), "outcome": outcome, "change": named_change})
+                      "ask": ask, "outcome": outcome, "change": named_change})
     state_dir(cwd).mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(ruled_asks_path(cwd), json.dumps(ruled, indent=1))
 
@@ -445,13 +451,9 @@ def uncommitted_files(repo_dir, previous):
 
 
 def file_hashes(repo_dir):
-    tracked = git_names(repo_dir, "diff", "--name-only", "HEAD")
-    untracked = git_names(repo_dir, "ls-files", "--others", "--exclude-standard")
-    hashes = {}
-    for name in sorted(set(tracked + untracked)):
-        # A deleted file has no content to hash: its hash is None, which still differs from a baseline that had it.
-        hashes[name] = git_output(repo_dir, "hash-object", name) if (repo_dir / name).exists() else None
-    return hashes
+    # A deleted file has no content to hash: its hash is None, which still differs from a baseline that had it.
+    changes = worktree_snapshot.working_tree_changes(repo_dir)
+    return {name: changes[name]["hash"] for name in sorted(changes)}
 
 
 def changed_since_baseline(state, changed_now):
@@ -750,6 +752,13 @@ def take_handback(repo_dir, state, agent_type, missing_text):
     return handback
 
 
+def current_phase_text(repo_dir, plan_rel, phase):
+    # The plan's text for the phase, or None when the plan has no such phase. An unreadable plan raises OSError,
+    # so a caller can tell it from a phase that is gone.
+    plan_lines = (repo_dir / plan_rel).read_text().splitlines()
+    return plan_format.phase_text(plan_lines, phase)
+
+
 def own_phase_text(repo_dir, state):
     # The plan's current section for the run's phase when the run's own agent may have left it: the plan reads, the
     # phase exists and its heading is the saved one. Otherwise None, and the stale check decides.
@@ -757,11 +766,10 @@ def own_phase_text(repo_dir, state):
         return None
 
     try:
-        plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+        current_text = current_phase_text(repo_dir, state["plan"], state["phase"])
     except OSError:
         return None
 
-    current_text = plan_format.phase_text(plan_lines, state["phase"])
     if current_text is None:
         return None
 
@@ -1187,11 +1195,10 @@ def stale_phase_reason(repo_dir, state):
     is_plan_fix_stop = stop_kind(state) in PLAN_EDIT_STOP_REASONS
 
     try:
-        plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+        current_text = current_phase_text(repo_dir, state["plan"], state["phase"])
     except OSError:
         return None if is_plan_fix_stop else f"{state['plan']} cannot be read"
 
-    current_text = plan_format.phase_text(plan_lines, state["phase"])
     if current_text is None:
         return f"Phase {state['phase']} is no longer in {state['plan']}"
     if is_plan_fix_stop:
@@ -1257,12 +1264,6 @@ def own_path(text):
 def say_file_in(directory):
     # say.md sits in the state folder, one level above the run folders.
     return directory / "say.md"
-
-
-def say_file(repo_dir):
-    # The real path of say.md for this repo.
-    directory = state_dir(repo_dir)
-    return say_file_in(directory) if directory is not None else pathlib.Path("say.md")
 
 
 def say(repo_dir, text, replaces_blocks_starting=None):

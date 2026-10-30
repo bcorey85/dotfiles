@@ -17,10 +17,14 @@ curly) or backticks on one line are dropped only when they hold a whole claim.
 
 The claim is checked against `git diff --cached --name-only` in the repo of each existing absolute path the
 sentence names, else in the repo of the session cwd. It blocks when that index is empty, or when a file the sentence
-names, and that exists in the repo, is not in it. A second stop in a row passes
-(stop_hook_active), so a stuck session cannot spin. Fails open: any error exits 0 with no output.
+names, and that exists in the repo, is not in it. A claim that names no existing absolute path and finds the cwd
+index empty passes when a work tree this session ran `git -C <tree> add` or `cd <tree> && ... git add` in, read from
+its transcript, holds staged files, and every relative path the sentence names that exists in the cwd checkout or in
+that tree, resolved against that tree, is among them: a session that stages that way keeps its cwd. A second stop
+in a row passes (stop_hook_active), so a stuck session cannot spin. Fails open: any error exits 0 with no output.
 """
 import contextlib
+import functools
 import json
 import os
 import re
@@ -28,6 +32,7 @@ import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import script_utils
+from git_calls import git_calls
 
 STAGED_CLAIM = re.compile(r"\b(?:(?P<first_person>I(?:'ve| have)?\s+staged)"
                           r"|(?:is|are|were|was|now|all|been|(?P<left>left))\s+staged"
@@ -63,6 +68,25 @@ def work_tree_top(path):
     directory = path if os.path.isdir(path) else os.path.dirname(path)
     top = script_utils.repo_root(directory)
     return os.path.realpath(top) if top else None
+
+
+@functools.cache
+def session_staging_trees(transcript_path, cwd):
+    """The work trees this session staged files in by naming the tree, as real paths. A relative tree is read from
+    the session cwd."""
+    if not transcript_path or not os.path.isfile(transcript_path):
+        return set()
+
+    directories = set()
+    for command in script_utils.bash_commands(transcript_path):
+        directories |= {call.directory for call in git_calls(command, cwd) if call.subcommand == "add"}
+
+    trees = set()
+    for directory in directories:
+        top = work_tree_top(directory) if os.path.isdir(directory) else None
+        if top:
+            trees.add(top)
+    return trees
 
 
 def without_quoted_claims(message):
@@ -112,7 +136,22 @@ def named_files(sentence, cwd):
     return files
 
 
-def sentence_problems(sentence, cwd):
+def session_tree_holds(top, sentence, cwd, transcript_path):
+    """Whether a work tree other than top, one the session staged in, has every relative path the sentence names in
+    its index. A path counts when it exists in the cwd checkout or in that tree."""
+    offset = os.path.relpath(os.path.realpath(cwd), top)
+    words = [word for word in PATH_WORD.findall(sentence) if not word.startswith("/")]
+    for tree in session_staging_trees(transcript_path, cwd) - {top}:
+        staged_output = script_utils.git_output(tree, "diff", "--cached", "--name-only")
+        tree_base = os.path.join(tree, offset)
+        required = {os.path.normpath(os.path.join(offset, word)) for word in words
+                    if os.path.isfile(os.path.join(cwd, word)) or os.path.isfile(os.path.join(tree_base, word))}
+        if staged_output and required <= set(staged_output.splitlines()):
+            return True
+    return False
+
+
+def sentence_problems(sentence, cwd, transcript_path):
     """What the index of each repo the sentence speaks of lacks, one line per repo."""
     files = named_files(sentence, cwd)
     absolute = [os.path.realpath(word) for word in PATH_WORD.findall(sentence)
@@ -125,11 +164,13 @@ def sentence_problems(sentence, cwd):
         if staged_output is None:
             continue
         staged = staged_output.splitlines()
+        named = [os.path.relpath(path, top) for path in files if path.startswith(top + os.sep)]
+        if not staged and not absolute and session_tree_holds(top, sentence, cwd, transcript_path):
+            continue
         if not staged:
             problems.append(f"the index of {top} holds nothing")
             continue
 
-        named = [os.path.relpath(path, top) for path in files if path.startswith(top + os.sep)]
         missing = [path for path in named if path not in staged]
         if missing:
             problems.append(f"the index of {top} does not hold {', '.join(missing)}")
@@ -142,8 +183,12 @@ def main():
         return
     message = hook.get("last_assistant_message") or ""
     cwd = hook.get("cwd") or os.getcwd()
+    claims = claim_sentences(message)
+    if not claims:
+        return
 
-    problems = [problem for sentence in claim_sentences(message) for problem in sentence_problems(sentence, cwd)]
+    transcript_path = hook.get("transcript_path")
+    problems = [problem for sentence in claims for problem in sentence_problems(sentence, cwd, transcript_path)]
     if not problems:
         return
 

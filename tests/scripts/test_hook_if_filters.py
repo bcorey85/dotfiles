@@ -14,9 +14,7 @@ WHY_LEADING_STAR = (
 )
 
 EXPECTED_FILTERS = {
-    "gates/git_discipline_gate.py": ["Bash(*git*)", "Bash(*gh*)"],
     "review/deferred_push_check.py": ["Bash(*git*)", "Bash(*gh*)"],
-    "review/review_commit_gate.py": ["Bash(*git*)", "Bash(*review-gate-mark*)"],
     "review/review_loop_gate.py": ["Bash(*log-review-metrics*)"],
     "gates/rg_path_gate.py": ["Bash(*rg*)"],
 }
@@ -40,27 +38,18 @@ ALWAYS_FIRING = {
     "gates/quality_check_cap.py",
     "code/coder_gate.py",
     "gates/wait_loop_gate.py",
+    "gates/git_discipline_gate.py",
+    "review/review_commit_gate.py",
 }
 
 # command -> scripts behind an `if` filter that fire for it (the always-firing ones are added in the test).
 FILTERED_FIRES_BY_COMMAND = {
-    "git commit -m x": {
-        "gates/git_discipline_gate.py",
-        "review/review_commit_gate.py",
-        "review/deferred_push_check.py",
-    },
-    # A git alias: neither git gate fires today. This flips when the two git gates lose their `if` filters.
+    "git commit -m x": {"review/deferred_push_check.py"},
+    # A git alias: both git gates fire, because they run on every Bash command.
     "g commit -m x": set(),
-    "env git push": {
-        "gates/git_discipline_gate.py",
-        "review/review_commit_gate.py",
-        "review/deferred_push_check.py",
-    },
-    "gh pr create": {
-        "gates/git_discipline_gate.py",
-        "review/deferred_push_check.py",
-    },
-    "review-gate-mark clean": {"review/review_commit_gate.py"},
+    "env git push": {"review/deferred_push_check.py"},
+    "gh pr create": {"review/deferred_push_check.py"},
+    "review-gate-mark clean": set(),
     "rg foo": {"gates/rg_path_gate.py"},
     "ls -la": set(),
 }

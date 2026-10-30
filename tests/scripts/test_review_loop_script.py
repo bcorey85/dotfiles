@@ -21,6 +21,7 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import finding_record
+import full_check
 import handback
 import handback_store
 import review_loop_findings
@@ -2013,6 +2014,51 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
         self.assertNotIn("check-finder", [call["key"] for call in self.fake_calls()])
+
+    def test_a_repo_with_no_quality_check_line_reruns_the_check_that_last_passed_without_the_check_finder(self):
+        passing_check = "touch full-check-ran.flag && echo '3 passed in 0.1s'"
+        found = json.dumps({"command": passing_check})
+        self.run_script({"check-finder": [{"result": found}], "code-reviewer": [{"result": CLEAN_REVIEW}]},
+                        claude_md="No check named here.\n")
+        self.reset_fake_run()
+        (self.repo / "full-check-ran.flag").unlink()
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
+        self.assertNotIn("check-finder", [call["key"] for call in self.fake_calls()])
+
+    UNCUT_PLAN = ("## Phase Status\n\n- [x] Phase 1: Skeleton (risk: low)\n- [ ] Phase 2: Limits (risk: low)\n"
+                  "- [ ] Phase 3: Notes (risk: low)\n\n## Phase 1: Skeleton\n\n## Phase 2: Limits\n\n"
+                  "Expected red: `false` until Phase 3\n\n## Phase 3: Notes\n")
+
+    def test_a_phase_that_cuts_an_expected_red_step_saves_the_full_found_command_as_the_last_passed_check(self):
+        full_command = "echo '3 passed in 0.1s' && false"
+        found = json.dumps({"command": full_command})
+        self.commit_files({"plan.md": self.UNCUT_PLAN})
+
+        completed = self.run_script({"check-finder": [{"result": found}], "code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="No check named here.\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(full_check.last_passed_command(self.repo), full_command)
+
+    def test_a_base_run_that_passes_the_cut_command_saves_nothing_over_the_full_found_command(self):
+        cut_command = "git diff --quiet HEAD -- app.py && echo '3 passed in 0.1s'"
+        full_command = f"{cut_command} && false"
+        found = json.dumps({"command": full_command})
+        self.commit_files({"plan.md": self.UNCUT_PLAN, "CLAUDE.md": "No check named here.\n"})
+        full_check.remember_passed_command(self.repo, full_command)
+
+        completed = self.run_script({"check-finder": [{"result": found}], "code-reviewer": [{"result": CLEAN_REVIEW}],
+                                     "coder": [{"result": "Repaired."}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("coder", [call["key"] for call in self.fake_calls()])
+        self.assertEqual(full_check.last_passed_command(self.repo), full_command)
 
     def test_a_repo_whose_full_suite_runs_in_ci_converges_on_its_declared_check_with_no_tests(self):
         repos = [("Quality check: `true`\nFull suite: CI\n", "passed (check only; CI runs the full suite)"),

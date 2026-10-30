@@ -26,6 +26,8 @@ TESTS_FAILED = re.compile(r"\b\d+ failed\b")
 PYTEST_NO_TESTS_CODE = 5
 RAN_NO_TESTS = re.compile(r"No test(?: file)?s found, exiting with code [1-9]|(?i:\bno tests ran\b)"
                           r"|(?m:^Ran 0 tests\b)")
+# A run that found no test and still exited 0: jest's `--passWithNoTests` line and its zero-total summary.
+NO_TESTS_EXIT_ZERO = re.compile(r"No test(?: file)?s found, exiting with code 0|(?m:^Tests:\s+0 total\b)")
 # The line a runner prints for one failed test: pytest `FAILED `/`ERROR ` summary lines, unittest and Django
 # `FAIL: `/`ERROR: ` lines, vitest, jest and nextest `FAIL ` lines, lines that start with the multiplication sign,
 # cargo's `test <name> ... FAILED` lines and a Rust test thread's panic line. unittest's final `FAILED (failures=1)`
@@ -241,6 +243,17 @@ def missing_path(lines):
     return None
 
 
+def ran_no_test(code, output):
+    """True when the run says it found no test to run and names no failed test. The no-test lines a run prints at
+    exit 0 (NO_TESTS_EXIT_ZERO) count only when the run exited 0: beside another step's non-zero exit, that step is
+    the reason."""
+    if code == 0:
+        found_none = RAN_NO_TESTS.search(output) or NO_TESTS_EXIT_ZERO.search(output)
+    else:
+        found_none = code == PYTEST_NO_TESTS_CODE or RAN_NO_TESTS.search(output)
+    return bool(found_none) and not failing_test_lines(output)
+
+
 def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     """A failure that says the environment cannot run the check, not that a check failed: the program is missing, the
     runner cannot start it, no package manifest is where it ran, a run found no test to run, a package-manager or
@@ -261,8 +274,7 @@ def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     if PACKAGE_MANAGER_MISMATCH.search(output):
         return True
 
-    ran_no_test = code == PYTEST_NO_TESTS_CODE or RAN_NO_TESTS.search(output)
-    if ran_no_test and not failing_test_lines(output):
+    if ran_no_test(code, output):
         return True
 
     missing_modules = MISSING_MODULE.findall(output)

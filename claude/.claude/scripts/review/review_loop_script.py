@@ -182,8 +182,7 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
               "rc": return_code, "tokens": tokens}
     with CALLS_LOCK:
         CALLS[sequence - 1] = record
-        with (out / "calls.jsonl").open("a") as handle:
-            handle.write(json.dumps(record) + "\n")
+        script_utils.append_jsonl(out / "calls.jsonl", record)
 
     if return_code != 0 or not replied:
         said = f" saying \"{script_utils.one_line(text)}\"" if text.strip() else ""

@@ -473,7 +473,7 @@ def new_state(options, packet, packet_id):
     waiting_packets = [] if same_run else carried_waiting_packets(previous)
     fixed_paths = handback.fixed_paths(packet)
     state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
-             "spec_iter": packet["spec_iter"], "status": packet["status"], "repo": script_utils.repo_name("."),
+             "spec_iter": packet["spec_iter"], "status": packet["status"],
              "branch": script_utils.current_branch(".") or "-", "packet_id": packet_id,
              "source": options.source, "fixed_paths": fixed_paths}
     if same_run:

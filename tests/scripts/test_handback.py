@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 import toolkit_paths
 
@@ -888,6 +889,11 @@ class StoreTest(HandbackTestBase):
         handback_store.record("../../evil", "dispatch")
         self.assertEqual([path.name for path in self.store.iterdir()], [".._.._evil.jsonl"])
 
+    def test_a_session_id_with_no_name_left_after_sanitizing_is_refused(self):
+        for session_id in ("", ".", "..", "_"):
+            with self.subTest(session_id=session_id), self.assertRaises(ValueError):
+                handback_store.session_file(session_id)
+
     def test_empty_session_has_no_rows_and_is_not_an_error(self):
         self.assertEqual(handback_store.latest("")["handback"], None)
         self.assertEqual(handback_store.latest(None)["dispatch"], None)
@@ -1330,6 +1336,20 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         self.assertEqual(self.hand_back(steps), "")
         self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_failed_full_check_scan_skips_only_the_full_check_gate_and_the_plan_edit_gate_still_denies(self):
+        steps = [{"type": "user", "message": {"role": "user", "content": "review loop\nplan: docs/plans/orders.md"}},
+                 coder_step("t1")]
+        self.transcript.write_text("".join(json.dumps(step) + "\n" for step in steps), encoding="utf-8")
+        event = {"agent_transcript_path": str(self.transcript), "cwd": str(self.tmp)}
+        packet = {"status": "converged", "files_touched": ["src/orders.ts", "docs/plans/orders.md"]}
+
+        with unittest.mock.patch.object(handback.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            reason = handback.transcript_gate_reason(event, SESSION, "a1", CONVERGED, packet)
+
+        self.assertEqual(reason, handback.loop_transcript.PLAN_EDIT_REASON.format(plan="docs/plans/orders.md"))
+        self.assertIn("full-check gate skipped", stderr.getvalue())
 
     def test_a_second_hand_back_from_an_agent_with_a_stored_report_is_denied_and_adds_no_row(self):
         steps = [coder_step("t1"), full_check_run("t2")]

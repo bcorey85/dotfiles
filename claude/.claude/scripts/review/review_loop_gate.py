@@ -55,7 +55,7 @@ import re
 import subprocess
 import sys
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../telemetry")]
 import handback
 import handback_store
 import script_utils
@@ -276,25 +276,10 @@ def write_run_row(hook, run, lane, phase, root=None):
     names that repo and branch; with no root it runs in the session cwd. It writes nothing while the telemetry
     switch is off, and it prints one stderr line for each skip. With no ledger found (PATH, then
     `${CARGO_HOME:-~/.cargo}/bin`) the row goes to review-findings.jsonl, and the writer's stderr line is passed on."""
-    claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or OWN_CLAUDE_DIR)
-    switch_script = claude_dir / "scripts" / "telemetry" / "telemetry_enabled.sh"
-    if not switch_script.is_file():
-        print(
-            "review-loop-gate: run row for {} skipped: {} is missing".format(run["gate"], switch_script),
-            file=sys.stderr,
-        )
-        return False
-    try:
-        switch = subprocess.run(["bash", str(switch_script)], capture_output=True, timeout=10)
-    except subprocess.TimeoutExpired:
-        print(
-            "review-loop-gate: run row for {} skipped: the telemetry switch timed out".format(run["gate"]),
-            file=sys.stderr,
-        )
-        return False
-    if switch.returncode:
+    if not script_utils.telemetry_switch_on():
         print("review-loop-gate: run row for {} skipped: telemetry is off".format(run["gate"]), file=sys.stderr)
         return False
+    claude_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_CLAUDE_DIR") or OWN_CLAUDE_DIR)
     command = [
         "bash",
         str(claude_dir / "skills" / "review" / "log-review-finding"),
@@ -326,7 +311,7 @@ def state_file_for(session_id):
     """The gate's state file of run-row marks for one session."""
     state_dir = pathlib.Path(os.environ.get("REVIEW_LOOP_GATE_STATE_DIR")
                              or pathlib.Path.home() / ".claude" / "state" / "review-loop-gate")
-    return state_dir / (re.sub(r"[^\w.-]", "_", str(session_id)) + ".jsonl")
+    return script_utils.state_file_path(state_dir, session_id, ".jsonl")
 
 
 def log_run_rows(hook, transcript):

@@ -527,6 +527,28 @@ def path_word(word):
     return os.path.expanduser(word)
 
 
+CD_OPTION = re.compile(r"-[LPe@]+|--")
+# A folder word the shell expands or looks up: a parameter, a substitution, a glob or brace, or `~user`.
+UNREAD_FOLDER = re.compile(r"[$`*?\[{]|^~[^/]")
+# A directory-stack index (`pushd +1`, `cd -1`), not a folder name.
+STACK_INDEX = re.compile(r"[+-]\d+")
+
+
+def cd_folder(words):
+    """The folder a `cd` or `pushd` call names (`~` for a bare `cd`), or None for a `popd`, a bare `pushd`, `cd -`,
+    zsh's two-word `cd old new`, a directory-stack index, or a folder the shell expands."""
+    arguments = [word for word in words[1:] if not CD_OPTION.fullmatch(word)]
+    if words[0] == "popd" or len(arguments) > 1:
+        return None
+    if not arguments:
+        return "~" if words[0] == "cd" else None
+
+    folder = arguments[0]
+    if folder == "-" or STACK_INDEX.fullmatch(folder) or UNREAD_FOLDER.search(folder):
+        return None
+    return folder
+
+
 def step_parts(step):
     """(core, tail) of a step: the command text after the `(` groups it opens, up to the first `)` that closes no `(`
     of its own, and the text after the last such `)` (a redirection or pipe that applies to the closed group). A

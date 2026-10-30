@@ -4,7 +4,7 @@ change_type: "added"
 title: "Scripts folder CLAUDE.md names the owner of each shared fact"
 description: "A CLAUDE.md under claude/.claude/scripts/ tells a coder to search first, import the one owner of each shared fact, pass JSON between steps and report every hook exception."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-29T00:00:00-05:00"}
-seq: 297
+seq: 304
 kind: "user-rule"
 components: ["rule/scripts-claude-md"]
 evidence: ["judgment"]

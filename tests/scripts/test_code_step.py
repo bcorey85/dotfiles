@@ -487,6 +487,17 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("Refused: abort takes no arguments.", out)
         self.assertEqual("coder", self.state()["stage"])
 
+    def test_a_verb_that_crashes_after_its_save_leaves_the_state_as_it_was(self):
+        self.start_phase_one()
+        state_before = self.state()
+
+        with unittest.mock.patch.object(code_step, "emit", side_effect=RuntimeError("emit broke")):
+            done = run(self.repo, self.env, "guide", "use the money helper")
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("emit broke", done.stderr)
+        self.assertEqual(state_before, self.state())
+
     def test_start_names_the_abort_verb_when_given_it_as_task_text(self):
         out = self.step("start", "abort")
 
@@ -5770,6 +5781,19 @@ class CodeStepTest(unittest.TestCase):
         first_wait_at = self.state()["stop"]["waitAt"]
         self.step("resume")
         self.assertEqual(first_wait_at, self.state()["stop"]["waitAt"])
+
+    def test_the_first_wait_time_of_a_resumed_coder_survives_a_kill_during_the_wait(self):
+        self.stop_the_coder_on_a_blocked_report()
+        self.send_message("a1")
+        self.wait_env(1, "0.2")
+
+        killed_wait = RuntimeError("killed during the wait")
+        with unittest.mock.patch.object(code_step_core.script_utils, "wait_for", side_effect=killed_wait):
+            done = run(self.repo, self.env, "resume")
+
+        self.assertEqual(1, done.returncode)
+        self.assertIn("killed during the wait", done.stderr)
+        self.assertIsNotNone(self.state()["stop"].get("waitAt"))
 
     def test_the_hand_back_of_a_resumed_coder_clears_the_saved_first_wait_time(self):
         self.stop_the_coder_on_a_blocked_report()

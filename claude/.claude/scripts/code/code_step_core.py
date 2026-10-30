@@ -10,6 +10,7 @@ looks for the newest hand-back event of the awaited agent's id after the time it
 import contextlib
 import dataclasses
 import datetime
+import io
 import json
 import os
 import pathlib
@@ -71,6 +72,8 @@ FORK_AGENT_TYPE = script_utils.FORK_AGENT_TYPE
 SAY_MAX_AGE_SECONDS = 6 * 3600
 STATE_FILE_NAME = "state.json"
 STATE_DIRS = {}  # resolved folder -> the code-step state folder git named for it
+# The state files of the verbs running in this process, one dict per open verb: resolved path -> VerbStateFile.
+OPEN_VERBS = []
 
 
 # ---------- git and state file ----------
@@ -106,6 +109,38 @@ def state_file(cwd):
     return state_dir(cwd) / STATE_FILE_NAME
 
 
+@dataclasses.dataclass
+class VerbStateFile:
+    """A state file as the open verb has left it so far. `found` is its text on disk at the verb's first touch and
+    `kept` the text the verb leaves; None in either means no file. `saved_from` and `session_id` come from the verb's
+    last save, for the session's list of repos."""
+    found: str | None
+    kept: str | None
+    saved_from: pathlib.Path | str | None = None
+    session_id: str | None = None
+
+
+def verb_state_file(path):
+    # None outside a verb. Inside one, the first touch reads the file from disk, and every later load, save and drop
+    # works on what the verb holds until verb_transaction writes it at the verb's end.
+    if not OPEN_VERBS:
+        return None
+
+    verb_files = OPEN_VERBS[-1]
+    resolved_path = path.resolve()
+    if resolved_path not in verb_files:
+        disk_text = state_text_on_disk(resolved_path)
+        verb_files[resolved_path] = VerbStateFile(found=disk_text, kept=disk_text)
+    return verb_files[resolved_path]
+
+
+def state_text_on_disk(path):
+    try:
+        return path.read_text()
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+
+
 def load_state(cwd):
     directory = state_dir(cwd)
     if directory is None:
@@ -114,11 +149,20 @@ def load_state(cwd):
 
 
 def read_state_file(directory):
+    # Inside a verb, the state as the verb has left it so far; elsewhere, the state on disk.
     path = directory / STATE_FILE_NAME
-    if not path.exists():
+    verb_file = verb_state_file(path)
+    if verb_file is None:
+        disk_text = state_text_on_disk(path)
+        return parse_state_text(disk_text, path)
+    return parse_state_text(verb_file.kept, path)
+
+
+def parse_state_text(text, path):
+    if text is None:
         return None
     try:
-        raw = json.loads(path.read_text())
+        raw = json.loads(text)
     except ValueError:
         raise StateFileError(f"{path} is not readable JSON") from None
     return RunState.from_json(raw, path)
@@ -233,12 +277,105 @@ def branch_label(cwd):
     return script_utils.current_branch(cwd) or "-"
 
 
-def save_state(cwd, state):
-    state_dir(cwd).mkdir(parents=True, exist_ok=True)
-    state_text = json.dumps(state.to_json(), indent=1)
-    script_utils.write_text_atomically(state_file(cwd), state_text)
+def state_text(state):
+    return json.dumps(state.to_json(), indent=1)
 
-    register_session_repo(cwd, state.session_id)
+
+def save_state(cwd, state):
+    # Inside a verb, the file is written at the verb's end; elsewhere, at once.
+    path = state_file(cwd)
+    saved_text = state_text(state)
+    verb_file = verb_state_file(path)
+    if verb_file is None:
+        write_state_text(path, saved_text, cwd, state.session_id)
+        return
+
+    verb_file.kept = saved_text
+    verb_file.saved_from = cwd
+    verb_file.session_id = state.session_id
+
+
+def drop_state(cwd):
+    # Inside a verb, the file goes at the verb's end; elsewhere, at once.
+    path = state_file(cwd)
+    verb_file = verb_state_file(path)
+    if verb_file is None:
+        path.unlink(missing_ok=True)
+        return
+
+    verb_file.kept = None
+
+
+def write_state_text(path, text, cwd, session_id):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    script_utils.write_text_atomically(path, text)
+
+    register_session_repo(cwd, session_id)
+
+
+@contextlib.contextmanager
+def verb_transaction():
+    """Runs one verb as one change. Its saves and drops of a state file stay in memory and what it prints is held.
+    When it returns, each state file it changed is written once, atomically, and then its output prints. A verb that
+    raises, or exits with an error, writes nothing and prints nothing it held. sys.exit(0) counts as a return."""
+    verb_files = {}
+    held_output = io.StringIO()
+    OPEN_VERBS.append(verb_files)
+    clean_exit = None
+    try:
+        with contextlib.redirect_stdout(held_output):
+            yield
+    except SystemExit as exited:
+        if exited.code not in (None, 0):
+            raise
+        clean_exit = exited
+    finally:
+        OPEN_VERBS.pop()
+
+    finish_verb(verb_files, held_output.getvalue())
+    if clean_exit is not None:
+        raise clean_exit
+
+
+def finish_verb(verb_files, held_output):
+    # A state file that changed on disk while the verb ran (an `abort`, which takes no lock) stays as it is: the verb
+    # writes nothing, and its output, which rests on the old state, is dropped. A verb that drops the file is never
+    # held back, so an abort always ends the run.
+    changed_paths = [path for path, verb_file in verb_files.items()
+                     if verb_file.kept is not None and state_text_on_disk(path) != verb_file.found]
+    if changed_paths:
+        changed_names = ", ".join(str(path) for path in changed_paths)
+        emit("stop", f"{changed_names} changed while this verb ran, so the verb wrote nothing and its output is "
+             f"dropped. Run `{script_command('status')}` and tell the user what it shows.")
+        return
+
+    for path, verb_file in verb_files.items():
+        write_verb_state_file(path, verb_file)
+    sys.stdout.write(held_output)
+
+
+def write_verb_state_file(path, verb_file):
+    # A dropped file goes and a saved one is written; a file the verb only read stays as it is.
+    if verb_file.kept is None:
+        path.unlink(missing_ok=True)
+        return
+    if verb_file.saved_from is not None:
+        write_state_text(path, verb_file.kept, verb_file.saved_from, verb_file.session_id)
+
+
+def write_staged_state(cwd):
+    # Writes what the open verb has staged so far before it blocks, so a kill during the block keeps it: the cap of a
+    # resumed agent's wait counts from the first wait the verb saved. A file that changed on disk since the verb read
+    # it is left for the verb's end to stop on.
+    path = state_file(cwd)
+    verb_file = verb_state_file(path)
+    if verb_file is None or verb_file.kept == verb_file.found:
+        return
+    if state_text_on_disk(path) != verb_file.found:
+        return
+
+    write_verb_state_file(path, verb_file)
+    verb_file.found = verb_file.kept
 
 
 def session_repos_file(session_id):
@@ -1029,6 +1166,8 @@ def wait_for_handback(repo_dir, state, verb):
     # The wait ends at the cap, not at the end of the wait that passes it.
     until_cap = max(0.0, clock_start + total_cap - wait_started)
 
+    # A wait killed part way still leaves the clock its cap counts from.
+    write_staged_state(repo_dir)
     found = script_utils.wait_for(lambda: handback_or_unlaunched(repo_dir, state, agent_type, until_cap <= 0),
                                   min(limit, until_cap), interval)
     if found and found[0] == "unlaunched":

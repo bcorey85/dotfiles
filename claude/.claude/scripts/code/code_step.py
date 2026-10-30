@@ -109,6 +109,7 @@ from code_step_core import (
     coder_changed_files,
     current_phase_text,
     dispatch_since,
+    drop_state,
     emit,
     file_hashes,
     guarded_verb_runs,
@@ -132,12 +133,13 @@ from code_step_core import (
     snapshot_part,
     stale_phase_reason,
     state_dir,
-    state_file,
+    state_text,
     stop_kind,
     stop_review_script,
     stop_with_question,
     take_handback,
     timed_command,
+    verb_transaction,
     wait_for_handback,
 )
 from code_step_hooks import (
@@ -759,7 +761,8 @@ def command_abort(args):
     criteria_message = None
     if state.criteria_guard is not None:
         criteria_message = settle_criteria_guard(repo_dir, state, branch_label(repo_dir))
-        save_state(repo_dir, state)
+    # The archive holds the run as it stood, with its criteria copy settled.
+    archived_text = state_text(state)
 
     review_script_was_running = review_script_running(state)
     script_pid = stop_review_script(state)
@@ -771,7 +774,8 @@ def command_abort(args):
     archive_path = directory / f"aborted-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
     lines = abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_pid,
                                 review_script_was_running)
-    state_file(repo_dir).rename(archive_path)
+    script_utils.write_text_atomically(archive_path, archived_text)
+    drop_state(repo_dir)
     emit("stop", *lines)
 
 
@@ -797,8 +801,7 @@ def command_status():
         print("no code-step state")
         return
 
-    state_text = json.dumps(state.to_json(), indent=1)
-    print(state_text)
+    print(state_text(state))
 
 
 def enter_run_checkout():
@@ -885,10 +888,12 @@ def run_verb(verb, handler, args):
             if verb in VERBS_THAT_CLEAR_SAY:
                 clear_say(repo)
 
-            if verb in GUARDED_VERBS:
-                run_guarded_verb(verb, handler, args)
-            else:
-                handler(args)
+            # The verb writes the state once, at its end, and only then prints what to do next.
+            with verb_transaction():
+                if verb in GUARDED_VERBS:
+                    run_guarded_verb(verb, handler, args)
+                else:
+                    handler(args)
     except StateFileError as error:
         emit("stop", f"{error}. Tell the user to delete that file, then run `start`.")
 

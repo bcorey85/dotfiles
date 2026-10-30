@@ -27,6 +27,7 @@ from code_step_core import (
     branch_label,
     clear_say,
     dispatch_id_at,
+    drop_state,
     emit,
     emit_dispatch,
     file_hashes,
@@ -50,7 +51,6 @@ from code_step_core import (
     session_pin,
     stale_phase_reason,
     start_run,
-    state_file,
     stop_kind,
     stop_record,
     uncommitted_files,
@@ -264,7 +264,7 @@ def drop_open_run(repo_dir, previous):
     if not is_run_open(previous):
         return
 
-    state_file(repo_dir).unlink(missing_ok=True)
+    drop_state(repo_dir)
 
 
 OTHER_SESSION_RUN_NOTE = ("The run was started by another session, and `start --restart` would drop it: run that "

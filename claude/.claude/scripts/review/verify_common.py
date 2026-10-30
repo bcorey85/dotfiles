@@ -7,6 +7,7 @@ import re
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
+import full_check_receipt
 import plan_format
 import reviewed_tree
 import script_utils
@@ -180,6 +181,16 @@ def review_state(repo, branch, fingerprint, logged_tree):
                   else "no review of this tree was logged from this checkout")
         return {"read": False, "ran": logged_here, "reason": f"{error}; {record}"}
     return {"read": True, "ran": ran, "reason": reason}
+
+
+def full_check_state(top):
+    """{"valid", "reason"} for the context's `fullCheck`: valid is True when a full-check receipt (written only by
+    review/full_check.py) covers the work tree at `top` as it stands, and reason names its result; else reason says
+    why none does."""
+    problem, finished = full_check_receipt.latest_receipt(top)
+    if problem is None:
+        return {"valid": True, "reason": f"latest full check: {finished['result']}"}
+    return {"valid": False, "reason": problem}
 
 
 def context_path(repo, branch):

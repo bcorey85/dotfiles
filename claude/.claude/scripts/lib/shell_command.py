@@ -287,6 +287,11 @@ def without_flag_values(words, value_flags):
     return kept_words
 
 
+def contains_word_run(words, run):
+    # True when the words hold the words of run next to each other, in order, anywhere in the list.
+    return any(words[start:start + len(run)] == run for start in range(len(words) - len(run) + 1))
+
+
 def command_after_wrappers(words, peel_containers=True):
     """The words of the command that a simple command finally runs, with the wrapper words, their flags and their
     values dropped: env (flags, NAME=value), sudo, doas, timeout (flags, duration), taskset (flags, CPU list), nice,
@@ -422,6 +427,12 @@ def and_steps(command):
     return [step.strip() for _operator, step in steps]
 
 
+def and_steps_or_whole(command):
+    """The stripped && steps of a command, or the stripped command as the one step when it joins its steps with any
+    other operator."""
+    return and_steps(command) or [command.strip()]
+
+
 def quoted_positions(command, unclosed_is_quoted=True):
     # The indexes of the characters that sit inside quotes, inside a comment (after its `#`, up to the newline) or
     # right after a backslash outside single quotes. A quote that never closes covers the rest of the command, unless
@@ -525,6 +536,28 @@ def path_word(word):
         if word.startswith(quote):
             word = word[1:]
     return os.path.expanduser(word)
+
+
+CD_OPTION = re.compile(r"-[LPe@]+|--")
+# A folder word the shell expands or looks up: a parameter, a substitution, a glob or brace, or `~user`.
+UNREAD_FOLDER = re.compile(r"[$`*?\[{]|^~[^/]")
+# A directory-stack index (`pushd +1`, `cd -1`), not a folder name.
+STACK_INDEX = re.compile(r"[+-]\d+")
+
+
+def cd_folder(words):
+    """The folder a `cd` or `pushd` call names (`~` for a bare `cd`), or None for a `popd`, a bare `pushd`, `cd -`,
+    zsh's two-word `cd old new`, a directory-stack index, or a folder the shell expands."""
+    arguments = [word for word in words[1:] if not CD_OPTION.fullmatch(word)]
+    if words[0] == "popd" or len(arguments) > 1:
+        return None
+    if not arguments:
+        return "~" if words[0] == "cd" else None
+
+    folder = arguments[0]
+    if folder == "-" or STACK_INDEX.fullmatch(folder) or UNREAD_FOLDER.search(folder):
+        return None
+    return folder
 
 
 def step_parts(step):

@@ -537,7 +537,7 @@ class CheckVerdictTest(unittest.TestCase):
             return code
 
         with mock.patch.object(full_check, "run_check_command", fake_check_command):
-            result, _tail, _details = full_check.run(self.repo, command, self.log, 60, declared=True)
+            result, _tail, _details = full_check.run(self.repo, command, self.log, 60, receipt=False)
 
         if result == full_check.PASSED:
             return PASS, result
@@ -643,6 +643,8 @@ class CommandClassificationTest(unittest.TestCase):
                                   return_value=[(0, "- [ ] **Check**: `x`")]), \
                 mock.patch.object(code_step_verification, "run_command", run_result), \
                 mock.patch.object(full_check, "configured_check_command", return_value=configured), \
+                mock.patch.object(code_step_verification.full_check_receipt, "valid_receipt",
+                                  return_value={"result": full_check.PASSED}), \
                 mock.patch.object(code_step_verification, "item_verdict", return_value=verdict):
             results, skipped, _unparsed = code_step_verification.run_verification_commands(
                 self.repo, "section", run_whole_suites=run_whole_suites)
@@ -690,7 +692,7 @@ class CommandClassificationTest(unittest.TestCase):
                 "npm run typecheck && npm test", "cd pkg && npm test", "(cd pkg && pytest)", "a&&pytest",
                 "pipenv run python backend/manage.py test app.tests", "make test-consistency ARGS=a.test.ts",
                 "pnpm --filter api test", "make install test", "make update test", "just install test",
-                "pnpm --filter add test",
+                "pnpm --filter add test", "python -m unittest tests.test_a", "uv run python3 -m unittest discover",
                 "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(widget_sorts)'")
         for command in not_runs + runs:
             with self.subTest(command=command):

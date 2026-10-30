@@ -128,7 +128,13 @@ def carried_question_lines(carried):
             *[f"- {line}" for line in carried], ""]
 
 
-def emit_plan_impact_modal(impact, repo_dir, carried=()):
+REPLACED_IMPACT_LINE = ("A later hand-back of the same coder no longer carries this block. Read that hand-back "
+                        "and rule: run `decide keep` when the block is answered. Write the ruling text in your own "
+                        "or the user's words, never the coder's options. Nothing is recorded or dispatched before "
+                        "that `decide`.")
+
+
+def emit_plan_impact_modal(impact, repo_dir, carried=(), replaced=False):
     word = preset_decision(repo_dir)
     if word:
         print(f"PLAN-IMPACT answered by the pre-set decision '{word}'. No question to the user.")
@@ -136,14 +142,16 @@ def emit_plan_impact_modal(impact, repo_dir, carried=()):
         return command_decide(repo_dir, state, [word, "--by", "session", "--ruling",
                                                 f"pre-set decision '{word}'; no user was asked"],
                               ruling_by="the pre-set decision")
-    if not plan_format.changes_acceptance_criteria(impact):
+    if not replaced and not plan_format.changes_acceptance_criteria(impact):
         print("PLAN-IMPACT changes no acceptance criterion, so the plan follows the code. No question to the user.")
         state = load_state(repo_dir)
         return command_decide(repo_dir, state, ["adopt", "--by", "session", "--ruling",
                                                 plan_format.below_criteria_ruling(impact)])
+    replaced_lines = [REPLACED_IMPACT_LINE, ""] if replaced else []
     ask_user(repo_dir, "the code and the plan disagree. Ask the user this question in plain text and wait for the "
              "answer. Then invoke Skill code with the args after the option the user chose, with the ruling in one "
              "line, in your own words, as the --ruling text. Do not quote the user.",
+             *replaced_lines,
              impact, "",
              *carried_question_lines(carried),
              f"1. {plan_format.PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "

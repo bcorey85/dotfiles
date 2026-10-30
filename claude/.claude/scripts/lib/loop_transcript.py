@@ -1,15 +1,16 @@
-"""loop_transcript.py: one read of a review-loop transcript, and the checks that read only the transcript: the last
-code step, whether a passed full check follows it, the open background dispatches, and a packet that names the plan
-file, and a packet that owes ledger rows (per-finding rows and a metrics line) the loop did not log.
-review_loop_gate.py (the SubagentStop backstop), handback.py (the hand-back hook) and open_child_gate.py read
-transcripts through it. Not a hook itself."""
+"""loop_transcript.py: one read of a review-loop transcript, and the checks that read the transcript: the last
+code step, whether a valid full-check receipt exists for the tree the loop reviewed (lib/full_check_receipt), the open
+background dispatches, a packet that names the plan file, and a packet that owes ledger rows (per-finding rows and a
+metrics line) the loop did not log. review_loop_gate.py (the SubagentStop backstop), handback.py (the hand-back hook)
+and open_child_gate.py read transcripts through it. Not a hook itself."""
 import json
 import os
 import re
 import shlex
 
-import expected_red
+import full_check_receipt
 import script_utils
+import shell_command
 
 FINDING_ID_HEX_LEN = 16
 FINDING_ID_PATTERN = re.compile(rf"[0-9a-f]{{{FINDING_ID_HEX_LEN}}}")
@@ -29,9 +30,6 @@ UNVERIFIED_TREE_STATUS = re.compile(
     r'|"status"[ \t]*:[ \t]*"[ \t`\'*]*' + _UNVERIFIED_STATUS + r'\b')
 # One shell command ends at a ;, a | or && that joins the next command, or at a newline no backslash escapes.
 SEGMENT_END = re.compile(r"&&|\|\||[;|]|(?<!\\)\n")
-# A shell call that ran the review loop's full-check script, and the first line that script prints: its result.
-FULL_CHECK_SCRIPT = re.compile(r"(?<![\w.-])full_check\.py(?![\w-])")
-FULL_CHECK_RESULT = re.compile(r"(?m)^full check: (.*)$")
 AGENT_MESSAGE = re.compile(r"<agent-message\s+from=\"([\w-]+)\">(.*?)(?=</agent-message>|<agent-message\s|\Z)", re.S)
 # A task notification's tool_use_id, and its result when it carries one: a killed dispatch reports with none.
 NOTIFICATION = re.compile(r"<tool-use-id>\s*([\w-]+)\s*</tool-use-id>(?:(?:(?!</task-notification>).)*?"
@@ -48,8 +46,6 @@ def prompt_field(key, value):
 
 PROMPT_PLAN = prompt_field("plan", r"(\S+?)[`*]*[ \t]*$")
 HELPER_ASSIGNMENT = re.compile(r"(?:^|[\s;&|])(\w+)=[\"']?[^\s;&|\"']*log-review-finding[\"']?(?=[\s;&|]|$)")
-FINDING_CALL_TAIL = r"\s+kind=finding\b"
-FINDING_CALL_ARGUMENTS_TAIL = rf"\s+(kind=finding\b(?:(?!{SEGMENT_END.pattern}).)*)"
 SHELL_VARIABLE_DIRECTORY = re.compile(r"^\$\{?\w+\}?/")
 NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
 METRICS_CALL = re.compile(r"log-review-metrics\b")
@@ -74,10 +70,10 @@ NIT_REASON = ("The packet lists {owed} nit(s) but only {logged} `disposition=nit
 METRICS_REASON = ("The last metrics line was logged before the last reviewer round, or its counts differ from the "
                   "packet's. Log the Step 7 metrics line again with the final counts (fixed={fixed}, "
                   "skipped_fp={skipped_fp}), then return the packet.")
-GATE_REASON = ("No passed full_check.py result follows the last code change in this phase. A scoped run, "
-               "including the handoff's tests-run, does not count. If a full_check.py result already follows the "
-               "last code change and was not passed, do not run it again: follow Step 6's route for that result "
-               "and return the packet. Otherwise run the Step 6 execution gate now.")
+GATE_REASON = ("No valid full-check receipt exists for the work tree as it stands: {problem}. A scoped run, "
+               "including the handoff's tests-run, does not count. If the latest full_check.py run did not pass, do "
+               "not run it again: follow Step 6's route for its result and return the packet. Otherwise run the "
+               "Step 6 execution gate now.")
 
 
 def text_of(content):
@@ -86,11 +82,23 @@ def text_of(content):
     return " ".join(b.get("text", "") for b in content or [] if isinstance(b, dict))
 
 
-def finding_call_pattern(command, tail):
-    """A pattern for a call of the log helper followed by `tail`, in the command's own spelling: the helper's name, or
-    a shell variable the command set to a path that ends in it (`L=<skills dir>/review/log-review-finding`)."""
-    variables = [rf"\$(?:\{{{re.escape(name)}\}}|{re.escape(name)}\b)" for name in HELPER_ASSIGNMENT.findall(command)]
-    return re.compile("(?:" + "|".join(["log-review-finding", *variables]) + ")" + tail)
+def finding_rows(command):
+    """The key=value fields of each `kind=finding` call of the log helper in one command, in order, wherever `kind`
+    stands among its arguments. The helper is called by its name, a path that ends in it, or a shell variable the
+    command set to such a path (`L=<skills dir>/review/log-review-finding`)."""
+    names = HELPER_ASSIGNMENT.findall(command)
+    helper_variables = {f"${name}" for name in names} | {f"${{{name}}}" for name in names}
+
+    rows = []
+    for words in shell_command.step_words(command):
+        if not words:
+            continue
+        if os.path.basename(words[0]) != "log-review-finding" and words[0] not in helper_variables:
+            continue
+        fields = dict(word.split("=", 1) for word in words[1:] if "=" in word)
+        if fields.get("kind") == "finding":
+            rows.append(fields)
+    return rows
 
 
 def finding_call_fields(arguments):
@@ -141,10 +149,6 @@ class LoopTranscript:
         self.scope_root = None  # the ROOT= that the last review-scope call printed
         self.finding_calls = {}  # Bash tool_use_id -> the key=value fields of each `kind=finding` call, in order
         self.ask_rows = []  # {file, line, finding_id} of each `actioned=ask` row whose id the log helper printed
-        self.full_check_calls = {}  # Bash tool_use_id -> (transcript line, full_check.py calls in it)
-        # the transcript lines of the full_check.py calls whose result is exactly `passed` (not `passed (check only;
-        # ...)`), or starts with `not run (expected red until Phase ` (a check the Expected red lines leave out whole)
-        self.full_checks = []
         with open(path, encoding="utf-8") as fh:
             for n, line in enumerate(fh):
                 self.read_record(n, json.loads(line))
@@ -197,13 +201,6 @@ class LoopTranscript:
     def read_bash_result(self, block):
         """One Bash call can chain a finding row, a metrics row and a scope call, so each check reads the result."""
         tool_use_id = block.get("tool_use_id")
-        if tool_use_id in self.full_check_calls:
-            line, call_count = self.full_check_calls[tool_use_id]
-            full_check_results = [found.strip() for found in FULL_CHECK_RESULT.findall(text_of(block.get("content")))]
-            counted = [found for found in full_check_results
-                       if found == "passed" or found.startswith(expected_red.NOT_RUN_PREFIX)]
-            if len(full_check_results) >= call_count and len(counted) == len(full_check_results):
-                self.full_checks.append(line)
         if tool_use_id in self.finding_calls:
             self.read_printed_finding_ids(block)
         refused = block.get("is_error") or METRICS_REFUSAL in text_of(block.get("content"))
@@ -261,20 +258,15 @@ class LoopTranscript:
 
     def read_command(self, n, tool_use_id, command):
         command = command.replace("\\\n", " ")
-        finding_rows = len(finding_call_pattern(command, FINDING_CALL_TAIL).findall(command))
-        self.finding_rows_logged += finding_rows
-        arguments_pattern = finding_call_pattern(command, FINDING_CALL_ARGUMENTS_TAIL)
-        finding_calls = [finding_call_fields(arguments) for arguments in arguments_pattern.findall(command)]
+        finding_calls = finding_rows(command)
+        self.finding_rows_logged += len(finding_calls)
         if finding_calls:
             self.finding_calls[tool_use_id] = finding_calls
         logged_metrics = [(n, fields, tool_use_id) for fields in metrics_calls(command)]
         self.metrics_calls += logged_metrics
-        self.ledger_calls_attempted += finding_rows + len(logged_metrics)
+        self.ledger_calls_attempted += len(finding_calls) + len(logged_metrics)
         if SCOPE_CALL.search(command):
             self.scope_calls.add(tool_use_id)
-        call_count = len(FULL_CHECK_SCRIPT.findall(command))
-        if call_count:
-            self.full_check_calls[tool_use_id] = (n, call_count)
 
     def reviewed_root(self):
         """The repo the loop reviewed: the ROOT= review-scope printed, else the prompt's `repo:` line, when it names a
@@ -346,16 +338,29 @@ def last_code_step(transcript):
     return max(transcript.steps(script_utils.CODERS), default=0)
 
 
-def scan(transcript, final=None, full_suite_in_ci=False):
-    """(no passed full_check.py result after the last code change, the count of background dispatches that have
-    not reported).
-    final is the loop's last message; the transcript's last text stands in when it is None."""
-    last_step = last_code_step(transcript)
-    last_full = max(transcript.full_checks, default=-1)
+def missing_receipt_reason(transcript, cwd=None):
+    """Why no full-check receipt is valid for the repo the loop reviewed (else the repo holding cwd, the process cwd
+    when empty), or None when one is. None too when that place is no git work tree: it keeps no receipts, so the gate
+    fails open there rather than ask for one that cannot exist."""
+    repo = script_utils.repo_root(transcript.reviewed_root() or cwd or os.getcwd())
+    if repo is None:
+        return None
+    return full_check_receipt.receipt_problem(repo)
 
-    unverified_tree = UNVERIFIED_TREE_STATUS.search(transcript.last_text if final is None else final)
-    ungated = last_full < last_step and not unverified_tree and not full_suite_in_ci
-    return ungated, transcript.open_dispatches()
+
+def scan(transcript, final=None, cwd=None):
+    """(the GATE_REASON text when no valid full-check receipt exists for the tree the loop reviewed, else None; the
+    count of background dispatches that have not reported). A loop that ends `plan-impact`, `setup-fault` or
+    `critical-blocker` owes no check.
+    final is the loop's last message; the transcript's last text stands in when it is None."""
+    open_dispatches = transcript.open_dispatches()
+    if UNVERIFIED_TREE_STATUS.search(transcript.last_text if final is None else final):
+        return None, open_dispatches
+
+    problem = missing_receipt_reason(transcript, cwd)
+    if problem is None:
+        return None, open_dispatches
+    return GATE_REASON.format(problem=problem), open_dispatches
 
 
 def plan_edit_reason(transcript, packet):

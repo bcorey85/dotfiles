@@ -85,6 +85,28 @@ def fingerprint_base(top, timeout=None):
     return "unborn", empty_tree
 
 
+def work_tree_fingerprint(repo, log=None):
+    """The fingerprint of the work tree that holds `repo` as it stands, against `fingerprint_base`, with the file `log`
+    left out when it lies inside the tree; None when `repo` is in no work tree. Raises TreeFingerprintError when git
+    cannot name the base tree or cannot fingerprint the tree."""
+    top = script_utils.repo_root(repo, timeout=GIT_TIMEOUT_SECONDS)
+    if top is None:
+        return None
+
+    top = top.resolve()
+    exclude_rel = None
+    if log:
+        log_path = pathlib.Path(log).resolve()
+        exclude_rel = log_path.relative_to(top).as_posix() if log_path.is_relative_to(top) else None
+
+    found = fingerprint_base(top, timeout=GIT_TIMEOUT_SECONDS)
+    if found is None:
+        raise TreeFingerprintError("git could not name the base tree")
+
+    _, base = found
+    return tree_fingerprint(top, base=base, exclude_rel=exclude_rel, timeout=GIT_TIMEOUT_SECONDS)
+
+
 def fingerprint(repo_dir):
     """(repo top level, fingerprint of its working tree against HEAD), or None when repo_dir is not in a work tree,
     has no commit yet, git fails, or an untracked file name holds a newline (so record_reviewed returns False and

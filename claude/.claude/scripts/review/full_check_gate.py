@@ -11,7 +11,6 @@ import sys
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib")]
 import code_step_core
-import expected_red
 import format_files
 import full_check
 import script_utils
@@ -27,14 +26,17 @@ LIVE_CHILDREN = set()
 LIVE_BASE_TREES = set()
 
 
-def run_full_check(repo, out, check_command, gate_env=(), runner=None, log_name=code_step_core.FULL_CHECK_LOG):
+def run_full_check(repo, out, check_command, gate_env=(), runner=None, log_name=code_step_core.FULL_CHECK_LOG,
+                   left_out=()):
     """(the full_check result, the log's last lines with the failing tests above them, the run's details: runner
     summaries and the files the check changed or created). A SIGTERM kills the check's process group with the claude
     calls. `runner` (full_check.run by default) is any function with run's check arguments, such as
-    full_check.base_run, whose result this returns as it is."""
+    full_check.base_run, whose result this returns as it is. `left_out` (the Expected red entries the command leaves
+    out) goes to the runner only when it holds some."""
     runner = runner or full_check.run
     assignments = script_utils.environment_from_assignments(gate_env)
     check_pids = []
+    options = {"left_out": left_out} if left_out else {}
 
     def check_started(pid):
         check_pids.append(pid)
@@ -42,7 +44,7 @@ def run_full_check(repo, out, check_command, gate_env=(), runner=None, log_name=
 
     try:
         return runner(repo, check_command, out / log_name, CHECK_TIMEOUT_SECONDS,
-                      env={**os.environ, **assignments}, on_start=check_started)
+                      env={**os.environ, **assignments}, on_start=check_started, **options)
     finally:
         LIVE_CHILDREN.difference_update(check_pids)
 
@@ -96,15 +98,14 @@ class FullCheckSteps:
         difference around its own call, so a changed or created file reaches files_touched only when the repair coder
         edits it itself. A rewrote_edited file holds coder work and always counts as touched. A check that the
         Expected red entries leave out whole does not run, and sets untested_fix so the changed files' tests run, and
-        so does a check-only pass in a repo whose full suite runs in CI."""
+        so does a check-only pass in a repo whose full suite runs in CI. Every run, the left-out one too, writes the
+        full-check receipt."""
         self.full_check_command = check_command or ""
+        self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env,
+                                                        left_out=self.expected_red)
         if check_command is None and self.expected_red:
-            self.full_check = expected_red.not_run_result(self.expected_red)
             self.untested_fix = True
-            return ""
-
-        self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)
-        if self.full_check == full_check.PASSED:
+        elif self.full_check == full_check.PASSED:
             self.untested_fix = False
         elif self.full_check == full_check.CHECK_ONLY_PASSED:
             self.untested_fix = True

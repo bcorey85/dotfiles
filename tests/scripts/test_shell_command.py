@@ -15,7 +15,10 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from shell_command import (
     and_steps,
+    and_steps_or_whole,
+    cd_folder,
     command_after_wrappers,
+    contains_word_run,
     docker_forwarded_variables,
     docker_set_variables,
     names_code_runner,
@@ -36,6 +39,20 @@ from shell_command import (
 )
 
 
+class CdFolderTest(unittest.TestCase):
+    def test_a_literal_folder_is_returned_and_a_bare_cd_goes_home(self):
+        for words, folder in ((["cd", "sub"], "sub"), (["cd", "-P", "--", "sub"], "sub"), (["pushd", "sub"], "sub"),
+                              (["cd"], "~"), (["cd", "~/sub"], "~/sub")):
+            with self.subTest(words):
+                self.assertEqual(folder, cd_folder(words))
+
+    def test_a_folder_the_shell_resolves_gives_none(self):
+        for words in (["popd"], ["pushd"], ["cd", "-"], ["cd", "a", "b"], ["cd", "$D"], ["cd", "sub*"],
+                      ["cd", "~someone"], ["pushd", "+1"], ["pushd", "-1"], ["cd", "-1"], ["cd", "+2"]):
+            with self.subTest(words):
+                self.assertIsNone(cd_folder(words))
+
+
 class AndStepsTest(unittest.TestCase):
     def test_a_command_joined_only_by_and_gives_its_stripped_steps(self):
         self.assertEqual(["ruff check .", "pytest -q"], and_steps("ruff check . && pytest -q"))
@@ -44,6 +61,23 @@ class AndStepsTest(unittest.TestCase):
         for command in ("a || b", "a | b", "a && b; c", "a & b"):
             with self.subTest(command):
                 self.assertIsNone(and_steps(command))
+
+    def test_any_other_operator_gives_the_stripped_command_as_the_one_step_when_asked_for_the_whole(self):
+        self.assertEqual(["ruff check .", "pytest -q"], and_steps_or_whole(" ruff check . && pytest -q "))
+        self.assertEqual(["a && b; c"], and_steps_or_whole(" a && b; c "))
+
+
+class ContainsWordRunTest(unittest.TestCase):
+    def test_the_run_must_stand_next_to_each_other_in_order(self):
+        words = ["python3", "-m", "unittest", "tests.test_a"]
+        cases = [(["-m", "unittest"], True), (["python3", "-m"], True), (["unittest", "-m"], False),
+                 (["-m", "tests.test_a"], False), (["tests.test_a", "x"], False)]
+        for run, expected in cases:
+            with self.subTest(run=run):
+                self.assertEqual(expected, contains_word_run(words, run))
+
+    def test_words_shorter_than_the_run_hold_none(self):
+        self.assertFalse(contains_word_run(["-m"], ["-m", "unittest"]))
 
 
 class SplitSimpleCommandsTest(unittest.TestCase):

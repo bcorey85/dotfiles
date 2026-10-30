@@ -174,17 +174,48 @@ class ShellWriteGateTest(unittest.TestCase):
                         "(cd sub; echo x > tracked.txt)", "pushd sub && echo x | tee tracked.txt"):
             reason = self.assert_denied(command)
             self.assertIn(f"{self.repo}/tracked.txt is git-tracked", reason)
-            self.assertIn("session cwd, not the cd target", reason, command)
+            self.assertIn("session cwd and each cd folder", reason, command)
 
-    def test_a_deny_after_a_directory_change_says_a_relative_path_follows_the_session_cwd(self):
+    def test_a_deny_after_a_directory_change_says_a_relative_path_is_checked_against_each_folder(self):
         scratch = self.tmp / "scratch"
         scratch.mkdir()
         for command in (f"cd {scratch} && echo y >> tracked.txt", f"pushd {scratch} && echo y | tee tracked.txt",
                         f"(cd {scratch}; echo y >> tracked.txt)"):
             reason = self.assert_denied(command)
             self.assertIn("is git-tracked", reason, command)
-            self.assertIn("This gate resolves a relative path against the session cwd, not the cd target; use an "
-                          "absolute path for the file you mean.", reason, command)
+            self.assertIn("This gate checks a relative path against the session cwd and each cd folder before it; "
+                          "use an absolute path for the file you mean.", reason, command)
+
+    def test_a_relative_target_is_checked_against_each_literal_cd_folder_before_it(self):
+        other = self.tmp / "other"
+        (other / "sub").mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        (other / "sub" / "t.txt").write_text("x\n")
+        subprocess.run(["git", "-C", str(other), "add", "sub/t.txt"], check=True)
+        for command in ("cd ../other/sub && echo x > t.txt", "cd .. && cd other && echo x > sub/t.txt",
+                        f"cd {other} && cd sub && echo x | tee t.txt", "pushd ../other && echo x >> sub/t.txt",
+                        "cd -P ../other && cd /nowhere-real && echo x > sub/t.txt",
+                        "(cd ../other; echo x > sub/t.txt)", "echo $(cd ../other/sub; echo x > t.txt)"):
+            reason = self.assert_denied(command)
+            self.assertIn(f"{other}/sub/t.txt is git-tracked", reason, command)
+        for command in ("cd ../other && echo x > new.txt", "cd ../other && echo x > t.txt",
+                        f"cd ../other && echo x > {self.tmp}/new.txt", "echo x > t.txt && cd ../other/sub"):
+            self.assert_allowed(command)
+
+    def test_a_relative_target_after_a_cd_to_a_folder_that_is_not_a_literal_is_denied(self):
+        for command in ('cd "$D" && echo x > new.txt', "cd $(mktemp -d) && echo x > new.txt",
+                        "cd - && echo x > new.txt", "popd; echo x > new.txt", "pushd && echo x | tee new.txt",
+                        "cd sub* && echo x > new.txt", "cd ~someone && echo x > new.txt",
+                        "cd a b && echo x > new.txt", "cd 'unterminated; echo x > new.py",
+                        "pushd +1 && echo x > new.txt", "cd -1 && echo x > new.txt"):
+            reason = self.assert_denied(command)
+            self.assertIn("is a relative write target after a cd to a folder this gate cannot read", reason, command)
+        reason = self.assert_denied('cd "$D" && echo x > -new.txt')
+        self.assertIn("-new.txt is a relative write target after a cd to a folder this gate cannot read", reason)
+        for command in ('cd "$D" && echo x > /dev/null', f'cd "$D" && echo x > {self.tmp}/new.txt',
+                        'cd "$D" && ls 2>&1', "cd && echo x > new.txt", "cd ~ && echo x > new.txt",
+                        'cd "$TMPDIR" && echo x > new.txt', "cd ${HOME} && echo x > new.txt"):
+            self.assert_allowed(command)
 
     def test_a_deny_without_a_directory_change_before_the_write_has_no_cwd_hint(self):
         for command in ("echo y >> tracked.txt", "echo cd sub; echo y >> tracked.txt",
@@ -198,15 +229,22 @@ class ShellWriteGateTest(unittest.TestCase):
         reason = self.assert_denied(f"cd {scratch} && echo y >> {self.repo}/tracked.txt")
         self.assertNotIn("session cwd", reason)
 
-    def test_a_coder_new_file_rule_is_skipped_for_a_relative_target_after_a_directory_change(self):
+    def test_a_coder_is_denied_any_relative_target_after_a_directory_change(self):
         outside = self.make_outside_dir()
-        for command in ("cd sub && echo x > new.py", "pushd sub && echo x > new.py", "popd; echo x > new.py",
+        for command in ("cd sub && echo x > new.py", "pushd sub && echo x > new.py",
                         "if true; then cd sub; fi; echo x > new.py", "echo $(cd sub; echo x > new.py)",
-                        "command cd sub && echo x | tee new.py", "cd 'unterminated; echo x > new.py"):
-            self.assert_allowed(command, agent="coder", cwd=str(outside))
+                        f"command cd {self.tmp} && echo x | tee new.py"):
+            reason = self.assert_denied(command, agent="coder", cwd=str(outside))
+            self.assertIn("new.py is a relative write target after a cd. ", reason, command)
+            self.assertIn("This agent has no way to skip this gate.", reason, command)
+        reason = self.assert_denied("cd sub && echo x > -new.txt", agent="coder", cwd=str(outside))
+        self.assertIn("-new.txt is a relative write target after a cd. ", reason)
         for command in ("echo x > new.py", "echo cd sub; echo x > new.py", "echo 'cd sub' > new.py",
                         "cd sub && echo x > /srv/not-a-temp-dir/new.py", "cd sub && echo x > $UNSET_DIR/new.py"):
             self.assert_denied(command, agent="coder", cwd=str(outside))
+        for command in (f"cd sub && echo x > {self.tmp}/new.py", "cd sub && echo x > $TMPDIR/new.py",
+                        "cd sub && echo x > /dev/null"):
+            self.assert_allowed(command, agent="coder", cwd=str(outside))
 
     def test_a_coder_is_not_denied_for_a_redirect_like_text_after_a_substitution_in_quotes(self):
         outside = self.make_outside_dir()

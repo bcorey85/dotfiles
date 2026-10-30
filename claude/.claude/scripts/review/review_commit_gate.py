@@ -49,9 +49,10 @@ A dirty session still commits in four more cases, each checked against something
   - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), so work
     that converged in a review-loop commits after a later coder dispatch that edited nothing
   - the session's latest review-loop hand-back is current, converged or deferred, came after the coder work that
-    made the session dirty, and answers a review-loop dispatch of that repo (its `repo:` line, else the first
-    absolute path the prompt names, else the session cwd; a `repo:` line in no work tree names no repo), however
-    the run that launched the loop closed.
+    made the session dirty, and answers a review-loop dispatch of that repo
+    (the ROOT= that review-scope printed in the loop, else its `repo:` line, else the first absolute path the prompt
+    names, else the session cwd; a ROOT= or `repo:` line in no work tree names no repo), however the run that
+    launched the loop closed.
 The last three credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
 dir or work-tree option or variable, quotes and escapes resolved) or holds a `$` or backtick outside a single-quoted

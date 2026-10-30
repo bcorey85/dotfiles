@@ -130,11 +130,12 @@ case "$1 $2" in
     "tab create") echo '{{"result":{{"tab":{{"tab_id":"w1:t2"}},"root_pane":{{"pane_id":"w1:p3"}}}}}}' ;;
 esac""")
 
-    def run_herdr_dev(self, *args):
+    def run_herdr_dev(self, *args, directory=None):
         env = {key: value for key, value in os.environ.items() if key != "TUIOS_SOCKET"}
         env["HOME"] = str(self.root)
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
-        return subprocess.run([str(HERDR_DEV), str(self.root), "w1", *args], env=env, capture_output=True, text=True)
+        return subprocess.run([str(HERDR_DEV), str(directory or self.root), "w1", *args], env=env,
+                              capture_output=True, text=True)
 
     def test_the_claude_command_is_typed_after_the_shell_prompt_shows_and_the_input_line_is_cleared(self):
         finished = self.run_herdr_dev("s1", "Fix it.")
@@ -155,6 +156,30 @@ esac""")
         self.addCleanup(os.remove, prompt_file)
         self.assertEqual(pathlib.Path(prompt_file).read_text(), "Fix it.")
         self.assertTrue(claude_command.endswith(f"&& rm -f '{prompt_file}'"), claude_command)
+
+    def test_the_fork_is_named_for_its_worktree_so_peers_can_tell_it_from_its_parent(self):
+        finished = self.run_herdr_dev("s1", "Fix it.")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        claude_command = finished.stdout.splitlines()[1]
+        prompt_file = re.search(r"cat '([^']+)'", claude_command).group(1)
+        self.addCleanup(os.remove, prompt_file)
+        self.assertTrue(claude_command.startswith(f"claude --resume s1 --fork-session --name {self.root.name} -- "),
+                        claude_command)
+
+    def test_a_worktree_folder_with_shell_special_characters_is_typed_as_one_name_argument(self):
+        folder_name = "my repo $x's"
+        worktree = self.root / folder_name
+        worktree.mkdir()
+
+        finished = self.run_herdr_dev("s1", "Fix it.", directory=worktree)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        claude_command = finished.stdout.splitlines()[1]
+        prompt_file = re.search(r"cat '([^']+)'", claude_command).group(1)
+        self.addCleanup(os.remove, prompt_file)
+        typed_words = shlex.split(claude_command)
+        self.assertEqual(typed_words[typed_words.index("--name") + 1], folder_name)
 
 
 if __name__ == "__main__":

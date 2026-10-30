@@ -18,6 +18,9 @@ import reviewed_tree
 import script_utils
 from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED
 
+# A pointer ask rides in the packet's ask list with no question, so handback drops it with this reason as its warning.
+POINTER_ASK_REASON = "ask only points back to another ask"
+
 
 def located(finding):
     """The packet's file_line for a finding: the `path:line` the driver parses, or UNLOCATED."""
@@ -52,6 +55,10 @@ def packet_message(outcome):
     status = "plan-impact" if outcome["status"] == "plan-change" else outcome["status"]
     asks = [ask_entry(ask, outcome["ask_gates"].get(ask, handback.DEFAULT_GATE), outcome["ask_ids"].get(ask))
             for ask in outcome["asks"]]
+    pointer_entries = [{"text": ask.text, "file_line": located(ask), "drop_reason": POINTER_ASK_REASON}
+                       for ask in outcome["pointer_asks"]]
+    asks += pointer_entries
+
     fields = {
         "status": status,
         "iter": outcome["iter"],
@@ -86,10 +93,10 @@ def packet_message(outcome):
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
     "status": "", "iter": 0, "fixed": [], "skipped_fp": [], "blockers": [], "plan_change": [], "open_fixes": [],
-    "asks": [], "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "", "full_check": "",
-    "full_check_command": "", "full_check_summaries": [], "check_changed": [], "check_rewrote_edited": [],
-    "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False, "scoped_tests": "",
-    "tool_fault": "",
+    "asks": [], "ask_gates": {}, "pointer_asks": [], "ask_ids": {}, "ask_rows": [], "class_closure": "",
+    "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
+    "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False,
+    "scoped_tests": "", "tool_fault": "",
 }
 
 

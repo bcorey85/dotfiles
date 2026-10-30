@@ -165,7 +165,7 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
         self.calls = []
         self.original_run_command = review_asks.run_command
         review_asks.run_command = lambda command, cwd=None: self.calls.append(command) or (0, "")
-        self.state = {"branch": "some-branch", "lane": "fix", "scope": "diff", "iter": 1}
+        self.state = {"branch": "some-branch", "lane": "fix", "scope": "diff", "iter": 1, "packet_id": "stdin:test"}
 
     def tearDown(self):
         review_asks.run_command = self.original_run_command
@@ -187,15 +187,16 @@ class ReviewFixLogAskOutcome(unittest.TestCase):
     def asks_done(self, asks, outcomes):
         """(stdout, stderr) of one asks-done call on asks waiting in self.state."""
         self.state.update({"stage": "asks", "asks": asks})
-        original = (review_fix.load_fix_state, review_fix.save_fix_state)
+        original = (review_fix.load_fix_state, review_fix.save_fix_state, review_fix.record_asks_logged)
         review_fix.load_fix_state = lambda: self.state
         review_fix.save_fix_state = lambda state: None
+        review_fix.record_asks_logged = lambda packet_id: None
         out, err = io.StringIO(), io.StringIO()
         try:
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 review_fix.command_asks_done(outcomes)
         finally:
-            review_fix.load_fix_state, review_fix.save_fix_state = original
+            review_fix.load_fix_state, review_fix.save_fix_state, review_fix.record_asks_logged = original
         return out.getvalue(), err.getvalue()
 
     def test_ask_without_finding_id_is_logged_under_a_new_id_and_marked_logged(self):

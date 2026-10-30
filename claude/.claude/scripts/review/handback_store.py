@@ -122,7 +122,8 @@ def latest(session_id):
 def latest_for_repo(session_id, repo_top):
     """`latest` over only the rows of review-loops that reviewed repo_top: each dispatch whose repo, after any
     DISPATCH_REPO_KIND row, is repo_top, and the stop and hand-back rows that follow such a dispatch before the next
-    dispatch. A review of another repo then neither answers nor voids this repo's hand-back."""
+    dispatch. A review of another repo then neither answers nor voids this repo's hand-back. A dispatch that names no
+    repo yet can be a review of this one, so it stays in and voids the hand-back before it."""
     stored_rows = stored_session_rows(session_id)
 
     dispatch_repos = []
@@ -140,7 +141,8 @@ def latest_for_repo(session_id, repo_top):
         if row.get("kind") == DISPATCH_REPO_KIND or dispatch_count == 0:
             continue
         reviewed_repo = dispatch_repos[dispatch_count - 1]
-        if repo_top is None or reviewed_repo != repo_top:
+        is_unnamed_dispatch = row.get("kind") == "dispatch" and reviewed_repo is None
+        if repo_top is None or (reviewed_repo != repo_top and not is_unnamed_dispatch):
             continue
         repo_rows.append({**row, "repo": reviewed_repo} if row.get("kind") == "dispatch" else row)
 

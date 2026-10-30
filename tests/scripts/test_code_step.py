@@ -1406,8 +1406,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_review_loop_plan_impact_with_a_toolkit_cause_stops_and_opens_no_plan_modal(self):
         self.coder_round()
-        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n"
-                                 "      cause: toolkit\n")
+        self.hook("review-loop", json.dumps({"status": "plan-impact", "iter": 1,
+                                             "plan_impact": "PLAN-IMPACT:\n  found: B\n  cause: toolkit\n"}))
         out = self.step("resume")
         self.assertIn("ACTION: stop", out)
         self.assertIn("toolkit gate or script fault", out)

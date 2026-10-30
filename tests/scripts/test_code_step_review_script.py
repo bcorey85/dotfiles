@@ -57,7 +57,8 @@ if mode in ("converged", "plan-impact", "plan-impact-dropped-ask", "plan-impact-
     if mode == "unreviewed-fix":
         packet = {**packet, "iter": 2,
                   "fixed": [{"finding": "f", "file_line": "src/orders.ts:4", "blocker": False}]}
-    dropped_ask = {"file_line": "a.ts:1", "gate": "code-reviewer", "class": "bug"}
+    dropped_ask = {"text": "see the ask above", "file_line": "a.ts:1",
+                   "drop_reason": "ask only points back to another ask"}
     if mode == "plan-impact":
         packet = {"status": "plan-impact", "iter": 1, "plan_impact": "PLAN-IMPACT:\\n  found: B"}
     if mode == "plan-impact-dropped-ask":
@@ -250,8 +251,7 @@ class ReviewScriptTest(base.CodeStepTest):
         out = self.step("resume")
 
         self.assertIn("DROPPED ASKS (tell the user; the review went on without them):\n"
-                      "- ask entry has no question, finding or change, so it was dropped: "
-                      "file_line a.ts:1, gate code-reviewer", out)
+                      "- ask only points back to another ask, so it was dropped: 'see the ask above'", out)
         return out
 
     def test_a_plan_impact_that_asks_the_user_prints_the_dropped_ask_warning(self):

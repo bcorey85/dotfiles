@@ -243,6 +243,16 @@ class CheckoutTest(base.CodeStepTest):
         self.assertIn("correction", self.said())
         self.assertEqual("asks-coder", self.stage_of(self.repo))
 
+    def test_correct_ruling_with_repo_from_another_checkout_at_the_asks_stage_dispatches_the_asks_coder(self):
+        self.step("start", "--task", "fix the typo")
+        self.wait_at_asks(self.repo)
+        cwd = self.other_checkout()
+
+        out = base.run(cwd, self.env, "correct-ruling", "--repo", str(self.repo), "accepted").stdout
+
+        self.assertIn("AGENT: coder", out)
+        self.assertEqual("asks-coder", self.stage_of(self.repo))
+
     def test_the_asks_hand_back_names_the_repo_of_the_run_in_its_asks_done_line(self):
         self.coder_round()
         self.hook("review-loop", CAP_WITH_ASK, agent_id="r1")

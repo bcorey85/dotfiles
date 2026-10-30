@@ -5,6 +5,7 @@ The fixtures are those of test_code_step.py; its own tests run there, not here.
 
 run: python3 -m unittest test_code_step_start_input
 """
+import json
 import pathlib
 import shlex
 import shutil
@@ -54,6 +55,126 @@ class StartInputTest(base.CodeStepTest):
         self.assertIn(f"Implement: {HOOK_SENSITIVE_TASK}\nsecond line\n", out)
         self.assertIsNone(self.state().get("plan"))
 
+    def test_a_task_file_that_opens_with_the_plan_starts_a_plan_run_with_the_rest_as_run_notes(self):
+        notes = "— From x (orchestrator): only touch orders (not totals); keep it small\nsecond line"
+        for task_text in (f"{self.plan} {notes}\n", f"Repo: {self.repo}\n\n{self.plan} {notes}\n"):
+            with self.subTest(task_text=task_text):
+                (self.repo / ".git/code-step/state.json").unlink(missing_ok=True)
+                task_file = self.write_outside_file("brief.md", task_text)
+
+                out = self.step("start", "--task-file", str(task_file))
+
+                self.assertIn("AGENT: coder", out)
+                self.assertEqual(self.plan, self.state()["plan"])
+                self.assertEqual("1", self.state()["phase"])
+                self.assertIn(f"{RUN_NOTES_HEADING}\n{notes}", out)
+                self.assertNotIn("Repo:", out)
+
+    def test_a_task_file_that_opens_with_the_plan_and_a_phase_lead_runs_that_phase(self):
+        task_file = self.write_outside_file("brief.md", f"{self.plan} Phase 2 touch totals\nsecond line\n")
+
+        out = self.step("start", "--task-file", str(task_file))
+
+        self.assertEqual("2", self.state()["phase"])
+        self.assertEqual("2", self.state()["onlyPhase"])
+        self.assertIn(f"{RUN_NOTES_HEADING}\ntouch totals\nsecond line", out)
+
+    def test_a_task_file_that_opens_with_the_plan_and_a_phase_flag_runs_that_phase(self):
+        task_file = self.write_outside_file("brief.md", f"{self.plan} --phase 2 touch totals\nsecond line\n")
+
+        out = self.step("start", "--task-file", str(task_file))
+
+        self.assertEqual("2", self.state()["phase"])
+        self.assertEqual("2", self.state()["onlyPhase"])
+        self.assertIn(f"{RUN_NOTES_HEADING}\ntouch totals\nsecond line", out)
+
+    def test_start_phase_flag_with_a_task_file_on_a_fresh_run_runs_that_phase_with_the_notes(self):
+        task_file = self.write_outside_file("brief.md", f"{self.plan} touch totals\n")
+
+        out = self.step("start", "--phase", "2", "--task-file", str(task_file))
+
+        self.assertEqual("2", self.state()["phase"])
+        self.assertEqual("2", self.state()["onlyPhase"])
+        self.assertIn(f"{RUN_NOTES_HEADING}\ntouch totals", out)
+
+    def test_a_task_file_that_opens_with_a_ticket_id_and_a_phase_lead_runs_that_ticket_plan_phase(self):
+        shutil.copytree(self.repo / "docs/plans/orders", self.repo / "docs/plans/ABC-400-x")
+        task_file = self.write_outside_file("brief.md", "ABC-400 Phase 1 only touch orders\nsecond line\n")
+
+        out = self.step("start", "--task-file", str(task_file))
+
+        self.assertEqual("docs/plans/ABC-400-x/spec.md", self.state()["plan"])
+        self.assertEqual("1", self.state()["phase"])
+        self.assertIn(f"{RUN_NOTES_HEADING}\nonly touch orders\nsecond line", out)
+
+    def test_a_task_file_that_opens_with_a_ticket_id_and_no_phase_stays_planless(self):
+        shutil.copytree(self.repo / "docs/plans/orders", self.repo / "docs/plans/ABC-400-x")
+        task_file = self.write_outside_file("brief.md", "ABC-400 is broken\n")
+
+        out = self.step("start", "--task-file", str(task_file))
+
+        self.assertIsNone(self.state().get("plan"))
+        self.assertIn("Implement: ABC-400 is broken", out)
+
+    def test_a_task_file_with_an_indented_repo_line_stays_planless_in_this_checkout_with_the_text_unchanged(self):
+        other = self.other_repo()
+        task_text = f"  Repo: {other}\n{self.plan} notes\n"
+        task_file = self.write_outside_file("brief.md", task_text)
+
+        out = self.step("start", "--task-file", str(task_file))
+
+        self.assertNotIn(f"This run's checkout is {other}", out)
+        self.assertFalse((other / ".git/code-step/state.json").exists())
+        self.assertIsNone(self.state().get("plan"))
+        self.assertIn(f"Implement: {task_text}", out)
+
+    def test_a_task_file_that_opens_with_the_plan_and_a_phase_lead_keeps_the_notes_line_breaks(self):
+        task_file = self.write_outside_file("brief.md", f"{self.plan} Phase 1 only touch orders\nsecond line\n")
+
+        out = self.step("start", "--task-file", str(task_file))
+
+        self.assertEqual(self.plan, self.state()["plan"])
+        self.assertEqual("1", self.state()["phase"])
+        self.assertEqual("1", self.state()["onlyPhase"])
+        self.assertIn(f"{RUN_NOTES_HEADING}\nonly touch orders\nsecond line", out)
+
+    def test_a_task_file_that_opens_with_a_markdown_file_that_has_no_phases_stays_planless(self):
+        (self.repo / "README.md").write_text("# Readme\n\nSome words.\n")
+        task_file = self.write_outside_file("brief.md", "README.md needs a new intro\n")
+
+        out = self.step("start", "--task-file", str(task_file))
+
+        self.assertIsNone(self.state().get("plan"))
+        self.assertIn("Implement: README.md needs a new intro", out)
+
+    def test_a_task_file_with_a_repo_line_runs_the_plan_of_that_other_checkout(self):
+        other = self.other_repo()
+        (self.repo / self.plan).unlink()
+        task_file = self.write_outside_file("brief.md", f"Repo: {other}\n{self.plan} only touch orders\n")
+
+        out = self.step("start", "--task-file", str(task_file))
+
+        other_state = json.loads((other / ".git/code-step/state.json").read_text())
+        self.assertIn(f"This run's checkout is {other}", out)
+        self.assertEqual(self.plan, other_state["plan"])
+        self.assertEqual("1", other_state["phase"])
+        self.assertIn(f"{RUN_NOTES_HEADING}\nonly touch orders", out)
+
+    def test_a_task_file_that_does_not_open_with_a_plan_stays_planless(self):
+        task_file = self.write_outside_file("brief.md", f"add orders, see {self.plan}\n")
+
+        out = self.step("start", "--task-file", str(task_file))
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIsNone(self.state().get("plan"))
+        self.assertIn(f"Implement: add orders, see {self.plan}", out)
+
+    def test_task_text_that_opens_with_the_plan_stays_planless(self):
+        out = self.step("start", "--task", f"{self.plan} — notes")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIsNone(self.state().get("plan"))
+
     def test_task_file_that_is_missing_or_empty_exits_two_and_changes_nothing(self):
         empty_file = self.write_outside_file("empty.md", "  \n")
         for task_file in (self.tmp / "nope.md", empty_file):
@@ -92,6 +213,15 @@ class StartInputTest(base.CodeStepTest):
         plan_file = self.write_outside_file("spec.md", base.PLAN)
 
         out = self.step("start", str(plan_file))
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("outside the repo", (self.repo / ".git/code-step/question.md").read_text())
+
+    def test_a_task_file_that_opens_with_a_plan_outside_the_repo_asks_for_a_plan_inside_it(self):
+        plan_file = self.write_outside_file("spec.md", base.PLAN)
+        task_file = self.write_outside_file("brief.md", f"{plan_file} only touch orders\n")
+
+        out = self.step("start", "--task-file", str(task_file))
 
         self.assertIn("ACTION: ask-user", out)
         self.assertIn("outside the repo", (self.repo / ".git/code-step/question.md").read_text())

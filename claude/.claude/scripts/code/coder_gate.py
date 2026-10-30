@@ -409,8 +409,7 @@ def append_gate_log(row):
     if not script_utils.telemetry_switch_on():
         return
 
-    with GATE_LOG.open("a") as log_file:
-        log_file.write(json.dumps(row) + "\n")
+    script_utils.append_jsonl(GATE_LOG, row)
 
 
 def log_gate_run(gate, coder, seconds, failed_count, timed_out_count, setup_fault_count):

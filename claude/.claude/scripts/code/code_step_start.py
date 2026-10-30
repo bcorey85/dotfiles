@@ -92,7 +92,8 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                'has open phases; use --task for planless work after --restart. --repo runs everything in that '
                'checkout, not the current directory; so does a `Repo: <path>` or `Repo root: <path>` first line in '
                'the task file. --headless is for a run no person watches: a phase that would wait for sign-off '
-               'commits and goes on to the next phase. --coder-stopped tells a restart that the coder of the '
+               'commits and goes on to the next phase; the last phase the run can do commits and hands back. '
+               '--coder-stopped tells a restart that the coder of the '
                'stopped run, which never handed back, was stopped.')
 FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: invoke Skill code with "
                   "`start --task \"<text>\"`.")

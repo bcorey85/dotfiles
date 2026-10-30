@@ -360,6 +360,10 @@ def phase_commit(repo_dir, state):
         ]
     if left_out:
         lines += ["Dirty before the phase and left out of the commit: " + ", ".join(left_out), ""]
+    index_paths = worktree_snapshot.staged_paths(repo_dir)
+    staged_by_hand = sorted(name for name in index_paths if name not in own_files)
+    if staged_by_hand:
+        lines += ["Staged before the commit and left staged, not committed: " + ", ".join(staged_by_hand), ""]
     lines += check_changed_note
     lines += check_rewrote_edited_note
     lines += check_created_note
@@ -488,7 +492,8 @@ def done_line_of(state, section, verify_results, skipped, reopened):
 
 
 def announce_boundary(repo_dir, state, boundary):
-    # What the user and the session see once the phase is closed. Block A auto-advances; B and C wait for the user.
+    # What the user and the session see once the phase is closed. Block A auto-advances; B and C wait for the user,
+    # except a headless run's block C, which commits and hands back.
     block, number = boundary["block"], state.phase
     done_line = boundary["done_line"]
     print(done_line)
@@ -510,6 +515,9 @@ def announce_boundary(repo_dir, state, boundary):
              + f"{commit_step}in the same response run `{next_start}` for Phase " + boundary["next_number"] + ".")
         return
 
+    if block == "C" and state.headless:
+        return announce_headless_run_end(repo_dir, state, boundary)
+
     block_text = block_b_or_c(block, number, boundary["risk_label"], state, boundary["manual_groups"],
                               boundary["next_number"], boundary["gate_block_message"], boundary["moved_text"])
     say(repo_dir, block_text.replace("<<STAGE QUEUE>>", "(the /stage queue is printed above in this turn)"))
@@ -519,6 +527,21 @@ def announce_boundary(repo_dir, state, boundary):
         "block at the end of the turn: do not write it. Then wait for the user. When they say continue, run "
         f"`code_step.py {RESUME_VERB}`.",
     )
+
+
+def announce_headless_run_end(repo_dir, state, boundary):
+    # A run started with --headless has no person to stage its last phase: the session commits the phase's files by
+    # path and hands back. A gated phase ahead still ends the run here.
+    block_text = block_b_or_c("C", state.phase, boundary["risk_label"], state, boundary["manual_groups"],
+                              boundary["next_number"], boundary["gate_block_message"], boundary["moved_text"],
+                              committed_files=boundary["commit_files"])
+    say(repo_dir, block_text)
+
+    commit_line = boundary["commit_line"]
+    if not commit_line:
+        return emit("commit-and-hand-back", "The phase changed no file, so there is nothing to commit. Hand back.")
+    emit("commit-and-hand-back", "Run this commit command as a Bash call:", commit_line,
+         "If the commit is refused, hand back with the refusal as a stop; do not retry it. Otherwise hand back.")
 
 
 def adopted_deviation_text(plan_path, number, is_run_end):
@@ -556,6 +579,7 @@ def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verific
     verify_results, skipped = verification
     boundary = {
         "block": block, "risk_label": risk_label, "commit_text": commit_text, "commit_line": commit_line,
+        "commit_files": commit_files,
         "manual_groups": manual_groups_of(manual_items),
         "next_number": next_ungated["number"] if next_ungated else None,
         "gate_block_message": plan_format.gate_block_text(gated_ahead, next_ungated) if gated_ahead else "",

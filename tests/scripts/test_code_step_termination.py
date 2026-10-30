@@ -60,7 +60,7 @@ NODE_BUDGET = 5000
 # over those entries alone makes sure the plan-edit wait is covered whatever the other entries spend of the budget.
 PLAN_EDIT_NODE_BUDGET = 1500
 SCRIPT_NODE_BUDGET = 1500
-HAND_BACK_ACTIONS = ("ask-user", "stop", "rerun", "judgment", "stop-block-B", "stop-block-C")
+HAND_BACK_ACTIONS = ("ask-user", "stop", "rerun", "judgment", "stop-block-B", "stop-block-C", "commit-and-hand-back")
 # The verbs a hand-back may name for the user to run.
 NAMEABLE_VERBS = ("start", "resume", "decide", "asks-done", "skill-done", "review-again", "tick", "verify")
 BACKTICKED_TEXT = re.compile(r"`([^`\n]+)`")

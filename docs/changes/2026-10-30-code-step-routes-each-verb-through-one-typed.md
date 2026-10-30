@@ -69,12 +69,12 @@ duplicate-code check passed. A state file a run in progress wrote before this ch
 values: keys that held null were left out, and keys it lacked were written with their defaults. The route property
 test passed, and the walk of every verb path from each start found no failing path in 3204 paths.
 
-Checked on the current tree: `ruff check` on `code_step_state.py` passes, and five tests pass. They are the stop
-record's `waitAt` key loading and being dropped, so a resumed agent's cap counts from its first wait after the change;
-a verb that crashes after its save leaving the state as it was; the first wait time of a resumed coder being logged
-once and at the time the cap counts from; and that first wait time surviving a kill during the wait. The full suite,
-the complexity check, the duplicate-code check, the route property test and the 3204-path walk were not re-run on
-this tree.
+Checked on the current tree, with the review fixes and the later integrate merge: the full suite passes, 4647 tests
+in 112 files, 0 failed, and ruff passes on the code-step scripts. The suite covers the stop record's `waitAt` key
+loading and being dropped, so a resumed agent's cap counts from its first wait after the change; a verb that crashes
+after its save leaving the state as it was; and the first wait time of a resumed coder being logged once, at the time
+the cap counts from, and surviving a kill during the wait. The complexity check, the duplicate-code check and the
+3204-path walk were not re-run on this tree.
 
 ## Watch
 

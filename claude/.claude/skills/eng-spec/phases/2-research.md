@@ -1,7 +1,9 @@
 # Phase 2: Goal-blind research (before any design thinking)
 
 5. **Dispatch `goal-blind-researcher`** with the path to
-   `00-ticket.md` and the task directory. It runs the phase and returns paths:
+   `00-ticket.md` and the task directory. When Phase 1 read the ticket from a
+   file inside the repo, also pass that source ticket file's path relative to the session working directory,
+   so research searches skip it. It runs the phase and returns paths:
    questions, leak check, `02-research.md`.
 
    **Pass the ticket by path, never inline**, and don't repeat what the feature

@@ -45,6 +45,7 @@ HELPER_ASSIGNMENT = re.compile(r"(?:^|[\s;&|])(\w+)=[\"']?[^\s;&|\"']*log-review
 FINDING_CALL_TAIL = r"\s+kind=finding\b"
 FINDING_CALL_ARGUMENTS_TAIL = rf"\s+(kind=finding\b(?:(?!{SEGMENT_END.pattern}).)*)"
 SHELL_VARIABLE_DIRECTORY = re.compile(r"^\$\{?\w+\}?/")
+NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
 METRICS_CALL = re.compile(r"log-review-metrics\b")
 METRICS_REFUSAL = "refusing to log"
 SCOPE_CALL = re.compile(r"review-scope\b")
@@ -293,6 +294,13 @@ class LoopTranscript:
                          *self.notified_at.get(send_id, []),
                          *(at for tool_use_id in launch_ids for at in self.notified_at.get(tool_use_id, []))]
         return not any(at > line for at in later_reports)
+
+    def open_kinds(self, kinds):
+        """The tool_use_ids of the dispatches whose subagent_type matches `kinds` that have not reported back: a
+        background launch with no report yet, or a dispatch with no tool_result at all."""
+        open_launches = self.open_launches()
+        return [tool_use_id for tool_use_id, kind in self.kinds.items()
+                if kinds.search(kind) and (tool_use_id in open_launches or tool_use_id not in self.results)]
 
     def open_dispatches(self):
         """The count of background dispatches that have not reported back, including each background resume of an

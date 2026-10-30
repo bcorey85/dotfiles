@@ -92,7 +92,6 @@ ITEM_START = re.compile(r"^\s*(?:-|\d+[.)])\s+", re.M)
 CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap", "weak-assertion", "security", "perf",
            "correctness", "docs", "other"]
 REVIEW_LOOP = "review-loop"
-NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
 RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
 REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
 ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])/[^\s`'\"<>|;:,()]+")
@@ -982,7 +981,7 @@ def handle_dispatch(event, session_id, tool_input):
             record(session_id, "step", agent_id=event.get("agent_id") or "unknown", step=step)
     elif subagent_type == REVIEW_LOOP:
         prompt = str(tool_input.get("prompt") or "")
-        record(session_id, "dispatch", no_review=NO_REVIEW_MODE.search(prompt) is not None,
+        record(session_id, "dispatch", no_review=loop_transcript.NO_REVIEW_MODE.search(prompt) is not None,
                resolved_plan_impact=RESOLVED_PLAN_IMPACT.search(prompt) is not None,
                repo=reviewed_repo(prompt, event.get("cwd")))
 

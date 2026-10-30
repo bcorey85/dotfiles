@@ -7163,10 +7163,23 @@ class CodeStepTest(unittest.TestCase):
     def test_the_item_shape_text_names_the_three_shapes(self):
         shape = code_step_verification.VERIFICATION_ITEM_SHAPE
 
-        for text in ("one of three shapes", "N/A", "CI-verified", "Human-only", "executable file in the repo",
-                     "'- [ ] **Name**: what it checks - `npm test`'"):
+        for text in ("one of three shapes", "N/A", "CI-verified", "Human-only", "Agent-run",
+                     "executable file in the repo", "'- [ ] **Name**: what it checks - `npm test`'",
+                     "'- [ ] **Agent-run**: time the import on the real data'"):
             self.assertIn(text, shape)
         self.assertNotIn("``", shape)
+
+    def test_finish_phase_says_an_agent_run_item_is_left_to_the_session(self):
+        self.coder_round_then_edit_verification("- [ ] **Check**: runs - `test -d backend`\n"
+                                                "- [ ] **Agent-run**: time the import on the real data")
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("resume")
+
+        self.assertEqual("done", self.state()["stage"])
+        self.assertIn("not run here: agent-run, the session runs it - **Agent-run**: time the import on the real data",
+                      out)
+        self.assertIn("1 command(s) green (test -d backend)", out)
 
     def test_plan_check_leaves_a_done_phase_item_without_a_command_alone(self):
         text = self.bad_item_plan("- [ ] **Check**: the orders pass, see the log").replace(
@@ -7225,6 +7238,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] **Check**: the streams pass, see the log - it has no backticked command", out)
         self.assertIn("- [ ] **Check**: the orders pass - `RUN npx vitest run` - no backticked span starts with", out)
         self.assertIn("one of three shapes", out)
+        self.assertIn("human-only or agent-run", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
     # ---------- the repo's gate environment variables ----------

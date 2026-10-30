@@ -82,12 +82,38 @@ class HerdrPhaseChangeTest(unittest.TestCase):
     def test_a_done_pane_gets_clear_and_the_prompt_as_two_submissions_after_the_session_changes(self):
         (self.state_dir / "clear-delay").write_text("2\n")
 
-        finished = self.run_phase_change("worker", "/code docs/plans/x/plan.md")
+        finished = self.run_phase_change("--watched", "worker", "/code docs/plans/x/plan.md")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md"])
         self.assertEqual((self.state_dir / "session").read_text().strip(), "s2")
         self.assertIn("--until idle --until done", (self.state_dir / "wait-args").read_text())
+
+    def test_a_code_prompt_goes_out_headless_unless_it_already_is_or_the_pane_is_watched(self):
+        cases = (
+            ("plain", ("/code docs/plans/x/plan.md",), "/code --headless docs/plans/x/plan.md"),
+            ("already headless", ("/code --headless docs/plans/x/plan.md",), "/code --headless docs/plans/x/plan.md"),
+            ("modifier", ("/code +fast plan.md",), "/code --headless +fast plan.md"),
+            ("bare code", ("/code",), "/code"),
+            ("resume verb", ("/code resume",), "/code resume"),
+            ("tick verb", ("/code tick 2",), "/code tick 2"),
+            ("headless in task text", ("/code fix the --headless flag",), "/code --headless fix the --headless flag"),
+            ("headless after task", ("/code --task drop --headless from restart",),
+             "/code --headless --task drop --headless from restart"),
+            ("watched", ("--watched", "/code docs/plans/x/plan.md"), "/code docs/plans/x/plan.md"),
+            ("other phase", ("/eng-spec docs/tickets/x.md",), "/eng-spec docs/tickets/x.md"),
+            ("verify", ("/verify-branch",), "/verify-branch"),
+        )
+        for name, args, sent in cases:
+            with self.subTest(case=name):
+                self.prompts.unlink(missing_ok=True)
+                (self.state_dir / "session").write_text("s1\n")
+                (self.state_dir / "clear-delay").write_text("0\n")
+
+                finished = self.run_phase_change(*args[:-1], "worker", args[-1])
+
+                self.assertEqual(finished.returncode, 0, finished.stderr)
+                self.assertEqual(self.submitted_prompts(), ["/clear", sent])
 
     def test_a_pane_that_does_not_settle_after_clear_gets_no_prompt(self):
         (self.state_dir / "clear-delay").write_text("0\n")

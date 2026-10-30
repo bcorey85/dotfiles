@@ -328,6 +328,17 @@ def resolved_command_words(command):
     return [words for words in unwrapped if words]
 
 
+def script_call_arguments(command, script_name):
+    """The arguments of each simple command whose command word is the script: the bare name or any path ending in
+    `/<script_name>`. A word that only names the script (`rg script_name`, `echo script_name`) is not a call. Empty
+    when shlex cannot read the command."""
+    calls = []
+    for words in resolved_command_words(command):
+        if os.path.basename(words[0]) == script_name:
+            calls.append(words[1:])
+    return calls
+
+
 def segment_words(segment):
     """The words of one command text, quotes removed: shlex.split reads back what shlex.join wrote, so quoted inline
     code stays one word. Text shlex cannot read (an unbalanced quote) is split on whitespace."""

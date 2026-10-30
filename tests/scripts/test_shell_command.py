@@ -24,6 +24,7 @@ from shell_command import (
     quoted_positions,
     redirection_writes_file,
     runs_only_after_success,
+    script_call_arguments,
     segment_words,
     shell_code_argument,
     split_command_steps,
@@ -450,6 +451,20 @@ class ShellCodeArgumentTest(unittest.TestCase):
 
     def test_a_backslash_before_a_dollar_or_backtick_is_removed_as_the_shell_does(self):
         self.assertEqual("echo \"$(echo a)\" `x`", shell_code_argument(["bash", "-c", 'echo "\\$(echo a)" \\`x\\`']))
+
+    def test_script_call_arguments_counts_only_a_command_word_that_is_the_script(self):
+        calls = {
+            "tool clean": [["clean"]],
+            "~/.claude/scripts/tool   dirty": [["dirty"]],
+            "echo ok && /x/tool clean a": [["clean", "a"]],
+            "rg 'tool clean' skills/": [],
+            "echo tool clean": [],
+            "mytool clean": [],
+            "tool 'unclosed": [],
+        }
+        for command, expected in calls.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, script_call_arguments(command, "tool"))
 
     def test_segment_words_keeps_quoted_code_with_operator_characters_as_one_word(self):
         segment = "python3 -c 'x = 1 > 0; (y) | z'"

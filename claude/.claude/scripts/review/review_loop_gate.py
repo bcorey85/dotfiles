@@ -8,12 +8,12 @@
       failed, unverified, setup-fault, or not-run result other than an Expected red one, and a checker run by hand,
       never count; full_check.py itself refuses a command scoped to files or tests, or one whose scope cannot be read,
       unless its text equals the CLAUDE.md `Quality check:` command, or, in a repo whose full suite runs in CI, one of
-      its && steps. The last coder step — a
-      dispatch, or a SendMessage to a coder it dispatched — is the last code change; with none, the loop start
-      is, since the phase changed code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
-      `status: plan-impact` owes no check, and neither does a loop in a repo whose CLAUDE.md holds the line
-      `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. That repo is the one the loop
-      reviewed (reviewed_root), else the hook cwd. A stop with a
+      its && steps. The last coder step — a dispatch, or a SendMessage to a coder it dispatched — is the last code
+      change; with none, the loop start is, since the phase changed code before the loop ran. A handoff `tests-run`
+      never exempts it. A loop returning `status: plan-impact`, `setup-fault` or `critical-blocker` owes no check,
+      and neither does a loop in a repo whose CLAUDE.md holds the line `Full suite: CI`
+      (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. That repo is the one the loop reviewed
+      (reviewed_root), else the hook cwd. A stop with a
       delivered SubagentHandback (one no hook denied) skips this check and the plan-file check.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher

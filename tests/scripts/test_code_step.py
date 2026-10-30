@@ -1319,6 +1319,43 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("Edit only the plan file", out)
         self.assertNotIn("## Plan Deviations", self.plan_text())
 
+    def test_a_plan_impact_about_a_hook_with_no_plan_step_stops_whatever_its_cause_line_says(self):
+        report = ("PLAN-IMPACT:\n  assumed: the hand-back hook lets the coder through\n  found: it denies every try\n"
+                  "  changes: nothing\n  acceptance_criteria: none\n  cause: plan\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
+    def test_a_plan_impact_naming_a_phase_and_a_hook_still_goes_to_the_rule(self):
+        report = ("PLAN-IMPACT:\n  assumed: Phase 2 adds the hand-back hook\n  found: the hook exists already\n"
+                  "  changes: C\n  acceptance_criteria: none\n  cause: plan\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("Edit only the plan file", out)
+
+    def test_a_plan_impact_that_a_later_hand_back_dropped_asks_instead_of_adopting_by_rule(self):
+        block = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n  cause: plan"
+        self.start_phase_one()
+        self.hook("coder", block + "\nPLAN-IMPACT: yes")
+        self.assertIn("ACTION: stop", self.step("resume"))
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("no longer carries this block", self.said())
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertEqual("impact-coder", self.state()["stage"])
+        self.assertIn("no longer carries this block", self.said())
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
     def test_a_plan_impact_with_an_unknown_cause_stops_and_names_both_causes(self):
         report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
                   "  cause: gate\nPLAN-IMPACT: yes")

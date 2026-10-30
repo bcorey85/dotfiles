@@ -579,6 +579,13 @@ def read_events(cwd, run_id):
     return script_utils.read_jsonl(run_events_path(cwd, run_id))
 
 
+def newest_later_phase_deny_reason(events, agent_id):
+    # The reason of the newest `later-phase-deny` event of this agent id, or None when it was never denied.
+    reasons = [event.get("reason") for event in events
+               if event.get("event") == "later-phase-deny" and event.get("agent_id") == agent_id]
+    return reasons[-1] if reasons else None
+
+
 def dispatch_marker(prompt_text):
     # (run id, dispatch id) of the last marker in the prompt of an Agent call, or None. The marker counts wherever it
     # stands: on its own line, after other text on a folded line, or with text after it.
@@ -1253,6 +1260,12 @@ def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     save_state(repo_dir, state)
     silent_text = (f"The {agent_type} has not handed back in {stopped_at - clock_start:.0f} seconds, counted from "
                    f"{dispatch_time_text(clock_start)} (the cap is {total_cap:g}).")
+    deny_reason = None
+    if agent_type == CODER:
+        deny_reason = newest_later_phase_deny_reason(read_events(repo_dir, state.run_id),
+                                                     awaited_agent_id(repo_dir, state))
+    if deny_reason:
+        silent_text += f" The hand-back gate denied an earlier attempt: {deny_reason}"
     if review_script_running(state):
         progress_names = " or ".join(REVIEW_SCRIPT_PROGRESS_FILES)
         silent_text += (f" Its script (pid {state.review_script_pid}) is still running and has written no "

@@ -162,6 +162,11 @@ class LoopTranscript:
         carrier += " " + str((rec.get("attachment") or {}).get("prompt") or "")
         self.read_reports(n, carrier)
 
+        # An api-request-blob record repeats the turn's blocks, so skip it: each call counts once. No other record
+        # type carries tool blocks.
+        if rec.get("type") not in ("user", "assistant"):
+            return
+
         blocks = [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
         for block in blocks:
             self.read_block(n, rec.get("type"), block)

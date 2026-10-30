@@ -894,6 +894,76 @@ class ResumeTest(base.CodeStepTest):
         self.assert_refused_with_choices(refused, "resume", "start --restart --task 'fix the totals'", "abort")
         self.assertEqual("block", json.loads(self.stop_hook())["decision"])
 
+    def test_resume_over_a_stopped_coder_reruns_a_restart_with_coder_stopped_at_once(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.wait_env(5, "0.2")
+        before = self.state_bytes()
+
+        started_at = time.time()
+        refused = self.step("resume")
+
+        self.assertLess(time.time() - started_at, 5)
+        self.assert_refused_with_rerun(refused, "start --restart --coder-stopped")
+        self.assertIn("agent c1 of the open run, or the fork that launched it, was stopped with TaskStop", refused)
+        self.assertEqual(before, self.state_bytes())
+
+    def test_resume_over_a_finished_run_with_a_stopped_launch_is_not_redirected_to_a_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.set_state(stage="done")
+
+        out = self.step("resume")
+
+        self.assertFalse(out.startswith("Refused: "), out)
+        self.assertNotIn("--coder-stopped", out)
+
+    def test_resume_over_a_verify_ready_run_with_a_stopped_launch_is_not_redirected_to_a_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.set_state(stage="review", reviewStatus="converged")
+
+        out = self.step("resume")
+
+        self.assertNotIn("--coder-stopped", out)
+
+    def test_resume_over_a_stopped_coder_of_a_planless_run_asks_for_the_task_text(self):
+        self.step("start", "--task", "fix the totals")
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        question = (self.repo / ".git/code-step/question.md").read_text()
+        self.assertIn("ask the user for the task text", question)
+        self.assertIn("start --restart --coder-stopped --task", question)
+
+    def test_resume_over_a_stopped_review_loop_reruns_a_restart_with_coder_stopped(self):
+        self.coder_round()
+        self.launch_the_pending_review("r1")
+        self.task_stop("r1", "r1")
+
+        refused = self.step("resume")
+
+        self.assert_refused_with_rerun(refused, "start --restart --coder-stopped")
+        self.assertIn("agent r1", refused)
+
+    def test_resume_over_a_coder_resumed_after_its_stop_goes_on_with_its_hand_back(self):
+        self.begin_coder()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.send_message("c1")
+        self.hook("coder", "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters", agent_id="c1")
+
+        out = self.step("resume")
+
+        self.assertNotIn("--coder-stopped", out)
+        self.assertIn("AGENT: review-loop", out)
+
     def test_a_restart_over_the_coder_cap_goes_on_once_that_coder_handed_back(self):
         self.stop_the_coder_at_the_wait_cap(launched_as="c1")
         self.hook("coder", self.CODER_REPORT, agent_id="c1")

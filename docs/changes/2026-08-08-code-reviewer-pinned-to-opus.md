@@ -9,6 +9,8 @@ kind: "behavior"
 components: ["agent/code-reviewer"]
 evidence: ["seeded round"]
 watches: []
+proof: ["2026-08-08-rb-15"]
+impact: {"metric": "quality", "before": 1.583, "after": 5.167, "unit": "substantive true findings per review", "finding": "2026-08-08-rb-15", "better": "higher"}
 ---
 
 ## Change

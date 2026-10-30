@@ -182,6 +182,8 @@ Dispatch ONE `coder` for the findings. Split into parallel coders only when the 
 **Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]` and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, return `status: plan-impact` with it verbatim and dispatch nothing further — do not enter the loop, do not return `converged`).
 **`no-review`**: when this flag is in args, dispatch the coder, run the coder-report post-processing above, run the execution gate as verification, and return `status: converged` WITHOUT dispatching a reviewer. Do not enter step 1.
 
+Every fix-first hand-back, `no-review` included, runs Step 7 and Step 7b first: one metrics line and one `log-review-finding kind=finding` row per `fixed[]`, `skipped_fp[]`, `findings_remaining[]`, `ask[]` and `nit[]` entry. The hand-back hook denies a packet without them.
+
 Skip any finding that is a false positive, a stylistic preference, out of scope, blocked by another unresolved issue, or architectural (recommend `/eng-spec`). Report each skip with its reason.
 
 **Test guard on the fix set.** NEVER let a fix dispatch prune a test in an acceptance-spec file (`*.spec.*`) or one covering an acceptance criterion, whatever disposition the finding carried — move it to `ask[]` instead. This is the one place you override a reviewer's label, and it only ever moves in the safe direction.
@@ -193,9 +195,10 @@ gets a coder. The cap stops a third full review and nothing else. A deferred
 finding is not discarded: it moves to the branch-exit queue, where it is read
 once, in one place, against the whole branch instead of one phase of it.
 
-**What may defer.** Only a `class` or `scoped` `fix` finding defers: a class
-member that Step 6 finds open at `iter >= 2`, or a finding of the scoped
-reviewer at the cap exit (below). Step 6 returns `cap-reached`. A blocker
+**What may defer.** Only a `scoped` `fix` finding defers the status: a finding
+of the scoped reviewer at the cap exit (below). A class member that Step 6 finds
+open at `iter >= 2` logs `actioned=deferred` but keeps `cap-reached`, because it
+stays in `open_classes`. A blocker
 never leaves on `deferred` or `converged`: it carries `blocker: yes` and the
 status is `cap-reached`.
 
@@ -216,8 +219,8 @@ the `fix` findings of a gate failure get one coder per invocation: after the
 repair, run the gate once more; a second failure returns `status: critical-blocker`, or `status: setup-fault` when the gate could not run.
 Exception to "no full review": when any coder (a second-round fix coder, or a gate-repair coder before its gate re-run)
 changed files after the last reviewer, dispatch one reviewer scoped to the changed files (not a full review). Its `fix`
-findings get no coder: they go to `findings_remaining` with `blocker: yes` on each blocker, log with `source=scoped actioned=deferred`, and the status is `cap-reached`. If that reviewer cannot run,
-return `status: cap-reached` with `findings_remaining` naming the unreviewed files.
+findings get no coder: they go to `findings_remaining` with `blocker: yes` on each blocker and log with `source=scoped actioned=deferred`, and the status is `cap-reached`. If that reviewer cannot run,
+return `status: cap-reached` with `findings_remaining` naming the unreviewed files, each with `blocker: yes`, and `unrun_reviewer` saying why.
 
 ## Step 6: Convergence — the execution gate
 
@@ -263,7 +266,7 @@ of an enumerable set of ways the same mistake can occur. Two shapes qualify:
 If a fixed finding is class-shaped and the class is NOT closed, the loop has not
 converged: re-enter step 5 with the unenumerated members as findings (counts
 toward `iter`; the correctness cap still bounds it). If the cap hits first, return
-`cap-reached` with them in `findings_remaining` — never `converged`.
+`cap-reached` with them in `findings_remaining` and `open_classes` — never `converged`.
 
 **Report the denominator, always.** `class_closure` carries the enumeration, `n/a — fixed[] empty`, or `none` plus each fixed finding with why it fits neither shape. A bare `none` is an unrun check, not a receipt.
 
@@ -280,7 +283,7 @@ Gate passed and class closed → go to Step 7.
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
 prose. Do not add an enum for it.
 
-`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; a `fix` finding routed to `ask[]` counts under `ask`, not `fix`. When the loop ends before any reviewer ran (`setup-fault`, `critical-blocker`, a fix-first `plan-impact`, an empty scope), log the line with `result="NOT DISPATCHED"`. `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit**. `fix` does not equal `fixed + skipped_fp`: routing moves some `fix` findings to `blockers`, and the budget defers others. `smells` = `[smell]` findings the code-reviewer's structure step and `smell-reviewer` returned this run. `culled` = diff-added tests deleted this run; always 0. `comment_noise` = always 0. Outside no-review mode, the gate refuses any other result before the first reviewer dispatch. If the script fails, mention it and continue — telemetry never blocks.
+`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; a `fix` finding routed to `ask[]` counts under `ask`, not `fix`. When the loop ends before any reviewer ran (`setup-fault`, `critical-blocker`, a fix-first `plan-impact`, an empty scope), log the line with `result="NOT DISPATCHED"`. `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit**. `fix` does not equal `fixed + skipped_fp`: routing moves some `fix` findings to `blockers`, and the budget defers others. `smells` = `[smell]` findings the code-reviewer's structure step and `smell-reviewer` returned this run. `culled` = diff-added tests deleted this run; always 0. `comment_noise` = always 0. Outside no-review mode, the gate refuses any other result before the first reviewer dispatch. If the script fails, mention it and continue: a failed logger costs one denied hand-back and one blocked stop; the second of each goes through.
 
 ### Step 7b: Per-finding rows
 
@@ -288,7 +291,7 @@ Also emit the per-finding rows per
 `~/.claude/skills/_shared/finding-log.md` (read it). Skip its `kind=run` block;
 the stop hook writes those. Run it last, so `actioned` is real.
 Log one `kind=finding` row for every entry the packet lists in `fixed[]`, `skipped_fp[]`, `findings_remaining[]`, `ask[]`
-and `nit[]`, on every pass, and the Step 7 metrics line. The stop hook blocks the hand-back until they exist.
+and `nit[]`, on every pass, and the Step 7 metrics line. The hand-back hook denies the packet until they exist.
 
 ## Return packet (the ONLY thing the orchestrator pays for)
 
@@ -296,7 +299,7 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
 
 ```json
 {
-  "status": "converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault",
+  "status": "converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault | fix-removed-change",
   "iter": 1,
   "spec_iter": "<n, or omit>",
   "fixed": [{"finding": "...", "file_line": "path:line", "blocker": false}],
@@ -306,9 +309,11 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
   "plan_impact": "<verbatim PLAN-IMPACT block>",
   "ask": [{"finding": "...", "file_line": "path:line", "question": "...", "change": "...", "gate": "code-reviewer", "class": "smell"}],
   "class_closure": "<the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a - fixed[] empty>",
+  "open_classes": ["<one entry per class member still open, or []>"],
   "full_check": "passed",
   "full_check_command": "<the exact command full_check.py ran>",
   "full_check_summary": "<the script's summary: line>",
+  "full_check_tree": "<the script's tree: line value, or omit the key>",
   "files_touched": ["<path>"],
   "check_changed": ["<path>"],
   "check_rewrote_edited": ["<path>"],
@@ -317,22 +322,26 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
   "load_bearing_clean": "<one line, or omit the key>",
   "tool_fault": "<what failed, or omit the key>",
   "blocked_agents": ["<agent>: <step it skipped> (<the refused call>)"],
-  "scoped_tests": "<see below, or omit the key>"
+  "scoped_tests": "<see below, or omit the key>",
+  "unrun_reviewer": "<see below, or omit the key>"
 }
 ```
 
-Every value is a JSON string, a list, or (for `iter` and `spec_iter`) an integer. A list key holds a list, never a string; an empty list is `[]`. Leave out the optional keys that have nothing to say. Write `\n` inside a string for a line break.
+Every value is a JSON string, a list, or (for `iter` and `spec_iter`) an integer. A list key holds a list, never a string; an empty list is `[]`. Every entry of `fixed`, `skipped_fp`, `findings_remaining` and `ask` is an object with its text field (`finding`, `item`, `finding`, `question`), never a string. Leave out the optional keys that have nothing to say. Write `\n` inside a string for a line break.
 
-- `status`: one of the six words. `iter`: correctness rounds run.
+- `status`: one of the seven words. `iter`: correctness rounds run.
 - `fixed`: the `fix` findings you resolved. NEVER leave it out; a silent repair is a bug.
 - `skipped_fp`: `fix` findings dropped as false positives.
-- `blockers`: status=critical-blocker | setup-fault (the full check could not run here). One string per entry.
+- `blockers`: status=critical-blocker | setup-fault (the full check could not run here) | fix-removed-change (the fix passes removed half or more of the source lines of a change under review that adds 10 or more; the scripted loop sets it). One string per entry.
 - `findings_remaining`: status=deferred | cap-reached | plan-impact. A blocker never rides on converged or deferred.
+- `open_classes`: status=cap-reached with a class not closed: one string per unenumerated member; otherwise `[]`.
 - `plan_impact`: status=plan-impact. The verbatim PLAN-IMPACT block, as one string.
 - `ask`: never auto-fixed; the user answers these. question is never empty: an ask with no question takes its finding, or else its change, as its question. `change` is the one edit an accepted answer makes. `gate` and `class` ride along so the caller can log the outcome. Log each ask row with the same file and line as its `file_line`; the caller reads the id from that row, so leave `finding_id` out.
 - `full_check`: the Step 6 result, one of: passed | unverified (exit 0, no runner summary) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | passed (check only; CI runs the full suite) | not run (timeout) | not run (scoped command: it names files or tests, so it is no full check) | not run (unresolved command: what it runs cannot be read, so it is no full check) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | not run (expected red until Phase <id>[, <id>...]) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only).
 - `full_check_summary`: passed | unverified only (not for passed (check only; CI runs the full suite)).
+- `full_check_tree`: the value of the `tree:` line right after the result line of the last full_check.py run, whatever the result; omit it when the script printed none.
 - `scoped_tests`: optional; the scoped test rerun after a fix no passed full check followed: passed | failed: <cmds>[; failing tests: <lines>]; full output: <log path> | setup fault / not run (timeout): <cmds>; full output: <log path> | command error: <cmd> (<line>)[; ...]; full output: <log path> | not run (<reason>).
+- `unrun_reviewer`: set only when the Step 5c scoped reviewer could not run and you returned `cap-reached` for it: one line saying why. Omit it otherwise.
 - `check_changed`, `check_rewrote_edited`, `check_created`: the paths of the `changed by the check:`, `rewrote edited files:` and `created by the check:` lines from every full_check.py run in this invocation.
 - `nit`: a small item ends `applied` or `skipped: <reason>`.
 - `blocked_agents`: one string per entry, `<agent>: <step it skipped> (<the refused call>)`: each reviewer report's `Blocked:` line, and any other refusal a subagent reports; omitted when none.
@@ -350,6 +359,6 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
 - **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**
-- **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation and a docs-only fix that ends the loop excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.
+- **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation and a docs-only fix that ends the loop excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files, each with `blocker: yes`, and `unrun_reviewer` set when the reviewer could not run. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.
 - **Never poll for a dispatched subagent.** After the launch stub, end your response. The result arrives as a notification that re-invokes you. No `sleep`, no `until` loop, no `echo waiting`.
 - **Independent tool calls go in one response.** Batch them whenever neither call's input depends on the other's output — every log call of Steps 7 and 7b in one response.

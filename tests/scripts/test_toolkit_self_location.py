@@ -19,7 +19,7 @@ CLAUDE_FOLDER = re.compile(r"\.claude(?![\w-])")
 # What follows `.claude`: an optional closing quote, then optionally a separator (slash, comma or plus) and the next
 # path segment. No segment means the line names the `.claude` folder itself.
 NEXT_SEGMENT = re.compile(r"""["']?\s*(?:[/,+]\s*["']?\s*/?\s*([\w.\-]*))?""")
-DATA_SEGMENTS = {"state", "logs", "projects", "settings.json", "settings.local.json"}
+DATA_SEGMENTS = {"state", "logs", "projects", "sessions", "settings.json", "settings.local.json"}
 DATA_SUFFIXES = (".jsonl", ".json", ".log", ".lock")
 
 
@@ -129,6 +129,7 @@ class LocateCodeThroughHomeRuleTest(unittest.TestCase):
             ('out="${X:-$HOME/.claude/backend-perf.log}"', False),
             ('cfg = Path.home() / ".claude" / "settings.json"', False),
             ('d = Path.home() / ".claude" / "projects" / name', False),
+            ('sessions = pathlib.Path.home() / ".claude" / "sessions"', False),
             ('d = "$HOME/.claude/logs/run.txt"', False),
             ('s = pathlib.Path.home() / ".claude" / "skills-extra"', True),
             ("# reads $HOME/.claude/scripts/x", False),

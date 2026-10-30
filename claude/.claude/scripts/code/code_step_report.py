@@ -18,18 +18,16 @@ def open_questions(report):
     value = found.group(1).strip()
     if value.lower() == "none":
         return []
-    try:
-        questions = json.loads(value)
-    except ValueError:
-        questions = None
-    if isinstance(questions, list) and all(isinstance(question, str) for question in questions):
+    questions = script_utils.json_string_list(value)
+    if questions is not None:
         return questions
     quoted = script_utils.one_line(value, UNREADABLE_QUOTE_LIMIT)
     return [f"the OPEN QUESTIONS line could not be read as a JSON list of strings: {quoted}"]
 
 
+PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
 PLAN_IMPACT_HEADER = re.compile(r"^[ \t>*`_-]*PLAN-IMPACT[*`_]*:?[*`_]*[ \t]*$")
-PLAN_IMPACT_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes|acceptance_criteria)[*`_]*:", re.I)
+PLAN_IMPACT_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes|acceptance_criteria|cause)[*`_]*:", re.I)
 
 
 def plan_impact_body(lines_after_header):
@@ -58,16 +56,24 @@ def plan_impact_block(report):
             continue
         body = plan_impact_body(lines[index + 1:])
         if body:
-            return "PLAN-IMPACT:\n" + "\n".join(body)
+            return PLAN_IMPACT_BLOCK_HEADER + "\n".join(body)
     if re.search(r"^PLAN-IMPACT:\s*yes\s*$", report, re.M):
         return "PLAN-IMPACT: yes (block not found in the report; read the report)"
     return None
 
 
-def first_plan_impact(messages):
+def has_plan_impact_block(report):
+    # True when the report holds a found block, not the `PLAN-IMPACT: yes (block not found…)` fallback.
+    block = plan_impact_block(report)
+    return block is not None and block.startswith(PLAN_IMPACT_BLOCK_HEADER)
+
+
+def first_plan_impact(messages, handled=None):
+    # `handled` holds the blocks the run already stopped on; none of them is found again.
+    handled = handled or []
     for message in messages:
         block = plan_impact_block(message)
-        if block:
+        if block and block not in handled:
             return block
     return None
 
@@ -192,6 +198,7 @@ def tests_run_text(gate, state):
             coder_gate.TIMED_OUT: "timed out at the hand-back gate, no test result",
             coder_gate.SETUP_FAULT: "could not run at the hand-back gate (setup fault), no test result",
             coder_gate.COMMAND_ERROR: "command error at the hand-back gate (missing path), no test result",
+            coder_gate.NOT_STARTED: "not started at the hand-back gate (time budget used up), no test result",
             coder_gate.SKIPPED: "skipped, no changed files",
         }
         for command in gate["commands"]:

@@ -840,6 +840,7 @@
       "effortLevel": "medium"
     }
   },
+  "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "autoMemoryEnabled": false,

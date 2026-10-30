@@ -24,7 +24,8 @@ rerun once per loop (the base run) in a detached worktree of HEAD, up to full_ch
 failed check's blocker holds the failing step's lines; after a repair coder, before recheck_full_check stops as a
 blocker, the autofix formatters run on the touched files and the check reruns once if one changed a file.
 
-Model steps are `claude -p` calls in auto permission mode, each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
+Model steps are `claude -p` calls in auto permission mode, each named `child of <parent session> (<role>)` so
+ListAgents tells it from a worker, and each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
 judgment (Sonnet). When the repo CLAUDE.md names no `Quality check` line, a Haiku check-finder call names the full
 check; when it names none, the review runs with no full check. A Sonnet disposition call runs
@@ -62,6 +63,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 # The file in the loop's state folder that holds the whole output of a red scoped test run.
 SCOPED_TESTS_LOG = "scoped-tests.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
+import change_removal
 import code_step_core
 import coder_gate
 import full_check
@@ -98,6 +100,7 @@ SPLIT_FILES = 5
 SPLIT_LINES = 300
 DIFF_CONTEXT = 12
 CALL_TIMEOUT_SECONDS = 1800
+DISPOSITION_ERROR_CHARS = 200
 LOG_TIMEOUT_SECONDS = 60
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 ABSENT_FILE_REASON = "the file is not in the tree"
@@ -122,6 +125,8 @@ CHECK_FINDER = (
 CALLS = []
 CALLS_LOCK = threading.Lock()
 LIVE_CHILDREN = full_check_gate.LIVE_CHILDREN
+# The ListAgents label of the session that ran this loop; main() sets it. Each child session's --name carries it.
+PARENT_SESSION = {"label": ""}
 
 
 def now():
@@ -138,9 +143,13 @@ def token_total(payload):
 def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
     """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises. The
     prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument."""
-    command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto"]
+    command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto",
+               "--name", f"child of {PARENT_SESSION['label']} ({role})"]
     if agent:
         command += ["--agent", agent]
+        skills_prompt = script_utils.preloaded_skills_prompt(agent)
+        if skills_prompt:
+            command += ["--append-system-prompt", skills_prompt]
     if model:
         command += ["--model", model]
     if tools:
@@ -258,6 +267,14 @@ def disposition_call(text, repo, out):
     reply = claude_call("disposition", prompt, repo, out, model="sonnet")
     parsed = last_json_object(reply, ("fix", "ask", "nit"))
     if parsed is None:
+        error = f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}'
+        retry_note = f"A previous reply to this prompt could not be parsed: {error[:DISPOSITION_ERROR_CHARS]}"
+        retry_prompt = (prompt + f"\n\n{retry_note}\n"
+                        "Reply with the JSON object only.")
+        # The retry's own role gives it its own row in calls.jsonl.
+        reply = claude_call("disposition-retry", retry_prompt, repo, out, model="sonnet")
+        parsed = last_json_object(reply, ("fix", "ask", "nit"))
+    if parsed is None:
         raise ValueError(f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}')
     return finding_records({"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []),
                             "assessment": ""})
@@ -296,6 +313,26 @@ def file_texts(repo):
     return texts
 
 
+def change_under_review(repo):
+    """{path: Counter of the source lines the working tree adds to HEAD}, for the files that count toward size. The
+    loop reads it at its start, as the change its fix passes must not remove, and after every coder pass, to see what
+    the tree still adds."""
+    added_by_file = {}
+    origins = worktree_snapshot.status_entries(repo)[1]
+    for path in scope(repo):
+        if not source_paths.counts_toward_size(path):
+            continue
+
+        target = pathlib.Path(repo) / path
+        tree_text = target.read_text(errors="replace") if target.is_file() else ""
+        head_path = origins.get(path, path)
+        head_text = script_utils.git_output(repo, "show", f"HEAD:{head_path}") or ""
+        added = change_removal.added_lines(head_text, tree_text)
+        if added:
+            added_by_file[path] = added
+    return added_by_file
+
+
 def added_source_lines(diffs):
     """Lines the given unified diffs add to files that count toward the size bar (`source_paths.counts_toward_size`)."""
     total, source = 0, False
@@ -310,6 +347,10 @@ def added_source_lines(diffs):
 
 class LaterPhaseEditError(RuntimeError):
     """A coder pass that edited a file the plan gives to a later phase."""
+
+
+class ChangeRemovedError(RuntimeError):
+    """A coder pass that removed half or more of the lines the change under review adds. The message is the blocker."""
 
 
 class CoderCallError(RuntimeError):
@@ -502,11 +543,13 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.skipped_fp, self.remaining, self.asks, self.nits, self.run_rows = [], [], [], [], []
         self.open_fixes = []  # the fix findings a plan-change stop leaves unapplied
         self.ask_gates = {}
+        self.plan_change_from_coder = False  # a coder's PLAN-IMPACT must name its cause; a reviewer ask's need not
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
                         "result": "PASS"}
         self.prior_issues = []
         self.status = "converged"
         self.class_closure = NO_CLOSURE
+        self.open_classes = []  # the class members the repair pass left unfixed
         self.init_full_check_state()
         self.round_two_fix_diff_path = ""
         self.files = {}
@@ -521,6 +564,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.scoped_tests = ""
         self.later_phase_files = set()  # the plan's later-phase files, which no coder pass may edit
         self.guidance = ""
+        self.change_added = {}  # the lines the change under review adds, which the fix passes must not remove
 
     def next_round(self):
         self.iter_count += 1
@@ -675,7 +719,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def repair(self, call_name, findings, nits=()):
         """One coder pass on the findings. Returns (report, diffs, changed files). Raises LaterPhaseEditError when the
-        pass edited a later-phase file."""
+        pass edited a later-phase file, and ChangeRemovedError when the passes so far removed half or more of the
+        lines the change under review adds."""
         before = scope(self.repo)
         prompt = coder_prompt(self.repo, [finding.text for finding in findings], [nit.text for nit in nits],
                               list(before), self.gate_env, self.later_phase_files, self.guidance)
@@ -692,6 +737,11 @@ class LoopRun(full_check_gate.FullCheckSteps):
             self.files_touched.update(changed)
             raise LaterPhaseEditError(f"{call_name} edited files the plan gives to a later phase: "
                                       + ", ".join(later_phase_edits))
+
+        removed = change_removal.removed_by_file(self.change_added, change_under_review(self.repo))
+        if change_removal.is_gutted(self.change_added, removed):
+            self.files_touched.update(changed)
+            raise ChangeRemovedError(change_removal.removal_blocker(self.change_added, removed))
         return report, diffs, changed
 
     def stop_on_coder_plan_change(self, round_findings, skips, changed, report):
@@ -705,6 +755,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
                 finding["actioned"] = "fixed"
 
         self.open_fixes = [item for item in round_findings if item not in applied]
+        self.plan_change_from_coder = True
         self.stop("plan-change", [report.strip()])
 
     def fix_round(self, round_fix, round_nits):
@@ -717,6 +768,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
         report, coder_diffs, changed = self.repair(f"coder{self.iter_count}", round_findings, round_nits)
         self.files_touched.update(changed)
+
         skips = skipped_issues(report, len(round_findings))
         if PLAN_CHANGE_YES.search(report.strip()):
             self.stop_on_coder_plan_change(round_findings, skips, changed, report)
@@ -766,6 +818,9 @@ class LoopRun(full_check_gate.FullCheckSteps):
         open_findings = [parse_finding(text) for text in closure["open"]]
         _report, _diffs, class_changed = self.repair("coder-class", open_findings)
         self.mark_repaired(open_findings, class_changed)
+        if not class_changed:
+            self.open_classes = closure["open"]
+
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")
 
@@ -784,12 +839,14 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "skipped_fp": self.skipped_fp,
             "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],
             "plan_change": self.remaining if self.status == "plan-change" else [],
+            "plan_change_from_coder": self.plan_change_from_coder,
             "open_fixes": self.open_fixes,
             "asks": self.asks,
             "ask_gates": self.ask_gates,
             "ask_ids": ask_ids,
             "ask_rows": ask_rows,
             "class_closure": self.class_closure,
+            "open_classes": self.open_classes,
             "full_check": self.full_check,
             "full_check_command": self.full_check_command,
             "full_check_summaries": self.check_details["summaries"],
@@ -832,6 +889,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     loop = LoopRun(repo, out, brief, gate_env, progress, header.get("plan", ""))
     loop.later_phase_files = set(filter(None, header.get("later-phase files", "").split(", ")))
     loop.guidance = header.get("guidance", "")
+    loop.change_added = change_under_review(repo)
 
     log_call(repo, [str(SKILLS / "review-scope"), "caller=code"])
     found_command = check_command_for(repo, out)
@@ -845,6 +903,8 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
         walk(loop, check_command, gate_commands)
     except LaterPhaseEditError as error:
         loop.stop("critical-blocker", [str(error)])
+    except ChangeRemovedError as error:
+        loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])
 
     every_actioned = [finding["actioned"] for row in loop.run_rows for finding in row["findings"]]
     loop.tallies["fixed"] = every_actioned.count("fixed") + loop.check_fixed
@@ -879,6 +939,7 @@ def parse_review_loop_arguments(argv):
 def main(argv=None):
     args = parse_review_loop_arguments(argv)
     signal.signal(signal.SIGTERM, stop_on_sigterm)
+    PARENT_SESSION["label"] = script_utils.session_display_name(args.session) or f"session {args.session}"
     repo = str(pathlib.Path(args.repo).resolve())
     out = pathlib.Path(args.state_dir) / "loop-script" / args.agent_id
     out.mkdir(parents=True, exist_ok=True)

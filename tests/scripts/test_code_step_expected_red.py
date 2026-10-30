@@ -84,6 +84,20 @@ class ExpectedRedTest(base.CodeStepTest):
         self.begin_coder()
         self.assert_later_phase_edit_denied()
 
+    def test_a_coder_hand_back_off_the_start_commit_is_not_denied_and_stops_on_the_old_start_commit(self):
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
+        self.commit_all()
+        self.begin_coder()
+        base_head = self.state()["baseHead"]
+        self.git("reset", "-q", "--hard", "HEAD~1")
+
+        result = self.hook("coder", self.LATER_PHASE_REPORT)
+
+        self.assertNotIn("permissionDecision", result.stdout)
+        out = self.step("resume")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn(base_head, out)
+
     def test_an_asks_coder_hand_back_that_edits_a_later_phase_file_is_denied(self):
         self.reach_asks_coder()
         self.assert_later_phase_edit_denied()

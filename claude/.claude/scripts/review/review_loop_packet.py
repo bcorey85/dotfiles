@@ -10,9 +10,11 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../code", "../lib")]
 import code_step_core
+import code_step_report
 import full_check
 import handback
 import handback_store
+import plan_format
 import review_loop_gate
 import script_utils
 from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED
@@ -62,6 +64,7 @@ def packet_message(outcome):
                                for finding in outcome["open_fixes"]],
         "ask": asks,
         "class_closure": script_utils.one_line(outcome["class_closure"], limit=None),
+        "open_classes": outcome["open_classes"],
         "files_touched": outcome["files_touched"],
         "nit": [finding_entry(finding) for finding in outcome["nits"]],
     }
@@ -78,17 +81,21 @@ def packet_message(outcome):
         if outcome.get(key):
             fields[key] = outcome[key]
     if outcome["plan_change"]:
-        fields["plan_impact"] = script_utils.one_line("; ".join(outcome["plan_change"]), limit=None)
+        plan_impact = "; ".join(outcome["plan_change"])
+        blocks = [code_step_report.plan_impact_block(entry) or "" for entry in outcome["plan_change"]]
+        fields["plan_impact_cause"] = plan_format.stopping_plan_impact_cause(
+            blocks, cause_required=outcome["plan_change_from_coder"])
+        fields["plan_impact"] = script_utils.one_line(plan_impact, limit=None)
     return json.dumps(fields, ensure_ascii=False)
 
 
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
     "status": "", "iter": 0, "fixed": [], "skipped_fp": [], "blockers": [], "plan_change": [], "open_fixes": [],
-    "asks": [], "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "", "full_check": "",
-    "full_check_command": "", "full_check_summaries": [], "check_changed": [], "check_rewrote_edited": [],
-    "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False, "scoped_tests": "",
-    "tool_fault": "",
+    "asks": [], "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "", "open_classes": [],
+    "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
+    "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False,
+    "scoped_tests": "", "tool_fault": "", "plan_change_from_coder": False,
 }
 
 

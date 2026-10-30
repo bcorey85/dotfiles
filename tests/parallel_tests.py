@@ -8,6 +8,7 @@
 A file listed in SHARDS runs as several processes, each taking every Nth test, so one huge file cannot bound the
 wall-clock. Expected failures and skips follow unittest: they do not fail the file."""
 import concurrent.futures
+import fcntl
 import functools
 import importlib
 import os
@@ -26,6 +27,8 @@ SCRIPTS_TESTS = REPO_ROOT / "tests" / "scripts"
 # A test process that runs longer than this many seconds is killed and its file reported as failed. The slowest file
 # takes about 240s on Linux; TEST_FILE_TIMEOUT_SECONDS overrides the limit.
 FILE_TIMEOUT_SECONDS = float(os.environ.get("TEST_FILE_TIMEOUT_SECONDS") or 1200)
+# How much nicer than the runner each test process runs.
+WORKER_NICENESS = 10
 # Files known to take minutes; each runs as this many processes.
 SHARDS = {"test_code_step.py": 4}
 # Slowest files by measured time, started before the rest (the rest start by file size, largest first).
@@ -43,6 +46,8 @@ def flatten(suite):
 
 
 def run_worker(test_file, shard_index, shard_count):
+    # Raised niceness is inherited by every process the tests start, so interactive work stays responsive.
+    os.nice(WORKER_NICENESS)
     sys.path.insert(0, str(SCRIPTS_TESTS))
     module = importlib.import_module(pathlib.Path(test_file).stem)
     all_tests = list(flatten(unittest.defaultTestLoader.loadTestsFromModule(module)))
@@ -93,7 +98,47 @@ def fixed_git_environment(config_path):
     return environment
 
 
+def slot_count():
+    # Test files that may run at once across every suite run on this machine; SUITE_SLOT_COUNT overrides nproc.
+    return int(os.environ.get("SUITE_SLOT_COUNT") or os.cpu_count() or 1)
+
+
+def slot_folder():
+    # Holds one lock file per slot; SUITE_SLOT_DIR overrides it. Without a runtime dir it falls back to the temp dir.
+    configured = os.environ.get("SUITE_SLOT_DIR")
+    if configured:
+        return pathlib.Path(configured)
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        return pathlib.Path(runtime) / "dotfiles-suite-slots"
+    return pathlib.Path(tempfile.gettempdir()) / f"dotfiles-suite-slots-{os.getuid()}"
+
+
+def acquire_slot(folder, count):
+    # Blocks until one of `count` slot files is flocked; returns its open descriptor. The kernel frees the lock when the
+    # process exits, so a crashed run leaks no slot.
+    folder.mkdir(parents=True, exist_ok=True)
+    while True:
+        for number in range(count):
+            slot_descriptor = os.open(folder / f"slot-{number}.lock", os.O_CREAT | os.O_WRONLY)
+            try:
+                fcntl.flock(slot_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                os.close(slot_descriptor)
+                continue
+            return slot_descriptor
+        time.sleep(0.05)
+
+
 def run_job(job, environment):
+    slot_descriptor = acquire_slot(slot_folder(), slot_count())
+    try:
+        return run_job_in_slot(job, environment)
+    finally:
+        os.close(slot_descriptor)
+
+
+def run_job_in_slot(job, environment):
     test_file, shard_index, shard_count = job
     started = time.monotonic()
     command = [sys.executable, str(pathlib.Path(__file__).resolve()), "--worker", test_file, str(shard_index),
@@ -119,7 +164,7 @@ def run_job(job, environment):
 
 def main(file_names=()):
     jobs = build_jobs(file_names)
-    workers = os.cpu_count() or 1
+    workers = slot_count()
     wall_started = time.monotonic()
     per_file = {}
     # The guard puts a failing `ledger` first on PATH and an empty CARGO_HOME in this process's environment, which every

@@ -56,6 +56,8 @@ from code_step_gates import derive_gate_commands
 from code_step_report import CODER_CHECKS_LINE, ENG_SPEC_BRIEF, coder_model
 from code_step_review import guarded_verb_runs
 from code_step_start_args import (
+    GATE_EVIDENCE_FLAG,
+    GATE_EVIDENCE_SHAPE,
     START_MODIFIERS,
     SWITCH_FLAGS,
     TASK_FLAG,
@@ -76,7 +78,7 @@ from code_step_verification import run_verification_commands, verification_forma
 from script_utils import run_command
 
 START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep] [--phase <id>] [--restart] '
-               '[--headless] [--coder-stopped] [<run notes>]\n'
+               f'[--gate-evidence "{GATE_EVIDENCE_SHAPE}"] [--headless] [--coder-stopped] [<run notes>]\n'
                '       code_step.py start [--repo <path>] --task "<task text>"\n'
                '       code_step.py start [--repo <path>] --task-file <path>\n'
                '--phase <id> starts the named phase; the text after a plan file inside the repo that has phases, or '
@@ -89,7 +91,9 @@ START_USAGE = ('usage: code_step.py start [--repo <path>] [<plan>] [+fast|+deep]
                'checkout, not the current directory; so does a `Repo: <path>` or `Repo root: <path>` first line in '
                'the task file. --headless is for a run no person watches: a phase that would wait for sign-off '
                'commits and goes on to the next phase. --coder-stopped tells a restart that the coder of the '
-               'stopped run, which never handed back, was stopped.')
+               'stopped run, which never handed back, was stopped. --gate-evidence goes with --phase on a phase '
+               'whose Phase Status title has a gate clause: it is who released the gate, when, and their quoted '
+               'words; the coder packet carries it, and the script does not judge it.')
 FOLLOW_UP_HINT = ("A follow-up change to a finished plan needs the task text: invoke Skill code with "
                   "`start --task \"<text>\"`.")
 VERB_WORDS_THAT_CARRY_INPUT = ("review-again", "decide", "asks-done", "skill-done", "tick", "verify")
@@ -100,14 +104,24 @@ def usage_error(message):
     sys.exit(2)
 
 
-StartArgs = collections.namedtuple("StartArgs", "modifier plan_args task_text phase_id restart positional_words "
-                                   "run_notes headless coder_stopped", defaults=(None, False, False))
+StartArgs = collections.namedtuple(
+    "StartArgs", "modifier plan_args task_text phase_id restart positional_words run_notes headless coder_stopped "
+    "gate_evidence", defaults=(None, False, False, None))
 
 
 def phase_flag_value(args, position):
     # The id after `--phase`; a missing id, or a flag in its place, exits 2.
     if position + 1 >= len(args) or args[position + 1].startswith("-"):
         usage_error("--phase needs a phase id")
+    return args[position + 1]
+
+
+def gate_evidence_value(args, position):
+    # The text after `--gate-evidence`; a missing or blank text, or a flag in its place, exits 2.
+    has_text = position + 1 < len(args) and args[position + 1].strip() and not args[position + 1].startswith("--")
+    is_placeholder = has_text and args[position + 1].strip() == GATE_EVIDENCE_SHAPE
+    if not has_text or is_placeholder:
+        usage_error(f'--gate-evidence needs the evidence text: "{GATE_EVIDENCE_SHAPE}"')
     return args[position + 1]
 
 
@@ -137,7 +151,7 @@ def parse_start_args(args):
     plan_args = []
     task_text = None
     positional_words = None
-    phase_id = None
+    flag_values = {}
     switches = set()
     position = 0
     while position < len(args):
@@ -151,8 +165,9 @@ def parse_start_args(args):
             task_text = task_file_text(args, position)
             position += 2
             continue
-        if word == "--phase":
-            phase_id = phase_flag_value(args, position)
+        if word in ("--phase", GATE_EVIDENCE_FLAG):
+            read_value = phase_flag_value if word == "--phase" else gate_evidence_value
+            flag_values[word] = read_value(args, position)
             position += 2
             continue
         if word in VALUE_FLAGS:
@@ -172,8 +187,10 @@ def parse_start_args(args):
             plan_args.append(word)
         position += 1
     modifier = "+deep" if "+deep" in modifiers else "+fast" if modifiers else None
-    return StartArgs(modifier, plan_args, task_text, phase_id, "--restart" in switches, positional_words,
-                     headless="--headless" in switches, coder_stopped="--coder-stopped" in switches)
+    return StartArgs(modifier, plan_args, task_text, flag_values.get("--phase"), "--restart" in switches,
+                     positional_words, headless="--headless" in switches,
+                     coder_stopped="--coder-stopped" in switches,
+                     gate_evidence=flag_values.get(GATE_EVIDENCE_FLAG))
 
 
 def phase_label(state):
@@ -578,6 +595,10 @@ def command_start(args):
         reason, commands, notes, stop = Refusal(*refusal)
         return refuse(reason, *commands, notes=notes, stop=stop)
 
+    if parsed.gate_evidence is not None and (parsed.phase_id is None or parsed.task_text is not None):
+        return emit("stop", "No coder was dispatched: --gate-evidence needs --phase <id> on a plan; "
+                            "a --task run has no plan and no gate.")
+
     start_command = script_command(shlex.join(["start", *args]))
     if stop_while_plan_edit_coder_is_out(repo_dir, previous, start_command):
         return
@@ -670,9 +691,16 @@ def next_phase_stop(entries, pending):
         return f"Every phase in the plan is {checked_text}. Tell the user the plan is complete. " + FOLLOW_UP_HINT
 
     gated_ahead, entry = plan_format.gate_blockers(pending)
-    if gated_ahead:
+    if gated_ahead and gated_ahead[0]["closing"]:
         return ("No phase was started, and no coder was dispatched: "
                 + plan_format.gate_block_text(gated_ahead, entry) + " Tell the user.")
+    if gated_ahead:
+        return ("No phase was started, and no coder was dispatched: "
+                + plan_format.gate_block_text(gated_ahead, entry)
+                + " Run "
+                + f"`start --phase {gated_ahead[0]['number']} --gate-evidence \"{GATE_EVIDENCE_SHAPE}\"`"
+                + " only after the user or the outside session has released the gate in their own words, and "
+                + "quote those words as the evidence. Otherwise tell the user.")
     return None
 
 
@@ -713,6 +741,10 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
         return
     entry = picked["entry"]
 
+    evidence_refusal = gate_evidence_refusal(parsed, entry)
+    if evidence_refusal:
+        return emit("stop", evidence_refusal)
+
     number = entry["number"] if entry else None
     section = plan_format.phase_text(plan_lines, number) if entry else "\n".join(plan_lines)
     closing_skill_name = plan_format.closing_skill(entry["title"]) if entry else None
@@ -723,6 +755,30 @@ def start_plan_run(repo_dir, previous, branch, parsed, start_command):
         return
     start_phase_coder(repo_dir, previous, branch, parsed, {
         "plan_rel": plan_rel, "lane": lane, "entry": entry, "section": section, "has_phases": bool(plan["sections"])})
+
+
+def gate_evidence_refusal(parsed, entry):
+    # The stop text for --gate-evidence on a named phase that cannot take it, or None. The evidence is for a phase
+    # whose title has a gate clause; the script only carries it and never judges it.
+    if parsed.gate_evidence is None:
+        return None
+    if entry["closing"]:
+        return ("No coder was dispatched: --gate-evidence needs a phase with a coder packet, and Phase "
+                f"{entry['number']} is a closing phase.")
+    if not entry["gate"]:
+        return (f"No coder was dispatched: Phase {entry['number']} has no gate clause, so --gate-evidence does not "
+                "apply. Run `start --phase <id>` without it.")
+    return None
+
+
+def gate_evidence_section(entry, gate_evidence):
+    # The coder packet's gate section, or "" for a phase started with no evidence.
+    if not gate_evidence:
+        return ""
+    return (f"Gate for Phase {entry['number']}: {entry['gate']}\n"
+            f"Gate evidence, as the caller gave it: {gate_evidence}\n"
+            "The caller released this gate with the evidence above. Proceed with the phase; do not ask for the "
+            "release again.")
 
 
 def finish_passing_restart(repo_dir, previous, section):
@@ -764,6 +820,9 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
         commands.append(f"python3 {stale_prose_script} --base {base_head}")
     gate_note = set_gate_and_packet_note(repo_dir, plan_rel, commands)
     packet_body = packet_text(repo_dir, plan_rel, number, use_packet)
+    evidence_section = gate_evidence_section(entry, parsed.gate_evidence)
+    if evidence_section:
+        packet_body = evidence_section + "\n\n" + packet_body
     run_id = start_run(repo_dir)
 
     phase_description = f"Phase {number} of `{plan_rel}`" if use_packet else f"`{plan_rel}`"

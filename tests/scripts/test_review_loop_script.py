@@ -897,6 +897,68 @@ class ReviewLoopScriptTest(unittest.TestCase):
         coder_calls = [call for call in self.fake_calls() if call["key"] == "coder"]
         self.assertEqual(len(coder_calls), 1)
 
+    RED_CHECK = f"{FAILS_ONLY_WITH_THE_DIFF}echo 'FAIL: test_x'; exit 1"
+    EXPECTED_RED_PLAN = ("## Phase Status\n\n- [x] Phase 1: Skeleton (risk: low)\n- [ ] Phase 2: Limits (risk: low)\n"
+                         "- [ ] Phase 3: Notes (risk: low)\n\n## Phase 1: Skeleton\n\n## Phase 2: Limits\n\n"
+                         f"Expected red: `{RED_CHECK}` until Phase 3\n\n## Phase 3: Notes\n")
+
+    def test_a_check_the_phase_declares_expected_red_converges_with_no_repair(self):
+        self.commit_files({"plan.md": self.EXPECTED_RED_PLAN})
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=self.RED_CHECK)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check"], "not run (expected red until Phase 3)")
+        self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
+
+    def test_a_check_the_phase_declares_expected_red_whole_runs_the_scoped_tests(self):
+        self.commit_files({"plan.md": self.EXPECTED_RED_PLAN})
+        self.state_dir.mkdir()
+        (self.state_dir / "state.json").write_text(json.dumps({"gateCommands": ["grep -q 'limit = 99' app.py"]}))
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=self.RED_CHECK)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        scoped_tests = packet["scoped_tests"]
+        self.assertTrue(scoped_tests.startswith("failed: grep -q 'limit = 99' app.py"), scoped_tests)
+
+    def test_once_the_named_phase_is_done_the_failing_check_is_a_blocker_again(self):
+        self.commit_files({"plan.md": self.EXPECTED_RED_PLAN.replace("- [ ] Phase 3:", "- [x] Phase 3:")})
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "coder": [{"result": "Repaired."}]},
+                                    quality_check=self.RED_CHECK)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("coder", [call["key"] for call in self.fake_calls()])
+
+    def test_a_coder_pass_that_edits_a_later_phase_file_stops_the_loop(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "notes.py": NOTES_REFLOWED}}],
+        }, header_extra="later-phase files: notes.py")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("edited files the plan gives to a later phase: notes.py", packet["blockers"][0])
+        self.assertEqual(1, [call["key"] for call in self.fake_calls()].count("code-reviewer"))
+
+    def test_the_coder_prompt_carries_the_later_phase_files_and_the_guidance(self):
+        completed = self.run_script(FIX_THEN_CLEAN,
+                                    header_extra="later-phase files: notes.py, lib/audit.py\nguidance: keep ints")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        coder_prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "coder")
+        self.assertIn("the plan gives them to a later phase", coder_prompt)
+        self.assertIn("lib/audit.py, notes.py", coder_prompt)
+        self.assertIn("it changes neither: keep ints", coder_prompt)
+
     RULED_PLAN = ("# Plan\n\n## Automated Verification\n\n- [ ] **Build-verified**: `CARGO_BUILD_JOBS=4 cargo build`\n"
                   "- [ ] **Lint-clean**: `cargo clippy`\n\n## Constraints\n\n"
                   "- C1: run builds with `CARGO_BUILD_JOBS=4` while the timing slice runs.\n")
@@ -1874,6 +1936,19 @@ class ReviewLoopScriptTest(unittest.TestCase):
                 _, packet = self.stored_packet()
                 self.assertEqual((packet["status"], packet["full_check"]), ("converged", full_check_result))
                 self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
+
+    def test_a_check_only_pass_in_a_ci_repo_runs_the_scoped_tests(self):
+        self.state_dir.mkdir()
+        (self.state_dir / "state.json").write_text(json.dumps({"gateCommands": ["grep -q 'limit = 99' app.py"]}))
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="Quality check: `true`\nFull suite: CI\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["full_check"], "passed (check only; CI runs the full suite)")
+        scoped_tests = packet["scoped_tests"]
+        self.assertTrue(scoped_tests.startswith("failed: grep -q 'limit = 99' app.py"), scoped_tests)
 
     def test_a_full_check_that_exits_zero_with_no_runner_summary_is_unverified_and_gets_no_repair(self):
         check = "echo 496 tests registered"

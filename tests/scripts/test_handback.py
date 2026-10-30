@@ -1,6 +1,8 @@
 """Checks for handback.py: the one reader of the review-loop hand-back packet and the per-session store."""
 import ast
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -11,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 import toolkit_paths
 
@@ -366,6 +369,149 @@ class ParseTest(HandbackTestBase):
         with self.assertRaises(handback.PacketError) as raised:
             handback.load(CONVERGED.replace("iter: 1\n", ""))
         self.assertIn("iter is missing", raised.exception.problems[0])
+
+
+def json_packet(**fields):
+    """A hand-back packet as the review loop sends it now: one JSON object."""
+    return json.dumps({"status": "converged", "iter": 1, "fixed": [], **fields})
+
+
+def json_form(free_text):
+    """The JSON packet with the content of a free-text packet: its parsed fields, lists as lists, iter as a number."""
+    raw = handback.parse_free_text(free_text)
+    fields = {}
+    for key, text in raw.items():
+        if key == "trailer":
+            continue
+        if key in handback.LIST_KEYS:
+            fields[key] = handback.read_list(text)[1]
+        else:
+            fields[key] = int(text) if key == "iter" else text
+    return json.dumps(fields)
+
+
+JSON_ASK = {"question": "cap at 3?", "file_line": "src/retry.ts:10", "change": "stop the retry loop after 3 tries",
+            "gate": "code-reviewer", "class": "smell"}
+
+
+class JsonPacketTest(HandbackTestBase):
+    def test_a_json_packet_validates_to_the_packet_its_free_text_form_gives(self):
+        free_text_and_json = {
+            "converged with a blocker flag": (CONVERGED, json_form(CONVERGED)),
+            "two asks": (NUMBERED, json_form(NUMBERED)),
+            "a blocker": (
+                'status: critical-blocker\niter: 1\nfixed: []\nblockers:\n- {finding: bad, file_line: "a.ts:1"}\n',
+                json_packet(status="critical-blocker", blockers=[{"finding": "bad", "file_line": "a.ts:1"}])),
+            "a plan-impact block": (
+                "status: plan-impact\niter: 1\nplan_impact: |\n  PLAN-IMPACT:\n    assumed: a\n    found: b\n",
+                json_packet(status="plan-impact", plan_impact="PLAN-IMPACT:\n  assumed: a\n  found: b")),
+        }
+        for label, (free_text, as_json) in free_text_and_json.items():
+            with self.subTest(label):
+                from_free_text = handback.load(free_text)
+                from_json = handback.load(as_json)
+                from_free_text["trailer"] = from_json["trailer"] = ""
+                self.assertEqual(from_free_text, from_json)
+
+    def test_a_fence_and_whitespace_around_the_json_object_are_removed(self):
+        for wrapper in ("  \n{}\n  ", "```\n{}\n```", "```json\n{}\n```\n\n", "~~~json\n{}\n~~~",
+                        "````json\n{}\n````"):
+            with self.subTest(wrapper=wrapper):
+                packet = handback.load(wrapper.format(json_packet(class_closure="done")))
+                self.assertEqual(packet["class_closure"], "done")
+
+    def test_a_fence_closer_of_another_char_or_a_shorter_run_leaves_the_packet_not_valid_json(self):
+        for wrapper in ("````json\n{}\n```", "~~~json\n{}\n```"):
+            with self.subTest(wrapper=wrapper), self.assertRaises(handback.PacketError) as raised:
+                handback.load(wrapper.format(json_packet(class_closure="done")))
+            self.assertIn("not valid JSON", raised.exception.problems[0])
+
+    def test_an_ask_whose_text_holds_dash_lines_colons_and_a_path_stays_one_ask(self):
+        long_ask = {"question": "the plan says -j8 at plan.md:12:\n- the ruling says -j2\n- which one holds?",
+                    "file_line": "plan.md:12", "change": "restore -j8", "gate": "code-reviewer", "class": "plan-drift"}
+        packet = handback.load(json_packet(ask=[long_ask, JSON_ASK]))
+        self.assertEqual([item["file_line"] for item in packet["ask"]], ["plan.md:12", "src/retry.ts:10"])
+        self.assertEqual(packet["ask"][0]["question"], long_ask["question"])
+        self.assertEqual(packet["dropped_asks"], [])
+
+    def test_blockers_keep_every_entry_whole_with_their_multi_line_text(self):
+        first = "full check failed:\n- test_a\n- test_b"
+        second = "setup fault: no package.json"
+        packet = handback.load(json_packet(status="critical-blocker", blockers=[first, second]))
+        self.assertEqual(packet["blockers"], [first, second])
+
+    def test_a_blocker_flag_on_a_remaining_finding_refuses_a_clean_status(self):
+        remaining = [{"disposition": "fix", "finding": "x", "file_line": "a.ts:1", "blocker": True}]
+        with self.assertRaises(handback.PacketError) as raised:
+            handback.load(json_packet(findings_remaining=remaining))
+        self.assertIn("findings_remaining holds a blocker", raised.exception.problems[0])
+
+    def test_a_wrong_shaped_value_is_a_packet_error_that_names_the_key(self):
+        cases = [
+            ({"fixed": "removed the dead branch"}, "fixed must be a JSON list, not a string"),
+            ({"ask": {"question": "q?"}}, "ask must be a JSON list, not an object"),
+            ({"blockers": None}, "blockers must be a JSON list, not null"),
+            ({"status": ["converged"]}, "status must be a JSON string, not a list"),
+            ({"iter": 1.5}, "iter must be a JSON string or integer, not a number"),
+            ({"iter": True}, "iter must be a JSON string or integer, not a boolean"),
+            ({"plan_impact": None}, "plan_impact must be a JSON string, not null"),
+        ]
+        for fields, problem in cases:
+            with self.subTest(fields=fields), self.assertRaises(handback.PacketError) as raised:
+                handback.load(json_packet(**fields))
+            self.assertIn(problem, raised.exception.problems)
+
+    def test_an_unknown_key_goes_to_the_trailer_as_a_key_value_line_like_the_free_text_form(self):
+        packet = handback.load(json_packet(surprise="x", principle=["a", 1]))
+        self.assertEqual(packet["trailer"], 'surprise: x\nprinciple: ["a",1]')
+
+    def test_text_that_opens_a_brace_but_is_not_json_is_a_packet_error(self):
+        with self.assertRaises(handback.PacketError) as raised:
+            handback.load('{"status": "converged", "iter": 1,')
+        self.assertIn("not valid JSON", raised.exception.problems[0])
+
+    def test_a_json_object_that_breaks_the_packet_rules_fails_like_the_free_text_one(self):
+        cases = {
+            "status is plan-impact but plan_impact is empty": json_packet(status="plan-impact", plan_impact=""),
+            "status is cap-reached but findings_remaining is missing": json_packet(status="cap-reached", fixed=[]),
+            "status is critical-blocker but blockers is empty": json_packet(status="critical-blocker", blockers=[]),
+            "fixed is missing": json.dumps({"status": "converged", "iter": 1}),
+            "ask entry has no change": json_packet(ask=[{**JSON_ASK, "change": ""}]),
+            "ask entry has no file_line": json_packet(ask=[{**JSON_ASK, "file_line": ""}]),
+            "status is 'done'": json_packet(status="done"),
+            "iter is missing": json.dumps({"status": "converged", "fixed": []}),
+            "fixed entry has no finding": json_packet(fixed=[{"blocker": True}]),
+        }
+        for problem, message in cases.items():
+            with self.subTest(problem), self.assertRaises(handback.PacketError) as raised:
+                handback.load(message)
+            self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],
+                            raised.exception.problems)
+
+    def test_an_ask_with_no_question_finding_or_change_is_dropped_with_a_warning_in_json_too(self):
+        packet = handback.load(json_packet(ask=[{"question": "", "file_line": "unlocated", "gate": "code-reviewer"},
+                                                JSON_ASK]))
+        self.assertEqual([item["question"] for item in packet["ask"]], ["cap at 3?"])
+        self.assertIn("file_line unlocated, gate code-reviewer", packet["dropped_asks"][0])
+
+    def test_check_accepts_a_json_packet(self):
+        code, out, _err = self.run_cli(["check"], json_packet(ask=[JSON_ASK]))
+        self.assertEqual((code, out.splitlines()[0]), (0, "ok: status=converged fixed=0 ask=1"))
+
+    def test_a_free_text_packet_prints_one_stderr_line_and_a_json_packet_prints_none(self):
+        with contextlib.redirect_stderr(io.StringIO()) as old_form:
+            handback.load(CONVERGED)
+        with contextlib.redirect_stderr(io.StringIO()) as new_form:
+            handback.load(json_packet())
+        self.assertEqual(len(old_form.getvalue().splitlines()), 1)
+        self.assertIn("old free-text packet", old_form.getvalue())
+        self.assertEqual(new_form.getvalue(), "")
+
+    def test_the_agent_doc_template_is_one_json_object_with_every_packet_key(self):
+        doc = (toolkit_paths.CLAUDE_DIR / "agents" / "review-loop.md").read_text()
+        section = doc.split("## Return packet", 1)[1]
+        template = re.search(r"```json\n(.*?)\n```", section, re.S).group(1)
+        self.assertEqual(set(json.loads(template)), set(handback.PACKET_KEYS))
 
 
 class ValidateTest(HandbackTestBase):
@@ -743,6 +889,11 @@ class StoreTest(HandbackTestBase):
         handback_store.record("../../evil", "dispatch")
         self.assertEqual([path.name for path in self.store.iterdir()], [".._.._evil.jsonl"])
 
+    def test_a_session_id_with_no_name_left_after_sanitizing_is_refused(self):
+        for session_id in ("", ".", "..", "_"):
+            with self.subTest(session_id=session_id), self.assertRaises(ValueError):
+                handback_store.session_file(session_id)
+
     def test_empty_session_has_no_rows_and_is_not_an_error(self):
         self.assertEqual(handback_store.latest("")["handback"], None)
         self.assertEqual(handback_store.latest(None)["dispatch"], None)
@@ -812,6 +963,22 @@ class HookTest(HandbackTestBase):
         code, out, _err = self.fire(bad)
         self.assertEqual((code, out), (0, ""))
         self.assertEqual(handback_store.latest(SESSION)["handback"]["status"], "invalid")
+
+    def test_a_json_hand_back_is_stored_and_a_bad_json_one_is_denied_once_with_the_json_repair_text(self):
+        self.fire(self.event("Agent"))
+        reviewer = {"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": "a1",
+                    "tool_input": {"subagent_type": "code-reviewer"}}
+        self.fire(reviewer)
+        bad = self.event("SubagentHandback", message=json_packet(status="plan-impact", plan_impact=""))
+        _code, out, _err = self.fire(bad)
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("status is plan-impact but plan_impact is empty", reason)
+        self.assertIn("one JSON object", reason)
+        self.assertIsNone(handback_store.latest(SESSION)["handback"])
+
+        good = self.event("SubagentHandback", message=json_packet(ask=[JSON_ASK]))
+        self.assertEqual(self.fire(good)[:2], (0, ""))
+        self.assertEqual(handback_store.latest(SESSION)["handback"]["status"], "converged")
 
     def test_a_different_agent_id_is_denied_afresh(self):
         self.fire(self.event("SubagentHandback", message="junk"))
@@ -1169,6 +1336,20 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         self.assertEqual(self.hand_back(steps), "")
         self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_failed_full_check_scan_skips_only_the_full_check_gate_and_the_plan_edit_gate_still_denies(self):
+        steps = [{"type": "user", "message": {"role": "user", "content": "review loop\nplan: docs/plans/orders.md"}},
+                 coder_step("t1")]
+        self.transcript.write_text("".join(json.dumps(step) + "\n" for step in steps), encoding="utf-8")
+        event = {"agent_transcript_path": str(self.transcript), "cwd": str(self.tmp)}
+        packet = {"status": "converged", "files_touched": ["src/orders.ts", "docs/plans/orders.md"]}
+
+        with unittest.mock.patch.object(handback.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            reason = handback.transcript_gate_reason(event, SESSION, "a1", CONVERGED, packet)
+
+        self.assertEqual(reason, handback.loop_transcript.PLAN_EDIT_REASON.format(plan="docs/plans/orders.md"))
+        self.assertIn("full-check gate skipped", stderr.getvalue())
 
     def test_a_second_hand_back_from_an_agent_with_a_stored_report_is_denied_and_adds_no_row(self):
         steps = [coder_step("t1"), full_check_run("t2")]

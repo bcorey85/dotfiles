@@ -10,6 +10,8 @@ import sys
 import tempfile
 import time
 
+import script_utils
+
 JQ_WHITESPACE = " \t\r\n"
 # The parsed payload of an empty stdin: jq prints nothing for it, so every field of it is empty.
 EMPTY_INPUT = object()
@@ -130,19 +132,6 @@ def raw_text(value):
     if isinstance(value, (list, dict)):
         return json.dumps(value, indent=2, ensure_ascii=False)
     return json.dumps(value)
-
-
-def jq_output(documents, extract, error_line):
-    """What `jq -r <extract>` leaves in a shell variable, over every document. A jq runtime error prints jq's message
-    with `error_line` as the input line and exits 5."""
-    pieces = []
-    for document in documents:
-        try:
-            pieces.append(raw_text(extract(document)))
-        except JqError as error:
-            sys.stderr.write(f"jq: error (at <stdin>:{error_line}): {error}\n")
-            sys.exit(5)
-    return "\n".join(pieces).rstrip("\n")
 
 
 def jq_str(value):
@@ -280,7 +269,7 @@ def temp_roots():
 
 def is_under_temp_dir(path):
     real = os.path.realpath(path)
-    return any(real == root or real.startswith(root.rstrip("/") + "/") for root in temp_roots())
+    return any(script_utils.path_is_under(real, root) for root in temp_roots())
 
 
 def expand_env_names(text, names):

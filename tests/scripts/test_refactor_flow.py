@@ -409,6 +409,18 @@ class RefactorFlowTest(unittest.TestCase):
         kept_times = sorted(path.stat().st_mtime for path in kept)
         self.assertEqual(kept_times, [2000.0 - index for index in range(48, -1, -1)])
 
+    def test_binary_paths_lists_only_binary_files_and_a_renamed_one_under_its_new_path(self):
+        module = load_script_module()
+        numstat_text = "-\t-\tlogo.png\0" "-\t-\t\0old.bin\0new.bin\0" "3\t0\ttext.py\0" "2\t1\t\0a.py\0b.py\0"
+
+        self.assertEqual({"logo.png", "new.bin"}, module.binary_paths(numstat_text))
+
+    def test_binary_paths_skips_a_malformed_row_without_raising(self):
+        module = load_script_module()
+        numstat_text = "garbage\0" "-\t-\tlogo.png\0" "1\t2\t\0old.py"
+
+        self.assertEqual({"logo.png"}, module.binary_paths(numstat_text))
+
     def test_prune_skips_a_file_deleted_between_the_glob_and_the_stat(self):
         module = load_script_module()
         for index in range(60):

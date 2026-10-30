@@ -115,7 +115,7 @@ class HandBackTest(base.CodeStepTest):
 
     def test_an_unverified_stop_in_a_repo_with_a_quality_check_line_asks_for_a_runner_summary_not_a_quality_check_line(
             self):
-        (self.repo / "CLAUDE.md").write_text("- Quality check: `npm run lint`\n")
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npm test`\n")
         self.coder_round()
         self.hook("review-loop", UNVERIFIED_PACKET)
 
@@ -125,10 +125,26 @@ class HandBackTest(base.CodeStepTest):
         question_text = self.question()
         self.assertIn("SUMMARY_LINES", question_text)
         self.assertIn("lib/test_run_output.py", question_text)
-        self.assertIn("`npm run lint`", question_text)
+        self.assertIn("`npm test`", question_text)
         self.assertIn(self.own_command("review-again"), question_text)
         self.assertNotIn("add a Quality check", question_text)
         self.assertNotIn("add a Quality check", out)
+
+    def test_an_unverified_stop_for_an_unrecognized_check_names_the_full_suite_ci_line_and_summary_lines(
+            self):
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `cargo fmt --check && cargo check`\n")
+        self.coder_round()
+        self.hook("review-loop", UNVERIFIED_PACKET)
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertEqual("check-unverified", self.state()["stop"]["kind"])
+        question_text = self.question()
+        self.assertIn("Full suite: CI", question_text)
+        self.assertIn("`cargo fmt --check && cargo check`", question_text)
+        self.assertIn("SUMMARY_LINES", question_text)
+        self.assertIn(self.own_command("review-again"), question_text)
 
     def test_a_converged_review_whose_check_ran_with_no_tests_in_a_ci_repo_finishes_the_phase(self):
         (self.repo / "CLAUDE.md").write_text("- Full suite: CI\n- Quality check: `cargo check`\n")

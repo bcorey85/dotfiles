@@ -5,7 +5,6 @@ imports only the ones it uses itself. The store is one append-only JSON-lines fi
 $HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
 import os
 import pathlib
-import re
 import sys
 import time
 
@@ -21,10 +20,11 @@ def store_dir():
 
 
 def session_file(session_id):
-    safe = re.sub(r"[^\w.-]", "_", str(session_id))
-    if not safe.strip("._"):
+    suffix = ".jsonl"
+    path = script_utils.state_file_path(store_dir(), session_id, suffix)
+    if not path.name[:-len(suffix)].strip("._"):
         raise ValueError("session id is empty")
-    return store_dir() / (safe + ".jsonl")
+    return path
 
 
 ANY_AGENT = object()

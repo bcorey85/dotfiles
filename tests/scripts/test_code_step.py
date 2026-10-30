@@ -6078,6 +6078,10 @@ class CodeStepTest(unittest.TestCase):
     def send_message(self, to, **extra):
         return self.log_fixture("send_message", {"to": to, "recipient": to}, **extra)
 
+    def task_stop(self, task_name, stopped_agent_id, **extra):
+        # The session stops a task by its name or id; the result names the agent id that was stopped.
+        return self.log_fixture("task_stop", {"task_id": task_name}, {"task_id": stopped_agent_id}, **extra)
+
     def hand_back(self, message, agent_type, agent_id, session=SESSION, **extra):
         return self.log_fixture("subagent_handback", {"message": message}, agent_type=agent_type, agent_id=agent_id,
                                 session_id=session, **extra)

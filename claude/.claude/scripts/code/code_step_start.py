@@ -48,6 +48,7 @@ from code_step_core import (
     state_file,
     stop_kind,
     stop_record,
+    stopped_awaited_agent_id,
     uncommitted_files,
 )
 from code_step_gates import derive_gate_commands
@@ -295,6 +296,12 @@ def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
     if guarded_verb_runs("verify", previous):
         reason += " Run `verify` first: it runs the phase's checks and closes the phase when they pass."
         verify_commands = [script_command("verify")]
+    stopped_agent_id = None if verify_commands else stopped_awaited_agent_id(repo_dir, previous)
+    if stopped_agent_id and not is_run_of_another_session(previous):
+        # `resume` would wait out the cap for a hand-back that never comes, so the start goes on over the open run.
+        restart_command = restart_command_for(args, parsed, repo_flags, "--coder-stopped")
+        return (f"{reason} Its agent {stopped_agent_id} was stopped with TaskStop, so no hand-back will come.",
+                [restart_command], ())
     if not args:
         return reason, verify_commands or [resume_command], ()
 
@@ -308,14 +315,14 @@ def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
         OPEN_RUN_CHOICES_NOTE,)
 
 
-def restart_command_for(args, parsed, repo_flags):
+def restart_command_for(args, parsed, repo_flags, *extra_flags):
     # The `start --restart` line that starts the user's arguments over the open run: plain task text keeps its +fast or
     # +deep, anything else (a plan path, phase or run notes) goes through as given.
     plain_text_words = plain_task_words(parsed)
     if plain_text_words:
-        return task_command(plain_text_words, parsed.modifier, *repo_flags, "--restart")
+        return task_command(plain_text_words, parsed.modifier, *repo_flags, "--restart", *extra_flags)
 
-    return script_command(f"start --restart {shlex.join(args)}")
+    return script_command(shlex.join(["start", "--restart", *extra_flags, *args]))
 
 
 def resume_text_refusal(repo_dir, state, words):

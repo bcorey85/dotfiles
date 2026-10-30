@@ -655,6 +655,25 @@ def awaited_agent_id(repo_dir, state):
     return launched.get("agent_id") if launched else None
 
 
+def stopped_awaited_agent_id(repo_dir, state):
+    # The id of the agent the next verb waits for when the session stopped it, or the agent that launched it, with
+    # TaskStop after its newest launch or resume: no hand-back will come. None otherwise.
+    agent_id = awaited_agent_id(repo_dir, state)
+    if agent_id is None:
+        return None
+
+    stopped = False
+    stoppable_ids = {agent_id}
+    for event in read_events(repo_dir, state["runId"]):
+        if event.get("event") in ("launch", "resume") and event.get("agent_id") == agent_id:
+            stopped = False
+            if event.get("launched_by"):
+                stoppable_ids.add(event["launched_by"])
+        elif event.get("event") == "task-stop" and event.get("task_id") in stoppable_ids:
+            stopped = True
+    return agent_id if stopped else None
+
+
 def dispatch_since(state):
     # The time the agent that the next verb waits for was dispatched, or None when the state records none. A coder
     # resumed after a stop counts from the stop.

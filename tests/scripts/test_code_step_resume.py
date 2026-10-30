@@ -803,6 +803,46 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertIn("AGENT: coder", restarted)
 
+    def test_a_task_start_over_a_run_whose_coder_was_stopped_reruns_a_restart_with_coder_stopped(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        before = self.state_bytes()
+
+        refused = self.step("start", "--task", "fix the totals")
+
+        self.assert_refused_with_rerun(refused, "start --restart --coder-stopped --task 'fix the totals'")
+        self.assertIn("agent c1 was stopped", refused)
+        self.assertEqual(before, self.state_bytes())
+        self.assertEqual("", self.stop_hook())
+
+        restarted = self.step("start", "--restart", "--coder-stopped", "--task", "fix the totals")
+
+        self.assertIn("AGENT: coder", restarted)
+
+    def test_a_start_over_a_run_whose_fork_was_stopped_by_name_reruns_a_restart_with_coder_stopped(self):
+        self.start_phase_one()
+        dispatch_id = self.events_named("dispatch")[-1]["id"]
+        self.log_fixture("agent_launch", {"prompt": f"code-step-dispatch: {self.state()['runId']}/{dispatch_id}"},
+                         {"agentId": "c1"}, agent_id="f1", agent_type=base.code_step_core.FORK_AGENT_TYPE)
+        self.task_stop("code", "f1")
+
+        refused = self.step("start")
+
+        self.assert_refused_with_rerun(refused, "start --restart --coder-stopped")
+        self.assertEqual("", self.stop_hook())
+
+    def test_a_coder_resumed_after_its_stop_is_waited_on_again(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.send_message("c1")
+
+        refused = self.step("start", "--task", "fix the totals")
+
+        self.assert_refused_with_choices(refused, "resume", "start --restart --task 'fix the totals'", "abort")
+        self.assertEqual("block", json.loads(self.stop_hook())["decision"])
+
     def test_a_restart_over_the_coder_cap_goes_on_once_that_coder_handed_back(self):
         self.stop_the_coder_at_the_wait_cap(launched_as="c1")
         self.hook("coder", self.CODER_REPORT, agent_id="c1")

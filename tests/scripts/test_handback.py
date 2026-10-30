@@ -26,25 +26,40 @@ spec.loader.exec_module(handback)
 import handback_store  # noqa: E402
 import loop_transcript  # noqa: E402
 
-CONVERGED = """status: converged
-iter: 1
-fixed: [{finding: "orders query lacked a tenant filter", file_line: src/orders.ts:42, blocker: true}]
-skipped_fp: []
-ask: []
-class_closure: enumerated every query
-files_touched: [src/orders.ts]
-"""
 
-NUMBERED = """status: converged
-iter: 1
-fixed: []
-ask:
-1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | \
-change: stop the retry loop after 3 tries | gate: code-reviewer | class: smell
-2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | \
-change: add an index on orders.tenant_id | gate: perf-reviewer | class: perf
-Closing note from the loop.
-"""
+def packet_text(fields, **changes):
+    """The JSON packet of `fields` with `changes` laid over them; a change to None drops that key."""
+    merged = {**fields, **changes}
+    kept = {key: value for key, value in merged.items() if value is not None}
+    return json.dumps(kept)
+
+
+def json_packet(**fields):
+    """A hand-back packet as the review loop sends it: one JSON object."""
+    return json.dumps({"status": "converged", "iter": 1, "fixed": [], **fields})
+
+
+def ask_packet(*asks):
+    """A converged packet whose ask list holds `asks`, a plain-text entry or a mapping each."""
+    return json_packet(ask=list(asks))
+
+
+CONVERGED_FIELDS = {"status": "converged", "iter": 1,
+                    "fixed": [{"finding": "orders query lacked a tenant filter", "file_line": "src/orders.ts:42",
+                               "blocker": True}],
+                    "skipped_fp": [], "ask": [], "class_closure": "enumerated every query",
+                    "files_touched": ["src/orders.ts"]}
+CONVERGED = json.dumps(CONVERGED_FIELDS)
+
+RETRY_ASK = {"finding": "cap on retries", "file_line": "src/retry.ts:10", "question": "cap at 3?",
+             "change": "stop the retry loop after 3 tries", "gate": "code-reviewer", "class": "smell"}
+INDEX_ASK = {"finding": "add index", "file_line": "src/db.ts:5", "question": "index tenant_id?",
+             "change": "add an index on orders.tenant_id", "gate": "perf-reviewer", "class": "perf"}
+TWO_ASKS_FIELDS = {"status": "converged", "iter": 1, "fixed": [], "ask": [RETRY_ASK, INDEX_ASK],
+                   "loop_note": "Closing note from the loop."}
+TWO_ASKS = json.dumps(TWO_ASKS_FIELDS)
+JOBS_ASK = {"finding": "jobs count changed", "file_line": "plan.md:12", "change": "restore -j8"}
+RETRY_TEXT_ASK = "the retry count disagrees with the plan: | src/retry.py:4"
 
 
 class HandbackTestBase(unittest.TestCase):
@@ -79,111 +94,45 @@ class HandbackTestBase(unittest.TestCase):
 
 
 class ParseTest(HandbackTestBase):
-    def test_numbered_asks_split_into_items_and_closing_prose_goes_to_the_trailer(self):
-        packet = handback.load(NUMBERED)
-        self.assertEqual([item["file_line"] for item in packet["ask"]], ["src/retry.ts:10", "src/db.ts:5"])
-        self.assertEqual(packet["trailer"], "Closing note from the loop.")
-
-    def test_indented_sub_bullets_stay_inside_their_parent_fixed_entry(self):
-        text = ("status: converged\niter: 1\nfixed:\n- tests added:\n  - retry case\n  - timeout case\n"
-                "- renamed the helper\nnit: []\n")
-        packet = handback.load(text)
-        self.assertEqual(len(packet["fixed"]), 2)
-        self.assertIn("timeout case", packet["fixed"][0]["finding"])
-
-    def test_fixed_entries_keep_their_whole_text_in_every_real_shape(self):
-        cases = [
-            ('fixed: [{"finding": "x", "file_line": "a.ts:1", "blocker": false}]', ["x"], "JSON style"),
-            ('fixed: [{finding: "guard the read, then class: fix it", file_line: a.ts:1, blocker: false}]',
-             ["guard the read, then class: fix it"], "a comma and a key word in the text"),
-            ("fixed:\n- {smell: literals extracted to constants, file_line: a.py:397-530, blocker: no}\n"
-             "- {blank lines between steps in two helpers, file_line: a.py:346-474, blocker: no}\n"
-             "- {summary overwrote the per-project total, serve.go summary, blocker: true}",
-             ["blank lines between steps in two helpers", "summary overwrote the per-project total"],
-             "keyed by smell, or starting with bare text"),
-        ]
-        for fixed_field, kept_texts, label in cases:
-            packet = handback.load(f"status: converged\niter: 0\n{fixed_field}\nask: []\nnit: []\n")
-            fixed_texts = " | ".join(handback.item_text(item, "finding", "item") for item in packet["fixed"])
-            for kept in kept_texts:
-                self.assertIn(kept, fixed_texts, label)
-
-    def test_extra_whitespace_and_a_code_fence_around_the_packet_still_parse(self):
-        padded = "```\n" + "\n".join("   " + line + "   " if line else line for line in CONVERGED.splitlines())
-        packet = handback.load(padded + "\n\n\n```\n")
-        self.assertEqual("orders query lacked a tenant filter", packet["fixed"][0]["finding"])
-        self.assertEqual("src/orders.ts:42", packet["fixed"][0]["file_line"])
-
-    def test_every_marker_of_an_indented_list_is_top_level(self):
-        text = ("status: converged\niter: 1\nfixed:\n  - {finding: a, file_line: a.ts:1}\n"
-                "  - {finding: b, file_line: b.ts:2}\nnit: []\n")
-        self.assertEqual(len(handback.load(text)["fixed"]), 2)
-
-    def test_lead_prose_before_the_first_item_marker_is_a_trailer_not_an_ask(self):
-        text = NUMBERED.replace("ask:\n1.", "ask: two questions follow\n1.")
-        packet = handback.load(text)
-        self.assertEqual(len(packet["ask"]), 2)
-        self.assertIn("two questions follow", packet["trailer"])
-
     def test_bullets_after_a_mapping_ask_stay_inside_that_ask(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
-                "- the plan says -j8\n- the ruling says -j2\n- which one holds?\n"
-                "- if the plan: restore -j8\n- if the ruling: keep -j2\nnit: []\n")
-        packet = handback.load(text)
+        packet = handback.load(ask_packet(JOBS_ASK, "the plan says -j8", "the ruling says -j2", "which one holds?",
+                                          "if the plan: restore -j8", "if the ruling: keep -j2"))
         self.assertEqual(len(packet["ask"]), 1)
         self.assertIn("which one holds?", packet["ask"][0]["question"])
         self.assertIn("if the ruling: keep -j2", packet["ask"][0]["question"])
 
     def test_fact_bullets_citing_a_location_mid_sentence_stay_inside_the_mapping_ask(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
-                "- the plan says -j8 at plan.md:12\n- the ruling says -j2 at docs/ruling.md:4\n"
-                "- which one holds?\nnit: []\n")
-        packet = handback.load(text)
+        packet = handback.load(ask_packet(JOBS_ASK, "the plan says -j8 at plan.md:12",
+                                          "the ruling says -j2 at docs/ruling.md:4", "which one holds?"))
         self.assertEqual(len(packet["ask"]), 1)
         self.assertIn("which one holds?", packet["ask"][0]["question"])
 
     def test_a_bullet_naming_its_own_location_after_a_mapping_ask_is_a_separate_ask(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
-                "- should tenant_id get an index? | src/db.ts:5\nnit: []\n")
-        packet = handback.load(text)
+        packet = handback.load(ask_packet(JOBS_ASK, "should tenant_id get an index? | src/db.ts:5"))
         self.assertEqual(len(packet["ask"]), 2)
         self.assertEqual(packet["ask"][1]["file_line"], "src/db.ts:5")
 
     def test_a_fact_bullet_leading_with_a_location_stays_inside_the_mapping_ask(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
-                "- docs/ruling.md:4 says -j2\n- which one holds?\nnit: []\n")
-        packet = handback.load(text)
+        packet = handback.load(ask_packet(JOBS_ASK, "docs/ruling.md:4 says -j2", "which one holds?"))
         self.assertEqual(len(packet["ask"]), 1)
         self.assertIn("docs/ruling.md:4 says -j2", packet["ask"][0]["question"])
 
     def test_a_mapping_bullet_with_no_location_or_finding_adds_its_fields_to_the_lead_ask(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- {finding: jobs count changed, file_line: plan.md:12, change: restore -j8}\n"
-                "- {question: which one holds?}\nnit: []\n")
-        packet = handback.load(text)
+        packet = handback.load(ask_packet(JOBS_ASK, {"question": "which one holds?"}))
         self.assertEqual(len(packet["ask"]), 1)
         self.assertEqual(packet["ask"][0]["question"], "which one holds?")
 
     def test_a_continuation_mapping_keeps_the_lead_ask_blocker_and_class(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- {finding: jobs count changed, file_line: plan.md:12, blocker: yes, class: plan-drift, "
-                "change: restore -j8}\n"
-                "- {question: which one holds?, blocker: no, class: test-gap}\nnit: []\n")
-        ask = handback.load(text)["ask"][0]
+        lead_ask = {**JOBS_ASK, "blocker": "yes", "class": "plan-drift"}
+        continuation = {"question": "which one holds?", "blocker": "no", "class": "test-gap"}
+        ask = handback.load(ask_packet(lead_ask, continuation))["ask"][0]
         self.assertIn(str(ask["blocker"]).lower(), ("true", "yes"))
         self.assertEqual(ask["class"], "plan-drift")
         self.assertEqual(ask["question"], "which one holds?")
 
     def test_bullets_after_a_text_ask_ending_in_a_colon_stay_inside_that_ask(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- the retry count disagrees with the plan: | src/retry.py:4\n"
-                "- the plan says 3\n- the code says 5\n- which one holds?\n"
-                "- should tenant_id get an index? | src/db.ts:5\nnit: []\n")
-        asks = handback.load(text)["ask"]
+        asks = handback.load(ask_packet(RETRY_TEXT_ASK, "the plan says 3", "the code says 5", "which one holds?",
+                                        "should tenant_id get an index? | src/db.ts:5"))["ask"]
         self.assertEqual(len(asks), 2)
         self.assertEqual(asks[0]["file_line"], "src/retry.py:4")
         self.assertIn("- the code says 5", asks[0]["question"])
@@ -191,155 +140,60 @@ class ParseTest(HandbackTestBase):
         self.assertEqual(asks[1]["file_line"], "src/db.ts:5")
 
     def test_a_mapping_bullet_after_a_text_ask_ending_in_a_colon_adds_its_change_to_that_ask(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- the retry count disagrees with the plan: | src/retry.py:4\n"
-                "- which one holds?\n- change: set it to 3\nnit: []\n")
-        asks = handback.load(text)["ask"]
+        asks = handback.load(ask_packet(RETRY_TEXT_ASK, "which one holds?", {"change": "set it to 3"}))["ask"]
         self.assertEqual(len(asks), 1)
         self.assertEqual(asks[0]["file_line"], "src/retry.py:4")
         self.assertEqual(asks[0]["change"], "set it to 3")
         self.assertIn("which one holds?", asks[0]["question"])
 
     def test_a_text_bullet_after_a_mapping_bullet_stays_a_dash_line_in_a_text_ask(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- the retry count disagrees: | src/retry.py:4\n"
-                "- the plan says 3\n- change: set it to 3\n- the code says 5\nnit: []\n")
-        asks = handback.load(text)["ask"]
+        asks = handback.load(ask_packet("the retry count disagrees: | src/retry.py:4", "the plan says 3",
+                                        {"change": "set it to 3"}, "the code says 5"))["ask"]
         self.assertEqual(len(asks), 1)
         self.assertIn("- the code says 5", asks[0]["question"])
 
     def test_a_text_ask_not_ending_in_a_colon_takes_no_bullets(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- which cache holds the session?\n- should tenant_id get an index?\nnit: []\n")
-        self.assertEqual(len(handback.load(text)["ask"]), 2)
+        packet = handback.load(ask_packet("which cache holds the session?", "should tenant_id get an index?"))
+        self.assertEqual(len(packet["ask"]), 2)
 
     def test_a_blocker_text_bullet_after_a_mapping_bullet_marks_the_text_ask_a_blocker(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- the retry count disagrees with the plan: | src/retry.py:4\n"
-                "- {change: set it to 3}\n- [blocker] data loss\nnit: []\n")
-        asks = handback.load(text)["ask"]
+        asks = handback.load(ask_packet(RETRY_TEXT_ASK, {"change": "set it to 3"}, "[blocker] data loss"))["ask"]
         self.assertEqual(len(asks), 1)
         self.assertTrue(handback.is_blocker(asks[0]))
 
     def test_a_blocker_text_bullet_marks_a_mapping_lead_with_no_blocker_field_a_blocker(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- {finding: the retry count disagrees with the plan, file_line: src/r.py:4, "
-                "question: which one holds?, change: set it to 3}\n- [blocker] data loss\nnit: []\n")
-        asks = handback.load(text)["ask"]
+        lead_ask = {"finding": "the retry count disagrees with the plan", "file_line": "src/r.py:4",
+                    "question": "which one holds?", "change": "set it to 3"}
+        asks = handback.load(ask_packet(lead_ask, "[blocker] data loss"))["ask"]
         self.assertEqual(len(asks), 1)
         self.assertTrue(handback.is_blocker(asks[0]))
 
     def test_a_mapping_bullet_with_blocker_yes_marks_the_text_ask_a_blocker(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "- the retry count disagrees with the plan: | src/retry.py:4\n"
-                "- {change: set it to 3, blocker: yes}\nnit: []\n")
-        asks = handback.load(text)["ask"]
+        asks = handback.load(ask_packet(RETRY_TEXT_ASK, {"change": "set it to 3", "blocker": "yes"}))["ask"]
         self.assertEqual(len(asks), 1)
         self.assertTrue(handback.is_blocker(asks[0]))
 
-    def test_empty_list_key_does_not_swallow_the_next_unindented_line(self):
-        packet = handback.parse("status: converged\niter: 1\nfixed: []\nask: []\nclass_closure: done\nnit: []\n")
-        self.assertEqual(packet["class_closure"], "done")
-        self.assertEqual(packet["trailer"], "")
-
-    def test_none_list_followed_by_indented_text_keeps_the_indented_text_in_the_list(self):
-        packet = handback.parse("status: converged\niter: 1\nfixed: []\nask: none\n  more words\nnit: []\n")
-        self.assertIn("more words", packet["ask"])
-
-    def test_empty_list_key_followed_by_a_dash_item_reads_the_items(self):
-        packet = handback.parse("status: converged\niter: 1\nfixed:\n- {finding: x, file_line: a.ts:1}\nnit: []\n")
-        self.assertIn("finding: x", packet["fixed"])
-
-    def test_a_field_name_after_a_bare_space_is_part_of_the_value(self):
-        pairs = handback.parse_inline_pairs("finding: guard the read then class: fix it. file_line: a.ts:1")
-        self.assertEqual(pairs["finding"], "guard the read then class: fix it")
-        self.assertEqual(pairs["file_line"], "a.ts:1")
-
-    def test_a_field_name_after_punctuation_and_space_starts_a_field_and_a_question_mark_stays(self):
-        pairs = handback.parse_inline_pairs(
-            "finding: x. question: cap it? gate: code-reviewer; class: smell | file_line: a.ts:1"
-        )
-        self.assertEqual(pairs["question"], "cap it?")
-        self.assertEqual((pairs["gate"], pairs["class"], pairs["file_line"]), ("code-reviewer", "smell", "a.ts:1"))
-
-    def test_key_with_a_note_in_brackets_is_still_a_key(self):
-        packet = handback.parse("status (final): converged\niter: 1\nfixed: []\n")
-        self.assertEqual(packet["status"], "converged")
-
-    def test_files_touched_is_a_packet_key_and_perf_smell_principle_are_trailer(self):
-        packet = handback.parse("status: converged\niter: 1\nfixed: []\nfiles_touched: [a.py]\n\nperf: n+1\n"
-                                "smell: []\nprinciple: batch\n")
-        self.assertEqual(packet["files_touched"], "[a.py]")
-        self.assertFalse({"perf", "smell", "principle"} & set(packet))
-        self.assertIn("principle: batch", packet["trailer"])
-
-    def test_flow_list_split_over_lines_parses(self):
-        packet = handback.load(
-            "status: converged\niter: 1\nfixed: [{finding: a, file_line: a.ts:1},\n {finding: b, file_line: b.ts:2}]\n"
-        )
-        self.assertEqual([item["finding"] for item in packet["fixed"]], ["a", "b"])
-
-    def test_json_style_list_parses(self):
-        packet = handback.load('status: converged\niter: 1\nfixed: [{"finding": "x", "file_line": "a.ts:1"}]\n')
-        self.assertEqual(packet["fixed"][0]["finding"], "x")
-
-    def test_multi_line_quoted_item_is_unquoted(self):
-        packet = handback.load('status: converged\niter: 1\nfixed:\n  - "first part\n    second part"\n')
-        self.assertIn("first part", packet["fixed"][0]["finding"])
-        self.assertNotIn('"', packet["fixed"][0]["finding"])
-
-    def test_one_multi_line_ask_with_numbered_lines_inside_it_is_one_ask(self):
-        text = ('status: converged\niter: 1\nfixed: []\nask:\n'
-                '- {finding: "f", file_line: "a.ts:1", question: "which one?", change: "do it"}\n'
-                '1. the first option reads the cache\n'
-                '2. the second option reads the table\n')
-        packet = handback.load(text)
-        self.assertEqual(len(packet["ask"]), 1)
-        self.assertIn("which one?", packet["ask"][0]["question"])
-        self.assertIn("the second option reads the table", packet["ask"][0]["question"])
-        self.assertEqual(packet["ask"][0]["change"], "do it")
-
-    def test_bullet_lines_inside_a_numbered_ask_stay_in_that_ask(self):
-        numbered_first = ('status: converged\niter: 1\nfixed: []\nask:\n'
-                          '1. which cache? change: pick one\n'
-                          '- the first option reads the cache\n'
-                          '2. which table? change: pick one\n')
-        packet = handback.load(numbered_first)
-        self.assertEqual(len(packet["ask"]), 2)
-        self.assertIn("the first option reads the cache", packet["ask"][0]["question"])
-
-    def test_numbered_lines_after_a_blocker_mapping_stay_in_its_finding_text(self):
-        packet = handback.load(
-            'status: critical-blocker\niter: 1\nblockers:\n'
-            '- {finding: "bad", file_line: "a.ts:1"}\n'
-            '1. first detail\n2. second detail\n'
-        )
-        self.assertIn("second detail", packet["blockers"][0]["finding"])
-
     def test_plain_text_fixed_entry_becomes_a_mapping_with_its_path(self):
-        packet = handback.load(
-            "status: converged\niter: 1\nfixed:\n  - removed the dead branch | src/a.ts:4 | blocker: no\n"
-        )
+        packet = handback.load(json_packet(fixed=["removed the dead branch | src/a.ts:4 | blocker: no"]))
         self.assertEqual(packet["fixed"][0]["file_line"], "src/a.ts:4")
         self.assertEqual(packet["fixed"][0]["blocker"], "no")
 
     def test_an_ask_with_an_empty_question_asks_its_change(self):
-        packet = handback.load(
-            'status: converged\niter: 1\nfixed: []\nask: [{"question": "", "file_line": "unlocated", '
-            '"change": "read the limit from settings", "gate": "code-reviewer", "class": "bug"}]\n'
-        )
+        packet = handback.load(ask_packet({"question": "", "file_line": "unlocated",
+                                           "change": "read the limit from settings", "gate": "code-reviewer",
+                                           "class": "bug"}))
 
         self.assertEqual(packet["ask"][0]["question"], "read the limit from settings")
 
     def test_an_ask_with_no_question_finding_or_change_is_dropped_with_a_warning_and_the_rest_survive(self):
-        good_ask = ('{"question": "cap at 3?", "file_line": "src/a.ts:4", "change": "cap retries at 3", '
-                    '"gate": "code-reviewer", "class": "bug"}')
-        bad_asks = (('{"question": "", "file_line": "unlocated", "gate": "code-reviewer", "class": "bug"}',
+        good_ask = {"question": "cap at 3?", "file_line": "src/a.ts:4", "change": "cap retries at 3",
+                    "gate": "code-reviewer", "class": "bug"}
+        bad_asks = (({"question": "", "file_line": "unlocated", "gate": "code-reviewer", "class": "bug"},
                      "file_line unlocated, gate code-reviewer"),
-                    ("null", "'None'"), ('["q"]', '''"['q']"'''))
+                    (None, "'None'"), (["q"], '''"['q']"'''))
         for bad_ask, named in bad_asks:
             with self.subTest(bad_ask=bad_ask):
-                packet = handback.load(f"status: converged\niter: 1\nfixed: []\nask: [{bad_ask}, {good_ask}]\n")
+                packet = handback.load(ask_packet(bad_ask, good_ask))
 
                 self.assertEqual([item["question"] for item in packet["ask"]], ["cap at 3?"])
                 self.assertEqual(len(packet["dropped_asks"]), 1)
@@ -347,9 +201,8 @@ class ParseTest(HandbackTestBase):
                               packet["dropped_asks"][0])
 
     def test_check_prints_each_dropped_ask_warning_after_the_ok_line(self):
-        code, out, _err = self.run_cli(
-            ["check"], 'status: converged\niter: 1\nfixed: []\nask: [{"question": "", "file_line": "a.ts:1", '
-            '"gate": "code-reviewer", "class": "bug"}]\n')
+        unaskable = {"question": "", "file_line": "a.ts:1", "gate": "code-reviewer", "class": "bug"}
+        code, out, _err = self.run_cli(["check"], ask_packet(unaskable))
 
         self.assertEqual(code, 0)
         self.assertEqual(out.splitlines()[1:],
@@ -358,37 +211,18 @@ class ParseTest(HandbackTestBase):
                           "file_line a.ts:1, gate code-reviewer"])
 
     def test_an_entry_that_is_neither_text_nor_a_mapping_is_a_problem(self):
-        for text, problem in (("status: converged\niter: 1\nfixed: [null]\n", "fixed entry has no finding: 'None'"),
-                              ("status: converged\niter: 1\nfixed: [5]\n", "fixed entry has no finding: '5'")):
-            with self.subTest(text=text), self.assertRaises(handback.PacketError) as raised:
-                handback.load(text)
+        for fixed, problem in (([None], "fixed entry has no finding: 'None'"),
+                               ([5], "fixed entry has no finding: '5'")):
+            with self.subTest(fixed=fixed), self.assertRaises(handback.PacketError) as raised:
+                handback.load(json_packet(fixed=fixed))
             self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],
                             raised.exception.problems)
 
     def test_missing_spec_iter_is_none_and_missing_iter_is_a_problem(self):
         self.assertIsNone(handback.load(CONVERGED)["spec_iter"])
         with self.assertRaises(handback.PacketError) as raised:
-            handback.load(CONVERGED.replace("iter: 1\n", ""))
+            handback.load(packet_text(CONVERGED_FIELDS, iter=None))
         self.assertIn("iter is missing", raised.exception.problems[0])
-
-
-def json_packet(**fields):
-    """A hand-back packet as the review loop sends it now: one JSON object."""
-    return json.dumps({"status": "converged", "iter": 1, "fixed": [], **fields})
-
-
-def json_form(free_text):
-    """The JSON packet with the content of a free-text packet: its parsed fields, lists as lists, iter as a number."""
-    raw = handback.parse_free_text(free_text)
-    fields = {}
-    for key, text in raw.items():
-        if key == "trailer":
-            continue
-        if key in handback.LIST_KEYS:
-            fields[key] = handback.read_list(text)[1]
-        else:
-            fields[key] = int(text) if key == "iter" else text
-    return json.dumps(fields)
 
 
 JSON_ASK = {"question": "cap at 3?", "file_line": "src/retry.ts:10", "change": "stop the retry loop after 3 tries",
@@ -396,23 +230,11 @@ JSON_ASK = {"question": "cap at 3?", "file_line": "src/retry.ts:10", "change": "
 
 
 class JsonPacketTest(HandbackTestBase):
-    def test_a_json_packet_validates_to_the_packet_its_free_text_form_gives(self):
-        free_text_and_json = {
-            "converged with a blocker flag": (CONVERGED, json_form(CONVERGED)),
-            "two asks": (NUMBERED, json_form(NUMBERED)),
-            "a blocker": (
-                'status: critical-blocker\niter: 1\nfixed: []\nblockers:\n- {finding: bad, file_line: "a.ts:1"}\n',
-                json_packet(status="critical-blocker", blockers=[{"finding": "bad", "file_line": "a.ts:1"}])),
-            "a plan-impact block": (
-                "status: plan-impact\niter: 1\nplan_impact: |\n  PLAN-IMPACT:\n    assumed: a\n    found: b\n",
-                json_packet(status="plan-impact", plan_impact="PLAN-IMPACT:\n  assumed: a\n  found: b")),
-        }
-        for label, (free_text, as_json) in free_text_and_json.items():
-            with self.subTest(label):
-                from_free_text = handback.load(free_text)
-                from_json = handback.load(as_json)
-                from_free_text["trailer"] = from_json["trailer"] = ""
-                self.assertEqual(from_free_text, from_json)
+    def test_a_message_that_is_not_one_json_object_is_a_packet_error(self):
+        for message in ("status: converged\niter: 1\nfixed: []\n", "prose with no packet", ""):
+            with self.subTest(message=message), self.assertRaises(handback.PacketError) as raised:
+                handback.load(message)
+            self.assertIn("must be one JSON object", raised.exception.problems[0])
 
     def test_a_fence_and_whitespace_around_the_json_object_are_removed(self):
         for wrapper in ("  \n{}\n  ", "```\n{}\n```", "```json\n{}\n```\n\n", "~~~json\n{}\n~~~",
@@ -462,7 +284,7 @@ class JsonPacketTest(HandbackTestBase):
                 handback.load(json_packet(**fields))
             self.assertIn(problem, raised.exception.problems)
 
-    def test_an_unknown_key_goes_to_the_trailer_as_a_key_value_line_like_the_free_text_form(self):
+    def test_an_unknown_key_goes_to_the_trailer_as_a_key_value_line(self):
         packet = handback.load(json_packet(surprise="x", principle=["a", 1]))
         self.assertEqual(packet["trailer"], 'surprise: x\nprinciple: ["a",1]')
 
@@ -471,7 +293,7 @@ class JsonPacketTest(HandbackTestBase):
             handback.load('{"status": "converged", "iter": 1,')
         self.assertIn("not valid JSON", raised.exception.problems[0])
 
-    def test_a_json_object_that_breaks_the_packet_rules_fails_like_the_free_text_one(self):
+    def test_a_json_object_that_breaks_the_packet_rules_names_each_broken_rule(self):
         cases = {
             "status is plan-impact but plan_impact is empty": json_packet(status="plan-impact", plan_impact=""),
             "status is cap-reached but findings_remaining is missing": json_packet(status="cap-reached", fixed=[]),
@@ -489,24 +311,9 @@ class JsonPacketTest(HandbackTestBase):
             self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],
                             raised.exception.problems)
 
-    def test_an_ask_with_no_question_finding_or_change_is_dropped_with_a_warning_in_json_too(self):
-        packet = handback.load(json_packet(ask=[{"question": "", "file_line": "unlocated", "gate": "code-reviewer"},
-                                                JSON_ASK]))
-        self.assertEqual([item["question"] for item in packet["ask"]], ["cap at 3?"])
-        self.assertIn("file_line unlocated, gate code-reviewer", packet["dropped_asks"][0])
-
     def test_check_accepts_a_json_packet(self):
         code, out, _err = self.run_cli(["check"], json_packet(ask=[JSON_ASK]))
         self.assertEqual((code, out.splitlines()[0]), (0, "ok: status=converged fixed=0 ask=1"))
-
-    def test_a_free_text_packet_prints_one_stderr_line_and_a_json_packet_prints_none(self):
-        with contextlib.redirect_stderr(io.StringIO()) as old_form:
-            handback.load(CONVERGED)
-        with contextlib.redirect_stderr(io.StringIO()) as new_form:
-            handback.load(json_packet())
-        self.assertEqual(len(old_form.getvalue().splitlines()), 1)
-        self.assertIn("old free-text packet", old_form.getvalue())
-        self.assertEqual(new_form.getvalue(), "")
 
     def test_the_agent_doc_template_is_one_json_object_with_every_packet_key(self):
         doc = (toolkit_paths.CLAUDE_DIR / "agents" / "review-loop.md").read_text()
@@ -517,73 +324,76 @@ class JsonPacketTest(HandbackTestBase):
 
 class ValidateTest(HandbackTestBase):
     def test_an_ask_carries_its_one_proposed_change_as_its_own_field(self):
-        packet = handback.load(NUMBERED)
+        packet = handback.load(TWO_ASKS)
 
         self.assertEqual("cap at 3?", packet["ask"][0]["question"])
         self.assertEqual("stop the retry loop after 3 tries", packet["ask"][0]["change"])
 
     def test_an_either_or_ask_with_no_proposed_change_is_refused(self):
-        either_or = NUMBERED.replace(" | change: stop the retry loop after 3 tries", "").replace(
-            "question: cap at 3?", "question: cap at 3, or keep retrying with backoff?")
+        either_or = {key: value for key, value in RETRY_ASK.items() if key != "change"}
+        either_or["question"] = "cap at 3, or keep retrying with backoff?"
 
         with self.assertRaises(handback.PacketError) as raised:
-            handback.load(either_or)
+            handback.load(ask_packet(either_or, INDEX_ASK))
 
         self.assertIn("ask entry has no change", raised.exception.problems[0])
 
     def test_unknown_ask_class_becomes_other_and_the_raw_class_is_kept(self):
-        packet = handback.load(NUMBERED.replace("class: smell", "class: ops"))
+        packet = handback.load(ask_packet({**RETRY_ASK, "class": "ops"}, INDEX_ASK))
         self.assertEqual((packet["ask"][0]["class"], packet["ask"][0]["class_raw"]), ("other", "ops"))
         self.assertNotIn("class_raw", packet["ask"][1])
 
     def test_gate_is_cut_to_its_first_token_and_defaults_when_missing(self):
-        packet = handback.load(NUMBERED.replace("gate: code-reviewer", "gate: code-reviewer / robustness"))
+        packet = handback.load(ask_packet({**RETRY_ASK, "gate": "code-reviewer / robustness"}, INDEX_ASK))
         self.assertEqual(packet["ask"][0]["gate"], "code-reviewer")
-        packet = handback.load(NUMBERED.replace(" | gate: perf-reviewer", ""))
+        index_ask_without_gate = {key: value for key, value in INDEX_ASK.items() if key != "gate"}
+        packet = handback.load(ask_packet(RETRY_ASK, index_ask_without_gate))
         self.assertEqual(packet["ask"][1]["gate"], "code-reviewer")
 
     def test_every_status_word_validates_with_its_required_fields(self):
+        remaining = [{"finding": "x", "file_line": "a.ts:1"}]
         cases = {
             "converged": CONVERGED,
-            "deferred": "status: deferred\niter: 1\nfixed: []\nfindings_remaining:\n- {finding: x, file_line: "
-                        "a.ts:1}\n",
-            "critical-blocker": "status: critical-blocker\niter: 1\nblockers:\n- bad thing\n",
-            "setup-fault": "status: setup-fault\niter: 1\nblockers:\n- full check could not run\n",
-            "cap-reached": "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n",
-            "plan-impact": "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n",
+            "deferred": json_packet(status="deferred", findings_remaining=remaining),
+            "critical-blocker": json.dumps({"status": "critical-blocker", "iter": 1, "blockers": ["bad thing"]}),
+            "setup-fault": json.dumps({"status": "setup-fault", "iter": 1, "blockers": ["full check could not run"]}),
+            "cap-reached": json.dumps({"status": "cap-reached", "iter": 2, "findings_remaining": remaining}),
+            "plan-impact": json.dumps({"status": "plan-impact", "iter": 1, "spec_iter": 0,
+                                       "plan_impact": "assumed a, found b"}),
         }
         for status, text in cases.items():
             self.assertEqual(handback.load(text)["status"], status)
 
     def test_each_stop_condition_is_a_problem(self):
-        cases = ["status: done\niter: 1\n",
-                 "status: converged\niter: x\nfixed: []\n",
-                 "status: converged\niter: 1\n",
-                 "status: converged\niter: 1\nspec_iter: many\nfixed: []\n",
-                 "status: converged\niter: 1\nfixed: [{blocker: true}]\n",
-                 "status: converged\niter: 1\nfixed: []\nask:\n- {finding: x, question: y?}\n",
-                 "status: plan-impact\niter: 1\nplan_impact:\n",
-                 "status: critical-blocker\niter: 1\nblockers: []\n",
-                 "status: setup-fault\niter: 1\nblockers: []\n",
-                 "status: cap-reached\niter: 2\n",
-                 "status: cap-reached\niter: 2\nfindings_remaining: []\n",
-                 "status: deferred\niter: 1\nfixed: []\nfindings_remaining: []\n"]
-        for text in cases:
-            with self.subTest(text=text), self.assertRaises(handback.PacketError):
-                handback.load(text)
+        cases = [{"status": "done", "iter": 1},
+                 {"status": "converged", "iter": "x", "fixed": []},
+                 {"status": "converged", "iter": 1},
+                 {"status": "converged", "iter": 1, "spec_iter": "many", "fixed": []},
+                 {"status": "converged", "iter": 1, "fixed": [{"blocker": True}]},
+                 {"status": "converged", "iter": 1, "fixed": [], "ask": [{"finding": "x", "question": "y?"}]},
+                 {"status": "plan-impact", "iter": 1, "plan_impact": ""},
+                 {"status": "critical-blocker", "iter": 1, "blockers": []},
+                 {"status": "setup-fault", "iter": 1, "blockers": []},
+                 {"status": "cap-reached", "iter": 2},
+                 {"status": "cap-reached", "iter": 2, "findings_remaining": []},
+                 {"status": "deferred", "iter": 1, "fixed": [], "findings_remaining": []}]
+        for fields in cases:
+            with self.subTest(fields=fields), self.assertRaises(handback.PacketError):
+                handback.load(json.dumps(fields))
 
     def test_cap_reached_with_a_key_present_but_empty_is_a_problem_and_a_missing_key_is_another(self):
-        for text, absence in (
-            ("status: cap-reached\niter: 2\nfindings_remaining: [] (none open)\n", "empty"),
-            ("status: cap-reached\niter: 2\n", "missing"),
+        for fields, absence in (
+            ({"status": "cap-reached", "iter": 2, "findings_remaining": []}, "empty"),
+            ({"status": "cap-reached", "iter": 2}, "missing"),
         ):
-            with self.subTest(text=text), self.assertRaises(handback.PacketError) as raised:
-                handback.load(text)
+            with self.subTest(fields=fields), self.assertRaises(handback.PacketError) as raised:
+                handback.load(json.dumps(fields))
             self.assertIn(f"status is cap-reached but findings_remaining is {absence}", raised.exception.problems)
 
     def test_pending_report_is_not_a_packet(self):
-        with self.assertRaises(handback.PacketError):
+        with self.assertRaises(handback.PacketError) as raised:
             handback.load("status: pending. The verification pass has not reported.\n\nDone so far:\n- fixed\n")
+        self.assertIn("must be one JSON object", raised.exception.problems[0])
 
 
 class AskFindingIdTest(unittest.TestCase):
@@ -608,12 +418,12 @@ class AskFindingIdTest(unittest.TestCase):
 
 
 class AskParsedFindingIdTest(unittest.TestCase):
-    def test_a_finding_id_the_loop_wrote_survives_parsing_in_block_and_flow_style(self):
-        text = ("status: converged\niter: 1\nfixed: []\nask:\n"
-                "  - finding: x\n    finding_id: a1b2c3d4e5f60001\n    file_line: a.ts:1\n    question: q?\n"
-                "    change: c\n"
-                "  - {finding: y, finding_id: a1b2c3d4e5f60002, file_line: b.ts:2, question: q?, change: c}\n")
-        packet = handback.load(text)
+    def test_a_finding_id_the_loop_wrote_survives_parsing(self):
+        first_ask = {"finding": "x", "finding_id": "a1b2c3d4e5f60001", "file_line": "a.ts:1", "question": "q?",
+                     "change": "c"}
+        second_ask = {"finding": "y", "finding_id": "a1b2c3d4e5f60002", "file_line": "b.ts:2", "question": "q?",
+                      "change": "c"}
+        packet = handback.load(ask_packet(first_ask, second_ask))
         self.assertEqual([handback.ask_finding_id(item) for item in packet["ask"]],
                          ["a1b2c3d4e5f60001", "a1b2c3d4e5f60002"])
 
@@ -668,19 +478,18 @@ class AskOutcomeFindingIdTest(unittest.TestCase):
 
 class RenderTest(HandbackTestBase):
     def test_findings_remaining_show_on_converged(self):
-        text = CONVERGED.replace(
-            "ask: []", "ask: []\nfindings_remaining: [{disposition: fix, finding: left over, file_line: a.ts:1}]"
-        )
+        remaining = [{"disposition": "fix", "finding": "left over", "file_line": "a.ts:1"}]
+        text = packet_text(CONVERGED_FIELDS, findings_remaining=remaining)
         self.assertIn("### Findings remaining", handback.render(handback.load(text), "review"))
 
     def test_bare_not_applicable_closure_with_empty_fixed_prints_one_line(self):
-        packet = handback.load("status: converged\niter: 0\nfixed: []\nclass_closure: n/a\n")
+        packet = handback.load(json_packet(iter=0, class_closure="n/a"))
         rendered = handback.render(packet, "review")
         self.assertEqual(rendered.count("Class closure"), 1)
         self.assertNotIn("receipt is missing", rendered)
 
     def test_missing_closure_with_fixed_entries_says_the_receipt_is_missing(self):
-        packet = handback.load(CONVERGED.replace("class_closure: enumerated every query\n", ""))
+        packet = handback.load(packet_text(CONVERGED_FIELDS, class_closure=None))
         self.assertIn("receipt is missing", handback.render(packet, "review"))
 
     def test_a_full_check_that_did_not_run_or_failed_before_the_diff_says_so_and_a_passed_one_prints_nothing(self):
@@ -689,17 +498,16 @@ class RenderTest(HandbackTestBase):
                            "pre-existing failure (the check fails the same way without this diff, so it did not "
                            "verify this diff)", "passed (check only; CI runs the full suite)"):
             with self.subTest(full_check=full_check):
-                packet = handback.load(CONVERGED + f"full_check: {full_check}\n")
+                packet = handback.load(packet_text(CONVERGED_FIELDS, full_check=full_check))
 
                 self.assertIn(f"Full check: {full_check}", handback.render(packet, "review"))
-        passed = handback.load(CONVERGED + "full_check: passed\n")
+        passed = handback.load(packet_text(CONVERGED_FIELDS, full_check="passed"))
         self.assertNotIn("Full check", handback.render(passed, "review"))
 
     def test_the_unverified_full_check_and_its_new_fields_parse_and_the_created_files_render(self):
-        packet = handback.load(
-            CONVERGED + "full_check: unverified (exit 0, no runner summary)\n"
-            "full_check_command: make test\nfull_check_summary: not found\n"
-            'check_changed: ["gen.ts"]\ncheck_created: ["dist/out.js"]\n')
+        packet = handback.load(packet_text(
+            CONVERGED_FIELDS, full_check="unverified (exit 0, no runner summary)", full_check_command="make test",
+            full_check_summary="not found", check_changed=["gen.ts"], check_created=["dist/out.js"]))
 
         self.assertEqual("unverified (exit 0, no runner summary)", packet["full_check"])
         self.assertEqual(("make test", "not found"), (packet["full_check_command"], packet["full_check_summary"]))
@@ -711,19 +519,20 @@ class RenderTest(HandbackTestBase):
         self.assertIn("Created by the full check, not by the coder (delete or keep): dist/out.js", rendered)
 
     def test_files_the_check_rewrote_after_the_coder_edited_them_parse_and_render_a_review_warning(self):
-        packet = handback.load(CONVERGED + 'check_rewrote_edited: ["edited.ts"]\n')
+        packet = handback.load(packet_text(CONVERGED_FIELDS, check_rewrote_edited=["edited.ts"]))
 
         self.assertEqual(["edited.ts"], packet["check_rewrote_edited"])
         rendered = handback.render(packet, "review")
         self.assertIn("Hold coder edits and a full check rewrite, so review them (do not restore): edited.ts", rendered)
 
     def test_sections_print_before_the_trailer(self):
-        packet = handback.load(NUMBERED)
+        packet = handback.load(TWO_ASKS)
         rendered = handback.render(packet, "fix", [("Aikido replies", ["- a.ts:1: Fixed"])])
         self.assertLess(rendered.index("### Aikido replies"), rendered.index("Closing note"))
 
     def test_fixed_findings_show_as_a_count_and_never_as_a_list(self):
-        text = CONVERGED.replace("fixed: [", "fixed: [{finding: small, file_line: a.ts:1, blocker: false}, ")
+        small_fix = {"finding": "small", "file_line": "a.ts:1", "blocker": False}
+        text = packet_text(CONVERGED_FIELDS, fixed=[small_fix, *CONVERGED_FIELDS["fixed"]])
         rendered = handback.render(handback.load(text), "review")
         self.assertIn("Fixed 2, nits 0, skipped 0", rendered)
         self.assertNotIn("small", rendered)
@@ -731,7 +540,7 @@ class RenderTest(HandbackTestBase):
 
     def test_a_blocked_agent_and_the_step_it_skipped_print_under_their_own_heading(self):
         blocked_line = "test-reviewer: Step 1 test map skipped (credential hook denied a bulk cp)"
-        packet = handback.load(CONVERGED + f"blocked_agents:\n- {blocked_line}\n")
+        packet = handback.load(packet_text(CONVERGED_FIELDS, blocked_agents=[blocked_line]))
 
         rendered = handback.render(packet, "review")
 
@@ -998,7 +807,7 @@ class CliTest(HandbackTestBase):
         self.assertIn("ok: status=converged", out)
 
     def test_check_rejects_a_bad_packet_with_the_reason_on_stderr(self):
-        code, _out, err = self.run_cli(["check"], "status: nope\niter: 1\n")
+        code, _out, err = self.run_cli(["check"], json_packet(status="nope"))
         self.assertEqual(code, 1)
         self.assertIn("status is 'nope'", err)
 
@@ -1037,7 +846,7 @@ class HookTest(HandbackTestBase):
         self.assertEqual(handback_store.latest(SESSION), seen)
 
     def test_bad_packet_is_denied_once_per_agent_then_stored_as_invalid(self):
-        bad = self.event("SubagentHandback", message="status: pending")
+        bad = self.event("SubagentHandback", message=json_packet(status="pending"))
         code, out, _ = self.fire(bad)
         decision = json.loads(out)["hookSpecificOutput"]
         self.assertEqual((code, decision["permissionDecision"]), (0, "deny"))
@@ -1185,24 +994,23 @@ class ReviewerRequiredTest(HandbackTestBase):
 
     def test_cap_exit_coder_passes_and_the_gate_accepts_it_when_converged(self):
         self.two_rounds_ending_on_the_cap_exit_coder()
-        self.assertEqual(self.hand_back(message=CONVERGED.replace("iter: 1", "iter: 2")), (0, ""))
+        self.assertEqual(self.hand_back(message=packet_text(CONVERGED_FIELDS, iter=2)), (0, ""))
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_cap_exit_coder_passes_and_the_gate_accepts_it_when_deferred(self):
         self.two_rounds_ending_on_the_cap_exit_coder()
-        message = ("status: deferred\niter: 2\nfixed: []\n"
-                   "findings_remaining:\n- {finding: x, file_line: a.ts:1}\n")
+        message = json_packet(status="deferred", iter=2, findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}])
         self.assertEqual(self.hand_back(message=message), (0, ""))
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_a_nit_fixed_at_the_cap_exit_commits_and_a_blocker_left_over_does_not(self):
         self.two_rounds_ending_on_the_cap_exit_coder()
-        blocker_left = ("status: deferred\niter: 2\nfixed: []\n"
-                        "findings_remaining:\n- {finding: x, file_line: a.ts:1, blocker: yes}\n")
-        nit_fixed = ("status: converged\niter: 2\nfixed:\n- {finding: reword the error, file_line: a.ts:1, "
-                     "blocker: no}\nfindings_remaining: []\n")
+        blocker_left = json_packet(status="deferred", iter=2,
+                                   findings_remaining=[{"finding": "x", "file_line": "a.ts:1", "blocker": "yes"}])
+        nit_fixed = json_packet(iter=2, fixed=[{"finding": "reword the error", "file_line": "a.ts:1", "blocker": "no"}],
+                                findings_remaining=[])
 
         self.assert_denied(self.hand_back(message=blocker_left))
         self.assertEqual(self.hand_back(message=nit_fixed), (0, ""))
@@ -1210,15 +1018,15 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_a_clean_status_with_a_failed_full_check_is_refused(self):
-        leftover = "findings_remaining:\n- {finding: x, file_line: a.ts:1, blocker: false}\n"
+        leftover = [{"finding": "x", "file_line": "a.ts:1", "blocker": False}]
         for status in handback.CLEAN_STATUSES:
             for full_check in ("failed (3 tests)", "setup fault (exit 2)"):
                 with (
                     self.subTest(status=status, full_check=full_check),
                     self.assertRaisesRegex(handback.PacketError, "full_check is"),
                 ):
-                    handback.load(CONVERGED.replace("status: converged", f"status: {status}")
-                                  + leftover + f"full_check: {full_check}\n")
+                    handback.load(packet_text(CONVERGED_FIELDS, status=status, findings_remaining=leftover,
+                                              full_check=full_check))
 
     def test_unreviewed_streak_counts_the_latest_flagged_hand_backs_and_a_reviewed_one_ends_it(self):
         self.dispatch("review-loop")
@@ -1305,7 +1113,8 @@ class OneCheckedHandBackTest(HandbackTestBase):
         return [row for row in rows if row["kind"] == "handback"]
 
     def test_a_clean_or_cap_reached_hand_back_with_a_code_change_after_the_last_full_check_is_denied(self):
-        cap_reached = "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n"
+        cap_reached = json.dumps({"status": "cap-reached", "iter": 2,
+                                  "findings_remaining": [{"finding": "x", "file_line": "a.ts:1"}]})
 
         for status, message in (("converged", CONVERGED), ("cap-reached", cap_reached)):
             with self.subTest(status):
@@ -1320,7 +1129,7 @@ class OneCheckedHandBackTest(HandbackTestBase):
                 self.assertEqual(self.handback_rows(), [])
 
     def test_a_plan_impact_hand_back_with_a_code_change_after_the_last_full_check_passes(self):
-        message = "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n"
+        message = json.dumps({"status": "plan-impact", "iter": 1, "spec_iter": 0, "plan_impact": "assumed a, found b"})
         out = self.hand_back([full_check_run("t1"), coder_step("t2")], message=message)
         self.assertEqual(out, "")
         self.assertEqual(len(self.handback_rows()), 1)
@@ -1377,9 +1186,9 @@ class OneCheckedHandBackTest(HandbackTestBase):
                                               coder_step("t4")]))
 
     def test_a_hand_back_while_a_background_reviewer_has_not_reported_is_denied_with_the_wait_reason(self):
-        message = "status: critical-blocker\niter: 1\nblockers:\n  - \"returned before the reviewer\"\n"
+        message = json.dumps({"status": "critical-blocker", "iter": 1, "blockers": ["returned before the reviewer"]})
         for agent_id, packet in (("a1", CONVERGED), ("a2", message)):
-            with self.subTest(status=packet.splitlines()[0]):
+            with self.subTest(agent_id=agent_id):
                 out = self.hand_back([full_check_run("t1"), *background_reviewer_launch("t2", "arev")],
                                      agent_id=agent_id, message=packet)
 
@@ -1412,13 +1221,13 @@ class OneCheckedHandBackTest(HandbackTestBase):
     def test_a_hand_back_whose_files_touched_names_the_plan_file_is_denied_with_the_plan_edit_reason(self):
         steps = [{"type": "user", "message": {"role": "user", "content": "review loop\nplan: docs/plans/orders.md"}},
                  coder_step("t1"), full_check_run("t2")]
-        plan_edit = CONVERGED.replace("files_touched: [src/orders.ts]",
-                                      "files_touched: [src/orders.ts, docs/plans/orders.md]")
-        cap_reached = ("status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n"
-                       "files_touched: [docs/plans/orders.md]\n")
+        plan_edit = packet_text(CONVERGED_FIELDS, files_touched=["src/orders.ts", "docs/plans/orders.md"])
+        cap_reached = json.dumps({"status": "cap-reached", "iter": 2,
+                                  "findings_remaining": [{"finding": "x", "file_line": "a.ts:1"}],
+                                  "files_touched": ["docs/plans/orders.md"]})
 
-        for message in (plan_edit, cap_reached):
-            with self.subTest(message=message.splitlines()[0]):
+        for status, message in (("converged", plan_edit), ("cap-reached", cap_reached)):
+            with self.subTest(status=status):
                 out = self.hand_back(steps, message=message)
 
                 reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]

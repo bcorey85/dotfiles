@@ -223,31 +223,27 @@ PLAN_EDIT_PLANS = {"docs/other/single.md": PLAN_SINGLE, "docs/other/no-status.md
 
 # ---------- fake agent outcomes ----------
 
-ASK_ONE = (
-    '{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep?", "gate": "code-reviewer", '
-    '"class": "correctness"}'
-)
-ASK_TWO = (
-    '{"finding": "g", "file_line": "backend/src/orders.ts:3", "question": "drop?", "gate": "code-reviewer", '
-    '"class": "other"}'
-)
+ASK_ONE = {"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep?", "gate": "code-reviewer",
+           "class": "correctness"}
+ASK_TWO = {"finding": "g", "file_line": "backend/src/orders.ts:3", "question": "drop?", "gate": "code-reviewer",
+           "class": "other"}
+DEFERRED = {"status": "deferred", "iter": 1, "findings_remaining": [{"finding": "d", "file_line": "a.ts:2"}]}
+CRITICAL_BLOCKER = {"status": "critical-blocker", "iter": 1, "blockers": [{"finding": "b", "file_line": "a.ts:1"}]}
+CAP_REACHED = {"status": "cap-reached", "iter": 3, "findings_remaining": [{"finding": "r", "file_line": "a.ts:1"}]}
 REVIEW_OUTCOMES = {
-    "converged-clean": "status: converged\niter: 1\nfixed: []\nask: []\nnit: []",
-    "converged-fixed": 'status: converged\niter: 2\nfixed:\n- {finding: "x", file_line: "backend/src/orders.ts:1", '
-                       'blocker: false}\nask: []',
-    "converged-ask1": f"status: converged\niter: 1\nfixed: []\nask: [{ASK_ONE}]",
-    "converged-ask2": f"status: converged\niter: 1\nfixed: []\nask: [{ASK_ONE}, {ASK_TWO}]",
-    "deferred-ask": f'status: deferred\niter: 1\nfindings_remaining:\n- {{finding: "d", file_line: "a.ts:2"}}\nask: '
-                    f'[{ASK_ONE}]',
-    "critical-blocker": 'status: critical-blocker\niter: 1\nblockers:\n- {finding: "b", file_line: "a.ts:1"}',
-    "critical-blocker-ask": f'status: critical-blocker\niter: 1\nblockers:\n- {{finding: "b", file_line: "a.ts:1"}}\n'
-                            f'ask: [{ASK_ONE}]',
-    "cap-reached": 'status: cap-reached\niter: 3\nfindings_remaining:\n- {finding: "r", file_line: "a.ts:1"}',
-    "cap-reached-ask": f'status: cap-reached\niter: 3\nfindings_remaining:\n- {{finding: "r", file_line: "a.ts:1"}}\n'
-                       f'ask: [{ASK_ONE}]',
-    "plan-impact": "status: plan-impact\niter: 1\nplan_impact: |\n  assumed: a\n  changes: b",
-    "plan-impact-no-description": "status: plan-impact\niter: 1",
-    "no-status": "iter: 1\nfixed: []",
+    "converged-clean": json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": []}),
+    "converged-fixed": json.dumps({"status": "converged", "iter": 2, "ask": [], "fixed": [
+        {"finding": "x", "file_line": "backend/src/orders.ts:1", "blocker": False}]}),
+    "converged-ask1": json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [ASK_ONE]}),
+    "converged-ask2": json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [ASK_ONE, ASK_TWO]}),
+    "deferred-ask": json.dumps({**DEFERRED, "ask": [ASK_ONE]}),
+    "critical-blocker": json.dumps(CRITICAL_BLOCKER),
+    "critical-blocker-ask": json.dumps({**CRITICAL_BLOCKER, "ask": [ASK_ONE]}),
+    "cap-reached": json.dumps(CAP_REACHED),
+    "cap-reached-ask": json.dumps({**CAP_REACHED, "ask": [ASK_ONE]}),
+    "plan-impact": json.dumps({"status": "plan-impact", "iter": 1, "plan_impact": "assumed: a\nchanges: b"}),
+    "plan-impact-no-description": json.dumps({"status": "plan-impact", "iter": 1}),
+    "no-status": json.dumps({"iter": 1, "fixed": []}),
     "empty-message": "",
     "missing-report": None,
 }

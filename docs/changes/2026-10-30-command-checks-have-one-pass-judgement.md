@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "Command classification has one owner and one pass judgement"
-description: "lib/check_scope.py owns every command question (runs_tests, runner_family, is_check, whole or targeted, test filter, cargo test target) and check_output.check_verdict is the one rule for whether a finished check passed, failed, failed with exit 0, ran no tests or did not run. The command tables of test_run_output, code_step_gates, code_step_verification and quality_check_cap are deleted and their callers import the owner. Where an old table and the owner disagreed, the owner answers strictest, except the looser answers marked Looser in the note (matches_no_test reads a redirect word and a selector flag's value as no filter; runs_tests reads a `test` word after a package verb as no test run; criteria_verdict reads a filtered run that matched no test as green when prints_own_runner_summary is False for the command, such as `echo pytest -k nothing` or `! cargo test x`)."
+description: "lib/check_scope.py owns every command question (runs_tests, runner_family, is_check, whole or targeted, test filter, cargo test target) and check_output.check_verdict is the shared rule for whether a finished check passed, failed, failed with exit 0, ran no tests or did not run (criteria_verdict also calls matches_no_test, and coder_gate adds a branch for a command that names manage.py test). The command tables of test_run_output, code_step_gates, code_step_verification and quality_check_cap are deleted and their callers import the owner. Where an old table and the owner disagreed, the owner answers strictest, except four looser answers marked Looser in the note (matches_no_test reads five cargo flags' values and `cargo test x` in another step's words as no filter; names_test_filter and matches_no_test read a redirect word and a selector flag's value as no filter; runs_tests reads a `test` word after a package verb as no test run)."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-30T02:55:46-05:00"}
 seq: 317
 kind: "fix"
@@ -20,11 +20,12 @@ unmeasured: "The change moves no intake number: it makes the deciders answer the
 Pass judgement. `lib/check_output.py` gains `check_verdict(command, code, output)`, returning `passed`, `failed`
 (non-zero exit), `failed-exit-zero` (exit 0 while a runner summary reports failures), `ran-no-tests` (exit 0 from a
 filtered run that matched no test, or a test command whose output says `Ran 0 tests` / no tests ran) or `not-run`
-(code None, a timeout). `SUMMARY_FAILURE` moved there from `review/full_check.py`; the Django-only
-`DJANGO_TEST_COMMAND` and `DJANGO_RAN_NO_TESTS` in `code/coder_gate.py` are deleted (the existing `NO_TESTS_RAN_OUTPUT`
-and `test_run_output.matches_no_test` are reused). `full_check.run`, `coder_gate.run_commands` and
+(code None, a timeout). `SUMMARY_FAILURE` moved there from `review/full_check.py`; for a command that names
+`manage.py test`, `coder_gate` also searches the output with `NO_TESTS_RAN_OUTPUT`
+(`check_scope.names_django_test_run`). `full_check.run`, `coder_gate.run_commands` and
 `criteria_verdict.judge_item` map the verdict to their own result names and keep their own CI-only, UNVERIFIED,
-setup-fault and search-ban handling.
+setup-fault and search-ban handling. `criteria_verdict.judge_item` also calls `test_run_output.matches_no_test`, and
+`coder_gate.run_commands` adds the `manage.py test` branch.
 
 Command classification. `lib/check_scope.py` owns every command question: `runs_tests`, `names_test_runner`,
 `prints_own_runner_summary`, `runner_family`, `is_check`, `names_test_filter`, `names_cargo_test_target`, plus the
@@ -44,16 +45,17 @@ Tables and functions deleted from their old homes:
 - `gates/quality_check_cap.py`: `CHECKS`, `CHECK_START`, `CARGO_TEST`, `CARGO_TARGET_FLAGS`, `CARGO_WHOLE_TREE_FLAGS`,
   `CARGO_VALUE_FLAGS` and `is_scoped_cargo_test` (replaced by `is_check` and `names_cargo_test_target`).
 
-Pass-judgement inputs whose answer changed (two kinds of input got looser: the first item below and the Looser item after the `cat run.log` item, which covers any command `prints_own_runner_summary` reads False, such as `echo pytest -k nothing` and `! cargo test x`):
+Pass-judgement inputs whose answer changed:
 
-- `coder_gate`: exit 0 with `Ran 0 tests` from a command that names `manage.py test` but is no test command (for
-  example `echo manage.py test; echo "Ran 0 tests"` or `bash -c "python manage.py test"`) was a setup fault, now a pass.
 - `coder_gate`: exit 0 whose runner summary reports failures (for example `Tests  1 failed | 2 passed`) was a pass, now
   a failed command.
 - `coder_gate`: exit 0 from a filtered test run that matched no test was a pass, now a failed
   command.
-- `coder_gate`: exit 0 with `Ran 0 tests` or `no tests ran` output from a test command, other than that
-  `manage.py test` case, was a pass, now a setup fault, which does not deny.
+- `coder_gate`: exit 0 with `Ran 0 tests` or `no tests ran` output from a test command, other than a
+  `manage.py test` command printing `Ran 0 tests` (already a setup fault), was a pass, now a setup fault, which does not deny.
+- `coder_gate`: exit 0 from a command that names `manage.py test`, with `no tests ran` or
+  `No tests found, exiting with code N` output (`DJANGO_RAN_NO_TESTS` matched only `^Ran 0 tests`), was a pass, now a
+  setup fault.
 - `criteria_verdict`: exit 0 whose runner summary reports failures was GREEN, now RED with a note.
 - `criteria_verdict`: exit 0 with `Ran 0 tests` or `no tests ran` output from a test command (Django and unittest runs, which
   `matches_no_test` never judged) was GREEN, now RED with the no-test-matched flag.
@@ -64,19 +66,23 @@ Pass-judgement inputs whose answer changed (two kinds of input got looser: the f
   runner holding a failing summary (`1 failed, 2 passed`) was a pass, now a failed command (failed-exit-zero).
   One case was not a pass: `criteria_verdict` on a filtered negated run with no passed test (`! pytest t.py::test_new`
   printing `1 failed`) was already RED; it stays RED, now with the summary-failure note and no no-test-matched flag.
-  Every command that exits 0 and prints a failed runner summary fails, whatever its programs. Only the
-  no-test-matched answer is still limited to a command with a step that can print its own summary
+  Every command that exits 0 and prints a failed runner summary fails, whatever its programs. In `check_verdict` and
+  `coder_gate`, the no-test-matched answer is still limited to a command with a step that can print its own summary
   (`prints_own_runner_summary`).
-- Looser: `criteria_verdict` for the no-test-matched check, on any command `prints_own_runner_summary` reads False
-  (every step a search, a print or negated), went from RED to GREEN. Two examples: `echo pytest -k nothing` with no
-  passed test and `! cargo test x`.
 - `NON_TEST_PROGRAMS` lists only some of the programs that cannot print a runner summary; that is a known gap, and this
   change does no list work.
 - `coder_gate`, `criteria_verdict` and `full_check`: exit 0 from `bash tests/run.sh` holding `1 failed, 2 passed`
   is a failed command (failed-exit-zero), the wrapper having swallowed the runner's exit code.
 
 Command-classification answers that changed (the owner gave the strictest answer wherever an old table and it
-disagreed; no caller got looser except the items marked Looser):
+disagreed; no caller got looser except the four answers marked Looser):
+
+- Unchanged answers, pinned by tests: `coder_gate` exit 0 with `Ran 0 tests` from a command that names `manage.py test`
+  but is no test command (`echo manage.py test; echo "Ran 0 tests"`, or `bash -c 'python manage.py test'`) is a setup
+  fault, now read through `check_scope.names_django_test_run`, which searches the command text. `criteria_verdict` reads an exit-0 command that names a filtered runner and shows no passed test
+  as RED with the "matches no test" flag when the command matches `TEST_FILTER` (`-k`, `-t`) or a step runs `cargo test` on a name: a search or print
+  (`rg -n 'pytest -k foo' docs`, `echo pytest -k nothing`) and a negated run (`! cargo test x`) are not exempt, as before.
+  `cargo test` named only in another step's words reads GREEN; see the Looser item below.
 
 - `quality_check_cap` now counts as a check, so a repeat is capped (was not a check): `python -m pytest`, `uv|poetry|pipenv
   run pytest` and any command a wrapper peels to a check, `docker exec c pytest`, a program named by path
@@ -110,9 +116,9 @@ disagreed; no caller got looser except the items marked Looser):
 - Looser: `matches_no_test` no longer reads as a filter the value after one of five cargo flags that
   `RUNNER_VALUE_FLAGS` knows and the old option list did not: `-A`, `-W`, `-D`, `--retries` and `--test-threads`
   (`cargo test -A warnings`, `cargo test --retries 2`). A test row pins each flag.
-- Looser: `matches_no_test` no longer reads `cargo test x` that sits only in quoted text of another step
-  (`echo "cargo test x"`). `runs_tests`, `is_check` and `names_test_filter` are false and the scope is `none`.
-  A test pins it.
+- Looser: `matches_no_test` no longer reads `cargo test x` that sits only in another step's words, quoted or not
+  (`echo "cargo test x"`, `echo cargo test x`, `rg -n 'cargo test foo' docs`). `runs_tests`, `is_check` and `names_test_filter` are false and the scope is `none`.
+  A test pins the quoted form.
 - Looser: `names_test_filter` and `matches_no_test` no longer read a redirect word or a selector flag's value as a
   filter: `cargo test 2>&1`, `cargo test > log`, `cargo test --lib 2>&1` and `cargo test -E x` went from True to
   False, and `matches_no_test("cargo test 2>&1", 0, "test result: ok. 0 passed; 0 failed")` is now False.
@@ -144,7 +150,6 @@ None: see `unmeasured`.
 
 ## Back-out
 
-Revert `check_verdict` and its call sites; restore `SUMMARY_FAILURE` in `review/full_check.py`, and
-`DJANGO_TEST_COMMAND` and `DJANGO_RAN_NO_TESTS` in `code/coder_gate.py`. Restore the deleted command tables in
+Revert `check_verdict` and its call sites; restore `SUMMARY_FAILURE` in `review/full_check.py`. Restore the deleted command tables in
 `lib/test_run_output.py`, `code/code_step_gates.py`, `code/code_step_verification.py` and `gates/quality_check_cap.py`,
 and remove the command questions added to `lib/check_scope.py`.

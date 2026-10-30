@@ -33,7 +33,8 @@ still ends with a verdict: a command gets at most the budget left, and one that 
 as not-started, apart from failed, and never denies the call (a run with no failure, command error or setup fault then
 has the result "timeout"). A failure that shows the environment cannot run the check (exit 126 or 127, a runner that
 cannot start the program, no package manifest where it ran, a run that found no test to run, an exit 0 from a test
-command with `Ran 0 tests` or no tests ran output, a package-manager or engine version mismatch, a missing module
+command or from a command that names `manage.py test`, with `Ran 0 tests` or no tests ran output, a
+package-manager or engine version mismatch, a missing module
 from outside the repo with no failed test, or, under pytest, a Django settings error with no failed test unless the
 coder changed a settings module or an app config) is a setup fault: it never denies the call or counts toward the
 cap, a run with only setup faults has the result "setup-fault", and the stamp names each one with its output tail.
@@ -65,7 +66,7 @@ from check_output import (
     missing_path,
     tail_with_failing_tests,
 )
-from check_scope import scanned_command
+from check_scope import names_django_test_run, scanned_command
 from source_paths import is_runnable_test_file
 
 MAX_DENIES = 3
@@ -316,6 +317,8 @@ def run_commands(gate, budget_seconds=None):
             failures.append((command, "exit 0", stdout + stderr + check_output.SUMMARY_FAILURE_NOTE))
         elif verdict == check_output.NO_TESTS_RAN:
             failures.append((command, "exit 0", stdout + stderr + check_output.NO_TEST_MATCHED_NOTE))
+        elif names_django_test_run(command) and check_output.NO_TESTS_RAN_OUTPUT.search(stdout + stderr):
+            failures.append((command, "exit 0", stdout + stderr))
     return failures, skipped, timed_out, not_started
 
 

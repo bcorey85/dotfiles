@@ -143,10 +143,11 @@ SCRIPT_RUNNERS = ("npm", "pnpm", "yarn", "bun", "make", "just", "task", "cargo",
 NON_TEST_PROGRAMS = ("test", "cd", "git", "rg", "grep", "echo", "cat", "ls", "find", "diff",
                      "head", "tail", "sed", "less", "more", "tac", "nl", "awk", "cut", "sort", "uniq", "wc", "jq",
                      "strings", "bat")
+DJANGO_TEST_RUN = re.compile(r"\bmanage\.py\s+test\b")
 # The runner families a test command can run, read from its text.
 RUNNER_FAMILY_PATTERNS = {
     "js": re.compile(r"\b(?:vitest|jest|mocha)\b|\b(?:npm|pnpm|yarn|bun|npx)\b.*\btest\b"),
-    "python": re.compile(r"\bpytest\b|\bmanage\.py\s+test\b"),
+    "python": re.compile(rf"\bpytest\b|{DJANGO_TEST_RUN.pattern}"),
     "cargo": re.compile(r"\bcargo\s+(?:test|nextest)\b"),
 }
 
@@ -530,6 +531,11 @@ def prints_own_runner_summary(command):
         if words and words[0] != "!" and words[0] not in NON_TEST_PROGRAMS:
             return True
     return False
+
+
+def names_django_test_run(command):
+    # True when the command text names `manage.py test`, a command that only names it included.
+    return bool(DJANGO_TEST_RUN.search(command))
 
 
 def runner_family(command):

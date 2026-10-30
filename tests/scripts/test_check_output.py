@@ -510,13 +510,13 @@ class CheckOutputTest(unittest.TestCase):
 class CheckVerdictTest(unittest.TestCase):
     """check_verdict and the three pass rules that call it read every row the same way."""
 
-    def test_a_negated_filtered_run_that_matched_no_test_is_green(self):
+    def test_a_negated_filtered_run_that_matched_no_test_passes_the_verdict_but_reads_red_for_a_criterion(self):
         # full_check reads no passed summary as unverified, so this row stays out of VERDICT_ROWS.
         command = "! pytest t.py -k nothing"
         output = "===== 42 deselected in 0.20s ====="
 
         self.assertEqual(check_output.PASSED, check_output.check_verdict(command, 0, output))
-        self.assertEqual("GREEN", criteria_verdict.judge_item(command, f"`{command}` exits 0", 0, output).outcome)
+        self.assertEqual("RED", criteria_verdict.judge_item(command, f"`{command}` exits 0", 0, output).outcome)
 
     def test_a_search_that_names_a_runner_is_not_read_for_no_tests_ran(self):
         # criteria_verdict bans an exit-0 search, so this command stays out of VERDICT_ROWS.
@@ -633,7 +633,7 @@ class CommandClassificationTest(unittest.TestCase):
         self.addCleanup(temp_directory.cleanup)
         self.repo = pathlib.Path(temp_directory.name)
 
-    def ran_and_skipped_commands(self, command, configured, run_configured_check=False):
+    def ran_and_skipped_commands(self, command, configured, run_whole_suites=False):
         # What run_verification_commands does with a listed command when no one asked for the configured check to
         # run and the repo's configured quality check is `configured`.
         run_result = mock.Mock(return_value=(0, ""))
@@ -645,11 +645,11 @@ class CommandClassificationTest(unittest.TestCase):
                 mock.patch.object(full_check, "configured_check_command", return_value=configured), \
                 mock.patch.object(code_step_verification, "item_verdict", return_value=verdict):
             results, skipped, _unparsed = code_step_verification.run_verification_commands(
-                self.repo, "section", run_configured_check=run_configured_check)
+                self.repo, "section", run_whole_suites=run_whole_suites)
         ran_commands = [result[0] for result in results]
         return ran_commands, skipped
 
-    def test_only_the_configured_check_is_skipped_and_run_configured_check_runs_it(self):
+    def test_only_the_configured_check_is_skipped_and_run_whole_suites_runs_it(self):
         configured = "npm test && npm run lint"
         for command in ("npm run test:e2e", "npm run lint:fix", "npm run build && node x.js"):
             with self.subTest(runs=command):
@@ -661,7 +661,7 @@ class CommandClassificationTest(unittest.TestCase):
                 ran_commands, skipped = self.ran_and_skipped_commands(command, configured)
                 self.assertEqual([], ran_commands)
                 self.assertEqual([command], skipped)
-                ran_commands, skipped = self.ran_and_skipped_commands(command, configured, run_configured_check=True)
+                ran_commands, skipped = self.ran_and_skipped_commands(command, configured, run_whole_suites=True)
                 self.assertEqual([command], ran_commands)
                 self.assertEqual([], skipped)
 

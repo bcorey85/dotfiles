@@ -2,8 +2,7 @@
 """handback.py: the one reader of the review-loop hand-back packet. The per-session store is handback_store.py.
 
   handback.py check < packet            exit 0 and one `ok` line for a packet that parses and validates; exit 1 and the
-                                        problems on stderr for a bad one. A packet is one JSON object; the old
-                                        free-text `key: value` form still parses, with a stderr note
+                                        problems on stderr for a bad one. A packet is one JSON object
   handback.py hook dispatch|handback < hook event JSON
                                         PreToolUse hook. Matcher Agent records each review-loop dispatch; matcher
                                         SubagentHandback validates and records each review-loop hand-back, and denies a
@@ -29,7 +28,6 @@ import pathlib
 import re
 import secrets
 import sys
-import textwrap
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import loop_transcript
@@ -47,7 +45,7 @@ from handback_store import (
 )
 from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
 from plan_format import PLAN_CHANGE_MARK
-from script_utils import first_number, one_line, unquote
+from script_utils import first_number, one_line
 
 STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
 CLEAN_STATUSES = ("converged", "deferred")
@@ -57,8 +55,6 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "blocked_agents", "scoped_tests"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
              "check_rewrote_edited", "check_created", "blocked_agents"]
-SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "full_check_command", "full_check_summary",
-               "load_bearing_clean", "tool_fault", "scoped_tests")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
 # The free-text fields of an ask that a continuation mapping joins to the lead ask's;
@@ -71,36 +67,13 @@ STATUS_REQUIRES = {"plan-impact": ("plan_impact", "empty"), "critical-blocker": 
                    "setup-fault": ("blockers", "empty"), "cap-reached": ("findings_remaining", "empty"),
                    "deferred": ("findings_remaining", "missing or empty")}
 BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
-ITEM_KEYS = [
-    "disposition",
-    "smell",
-    "finding_id",
-    "finding",
-    "file_line",
-    "blocker",
-    "question",
-    "change",
-    "gate",
-    "class",
-    "reason",
-    "item",
-    "phase",
-]
-NONE_VALUE = re.compile(r"^\[\s*\]|^\(?\s*(none|n/a|null)\b", re.I)
-BLOCK_INDICATOR = re.compile(r"^[|>][+-]?$")
-NUMBERED_ITEM = re.compile(r"^\s*\d+[.)]\s")
-ITEM_START = re.compile(r"^\s*(?:-|\d+[.)])\s+", re.M)
 CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap", "weak-assertion", "security", "perf",
            "correctness", "docs", "other"]
 REVIEW_LOOP = "review-loop"
 NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
 RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
 DEFAULT_GATE = "code-reviewer"
-FENCE_OPEN = "```"
 BLOCKER_TEXT = re.compile(r"\[blocker\]|\bblocker\s*[:=]\s*(?:yes|true)\b", re.I)
-INLINE_KEY_AT = re.compile(r"(?:^|\n\s*|([,.;|?!)])\s+)(" + "|".join(ITEM_KEYS) + r")\s*:\s*")
-KEPT_DELIMITERS = "?!)"
-ITEM_KEY_START = re.compile(r"(?:{})\s*:".format("|".join(ITEM_KEYS)))
 
 
 class PacketError(Exception):
@@ -138,7 +111,7 @@ def json_field_problem_or_text(key, value):
 
 
 def parse_json_packet(text):
-    """The packet's raw fields from a JSON object, in the shape parse_free_text returns."""
+    """The packet's raw fields from a JSON object: each list field as its JSON text, each other field as text."""
     try:
         loaded = json.loads(text)
     except ValueError as error:
@@ -165,206 +138,13 @@ def parse_json_packet(text):
 
 
 def parse(message):
-    """The packet's raw fields as text, plus `trailer` (prose outside any field). The packet is one JSON object; a
-    message that is not one is read as the old free-text form."""
+    """The packet's raw fields as text, plus `trailer` (the keys outside the packet, one `key: value` line each). The
+    packet is one JSON object; any other message is a PacketError."""
     json_text = json_packet_text(message)
-    if json_text is not None:
-        return parse_json_packet(json_text)
-    packet = parse_free_text(message)
-    if len(packet) > 1:
-        print("handback: parsed an old free-text packet; hand back one JSON object", file=sys.stderr)
-    return packet
+    if json_text is None:
+        raise PacketError(["the packet must be one JSON object, and the message does not open with `{`"])
 
-
-# ---------- the old free-text form ----------
-# Everything from here to the end of read_list reads the old `key: value` packet form. It is kept for one release and
-# removed after it. read_list's first branch (a JSON list) also serves the JSON path.
-
-def is_block_scalar(value_lines):
-    return BLOCK_INDICATOR.match(value_lines[0].strip()) is not None
-
-
-def is_item_line(line):
-    return line.lstrip().startswith("-") or NUMBERED_ITEM.match(line) is not None
-
-
-def ends_packet_value(key, value_lines, line, next_line=""):
-    # A scalar key owns one line. A list key owns its item lines and their indented continuations; the first
-    # unindented prose line after them is the loop's closing note, not another item.
-    if key in SCALAR_KEYS:
-        return True
-    unindented = line[:1] not in (" ", "\t")
-    if is_block_scalar(value_lines):
-        return unindented
-    is_none_list = key in LIST_KEYS and len(value_lines) == 1 and NONE_VALUE.match(value_lines[0].strip()) is not None
-    if is_none_list:
-        return unindented
-    is_list = any(is_item_line(value_line) for value_line in value_lines[1:])
-    is_empty_list_key = key in LIST_KEYS and value_lines == [""]
-    if is_empty_list_key and is_item_line(next_line):
-        return False
-    starts_item = is_item_line(line) or line[:1] in ("[", "{", "]", "}")
-    return (is_list or is_empty_list_key) and unindented and not starts_item
-
-
-def packet_value(value_lines):
-    if is_block_scalar(value_lines):
-        return textwrap.dedent("\n".join(value_lines[1:])).strip()
-    first = value_lines[0].strip()
-    rest = "\n".join(value_lines[1:]).rstrip()
-    if first:
-        return (first + "\n" + rest).strip() if rest.strip() else first
-    return rest.strip("\n")
-
-
-def parse_free_text(message):
-    """The packet's raw fields as text, plus `trailer` (prose outside any field)."""
-    lines = [line.rstrip() for line in message.splitlines() if not line.strip().startswith(FENCE_OPEN)]
-    text_lines = textwrap.dedent("\n".join(lines)).splitlines()
-    next_lines = [""] * len(text_lines)
-    following = ""
-    for index in range(len(text_lines) - 1, -1, -1):
-        next_lines[index] = following
-        following = text_lines[index] if text_lines[index].strip() else following
-    fields = {}
-    trailer = []
-    key = None
-    for index, line in enumerate(text_lines):
-        match = re.match(r"^([a-z_]+)(?:[ \t]*\([^)]*\))?:[ \t]*(.*)$", line)
-        is_packet_key = match is not None and match.group(1) in PACKET_KEYS
-        if is_packet_key and match.group(1) not in fields:
-            key = match.group(1)
-            fields[key] = [match.group(2)]
-        elif is_packet_key:
-            key = None
-            trailer.append(line)
-        elif key and not line.strip() and is_block_scalar(fields[key]):
-            fields[key].append("")
-        elif key and not line.strip():
-            if key in LIST_KEYS and fields[key][0] == "":
-                continue
-            key = None
-            trailer.append("")
-        elif key and ends_packet_value(key, fields[key], line, next_lines[index]):
-            key = None
-            trailer.append(line)
-        elif key:
-            fields[key].append(line)
-        else:
-            trailer.append(line)
-    packet = {name: packet_value(value) for name, value in fields.items()}
-    packet["trailer"] = "\n".join(trailer).strip()
-    return packet
-
-
-def parse_flow_mapping(chunk):
-    # The loop writes items as `{finding: "...", file_line: a.ts:1, blocker: false}`: YAML flow style, not JSON.
-    return parse_inline_pairs(chunk.strip()[1:-1])
-
-
-def parse_inline_pairs(body):
-    # A key starts a field at the start of the body, after a newline, or after `, ` `. ` `; ` `| ` `? ` `! ` `) `.
-    # A key word after a bare space is part of the previous value.
-    masked_body = script_utils.unquoted_mask(body)
-    matches = list(INLINE_KEY_AT.finditer(masked_body))
-    if not matches:
-        return None
-    fields = {}
-    lead_text = body[:matches[0].start()].strip().rstrip(".;|,").strip()
-    if lead_text:
-        fields["finding"] = unquote(lead_text)
-    for position, match in enumerate(matches):
-        end = len(body)
-        if position + 1 < len(matches):
-            following = matches[position + 1]
-            keeps_delimiter = following.group(1) is not None and following.group(1) in KEPT_DELIMITERS
-            end = following.start() + (1 if keeps_delimiter else 0)
-        fields[match.group(2)] = unquote(body[match.end():end].strip().rstrip(".;|").strip())
-    return fields
-
-
-def flow_item(chunk):
-    return parse_flow_mapping(chunk) or unquote(chunk)
-
-
-def split_top_level_items(body):
-    """Split a list body at its item markers. A marker indented deeper than the shallowest one is a sub-bullet:
-    it stays inside its parent item, and so does a marker of the other kind (bullet or numbered) at the shallowest
-    indent. Chunk 0 is the lead prose before the first marker."""
-    markers = list(ITEM_START.finditer(body))
-    if not markers:
-        return [body]
-
-    def indent_of(marker):
-        marker_line = marker.group(0).rsplit("\n", 1)[-1]
-        return len(marker_line) - len(marker_line.lstrip())
-
-    def is_bullet(marker):
-        return marker.group(0).lstrip().startswith("-")
-
-    shallowest = min(indent_of(marker) for marker in markers)
-    first_kind = is_bullet(next(marker for marker in markers if indent_of(marker) == shallowest))
-    top_level = [marker for marker in markers if indent_of(marker) == shallowest and is_bullet(marker) == first_kind]
-    chunks = []
-    position = 0
-    for marker in top_level:
-        chunks.append(body[position:marker.start()])
-        position = marker.end()
-    chunks.append(body[position:])
-    return chunks
-
-
-def mapping_with_trailing_lines(chunk):
-    """A mapping followed by more lines of the same item: the lines add to its question,
-    or to its finding when it has no question."""
-    groups = script_utils.top_level_braces(chunk)
-    trailing = chunk[len(groups[0]):].strip() if groups and chunk.startswith(groups[0]) else ""
-    flow_fields = parse_flow_mapping(groups[0]) if trailing else None
-    if flow_fields:
-        key = "question" if "question" in flow_fields else "finding"
-        flow_fields[key] = f"{flow_fields.get(key, '')}\n{trailing}".strip()
-    return flow_fields
-
-
-def read_list(raw):
-    """(lead prose, items) of a list field. Lead prose is text before the first item marker: it is not an item."""
-    indented = raw.strip("\n").rstrip()
-    raw = raw.strip()
-    has_items = ITEM_START.search(raw) is not None or "{" in raw
-    if raw == "" or (not has_items and NONE_VALUE.match(raw)):
-        return "", []
-    try:
-        loaded = json.loads(raw)
-        return "", loaded if isinstance(loaded, list) else [loaded]
-    except ValueError:
-        pass
-    bracketed = raw.startswith("[") and raw.endswith("]") and raw.count("{") > 0
-    if bracketed:
-        return "", [flow_item(chunk) for chunk in script_utils.top_level_braces(raw[1:-1])]
-    chunks = split_top_level_items(indented)
-    lead = ""
-    if len(chunks) > 1:
-        lead = chunks[0].strip()
-        chunks = chunks[1:]
-    list_entries = []
-    for chunk in chunks:
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        flow_fields = parse_flow_mapping(chunk) if chunk.startswith("{") and chunk.endswith("}") else None
-        if chunk.startswith("{") and not flow_fields:
-            flow_fields = mapping_with_trailing_lines(chunk)
-        if flow_fields:
-            list_entries.append(flow_fields)
-            continue
-        inline_fields = parse_inline_pairs(chunk) if ITEM_KEY_START.match(chunk) else None
-        if inline_fields and len(inline_fields) > 1 and "\n" not in chunk:
-            list_entries.append(inline_fields)
-            continue
-        pairs = dict(re.findall(r"^\s*(\w+):\s*(.+)$", chunk, re.M))
-        list_entries.append({name: unquote(value) for name, value in pairs.items()}
-                           if pairs and all(name in ITEM_KEYS for name in pairs) else unquote(chunk))
-    return lead, list_entries
+    return parse_json_packet(json_text)
 
 
 # ---------- items ----------
@@ -495,7 +275,7 @@ def entry_locations(item):
 
 
 def entry_from_text(text, text_key):
-    """A plain-text list entry (`- text | path:line | blocker: no`) as the mapping the loop's flow style gives."""
+    """A plain-text string entry of a JSON list (`text | path:line | blocker: no`) as a mapping."""
     found = script_utils.PATH_LINE.search(text)
     entry = {text_key: text, "blocker": "yes" if BLOCKER_TEXT.search(text) else "no", "from_text": True}
     if found:
@@ -674,11 +454,9 @@ def print_dropped_asks(packet):
         print("- " + warning)
 
 
-def item_problems(raw, packet):
+def item_problems(packet):
     problems = [f"fixed entry has no finding: {one_line(item, 80)!r}" for item in packet["fixed"]
                 if not (isinstance(item, dict) and item.get("finding"))]
-    if raw.get("ask", "").strip() and not packet["ask"] and not NONE_VALUE.match(raw["ask"].strip()):
-        problems.append(f"ask holds text but yields no ask entries: {one_line(raw['ask'], 80)!r}")
     for item in packet["ask"]:
         if not is_askable(item):
             continue
@@ -717,15 +495,12 @@ def validate(raw):
     """Typed packet from the raw fields. Raises PacketError listing every problem; never guesses a missing field."""
     packet, problems = read_header(raw)
 
-    trailer = [raw.get("trailer", "")]
     for key in LIST_KEYS:
-        lead, entries = read_list(raw.get(key, ""))
+        entries = json.loads(raw.get(key, "[]"))
         packet[key] = normalize_items(key, entries)
-        if lead:
-            trailer.append(lead)
-    packet["trailer"] = "\n".join(part for part in trailer if part).strip()
+    packet["trailer"] = raw.get("trailer", "").strip()
 
-    problems += item_problems(raw, packet) + status_problems(raw, packet)
+    problems += item_problems(packet) + status_problems(raw, packet)
     if problems:
         raise PacketError(problems)
 

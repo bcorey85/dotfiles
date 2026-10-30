@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from typing import ClassVar
 
 import fake_ledger
 import toolkit_paths
@@ -25,103 +26,98 @@ GIT_ENV = {
     "GIT_CONFIG_SYSTEM": "/dev/null",
 }
 
-CONVERGED = """status: converged
-iter: 1
-fixed: [{finding: "orders query lacked a tenant filter", file_line: src/orders.ts:42, blocker: true},
-        {finding: "unused import", file_line: src/util.ts:3, blocker: false}]
-skipped_fp: [{item: "src/a.ts:9 possible null", reason: "guarded two lines above"}]
-blockers: []
-findings_remaining: []
-plan_impact:
-ask: []
-class_closure: enumerated every query in orders.ts; the tenant filter now sits on all 3
-files_touched: [src/orders.ts, src/util.ts]
-nit: ["rename tmp: skipped: out of scope"]
-load_bearing_clean: auth.ts came back clean but is load-bearing
-"""
 
-CLEAN_EMPTY = """status: converged
-iter: 0
-fixed: []
-skipped_fp: []
-ask: []
-class_closure: n/a - fixed[] empty
-files_touched: []
-nit: []
-"""
+def packet_text(fields, **changes):
+    """The JSON packet of `fields` with `changes` laid over them; a change to None drops that key."""
+    merged = {**fields, **changes}
+    kept = {key: value for key, value in merged.items() if value is not None}
+    return json.dumps(kept)
 
-WITH_ASK = (
-    """status: converged
-iter: 1
-fixed: []
-ask:
-  - finding: "retry count looks arbitrary"
-    finding_id: a1b2c3d4e5f60001
-    file_line: src/retry.ts:10
-    question: "Should retries be capped at 3 or configurable?"
-    change: "cap retries at 3"
-    gate: code-reviewer
-    class: smell
-"""
-    '  - {finding: "no index", finding_id: a1b2c3d4e5f60002, file_line: src/db.ts:5, '
-    'question: "Add an index on tenant_id?", change: "add an index on tenant_id", gate: perf-reviewer, '
-    'class: perf}\n'
-    """class_closure: n/a - fixed[] empty
-"""
-)
 
+def ask_entry(finding, file_line, finding_id=None, question="cap?", change="cap at 3", gate="code-reviewer",
+              ask_class="smell"):
+    entry = {"finding": finding, "finding_id": finding_id, "file_line": file_line, "question": question,
+             "change": change, "gate": gate, "class": ask_class}
+    return {key: value for key, value in entry.items() if value is not None}
+
+
+CONVERGED_FIELDS = {
+    "status": "converged",
+    "iter": 1,
+    "fixed": [{"finding": "orders query lacked a tenant filter", "file_line": "src/orders.ts:42", "blocker": True},
+              {"finding": "unused import", "file_line": "src/util.ts:3", "blocker": False}],
+    "skipped_fp": [{"item": "src/a.ts:9 possible null", "reason": "guarded two lines above"}],
+    "blockers": [],
+    "findings_remaining": [],
+    "plan_impact": "",
+    "ask": [],
+    "class_closure": "enumerated every query in orders.ts; the tenant filter now sits on all 3",
+    "files_touched": ["src/orders.ts", "src/util.ts"],
+    "nit": ["rename tmp: skipped: out of scope"],
+    "load_bearing_clean": "auth.ts came back clean but is load-bearing",
+}
+CONVERGED = json.dumps(CONVERGED_FIELDS)
+
+CLEAN_EMPTY_FIELDS = {"status": "converged", "iter": 0, "fixed": [], "skipped_fp": [], "ask": [],
+                      "class_closure": "n/a - fixed[] empty", "files_touched": [], "nit": []}
+CLEAN_EMPTY = json.dumps(CLEAN_EMPTY_FIELDS)
+
+RETRY_ASK = ask_entry("retry count looks arbitrary", "src/retry.ts:10", finding_id="a1b2c3d4e5f60001",
+                      question="Should retries be capped at 3 or configurable?", change="cap retries at 3")
+INDEX_ASK = ask_entry("no index", "src/db.ts:5", finding_id="a1b2c3d4e5f60002", question="Add an index on tenant_id?",
+                      change="add an index on tenant_id", gate="perf-reviewer", ask_class="perf")
+WITH_ASK_FIELDS = {"status": "converged", "iter": 1, "fixed": [], "ask": [RETRY_ASK, INDEX_ASK],
+                   "class_closure": "n/a - fixed[] empty"}
+WITH_ASK = json.dumps(WITH_ASK_FIELDS)
+
+UNASKABLE_ASK = {"file_line": "a.ts:1", "gate": "code-reviewer", "class": "bug"}
 DROPPED_ASK_WARNING = ("DROPPED ASKS (tell the user; the review went on without them):\n"
                        "- ask entry has no question, finding or change, so it was dropped: "
                        "file_line a.ts:1, gate code-reviewer")
 
-PLAN_IMPACT = """status: plan-impact
-iter: 1
-spec_iter: 2
-plan_impact: |
-  PLAN-IMPACT:
-    assumed: the queue is at-least-once
-    found: the queue is at-most-once
-    changes: phase 3 needs a dedupe table
-"""
+PLAN_IMPACT_TEXT = ("PLAN-IMPACT:\n"
+                    "  assumed: the queue is at-least-once\n"
+                    "  found: the queue is at-most-once\n"
+                    "  changes: phase 3 needs a dedupe table")
+PLAN_IMPACT_FIELDS = {"status": "plan-impact", "iter": 1, "spec_iter": 2, "plan_impact": PLAN_IMPACT_TEXT}
+PLAN_IMPACT = json.dumps(PLAN_IMPACT_FIELDS)
 
-BLOCKER = """status: critical-blocker
-iter: 1
-blockers:
-  - "auth bypass needs a design decision: src/auth.ts:12"
-  - "public API field rename"
-"""
 
-SETUP_FAULT = """status: setup-fault
-iter: 1
-blockers:
-  - "the full check could not run: no package.json"
-"""
+def plan_impact_packet(criteria, **changes):
+    impact_with_criteria = f"{PLAN_IMPACT_TEXT}\n  acceptance_criteria: {criteria}"
+    return packet_text(PLAN_IMPACT_FIELDS, plan_impact=impact_with_criteria, **changes)
 
-CAP = """status: cap-reached
-iter: 2 of 2
-findings_remaining:
-  - {disposition: fix, finding: "still racy", file_line: src/q.ts:7}
-"""
 
-CAP_WITH_AN_OPEN_CLASS = """status: cap-reached
-iter: 2 of 2
-fixed:
-  - {finding: "a log with no timestamp compared as equal", file_line: src/logs.ts:12}
-findings_remaining:
-  - {disposition: fix, finding: "a log with a trailing blank line compares as different", file_line: src/logs.ts:30}
-class_closure: log shapes the comparison takes - no timestamp closed; trailing blank line still open
-files_touched:
-  - src/logs.ts
-"""
+BLOCKER_FIELDS = {"status": "critical-blocker", "iter": 1,
+                  "blockers": ["auth bypass needs a design decision: src/auth.ts:12", "public API field rename"]}
+BLOCKER = json.dumps(BLOCKER_FIELDS)
 
-DEFERRED = """status: deferred
-iter: 1
-fixed: []
-findings_remaining:
-  - {disposition: fix, finding: "needs the shared helper", file_line: src/h.ts:1}
-ask: []
-class_closure: n/a - fixed[] empty
-"""
+SETUP_FAULT = json.dumps({"status": "setup-fault", "iter": 1,
+                          "blockers": ["the full check could not run: no package.json"]})
+
+CAP_FIELDS = {"status": "cap-reached", "iter": "2 of 2",
+              "findings_remaining": [{"disposition": "fix", "finding": "still racy", "file_line": "src/q.ts:7"}]}
+CAP = json.dumps(CAP_FIELDS)
+
+CAP_WITH_AN_OPEN_CLASS_FIELDS = {
+    "status": "cap-reached",
+    "iter": "2 of 2",
+    "fixed": [{"finding": "a log with no timestamp compared as equal", "file_line": "src/logs.ts:12"}],
+    "findings_remaining": [{"disposition": "fix", "finding": "a log with a trailing blank line compares as different",
+                            "file_line": "src/logs.ts:30"}],
+    "class_closure": "log shapes the comparison takes - no timestamp closed; trailing blank line still open",
+    "files_touched": ["src/logs.ts"],
+}
+CAP_WITH_AN_OPEN_CLASS = json.dumps(CAP_WITH_AN_OPEN_CLASS_FIELDS)
+
+DEFERRED = json.dumps({
+    "status": "deferred",
+    "iter": 1,
+    "fixed": [],
+    "findings_remaining": [{"disposition": "fix", "finding": "needs the shared helper", "file_line": "src/h.ts:1"}],
+    "ask": [],
+    "class_closure": "n/a - fixed[] empty",
+})
 
 
 class ReviewFixScriptTest(unittest.TestCase):
@@ -219,18 +215,12 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("### Ledger", output)
 
     def test_converged_with_bare_none_class_closure_says_the_receipt_is_missing(self):
-        code, output = self.packet(
-            CONVERGED.replace(
-                "class_closure: enumerated every query in orders.ts; the tenant filter now sits on all 3",
-                "class_closure: none",
-            )
-        )
+        code, output = self.packet(packet_text(CONVERGED_FIELDS, class_closure="none"))
         self.assertEqual(code, 0, output)
         self.assertIn("receipt is missing", output)
 
     def test_converged_without_a_class_closure_line_says_the_receipt_is_missing(self):
-        text = "\n".join(line for line in CONVERGED.splitlines() if not line.startswith("class_closure"))
-        code, output = self.packet(text)
+        code, output = self.packet(packet_text(CONVERGED_FIELDS, class_closure=None))
         self.assertEqual(code, 0, output)
         self.assertIn("Class closure: MISSING", output)
         self.assertIn("receipt is missing", output)
@@ -289,14 +279,15 @@ class ReviewFixScriptTest(unittest.TestCase):
                            "closed (was left open in iter 1)"]
         for receipt in closed_receipts:
             with self.subTest(receipt):
-                closed = CAP_WITH_AN_OPEN_CLASS.replace("still open", receipt)
+                closed_closure = CAP_WITH_AN_OPEN_CLASS_FIELDS["class_closure"].replace("still open", receipt)
+                closed = packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, class_closure=closed_closure)
                 code, output = self.packet(closed)
                 self.assertEqual(code, 0, output)
                 self.assertIn("Do not re-dispatch", output)
                 self.assertNotIn("files the capped run's fixes touched", output)
 
     def test_a_cap_reached_with_an_open_class_and_no_files_touched_keeps_the_plain_stop(self):
-        no_files = CAP_WITH_AN_OPEN_CLASS.replace("files_touched:\n  - src/logs.ts\n", "files_touched: []\n")
+        no_files = packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, files_touched=[])
         code, output = self.packet(no_files)
         self.assertEqual(code, 0, output)
         self.assertIn("Do not re-dispatch", output)
@@ -329,8 +320,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("  The disagreement:", plan_text)
 
     def test_plan_impact_that_changes_no_acceptance_criterion_is_adopted_without_asking(self):
-        below_criteria = PLAN_IMPACT + "    acceptance_criteria: none\n"
-        code, output = self.packet(below_criteria)
+        code, output = self.packet(plan_impact_packet("none"))
         self.assertEqual(code, 0, output)
         self.assertNotIn("ask-user-plan-impact", output)
         self.assertIn("ACTION: redispatch", output)
@@ -340,42 +330,40 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("spec_iter=2", output)
 
     def test_plan_impact_that_changes_an_acceptance_criterion_still_asks_the_user(self):
-        code, output = self.packet(PLAN_IMPACT + "    acceptance_criteria: AC-2 drops the retry\n")
+        code, output = self.packet(plan_impact_packet("AC-2 drops the retry"))
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: ask-user-plan-impact", output)
         self.assertNotIn("ACTION: redispatch", output)
 
     def test_every_plan_impact_route_prints_the_dropped_ask_warning(self):
-        dropped_ask = "ask:\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}\n"
         routes = (("asks the user", "AC-2 drops the retry", "ACTION: ask-user-plan-impact"),
                   ("no acceptance criterion changed", "none", "ACTION: redispatch"))
         for route, criteria, action in routes:
             with self.subTest(route=route):
-                code, output = self.packet(PLAN_IMPACT + f"    acceptance_criteria: {criteria}\n" + dropped_ask)
+                code, output = self.packet(plan_impact_packet(criteria, ask=[UNASKABLE_ASK]))
 
                 self.assertEqual(code, 0, output)
                 self.assertIn(action, output)
                 self.assertIn(DROPPED_ASK_WARNING, output)
 
     def test_a_loosely_marked_plan_change_with_no_criteria_line_still_asks_the_user(self):
-        two_changes = (PLAN_IMPACT + "    acceptance_criteria: none\n"
-                       "  plan impact: the retry window is a day, not an hour\n")
+        two_impacts = (f"{PLAN_IMPACT_TEXT}\n  acceptance_criteria: none\n"
+                       "plan impact: the retry window is a day, not an hour")
+        two_changes = packet_text(PLAN_IMPACT_FIELDS, plan_impact=two_impacts)
         code, output = self.packet(two_changes)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: ask-user-plan-impact", output)
         self.assertNotIn("ACTION: redispatch", output)
 
     def test_plan_impact_redispatch_carries_the_round_s_open_findings(self):
-        with_open_findings = PLAN_IMPACT + (
-            "findings_remaining:\n"
-            '  - {finding: "parity script compares the wrong column", file_line: bin/parity.py:40, '
-            "disposition: fix}\n"
-            "ask:\n"
-            '  - {finding: "no index", file_line: src/db.ts:5, question: "Add an index on tenant_id?", '
-            'change: "add the index"}\n'
-            '  - {finding: "PLAN-IMPACT: the queue is at-most-once", file_line: src/queue.ts:1, '
-            'change: "add a dedupe table"}\n'
-        )
+        open_finding = {"finding": "parity script compares the wrong column", "file_line": "bin/parity.py:40",
+                        "disposition": "fix"}
+        index_ask = {"finding": "no index", "file_line": "src/db.ts:5", "question": "Add an index on tenant_id?",
+                     "change": "add the index"}
+        impact_ask = {"finding": "PLAN-IMPACT: the queue is at-most-once", "file_line": "src/queue.ts:1",
+                      "change": "add a dedupe table"}
+        with_open_findings = packet_text(PLAN_IMPACT_FIELDS, findings_remaining=[open_finding],
+                                         ask=[index_ask, impact_ask])
         code, output = self.packet(with_open_findings)
         self.assertEqual(code, 0, output)
         code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
@@ -386,11 +374,9 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("the queue is at-most-once", carried)
 
     def test_a_located_plan_impact_ask_is_not_carried_after_the_ruling(self):
-        located_impact = PLAN_IMPACT + (
-            "ask:\n"
-            '  - {finding: "`src/queue.ts:1` [correctness] plan impact: the queue is at-most-once", '
-            'file_line: src/queue.ts:1, change: "add a dedupe table"}\n'
-        )
+        located_ask = {"finding": "`src/queue.ts:1` [correctness] plan impact: the queue is at-most-once",
+                       "file_line": "src/queue.ts:1", "change": "add a dedupe table"}
+        located_impact = packet_text(PLAN_IMPACT_FIELDS, ask=[located_ask])
         code, output = self.packet(located_impact)
         self.assertEqual(code, 0, output)
         code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
@@ -398,8 +384,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("the queue is at-most-once", output.split("RESOLVED", 1)[1])
 
     def test_plan_impact_that_touches_no_criterion_redispatches_and_shows_the_deviation_with_no_question(self):
-        no_criterion = PLAN_IMPACT + "    acceptance_criteria: none\n"
-        code, output = self.packet(no_criterion)
+        code, output = self.packet(plan_impact_packet("none"))
         self.assertEqual(code, 0, output)
         self.assertNotIn("ask-user-plan-impact", output)
         self.assertNotIn("AskUserQuestion", output)
@@ -422,7 +407,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("Plan deviations adopted", output)
 
     def test_two_plan_impacts_adopted_across_one_redispatch_are_both_listed_in_the_closing_block(self):
-        first_impact = PLAN_IMPACT + "    acceptance_criteria: none\n"
+        first_impact = plan_impact_packet("none")
         second_impact = first_impact.replace("the queue is at-least-once", "the cache is write-through")
         resolved_prompt = "mode: review-first\nplan_impact: RESOLVED - Adopt plan change.\niter=1"
         self.packet(first_impact)
@@ -440,8 +425,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("assumed: the cache is write-through", deviations)
 
     def test_an_unrelated_review_after_an_abandoned_redispatch_shows_no_adopted_deviation(self):
-        no_criterion = PLAN_IMPACT + "    acceptance_criteria: none\n"
-        code, output = self.packet(no_criterion)
+        code, output = self.packet(plan_impact_packet("none"))
         self.assertIn("ACTION: redispatch", output)
 
         self.dispatch(prompt="mode: review-first\ncaller: review")
@@ -632,13 +616,11 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("desc", finding_rows[1])
         self.assertEqual(finding_rows[0]["iter"], "1")
 
-    STOP_ASKS = (
-        "ask:\n"
-        "  - {finding: retry count, finding_id: a1b2c3d4e5f60021, file_line: src/retry.ts:10, "
-        "question: cap at 3?, change: cap at 3, gate: code-reviewer, class: smell}\n"
-        "  - {finding: no index, finding_id: a1b2c3d4e5f60022, file_line: src/db.ts:5, "
-        "question: add an index?, change: add the index, gate: perf-reviewer, class: perf}\n"
-    )
+    STOP_ASKS: ClassVar[list] = [
+        ask_entry("retry count", "src/retry.ts:10", finding_id="a1b2c3d4e5f60021", question="cap at 3?"),
+        ask_entry("no index", "src/db.ts:5", finding_id="a1b2c3d4e5f60022", question="add an index?",
+                  change="add the index", gate="perf-reviewer", ask_class="perf"),
+    ]
 
     def assert_stop_packet_asks_are_printed_and_logged(self, text):
         code, output = self.packet(text)
@@ -659,14 +641,13 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(self.stored_stage(), "done")
 
     def test_a_cap_reached_packet_with_asks_prints_them_and_asks_done_logs_their_outcomes(self):
-        self.assert_stop_packet_asks_are_printed_and_logged(CAP + self.STOP_ASKS)
+        self.assert_stop_packet_asks_are_printed_and_logged(packet_text(CAP_FIELDS, ask=self.STOP_ASKS))
 
     def test_a_critical_blocker_packet_with_asks_prints_them_and_asks_done_logs_their_outcomes(self):
-        self.assert_stop_packet_asks_are_printed_and_logged(BLOCKER + self.STOP_ASKS)
+        self.assert_stop_packet_asks_are_printed_and_logged(packet_text(BLOCKER_FIELDS, ask=self.STOP_ASKS))
 
-    ONE_ASK = CLEAN_EMPTY.replace(
-        "ask: []", "ask:\n  - {finding: first, finding_id: a1b2c3d4e5f60031, file_line: one.ts:1, question: first?, "
-                  "change: c, gate: code-reviewer, class: smell}")
+    ONE_ASK = packet_text(CLEAN_EMPTY_FIELDS, ask=[ask_entry("first", "one.ts:1", finding_id="a1b2c3d4e5f60031",
+                                                             question="first?", change="c")])
 
     def stored_state(self):
         return json.loads((self.repo / ".git" / "review-fix" / "state.json").read_text())
@@ -706,10 +687,9 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("already logged", output)
 
     def ask_packet_numbered(self, number):
-        return CLEAN_EMPTY.replace(
-            "ask: []", f"ask:\n  - {{finding: f{number}, finding_id: a1b2c3d4e5f6004{number}, "
-                      f"file_line: n{number}.ts:1, question: q{number}?, change: c, gate: code-reviewer, "
-                      "class: smell}")
+        numbered_ask = ask_entry(f"f{number}", f"n{number}.ts:1", finding_id=f"a1b2c3d4e5f6004{number}",
+                                 question=f"q{number}?", change="c")
+        return packet_text(CLEAN_EMPTY_FIELDS, ask=[numbered_ask])
 
     def test_three_packets_in_a_row_all_keep_their_unanswered_asks(self):
         packet_ids = []
@@ -781,8 +761,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(self.ledger_writes(), [])
 
     def test_asks_done_logs_the_outcome_of_an_ask_that_names_no_file(self):
-        first_ask = WITH_ASK.split("  - {finding")[0].replace("src/retry.ts:10", "unlocated")
-        unlocated_ask = first_ask + "class_closure: n/a - fixed[] empty\n"
+        unlocated_ask = packet_text(WITH_ASK_FIELDS, ask=[{**RETRY_ASK, "file_line": "unlocated"}])
         self.packet(unlocated_ask)
         code, output = self.run_script(["asks-done", "accepted"])
         self.assertEqual(code, 0, output)
@@ -890,11 +869,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2)
 
     def test_aikido_replies_follow_fixed_skipped_and_other_dispositions(self):
-        text = CONVERGED.replace(
-            "ask: []",
-            'ask: [{finding: "pick a cap", file_line: src/c.ts:4, question: "cap?", change: "cap at 3", '
-            'gate: code-reviewer, class: smell}]',
-        )
+        text = packet_text(CONVERGED_FIELDS, ask=[ask_entry("pick a cap", "src/c.ts:4")])
         code, output = self.packet(text, "--aikido", "src/orders.ts:42=111", "--aikido", "src/a.ts:9=222",
                                    "--aikido", "src/c.ts:4=333", skill="fix")
         self.assertEqual(code, 0, output)
@@ -919,8 +894,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("numeric comment id", output)
 
     def test_fix_render_has_no_class_closure_line_unless_the_packet_carries_one(self):
-        text = "\n".join(line for line in CONVERGED.splitlines() if not line.startswith("class_closure"))
-        _code, output = self.packet(text, skill="fix")
+        _code, output = self.packet(packet_text(CONVERGED_FIELDS, class_closure=None), skill="fix")
         self.assertNotIn("Class closure", output)
         self.assertNotIn("receipt", output)
 
@@ -936,39 +910,40 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(self.ledger_writes(), [])
 
     def test_a_malformed_packet_is_a_parse_failure(self):
-        without_fixed = "\n".join(line for line in CLEAN_EMPTY.splitlines() if not line.startswith("fixed"))
+        fixed_without_a_finding = [{"file_line": "src/orders.ts:42", "blocker": True}, CONVERGED_FIELDS["fixed"][1]]
+        index_ask_without_a_file_line = {key: value for key, value in INDEX_ASK.items() if key != "file_line"}
         cases = {
             "empty stdin": ("", "no review-loop dispatch on record"),
-            "prose with no packet": ("I reviewed the diff and it looks fine.", "status is 'missing'"),
-            "unknown status": (CONVERGED.replace("status: converged", "status: done"), "status is 'done'"),
-            "missing iter": (CONVERGED.replace("iter: 1\n", ""), "iter is missing"),
-            "iter without a number": (CONVERGED.replace("iter: 1", "iter: two"), "iter is missing"),
-            "converged without fixed": (without_fixed, "fixed is missing"),
+            "prose with no packet": ("I reviewed the diff and it looks fine.", "must be one JSON object"),
+            "a free-text packet": ("status: converged\niter: 1\nfixed: []\n", "must be one JSON object"),
+            "unknown status": (packet_text(CONVERGED_FIELDS, status="done"), "status is 'done'"),
+            "missing iter": (packet_text(CONVERGED_FIELDS, iter=None), "iter is missing"),
+            "iter without a number": (packet_text(CONVERGED_FIELDS, iter="two"), "iter is missing"),
+            "converged without fixed": (packet_text(CLEAN_EMPTY_FIELDS, fixed=None), "fixed is missing"),
             "fixed entry without a finding": (
-                CONVERGED.replace('finding: "orders query lacked a tenant filter", ', ""), "no finding"),
+                packet_text(CONVERGED_FIELDS, fixed=fixed_without_a_finding), "no finding"),
             "ask entry without a file line": (
-                WITH_ASK.replace("file_line: src/db.ts:5, ", ""), "no file_line"),
+                packet_text(WITH_ASK_FIELDS, ask=[RETRY_ASK, index_ask_without_a_file_line]), "no file_line"),
             "plan impact with an empty block": (
-                "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact:\n", "plan_impact is empty"),
+                json.dumps({"status": "plan-impact", "iter": 1, "spec_iter": 0, "plan_impact": ""}),
+                "plan_impact is empty"),
             "critical blocker without blockers": (
-                "status: critical-blocker\niter: 1\nblockers: []\n", "blockers is empty"),
+                json.dumps({"status": "critical-blocker", "iter": 1, "blockers": []}), "blockers is empty"),
             "cap reached without findings remaining": (
-                "status: cap-reached\niter: 2\n", "findings_remaining is missing"),
+                json.dumps({"status": "cap-reached", "iter": 2}), "findings_remaining is missing"),
             "deferred with empty findings remaining": (
-                "status: deferred\niter: 1\nfixed: []\nfindings_remaining: []\n",
+                json.dumps({"status": "deferred", "iter": 1, "fixed": [], "findings_remaining": []}),
                 "findings_remaining is missing or empty"),
             "spec iter without a number": (
-                PLAN_IMPACT.replace("spec_iter: 2", "spec_iter: many"), "spec_iter has no number"),
-            "a real pending report": (
-                "status: pending. This is not a convergence packet. The verification pass has not reported.\n\n"
-                "Done so far:\n- fixed\n",
-                "status is"),
+                packet_text(PLAN_IMPACT_FIELDS, spec_iter="many"), "spec_iter has no number"),
             "deferred with asks but no findings remaining": (
-                "status: deferred\niter: 1\nfixed: []\nskipped_fp: []\nblockers: []\nfindings_remaining: []\nask:\n- "
-                "{finding: x, file_line: a.ts:1, question: y?}\n",
+                json.dumps({"status": "deferred", "iter": 1, "fixed": [], "skipped_fp": [], "blockers": [],
+                            "findings_remaining": [],
+                            "ask": [{"finding": "x", "file_line": "a.ts:1", "question": "y?"}]}),
                 "findings_remaining"),
             "cap reached with an empty findings remaining": (
-                "status: cap-reached\niter: 2\nfixed: []\nblockers: []\nfindings_remaining: [] (none open)\n",
+                json.dumps({"status": "cap-reached", "iter": 2, "fixed": [], "blockers": [],
+                            "findings_remaining": []}),
                 "findings_remaining"),
         }
 
@@ -977,10 +952,9 @@ class ReviewFixScriptTest(unittest.TestCase):
                 self.assert_parse_failure(text, expected)
 
     def test_ask_entry_without_a_question_or_a_change_is_dropped_and_the_other_ask_is_presented(self):
-        code, output = self.packet(
-            WITH_ASK.replace('finding: "no index", ', "").replace('question: "Add an index on tenant_id?", ', "")
-            .replace('change: "add an index on tenant_id", ', "")
-        )
+        unaskable_index_ask = {key: value for key, value in INDEX_ASK.items()
+                               if key not in ("finding", "question", "change")}
+        code, output = self.packet(packet_text(WITH_ASK_FIELDS, ask=[RETRY_ASK, unaskable_index_ask]))
 
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: present-asks", output)
@@ -989,92 +963,48 @@ class ReviewFixScriptTest(unittest.TestCase):
                       "- ask entry has no question, finding or change, so it was dropped", output)
 
     def test_ask_with_keys_but_no_finding_or_question_is_dropped_and_the_review_finishes(self):
-        text = CLEAN_EMPTY.replace("ask: []", "ask:\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}")
-
-        code, output = self.packet(text)
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[UNASKABLE_ASK]))
 
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
         self.assertIn(DROPPED_ASK_WARNING, output)
 
     def test_plain_text_ask_without_a_file_line_still_reaches_the_user(self):
-        code, output = self.packet(CLEAN_EMPTY.replace("ask: []", "ask:\n  - see the thread above"))
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=["see the thread above"]))
         self.assertEqual(code, 0, output)
         self.assertIn("see the thread above", output)
 
     # ---------- whitespace and format tolerance ----------
 
     def test_extra_whitespace_and_a_code_fence_around_the_packet_still_parse(self):
-        padded = (
-            "```\n"
-            + "\n".join("   " + line + "   " if line else line for line in CONVERGED.splitlines())
-            + "\n\n\n```\n"
-        )
+        padded = "\n  ```json\n" + json.dumps(CONVERGED_FIELDS, indent=2) + "\n```\n\n\n"
         code, output = self.packet(padded)
         self.assertEqual(code, 0, output)
         self.assertIn("Fixed 2, nits 1, skipped 1", output)
 
     def test_a_status_with_trailing_words_extra_spaces_backticks_or_upper_case_parses(self):
-        for status in ("status:    converged   (all clear)", "status: `CONVERGED`"):
+        for status in ("   converged   (all clear)", "`CONVERGED`"):
             with self.subTest(status):
-                code, output = self.packet(CLEAN_EMPTY.replace("status: converged", status))
+                code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, status=status))
 
                 self.assertEqual(code, 0, output)
                 self.assertIn("render-and-finish", output)
 
-    def test_closing_prose_after_the_packet_is_kept_as_a_trailer_not_a_field(self):
-        code, output = self.packet(CLEAN_EMPTY + "\nThe second pass found nothing more.\n")
-        self.assertEqual(code, 0, output)
-        self.assertIn("The second pass found nothing more.", output)
-
     # ---------- shapes seen in real review-loop hand-backs ----------
 
-    def test_unbracketed_key_value_asks_with_dot_semicolon_and_pipe_separators_parse(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            "ask:\n"
-            "- finding: cache lock spans the scan. file_line: serve.go:162,188. question: what staleness is fine? "
-            "change: release the lock before the scan. gate: code-reviewer. class: perf\n"
-            "- finding: timeouts left unset; file_line: cli/serve.go:35; question: out of scope? change: set the "
-            "timeouts; gate: robustness; class: ops\n"
-            "- finding: ReadHeaderTimeout question | file_line: cli/serve.go:35 | question: use an http.Server? | "
-            "change: serve through an http.Server | gate: robustness | class: ops",
-        )
-        code, output = self.packet(text)
-        self.assertEqual(code, 0, output)
-        self.assertIn("what staleness is fine?", output)
-        self.assertIn("use an http.Server?", output)
-
-    def test_flow_ask_with_a_finding_but_no_question_uses_the_finding_as_the_question(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            'ask:\n  - {finding: "Accept it as the contract and update the README?", file_line: '
-            '"src/inventory.ts:103-110", change: "update the README", gate: code-reviewer, class: docs}',
-        )
-        code, output = self.packet(text)
+    def test_ask_with_a_finding_but_no_question_uses_the_finding_as_the_question(self):
+        contract_ask = {"finding": "Accept it as the contract and update the README?",
+                        "file_line": "src/inventory.ts:103-110", "change": "update the README",
+                        "gate": "code-reviewer", "class": "docs"}
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[contract_ask]))
         self.assertEqual(code, 0, output)
         self.assertIn("Accept it as the contract", output)
 
-    def test_flow_ask_whose_keys_follow_a_period_parses(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            "ask:\n  - {finding: The rules file wants interface. file_line: backend/a.ts:1, question: Convert the "
-            "shapes? change: convert the shapes to interfaces, gate: code-reviewer, class: docs}",
-        )
-        code, output = self.packet(text)
-        self.assertEqual(code, 0, output)
-        self.assertIn("Convert the shapes?", output)
-
-    def test_free_text_file_line_and_a_comma_list_of_lines_parse(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            "ask:\n- finding: parseDateOnly is unresolved | file_line: service.test.ts:1313 area | question: drop it? "
-            "| change: drop the parseDateOnly test | gate: carried | class: carried",
-        )
-        text = text.replace(
-            "fixed: []", 'fixed: [{finding: "spec gap", file_line: "spec.md:432, :1521-1523", blocker: false}]'
-        )
-        code, output = self.packet(text)
+    def test_a_file_line_with_trailing_words_and_a_comma_list_of_lines_parse(self):
+        carried_ask = ask_entry("parseDateOnly is unresolved", "service.test.ts:1313 area", question="drop it?",
+                                change="drop the parseDateOnly test", gate="carried", ask_class="carried")
+        spec_gap = {"finding": "spec gap", "file_line": "spec.md:432, :1521-1523", "blocker": False}
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, fixed=[spec_gap], ask=[carried_ask]))
         self.assertEqual(code, 0, output)
 
     # ---------- no-paste: saved hand-back ----------
@@ -1113,7 +1043,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("review-gate-mark", output)
 
     def test_a_hand_back_with_no_reviewer_run_re_dispatches_with_the_round_count_kept(self):
-        self.unreviewed_loop("a1", CONVERGED.replace("iter: 1", "iter: 2"))
+        self.unreviewed_loop("a1", packet_text(CONVERGED_FIELDS, iter=2))
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("Re-dispatch review-loop once", output)
@@ -1121,9 +1051,9 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("review-gate-mark", output)
 
     def test_a_second_unreviewed_hand_back_in_a_row_says_stop_and_no_re_dispatch(self):
-        self.unreviewed_loop("a1", CONVERGED.replace("iter: 1", "iter: 2"))
+        self.unreviewed_loop("a1", packet_text(CONVERGED_FIELDS, iter=2))
         self.packet("")
-        self.unreviewed_loop("a2", CONVERGED.replace("iter: 1", "iter: 2"))
+        self.unreviewed_loop("a2", packet_text(CONVERGED_FIELDS, iter=2))
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-no-reviewer", output)
@@ -1513,34 +1443,10 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     # ---------- shapes that broke on real hand-backs ----------
 
-    NUMBERED = (
-        "status: converged\niter: 1\nfixed: []\nask:\n"
-        "1. finding: cap on retries | file_line: src/retry.ts:10 | question: cap at 3? | change: cap at 3 | "
-        "gate: code-reviewer | class: smell\n"
-        "2) finding: add index | file_line: src/db.ts:5 | question: index tenant_id? | change: add the index | "
-        "gate: perf-reviewer | class: perf\n"
-        "class_closure: n/a - fixed[] empty\nThe loop found two questions.\n"
-    )
-
-    def test_numbered_asks_are_two_asks_and_the_closing_prose_stays_a_trailer(self):
-        code, output = self.packet(self.NUMBERED)
-        self.assertEqual(code, 0, output)
-        self.assertIn("1. src/retry.ts:10", output)
-        self.assertIn("2. src/db.ts:5", output)
-        self.assertIn("The loop found two questions.", output.split("-----END USER TEXT-----")[0])
-
-    def test_unmarked_ask_prose_is_one_ask_and_still_reaches_the_user(self):
-        code, output = self.packet(CLEAN_EMPTY.replace("ask: []", "ask: see the thread above"))
-        self.assertEqual(code, 0, output)
-        self.assertIn("see the thread above", output)
-
     def test_ask_with_an_unknown_class_and_a_gate_phrase_is_logged_as_other_and_the_raw_class_is_not_sent(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            'ask:\n  - {finding: x, finding_id: a1b2c3d4e5f60003, file_line: "a.ts:1, b.ts:2", question: why?, '
-            "change: c, gate: code-reviewer / robustness, class: ops}",
-        )
-        self.packet(text)
+        ops_ask = ask_entry("x", "a.ts:1, b.ts:2", finding_id="a1b2c3d4e5f60003", question="why?", change="c",
+                            gate="code-reviewer / robustness", ask_class="ops")
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[ops_ask]))
         code, output = self.run_script(["asks-done", "accepted"])
         self.assertEqual(code, 0, output)
         row = self.ledger_writes()[0]
@@ -1551,22 +1457,16 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("desc", row)
 
     def test_a_plan_impact_ask_is_presented_but_not_logged(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            'ask:\n  - {finding: "PLAN-IMPACT: queue is at-most-once", '
-            "file_line: a.ts:1, question: adopt?, change: adopt it, gate: code-reviewer, class: plan-drift}\n"
-            "  - {finding: real ask, finding_id: a1b2c3d4e5f60004, file_line: b.ts:2, question: cap?, change: cap "
-            "at 3, gate: code-reviewer, class: smell}",
-        )
-        code, output = self.packet(text)
+        impact_ask = ask_entry("PLAN-IMPACT: queue is at-most-once", "a.ts:1", question="adopt?", change="adopt it",
+                               ask_class="plan-drift")
+        real_ask = ask_entry("real ask", "b.ts:2", finding_id="a1b2c3d4e5f60004")
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[impact_ask, real_ask]))
         self.assertIn("adopt?", output)
         code, output = self.run_script(["asks-done", "accepted", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertEqual([row["path_key"] for row in self.ledger_writes()], ["b.ts"])
 
-    ASK_WITHOUT_FINDING_ID = CLEAN_EMPTY.replace(
-        "ask: []", "ask:\n  - {finding: x, file_line: a.ts:1, question: cap?, change: cap at 3, gate: code-reviewer, "
-                   "class: smell}")
+    ASK_WITHOUT_FINDING_ID = packet_text(CLEAN_EMPTY_FIELDS, ask=[ask_entry("x", "a.ts:1")])
 
     def test_an_ask_the_loop_logged_without_writing_its_id_gets_its_outcome_under_the_logged_id(self):
         self.seed(self.ASK_WITHOUT_FINDING_ID)
@@ -1614,11 +1514,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(len(self.ledger_writes()), 2)
 
     def test_a_logged_row_serves_one_ask_and_a_second_ask_at_the_same_place_is_logged_by_packet(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            "ask:\n  - {finding: x, file_line: a.ts:1, question: cap?, change: c, gate: code-reviewer, class: smell}\n"
-            "  - {finding: y, file_line: a.ts:1, question: cap?, change: c, gate: code-reviewer, class: smell}")
-        self.seed(text)
+        two_asks_at_one_place = [ask_entry("x", "a.ts:1", change="c"), ask_entry("y", "a.ts:1", change="c")]
+        self.seed(packet_text(CLEAN_EMPTY_FIELDS, ask=two_asks_at_one_place))
         self.stop_row(0, ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60014"}])
         self.packet("")
         self.run_script(["asks-done", "accepted", "rejected"])
@@ -1627,14 +1524,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(finding_ids[0], "a1b2c3d4e5f60014")
 
     def ask_packet_with_finding_id(self, finding_id_text):
-        return CLEAN_EMPTY.replace(
-            "ask: []",
-            "ask:\n  - {finding: x, finding_id: " + finding_id_text + ", file_line: a.ts:1, "
-            "question: cap?, change: cap at 3, gate: code-reviewer, class: smell}",
-        )
+        return packet_text(CLEAN_EMPTY_FIELDS, ask=[ask_entry("x", "a.ts:1", finding_id=finding_id_text)])
 
     def test_an_ask_whose_finding_id_is_a_placeholder_is_logged_by_packet_and_its_outcome_supersedes_that_row(self):
-        placeholders = ["none logged", "not logged (no id was printed)", "none", "-", '""', "a1b2c3d4e5f6000",
+        placeholders = ["none logged", "not logged (no id was printed)", "none", "-", "", "a1b2c3d4e5f6000",
                         "A1B2C3D4E5F60001", "a1b2c3d4e5f600011", "a1b2c3d4e5f6000g"]
         for finding_id_text in placeholders:
             with self.subTest(finding_id=finding_id_text):
@@ -1661,15 +1554,9 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("1 ask(s) without a valid finding_id are logged under a new finding_id.", output)
 
     def test_an_ask_with_a_valid_finding_id_among_placeholder_asks_keeps_its_id(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            "ask:\n"
-            "  - {finding: x, finding_id: none logged, file_line: a.ts:1, question: cap?, change: cap at 3, "
-            "gate: code-reviewer, class: smell}\n"
-            "  - {finding: y, finding_id: a1b2c3d4e5f60005, file_line: b.ts:2, question: cap?, change: cap at 3, "
-            "gate: code-reviewer, class: smell}",
-        )
-        self.packet(text)
+        placeholder_id_ask = ask_entry("x", "a.ts:1", finding_id="none logged")
+        kept_id_ask = ask_entry("y", "b.ts:2", finding_id="a1b2c3d4e5f60005")
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[placeholder_id_ask, kept_id_ask]))
         code, output = self.run_script(["asks-done", "modified:tighten the cap", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertIn("Logged 2 of 2 ask outcome row(s).", output)
@@ -1681,7 +1568,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual([row["ask_outcome"] for row in (new_id_row, kept_id_row)], ["modified", "accepted"])
 
     def test_a_valid_finding_id_with_surrounding_spaces_is_logged_without_them(self):
-        self.packet(self.ask_packet_with_finding_id('" a1b2c3d4e5f60006 "'))
+        self.packet(self.ask_packet_with_finding_id(" a1b2c3d4e5f60006 "))
         code, output = self.run_script(["asks-done", "modified:tighten the cap"])
         self.assertEqual(code, 0, output)
         self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60006"])
@@ -1701,50 +1588,34 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("rejected: leave the code as it stands", output)
 
     def test_present_asks_indents_a_multi_line_asks_folded_lines_under_its_number(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            "ask:\n"
-            "  - {finding: jobs count changed, finding_id: a1b2c3d4e5f60031, file_line: plan.md:12, "
-            "change: restore -j8, gate: code-reviewer, class: smell}\n"
-            "  - the plan says -j8\n"
-            "  - which one holds?\n",
-        )
-        code, output = self.packet(text)
+        jobs_ask = ask_entry("jobs count changed", "plan.md:12", finding_id="a1b2c3d4e5f60031", question=None,
+                             change="restore -j8")
+        folded_ask = [jobs_ask, "the plan says -j8", "which one holds?"]
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=folded_ask))
         self.assertEqual(code, 0, output)
         self.assertIn("\n   the plan says -j8\n   which one holds?\n", output)
 
     def test_present_asks_indents_a_multi_line_proposed_changes_later_lines_under_its_number(self):
-        text = CLEAN_EMPTY.replace(
-            "ask: []",
-            "ask:\n"
-            "  - {finding: jobs count changed, finding_id: a1b2c3d4e5f60031, file_line: plan.md:12, "
-            "question: which one holds?, change: restore -j8, gate: code-reviewer, class: smell}\n"
-            "  - {change: and log the count}\n",
-        )
-        code, output = self.packet(text)
+        jobs_ask = ask_entry("jobs count changed", "plan.md:12", finding_id="a1b2c3d4e5f60031",
+                             question="which one holds?", change="restore -j8")
+        folded_ask = [jobs_ask, {"change": "and log the count"}]
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=folded_ask))
         self.assertEqual(code, 0, output)
         self.assertIn("\n   Proposed change: restore -j8\n   and log the count\n", output)
 
     def test_an_either_or_ask_with_no_proposed_change_is_a_parse_failure(self):
-        self.assert_parse_failure(WITH_ASK.replace('    change: "cap retries at 3"\n', ""), "ask entry has no change")
-
-    def test_empty_list_key_does_not_swallow_the_next_unindented_key(self):
-        text = "status: converged\niter: 1\nfixed: []\nask: []\nclass_closure: all queries listed\nfiles_touched: []\n"
-        _code, output = self.packet(text)
-        self.assertIn("Class closure: all queries listed", output)
+        either_or_ask = {key: value for key, value in RETRY_ASK.items() if key != "change"}
+        self.assert_parse_failure(packet_text(WITH_ASK_FIELDS, ask=[either_or_ask, INDEX_ASK]),
+                                  "ask entry has no change")
 
     def test_bare_not_applicable_class_closure_with_empty_fixed_prints_one_line(self):
-        _code, output = self.packet(CLEAN_EMPTY.replace("n/a - fixed[] empty", "n/a"))
+        _code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, class_closure="n/a"))
         self.assertEqual(output.count("Class closure"), 1)
         self.assertNotIn("receipt is missing", output)
 
     def test_findings_remaining_show_on_converged(self):
-        _code, output = self.packet(
-            CONVERGED.replace(
-                "findings_remaining: []",
-                'findings_remaining: [{disposition: fix, finding: "left over", file_line: a.ts:1}]',
-            )
-        )
+        left_over = {"disposition": "fix", "finding": "left over", "file_line": "a.ts:1"}
+        _code, output = self.packet(packet_text(CONVERGED_FIELDS, findings_remaining=[left_over]))
         self.assertIn("### Findings remaining", output)
         self.assertIn("left over", output)
 
@@ -1812,17 +1683,16 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
 
     def test_escape_matches_normalised_paths_and_paths_named_in_the_finding_text(self):
-        text = CLEAN_EMPTY.replace("fixed: []", 'fixed: [{finding: "tenant filter missing, also see lib/q.ts:9", '
-                                   'file_line: "`./src/orders.ts:42`", blocker: false}]')
-        self.packet(text, "--source", "conversation", skill="fix")
+        tenant_fix = {"finding": "tenant filter missing, also see lib/q.ts:9", "file_line": "`./src/orders.ts:42`",
+                      "blocker": False}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, fixed=[tenant_fix]), "--source", "conversation", skill="fix")
         for path in ("src/orders.ts:42", "./lib/q.ts"):
             _code, output = self.run_script(["escape", "--escape", self.escape_spec(file=path)])
             self.assertIn("escape logged", output)
         self.assertEqual(self.escape_ids(), ["src/orders.ts", "lib/q.ts"])
 
     def test_a_plain_text_skipped_entry_with_aikido_does_not_crash(self):
-        text = CONVERGED.replace('skipped_fp: [{item: "src/a.ts:9 possible null", reason: "guarded two lines above"}]',
-                                 "skipped_fp:\n  - src/a.ts:9 possible null")
+        text = packet_text(CONVERGED_FIELDS, skipped_fp=["src/a.ts:9 possible null"])
         code, output = self.packet(text, "--aikido", "src/zzz.ts:1=5", skill="fix")
         self.assertEqual(code, 0, output)
         self.assertNotIn("Traceback", output)

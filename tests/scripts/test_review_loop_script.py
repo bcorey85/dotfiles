@@ -488,7 +488,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((sent["status"], sent["iter"], sent["files_touched"]), ("converged", 2, ["app.py"]))
         self.assertEqual(sent["fixed"][0]["file_line"], "app.py:2")
         self.assertEqual(handback.load(row["message"]), packet)
-        self.assertNotIn("old free-text packet", completed.stderr)
 
     def test_the_crash_packet_is_one_json_object_with_its_blocker_and_tool_fault(self):
         progress = {"iter": 1, "fixed": [], "files_touched": {"app.py"}}

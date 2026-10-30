@@ -17,10 +17,13 @@ import time
 
 import test_code_step as base
 
-SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
-BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
-UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
-                     "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
+SETUP_FAULT_PACKET = json.dumps({"status": "setup-fault", "iter": 1,
+                                 "blockers": [{"finding": "no package.json", "file_line": "none"}]})
+BLOCKER_PACKET = json.dumps({"status": "critical-blocker", "iter": 1,
+                             "blockers": [{"finding": "b", "file_line": "backend/src/orders.ts:1"}]})
+UNVERIFIED_PACKET = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": [],
+                                "full_check": "unverified (exit 0, no runner summary)",
+                                "full_check_command": "npm run lint"})
 
 
 class ResumeTest(base.CodeStepTest):

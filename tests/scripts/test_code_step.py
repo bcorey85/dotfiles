@@ -153,6 +153,10 @@ def run_in_process(cwd, env, args, stdin):
     return subprocess.CompletedProcess(script_argv,exit_code, script_out.getvalue(), script_err.getvalue())
 
 
+def packet_with(packet, **fields):
+    return json.dumps({**json.loads(packet), **fields})
+
+
 def in_process_modules():
     # The script and every code-step module it imported: each holds its own copy of the toolkit folder.
     module_names = [pathlib.Path(name).stem for name in toolkit_paths.CODE_STEP_MODULES]
@@ -407,13 +411,15 @@ class CodeStepTest(unittest.TestCase):
     # The id the stand-in log helper prints for a finding row it is not given an id for.
     MINTED_FINDING_ID = "aaaaaaaaaaaaaaaa"
     LOGGED_FINDING_ID = "bbbbbbbbbbbbbbbb"
-    ASK = ('status: converged\niter: 1\nfixed: []\nask: [{"finding": "f", "file_line": "backend/src/orders.ts:2", '
-           '"question": "keep?", "change": "export o as a const", "gate": "code-reviewer", "class": "correctness", '
-           '"finding_id": "0123456789abcdef"}]')
+    ASK_ENTRY: ClassVar[dict] = {"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep?",
+                                 "change": "export o as a const", "gate": "code-reviewer", "class": "correctness",
+                                 "finding_id": "0123456789abcdef"}
+    ASK = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [ASK_ENTRY]})
 
     ASK_WITHOUT_FINDING_ID = ASK.replace(', "finding_id": "0123456789abcdef"', "")
 
-    LOOP_OK = "status: converged\niter: 1\nfixed: []\nask: []\nnit: []"
+    LOOP_OK = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": []})
+    PLAN_IMPACT_PACKET = json.dumps({"status": "plan-impact", "iter": 1, "plan_impact": "PLAN-IMPACT:\n  found: B"})
 
     def test_start_builds_gate_and_prompt(self):
         out = self.start_phase_one()
@@ -1731,17 +1737,17 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(original, self.criteria_text())
         self.assertIn("the script restored them.", self.said())
 
-    def test_review_packet_block_scalar_reaches_the_question_without_its_indicator(self):
+    def test_review_packet_plan_impact_reaches_the_question(self):
         self.coder_round()
-        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n")
+        self.hook("review-loop", self.PLAN_IMPACT_PACKET)
         self.step("resume")
         self.assertEqual("PLAN-IMPACT:\n  found: B", self.state()["impact"])
 
-    PLAN_IMPACT_WITH_LEFTOVERS = (
-        "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n"
-        "pending_fix_findings_not_dispatched: three test gaps need a coder once the plan-impact is settled\n"
-        'ask: [{"finding": "second", "file_line": "backend/src/orders.ts:2", "question": "second ask?", '
-        '"change": "c", "gate": "code-reviewer", "class": "correctness", "finding_id": "0123456789abcdef"}]')
+    PLAN_IMPACT_WITH_LEFTOVERS = json.dumps({
+        "status": "plan-impact", "iter": 1, "plan_impact": "PLAN-IMPACT:\n  found: B",
+        "pending_fix_findings_not_dispatched": "three test gaps need a coder once the plan-impact is settled",
+        "ask": [{"finding": "second", "file_line": "backend/src/orders.ts:2", "question": "second ask?",
+                 "change": "c", "gate": "code-reviewer", "class": "correctness", "finding_id": "0123456789abcdef"}]})
 
     def test_a_plan_impact_round_s_other_asks_and_pending_findings_reach_the_question_and_the_next_review(self):
         self.coder_round()
@@ -1860,11 +1866,11 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn(f"{self.plan}:{bad_line}:", result.stdout)
 
-    def test_a_converged_packet_with_a_labelled_ask_list_asks_the_user(self):
+    def test_a_converged_packet_with_three_asks_asks_the_user(self):
         self.coder_round()
-        asks = "\n".join(f'  - {{question: "q{n}", change: "c{n}", file_line: "backend/src/orders.ts:{n}", '
-                         'gate: code-reviewer}}' for n in (1, 2, 3))
-        self.hook("review-loop", f"status: converged\niter: 1\nfixed: []\nask (for the user):\n{asks}")
+        asks = [{"question": f"q{n}", "change": f"c{n}", "file_line": f"backend/src/orders.ts:{n}",
+                 "gate": "code-reviewer"} for n in (1, 2, 3)]
+        self.hook("review-loop", json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": asks}))
         out = self.step("resume")
         self.assertIn("ACTION: ask-user", out)
         self.assertEqual(3, len(self.state()["asks"]))
@@ -1940,7 +1946,8 @@ class CodeStepTest(unittest.TestCase):
     def test_cap_reached_and_blocker_stop_without_marking(self):
         self.coder_round()
         self.hook(
-            "review-loop", "status: cap-reached\niter: 2\nfindings_remaining:\n  - finding: x\n    file_line: a.ts:1"
+            "review-loop", json.dumps({"status": "cap-reached", "iter": 2,
+                                       "findings_remaining": [{"finding": "x", "file_line": "a.ts:1"}]})
         )
         out = self.step("resume")
         self.assertIn("ACTION: stop", out)
@@ -3045,9 +3052,9 @@ class CodeStepTest(unittest.TestCase):
 
     def test_an_ask_that_repeats_one_text_in_finding_and_question_shows_it_once(self):
         self.coder_round()
-        self.hook("review-loop", 'status: converged\niter: 1\nfixed: []\nask: [{"finding": "Is the cap right?", '
-                  '"change": "cap at 3", "file_line": "backend/src/orders.ts:2", "gate": "code-reviewer", '
-                  '"class": "correctness"}]')
+        ask = {"finding": "Is the cap right?", "change": "cap at 3", "file_line": "backend/src/orders.ts:2",
+               "gate": "code-reviewer", "class": "correctness"}
+        self.hook("review-loop", json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [ask]}))
         out = self.step("resume")
         self.assertIn("Is the cap right?", out + self.said())
         self.assertNotIn("Is the cap right? - Is the cap right?", out + self.said())
@@ -3060,7 +3067,7 @@ class CodeStepTest(unittest.TestCase):
 
     def hand_back_an_unreadable_packet(self, agent_id="a1"):
         # The packet hook denies an unreadable packet the first time its agent hands it back; the second goes through.
-        packet = "status: deferred\niter: 1\nfindings_remaining: []"
+        packet = json.dumps({"status": "deferred", "iter": 1, "findings_remaining": []})
         self.hook("review-loop", packet, agent_id=agent_id)
         denied_handbacks = [event for event in self.events_named("handback") if event["agent_id"] == agent_id
                             and event["agent_type"] == "review-loop" and event["message"] == packet]
@@ -3075,7 +3082,7 @@ class CodeStepTest(unittest.TestCase):
     def test_an_unreadable_review_packet_stops_with_the_raw_packet_and_one_resume_command(self):
         out = self.leave_unreadable_packet()
         self.assertIn("ACTION: stop", out)
-        self.assertIn("status: deferred", out)
+        self.assertIn('"status": "deferred"', out)
         self.assertIn("invoke Skill code with `review-again`", out)
         self.assertNotIn("python3", out.split("invoke Skill code with `review-again`")[0].splitlines()[-1])
         self.assertEqual("stopped", self.state()["stage"])
@@ -3105,9 +3112,9 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("AGENT: review-loop", again)
         self.assertIn(self.SKIP_LINE, again)
 
-    TOOL_FAULT_PACKET = ("status: critical-blocker\niter: 2\nblockers:\n  - the review2-code-reviewer call failed "
-                         "(exit 1) saying \"Prompt is too long\"\ntool_fault: the review2-code-reviewer call failed "
-                         "(exit 1) saying \"Prompt is too long\"")
+    TOOL_FAULT = 'the review2-code-reviewer call failed (exit 1) saying "Prompt is too long"'
+    TOOL_FAULT_PACKET = json.dumps({"status": "critical-blocker", "iter": 2, "blockers": [TOOL_FAULT],
+                                    "tool_fault": TOOL_FAULT})
 
     def test_a_crashed_review_call_stops_as_a_tool_fault_not_as_a_blocker(self):
         self.coder_round()
@@ -3123,9 +3130,9 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_tool_fault_with_a_reviewer_question_stops_as_a_tool_fault_without_carrying_a_blocker(self):
         self.coder_round()
-        ask = ('{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?", '
-               '"change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}')
-        self.hook("review-loop", self.TOOL_FAULT_PACKET + f"\nfixed: []\nask: [{ask}]")
+        ask = {"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?",
+               "change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}
+        self.hook("review-loop", packet_with(self.TOOL_FAULT_PACKET, fixed=[], ask=[ask]))
 
         self.step("resume")
 
@@ -3690,13 +3697,13 @@ class CodeStepTest(unittest.TestCase):
 
     def test_iter_with_a_budget_suffix_reads_the_first_number(self):
         self.coder_round()
-        self.hook("review-loop", "status: converged\niter: 2 of 2\nfixed: []\nask: []")
+        self.hook("review-loop", json.dumps({"status": "converged", "iter": "2 of 2", "fixed": [], "ask": []}))
         self.step("resume")
         self.assertEqual(2, self.state()["iter"])
 
     def test_plan_impact_status_with_no_description_stops(self):
         self.coder_round()
-        packet = "status: plan-impact\niter: 1\nplan_impact:\n"
+        packet = json.dumps({"status": "plan-impact", "iter": 1, "plan_impact": ""})
         self.hook("review-loop", packet)
         self.hook("review-loop", packet)
         out = self.step("resume")
@@ -3937,7 +3944,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_ruling_that_keeps_the_plan_after_a_review_skips_the_structure_pass(self):
         self.coder_round()
-        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n")
+        self.hook("review-loop", self.PLAN_IMPACT_PACKET)
         self.step("resume")
         out = self.step("decide", "keep", "--by", "user", "--ruling", "keep it")
         self.assertIn("AGENT: review-loop", out)
@@ -3952,7 +3959,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_adopted_plan_change_after_a_review_refreshes_the_phase_text_and_reviews_once(self):
         self.coder_round()
-        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n")
+        self.hook("review-loop", self.PLAN_IMPACT_PACKET)
         self.step("resume")
         out = self.step("decide", "adopt", "--by", "user", "--ruling", "adopt it")
         self.assertIn("AGENT: coder", out)
@@ -4427,7 +4434,7 @@ class CodeStepTest(unittest.TestCase):
     def test_coder_and_review_loop_handbacks_are_never_denied(self):
         self.start_phase_one()
         self.assertEqual("", self.hook("coder", self.CODER_REPORT).stdout)
-        self.assertEqual("", self.hook("review-loop", "status: converged").stdout)
+        self.assertEqual("", self.hook("review-loop", json.dumps({"status": "converged"})).stdout)
 
     def test_fork_handback_passes_with_no_run_open_or_from_another_session(self):
         self.assertEqual("", self.fork_handback().stdout)
@@ -4541,7 +4548,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", self.CODER_REPORT)
         self.step("resume")
-        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n")
+        self.hook("review-loop", self.PLAN_IMPACT_PACKET)
         self.step("resume")
 
         out = self.step("decide", "adopt", "--by", "session", "--ruling", "drop the header")
@@ -4569,7 +4576,7 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", self.CODER_REPORT)
         self.step("resume")
-        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n")
+        self.hook("review-loop", self.PLAN_IMPACT_PACKET)
         self.step("resume")
         self.step("decide", "adopt", "--by", "session", "--ruling", "drop the header")
 
@@ -5148,8 +5155,8 @@ class CodeStepTest(unittest.TestCase):
         (self.repo / "generated.ts").write_text("rewritten by the check\n")
         (self.repo / "dist").mkdir()
         (self.repo / "dist/out.js").write_text("built by the check\n")
-        self.hook("review-loop", self.LOOP_OK + '\ncheck_changed: ["generated.ts"]\ncheck_created: ["dist/out.js"]'
-                  '\ncheck_rewrote_edited: ["edited.ts"]')
+        self.hook("review-loop", packet_with(self.LOOP_OK, check_changed=["generated.ts"],
+                                             check_created=["dist/out.js"], check_rewrote_edited=["edited.ts"]))
         self.step("resume")
         state = self.state()
         self.assertEqual((["generated.ts"], ["dist/out.js"], ["edited.ts"]),
@@ -5165,8 +5172,9 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_file_the_packet_says_the_coder_touched_is_not_kept_as_changed_or_created_by_the_check(self):
         self.coder_round()
-        self.hook("review-loop", self.LOOP_OK + '\nfiles_touched: ["generated.ts", "dist/out.js"]'
-                  '\ncheck_changed: ["generated.ts", "other.ts"]\ncheck_created: ["dist/out.js", "made.txt"]')
+        self.hook("review-loop", packet_with(self.LOOP_OK, files_touched=["generated.ts", "dist/out.js"],
+                                             check_changed=["generated.ts", "other.ts"],
+                                             check_created=["dist/out.js", "made.txt"]))
         self.step("resume")
         state = self.state()
         self.assertEqual((["other.ts"], ["made.txt"]), (state["checkChanged"], state["checkCreated"]))
@@ -6459,8 +6467,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_ask_user_action_for_review_asks_names_the_real_question_file(self):
         self.coder_round()
-        asks = '  - {question: "q1", change: "c1", file_line: "backend/src/orders.ts:1", gate: code-reviewer}'
-        self.hook("review-loop", f"status: converged\niter: 1\nfixed: []\nask (for the user):\n{asks}")
+        ask = {"question": "q1", "change": "c1", "file_line": "backend/src/orders.ts:1", "gate": "code-reviewer"}
+        self.hook("review-loop", json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [ask]}))
 
         out = self.step("resume")
 

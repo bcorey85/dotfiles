@@ -88,7 +88,7 @@ def resume_background_coder():
 
 
 class StopHookMixin:
-    def stop(self, records, old_packet_form=False, **extra):
+    def stop(self, records, **extra):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = os.path.join(tmp.name, "loop.jsonl")
@@ -99,10 +99,7 @@ class StopHookMixin:
         hook.update(extra)
         proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
                               text=True, check=True)
-        if old_packet_form:
-            self.assertIn("old free-text packet", proc.stderr)
-        else:
-            self.assertEqual(proc.stderr, "")
+        self.assertEqual(proc.stderr, "")
         return proc.stdout
 
 
@@ -139,13 +136,6 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
                   {"type": "user", "message": {"role": "user", "content": [
                       {"type": "tool_result", "tool_use_id": "toolu_hb", "content": "denied", "is_error": True}]}}]
         self.assertIn("No passed full_check.py result", json.loads(self.stop([*records, *denied]))["reason"])
-
-    def test_a_plan_impact_report_owes_no_full_check(self):
-        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
-        out = self.stop(records, old_packet_form=True,
-                        last_assistant_message="status: plan-impact\niter: 1\nplan_impact: a, b\n")
-        self.assertNotIn("No passed full_check.py result", out)
 
     def test_a_json_plan_impact_report_owes_no_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]

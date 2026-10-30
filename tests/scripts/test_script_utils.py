@@ -607,25 +607,10 @@ class TextAndFileHelpersTest(unittest.TestCase):
         self.assertEqual(script_utils.one_line("a \n  b\t c"), "a b c")
         self.assertEqual(script_utils.one_line("abcdef", 3), "abc")
 
-    def test_unquote_strips_one_matching_pair_only(self):
-        self.assertEqual(script_utils.unquote(' "x" '), "x")
-        self.assertEqual(script_utils.unquote("'x'"), "x")
-        self.assertEqual(script_utils.unquote("\"x'"), "\"x'")
-        self.assertEqual(script_utils.unquote('""x""'), '"x"')
-
     def test_first_number(self):
         self.assertEqual(script_utils.first_number("2 of 3"), 2)
         self.assertIsNone(script_utils.first_number("two"))
         self.assertIsNone(script_utils.first_number(None))
-
-    def test_unquoted_mask_blanks_quoted_spans(self):
-        masked = script_utils.unquoted_mask('a: "b: c" d')
-        self.assertNotIn("b: c", masked)
-        self.assertEqual(len(masked), len('a: "b: c" d'))
-
-    def test_top_level_braces_splits_flow_lists_and_ignores_quoted_braces(self):
-        groups = script_utils.top_level_braces('{a: 1}, {b: {c: 2}}, {d: "}"}')
-        self.assertEqual(groups, ["{a: 1}", "{b: {c: 2}}", '{d: "}"}'])
 
     def test_normalize_path_strips_ticks_dot_slash_and_line_suffix(self):
         self.assertEqual(script_utils.normalize_path("`./src/a.ts:12-20`"), "src/a.ts")

@@ -13,6 +13,19 @@ NUMSTAT = (
 )
 
 
+class NumstatRowsTest(unittest.TestCase):
+    def test_a_plain_row_gives_its_counts_and_path(self):
+        self.assertEqual([(12, 3, "src/a/one.py")], list(numstat.numstat_rows("12\t3\tsrc/a/one.py\0")))
+
+    def test_a_binary_row_gives_no_counts(self):
+        self.assertEqual([(None, None, "logo.png")], list(numstat.numstat_rows("-\t-\tlogo.png\0")))
+
+    def test_a_rename_row_gives_its_new_path(self):
+        text = "2\t1\t\0src/old.py\0src/new.py\0" "3\t0\tplain.py\0"
+
+        self.assertEqual([(2, 1, "src/new.py"), (3, 0, "plain.py")], list(numstat.numstat_rows(text)))
+
+
 class AddedLinesByGroupTest(unittest.TestCase):
     def test_added_lines_are_summed_per_group_and_binary_and_skipped_files_count_nowhere(self):
         totals = numstat.added_lines_by_group(NUMSTAT, lambda path: str(pathlib.PurePosixPath(path).parent),

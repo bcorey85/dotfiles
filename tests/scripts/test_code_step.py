@@ -1066,7 +1066,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("path: backend/src/existing.ts", out)
 
     def test_plan_impact_asks_then_decide_records_deviation(self):
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
         out = self.coder_round(report)
         self.assertIn("ACTION: ask-user", out)
         self.assertIn("## Question for the user", self.said())
@@ -1087,7 +1087,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_plan_impact_preset_decision_skips_the_question(self):
         self.env["CODE_STEP_IMPACT_DECISION"] = "adopt"
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
         out = self.coder_round(report)
         self.assertNotIn("ACTION: ask-user", out)
         self.assertIn("AGENT: coder", out)
@@ -1099,7 +1099,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_plan_impact_that_changes_no_acceptance_criterion_is_adopted_without_asking(self):
         report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
-                  "PLAN-IMPACT: yes")
+                  "  cause: plan\nPLAN-IMPACT: yes")
         out = self.coder_round(report)
         self.assertNotIn("ACTION: ask-user", out)
         self.assertNotIn("## Question for the user", self.said())
@@ -1112,13 +1112,152 @@ class CodeStepTest(unittest.TestCase):
 
     def test_plan_impact_that_changes_an_acceptance_criterion_still_asks(self):
         report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: AC-3\n"
-                  "PLAN-IMPACT: yes")
+                  "  cause: plan\nPLAN-IMPACT: yes")
         out = self.coder_round(report)
         self.assertIn("ACTION: ask-user", out)
 
+    def test_a_plan_impact_with_a_toolkit_cause_stops_and_dispatches_no_plan_rewrite(self):
+        report = ("PLAN-IMPACT:\n  assumed: the gate checks this phase\n  found: its base is the old commit\n"
+                  "  changes: nothing in the plan\n  acceptance_criteria: none\n  cause: toolkit\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertNotIn("AGENT: coder", out)
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
+    def test_a_plan_impact_with_an_unknown_cause_stops_and_names_both_causes(self):
+        report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
+                  "  cause: gate\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("`cause: gate` that does not parse: the cause is plan or toolkit", out)
+        self.assertNotIn("Edit only the plan file", out)
+
+    def test_a_plan_impact_with_a_plan_cause_is_adopted_as_before(self):
+        report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
+                  "  cause: plan\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("Edit only the plan file", out)
+
+    def test_a_coder_resumed_after_the_toolkit_stop_is_not_stopped_on_the_same_block_again(self):
+        report = ("PLAN-IMPACT:\n  assumed: the gate checks this phase\n  found: its base is the old commit\n"
+                  "  changes: nothing in the plan\n  acceptance_criteria: none\n  cause: toolkit\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.send_message("a1")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended", agent_id="a1")
+        out = self.step("resume")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("toolkit gate or script fault", out)
+
+    def test_two_toolkit_blocks_then_a_clean_hand_back_do_not_stop_again(self):
+        template = ("PLAN-IMPACT:\n  assumed: the gate checks this phase\n  found: {found}\n"
+                    "  changes: nothing in the plan\n  acceptance_criteria: none\n  cause: toolkit\nPLAN-IMPACT: yes")
+        self.coder_round(template.format(found="its base is the old commit"))
+        self.assertEqual("stopped", self.state()["stage"])
+        self.send_message("a1")
+        self.hook("coder", template.format(found="its log is unreadable"), agent_id="a1")
+        out = self.step("resume")
+        self.assertIn("toolkit gate or script fault", out)
+        self.send_message("a1")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended", agent_id="a1")
+        out = self.step("resume")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("toolkit gate or script fault", out)
+
+    def test_a_review_loop_plan_impact_with_a_toolkit_cause_stops_and_opens_no_plan_modal(self):
+        self.coder_round()
+        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n"
+                                 "      cause: toolkit\n")
+        out = self.step("resume")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertIn("review-again", out)
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.assertIn("AGENT: review-loop", self.step("review-again"))
+
+    def test_a_restart_after_a_reset_off_the_start_commit_takes_a_fresh_start_commit(self):
+        (self.repo / "backend/src/early.ts").write_text("export const e = 1\n")
+        self.commit_all()
+        self.start_phase_one()
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        self.assertIn("ACTION: stop", self.step("resume"))
+        self.step("start", self.plan, "--restart")
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.state()["baseHead"])
+
+    def test_a_coder_hand_back_after_a_reset_off_the_start_commit_stops_and_names_both_commits(self):
+        (self.repo / "backend/src/early.ts").write_text("export const e = 1\n")
+        self.commit_all()
+        self.start_phase_one()
+        base_head = self.state()["baseHead"]
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        out = self.step("resume")
+        head = self.git("rev-parse", "HEAD").strip()
+        self.assertIn("ACTION: stop", out)
+        self.assertIn(base_head, out)
+        self.assertIn(head, out)
+        self.assertNotIn("AGENT: review-loop", out)
+        self.assertNotIn("resume that coder with SendMessage", out)
+        self.assertIn("start --restart", out)
+
+    def test_a_restart_after_a_reset_keeps_the_baseline_so_the_phase_work_stays_in_the_diff(self):
+        (self.repo / "backend/src/early.ts").write_text("export const e = 1\n")
+        self.commit_all()
+        self.start_phase_one()
+        baseline = self.state()["baseline"]
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        self.step("resume")
+        self.step("start", self.plan, "--restart")
+        self.assertEqual(baseline, self.state()["baseline"])
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.state()["baseHead"])
+
+    def test_a_toolkit_cause_report_with_no_file_change_stops_on_the_cause_and_not_again_after_resume(self):
+        report = ("PLAN-IMPACT:\n  assumed: the gate checks this phase\n  found: its base is the old commit\n"
+                  "  changes: nothing in the plan\n  acceptance_criteria: none\n  cause: toolkit\nPLAN-IMPACT: yes")
+        self.start_phase_one()
+        self.pass_coder_gate()
+        self.hook("coder", report)
+        out = self.step("resume")
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertNotIn("no reviewable change", out)
+        self.assertEqual(1, len(self.state()["handledImpacts"]))
+        self.send_message("a1")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended", agent_id="a1")
+        out = self.step("resume")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("toolkit gate or script fault", out)
+
+    def test_a_coder_plan_impact_with_no_cause_line_stops_as_unparsed(self):
+        report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
+                  "PLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("no `cause:` line: the cause is plan or toolkit", out)
+        self.assertNotIn("Edit only the plan file", out)
+
+    def test_a_script_shaped_review_packet_with_a_toolkit_cause_stops_and_opens_no_plan_modal(self):
+        self.coder_round()
+        packet = json.dumps({"status": "plan-impact", "iter": 1, "plan_impact_cause": "toolkit",
+                             "plan_impact": "PLAN-IMPACT: found: B; cause: toolkit"})
+        self.hook("review-loop", packet)
+        out = self.step("resume")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertNotIn("Edit only the plan file", out)
+
     def test_the_phase_end_block_lists_the_deviation_adopted_in_the_phase(self):
         self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
-                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\n"
+                         "  cause: plan\nPLAN-IMPACT: yes")
         (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
@@ -1131,7 +1270,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_run_end_block_lists_the_deviation_adopted_in_phase_one(self):
         self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
-                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\n"
+                         "  cause: plan\nPLAN-IMPACT: yes")
         (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
@@ -1152,7 +1292,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_phase_end_block_omits_a_deviation_adopted_in_phase_1(self):
         self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
-                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\n"
+                         "  cause: plan\nPLAN-IMPACT: yes")
         (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
@@ -1167,7 +1308,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("the importer reads a header row", phase_two_text)
 
     def test_adopt_rewrites_the_plan_before_the_review(self):
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
         self.coder_round(report)
         out = self.step("decide", "adopt", "--by", "user", "--ruling", "adopt it, drop the header")
         self.assertIn("AGENT: coder", out)
@@ -3643,7 +3784,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("The saved run is stale", (self.repo / ".git/code-step/question.md").read_text())
 
     def test_missing_plan_at_decide_stops(self):
-        self.coder_round("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.coder_round("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes")
         (self.repo / self.plan).unlink()
         self.assertIn("ACTION: stop", self.step("decide", "keep", "--by", "user", "--ruling", "keep it"))
 
@@ -3665,7 +3806,7 @@ class CodeStepTest(unittest.TestCase):
     def test_plan_impact_survives_a_retry_that_sends_only_the_fix(self):
         self.begin_coder()
         self.gate_commands = ["echo lint broke; exit 1"]
-        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes")
         self.assertEqual([], self.events_named("handback"))
         self.assertEqual(1, len(self.events_named("handback-attempt")))
         self.gate_commands = ["true"]
@@ -3865,7 +4006,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("prior-issues:", out)
 
     SKIP_LINE = "structure-pass: skip"
-    IMPACT_REPORT = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+    IMPACT_REPORT = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
 
     def asks_follow_up(self, write_files):
         self.apply_first_ask()
@@ -4730,6 +4871,28 @@ class CodeStepTest(unittest.TestCase):
         self.commit_all()
         self.assertIn("AGENT: coder", self.step("start"))
 
+    def test_a_phase_commit_made_after_the_next_start_is_not_the_next_coders_work(self):
+        self.finish_phase_two_as_auto_advance()
+        # A boundary that stops for the user does not check the commit before the next start.
+        self.set_state(autoAdvance=False)
+        self.assertIn("AGENT: coder", self.step("start"))
+        self.commit_all()
+        (self.repo / "backend/src/audit.ts").write_text("export const a = 1\n")
+        self.hook("coder", "BEHAVIOR: audit\nREVIEW: recommended")
+        out = self.step("resume")
+        self.assertIn("- path: backend/src/audit.ts", out)
+        self.assertNotIn("backend/src/totals.ts", out)
+
+    def test_a_file_dirty_at_the_start_that_the_coder_changes_and_commits_is_its_work(self):
+        self.finish_phase_two_as_auto_advance()
+        self.set_state(autoAdvance=False)
+        self.step("start")
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 2\n")
+        self.commit_all()
+        self.hook("coder", "BEHAVIOR: totals\nREVIEW: recommended")
+        out = self.step("resume")
+        self.assertIn("- path: backend/src/totals.ts", out)
+
     # ---------- tick ----------
 
     def test_tick_marks_the_phase_done_and_records_who_said_so(self):
@@ -5442,15 +5605,17 @@ class CodeStepTest(unittest.TestCase):
                  "acceptance_criteria: none")
         shapes = {
             "indented": "BEHAVIOR: none\nPLAN-IMPACT:\n  " + block.replace("\n", "\n  ") + "\nPLAN-IMPACT: yes",
-            "keys at column 0": "BEHAVIOR: none\nPLAN-IMPACT:\n" + block + "\nPLAN-IMPACT: yes",
+            "keys at column 0": "BEHAVIOR: none\nPLAN-IMPACT:\n" + block + "\ncause: toolkit\nPLAN-IMPACT: yes",
             "bold header and a blank line": "PLAN-IMPACT:**\n\n  " + block.replace("\n", "\n  "),
             "bold keys": ("**PLAN-IMPACT:**\n- **assumed:** a\n- **found:** b\n- **changes:** c\n"
-                          "- **acceptance_criteria:** none"),
+                          "- **acceptance_criteria:** none\n- **cause:** toolkit"),
         }
+        causes = {"keys at column 0": "toolkit", "bold keys": "toolkit"}
         for name, report in shapes.items():
             with self.subTest(name):
                 found = code_step_report.plan_impact_block(report)
                 self.assertIsNotNone(found)
+                self.assertEqual(causes.get(name, "plan"), plan_format.plan_impact_cause(found))
                 self.assertNotIn("block not found", found)
                 self.assertIn("assumed", found)
                 self.assertIn("changes", found)
@@ -5560,7 +5725,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_plan_impact_of_a_coder_that_stopped_on_no_reviewable_change_is_raised_after_the_resume(self):
         self.start_phase_one()
-        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes")
         self.assertIn("ACTION: stop", self.step("resume"))
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
@@ -5612,7 +5777,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual([], unreadable)
 
     def adopt_plan_change_with_the_plan_coder_out(self):
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
         self.coder_round(report)
         out = self.step("decide", "adopt", "--by", "user", "--ruling", "adopt it, drop the header")
         self.assertIn("AGENT: coder", out)
@@ -6047,7 +6212,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_second_stop_on_no_reviewable_change_keeps_the_plan_impact_of_the_first(self):
         self.start_phase_one()
-        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes")
         self.assertIn("ACTION: stop", self.step("resume"))
         self.hook("coder", "BEHAVIOR: none\nstill blocked")
         out = self.step("resume")
@@ -6445,7 +6610,7 @@ class CodeStepTest(unittest.TestCase):
         return (self.repo / ".git/code-step/question.md").resolve()
 
     def test_the_ask_user_action_for_a_plan_impact_names_the_real_question_file(self):
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
 
         out = self.coder_round(report)
 

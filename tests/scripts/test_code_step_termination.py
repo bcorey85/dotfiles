@@ -251,7 +251,7 @@ REVIEW_OUTCOMES = {
     "empty-message": "",
     "missing-report": None,
 }
-PLAN_IMPACT_BLOCK = "PLAN-IMPACT:\n  assumed: the plan says A\n  changes: the code does B"
+PLAN_IMPACT_BLOCK = "PLAN-IMPACT:\n  assumed: the plan says A\n  changes: the code does B\n  cause: plan"
 CODER_REPORT = "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters\nREVIEW: recommended"
 # name: (files written, flag written, gate result or None for untouched, report text or None for no report row)
 CODER_OUTCOMES = {

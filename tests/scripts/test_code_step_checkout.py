@@ -98,7 +98,7 @@ class CheckoutTest(base.CodeStepTest):
         self.assertIn(self.checkout_sentence(second_run), self.printed_prompt(out))
 
     def test_a_verb_from_another_checkout_clears_the_question_in_the_run_checkout(self):
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
         out = self.coder_round(report)
         question_file = self.repo / ".git/code-step/question.md"
         self.assertIn("ACTION: ask-user", out)

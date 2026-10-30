@@ -1,15 +1,75 @@
 """Tests for check_output.py: which check failures are setup faults, and which lines name a failed test."""
+import importlib.util
 import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import check_output
+import criteria_verdict
+import full_check
+import script_utils
 
 CROSS = chr(0xD7)
+PASS, NOT_PASS, NOT_RUN = "pass", "not pass", "not run"
+NO_TESTS_RAN_FLAG = criteria_verdict.NO_TEST_MATCHED_FLAG
+# (name, command, exit code, output, verdict, full_check result or None to skip it, coder_gate result). One row per
+# kind of run that the pass rules once judged differently.
+VERDICT_ROWS = [
+    ("a pass", "pytest tests/", 0, "===== 3 passed in 0.10s =====", check_output.PASSED, full_check.PASSED,
+     "pass"),
+    ("a plain failure", "pytest tests/", 1, "FAILED tests/a.py::t - boom\n===== 1 failed, 2 passed in 0.1s =====",
+     check_output.FAILED, None, "failed"),
+    ("exit 0 with a failing summary", "npm test", 0, " Test Files  1 failed (1)\n      Tests  1 failed | 2 passed (3)",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a runner piped into a tail", "pytest tests/ | tail -5", 0, "1 failed, 2 passed in 0.1s",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a Django run of 0 tests", "python manage.py test app", 0,
+     "Found 0 test(s).\nRan 0 tests in 0.000s\n\nNO TESTS RAN", check_output.NO_TESTS_RAN, full_check.UNVERIFIED,
+     "setup-fault"),
+    ("a filtered pytest run that matched no test", "pytest tests/ -k nothing", 0, "===== 42 deselected in 0.20s =====",
+     check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "failed"),
+    ("a filtered vitest run that matched no test", "npx vitest run -t totals", 0,
+     " Test Files  1 skipped (1)\n      Tests  7 skipped (7)", check_output.NO_TESTS_RAN, full_check.UNVERIFIED,
+     "failed"),
+    ("a filtered cargo run that matched no test", "cargo test fault_codes", 0,
+     "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out", check_output.NO_TESTS_RAN,
+     full_check.UNVERIFIED, "failed"),
+    ("a chained run where one runner ran no test", "python manage.py test app && pytest tests/", 0,
+     "Ran 0 tests in 0.000s\n\nOK\n===== 3 passed in 0.10s =====", check_output.NO_TESTS_RAN, full_check.UNVERIFIED,
+     "setup-fault"),
+    ("a passing run that logs the phrase", "pytest tests/", 0, "no tests ran\n===== 3 passed in 0.10s =====",
+     check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "setup-fault"),
+    ("a non-test command that prints the phrase", "cat ci.log", 0, "no tests ran\n===== 3 passed in 0.10s =====",
+     check_output.PASSED, full_check.PASSED, "pass"),
+    ("a filtered run with a failing summary", "pytest tests/ -k totals", 0, "===== 1 failed in 0.10s =====",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a file print that holds a failing summary", "cat run.log", 0, "1 failed, 2 passed in 0.1s",
+     check_output.PASSED, full_check.PASSED, "pass"),
+    ("a script wrapper that swallowed a failing summary", "bash tests/run.sh", 0, "1 failed, 2 passed in 0.1s",
+     check_output.FAILED_EXIT_ZERO, full_check.FAILED_EXIT_ZERO, "failed"),
+    ("a negated runner whose failure is expected", "! pytest new_test.py", 0, "1 failed, 2 passed in 0.1s",
+     check_output.PASSED, full_check.PASSED, "pass"),
+    ("a negated filtered runner whose failure is expected", "! pytest t.py::test_new", 0, "1 failed in 0.10s",
+     check_output.PASSED, full_check.PASSED, "pass"),
+    ("a tail of a log that holds a failing summary", "tail -5 run.log", 0, "1 failed, 2 passed in 0.1s",
+     check_output.PASSED, full_check.PASSED, "pass"),
+    ("a timeout", "pytest tests/", None, "", check_output.NOT_RUN, full_check.NOT_RUN_TIMEOUT, "timeout"),
+]
+COARSE_OUTCOME = {check_output.PASSED: PASS, check_output.FAILED: NOT_PASS, check_output.FAILED_EXIT_ZERO: NOT_PASS,
+                  check_output.NO_TESTS_RAN: NOT_PASS, check_output.NOT_RUN: NOT_RUN}
+
+
+def load_coder_gate():
+    spec = importlib.util.spec_from_file_location("coder_gate_for_verdict", toolkit_paths.CODE_DIR / "coder_gate.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class CheckOutputTest(unittest.TestCase):
@@ -438,3 +498,83 @@ class CheckOutputTest(unittest.TestCase):
         for name, (log_lines, expected_details) in cases.items():
             with self.subTest(name):
                 self.assertEqual(expected_details, check_output.failing_block_details(log_lines))
+
+
+class CheckVerdictTest(unittest.TestCase):
+    """check_verdict and the three pass rules that call it read every row the same way."""
+
+    def test_a_search_that_names_a_runner_is_not_read_for_no_tests_ran(self):
+        # criteria_verdict bans an exit-0 search, so this command stays out of VERDICT_ROWS.
+        verdict = check_output.check_verdict("rg -t py pytest scripts/", 0, "no tests ran")
+
+        self.assertEqual(check_output.PASSED, verdict)
+
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name)
+        self.log = self.repo / "check.log"
+        self.coder_gate = load_coder_gate()
+
+    def full_check_outcome(self, command, code, output):
+        def fake_check_command(_repo, _command, log, _timeout, _env, _on_start):
+            pathlib.Path(log).write_text(output)
+            return code
+
+        with mock.patch.object(full_check, "run_check_command", fake_check_command):
+            result, _tail, _details = full_check.run(self.repo, command, self.log, 60, declared=True)
+
+        if result == full_check.PASSED:
+            return PASS, result
+        if result == full_check.NOT_RUN_TIMEOUT:
+            return NOT_RUN, result
+        return NOT_PASS, result
+
+    def coder_gate_outcome(self, command, code, output):
+        with mock.patch.object(script_utils, "run_process", return_value=(code, output, "")):
+            failures, _skipped, timed_out = self.coder_gate.run_commands(
+                {"repoRoot": str(self.repo), "commands": [command]})
+
+        with mock.patch.object(self.coder_gate, "changed_files", return_value=[]):
+            real_failures, setup_faults, command_errors = self.coder_gate.sort_failures(failures, str(self.repo))
+
+        gate_result = self.coder_gate.gate_outcome(real_failures, command_errors, setup_faults, timed_out)
+        if timed_out:
+            return NOT_RUN, gate_result, failures
+        return (NOT_PASS if failures else PASS), gate_result, failures
+
+    def criteria_outcome(self, command, code, output):
+        verdict = criteria_verdict.judge_item(command, f"`{command}` exits 0", code, output)
+        return (PASS if verdict.outcome == "GREEN" else NOT_PASS), verdict
+
+    def test_check_verdict_and_every_pass_rule_agree_on_each_command_and_output(self):
+        for name, command, code, output, verdict, full_check_result, gate_result in VERDICT_ROWS:
+            with self.subTest(name):
+                expected = COARSE_OUTCOME[verdict]
+
+                self.assertEqual(verdict, check_output.check_verdict(command, code, output))
+                full_check_outcome, result = self.full_check_outcome(command, code, output)
+                self.assertEqual(expected, full_check_outcome)
+                if full_check_result is not None:
+                    self.assertEqual(full_check_result, result)
+                gate_coarse, gate_actual, gate_failures = self.coder_gate_outcome(command, code, output)
+                self.assertEqual(expected, gate_coarse)
+                self.assertEqual(gate_result, gate_actual)
+                if verdict == check_output.FAILED_EXIT_ZERO:
+                    self.assertIn(check_output.SUMMARY_FAILURE_NOTE, gate_failures[0][2])
+                    self.assertIn(check_output.SUMMARY_FAILURE_NOTE, self.coder_gate.denial(gate_failures))
+                if verdict == check_output.NO_TESTS_RAN:
+                    self.assertIn(check_output.NO_TEST_MATCHED_NOTE, gate_failures[0][2])
+                    self.assertIn(check_output.NO_TEST_MATCHED_NOTE, self.coder_gate.denial(gate_failures))
+                # A timeout reaches the plan-criteria rule as exit code 124, never as None.
+                if code is None:
+                    continue
+
+                criteria_result, item = self.criteria_outcome(command, code, output)
+                self.assertEqual(expected, criteria_result)
+                if verdict == check_output.NO_TESTS_RAN:
+                    self.assertEqual(NO_TESTS_RAN_FLAG, item.flag)
+                    self.assertIn(criteria_verdict.NO_TEST_MATCHED_NOTE, item.output)
+                if verdict == check_output.FAILED_EXIT_ZERO:
+                    self.assertIsNone(item.flag)
+                    self.assertIn(criteria_verdict.SUMMARY_FAILURE_NOTE, item.output)

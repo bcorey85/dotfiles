@@ -133,8 +133,8 @@ class HandBackTest(base.CodeStepTest):
         self.assertIn("ACTION: stop", out)
         self.assertEqual(("stopped", "check-unverified"), (self.state()["stage"], self.state()["stop"]["kind"]))
         self.assertEqual(1, out.count("Do not mark the phase done."))
-        why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
-               "test ran.")
+        why = ("the full check exited 0 and printed no test-runner summary or ran no test, so the check did not "
+               "show that any test ran.")
         question_text = self.assert_stop_question(why, "npm run lint")
         self.assertIn("Quality check: `", question_text)
         self.assertIn(self.own_command("review-again"), question_text)

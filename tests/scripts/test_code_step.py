@@ -5527,7 +5527,7 @@ class CodeStepTest(unittest.TestCase):
         (ran_command, code, output), = results
         self.assertEqual(command, ran_command)
         self.assertNotEqual(0, code)
-        self.assertIn("test filter matched no test", output)
+        self.assertIn("the run exits 0 but ran no test", output)
 
     def test_each_search_line_holds_or_fails_by_its_wording_and_whether_the_search_hits(self):
         ban_note = "unless its text says it checks presence"

@@ -3,6 +3,21 @@ and which tests failed."""
 import pathlib
 import re
 
+from test_run_output import matches_no_test, prints_own_runner_summary, runner_summaries, runs_tests
+
+# What check_verdict returns.
+PASSED = "passed"
+FAILED = "failed"
+FAILED_EXIT_ZERO = "failed-exit-zero"
+NO_TESTS_RAN = "ran-no-tests"
+NOT_RUN = "not-run"
+# What a caller appends to the output of an exit-0 run that check_verdict fails.
+SUMMARY_FAILURE_NOTE = "\nthe run exits 0 but its runner summary reports failures\n"
+NO_TEST_MATCHED_NOTE = "\nthe run exits 0 but ran no test\n"
+# A runner summary that counts failures, which an exit code of 0 contradicts.
+SUMMARY_FAILURE = re.compile(
+    r"\b[1-9]\d* (?:failed|failing|errors?)\b|FAILED \(|^[1-9]\d* fail$|^(?:#|\N{INFORMATION SOURCE}) fail [1-9]\d*$"
+    r"|^FAIL\t", re.MULTILINE)
 MAX_FAILING_TEST_LINES = 20
 MAX_ERROR_LINES_PER_TEST = 6
 MAX_ERROR_LINES_TOTAL = 40
@@ -24,8 +39,8 @@ MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)")
 TESTS_FAILED = re.compile(r"\b\d+ failed\b")
 # A run that found no test to run: pytest exit 5, vitest and jest exiting non-zero, unittest and Django output.
 PYTEST_NO_TESTS_CODE = 5
-RAN_NO_TESTS = re.compile(r"No test(?: file)?s found, exiting with code [1-9]|(?i:\bno tests ran\b)"
-                          r"|(?m:^Ran 0 tests\b)")
+NO_TESTS_RAN_OUTPUT = re.compile(r"No test(?: file)?s found, exiting with code [1-9]|(?i:\bno tests ran\b)"
+                                 r"|(?m:^Ran 0 tests\b)")
 # The line a runner prints for one failed test: pytest `FAILED `/`ERROR ` summary lines, unittest and Django
 # `FAIL: `/`ERROR: ` lines, vitest, jest and nextest `FAIL ` lines, lines that start with the multiplication sign,
 # cargo's `test <name> ... FAILED` lines and a Rust test thread's panic line. unittest's final `FAILED (failures=1)`
@@ -261,7 +276,7 @@ def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     if PACKAGE_MANAGER_MISMATCH.search(output):
         return True
 
-    ran_no_test = code == PYTEST_NO_TESTS_CODE or RAN_NO_TESTS.search(output)
+    ran_no_test = code == PYTEST_NO_TESTS_CODE or NO_TESTS_RAN_OUTPUT.search(output)
     if ran_no_test and not failing_test_lines(output):
         return True
 
@@ -282,3 +297,26 @@ def is_django_settings_fault(command, output, changed_file_list):
     if TESTS_FAILED.search(output) or SYNTAX_ERROR.search(output):
         return False
     return not any(DJANGO_CONFIG_FILE.search(name) for name in changed_file_list)
+
+
+def check_verdict(command, code, output):
+    """The one pass judgement on a finished check command: PASSED, FAILED (non-zero exit), FAILED_EXIT_ZERO (exit 0
+    while a runner summary reports failures, from a command with a step that can print its own summary
+    (`prints_own_runner_summary`): a wrapper swallowed the runner's exit code), NO_TESTS_RAN (exit 0 from a
+    test command whose output says no test ran: a filter that matched nothing, or `Ran 0 tests`) or NOT_RUN (`code`
+    None: the command timed out). It judges the exit code and the output only; whether a failure is a setup fault or
+    a defect is for the caller."""
+    if code is None:
+        return NOT_RUN
+    if code != 0:
+        return FAILED
+
+    summaries = runner_summaries(output, limit=None)
+    prints_summary = prints_own_runner_summary(command)
+    if prints_summary and SUMMARY_FAILURE.search("\n".join(summaries)):
+        return FAILED_EXIT_ZERO
+    if prints_summary and matches_no_test(command, code, output):
+        return NO_TESTS_RAN
+    if runs_tests(command) and NO_TESTS_RAN_OUTPUT.search(output):
+        return NO_TESTS_RAN
+    return PASSED

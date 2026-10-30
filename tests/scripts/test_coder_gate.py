@@ -296,7 +296,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                 self.assertEqual([command], commands_with(self.stored_gate()["coders"]["a1"], "failed"))
 
     def test_a_manage_py_test_run_that_exits_0_after_running_no_test_is_a_setup_fault_not_a_pass(self):
-        command = """echo manage.py test; echo "Ran 0 tests in 0.000s"; exit 0"""
+        (self.repo / "manage.py").write_text('print("Ran 0 tests in 0.000s")\n')
+        command = "python3 manage.py test app.tests"
         self.gate_set(command)
 
         hook = self.gate_hook()

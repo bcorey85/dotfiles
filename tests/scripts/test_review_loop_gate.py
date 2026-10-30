@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 import fake_ledger
+import receipt_repo
 import toolkit_paths
 
 SCRIPT = os.environ.get("REVIEW_LOOP_GATE_SCRIPT") or str(toolkit_paths.REVIEW_DIR / "review_loop_gate.py")
@@ -47,13 +48,7 @@ def bash(command, tool_use_id="toolu_bash"):
     return {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
 
 
-FULL_CHECK_CALL = "python3 ~/.claude/scripts/review/full_check.py /r/app --log /tmp/review-gate-feat.log -- 'npm test'"
-FULL_CHECK_PASSED = "full check: passed\nsummary: 3 passed in 0.1s"
-
-
-def full_check_run(output=FULL_CHECK_PASSED, command=FULL_CHECK_CALL, tool_use_id="toolu_full"):
-    """A full_check.py shell call and the tool_result it printed."""
-    return [bash(command, tool_use_id), result(tool_use_id, output)]
+NO_RECEIPT = receipt_repo.NO_RECEIPT_REASON
 
 
 def send_message(to):
@@ -87,8 +82,19 @@ def resume_background_coder():
             result("toolu_resume", resumed)]
 
 
+def loop_repo(test, unchecked):
+    """A throwaway repo for the hook's cwd that holds a valid full-check receipt, unless `unchecked`."""
+    repo = receipt_repo.make_repo(test)
+    if not unchecked:
+        receipt_repo.plant_receipt(repo)
+    return repo
+
+
 class StopHookMixin:
-    def stop(self, records, old_packet_form=False, **extra):
+    def stop(self, records, old_packet_form=False, unchecked=False, **extra):
+        """Run the hook on `records`. The loop's repo (the hook's cwd, unless the test names one) holds a valid
+        full-check receipt, unless `unchecked` says no full check ran."""
+        extra.setdefault("cwd", loop_repo(self, unchecked))
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = os.path.join(tmp.name, "loop.jsonl")
@@ -108,19 +114,19 @@ class StopHookMixin:
 
 class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
     def test_reported_background_dispatch_blocks_without_full_check(self):
-        out = self.stop([*coder_and_background_reviewer(), notification("toolu_rev")])
-        self.assertIn("No passed full_check.py result", json.loads(out)["reason"])
+        out = self.stop([*coder_and_background_reviewer(), notification("toolu_rev")], unchecked=True)
+        self.assertIn(NO_RECEIPT, json.loads(out)["reason"])
 
     def test_agent_message_counts_as_reported(self):
         message = user('<agent-message from="a7bf12f9c51bc4875">findings</agent-message>')
-        out = self.stop([*coder_and_background_reviewer(), message])
-        self.assertIn("No passed full_check.py result", json.loads(out)["reason"])
+        out = self.stop([*coder_and_background_reviewer(), message], unchecked=True)
+        self.assertIn(NO_RECEIPT, json.loads(out)["reason"])
 
     def test_foreground_dispatch_blocks(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "agentId: a7bf12f9c51bc4875")]
-        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
+        self.assertIn(NO_RECEIPT, json.loads(self.stop(records, unchecked=True))["reason"])
 
     def test_a_delivered_hand_back_ends_the_full_check_block_but_a_stop_without_one_keeps_it(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
@@ -128,8 +134,8 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
                         "input": {"message": '{"status": "converged"}'}}
         delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
                      result("toolu_hb", "delivered")]
-        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
-        self.assertEqual(self.stop([*records, *delivered]), "")
+        self.assertIn(NO_RECEIPT, json.loads(self.stop(records, unchecked=True))["reason"])
+        self.assertEqual(self.stop([*records, *delivered], unchecked=True), "")
 
     def test_a_denied_hand_back_does_not_end_the_full_check_block(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
@@ -138,14 +144,15 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
         denied = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
                   {"type": "user", "message": {"role": "user", "content": [
                       {"type": "tool_result", "tool_use_id": "toolu_hb", "content": "denied", "is_error": True}]}}]
-        self.assertIn("No passed full_check.py result", json.loads(self.stop([*records, *denied]))["reason"])
+        out = self.stop([*records, *denied], unchecked=True)
+        self.assertIn(NO_RECEIPT, json.loads(out)["reason"])
 
     def test_a_plan_impact_report_owes_no_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
-        out = self.stop(records, old_packet_form=True,
+        self.assertIn(NO_RECEIPT, json.loads(self.stop(records, unchecked=True))["reason"])
+        out = self.stop(records, old_packet_form=True, unchecked=True,
                         last_assistant_message="status: plan-impact\niter: 1\nplan_impact: a, b\n")
-        self.assertNotIn("No passed full_check.py result", out)
+        self.assertNotIn(NO_RECEIPT, out)
 
     def test_a_json_plan_impact_report_owes_no_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
@@ -155,154 +162,122 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
         for message in (packet, f"```json\n{packet}\n```", json.dumps({"iter": 1, "status": "plan-impact"}, indent=2),
                         *padded):
             with self.subTest(message=message):
-                out = self.stop(records, last_assistant_message=message)
-                self.assertNotIn("No passed full_check.py result", out)
+                out = self.stop(records, unchecked=True, last_assistant_message=message)
+                self.assertNotIn(NO_RECEIPT, out)
+
+    def test_a_setup_fault_or_critical_blocker_report_owes_no_full_check(self):
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        for status in ("setup-fault", "critical-blocker"):
+            with self.subTest(status=status):
+                packet = json.dumps({"status": status, "iter": 1, "blockers": ["a"]})
+
+                out = self.stop(records, unchecked=True, last_assistant_message=packet)
+
+                self.assertNotIn(NO_RECEIPT, out)
 
     def test_a_json_converged_report_still_owes_a_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impact": '"status": "plan-impact"'})
-        out = self.stop(records, last_assistant_message=packet)
-        self.assertIn("No passed full_check.py result", json.loads(out)["reason"])
+        out = self.stop(records, unchecked=True, last_assistant_message=packet)
+        self.assertIn(NO_RECEIPT, json.loads(out)["reason"])
 
-    def test_a_check_the_phase_declares_expected_red_counts_as_run(self):
-        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                   *full_check_run("full check: not run (expected red until Phase 3)\n"
-                                   "expected red: `make test` until Phase 3")]
-        self.assertEqual(self.stop(records), "")
+    def test_a_run_that_verified_nothing_is_blocked_with_the_runs_own_result(self):
+        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        for result_line in ("failed (exit 1)", "failed (exit 0, summary reports failures)", "setup fault (exit 127)",
+                            "not run (timeout)"):
+            with self.subTest(result_line=result_line):
+                repo = receipt_repo.make_repo(self)
+                receipt_repo.plant_receipt(repo, result=result_line, satisfied=False)
+
+                reason = json.loads(self.stop(coder, cwd=repo))["reason"]
+
+                self.assertIn(NO_RECEIPT, reason)
+                self.assertIn(result_line, reason)
+                self.assertIn("do not run it again: follow Step 6's route for its result and return the packet. "
+                              "Otherwise run the Step 6 execution gate now.", reason)
+
+    def test_a_run_that_never_finished_is_blocked(self):
+        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        repo = receipt_repo.make_repo(self)
+        receipt_repo.plant_receipt(repo, finish=False)
+
+        self.assertIn("never finished", json.loads(self.stop(coder, cwd=repo))["reason"])
+
+    def test_a_killed_later_run_voids_an_earlier_receipt(self):
+        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        repo = receipt_repo.make_repo(self)
+        receipt_repo.plant_receipt(repo)
+        receipt_repo.plant_receipt(repo, finish=False)
+
+        self.assertIn("never finished", json.loads(self.stop(coder, cwd=repo))["reason"])
+
+    def test_an_edit_after_the_full_check_voids_the_receipt(self):
+        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        repo = receipt_repo.make_repo(self)
+        receipt_repo.plant_receipt(repo)
+        self.assertEqual(self.stop(coder, cwd=repo), "")
+
+        pathlib.Path(repo, "app.py").write_text("x = 2\n")
+
+        self.assertIn("changed after the latest full check", json.loads(self.stop(coder, cwd=repo))["reason"])
+
+    def test_a_shell_call_that_only_looks_like_a_passed_full_check_is_blocked(self):
+        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        looks_passed = [bash("python3 ~/.claude/scripts/review/full_check.py /r/app -- 'npm test'", "toolu_full"),
+                        result("toolu_full", "full check: passed\nsummary: 3 passed in 0.1s")]
+
+        out = self.stop([*coder, *looks_passed], unchecked=True)
+
+        self.assertIn(NO_RECEIPT, json.loads(out)["reason"])
 
     def test_full_check_after_reviewed_coder_passes(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
-                   *full_check_run()]
+                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok")]
         self.assertEqual(self.stop(records), "")
-
-    def test_a_full_check_script_call_whose_result_is_not_passed_is_blocked(self):
-        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        results = ("full check: failed (exit 1)\nFAILED tests/test_a.py::test_x",
-                   "full check: unverified (exit 0, no runner summary)\nsummary: not found",
-                   "full check: setup fault (exit 127)\nnpm: command not found",
-                   "full check: not run (timeout)",
-                   "full check: not run (check-command error: no such file tests/x)",
-                   "full check: not run (environment gap: No module named 'x')",
-                   "full check: pre-existing failure (the check fails the same way without this diff)",
-                   "full check: passed-ish",
-                   "the output quotes full check: passed mid-line",
-                   "full check: failed (exit 1)\nfull check: passed",
-                   "")
-        for output in results:
-            with self.subTest(output=output):
-                records = [*coder, *full_check_run(output)]
-                reason = json.loads(self.stop(records))["reason"]
-                self.assertIn("No passed full_check.py result", reason)
-                self.assertIn("If a full_check.py result already follows the last code change and was not passed, "
-                              "do not run it again: follow Step 6's route for that result and return the packet. "
-                              "Otherwise run the Step 6 execution gate now.", reason)
-
-    def test_a_bare_checker_command_with_a_passing_looking_output_is_blocked(self):
-        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        for command in ("npm test", "npm test > /tmp/review-gate.log 2>&1", "pytest -q"):
-            with self.subTest(command=command):
-                records = [*coder, bash(command, "toolu_bare"), result("toolu_bare", FULL_CHECK_PASSED)]
-                self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
-
-    def test_a_passed_line_with_no_result_for_the_call_or_for_another_call_is_blocked(self):
-        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        unanswered = [bash(FULL_CHECK_CALL, "toolu_full")]
-        elsewhere = [bash(FULL_CHECK_CALL, "toolu_full"), result("toolu_other", FULL_CHECK_PASSED)]
-        for run in (unanswered, elsewhere):
-            with self.subTest(run=run):
-                self.assertIn("No passed full_check.py result", json.loads(self.stop([*coder, *run]))["reason"])
-
-    def test_a_full_check_result_is_read_from_its_own_call_when_other_shell_calls_come_between(self):
-        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                   bash(FULL_CHECK_CALL, "toolu_full"), bash("git status", "toolu_git"),
-                   result("toolu_git", "clean"), result("toolu_full", FULL_CHECK_PASSED)]
-        self.assertEqual(self.stop(records), "")
-
-    def test_a_command_of_two_full_check_calls_counts_only_when_each_call_printed_passed(self):
-        coder = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        second_call = FULL_CHECK_CALL.replace("/r/app", "/r/lib").replace("'npm test'", "'npm run lint'")
-        command = f"{FULL_CHECK_CALL} ; {second_call}"
-        failed = "full check: failed (exit 1)\nFAIL src/a.test.ts"
-        blocked_by_output = {FULL_CHECK_PASSED: True,
-                             FULL_CHECK_PASSED + "\n" + failed: True,
-                             FULL_CHECK_PASSED + "\n" + FULL_CHECK_PASSED: False}
-
-        for output, blocked in blocked_by_output.items():
-            with self.subTest(output=output):
-                out = self.stop([*coder, *full_check_run(output, command)])
-
-                self.assertEqual(bool(out), blocked)
 
     def test_a_fix_coder_after_the_last_review_needs_only_the_full_check(self):
         records = [user("review loop"),
                    dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
                    dispatch("toolu_fix", "coder"), result("toolu_fix", "done")]
-        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
-        self.assertEqual(self.stop([*records, *full_check_run()]), "")
-
-    def test_a_message_to_a_coder_after_the_full_check_counts_as_a_code_change(self):
-        records = [user("review loop"),
-                   dispatch("toolu_coder", "coder"), result("toolu_coder", "agentId: acoder1"),
-                   dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", "ok"),
-                   *full_check_run()]
+        self.assertIn(NO_RECEIPT, json.loads(self.stop(records, unchecked=True))["reason"])
         self.assertEqual(self.stop(records), "")
-        out = self.stop([*records, send_message("acoder1")])
-        self.assertIn("No passed full_check.py result", json.loads(out)["reason"])
 
     def test_stop_hook_active_passes(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        self.assertEqual(self.stop(records, stop_hook_active=True), "")
+        self.assertEqual(self.stop(records, unchecked=True, stop_hook_active=True), "")
 
-    def repo_with_claude_md(self, claude_md):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        subprocess.run(["git", "init", "-q", tmp.name], check=True)
-        pathlib.Path(tmp.name, "CLAUDE.md").write_text(claude_md)
-        return tmp.name
-
-    def test_a_repo_whose_full_suite_runs_in_ci_owes_no_full_check(self):
-        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        repo = self.repo_with_claude_md("# Repo\n\n- Full suite: CI\n")
-
-        self.assertEqual(self.stop(records, cwd=repo), "")
-
-    def test_a_loop_reviewing_a_repo_whose_full_suite_runs_in_ci_owes_no_full_check_from_another_cwd(self):
-        reviewed = self.repo_with_claude_md("# Repo\n\n- Full suite: CI\n")
-        other = self.repo_with_claude_md("# Other repo\n")
+    def test_a_loop_is_judged_by_the_receipt_of_the_repo_it_reviewed_not_the_cwd(self):
+        reviewed = receipt_repo.make_repo(self)
+        other = receipt_repo.make_repo(self)
+        receipt_repo.plant_receipt(other)
         records = [user(f"review loop\nrepo: {reviewed}"), dispatch("toolu_coder", "coder"),
                    result("toolu_coder", "done")]
 
+        self.assertIn(NO_RECEIPT, json.loads(self.stop(records, cwd=other))["reason"])
+
+        receipt_repo.plant_receipt(reviewed)
         self.assertEqual(self.stop(records, cwd=other), "")
 
-    def test_a_loop_reviewing_a_repo_without_the_ci_line_owes_a_full_check_though_the_cwd_has_it(self):
-        reviewed = self.repo_with_claude_md("# Repo\n")
-        other = self.repo_with_claude_md("- Full suite: CI\n")
-        records = [user(f"review loop\nrepo: {reviewed}"), dispatch("toolu_coder", "coder"),
-                   result("toolu_coder", "done")]
-
-        self.assertIn("No passed full_check.py result", json.loads(self.stop(records, cwd=other))["reason"])
-
-    def test_a_repo_without_the_exact_full_suite_line_still_owes_a_full_check(self):
+    def test_a_cwd_outside_any_git_work_tree_fails_open(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        for claude_md in ("# Repo\n", "Full suite: ci\n", "Full-suite: CI\n", "The full suite: CI\n"):
-            with self.subTest(claude_md=claude_md):
-                repo = self.repo_with_claude_md(claude_md)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
 
-                self.assertIn("No passed full_check.py result", json.loads(self.stop(records, cwd=repo))["reason"])
+        self.assertEqual(self.stop(records, cwd=tmp.name), "")
 
     def test_a_foreground_report_that_quotes_the_launch_text_is_not_an_open_dispatch(self):
         report = "Reviewed the gate. It counts `Async agent launched` results as open dispatches.\nagentId: arev1"
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
                    dispatch("toolu_rev", "code-reviewer"), result("toolu_rev", report)]
-        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
+        self.assertIn(NO_RECEIPT, json.loads(self.stop(records, unchecked=True))["reason"])
 
 
 class StopRowTest(unittest.TestCase):
-    def stop_in_session(self, records, store_dir, transcript_path=None, **extra):
+    def stop_in_session(self, records, store_dir, transcript_path=None, unchecked=False, **extra):
         # The hook runs with its own store folder so the test never writes the real ~/.claude/state.
+        extra.setdefault("cwd", loop_repo(self, unchecked))
         env = {**os.environ, "HANDBACK_STORE_DIR": store_dir}
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -334,8 +309,7 @@ class StopRowTest(unittest.TestCase):
         self.addCleanup(store.cleanup)
         waiting = self.stop_in_session(coder_and_background_reviewer(), store.name)
         self.assertEqual(waiting.stdout, "")
-        finished = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done"),
-                    *full_check_run()]
+        finished = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
         self.stop_in_session(finished, store.name)
         stops = self.stored_stops(store.name)
         self.assertEqual([(row["agent_id"], row["open_dispatches"]) for row in stops],
@@ -391,10 +365,9 @@ class StopRowTest(unittest.TestCase):
 
     def test_a_stop_the_gate_blocked_is_stored_as_blocked_and_a_passing_stop_is_not(self):
         store = self.new_store()
-        unchecked = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        checked = [*unchecked, *full_check_run()]
-        blocked_out = self.stop_in_session(unchecked, store)
-        self.stop_in_session(checked, store)
+        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
+        blocked_out = self.stop_in_session(records, store, unchecked=True)
+        self.stop_in_session(records, store)
         self.assertIn("block", blocked_out.stdout)
         self.assertEqual([bool(row.get("blocked")) for row in self.stored_stops(store)], [True, False])
 
@@ -551,12 +524,12 @@ class RunRowTest(unittest.TestCase):
                     "REVIEW_LOOP_GATE_CLAUDE_DIR": claude_dir,
                     "CLAUDE_TOOLKIT_TELEMETRY": "1"}
 
-    def stop(self, records, **extra):
+    def stop(self, records, unchecked=False, **extra):
         with open(self.transcript, "w", encoding="utf-8") as fh:
             for rec in records:
                 fh.write(json.dumps(rec) + "\n")
         hook = {"hook_event_name": "SubagentStop", "agent_type": "review-loop", "session_id": "s1",
-                "agent_transcript_path": self.transcript}
+                "agent_transcript_path": self.transcript, "cwd": loop_repo(self, unchecked)}
         hook.update(extra)
         proc = subprocess.run([sys.executable, "-B", self.script], input=json.dumps(hook), capture_output=True,
                               text=True, check=True, env=self.env, cwd=self.tmp.name)
@@ -571,7 +544,7 @@ class RunRowTest(unittest.TestCase):
         return fake_ledger.recorded_rows(self.env, "review_run")
 
     def loop(self, *steps):
-        return [user("review loop\nlane: code\nphase: 2")] + [rec for step in steps for rec in step] + full_check_run()
+        return [user("review loop\nlane: code\nphase: 2")] + [rec for step in steps for rec in step]
 
     def test_foreground_reports_each_write_a_row_with_their_own_count(self):
         records = self.loop([dispatch("t_smell", "smell-reviewer"), result("t_smell", indented(SMELL_REPORT))],
@@ -587,7 +560,7 @@ class RunRowTest(unittest.TestCase):
 
     def test_a_fix_loop_dispatched_from_a_test_audit_writes_its_run_rows_under_the_test_audit_lane(self):
         records = [user("review loop\nlane: test-audit"), dispatch("t_code", "code-reviewer"),
-                   result("t_code", indented(CODE_REPORT)), *full_check_run()]
+                   result("t_code", indented(CODE_REPORT))]
         self.assertEqual(self.stop(records), "")
 
         (code,) = self.rows()
@@ -675,12 +648,13 @@ class RunRowTest(unittest.TestCase):
         git_env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
         for args in (["init", "-q", "-b", "main"], ["checkout", "-q", "-b", "feature-x"]):
             subprocess.run(["git", *args], cwd=worktree, env=git_env, check=True, capture_output=True)
+        pathlib.Path(worktree, "app.py").write_text("x = 1\n")
+        receipt_repo.plant_receipt(worktree)
         return worktree
 
     def test_a_review_of_a_worktree_outside_the_cwd_logs_that_worktrees_repo_and_branch(self):
         worktree = self.reviewed_worktree()
-        review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT)),
-                  *full_check_run()]
+        review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]
         scope_call = [bash(f"~/.claude/skills/review/review-scope caller=review root={worktree}", "t_scope"),
                       result("t_scope", f"ROOT={worktree}\nMODE=worktree\n")]
         cases = {"the review-scope ROOT= line": ([user("review loop\nlane: code")], scope_call),
@@ -697,8 +671,7 @@ class RunRowTest(unittest.TestCase):
                 self.assertEqual((row["_cwd"], row["branch_key"]), (os.path.realpath(worktree), "feature-x"))
 
     def test_a_prompt_repo_that_does_not_exist_writes_the_row_quietly(self):
-        review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT)),
-                  *full_check_run()]
+        review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]
         missing = os.path.join(self.tmp.name, "no-such-repo")
 
         self.assertEqual(self.stop([user(f"review loop\nlane: code\nrepo: {missing}"), *review]), "")
@@ -714,8 +687,7 @@ class RunRowTest(unittest.TestCase):
                        capture_output=True)
         scope_call = [bash(f"~/.claude/skills/review/review-scope caller=review root={worktree}", "t_scope"),
                       result("t_scope", f"ROOT={worktree}\nMODE=worktree\n")]
-        review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT)),
-                  *full_check_run()]
+        review = [dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]
 
         self.assertEqual(self.stop([user(f"review loop\nlane: code\nrepo: {other_repo}"), *scope_call, *review]), "")
 
@@ -770,7 +742,7 @@ class RunRowTest(unittest.TestCase):
     def test_a_blocked_stop_writes_nothing(self):
         records = [user("review loop"), dispatch("t_coder", "coder"), result("t_coder", "done"),
                    dispatch("t_code", "code-reviewer"), result("t_code", indented(CODE_REPORT))]
-        self.assertIn("No passed full_check.py result", json.loads(self.stop(records))["reason"])
+        self.assertIn(NO_RECEIPT, json.loads(self.stop(records, unchecked=True))["reason"])
         self.assertEqual([], self.rows())
 
     def test_a_report_that_cannot_be_counted_still_writes_its_row_with_null(self):
@@ -1077,7 +1049,7 @@ METRICS_ROW = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=1
 
 class LedgerRowsTest(StopHookMixin, unittest.TestCase):
     def loop(self, *rows, plan="spec.md"):
-        return [user(f"review loop\nlane: code\nplan: {plan}"), *full_check_run(),
+        return [user(f"review loop\nlane: code\nplan: {plan}"),
                 *[bash(row) for row in rows]]
 
     def stop_with_packet(self, records, touched="spec.md"):
@@ -1096,10 +1068,41 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
     def test_every_row_logged_passes(self):
         self.assertEqual(self.stop_with_packet(self.loop(FINDING_ROW, METRICS_ROW, plan="other.md"), "b.py"), "")
 
+    def test_a_finding_row_with_root_before_kind_counts_so_the_loop_is_not_told_to_log_it_again(self):
+        root_first = FINDING_ROW.replace("kind=finding", "root=/home/u/repo kind=finding")
+
+        self.assertEqual(self.stop_with_packet(self.loop(root_first, METRICS_ROW, plan="other.md"), "b.py"), "")
+
+    def test_a_semicolon_inside_a_quoted_argument_before_kind_does_not_end_the_row(self):
+        quoted = ('~/.claude/skills/review/log-review-finding desc="null; guard" kind=finding lane=code '
+                  'disposition=fix class=bug file=a.py line=3 actioned=fixed')
+
+        self.assertEqual(self.stop_with_packet(self.loop(quoted, METRICS_ROW, plan="other.md"), "b.py"), "")
+
+    def test_an_escaped_quote_and_semicolon_inside_a_quoted_argument_do_not_end_the_row(self):
+        escaped = ('~/.claude/skills/review/log-review-finding desc="say \\"x; y\\"" kind=finding lane=code '
+                   'disposition=fix class=bug file=a.py line=3 actioned=fixed')
+
+        self.assertEqual(self.stop_with_packet(self.loop(escaped, METRICS_ROW, plan="other.md"), "b.py"), "")
+
+    def test_an_unclosed_quote_in_one_command_does_not_hang_the_count_of_a_later_command(self):
+        unclosed = '~/.claude/skills/review/log-review-finding desc="oops ' + 'x; ' * 2000
+
+        records = self.loop(unclosed, FINDING_ROW, METRICS_ROW, plan="other.md")
+
+        self.assertEqual(self.stop_with_packet(records, "b.py"), "")
+
+    def test_a_run_row_with_root_first_is_no_finding_row(self):
+        run_row = "~/.claude/skills/review/log-review-finding root=/home/u/repo kind=run lane=code n_findings=1"
+
+        reason = json.loads(self.stop_with_packet(self.loop(run_row, METRICS_ROW, plan="other.md"), "b.py"))["reason"]
+
+        self.assertIn("only 0 per-finding", reason)
+
     def test_a_metrics_line_logged_before_the_last_reviewer_round_is_blocked(self):
         records = [user("review loop\nlane: code\nplan: other.md"), bash(METRICS_ROW),
                    dispatch("t_verify", "code-reviewer"), result("t_verify", "ok"),
-                   *full_check_run(), bash(FINDING_ROW)]
+                   bash(FINDING_ROW)]
 
         reason = json.loads(self.stop_with_packet(records, "b.py"))["reason"]
 
@@ -1202,14 +1205,14 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
         reason = json.loads(self.stop(blocked, last_assistant_message=packet))["reason"]
         self.assertIn("1 nit(s) but only 0 `disposition=nit` row(s)", reason)
 
-        logged = [user("review loop\nlane: code\nplan: other.md"), *full_check_run(),
+        logged = [user("review loop\nlane: code\nplan: other.md"),
                   bash(FINDING_ROW, "t_fix"), bash(nit_row, "t_nit"), bash(METRICS_ROW, "t_metrics")]
         self.assertEqual(self.stop(logged, last_assistant_message=packet), "")
 
     def test_a_nit_row_whose_disposition_is_a_shell_variable_leaves_the_nit_count_unclaimed(self):
         packet = (PACKET % "b.py").replace('"nit": []', '"nit": ["b.py:4 rename x - applied"]')
         variable_row = FINDING_ROW.replace("disposition=fix", "disposition=$D")
-        records = [user("review loop\nlane: code\nplan: other.md"), *full_check_run(),
+        records = [user("review loop\nlane: code\nplan: other.md"),
                    bash(FINDING_ROW, "t_fix"), bash(variable_row, "t_variable"), bash(METRICS_ROW, "t_metrics")]
 
         self.assertEqual(self.stop(records, last_assistant_message=packet), "")

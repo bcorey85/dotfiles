@@ -1,6 +1,6 @@
 ---
 name: code
-description: Dispatch a coder subagent for implementation, then auto-run `/review`. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first. Pass a long or quote-heavy task as `--task-file <path>` (the scratchpad is fine).
+description: Dispatch a coder subagent for implementation, then auto-run `/review`. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first. Pass a long or quote-heavy task as `--task-file <path>` (the scratchpad is fine). Do not edit tracked files in the run's checkout while a coder runs; send a change as `guidance:` or wait for the hand-back.
 context: fork
 agent: code-fork
 model: sonnet
@@ -19,6 +19,7 @@ You route nothing. `code_step.py` decides, and you run what it prints. Run `star
    - `invoke-skill`: invoke that skill. Run the `skill-done pass` command it prints, one `--evidence` per open item it lists, only when the skill reports no open finding. Otherwise run `skill-done fail`, with one `--finding "<one line>"` per open finding.
    - `auto-advance`: run the commit command the output names, then the next-phase command it names.
    - `stop-block-B` / `stop-block-C`: invoke Skill `stage`, then hand back.
+   - `commit-and-hand-back`: run the commit command it prints, then hand back. If the commit is refused, hand back with the refusal; never retry it.
    - `ask-user`: hand back.
    - `stop` / `judgment`: hand back.
    - `go-on`: send the printed lines to the message's sender with SendMessage, then go on with the step you were on.

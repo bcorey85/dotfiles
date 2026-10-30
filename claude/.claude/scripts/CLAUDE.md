@@ -10,9 +10,10 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 
 - Review converged or clean status: `review/handback.py` `CLEAN_STATUSES` and `false_clean_reason`, and `review/capped_review.py` `effective_status` (a capped packet reads as `deferred` only with no blocker, no open class, no unrun scoped reviewer and a passed full check of the final tree). Read it; never re-derive it from packet text, a transcript or a session line.
 - Commit credit and the reviewed tree: `lib/reviewed_tree.py` (`record_reviewed`, `is_reviewed`); the only writer of the record is `handback.record_clean_review`, fed the dispatch repo from the store. Fingerprint the repo that was reviewed, never the hook's cwd.
-- Tree identity: `lib/reviewed_tree.py` `tree_fingerprint`. Never hash a tree another way.
+- Tree identity: `lib/reviewed_tree.py` `tree_fingerprint` (`work_tree_fingerprint` for the work tree against its HEAD). Never hash a tree another way.
 - Hand-back rows (dispatch, hand-back, stop, step): `review/handback_store.py`.
 - Full-check result and scope: `review/full_check.py` owns the result values. `lib/check_scope.py` owns whether a command is whole or targeted.
+- Whether a full check ran on the current tree: `lib/full_check_receipt.py` (`valid_receipt`, `receipt_problem`), written only by `review/full_check.py`. Never match a command's text or a result line to decide it.
 - Test file and test path: `lib/source_paths.py` (`is_test_path`, `is_runnable_test_file`).
 - Test runner output: `lib/test_run_output.py`. Whether a check passed or could not run: `lib/check_output.py`.
 - Every question about a command (runs tests, runner family, is a check, test filter, cargo test target): `lib/check_scope.py` (`runs_tests`, `runner_family`, `is_check`, `command_check_scope`, `names_test_filter`, `names_cargo_test_target`, `names_test_runner`, `prints_own_runner_summary`). Add no per-gate runner or flag table.

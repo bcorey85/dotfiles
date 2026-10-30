@@ -6,6 +6,7 @@ import pathlib
 import re
 import shutil
 
+import full_check_receipt
 import plan_format
 import script_utils
 import shell_command
@@ -14,7 +15,8 @@ from criteria_verdict import item_verdict, without_leading_cd_and_env, without_n
 from script_utils import run_command
 
 VERIFY_TIMEOUT_SECONDS = 600
-COMMAND_START = re.compile(r"^(?:" + script_utils.ENV_PREFIX.pattern + r")?"
+# `env` may lead the assignments (`env CI=1 cargo test`) or stand alone (`env cargo test`).
+COMMAND_START = re.compile(r"^(?:env\s+)?(?:" + script_utils.ENV_PREFIX.pattern + r")?"
                            r"(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
                            r"|cargo |go |deno |bun |uv |poetry |pipenv |pdm |tsc\b|eslint |vitest|jest|mvn |gradle |\./"
                            r"|dotnet |docker |just |rake |bundle |ruby |php |composer |mix |swift |sbt |bazel |tox\b"
@@ -87,11 +89,18 @@ def starts_like_a_program_here(span, repo_dir):
 
 def first_command_span(line, repo_dir):
     # The first backticked span that starts with a known program, after any leading NAME=value assignments, which the
-    # shell passes to the command; when none does, the first span that starts with a program of this machine. The
-    # line may continue after it ("`npm run build` exits 0.").
+    # shell passes to the command (or `env`, with or without assignments); when none does, the last span after the
+    # item's em dash that starts with a program of this machine, else the first such span of the line. The line may
+    # continue after it ("`npm run build` exits 0.").
     spans = [without_negation(span) for span in script_utils.backticked_spans(line)]
     for span in spans:
         if COMMAND_START.match(span):
+            return span
+
+    _, _, after_dash = line.partition(" — ")
+    spans_after_dash = [without_negation(span) for span in script_utils.backticked_spans(after_dash)]
+    for span in reversed(spans_after_dash):
+        if starts_like_a_program_here(span, repo_dir):
             return span
 
     for span in spans:
@@ -198,8 +207,11 @@ def log_prohibition_scan(repo_dir, command, verdict):
 
 
 def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
-    # The repo's configured `Quality check:` command is left to the review loop's own run unless the caller says
-    # nothing else will run it. Every other command runs, and a repo with no configured check skips nothing.
+    # The repo's configured `Quality check:` command is skipped while a valid full-check receipt covers the work tree
+    # as it stands, unless that receipt is the no-check-found result (NOT_RUN_NO_CHECK); `not run (CI)` and
+    # all-expected-red receipts ran nothing but still skip, by design. With no such receipt, or when the caller says
+    # nothing else will run it, it runs here. Every other command runs, and a repo with no configured check skips
+    # nothing.
     results = []
     skipped = []
     unparsed = []
@@ -215,7 +227,9 @@ def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
             unparsed.append(line.strip())
             continue
         is_configured_check_command = full_check.is_configured_check(command, configured_check)
-        if is_configured_check_command and not run_whole_suites:
+        receipt = full_check_receipt.valid_receipt(repo_dir) if is_configured_check_command and not run_whole_suites \
+            else None
+        if receipt and receipt["result"] != full_check.NOT_RUN_NO_CHECK:
             skipped.append(command)
             continue
         code, output = run_command(command, repo_dir, timeout=timeout)

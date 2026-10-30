@@ -143,6 +143,28 @@ def last_json_object(reply, keys):
     return None
 
 
+# How much of the first unparsable reply the retry note quotes.
+RETRY_ERROR_CHARS = 200
+
+
+def reply_with_one_retry(claude_call, role, prompt, repo, out, keys, shape, **options):
+    """The parsed JSON object of a model reply that holds any of `keys`. A reply with none is retried once under
+    "<role>-retry", so the retry has its own row in calls.jsonl; a second miss raises ValueError."""
+    reply = claude_call(role, prompt, repo, out, **options)
+    parsed = last_json_object(reply, keys)
+    if parsed is not None:
+        return parsed
+
+    error = f"the {role} reply holds no {shape} object: {reply!r}"
+    retry_note = f"A previous reply to this prompt could not be parsed: {error[:RETRY_ERROR_CHARS]}"
+    retry_prompt = prompt + f"\n\n{retry_note}\nReply with the JSON object only."
+    reply = claude_call(f"{role}-retry", retry_prompt, repo, out, **options)
+    parsed = last_json_object(reply, keys)
+    if parsed is None:
+        raise ValueError(f"the {role} reply holds no {shape} object: {reply!r}")
+    return parsed
+
+
 REFILE_SIMILARITY = 0.8
 
 

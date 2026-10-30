@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
 """review_loop_gate.py — deterministic checks on the review loop.
 
-  SubagentStop (review-loop), the backstop: blocks once when no full check ran after the last code
-      change: a shell call of review/full_check.py whose tool_result holds the line
-      `full check: passed`; a shell call of several full_check.py calls counts only when each printed
-      `full check: passed` or an Expected red `not run` line. A
-      failed, unverified, setup-fault, or not-run result other than an Expected red one, and a checker run by hand,
-      never count; full_check.py itself refuses a command scoped to files or tests, or one whose scope cannot be read,
-      unless its text equals the CLAUDE.md `Quality check:` command, or, in a repo whose full suite runs in CI, one of
-      its && steps. The last coder step — a dispatch, or a SendMessage to a coder it dispatched — is the last code
-      change; with none, the loop start is, since the phase changed code before the loop ran. A handoff `tests-run`
-      never exempts it. A loop returning `status: plan-impact`, `setup-fault` or `critical-blocker` owes no check,
-      and neither does a loop in a repo whose CLAUDE.md holds the line `Full suite: CI`
-      (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. That repo is the one the loop reviewed
-      (reviewed_root), else the hook cwd. A stop with a
+  SubagentStop (review-loop), the backstop: blocks once when no valid full-check receipt exists for the tree the
+      loop reviewed (lib/full_check_receipt, written only by review/full_check.py). A receipt is valid when the
+      latest full check run finished and verified the tree, and the tree has not changed since; a checker run by hand,
+      a scoped run and a handoff `tests-run` never make one. The gate matches no command or result text. A loop
+      returning `status: plan-impact`, `setup-fault` or `critical-blocker` owes no check. The repo is the one the loop
+      reviewed (reviewed_root), else the hook cwd; outside a git work tree the gate lets the stop through. A stop with a
       delivered SubagentHandback (one no hook denied) skips this check and the plan-file check.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
@@ -63,12 +56,10 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../telemetry")]
 import handback
-import handback_hook
 import handback_store
 import script_utils
 from loop_transcript import (
     DELIVERED_TAIL,
-    GATE_REASON,
     NO_REVIEW_MODE,
     RETURN_TAIL,
     RUN_GATES,
@@ -128,7 +119,7 @@ def reasons_for(scanned):
     ungated, open_dispatches = scanned
     if open_dispatches or not ungated:
         return []
-    return [GATE_REASON]
+    return [ungated]
 
 
 def final_packet(transcript, final):
@@ -379,8 +370,7 @@ def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
 def check_stop(hook):
     try:
         transcript = LoopTranscript(hook["agent_transcript_path"])
-        in_ci = handback_hook.full_suite_in_ci(transcript, hook.get("cwd"))
-        scanned = scan(transcript, hook.get("last_assistant_message"), in_ci)
+        scanned = scan(transcript, hook.get("last_assistant_message"), hook.get("cwd"))
     except Exception:
         # A transcript the gate cannot read still ends an earlier wait: with no row, the last open count would stand.
         record_stop(hook, 0)

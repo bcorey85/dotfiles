@@ -18,6 +18,7 @@ import unittest.mock
 from typing import ClassVar
 
 import fake_ledger
+import receipt_repo
 import toolkit_paths
 from in_process import process_exit_code
 
@@ -567,6 +568,19 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("coder-packet failed", done.stderr)
         self.assertFalse((self.repo / ".git/coder-gate.json").exists())
         self.assertEqual({}, self.state())
+
+    def test_a_restart_whose_new_run_fails_to_build_keeps_the_old_run_and_its_gate(self):
+        self.start_phase_one()
+        state_before = self.state()
+        gate_before = (self.repo / ".git/coder-gate.json").read_text()
+        (self.claude / "scripts/code/coder_packet.py").write_text("raise SystemExit('packet broke')\n")
+
+        done = run(self.repo, self.env, "start", "--restart", self.plan)
+
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn("coder-packet failed", done.stderr)
+        self.assertEqual(state_before, self.state())
+        self.assertEqual(gate_before, (self.repo / ".git/coder-gate.json").read_text())
 
     def test_gate_skips_a_package_in_a_sibling_repo(self):
         sibling = self.tmp / "sibling/evals"
@@ -1303,6 +1317,43 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("toolkit gate or script fault", out)
         self.assertNotIn("AGENT: coder", out)
         self.assertNotIn("Edit only the plan file", out)
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
+    def test_a_plan_impact_about_a_hook_with_no_plan_step_stops_whatever_its_cause_line_says(self):
+        report = ("PLAN-IMPACT:\n  assumed: the hand-back hook lets the coder through\n  found: it denies every try\n"
+                  "  changes: nothing\n  acceptance_criteria: none\n  cause: plan\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
+    def test_a_plan_impact_naming_a_phase_and_a_hook_still_goes_to_the_rule(self):
+        report = ("PLAN-IMPACT:\n  assumed: Phase 2 adds the hand-back hook\n  found: the hook exists already\n"
+                  "  changes: C\n  acceptance_criteria: none\n  cause: plan\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("Edit only the plan file", out)
+
+    def test_a_plan_impact_that_a_later_hand_back_dropped_asks_instead_of_adopting_by_rule(self):
+        block = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n  cause: plan"
+        self.start_phase_one()
+        self.hook("coder", block + "\nPLAN-IMPACT: yes")
+        self.assertIn("ACTION: stop", self.step("resume"))
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("no longer carries this block", self.said())
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertEqual("impact-coder", self.state()["stage"])
+        self.assertIn("no longer carries this block", self.said())
         self.assertNotIn("## Plan Deviations", self.plan_text())
 
     def test_a_plan_impact_with_an_unknown_cause_stops_and_names_both_causes(self):
@@ -2258,6 +2309,57 @@ class CodeStepTest(unittest.TestCase):
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("ACTION: auto-advance", self.step("resume"))
+
+    def finish_headless_last_phase(self, *start_options):
+        self.coder_round(start_options=("--headless", *start_options))
+        self.hook("review-loop", self.LOOP_OK)
+        return self.step("resume")
+
+    def run_printed_commit(self, out):
+        commit_line = out[out.index("git add -- "):].splitlines()[0]
+        subprocess.run(["bash", "-c", commit_line], cwd=self.repo, check=True, capture_output=True, env=self.env)
+
+    def test_a_headless_run_commits_its_last_phase_by_path_and_hands_back_with_no_wait_to_stage(self):
+        out = self.finish_headless_last_phase("--phase", "1")
+
+        self.assertIn("ACTION: commit-and-hand-back", out)
+        self.assertIn("git add -- ", out)
+        self.assertIn("If the commit is refused, hand back with the refusal as a stop; do not retry it.", out)
+        self.assertNotIn("stage", out)
+        self.assertNotIn("/stage", self.said())
+        self.assertIn("Files this run commits", self.said())
+
+    def test_a_headless_run_stops_before_a_gated_phase_after_committing_the_phase_before_it(self):
+        self.gate_phases(2)
+
+        out = self.finish_headless_last_phase()
+
+        self.assertIn("ACTION: commit-and-hand-back", out)
+        self.assertIn("No phase starts on its own", self.said())
+        self.assertNotIn("Auto-advancing", self.said())
+        self.assertEqual("1", self.state()["phase"])
+
+    def test_a_headless_last_phase_commit_leaves_a_file_staged_by_hand_staged_and_names_it(self):
+        (self.repo / "notes.md").write_text("mine\n")
+        subprocess.run(["git", "add", "notes.md"], cwd=self.repo, check=True, capture_output=True, env=self.env)
+
+        out = self.finish_headless_last_phase("--phase", "1")
+        self.run_printed_commit(out)
+
+        self.assertIn("Staged before the commit and left staged, not committed: notes.md", self.said())
+        staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=self.repo, capture_output=True,
+                                text=True, env=self.env).stdout.split()
+        self.assertEqual(["notes.md"], staged)
+
+    def test_a_headless_last_phase_commit_message_is_one_subject_line_with_no_attribution(self):
+        out = self.finish_headless_last_phase("--phase", "1")
+        self.run_printed_commit(out)
+
+        message = subprocess.run(["git", "log", "-1", "--format=%B"], cwd=self.repo, capture_output=True, text=True,
+                                 env=self.env).stdout.strip()
+        self.assertEqual(1, len(message.splitlines()))
+        self.assertNotIn("Co-Authored-By", message)
+        self.assertNotIn("Claude", message)
 
     def test_cap_reached_and_blocker_stop_without_marking(self):
         self.coder_round()
@@ -5677,6 +5779,22 @@ class CodeStepTest(unittest.TestCase):
         command = code_step_verification.verification_command(item)
         self.assertEqual("PARITY_PATH=/x/y.py cargo test --test watch_parity", command)
 
+    def test_an_env_prefixed_command_wins_over_a_prose_program_span_before_it(self):
+        item = "- [ ] **Env**: lists them with `ls -la` - `env CARGO_BUILD_JOBS=4 cargo test --test watch_parity`"
+
+        command = code_step_verification.verification_command(item)
+        self.assertEqual("env CARGO_BUILD_JOBS=4 cargo test --test watch_parity", command)
+
+    def test_env_with_no_assignment_leads_a_command_start(self):
+        self.assertTrue(code_step_verification.COMMAND_START.match("env cargo test"))
+        self.assertIsNone(code_step_verification.COMMAND_START.match("env nosuchprogram hi"))
+
+    def test_the_last_program_span_after_the_em_dash_wins_over_prose_spans_before_it(self):
+        item = "- [ ] **Check**: `ls -la` lists them — run `wc -l` then `stat -c %s`"
+
+        command = code_step_verification.verification_command(item)
+        self.assertEqual("stat -c %s", command)
+
     def test_a_quoted_assignment_value_with_spaces_is_kept_in_the_command(self):
         item = "- [ ] **Env**: `GREETING=\"a b\" echo hi`"
 
@@ -5732,15 +5850,72 @@ class CodeStepTest(unittest.TestCase):
             with self.subTest(span=span):
                 self.assertIsNone(code_step_verification.COMMAND_START.match(span))
 
+    CONFIGURED_CHECK_SECTION = ("#### Automated Verification:\n\n- [ ] **All**: `npm test`\n\n"
+                                "#### Manual Verification:\n")
+
+    def declare_quality_check_and_plant_receipt(self, **receipt):
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npm test`\n")
+        receipt_repo.plant_receipt(str(self.repo), **receipt)
+
     def test_a_whole_suite_command_with_a_variable_prefix_runs(self):
         section = "#### Automated Verification:\n\n- [ ] **All**: `CI=1 npm test`\n\n#### Manual Verification:\n"
+        self.declare_quality_check_and_plant_receipt()
 
-        with unittest.mock.patch.object(full_check, "configured_check_command", return_value="npm test"), \
-                unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+        with unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
             results, skipped, unparsed = code_step_verification.run_verification_commands(self.repo, section)
 
         self.assertEqual(([], []), (skipped, unparsed))
         self.assertEqual(1, len(results))
+
+    def test_the_configured_check_command_is_skipped_when_a_valid_receipt_covers_the_tree(self):
+        self.declare_quality_check_and_plant_receipt()
+
+        results, skipped, unparsed = code_step_verification.run_verification_commands(
+            self.repo, self.CONFIGURED_CHECK_SECTION)
+
+        self.assertEqual(([], ["npm test"], []), (results, skipped, unparsed))
+
+    def test_the_configured_check_command_runs_when_no_valid_receipt_covers_the_tree(self):
+        self.declare_quality_check_and_plant_receipt()
+        (self.repo / "edited-after-the-check.txt").write_text("x\n")
+
+        with unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+            results, skipped, unparsed = code_step_verification.run_verification_commands(
+                self.repo, self.CONFIGURED_CHECK_SECTION)
+
+        self.assertEqual(([], []), (skipped, unparsed))
+        self.assertEqual(["npm test"], [result[0] for result in results])
+
+    def test_the_configured_check_command_runs_when_the_valid_receipt_is_of_a_run_that_found_no_check(self):
+        self.declare_quality_check_and_plant_receipt(
+            result="not run (no check found; the coder's scoped tests stand)")
+
+        with unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+            results, skipped, _unparsed = code_step_verification.run_verification_commands(
+                self.repo, self.CONFIGURED_CHECK_SECTION)
+
+        self.assertEqual([], skipped)
+        self.assertEqual(["npm test"], [result[0] for result in results])
+
+    def test_the_configured_check_command_is_skipped_when_the_valid_receipt_is_of_a_ci_or_expected_red_run(self):
+        for result in ("not run (CI)", "not run (expected red until Phase 3)"):
+            with self.subTest(result=result):
+                self.declare_quality_check_and_plant_receipt(result=result)
+
+                results, skipped, _unparsed = code_step_verification.run_verification_commands(
+                    self.repo, self.CONFIGURED_CHECK_SECTION)
+
+                self.assertEqual(([], ["npm test"]), (results, skipped))
+
+    def test_the_configured_check_command_runs_when_the_caller_asks_for_whole_suites_even_with_a_valid_receipt(self):
+        self.declare_quality_check_and_plant_receipt()
+
+        with unittest.mock.patch.object(code_step_verification, "run_command", return_value=(0, "")):
+            results, skipped, _unparsed = code_step_verification.run_verification_commands(
+                self.repo, self.CONFIGURED_CHECK_SECTION, run_whole_suites=True)
+
+        self.assertEqual([], skipped)
+        self.assertEqual(["npm test"], [result[0] for result in results])
 
     @staticmethod
     def verification_section(command):
@@ -6399,7 +6574,10 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_phase_that_lists_commands_keeps_the_green_count_in_the_done_line(self):
         (self.repo / "CLAUDE.md").write_text("- Quality check: `npx vitest run`\n")
-        self.finish_phase_one()
+        self.coder_round()
+        receipt_repo.plant_receipt(str(self.repo))
+        self.hook("review-loop", self.LOOP_OK)
+        self.step("resume")
         done = next(line for line in self.said().splitlines() if line.startswith("Phase 1 marked done"))
         self.assertIn("Verification run: 1 command(s) green (git grep -n --untracked console.log", done)
         self.assertIn("skipped as covered by the review loop: 1.", done)

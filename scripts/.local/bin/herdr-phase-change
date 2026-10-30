@@ -5,6 +5,9 @@
 # Usage: herdr-phase-change [--timeout <seconds>] <agent> <prompt>
 #   agent      a live agent name or pane id.
 #   prompt     the new phase's first prompt, e.g. "/code docs/plans/x/plan.md".
+#              A prompt that is not a slash command goes out prefixed with
+#              "[from orchestrator pane <sending pane id>] ", so the receiver can tell the
+#              prompt came from another pane, not from the user.
 #   --timeout  seconds bounding each of the two waits: for /clear to take effect,
 #              then for the pane to settle. Defaults to 30.
 #
@@ -49,6 +52,13 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$target" ] && [ -n "$prompt" ] || { usage >&2; exit 1; }
+
+if [ "${prompt:0:1}" != "/" ]; then
+    sender_pane=$(herdr-api pane current 2>/dev/null | jq -r '.result.pane.pane_id // empty' || true)
+    [ -n "$sender_pane" ] \
+        || { echo "herdr-phase-change: cannot name the sending pane, so the prompt cannot be marked; sent nothing" >&2; exit 1; }
+    prompt="[from orchestrator pane $sender_pane] $prompt"
+fi
 
 agent_field() {
     herdr-api agent get "$target" | jq -r ".result.agent.$1 // empty" || true

@@ -32,6 +32,11 @@ class GuidanceRulesTest(unittest.TestCase):
                       "non-negotiables check, that check passed", text)
         self.assertIn("A green gate or CI run alone never produces that line.", text)
 
+    def test_the_orchestrator_never_answers_a_question_put_to_the_user_in_another_session_s_pane(self):
+        text = guidance_text("orchestration.md")
+        self.assertIn("Never submit text in another session's input box to answer a question put to the user", text)
+        self.assertIn("tell the user to answer in that pane", text)
+
     def test_a_coder_runs_a_changed_test_file_through_the_sharding_runner(self):
         text = repo_doc_text("toolkit-script-rules.md")
         self.assertIn("Run a changed test file through `python3 tests/parallel_tests.py <test file name>`", text)

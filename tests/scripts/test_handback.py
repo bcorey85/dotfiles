@@ -50,6 +50,8 @@ CONVERGED_FIELDS = {"status": "converged", "iter": 1,
                     "skipped_fp": [], "ask": [], "class_closure": "enumerated every query",
                     "files_touched": ["src/orders.ts"]}
 CONVERGED = json.dumps(CONVERGED_FIELDS)
+CAP_REACHED = json.dumps({"status": "cap-reached", "iter": 0,
+                          "findings_remaining": [{"finding": "NOT REVIEWED", "file_line": "a.ts:1"}]})
 
 RETRY_ASK = {"finding": "cap on retries", "file_line": "src/retry.ts:10", "question": "cap at 3?",
              "change": "stop the retry loop after 3 tries", "gate": "code-reviewer", "class": "smell"}
@@ -942,6 +944,32 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertEqual(self.hand_back(), (0, ""))
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_a_cap_after_a_handed_in_change_with_no_reviewer_is_denied_once(self):
+        self.dispatch("review-loop", prompt="mode: review-first\naccepted change: rename the flag\n")
+        self.dispatch("coder", "a1")
+        self.assert_denied(self.hand_back(message=CAP_REACHED))
+        self.assertIsNone(handback_store.latest(SESSION)["handback"])
+        self.assertEqual(self.hand_back(message=CAP_REACHED), (0, ""))
+        self.assertEqual(handback_store.latest(SESSION)["handback"]["status"], "cap-reached")
+
+    def test_a_cap_with_a_coder_after_the_last_reviewer_is_denied_once(self):
+        self.dispatch("review-loop")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+        self.assert_denied(self.hand_back(message=CAP_REACHED))
+        self.assertEqual(self.hand_back(message=CAP_REACHED), (0, ""))
+
+    def test_a_cap_with_a_reviewer_after_the_last_coder_passes(self):
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.dispatch("code-reviewer", "a1")
+        self.assertEqual(self.hand_back(message=CAP_REACHED), (0, ""))
+
+    def test_a_cap_in_no_review_mode_passes(self):
+        self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
+        self.dispatch("coder", "a1")
+        self.assertEqual(self.hand_back(message=CAP_REACHED), (0, ""))
 
     def test_no_review_mode_dispatch_passes_with_no_reviewer(self):
         self.dispatch("review-loop", prompt="scope: branch\nno-review\n")

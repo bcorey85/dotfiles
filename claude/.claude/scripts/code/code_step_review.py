@@ -702,8 +702,14 @@ def command_after_review(repo_dir, state, args):
     asks = packet["ask"]
     if asks:
         fill_review_ask_ids(repo_dir, state, module, handback, asks)
+        save_asks_packet_id(state, handback_store, session_id, handback)
         return present_asks(repo_dir, state, asks)
     finish_phase(repo_dir, state)
+
+
+def save_asks_packet_id(state, handback_store, session_id, handback):
+    if session_id:
+        state["asksPacketId"] = handback_store.agent_hand_back_id(session_id, handback.get("agent_id"))
 
 
 def present_asks(repo_dir, state, asks):
@@ -809,6 +815,19 @@ def log_ask_outcomes(repo_dir, state, outcomes, decided_by="user"):
                   f"exited {outcome_row.code}: {script_utils.one_line(outcome_row.output)}", file=sys.stderr)
         elif outcome_row.new_finding_id_note:
             print(f"code-step: {outcome_row.new_finding_id_note}", file=sys.stderr)
+
+    record_run_asks_logged(repo_dir, state)
+
+
+def record_run_asks_logged(repo_dir, state):
+    # review_fix.py packet reads this row, so a packet whose asks this run logged is not offered again elsewhere.
+    session_id = run_session_id(state)
+    packet_id = state.get("asksPacketId")
+    if not session_id or not packet_id:
+        return
+
+    import handback_store  # after the load check in log_ask_outcomes, as in command_after_review
+    handback_store.record_asks_logged(session_id, packet_id, str(repo_dir))
 
 
 def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):

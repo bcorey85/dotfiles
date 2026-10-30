@@ -67,7 +67,6 @@ NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit
 LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
 PLAN_IMPACT = "plan-impact"
-ASKS_LOGGED_ROW = "asks-logged"
 NEW_FINDING_ID = "new-finding-id"
 # Exit code of `wait-for-loop`: non-zero so no caller reads it as a finished run, and not 2, the code of a real stop.
 WAIT_EXIT_CODE = 3
@@ -119,24 +118,19 @@ def save_fix_state(state):
     path.write_text(json.dumps(state, indent=1))
 
 
-def record_asks_logged(packet_id):
-    """Notes in the session's hand-back store that this packet's ask outcomes are logged. The review-fix state is
-    kept per repo, so a `packet` run from another repo reads this row instead."""
+def record_packet_asks_logged(packet_id):
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not session_id:
         return
     repo = script_utils.work_tree_top(".")
-    handback_store.record(session_id, ASKS_LOGGED_ROW, packet_id=packet_id, repo=repo)
+    handback_store.record_asks_logged(session_id, packet_id, repo)
 
 
-def repo_that_logged_the_asks(packet_id):
-    """The repo where this session's asks-done logged this packet's ask outcomes, or None when none did."""
+def repo_that_logged_packet_asks(packet_id):
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not session_id:
         return None
-    logged_rows = handback_store.session_rows(session_id, ASKS_LOGGED_ROW)
-    packet_rows = [row for row in logged_rows if row.get("packet_id") == packet_id]
-    return packet_rows[-1]["repo"] if packet_rows else None
+    return handback_store.repo_that_logged_the_asks(session_id, packet_id)
 
 
 # ---------- options ----------
@@ -603,9 +597,9 @@ def command_packet(argv):
     if state.get("stage") in FINISHED_STAGES:
         return print_action("done", f"This packet was already processed (stage {state['stage']}). Nothing was "
                             "logged or posted again. Continue from the step the first output named.")
-    logged_in_repo = repo_that_logged_the_asks(packet_id)
+    logged_in_repo = repo_that_logged_packet_asks(packet_id)
     if logged_in_repo:
-        return print_action("done", f"This packet's ask outcomes were already logged by asks-done in "
+        return print_action("done", f"This packet's ask outcomes were already logged in "
                             f"{logged_in_repo}. Nothing was logged or posted again. Run any later step there.")
 
     if packet["status"] == "plan-impact":
@@ -788,7 +782,7 @@ def command_asks_done(argv):
         state["waiting_packets"] = [kept for kept in state["waiting_packets"] if kept is not target]
     save_fix_state(state)
     if not failures:
-        record_asks_logged(target["packet_id"])
+        record_packet_asks_logged(target["packet_id"])
 
     rows_logged = sum(1 for index in target["asks_logged"] if not is_plan_impact_ask(asks[index]))
     summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."

@@ -568,7 +568,7 @@ def checkout_line(repo_dir):
 def emit_dispatch(repo_dir, state, *lines, prompt, agent, model=None):
     # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
     # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt. A coder also gets the run's
-    # guidance from the main session.
+    # notes and guidance from the main session.
     if agent == CODER:
         prompt = "\n".join([prompt, *coder_guidance_lines(state)])
     prompt_in_checkout = f"{checkout_line(repo_dir)}\n\n{prompt}"

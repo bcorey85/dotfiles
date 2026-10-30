@@ -236,14 +236,6 @@ def carry_run_notes(parsed, saved_plan=None):
                            run_notes=run_notes)
 
 
-def run_notes_lines(run_notes):
-    # The coder brief's lines for the user's run notes.
-    if not run_notes:
-        return []
-
-    return ["", "Run notes from the user. They bind this run; the plan stays the spec:", run_notes]
-
-
 def outside_repo_plan_refusal(repo_dir, parsed, repo_flags):
     # (reason, commands, notes) for a first plan argument that is a file outside the repo and is no plan, or None. A
     # plan is kept by its path in the repo, so a file outside it can only be task text: the rerun reads it as that. A

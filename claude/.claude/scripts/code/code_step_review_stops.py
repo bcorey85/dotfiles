@@ -4,6 +4,7 @@ the phase end otherwise."""
 import script_utils
 from code_step_core import (
     REVIEW_AGAIN_INVOKE,
+    load_handback,
     restart_instruction,
     save_state,
     script_command,
@@ -32,14 +33,23 @@ def review_stop_next_step(state):
 # The fix a check stop names when the repo's CLAUDE.md names no check.
 ADD_QUALITY_CHECK_FIX = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
 
-# The statuses that stop on the packet's blockers: (the question, the instruction to the caller).
-BLOCKER_STOP_TEXT = {
-    "critical-blocker": ("the review found a critical blocker.",
-                         "Review found a critical blocker. Present these to the user. Do not mark the phase done."),
-    "setup-fault": ("the review's full check could not run here.",
-                    "The full check could not run here. This is a toolkit or environment fault, not a code failure. "
-                    "Present these to the user. Do not mark the phase done."),
-}
+def blocker_stop_text():
+    # The statuses that stop on the packet's blockers: {status: (the question, the instruction to the caller)}.
+    module, _import_error = load_handback()
+    stops = {
+        "critical-blocker": ("the review found a critical blocker.",
+                             "Review found a critical blocker. Present these to the user. Do not mark the phase "
+                             "done."),
+        "setup-fault": ("the review's full check could not run here.",
+                        "The full check could not run here. This is a toolkit or environment fault, not a code "
+                        "failure. Present these to the user. Do not mark the phase done."),
+    }
+    if module is not None:
+        stops[module.FIX_REMOVED_CHANGE] = (
+            "the review's fix passes removed the change under review.",
+            "The fix passes removed half or more of the change under review. Present these to the user. Do not "
+            "mark the phase done.")
+    return stops
 
 
 def blocker_stop_next_step(state):
@@ -132,8 +142,9 @@ def stop_on_review_status(repo_dir, state, module, packet):
         state["blockerCarried"] = True
         state["carriedFindings"] = module.carried_findings(packet, include_asks=False)
         return False
-    if status in BLOCKER_STOP_TEXT:
-        question, instruction = BLOCKER_STOP_TEXT[status]
+    blocker_stops = blocker_stop_text()
+    if status in blocker_stops:
+        question, instruction = blocker_stops[status]
         set_stop(state, status)
         save_state(repo_dir, state)
 

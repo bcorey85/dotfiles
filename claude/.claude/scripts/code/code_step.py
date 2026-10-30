@@ -174,9 +174,10 @@ from code_step_review import (
     dispatch_correction_coder,
     emit_plan_impact_modal,
     emit_review_dispatch,
+    guard_stop_reasons,
     guarded_verb_runs,
 )
-from code_step_review_stops import BLOCKER_STOP_TEXT, blocker_stop_next_step, left_findings_open
+from code_step_review_stops import blocker_stop_next_step, blocker_stop_text, left_findings_open
 from code_step_start import (
     command_start,
     emit_closing_skill,
@@ -498,7 +499,7 @@ def stopped_route(repo_dir, state):
     kind = stop_kind(state)
     if kind == "coder-cap":
         return "ask-coder-cap"
-    if kind in BLOCKER_STOP_TEXT:
+    if kind in blocker_stop_text():
         return "ask-critical-blocker"
     # A review gate refused as false-clean is reviewed again, not stopped on again.
     return "review-again" if kind == "false-clean" else "ask-unknown"
@@ -559,7 +560,7 @@ def ask_about_unrecorded_state(repo_dir, state):
     stop_reason = stop_kind(state)
     saved = f"The run is at stage {stage}" + (f" with stop reason {stop_reason}." if stop_reason else ".")
     guarded_verb = next((verb for verb, guard in STAGE_GUARDS.items()
-                        if stage in guard["stages"] and stop_reason in guard.get("stopReasons", ())), None)
+                        if stage in guard["stages"] and stop_reason in guard_stop_reasons(verb)), None)
     if guarded_verb:
         next_step = f"When the cause is fixed, run `{guarded_verb}`."
     else:
@@ -585,7 +586,7 @@ def ask_about_review_cap(repo_dir, state):
 
 def ask_about_critical_blocker(repo_dir, state):
     status_command = script_command("status")
-    opening_sentence = BLOCKER_STOP_TEXT[stop_kind(state)][0]
+    opening_sentence = blocker_stop_text()[stop_kind(state)][0]
     ask_user(repo_dir, f"The run stopped: {opening_sentence} Present it to the user. Run "
              f"`{status_command}` to read the saved state. Then, {blocker_stop_next_step(state)}")
 

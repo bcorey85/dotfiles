@@ -52,7 +52,7 @@ import handback
 import plan_format
 import review_asks
 import script_utils
-from handback import PacketError, is_plan_impact_ask, item_text
+from handback import FIX_REMOVED_CHANGE, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
 from saved_handback import LoopWaitingError, NoHandbackError, dispatched_with_ruling, read_message
 from script_utils import one_line, run_command, split_location
@@ -507,6 +507,9 @@ STOP_STATUSES = {
     "setup-fault": ("The full check could not run in this environment. This is a toolkit or environment fault, not a "
                     "code failure. Present these lines and wait for direction. Do not re-dispatch. Do not run /fix. "
                     "Do not mark the gate.", blocker_lines),
+    FIX_REMOVED_CHANGE: ("The fix passes removed half or more of the change under review. Present these lines "
+                         "and wait for direction. Do not re-dispatch. Do not run /fix. Do not mark the gate.",
+                         blocker_lines),
     "cap-reached": ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
                     "run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.",
                     remaining_lines),

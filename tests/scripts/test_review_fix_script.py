@@ -97,6 +97,12 @@ blockers:
   - "the full check could not run: no package.json"
 """
 
+FIX_REMOVED = """status: fix-removed-change
+iter: 1
+blockers:
+  - "the fix passes removed 9 of the 10 source lines the change under review adds"
+"""
+
 CAP = """status: cap-reached
 iter: 2 of 2
 findings_remaining:
@@ -264,6 +270,15 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: stop", output)
         self.assertIn("no package.json", output)
         self.assertIn("toolkit or environment fault, not a code failure", output)
+        self.assertIn("Do not mark the gate", output)
+        self.assertNotIn("render-and-finish", output)
+
+    def test_a_fix_that_removed_the_change_stops_without_a_mark(self):
+        code, output = self.packet(FIX_REMOVED)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("removed 9 of the 10", output)
+        self.assertIn("removed half or more of the change under review", output)
         self.assertIn("Do not mark the gate", output)
         self.assertNotIn("render-and-finish", output)
 

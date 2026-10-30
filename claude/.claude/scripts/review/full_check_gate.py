@@ -4,7 +4,6 @@ recheck steps. LoopRun inherits FullCheckSteps; the loop script's SIGTERM handle
 import functools
 import os
 import pathlib
-import re
 import shutil
 import sys
 
@@ -15,6 +14,7 @@ import expected_red
 import format_files
 import full_check
 import script_utils
+import source_paths
 from finding_record import parse_finding
 from worktree_snapshot import CHANGE_KINDS
 
@@ -80,7 +80,7 @@ class FullCheckSteps:
             return
 
         gate_findings = [f"full check failed (`{check_command}`), failing lines:\n{tail}"]
-        if re.search(r"\.spec\.", tail):
+        if source_paths.names_spec_file(tail):
             self.stop("critical-blocker", gate_findings)
             return
 

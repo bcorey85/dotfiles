@@ -2187,9 +2187,20 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def call_keys(self):
         return [call["key"] for call in self.fake_calls()]
 
-    def test_a_fix_that_changes_only_markdown_ends_the_rounds_with_no_second_review(self):
+    def test_a_correctness_fix_to_a_markdown_file_gets_a_second_review(self):
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}],
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1 in the agent file.", "edits": {"CHANGES.md": "the limit is 20\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.call_keys().count("code-reviewer"), 2)
+
+    def test_a_docs_class_fix_that_changes_only_markdown_ends_the_rounds_with_no_second_review(self):
+        docs_review = FIX_REVIEW.replace("`app.py:2` the", "`app.py:2` [docs] the")
+        completed = self.run_script({
+            "code-reviewer": [{"result": docs_review}],
             "coder": [{"result": "Fixed 1 in the docs.", "edits": {"CHANGES.md": "the limit is 20\n"}}],
             "closure": [{"result": CLOSED}],
         })
@@ -2200,6 +2211,30 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(self.call_keys().count("code-reviewer"), 1)
         self.assertEqual(packet["files_touched"], ["CHANGES.md"])
         self.assertTrue(row["unreviewed_fix"])
+
+    def test_a_docs_class_fix_that_edits_a_code_file_gets_a_second_review(self):
+        docs_review = FIX_REVIEW.replace("`app.py:2` the", "`app.py:2` [docs] the")
+        completed = self.run_script({
+            "code-reviewer": [{"result": docs_review}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1 in the code.", "edits": {"app.py": "limit = 20\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.call_keys().count("code-reviewer"), 2)
+
+    def test_a_docs_fix_together_with_a_correctness_fix_gets_a_second_review(self):
+        mixed_review = FIX_REVIEW.replace(
+            "- `app.py:2` the limit is wrong for `limit`\n",
+            "- `app.py:2` [docs] the limit is wrong for `limit`\n- `app.py:3` [correctness] the offset is wrong\n")
+        completed = self.run_script({
+            "code-reviewer": [{"result": mixed_review}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1 and 2.", "edits": {"CHANGES.md": "the limit is 20\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.call_keys().count("code-reviewer"), 2)
 
     def test_a_fix_that_changes_only_a_test_file_leaves_no_source_reviewer_for_round_two(self):
         completed = self.run_script({
@@ -2271,6 +2306,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(packet["skipped_fp"]), 1)
         self.assertEqual(packet["skipped_fp"][0]["file_line"], "app.py:2")
         self.assertIn("meant to be 5", packet["skipped_fp"][0]["reason"])
+        self.assertEqual(self.call_keys().count("code-reviewer"), 2)
 
     def test_a_nit_gets_its_file_line_in_the_packet_and_unlocated_when_it_names_none(self):
         nit_review = ("## Fix\nNone\n\n## Ask\nNone\n\n## Nit\n- `app.py:3` rename `limit`\n- tidy the module\n\n"

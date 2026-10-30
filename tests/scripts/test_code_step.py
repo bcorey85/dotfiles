@@ -568,6 +568,19 @@ class CodeStepTest(unittest.TestCase):
         self.assertFalse((self.repo / ".git/coder-gate.json").exists())
         self.assertEqual({}, self.state())
 
+    def test_a_restart_whose_new_run_fails_to_build_keeps_the_old_run_and_its_gate(self):
+        self.start_phase_one()
+        state_before = self.state()
+        gate_before = (self.repo / ".git/coder-gate.json").read_text()
+        (self.claude / "scripts/code/coder_packet.py").write_text("raise SystemExit('packet broke')\n")
+
+        done = run(self.repo, self.env, "start", "--restart", self.plan)
+
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn("coder-packet failed", done.stderr)
+        self.assertEqual(state_before, self.state())
+        self.assertEqual(gate_before, (self.repo / ".git/coder-gate.json").read_text())
+
     def test_gate_skips_a_package_in_a_sibling_repo(self):
         sibling = self.tmp / "sibling/evals"
         (sibling / "truth").mkdir(parents=True)

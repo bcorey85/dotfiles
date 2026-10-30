@@ -39,7 +39,7 @@ from code_text import SP, receiver_text, split_arguments, tuple_fields, without_
 from hook_input import JqError, expand_env_names, is_under_temp_dir, jq_get, jq_str
 from hook_input import bash_basename as shell_basename
 from hook_input import bash_dirname as shell_dirname
-from shell_statements import SKIP_WORDS, strip_comments, strip_heredocs
+from shell_statements import strip_comments, strip_heredocs
 
 SPC = r"[ \t\r\f\v]"
 TARGET = r"[^ \t\r\f\v|&;<>()]+"
@@ -205,8 +205,6 @@ def directory_changes(step):
         return [None] if DIRECTORY_COMMAND_TEXT.search(step) else []
     folders = []
     for words, _redirections, _piped in commands:
-        while words and words[0] in SKIP_WORDS:
-            words = words[1:]
         words = shell_command.command_after_wrappers(words)
         if words and words[0] in DIRECTORY_COMMANDS:
             expanded_words = [expand_env_names(word, ("TMPDIR", "HOME")) for word in words]

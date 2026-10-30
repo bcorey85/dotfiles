@@ -62,12 +62,11 @@ dir or work-tree option or variable, quotes and escapes resolved; a `.` counts a
 `while`, `until` and `do` too) or holds a `$` or backtick outside a single-quoted string, a comment or a double-quoted
 quoted-heredoc message earns no credit, and so does a command over more than one line once its quoted-heredoc
 messages are emptied, a command the gate cannot read, and a command that names a code runner (`| sh`, `sh -c`) or
-holds an emptied quoted-heredoc message as a word or a redirection target outside a plain `git add` or
-`git commit`. The words of a plain `git add` or
-`git commit` are not read for a folder change. A command also earns no credit when a step that is not a plain
-`git commit` counts as a commit (`env -C <dir> git commit`, `time git commit`); a `git add` of a file with `commit` in
-its name does not. When only that lost credit stands between a command and a repo a review covers, the deny names
-the repo and `git -C <repo> commit`.
+holds an empty word or redirection target (it may be an emptied quoted-heredoc message) outside a plain
+`git add` or `git commit`. The words of a plain `git add` or `git commit` are not read for a folder change. A command
+also earns no credit when a step that is not a plain `git commit` counts as a commit (`env -C <dir> git commit`,
+`time git commit`); a `git add` of a file with `commit` in its name does not. When only that lost credit stands
+between a command and a repo a review covers, the deny names each such repo and its `git -C <repo> commit`.
 
 State: ~/.claude/state/review-gate/<session>, one line per record: a JSON event {"kind": "dispatch"|"dirty", "ts",
 "agent"}. A plain `dirty` line, from before events carried a time, counts from the file's last change. A leftover
@@ -649,8 +648,8 @@ def changes_folder(command):
     """True when the command changes folder or repo, quotes and escapes resolved, so `c\\d` and `'c'd` count as `cd`.
     The words of a plain `git add` or `git commit` are left out, so a message or a path may hold `cd`. A command shlex
     cannot read earns no credit, so it counts as a change. So does any other step that holds a code runner (`| sh`,
-    `sh -c`), an empty word or an empty redirection target: either is a quoted-heredoc message emptied from a place
-    where it is no message."""
+    `sh -c`), an empty word or an empty redirection target: either may be a quoted-heredoc message emptied from a
+    place where it is no message. Any empty word or target outside a plain add or commit earns no credit."""
     readable = readable_command(command)
     command_words = resolved_command_words(readable)
     if any(words[0] in FOLDER_COMMAND_WORDS for words in command_words):
@@ -766,12 +765,18 @@ def is_clear(repo_dir, events, transcript_path, session, edited_by_agent):
     if repo_dir is None:
         return False
 
-    repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
-    repo_top_name = str(repo_top) if repo_top else None
-    dirty_at = dirty_since(events, transcript_path, repo_top_name, edited_by_agent)
+    repo_top_name, dirty_at = repo_top_and_dirty_at(repo_dir, events, transcript_path, edited_by_agent)
     if dirty_at is None:
         return True
     return earns_credit(repo_dir, repo_top_name, dirty_at, session)
+
+
+def repo_top_and_dirty_at(repo_dir, events, transcript_path, edited_by_agent):
+    """repo_dir's top level as a string (None outside a work tree) and the latest time the session's work made it
+    dirty (None when no dirty mark or coder work touched it)."""
+    repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
+    repo_top_name = str(repo_top) if repo_top else None
+    return repo_top_name, dirty_since(events, transcript_path, repo_top_name, edited_by_agent)
 
 
 def latest_reviewed_repo(session):
@@ -785,11 +790,17 @@ def latest_reviewed_repo(session):
     return handback_store.repo_of_latest_dispatch(session)
 
 
-def credited_repo(events, transcript_path, session, edited_by_agent):
-    """A repo where a commit the gate can place passes now, or None."""
-    candidates = [*reviewed_tree.read_reviewed(session), latest_reviewed_repo(session)]
-    return next((repo for repo in candidates
-                 if is_clear(repo, events, transcript_path, session, edited_by_agent)), None)
+def credited_repos(events, transcript_path, session, edited_by_agent):
+    """Every repo where a commit the gate can place earns credit now: the reviewed trees and the latest review
+    dispatch's repo, each deduplicated. A repo with no coder work must still prove a review."""
+    credited = []
+    for repo in [*reviewed_tree.read_reviewed(session), latest_reviewed_repo(session)]:
+        if repo is None or repo in credited:
+            continue
+        repo_top_name, dirty_at = repo_top_and_dirty_at(repo, events, transcript_path, edited_by_agent)
+        if earns_credit(repo, repo_top_name, dirty_at or 0, session):
+            credited.append(repo)
+    return credited
 
 
 def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_agent):
@@ -797,15 +808,17 @@ def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_ag
     if None not in repo_dirs:
         return NO_REVIEW_DENIED
 
-    reviewed_repo = credited_repo(events, transcript_path, session, edited_by_agent)
-    if reviewed_repo is None:
+    reviewed_repos = credited_repos(events, transcript_path, session, edited_by_agent)
+    if not reviewed_repos:
         return NO_REVIEW_DENIED
+    covered = ", ".join(reviewed_repos)
+    suggestions = " or ".join(f"`git -C {shlex.quote(repo)} commit`" for repo in reviewed_repos)
     return (
-        f"[review-commit-gate] This session's /review covers {reviewed_repo}, but the gate cannot place this command "
+        f"[review-commit-gate] This session's /review covers {covered}, but the gate cannot place this command "
         "in a repo: a `cd` or other folder change, a `$` or backtick, a wrapper before `git`, or a command over more "
-        "than one line earns no credit. Do not run /review again: to commit in that repo, run "
-        f"`git -C {shlex.quote(reviewed_repo)} commit` on one line with no `cd`, with any multi-line message in a "
-        "quoted heredoc. A commit in another repo still needs its own /review."
+        "than one line earns no credit. Do not run /review again: to commit in a covered repo, run "
+        f"{suggestions} on one line with no `cd`, with any multi-line message as "
+        "`-m \"$(cat <<'EOF' ... EOF\\n)\"`. A commit in another repo still needs its own /review."
     )
 
 

@@ -73,7 +73,7 @@ SECTION_HEADING = re.compile(r"^(#{2,4})\s*(.*)")
 LIST_MARKER = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 PATH_TOKEN = r"`?[\w@~+./-]*[./][\w@~+./-]*"
 ENTRY_START = re.compile(
-    rf"^(?:\*{{0,2}}\[blocker\]\*{{0,2}}\s*)?\*{{0,2}}(?:{PATH_TOKEN}:\d[\d,\u2013-]*`?(?!\w)|{PATH_TOKEN}`?\s+[\u2014\u2013-])"
+    rf"^(?:{script_utils.BLOCKER_TAG_PATTERN}\s*)?\*{{0,2}}(?:{PATH_TOKEN}:\d[\d,\u2013-]*`?(?!\w)|{PATH_TOKEN}`?\s+[\u2014\u2013-])"
 )
 NO_ENTRIES = re.compile(r"^[\[(*_`]*(none|n/a|nothing|-|\u2014|\u2013)[\])*_`.!]*$", re.I)
 INTENT_SECTIONS = re.compile(r"(BUG-PINNING|UNVERIFIABLE|CULL|REQUIRES-MUTATION|WEAK)\b")

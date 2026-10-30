@@ -305,6 +305,18 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("  gate-env: LEDGER_EDIT_WATCH_PY=/x/edit_watch.py", review_step)
         self.assertIn("Put these variables before every test, check or build command you run.", review_step)
 
+    def test_the_review_step_defers_non_blocking_fixes_and_fixes_only_a_blocker(self):
+        self.task_dir()
+
+        done = self.prep()
+
+        review_step = done.stdout.split("STEP 1:", 1)[1].split("STEP 2:", 1)[0]
+        self.assertIn("If no finding is a `[blocker]`, do not fix", review_step)
+        self.assertIn("actioned `deferred`", review_step)
+        self.assertIn("log it with disposition `ask` and actioned `ask`", review_step)
+        self.assertIn("go on to STEP 2", review_step)
+        self.assertIn("If any finding is a `[blocker]`, route the findings with /review and fix them", review_step)
+
     def test_the_verifier_prompt_has_no_gate_env_line_when_no_plan_command_sets_a_variable(self):
         self.task_dir()
 
@@ -1288,6 +1300,36 @@ class ReviewLogTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 2)
         self.assertIn("cannot have actioned `none`", done.stderr)
         self.assertEqual(self.jsonl(self.findings), [])
+
+    def test_a_blocker_finding_cannot_be_deferred(self):
+        findings = json.dumps([{"desc": "[Blocker] data loss on retry", "file": "src/a.py", "line": 1,
+                                "actioned": "deferred"}])
+        done = self.log_review(findings, "NEEDS CHANGES")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("cannot be deferred", done.stderr)
+        self.assertEqual(self.jsonl(self.findings), [])
+
+    def test_a_bold_tagged_blocker_finding_cannot_be_deferred(self):
+        findings = json.dumps([{"desc": "**[blocker]** data loss", "file": "src/a.py", "line": 1,
+                                "actioned": "deferred"}])
+        done = self.log_review(findings, "NEEDS CHANGES")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("cannot be deferred", done.stderr)
+
+    def test_a_blocker_finding_left_as_an_ask_is_refused(self):
+        findings = json.dumps([{"desc": "[blocker] data loss on retry", "file": "src/a.py", "line": 1,
+                                "actioned": "ask"}])
+        done = self.log_review(findings, "NEEDS CHANGES")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("left open", done.stderr)
+        self.assertEqual(self.jsonl(self.findings), [])
+
+    def test_a_non_blocking_fix_finding_can_be_deferred_and_the_review_then_counts_as_ran(self):
+        findings = json.dumps([{"desc": "[smell] dup helper", "file": "src/a.py", "line": 1, "actioned": "deferred"}])
+        done = self.log_review(findings, "PASS WITH WARNINGS")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.jsonl(self.findings)[1]["actioned"], "deferred")
+        self.assertIn("REVIEW: ran", self.prep().stdout)
 
     def test_findings_count_must_match_the_rows(self):
         findings = json.dumps([{"desc": "x", "file": "src/a.py", "line": 1, "actioned": "fixed"}])

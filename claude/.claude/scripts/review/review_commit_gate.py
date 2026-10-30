@@ -8,7 +8,8 @@
 A coder dispatch makes the session dirty, whatever repo the coder changed: every commit in any repo is judged.
 
 A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
-under the repo's top-level docs/ folder: the paths already staged (`git diff --cached`, run in the hook input's
+under the repo's top-level docs/ folder, the top-level QUEUE.md, or a Markdown file directly in the top-level queue/
+folder: the paths already staged (`git diff --cached`, run in the hook input's
 cwd), every `git add` pathspec in the command, and every commit pathspec. Each pathspec must name one file
 literally: a folder, `.`, a glob, `~`, `$` or a `:` magic pathspec is denied. It is denied when the command can
 stage or pick more than that, or when the hook cannot tell which repo or files it uses:
@@ -48,11 +49,11 @@ A dirty session still commits in four more cases, each checked against something
   - the commit concludes a merge (the repo it commits in has a MERGE_HEAD)
   - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), so work
     that converged in a review-loop commits after a later coder dispatch that edited nothing
-  - the session's latest review-loop hand-back is current, converged or deferred, came after the coder work that
-    made the session dirty, and answers a review-loop dispatch of that repo
-    (the ROOT= that review-scope printed in the loop, else its `repo:` line, else the first absolute path the prompt
-    names, else the session cwd; a ROOT= or `repo:` line in no work tree names no repo), however the run that
-    launched the loop closed.
+  - the session's latest review-loop hand-back for that repo is current, converged or deferred, and came after the
+    coder work that made the session dirty, however the run that launched the loop closed. A hand-back answers the
+    dispatch before it, and a review of another repo neither answers nor voids it. A dispatch's repo is the ROOT=
+    that review-scope printed in the loop, else its `repo:` line, else the first absolute path the prompt names,
+    else the session cwd; a ROOT= or `repo:` line in no work tree names no repo.
 The last three credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
 dir or work-tree option or variable, quotes and escapes resolved) or holds a `$` or backtick outside a single-quoted
@@ -116,6 +117,8 @@ UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_
 GIT_TIMEOUT_SECONDS = 3
 NO_REVIEW_MARKER = "[no-review]"
 DOCS_FOLDER = "docs/"
+QUEUE_PAGE = "QUEUE.md"
+QUEUE_FOLDER = "queue/"
 NOTES_SUFFIX = ".md"
 # Characters a shell or git would expand in a pathspec, and a newline.
 EXPANDING_CHARS = set("*?[]{}$`~\\\n")
@@ -353,7 +356,13 @@ def command_pathspecs(command):
 
 
 def is_notes_path(path):
-    return path.startswith(DOCS_FOLDER) and path.endswith(NOTES_SUFFIX)
+    if path == QUEUE_PAGE:
+        return True
+    if not path.endswith(NOTES_SUFFIX):
+        return False
+
+    queue_item = path.removeprefix(QUEUE_FOLDER)
+    return path.startswith(DOCS_FOLDER) or (queue_item != path and "/" not in queue_item)
 
 
 def repo_path(pathspec, prefix):
@@ -364,7 +373,8 @@ def repo_path(pathspec, prefix):
 
 
 def ships_only_notes(command, cwd):
-    """True when every path the commit can ship is a Markdown file under the repo's top-level docs/ folder."""
+    """True when every path the commit can ship is a Markdown file under the repo's top-level docs/ folder, the
+    top-level QUEUE.md, or a Markdown file directly in the top-level queue/ folder."""
     found = command_pathspecs(command)
     if found is None or not cwd:
         return False
@@ -643,8 +653,8 @@ def concludes_merge(repo_dir):
 
 
 def review_handed_back_since(session, dirty_at, repo_top):
-    """True when the session's latest review-loop hand-back is current, converged or deferred, was stored after
-    `dirty_at`, and answers a dispatch that reviewed repo_top."""
+    """True when the session's latest review-loop hand-back for repo_top is current, converged or deferred, and was
+    stored after `dirty_at`. Reviews of other repos do not count."""
     if repo_top is None:
         return False
     try:
@@ -652,10 +662,9 @@ def review_handed_back_since(session, dirty_at, repo_top):
         import handback_store
     except ImportError:
         return False
-    if handback.false_clean_reason(session) is not None:
-        return False
-    seen = handback_store.latest(session)
-    if seen["dispatch"].get("repo") != repo_top:
+
+    seen = handback_store.latest_for_repo(session, repo_top)
+    if handback.standing_false_clean_reason(seen) is not None:
         return False
     handed_back_at = seen["handback"].get("ts")
     return isinstance(handed_back_at, (int, float)) and handed_back_at > dirty_at
@@ -703,7 +712,8 @@ def check_commit(command, root, state_file, session):
     raise DenyError(
         "[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
         "the user: invoke the /review skill now on the coder work, then commit after it converges. If the "
-        "commit ships only Markdown files under the repo's top-level docs/ folder, run it as a plain "
+        "commit ships only Markdown files under the repo's top-level docs/ folder, QUEUE.md or queue/*.md "
+        "pages, run it as a plain "
         "`git commit` (with `git add` of single named files if needed) from the repo root in its own "
         "Bash call, with no `cd`, `env` or `git -C`, because the gate passes that form."
     )

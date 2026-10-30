@@ -1219,7 +1219,7 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertIsNone(handback_store.latest(SESSION)["dispatch"]["repo"])
         self.assertFalse(review_commit_gate.review_handed_back_since(SESSION, 0, os.path.realpath(other)))
 
-    def test_a_second_dispatch_with_a_repo_line_replaces_the_root_line_repo_for_the_gate(self):
+    def test_a_second_dispatch_of_another_repo_leaves_the_root_line_repo_its_credit_and_gives_itself_none(self):
         import review_commit_gate
 
         _, other = self.make_repos("# Repo\n", "# Other repo\n")
@@ -1238,7 +1238,8 @@ class OneCheckedHandBackTest(HandbackTestBase):
                         "tool_input": {"subagent_type": "review-loop", "prompt": f"review loop\nrepo: {other}\n"}}
         self.run_cli(["hook", "dispatch"], json.dumps(second_event))
         self.assertEqual(handback_store.latest(SESSION)["dispatch"]["repo"], os.path.realpath(other))
-        self.assertFalse(review_commit_gate.review_handed_back_since(SESSION, 0, reviewed))
+        self.assertTrue(review_commit_gate.review_handed_back_since(SESSION, 0, reviewed))
+        self.assertFalse(review_commit_gate.review_handed_back_since(SESSION, 0, os.path.realpath(other)))
 
     def test_a_clean_hand_back_after_a_full_check_passes(self):
         self.assertEqual(self.hand_back([coder_step("t1"), full_check_run("t2")]), "")

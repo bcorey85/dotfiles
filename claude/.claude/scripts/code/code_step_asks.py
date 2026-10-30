@@ -1,4 +1,4 @@
-"""The words of code_step's asks route: the ask listing, the pre-set outcome, the asks-done arguments, the asks coder's
+"""The words of code_step's asks route: the pre-set outcome, the asks-done arguments, the asks coder's
 prompt and the prior issues it leaves for the next review."""
 import os
 
@@ -22,17 +22,6 @@ def prior_issues(accepted_asks):
             issue_text += f" (user's change: {change_text})"
         issues.append({"issue": issue_text, "file": file_line.partition(":")[0]})
     return issues
-
-
-def numbered_ask_lines(asks):
-    # Each ask with the one change an accepted answer makes. A multi-line ask's later lines sit indented under its
-    # number.
-    lines = []
-    for number, item in enumerate(asks, 1):
-        lines += script_utils.hanging_indent_lines(f"{number}. ", ask_text(item))
-        if item.get("change"):
-            lines += script_utils.hanging_indent_lines("   Proposed change: ", item["change"])
-    return lines
 
 
 def preset_ask_outcome(repo_dir):

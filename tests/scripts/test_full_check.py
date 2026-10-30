@@ -19,6 +19,7 @@ import full_check  # noqa: E402
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import linked_installs  # noqa: E402
+import reviewed_tree  # noqa: E402
 
 # A command that prints a test runner's own summary line.
 PASSING_SUITE = "echo '3 passed in 0.1s'"
@@ -460,12 +461,26 @@ class FullCheckSideEffectsTest(unittest.TestCase):
         argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log), "--timeout", str(timeout)]
         return subprocess.run([*argv, "--", command], capture_output=True, text=True, timeout=60)
 
+    def result_lines(self, completed):
+        """The result lines without the tree line, which the check's own changes make vary."""
+        return [line for line in completed.stdout.splitlines() if not line.startswith("tree: ")]
+
+    def test_the_result_names_the_tree_the_check_left_as_the_reviewed_tree_fingerprint(self):
+        before = reviewed_tree.tree_fingerprint(self.repo, exclude_rel=None)
+
+        completed = self.check(f"echo generated v2 > generated.ts; {PASSING_SUITE}")
+
+        tree_lines = [line for line in completed.stdout.splitlines() if line.startswith("tree: ")]
+        expected = reviewed_tree.tree_fingerprint(self.repo, exclude_rel=None)
+        self.assertEqual(tree_lines, [f"tree: {expected}"])
+        self.assertNotEqual(expected, before)
+
     def test_a_tracked_file_the_check_rewrote_and_a_file_it_created_are_named_and_left_in_place(self):
         command = f"echo generated v2 > generated.ts; mkdir dist; echo built > dist/out.js; {PASSING_SUITE}"
 
         completed = self.check(command)
 
-        self.assertEqual(completed.stdout.splitlines(), [
+        self.assertEqual(self.result_lines(completed), [
             "full check: passed", "summary: 3 passed in 0.1s",
             "changed by the check: generated.ts", "created by the check: dist/out.js"])
         self.assertEqual("generated v2\n", (self.repo / "generated.ts").read_text())
@@ -476,13 +491,13 @@ class FullCheckSideEffectsTest(unittest.TestCase):
 
         completed = self.check(f"echo rewritten > generated.ts; {PASSING_SUITE}")
 
-        self.assertEqual(completed.stdout.splitlines(), [
+        self.assertEqual(self.result_lines(completed), [
             "full check: passed", "summary: 3 passed in 0.1s", "rewrote edited files: generated.ts"])
 
     def test_a_check_that_times_out_still_names_what_it_rewrote_and_leaves_it(self):
         completed = self.check("echo generated v2 > generated.ts; sleep 30", timeout=1)
 
-        self.assertEqual(completed.stdout.splitlines(),
+        self.assertEqual(self.result_lines(completed),
                          ["full check: not run (timeout)", "changed by the check: generated.ts"])
         self.assertEqual("generated v2\n", (self.repo / "generated.ts").read_text())
 
@@ -491,7 +506,7 @@ class FullCheckSideEffectsTest(unittest.TestCase):
 
         completed = self.check(PASSING_SUITE)
 
-        self.assertEqual(completed.stdout.splitlines(), ["full check: passed", "summary: 3 passed in 0.1s"])
+        self.assertEqual(self.result_lines(completed), ["full check: passed", "summary: 3 passed in 0.1s"])
 
 
 class BaseComparisonTest(unittest.TestCase):

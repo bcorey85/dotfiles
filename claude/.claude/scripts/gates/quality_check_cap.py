@@ -40,6 +40,7 @@ import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
+import reviewed_tree
 import script_utils
 from hook_input import EMPTY_INPUT, JqError, cksum, exit_code_in_error_text, jq_field, jq_get, truthy
 from shell_command import (
@@ -184,27 +185,23 @@ def timed_git_output(cwd, *args):
 
 
 def git_state_hash(cwd):
-    """A hash of HEAD, the diff against HEAD and the untracked file list: it changes when git (merge, pull,
-    checkout, reset, rebase, apply...) or any shell write changes the tree. None when cwd is not a repo or git fails."""
-    top = timed_git_output(cwd, "rev-parse", "--show-toplevel")
+    """HEAD and the tree fingerprint (lib/reviewed_tree.py): it changes when git (merge, pull, checkout, reset, rebase,
+    apply...) or any shell write changes the commit or tracked or untracked content. A repo with no commit yet is
+    fingerprinted against the empty tree; a failed HEAD lookup counts as no commit. None when cwd is not a repo or git
+    cannot name the empty tree; the callers fail open on None."""
+    top = script_utils.repo_root(cwd, timeout=GIT_TIMEOUT_SECONDS)
     if top is None:
         return None
-    head = timed_git_output(top, "rev-parse", "--verify", "-q", "HEAD")
-    if head is None:
-        head = "unborn"
-        diff = timed_git_output(top, "diff")
-        staged = timed_git_output(top, "diff", "--cached")
-        diff = None if diff is None or staged is None else diff + staged
-    else:
-        diff = timed_git_output(top, "diff", "HEAD")
-    untracked = timed_git_output(top, "ls-files", "-o", "--exclude-standard")
-    if diff is None or untracked is None:
+
+    found = reviewed_tree.fingerprint_base(top, timeout=GIT_TIMEOUT_SECONDS)
+    if found is None:
         return None
-    digest = hashlib.sha256()
-    for part in (head, diff, untracked):
-        part_bytes = os.fsencode(part)
-        digest.update(hashlib.sha256(part_bytes).digest())
-    return digest.hexdigest()
+
+    head, base = found
+    try:
+        return head + ":" + reviewed_tree.tree_fingerprint(top, base=base, timeout=GIT_TIMEOUT_SECONDS)
+    except reviewed_tree.TreeFingerprintError:
+        return None
 
 
 def run_record_lines(run_file):

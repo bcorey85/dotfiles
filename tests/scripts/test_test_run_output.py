@@ -108,6 +108,16 @@ class MatchesNoTestTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(command in runs, test_run_output.runs_tests(command))
 
+    def test_only_a_command_with_a_step_that_can_print_a_summary_prints_its_own(self):
+        quotes = ("cat a.log", "cd tests && ls", "! pytest x", "FOO=1 cat a.log", "tail -5 run.log",
+                  "head run.log", "sed -n 1p run.log", "cat run.log | tail",
+                  "less run.log", "sort run.log | uniq", "awk 1 run.log", "wc -l run.log")
+        prints = ("bash tests/run.sh", "cd pkg && bash tests/run.sh", "cat a.log; pytest", 'cat "a',
+                  "pytest x | tail -5")
+        for command in quotes + prints:
+            with self.subTest(command=command):
+                self.assertEqual(command in prints, test_run_output.prints_own_runner_summary(command))
+
     def test_each_runners_own_summary_line_is_read(self):
         outputs = {
             "pytest": ("noise\n===== 3 failed, 4000 passed in 41.20s (0:00:41) =====\n",

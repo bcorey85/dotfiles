@@ -64,21 +64,22 @@ def unverified_check_why_and_fix(configured):
         # The command may be a compile or format check, or a test command the toolkit does not recognize. The
         # `Full suite: CI` line declares a check check-only; otherwise the runner's summary has to be recognized.
         why = (f"the full check exited 0, but the configured check (`{configured}`) is not a command this toolkit "
-               "recognizes as a test run, and it printed no test-runner summary, so the check did not show that "
-               "any test ran.")
+               "recognizes as a test run, and it printed no test-runner summary or ran no test, so the check did not "
+               "show that any test ran.")
         fix = (f"add the line `{full_check.FULL_SUITE_IN_CI}` to the repo's CLAUDE.md if CI runs the full suite "
                "and this check is check-only, or make the configured check print its test runner's summary, or "
                "add the runner's summary format to SUMMARY_LINES in ~/.claude/scripts/lib/test_run_output.py")
     elif configured:
         # The repo already names its check, so a Quality check line would change nothing: the runner's output
         # is what the toolkit does not recognize.
-        why = ("the full check exited 0 and printed no test-runner summary this toolkit recognizes, so the check "
-               "did not show that any test ran.")
-        fix = (f"make the configured check (`{configured}`) print its test runner's summary, or add the "
-               "runner's summary format to SUMMARY_LINES in ~/.claude/scripts/lib/test_run_output.py")
+        why = ("the full check exited 0 and either printed no test-runner summary this toolkit recognizes or ran no "
+               "test, so the check did not show that any test ran.")
+        fix = (f"make the configured check (`{configured}`) run at least one test and print its test runner's "
+               "summary, or add the runner's summary format to SUMMARY_LINES in "
+               "~/.claude/scripts/lib/test_run_output.py")
     else:
-        why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
-               "test ran.")
+        why = ("the full check exited 0 and printed no test-runner summary or ran no test, so the check did not "
+               "show that any test ran.")
         fix = ADD_QUALITY_CHECK_FIX
     return why, fix
 
@@ -144,8 +145,8 @@ def stop_on_review_status(repo_dir, state, module, packet):
             *blocker_lines, questions=ask_lines(packet))
         return True
     if status in ("converged", "deferred") and full_check.is_unverified(packet["full_check"]):
-        # A check that exited 0 printed no test-runner summary, so the check did not show that any test ran: the phase
-        # is not verified, so it does not finish.
+        # A check that exited 0 printed no test-runner summary or ran no test, so the check did not show that any test
+        # ran: the phase is not verified, so it does not finish.
         check_command = packet["full_check_command"] or "(not named)"
         why, fix = unverified_check_why_and_fix(full_check.configured_check_command(repo_dir))
         why_sentence = why[0].upper() + why[1:]

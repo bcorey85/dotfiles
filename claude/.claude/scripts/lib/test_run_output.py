@@ -51,7 +51,9 @@ TEST_WORD = re.compile(r"^(?:test(?:[:-][\w:.-]*)?|nextest)$")
 # Programs that run a named script or target, and Django's `manage.py`: a `test` word given to one runs tests.
 SCRIPT_RUNNERS = ("npm", "pnpm", "yarn", "bun", "make", "just", "task", "cargo", "go", "deno", "manage.py")
 # Programs whose arguments only name a test: a search, a file check, a print, a directory change.
-NON_TEST_PROGRAMS = ("test", "cd", "git", "rg", "grep", "echo", "cat", "ls", "find", "diff")
+NON_TEST_PROGRAMS = ("test", "cd", "git", "rg", "grep", "echo", "cat", "ls", "find", "diff",
+                     "head", "tail", "sed", "less", "more", "tac", "nl", "awk", "cut", "sort", "uniq", "wc", "jq",
+                     "strings", "bat")
 
 
 def runs_tests(command):
@@ -78,6 +80,22 @@ def runs_tests(command):
                 return True
             if pathlib.PurePosixPath(word).name in SCRIPT_RUNNERS:
                 runner_seen = True
+    return False
+
+
+def prints_own_runner_summary(command):
+    """False when no step of the shell command can print a runner summary of its own: every step is a search, a file
+    print, a `cd` or similar program, or is negated with `!`, so a summary in the output is quoted text. True for any
+    other step (a test runner or a script wrapper such as `bash tests/run.sh`) and for text shlex cannot split."""
+    try:
+        simple_commands = split_simple_commands(command)
+    except ValueError:
+        return True
+
+    for words in simple_commands:
+        words = without_assignments(words)
+        if words and words[0] != "!" and words[0] not in NON_TEST_PROGRAMS:
+            return True
     return False
 
 

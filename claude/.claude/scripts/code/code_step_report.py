@@ -198,6 +198,7 @@ def tests_run_text(gate, state):
             coder_gate.TIMED_OUT: "timed out at the hand-back gate, no test result",
             coder_gate.SETUP_FAULT: "could not run at the hand-back gate (setup fault), no test result",
             coder_gate.COMMAND_ERROR: "command error at the hand-back gate (missing path), no test result",
+            coder_gate.NOT_STARTED: "not started at the hand-back gate (time budget used up), no test result",
             coder_gate.SKIPPED: "skipped, no changed files",
         }
         for command in gate["commands"]:

@@ -1,12 +1,14 @@
 """The git calls a Bash command makes, and the directory each runs in.
 
 Calls are read in command position, after git's own options (`-C <dir>`, `-c <key=value>`, `--no-pager`) and wrapper
-words (env, timeout), and inside `$(...)` and backticks. A call's directory is its `-C` directory, taken relative to the
-target of an earlier `cd` in the same command, else to the starting directory. A command with a `cd` after a `(` not
-preceded by `$` follows no `cd`, and a quoted, variable or substituted target is not read: those calls run from the
-directory the earlier calls resolved to, with the `-C` directory joined to it. SUBSHELL_CD matches such a `(` before a
-`cd`, quoted or not. A command that names a code runner (`bash -c`, eval, xargs, ssh) is read as text: every `git` word
-in it starts a call.
+words (env, timeout), and inside `$(...)` and backticks. Heredoc bodies, comments and quoted strings are text, not
+calls, except that a `$(...)` or backtick span is still read as a call inside quotes, single or double (the shell
+runs it only inside double quotes; the gate deliberately over-reads the single-quoted form). A call's
+directory is its `-C` directory, taken relative to the target of an earlier `cd` in the same command, else to the
+starting directory. A command with a `cd` after a `(` not preceded by `$` follows no `cd`, and a quoted, variable or
+substituted target is not read: those calls run from the directory the earlier calls resolved to, with the `-C`
+directory joined to it. SUBSHELL_CD matches such a `(` before a `cd`, quoted or not. A command that names a code runner
+(`bash -c`, eval, xargs, ssh) is read as text: every `git` word in it starts a call.
 """
 import os
 import re
@@ -19,8 +21,8 @@ import shell_statements
 GIT_CALL_TEXT = re.compile(r"\bgit\b[^\n;&|'\"`()]*", re.I)
 SUBSHELL_CD = re.compile(r"(?<!\$)\(.*\bcd\b", re.S)
 LINE_CONTINUATION = re.compile(r"\\\n")
-# A path word holding one of these is a quoted string, a variable, a substitution or a glob the gate cannot read.
 CD_OPTIONS = ("-L", "-P", "-e", "-@", "--")
+# A path word holding one of these is a quoted string, a variable, a substitution or a glob the gate cannot read.
 UNREAD_PATH_MARKS = ('"', "'", "$", "`", "*", "?")
 
 

@@ -994,6 +994,54 @@ class NestedDispatchTest(unittest.TestCase):
                 self.assertEqual("", run_dispatch_hook(REVIEW_PROMPT, **caller))
 
 
+LOG_METRICS = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 result=PASS"
+
+
+class MetricsTimingTest(unittest.TestCase):
+    def metrics_hook(self, records, command=LOG_METRICS, agent_type="review-loop"):
+        """The gate's stdout for a Bash call from a loop whose transcript holds these records."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "loop.jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            for rec in records:
+                fh.write(json.dumps(rec) + "\n")
+        hook = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "agent_type": agent_type,
+                "agent_id": "loop-1", "agent_transcript_path": path, "tool_input": {"command": command}}
+        environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}
+        proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
+                              text=True, check=True, env=environment)
+        self.assertEqual(proc.stderr, "")
+        return proc.stdout
+
+    def assert_denied(self, output):
+        denial = json.loads(output)["hookSpecificOutput"]
+        self.assertEqual("deny", denial["permissionDecision"])
+        self.assertIn("reviewer", denial["permissionDecisionReason"])
+
+    def test_metrics_call_before_any_reviewer_dispatch_is_denied(self):
+        self.assert_denied(self.metrics_hook([user("mode: review-first"), bash("git status")]))
+
+    def test_metrics_call_while_the_reviewer_is_still_open_is_denied(self):
+        records = [user("mode: review-first"), dispatch("toolu_rev", "code-reviewer"),
+                   result("toolu_rev", ASYNC_RESULT)]
+        self.assert_denied(self.metrics_hook(records))
+
+    def test_metrics_call_after_the_reviewer_reported_passes(self):
+        records = [user("mode: review-first"), dispatch("toolu_rev", "code-reviewer"),
+                   result("toolu_rev", ASYNC_RESULT), notification("toolu_rev")]
+        self.assertEqual("", self.metrics_hook(records))
+
+    def test_metrics_call_in_no_review_mode_passes_with_no_reviewer(self):
+        self.assertEqual("", self.metrics_hook([user("no-review\nlane: code")]))
+
+    def test_a_call_that_logs_no_metrics_passes(self):
+        self.assertEqual("", self.metrics_hook([user("mode: review-first")], command="git status"))
+
+    def test_a_metrics_call_from_another_agent_passes(self):
+        self.assertEqual("", self.metrics_hook([user("mode: review-first")], agent_type="coder"))
+
+
 if __name__ == "__main__":
     unittest.main()
 

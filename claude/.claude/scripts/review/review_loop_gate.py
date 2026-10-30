@@ -35,6 +35,10 @@
   PreToolUse (Agent): a review-loop dispatch whose prompt says `caller: code` must carry a
       `handoff:` line. A review-loop dispatch from a subagent other than the /code fork is refused: the
       nested loop cannot ask for permission or wake on its reviewer's report, so it never hands back.
+  PreToolUse (Bash), a review-loop agent: a shell call of log-review-metrics is refused while the loop's transcript
+      holds no reviewer dispatch (`*-reviewer`, `*-reviewer-deep`), unless its prompt is a no-review mode, and while a
+      reviewer dispatch has not reported back. The loop logs the line once, with the final counts, right before it
+      hands back. Register with matcher `Bash`; the agent_type check guards every other caller.
 
   SubagentStop (review-loop), when the stop passes and no background dispatch is open: writes one
     `kind=run` row per reviewer dispatch (`*-reviewer`, `*-reviewer-deep`) through log-review-finding,
@@ -59,7 +63,15 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import handback
 import handback_store
 import script_utils
-from loop_transcript import GATE_REASON, LoopTranscript, plan_edit_reason, prompt_field, scan
+from loop_transcript import (
+    GATE_REASON,
+    NO_REVIEW_MODE,
+    LoopTranscript,
+    metrics_calls,
+    plan_edit_reason,
+    prompt_field,
+    scan,
+)
 
 OWN_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2]
 CALLER_CODE = re.compile(r"(?i)(?<![\w-])caller[`*]*\s*[:=]\s*[`\"']?code\b")
@@ -105,6 +117,11 @@ RETURN_TAIL = "then return the packet."
 DELIVERED_TAIL = "then stop: the packet was already delivered, and a second hand-back is denied."
 HANDOFF_REASON = ("A review-loop dispatch from /code carries no handoff block. Build it per "
                   "~/.claude/skills/_shared/handoff-block.md and dispatch again.")
+METRICS_EARLY_REASON = ("No reviewer has been dispatched yet, so the Step 7 metrics line would log counts before "
+                        "any review. Dispatch the reviewer first, wait for its report, then log the metrics line "
+                        "once, with the final counts, right before you hand back.")
+METRICS_OPEN_REASON = ("A reviewer dispatch has not reported yet. Wait for the reviewer's report, then log the "
+                       "Step 7 metrics line once, with the final counts, right before you hand back.")
 NESTED_REASON = ("Run /review from the main session: a review-loop that a subagent dispatches cannot ask for "
                  "permission or wake on its reviewer's report, so it ends with no hand-back.")
 
@@ -359,6 +376,35 @@ def check_dispatch(hook):
         script_utils.pre_tool_use_deny(reason)
 
 
+def metrics_deny_reason(hook):
+    """Why a review-loop's log-review-metrics call is refused, or None: the Step 7 row carries the final counts, so
+    it waits until a reviewer has been dispatched (not in a no-review prompt) and has reported."""
+    command = str((hook.get("tool_input") or {}).get("command") or "")
+    if not metrics_calls(command.replace("\\\n", " ")):
+        return None
+
+    transcript = LoopTranscript(script_utils.agent_transcript_path(hook))
+    if NO_REVIEW_MODE.search(transcript.prompt or ""):
+        return None
+
+    reviewers = [kind for kind in transcript.kinds.values() if RUN_GATES.search(kind)]
+    if not reviewers:
+        return METRICS_EARLY_REASON
+    if transcript.open_kinds(RUN_GATES):
+        return METRICS_OPEN_REASON
+    return None
+
+
+def check_metrics(hook):
+    try:
+        reason = metrics_deny_reason(hook)
+    except Exception as e:
+        print(f"review-loop-gate: metrics check skipped, {type(e).__name__}: {e}", file=sys.stderr)
+        return
+    if reason:
+        script_utils.pre_tool_use_deny(reason)
+
+
 def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
     """Store this stop with the count of background dispatches still open, so `review_fix.py packet` can tell a loop
     that waits on an agent from one that ended without handing back, with the ask rows the loop logged, so `packet`
@@ -408,6 +454,8 @@ def main():
     event = hook.get("hook_event_name")
     if event == "PreToolUse" and hook.get("tool_name") == "Agent":
         check_dispatch(hook)
+    elif event == "PreToolUse" and hook.get("tool_name") == "Bash" and hook.get("agent_type") == "review-loop":
+        check_metrics(hook)
     elif event == "SubagentStop" and hook.get("agent_type") == "review-loop":
         check_stop(hook)
 

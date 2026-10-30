@@ -16,6 +16,7 @@ EXPECTED_FILTERS = {
     "gates/git_discipline_gate.py": ["Bash(*git*)", "Bash(*gh*)"],
     "review/deferred_push_check.py": ["Bash(*git*)", "Bash(*gh*)"],
     "review/review_commit_gate.py": ["Bash(*git*)", "Bash(*review-gate-mark*)"],
+    "review/review_loop_gate.py": ["Bash(*log-review-metrics*)"],
     "gates/rg_path_gate.py": ["Bash(*rg*)"],
 }
 

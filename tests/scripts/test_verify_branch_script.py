@@ -850,13 +850,8 @@ class ReviewGateTest(VerifyBranchBase):
         self.write("late.txt", "x\n")
         self.assertEqual(self.log("--rows", "-", stdin=self.rows()).returncode, 2)
 
-    def test_a_context_saved_with_the_earlier_fingerprint_of_an_unchanged_tree_passes_the_tree_check(self):
-        self.task_dir()
-        self.assertEqual(self.prep().returncode, 0)
-        context_file = next((self.temp_root / "state").glob("*.json"))
-        context = json.loads(context_file.read_text())
-        context["fingerprint"] = self.EARLIER_FINGERPRINT
-        context_file.write_text(json.dumps(context))
+    def test_prep_of_an_unchanged_tree_stores_the_earlier_fingerprint_and_passes_the_tree_check(self):
+        self.assertEqual(self.EARLIER_FINGERPRINT, self.context()["fingerprint"])
         self.assertEqual(self.log_review().returncode, 0)
 
         done = self.log("--rows", "-", stdin=self.rows())

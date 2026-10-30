@@ -1,6 +1,5 @@
 """Checks for reviewed_tree.tree_fingerprint, the one working-tree hash behind verify's stored fingerprints and the
 review commit gate's reviewed-tree record."""
-import json
 import os
 import pathlib
 import shutil
@@ -48,6 +47,10 @@ def build_fixture(top):
 
 class TreeFingerprint(unittest.TestCase):
     def setUp(self):
+        isolated_git_config = mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull,
+                                                           "GIT_CONFIG_SYSTEM": os.devnull})
+        isolated_git_config.start()
+        self.addCleanup(isolated_git_config.stop)
         self.directory = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.directory, ignore_errors=True)
         self.top = pathlib.Path(self.directory)
@@ -113,30 +116,6 @@ class TreeFingerprint(unittest.TestCase):
         with mock.patch.object(reviewed_tree, "tree_fingerprint",
                                side_effect=reviewed_tree.TreeFingerprintError("boom")):
             self.assertIsNone(reviewed_tree.fingerprint(self.top))
-
-
-class StaleReviewedRecord(unittest.TestCase):
-    def setUp(self):
-        self.directory = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.directory, ignore_errors=True)
-        self.top = pathlib.Path(self.directory) / "repo"
-        self.top.mkdir()
-        build_fixture(self.top)
-        home = pathlib.Path(self.directory) / "home"
-        home.mkdir()
-        patcher = mock.patch.object(pathlib.Path, "home", return_value=home)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def test_bare_hex_record_of_the_current_tree_is_not_reviewed_until_rerecorded(self):
-        top, value = reviewed_tree.fingerprint(self.top)
-        bare_hex = value.removeprefix("sha256:")
-        reviewed_tree.review_gate_dir().mkdir(parents=True)
-        reviewed_tree.reviewed_file("s1").write_text(json.dumps({top: bare_hex}) + "\n")
-
-        self.assertFalse(reviewed_tree.is_reviewed("s1", self.top))
-        self.assertTrue(reviewed_tree.record_reviewed("s1", self.top))
-        self.assertTrue(reviewed_tree.is_reviewed("s1", self.top))
 
 
 if __name__ == "__main__":

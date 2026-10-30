@@ -10,6 +10,8 @@ import sys
 import tempfile
 import time
 
+import script_utils
+
 JQ_WHITESPACE = " \t\r\n"
 # The parsed payload of an empty stdin: jq prints nothing for it, so every field of it is empty.
 EMPTY_INPUT = object()
@@ -280,7 +282,7 @@ def temp_roots():
 
 def is_under_temp_dir(path):
     real = os.path.realpath(path)
-    return any(real == root or real.startswith(root.rstrip("/") + "/") for root in temp_roots())
+    return any(script_utils.path_is_under(real, root) for root in temp_roots())
 
 
 def expand_env_names(text, names):

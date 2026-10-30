@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""handback_store.py: the per-session store of review-loop rows (dispatch, hand-back, stop, step) and the reads of it
-that decide whether a hand-back is current. Callers import these names from handback_store directly; handback.py
-imports only the ones it uses itself. The store is one append-only JSON-lines file per session under
+"""handback_store.py: the per-session store of review-loop rows (dispatch, hand-back, stop, step, asks-logged) and the
+reads of it that decide whether a hand-back is current. Callers import these names from handback_store directly;
+handback.py imports only the ones it uses itself. The store is one append-only JSON-lines file per session under
 $HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
 import os
 import pathlib

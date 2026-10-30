@@ -1328,6 +1328,24 @@ class ReviewLoopScriptTest(unittest.TestCase):
         asks = [row for row in self.finding_rows() if row["disposition"] == "ask"]
         self.assertEqual(len(asks), 2)
 
+    def test_an_ask_that_only_points_back_to_another_ask_is_dropped(self):
+        asks_with_a_pointer = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the window be pinned?\n"
+                               "- `app.py:4` should the limit be cached?\n"
+                               "- The open ask about pinning the window still stands.\n"
+                               "- After ask 1 is answered, should the cache key change too?\n\n## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": asks_with_a_pointer}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([item["question"] for item in packet["ask"]][-1],
+                         "After ask 1 is answered, should the cache key change too?")
+        self.assertEqual(len(packet["ask"]), 3)
+        asks = [row for row in self.finding_rows() if row["disposition"] == "ask"]
+        self.assertEqual(len(asks), 3)
+        self.assertEqual(packet["dropped_asks"], ["ask only points back to another ask, so it was dropped: "
+                                                  "'The open ask about pinning the window still stands.'"])
+
     def test_two_fixes_at_one_line_are_two_rows_with_distinct_ids(self):
         two_at_one_line = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
                            "- `app.py:2` the name `limit` shadows the module setting\n\n"

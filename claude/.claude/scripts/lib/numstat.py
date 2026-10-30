@@ -1,11 +1,10 @@
 """Added-line and deleted-line counts from `git diff --numstat -z` output."""
 
 
-def changed_lines_by_path(numstat_text):
-    """{path: (added, deleted)} from `git diff --numstat -z` text: a row is `added\\tdeleted\\tpath\\0`, and a rename
-    or copy row is `added\\tdeleted\\t\\0old\\0new\\0`. A renamed file is listed under its new path with only its
-    edited lines. A binary file (git prints "-") is left out."""
-    counts = {}
+def numstat_rows(numstat_text):
+    """Yield (added, deleted, new_path) per row of `git diff --numstat -z` text: a row is `added\\tdeleted\\tpath\\0`,
+    and a rename or copy row is `added\\tdeleted\\t\\0old\\0new\\0`, which yields its new path. A binary file (git
+    prints "-") has None for both counts. A malformed row or a row without a path is left out."""
     fields = numstat_text.split("\0")
     index = 0
     while index < len(fields):
@@ -20,9 +19,20 @@ def changed_lines_by_path(numstat_text):
             path = fields[index + 1] if index + 1 < len(fields) else ""
             index += 2
 
-        if added.isdigit() and deleted.isdigit() and path:
-            counts[path] = (int(added), int(deleted))
-    return counts
+        if not path:
+            continue
+
+        yield (int(added) if added.isdigit() else None, int(deleted) if deleted.isdigit() else None, path)
+
+
+def changed_lines_by_path(numstat_text):
+    """{path: (added, deleted)} from `git diff --numstat -z` text. A renamed file is listed under its new path
+    with only its edited lines. A binary file is left out."""
+    return {
+        path: (added, deleted)
+        for added, deleted, path in numstat_rows(numstat_text)
+        if added is not None and deleted is not None
+    }
 
 
 def added_lines_by_group(numstat_text, group_of, is_skipped=None):

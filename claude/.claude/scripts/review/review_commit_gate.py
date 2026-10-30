@@ -13,7 +13,9 @@ repo when no edited file lies in a repo, its transcript cannot be read or it has
 every repo dirty. A commit is judged when a repo it commits in is dirty.
 
 A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
-under the repo's top-level docs/ folder: the paths already staged (`git diff --cached`, run in the hook input's
+under the repo's top-level docs/ folder or a path listed in the repo's `.claude/notes-paths` (one entry per line: a
+`/` ending is a folder prefix, else an exact file; read from HEAD, so an uncommitted edit of the list grants
+nothing): the paths already staged (`git diff --cached`, run in the hook input's
 cwd), every `git add` pathspec in the command, and every commit pathspec. Each pathspec must name one file
 literally: a folder, `.`, a glob, `~`, `$` or a `:` magic pathspec is denied. It is denied when the command can
 stage or pick more than that, or when the hook cannot tell which repo or files it uses:
@@ -72,9 +74,15 @@ State: ~/.claude/state/review-gate/<session>, one line per record: a JSON event 
 "agent"}. A plain `dirty` line, from before events carried a time, counts from the file's last change. A leftover
 `clean` line is no event. Hook JSON in, one permissionDecision line out,
 exit 0. On an internal error PreToolUse asks the user; PostToolUse stays silent.
+
+A commit that ships a Markdown file outside docs/ reads the `.claude/notes-paths` list from HEAD; an entry that is not
+a normalized literal (an empty, `.` or `..` segment, a leading `/`, a glob) denies the commit and names the list line.
+`review_commit_gate.py check <file>` is the other entry point: it prints each bad entry of a list file to stderr as
+`file:line: message` and exits 1 (2 with a usage line on a wrong argument count), with no hook JSON.
 """
 import json
 import os
+import pathlib
 import posixpath
 import re
 import shlex
@@ -132,6 +140,7 @@ GIT_TIMEOUT_SECONDS = 3
 NO_REVIEW_MARKER = "[no-review]"
 DOCS_FOLDER = "docs/"
 NOTES_SUFFIX = ".md"
+NOTES_PATHS_FILE = ".claude/notes-paths"
 # The input key that names the edited file, for each tool a coder edits with.
 EDIT_TOOL_PATH_KEYS = {"Edit": "file_path", "MultiEdit": "file_path", "Write": "file_path",
                        "NotebookEdit": "notebook_path"}
@@ -173,7 +182,8 @@ COMMIT_VALUE_LETTERS = "mFCct"
 NO_REVIEW_DENIED = (
     "[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
     "the user: invoke the /review skill now on the coder work, then commit after it converges. If the "
-    "commit ships only Markdown files under the repo's top-level docs/ folder, run it as a plain "
+    "commit ships only Markdown files under the repo's top-level docs/ folder or a path listed in the repo's "
+    ".claude/notes-paths, run it as a plain "
     "`git commit` (with `git add` of single named files if needed) from the repo root in its own "
     "Bash call, with no `cd`, `env` or `git -C`, because the gate passes that form. A commit after a "
     "`cd` earns no credit even when a review converged: run it as `git -C <dir> commit`."
@@ -378,8 +388,77 @@ def command_pathspecs(command):
     return pathspecs["add"], pathspecs["commit"]
 
 
-def is_notes_path(path):
-    return path.startswith(DOCS_FOLDER) and path.endswith(NOTES_SUFFIX)
+def declared_notes_paths(cwd):
+    """The entries of the repo's committed `.claude/notes-paths` list, one per line: an entry ending in `/` is a
+    folder prefix, any other an exact repo-root-relative file. Blank lines and `#` lines are skipped. It is read from
+    HEAD, so an edit that is only staged or in the working tree grants nothing. No file, no HEAD or a git failure
+    gives []; that fails closed, because listed paths stay denied. An entry that is not a normalized literal denies
+    the commit and names its line."""
+    listed = script_utils.git_output(cwd, "show", "HEAD:" + NOTES_PATHS_FILE, timeout=GIT_TIMEOUT_SECONDS)
+    if listed is None:
+        return []
+
+    errors = notes_list_errors(listed, "HEAD:" + NOTES_PATHS_FILE)
+    if errors:
+        raise DenyError("[review-commit-gate] " + "; ".join(errors))
+    return [entry for _, entry in notes_entries(listed)]
+
+
+NOTES_ENTRY_FORM = ("a normalized repo-root-relative literal: no leading `/` or `./`, no glob, no `..`; "
+                    "a folder ends in `/`")
+
+
+def notes_entries(text):
+    """(line number, entry) of each entry of a notes-paths list: blank lines and `#` lines are skipped."""
+    lines = [(number, line.strip()) for number, line in enumerate(text.splitlines(), 1)]
+    return [(number, line) for number, line in lines if line and not line.startswith("#")]
+
+
+def notes_entry_error(entry):
+    """Why a `.claude/notes-paths` entry is not a normalized repo-relative literal, or None when it is."""
+    segments = entry.removesuffix("/").split("/")
+    if EXPANDING_CHARS & set(entry) or any(segment in ("", ".", "..") for segment in segments):
+        return f"entry {entry!r} is not {NOTES_ENTRY_FORM}"
+    return None
+
+
+def notes_list_errors(text, name):
+    """One `name:line: message` per entry of the list text that is not a normalized repo-relative literal."""
+    errors = []
+    for number, entry in notes_entries(text):
+        error = notes_entry_error(entry)
+        if error:
+            errors.append(f"{name}:{number}: {error}")
+    return errors
+
+
+def check_notes_list(list_file):
+    """The `check` verb: print each bad entry of a notes-paths file to stderr; exit 1 when there is one."""
+    try:
+        text = pathlib.Path(list_file).read_text()
+    except OSError as error:
+        print(f"{list_file}: cannot read: {error}", file=sys.stderr)
+        return 1
+
+    errors = notes_list_errors(text, list_file)
+    for error in errors:
+        print(error, file=sys.stderr)
+    return 1 if errors else 0
+
+
+def matches_notes_entry(path, entry):
+    """True when the path is under the folder the entry names (it ends in `/`) or is the file it names."""
+    if entry.endswith("/"):
+        return path.startswith(entry)
+    return path == entry
+
+
+def is_notes_path(path, declared_paths):
+    if not path.endswith(NOTES_SUFFIX):
+        return False
+    if path.startswith(DOCS_FOLDER):
+        return True
+    return any(matches_notes_entry(path, entry) for entry in declared_paths)
 
 
 def repo_path(pathspec, prefix):
@@ -390,7 +469,8 @@ def repo_path(pathspec, prefix):
 
 
 def ships_only_notes(command, cwd):
-    """True when every path the commit can ship is a Markdown file under the repo's top-level docs/ folder."""
+    """True when every path the commit can ship is a Markdown file under the repo's top-level docs/ folder or listed
+    in the repo's committed `.claude/notes-paths`."""
     found = command_pathspecs(command)
     if found is None or not cwd:
         return False
@@ -407,7 +487,13 @@ def ships_only_notes(command, cwd):
         if os.path.isdir(os.path.join(cwd, pathspec)):
             return False
         shipped_paths.append(repo_path(pathspec, prefix) or "")
-    return bool(shipped_paths) and all(is_notes_path(path) for path in shipped_paths)
+
+    # The list is read only when every path is Markdown and one is outside docs/, so a commit with any
+    # non-Markdown path keeps the review deny even when the list is bad.
+    all_markdown = all(path.endswith(NOTES_SUFFIX) for path in shipped_paths)
+    needs_list = all_markdown and any(not path.startswith(DOCS_FOLDER) for path in shipped_paths)
+    declared_paths = declared_notes_paths(cwd) if needs_list else []
+    return bool(shipped_paths) and all(is_notes_path(path, declared_paths) for path in shipped_paths)
 
 
 def read_event(raw):
@@ -900,6 +986,11 @@ def run(raw, state):
 
 
 def main():
+    if sys.argv[1:2] == ["check"]:
+        if len(sys.argv) != 3:
+            print("usage: review_commit_gate.py check <file>", file=sys.stderr)
+            return 2
+        return check_notes_list(sys.argv[2])
     if os.environ.get("CLAUDE_SKIP_HOOKS"):
         return 0
     state = {"event": ""}

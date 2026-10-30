@@ -95,6 +95,13 @@ def record(session_id, kind, **fields):
     return row
 
 
+def repo_of_latest_dispatch(session_id):
+    """The repo the session's last review-loop dispatch reviewed, or None when the session or the dispatch names
+    none."""
+    last_dispatch = latest(session_id)["dispatch"] or {}
+    return last_dispatch.get("repo")
+
+
 def latest(session_id):
     """{"dispatch": last review-loop dispatch row that ran (see dispatch_ran) or None, "handback": last hand-back row
     or None, "stop": the last review-loop stop row after the last dispatch or None, "unanswered": the number of

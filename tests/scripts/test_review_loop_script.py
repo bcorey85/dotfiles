@@ -2366,7 +2366,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
-        self.assertEqual(packet["full_check"], "unverified (exit 0, no runner summary)")
+        self.assertEqual(packet["full_check"], "unverified (exit 0, no test result shown)")
         self.assertEqual((packet["full_check_command"], packet["full_check_summary"]), (check, "not found"))
         self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
 

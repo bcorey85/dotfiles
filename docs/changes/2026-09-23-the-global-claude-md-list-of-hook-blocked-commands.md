@@ -25,7 +25,7 @@ Over three days of work logs, the safety gates blocked 183 commands, rising from
 
 ## Watch
 
-Read 2026-10-24 on work logs through 2026-10-22, toolkit sessions filtered out: blocks per day of the listed forms 25.87 after, against a median of 18.50 (range 13.86 to 46.86) before. No change, with the good direction down. Reverted 2026-10-25: the list was cut from the global CLAUDE.md and the recovery rules kept, because it did not lower blocks and every session paid for it on every load. The block messages already name the way around at block time. Watch closed as reverted. The cut has its own watch, `hook-block-list-cut`.
+Read 2026-10-24 on work logs through 2026-10-22, toolkit sessions filtered out: blocks per day of the listed forms 25.87 after, against a median of 18.50 (range 13.86 to 46.86) before. No change, with the good direction down. Reverted 2026-10-25: the list was cut from the global CLAUDE.md and the recovery rules kept, because it did not lower blocks and every session paid for it on every load. The block messages already name the way around at block time. Watch `hook-block-list-in-claude-md` closed as reverted. The cut has its own watch, `hook-block-list-cut`.
 
 ## Back-out
 

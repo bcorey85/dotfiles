@@ -53,6 +53,8 @@ Expected saving: about 4 hours over 3 days of work runs, if the agents use the b
 
 Reading, 2026-10-28 intake: NO CHANGE on the report, kept. Ceiling calls per day read 4.67 after against a 1.57 before median, but the before median draws on early weeks before these waits grew: the two bins nearest the edit read 9.86 and 15.86. Daily counts after: 8, 4, 19, then 0 on 10-27 and 1 on 10-28. The drop starts late, likely when the work machine installed the gate. Read again at the next intake; revert if the days from 10-27 on rise back above 5.
 
+Reading, 2026-10-29 intake: NO CHANGE on the report (1.57 → 4.20 per day), kept. The after window spans the 10-27 switch of `/code` to the scripted review loop, which changed how many subagent Bash calls run at all, so the count cannot separate the gate from the switch. Read again on days after 10-27 only.
+
 ## Back-out
 
 Remove the `python3 ~/.claude/scripts/wait-loop-gate.py` entry from the PreToolUse Bash block in `settings.json`, then delete `scripts/wait-loop-gate.py`.

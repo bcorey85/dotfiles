@@ -38,11 +38,7 @@ Never block on it. If it fails, continue, and take the file list from `git statu
 
 ## Loop ordering (GATE-CRITICAL — do not reorder)
 
-A coder dispatch marks the session `dirty`. The only clean transition is your
-caller running `review-gate-mark clean` after rendering a packet whose `status`
-is `converged` or `deferred` — those two are the normal exits; the other five
-statuses leave the session dirty by design. Your caller routes on `status`, so
-a dishonest `converged` becomes an unearned mark.
+Reviewed work earns the commit gate's credit only from a converged or deferred hand-back, or from a commit that concludes a merge, so a dishonest `converged` unlocks an unreviewed commit.
 
 ```
 each iteration:
@@ -310,7 +306,6 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 ## What NOT to do
 
 - **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a `Task` coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, say so in the packet and stop.
-- **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
 - **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**
 - **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files, each with `blocker: yes`. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.

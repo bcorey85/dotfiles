@@ -54,6 +54,26 @@ class BlockCauseTest(unittest.TestCase):
                     self.assertIn(expected, found)
 
 
+class NamesOnlyToolkitTest(unittest.TestCase):
+    def test_a_hook_or_gate_with_no_plan_step_in_assumed_or_found_is_toolkit(self):
+        cases = {
+            "hook in assumed": ("PLAN-IMPACT:\n  assumed: the hand-back hook passes\n  found: B\n  cause: plan", True),
+            "gates in found, any case": ("PLAN-IMPACT:\n  assumed: A\n  found: The coder GATES loop\n  cause: plan",
+                                         True),
+            "react hook in a path and a name": ("PLAN-IMPACT:\n  found: src/hooks/useSession.ts:12\n"
+                                                "  assumed: the useOrders hook returns a list\n  cause: plan", False),
+            "a bare hook or gate": ("PLAN-IMPACT:\n  assumed: the hook passes\n  found: the gate denies\n", False),
+            "a step named": ("PLAN-IMPACT:\n  assumed: step 3 adds the hand-back hook\n  found: B", False),
+            "a phase named in found": ("PLAN-IMPACT:\n  assumed: the coder gate\n  found: Phase 2 has it", False),
+            "word inside another word": ("PLAN-IMPACT:\n  assumed: the encoder gate\n  found: B", False),
+            "only the cause line": ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  cause: hand-back hook", False),
+            "only the changes line": ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: the hand-back hook", False),
+        }
+        for name, (block, expected) in cases.items():
+            with self.subTest(name):
+                self.assertIs(expected, plan_format.names_only_toolkit(block))
+
+
 class SectionShapeTest(unittest.TestCase):
     def test_template_items_carry_phase_text_checked_state_and_line(self):
         items = parse(TEMPLATE)

@@ -164,7 +164,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.env.pop("CLAUDE_SKIP_HOOKS", None)
         self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
         self.env["PATH"] = f"{claude.parent}{os.pathsep}{self.env['PATH']}"
-        self.state_dir = self.scratch / "state"
+        # /code starts the loop with its own state folder, the one that also holds the run events.
+        self.state_dir = pathlib.Path(git(self.repo, "rev-parse", "--path-format=absolute", "--git-path", "code-step"))
 
     def commit_files(self, files):
         for name, text in files.items():
@@ -257,6 +258,26 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((usage[0]["agent"], usage[0]["model"], usage[0]["driver"]),
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
+
+    def test_a_review_prompt_with_no_phase_logs_a_standalone_scope(self):
+        self.prompt_file_text = lambda header_extra="", footer="": (
+            "mode: review-first\ncaller: review\nlane: none\n\nhandoff:\n  files:\n    - path: app.py\n")
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        runs = fake_ledger.recorded_rows(self.env, "review_run")
+        self.assertEqual([run["scope"] for run in runs], ["standalone"])
+        scope_rows = fake_ledger.recorded_rows(self.env, "review_scope")
+        self.assertEqual([row["caller"] for row in scope_rows], ["review"])
+
+    def test_a_code_prompt_with_no_phase_logs_a_phase_scope(self):
+        self.prompt_file_text = lambda header_extra="", footer="": (
+            "mode: review-first\ncaller: code\nlane: code\n\nhandoff:\n  files:\n    - path: app.py\n")
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        runs = fake_ledger.recorded_rows(self.env, "review_run")
+        self.assertEqual([run["scope"] for run in runs], ["phase"])
 
     def start_with_a_twelve_line_change(self):
         added = "".join(f"mechanism = {number}\n" for number in range(12))

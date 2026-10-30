@@ -11,7 +11,10 @@ import fake_ledger
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import review_loop_script
 import reviewed_tree
+import script_utils
 
 LOGGED_MARK = "LOGGED / POSTED"
 
@@ -1964,6 +1967,125 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["nope"])
         self.assertEqual(code, 2)
         self.assertIn("review_fix.py", output)
+
+    # ---------- launch ----------
+
+    def loop_stub(self):
+        """A stand-in loop script: records its arguments and hands back through the real write_handback_rows, so the
+        rows it writes are the ones `packet` reads."""
+        stub = self.temp_root / "loop_stub.py"
+        stub.write_text(
+            "import json, sys\n"
+            f"sys.path[:0] = [{str(toolkit_paths.REVIEW_DIR)!r}, {str(toolkit_paths.CODE_DIR)!r}, "
+            f"{str(toolkit_paths.LIB_DIR)!r}, {str(toolkit_paths.TELEMETRY_DIR)!r}]\n"
+            "import review_loop_packet, review_loop_script\n"
+            "argv = sys.argv[1:]\n"
+            "options = dict(zip(argv[1::2], argv[2::2]))\n"
+            "args = review_loop_script.parse_review_loop_arguments(argv)\n"
+            "print(json.dumps({'argv': argv, 'repo': argv[0], **options}))\n"
+            f"review_loop_packet.write_handback_rows(argv[0], args, {CONVERGED!r}, 'converged', [], False)\n")
+        return stub
+
+    def launch(self, *flags, **extra):
+        return self.run_script(["launch", *flags], REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub()), **extra)
+
+    def crashing_stub(self):
+        stub = self.temp_root / "crashing_stub.py"
+        stub.write_text("import sys\nsys.exit(1)\n")
+        return stub
+
+    def dispatch_rows(self):
+        return [row for row in self.rows(self.store_dir / f"{SESSION}.jsonl") if row["kind"] == "dispatch"]
+
+    def test_launch_without_a_session_refuses_and_launches_nothing(self):
+        code, output = self.launch(CLAUDE_CODE_SESSION_ID="")
+        self.assertEqual(code, 2, output)
+        self.assertIn("CLAUDE_CODE_SESSION_ID is not set", output)
+        self.assertEqual(list(self.store_dir.glob("*")), [])
+
+    def test_launch_records_the_dispatch_writes_the_prompt_and_packet_reads_the_hand_back(self):
+        subfolder = self.repo / "src"
+        subfolder.mkdir()
+        code, output = self.launch(cwd=subfolder)
+        self.assertEqual(code, 0, output)
+        lines = output.splitlines()
+        loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"
+        log_path = next(loop_root.glob("review-script-*/script.log"))
+        self.assertIn(str(log_path), lines[0])
+        self.assertIn("exited 0", lines[-1])
+        self.assertIn("packet --skill review", lines[-1])
+
+        dispatches = self.dispatch_rows()
+        self.assertEqual(len(dispatches), 1)
+        self.assertEqual(dispatches[0]["repo"], str(self.repo.resolve()))
+        self.assertIs(dispatches[0]["no_review"], False)
+
+        prompt = (log_path.parent / "prompt.txt").read_text()
+        self.assertEqual(prompt, "mode: review-first\ncaller: review\nlane: none\n\n"
+                         "Review the working tree against HEAD.\n")
+        called_with = json.loads(log_path.read_text().splitlines()[0])
+        self.assertEqual(called_with["--session"], SESSION)
+        self.assertEqual(called_with["--state-dir"], str(loop_root.parent))
+        self.assertTrue(called_with["--agent-id"].startswith("review-script-"))
+        # The loop script's own parser must accept the argv the launcher builds.
+        parsed = review_loop_script.parse_review_loop_arguments(called_with["argv"])
+        self.assertEqual(parsed.session, SESSION)
+        self.assertEqual(parsed.prompt_file, str(log_path.parent / "prompt.txt"))
+
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
+
+    def test_launch_writes_no_code_run_folder_so_a_code_abort_stays_resumable(self):
+        code, output = self.launch()
+        self.assertEqual(code, 0, output)
+        self.assertFalse((script_utils.git_path(self.repo, "code-step") / "runs").exists())
+
+    def test_launch_with_a_repo_flag_reviews_that_repo_and_keeps_state_in_it(self):
+        second = self.temp_root / "second"
+        second.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=second, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+        code, output = self.launch("--repo", str(second), cwd=self.repo)
+        self.assertEqual(code, 0, output)
+        loop_root = script_utils.git_path(second, "review-script") / "loop-script"
+        log_path = next(loop_root.glob("review-script-*/script.log"))
+        self.assertIn(str(log_path), output.splitlines()[0])
+        called_with = json.loads(log_path.read_text().splitlines()[0])
+        self.assertEqual(called_with["repo"], str(second.resolve()))
+        dispatches = self.dispatch_rows()
+        self.assertEqual(len(dispatches), 1)
+        self.assertEqual(dispatches[0]["repo"], str(second.resolve()))
+        self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
+
+    def test_each_launch_reviews_the_working_tree_and_has_its_own_ids(self):
+        loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"
+        for _ in range(2):
+            code, output = self.launch()
+            self.assertEqual(code, 0, output)
+        logs = sorted(loop_root.glob("*/script.log"))
+        self.assertEqual(len(logs), 2)
+        agent_ids = [json.loads(log.read_text().splitlines()[0])["--agent-id"] for log in logs]
+        self.assertNotEqual(agent_ids[0], agent_ids[1])
+        prompts = sorted(loop_root.glob("*/prompt.txt"))
+        self.assertEqual(len(prompts), 2)
+
+    def test_launch_with_a_loop_that_crashes_exits_0_and_packet_reports_no_hand_back(self):
+        code, output = self.run_script(["launch"], REVIEW_FIX_LOOP_SCRIPT=str(self.crashing_stub()))
+        self.assertEqual(code, 0, output)
+        self.assertIn("exited 1", output)
+        code, output = self.packet("")
+        self.assertEqual(code, 2, output)
+        self.assertIn("ACTION: stop-no-handback", output)
+
+    def test_launch_with_a_repo_outside_git_stops_with_no_dispatch(self):
+        outside = self.temp_root / "plain"
+        outside.mkdir()
+        code, output = self.launch("--repo", str(outside))
+        self.assertEqual(code, 2, output)
+        self.assertIn("is not inside a git work tree", output)
+        self.assertNotIn("Traceback", output)
+        self.assertEqual(self.dispatch_rows(), [])
 
 
 if __name__ == "__main__":

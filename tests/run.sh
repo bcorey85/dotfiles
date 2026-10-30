@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Lints first (ruff with the rules in ruff.toml fails the run; C901 only reports, but fails the run in the code-step
-# and review-flow files; a missing ruff stops the run), then checks for any duplicate code
-# (tests/duplicate_code.py), then runs every unit test under tests/, one process per test
-# file, nproc at a time. The tests run even when the lint fails. When the lint, the duplicate check or the tests
-# fail, the last line names each failed step ("FAILED: lint tests"), after the test summary, and the exit is
-# non-zero.
+# Lints first (tests/lint.sh; a missing ruff stops the run), then checks for duplicate code, then runs every unit test
+# under tests/, one process per test file, nproc at a time. The tests run even when the lint fails. A failed step is
+# named on the last line ("FAILED: lint tests"), after the test summary, and the exit is non-zero.
 # `REAL_PLANS=1 bash tests/run.sh` also parses every real plan under ~/dev.
 set -euo pipefail
 
@@ -15,26 +12,9 @@ cd "$repoRoot"
 unset CLAUDE_SKIP_HOOKS
 
 lintStatus=0
-if command -v ruff >/dev/null 2>&1; then
-    ruff check --no-cache claude/.claude/scripts claude/.claude/skills tests/scripts tests/duplicate_code.py || lintStatus=1
-    ruff check --no-cache --select C901 --output-format concise claude/.claude/scripts || echo "complexity report only: not a failure" >&2
-    codeStepFiles=(claude/.claude/scripts/code/code_step.py claude/.claude/scripts/code/code_step_core.py
-        claude/.claude/scripts/code/code_step_hooks.py claude/.claude/scripts/code/code_step_boundary.py
-        claude/.claude/scripts/code/code_step_verification.py claude/.claude/scripts/code/code_step_closing.py
-        claude/.claude/scripts/code/code_step_gates.py claude/.claude/scripts/code/code_step_start.py
-        claude/.claude/scripts/code/code_step_report.py claude/.claude/scripts/code/code_step_review.py
-        claude/.claude/scripts/code/code_step_review_stops.py claude/.claude/scripts/code/code_step_state.py
-        claude/.claude/scripts/code/code_step_routes.py claude/.claude/scripts/lib/plan_format.py)
-    reviewFlowFiles=(claude/.claude/scripts/review/review_fix.py claude/.claude/scripts/review/handback.py
-        claude/.claude/scripts/review/review_loop_gate.py claude/.claude/scripts/review/review_commit_gate.py
-        claude/.claude/scripts/review/review_loop_script.py claude/.claude/scripts/review/review_loop_findings.py
-        claude/.claude/scripts/review/review_loop_packet.py claude/.claude/scripts/review/review_loop_closure.py
-        claude/.claude/scripts/review/full_check_gate.py claude/.claude/scripts/review/full_check.py
-        claude/.claude/scripts/review/handback_store.py claude/.claude/scripts/review/saved_handback.py
-        claude/.claude/scripts/review/finding_record.py claude/.claude/scripts/lib/loop_transcript.py)
-    ruff check --no-cache --select C901 "${codeStepFiles[@]}" "${reviewFlowFiles[@]}" || lintStatus=1
-else
-    echo "ruff not installed: install it (pacman -S ruff, brew install ruff or pipx install ruff) and rerun" >&2
+"$BASH" "$repoRoot/tests/lint.sh" || lintStatus=$?
+lintMissingRuffStatus=2
+if [ "$lintStatus" -eq "$lintMissingRuffStatus" ]; then
     exit 1
 fi
 

@@ -197,7 +197,7 @@ def log_prohibition_scan(repo_dir, command, verdict):
                  f"confirmed={verdict.hits}", f"branch={branch_label(repo_dir)}", f"note={command[:120]}"], repo_dir)
 
 
-def run_verification_commands(repo_dir, phase_section, run_configured_check=False):
+def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
     # The repo's configured `Quality check:` command is left to the review loop's own run unless the caller says
     # nothing else will run it. Every other command runs, and a repo with no configured check skips nothing.
     results = []
@@ -215,7 +215,7 @@ def run_verification_commands(repo_dir, phase_section, run_configured_check=Fals
             unparsed.append(line.strip())
             continue
         is_configured_check_command = full_check.is_configured_check(command, configured_check)
-        if is_configured_check_command and not run_configured_check:
+        if is_configured_check_command and not run_whole_suites:
             skipped.append(command)
             continue
         code, output = run_command(command, repo_dir, timeout=timeout)

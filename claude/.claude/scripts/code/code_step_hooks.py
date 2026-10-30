@@ -66,9 +66,16 @@ def hook_repo_dirs(event):
 
 
 def hook_repo_states(event):
-    # (repo, state) for each repo hook_repo_dirs reaches that holds state.
+    # (repo, state) for each repo hook_repo_dirs reaches that holds state. A repo whose state file is unreadable JSON
+    # or a state this code does not know is skipped with its error on stderr, so one stale file never hides the
+    # session's other repos.
     for repo, directory in hook_repo_dirs(event):
-        state = read_state_file(directory)
+        try:
+            state = read_state_file(directory)
+        except StateFileError as error:
+            print(f"code-step hook: skipped {repo}: {error}", file=sys.stderr)
+            continue
+
         if state:
             yield repo, state
 
@@ -462,7 +469,7 @@ def command_plan_hook():
             return
     except ValueError:
         return
-    except (OSError, StateFileError) as error:
+    except OSError as error:
         print(f"code-step plan-hook: {error}", file=sys.stderr)
 
 

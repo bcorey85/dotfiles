@@ -51,6 +51,7 @@ METRICS_REFUSAL = "refusing to log"
 SCOPE_CALL = re.compile(r"review-scope\b")
 SCOPE_ROOT = re.compile(r"(?m)^ROOT=(\S.*?)\s*$")
 PROMPT_REPO = prompt_field("repo", r"(\S[^\n]*?)[`*]*[ \t]*$")
+PROMPT_REPO_ROOT = prompt_field("repo root", r"(\S[^\n]*?)[`*]*[ \t]*$")
 PARENTHETICAL_TAIL = re.compile(r"\s*\([^()]*\)$")
 GIT_TIMEOUT_SECONDS = 10
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
@@ -311,6 +312,15 @@ def last_code_step(transcript):
     return max(transcript.steps(script_utils.CODERS), default=0)
 
 
+def prompt_path_work_tree(named, cwd):
+    """The real path of the work tree that holds the path a prompt `key: <path>` match names (quotes and a trailing
+    parenthetical dropped, `~` expanded, a relative path read from cwd). None when no work tree holds it."""
+    named_value = PARENTHETICAL_TAIL.sub("", named.group(1).strip("`\"'"))
+    named_dir = os.path.expanduser(named_value)
+    named_path = os.path.join(cwd or "", named_dir)
+    return script_utils.work_tree_top(named_path, timeout=GIT_TIMEOUT_SECONDS)
+
+
 def reviewed_repo(prompt, cwd, scope_root=None, follow_first_path=True):
     """The real path of the work tree a review-loop dispatch reviews: the ROOT= that review-scope printed, else the
     prompt's `repo:` line (a trailing parenthetical dropped) read from cwd, else the first absolute path the prompt
@@ -321,10 +331,7 @@ def reviewed_repo(prompt, cwd, scope_root=None, follow_first_path=True):
 
     named = PROMPT_REPO.search(prompt)
     if named:
-        named_value = PARENTHETICAL_TAIL.sub("", named.group(1).strip("`\"'"))
-        named_dir = os.path.expanduser(named_value)
-        named_path = os.path.join(cwd or "", named_dir)
-        return script_utils.work_tree_top(named_path, timeout=GIT_TIMEOUT_SECONDS)
+        return prompt_path_work_tree(named, cwd)
 
     first_path = script_utils.first_absolute_path(prompt) if follow_first_path else None
     if first_path:

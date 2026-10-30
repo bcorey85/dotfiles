@@ -1,7 +1,8 @@
-"""loop_transcript.py: one read of a review-loop transcript, and the checks that read only the transcript: the last
-code step, whether a passed full check follows it, the open background dispatches, and a packet that names the plan
-file. review_loop_gate.py (the SubagentStop backstop), handback.py (the hand-back hook) and open_child_gate.py read
-transcripts through it. Not a hook itself."""
+"""loop_transcript.py: one read of a review-loop transcript, and the checks that read a transcript: the last code
+step, whether a passed full check follows it, the open background dispatches, and a packet that names the plan
+file; and the repo a loop reviewed, which also reads cwd and the git work tree. review_loop_gate.py (the
+SubagentStop backstop), handback.py (the hand-back hook) and open_child_gate.py read transcripts through it. Not a
+hook itself."""
 import json
 import os
 import re
@@ -49,7 +50,9 @@ METRICS_CALL = re.compile(r"log-review-metrics\b")
 METRICS_REFUSAL = "refusing to log"
 SCOPE_CALL = re.compile(r"review-scope\b")
 SCOPE_ROOT = re.compile(r"(?m)^ROOT=(\S.*?)\s*$")
-PROMPT_REPO = prompt_field("repo", r"(\S+?)[`*]*[ \t]*$")
+PROMPT_REPO = prompt_field("repo", r"(\S[^\n]*?)[`*]*[ \t]*$")
+PARENTHETICAL_TAIL = re.compile(r"\s*\([^()]*\)$")
+GIT_TIMEOUT_SECONDS = 10
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
                     "that edit, and return the finding that needs a plan change with `status` set to `plan-impact`.")
 GATE_REASON = ("No passed full_check.py result follows the last code change in this phase. A scoped run, "
@@ -249,13 +252,9 @@ class LoopTranscript:
         if call_count:
             self.full_check_calls[tool_use_id] = (n, call_count)
 
-    def reviewed_root(self):
-        """The repo the loop reviewed: the ROOT= review-scope printed, else the prompt's `repo:` line, when it names a
-        directory that still exists; else None."""
-        repo = PROMPT_REPO.search(self.prompt or "")
-        named = os.path.expanduser(repo.group(1).strip("`\"'")) if repo else None
-        candidates = [path for path in (self.scope_root, named) if path and os.path.isdir(path)]
-        return candidates[0] if candidates else None
+    def reviewed_repo(self, cwd, follow_first_path=True):
+        """The repo the loop reviewed, by the module-level function reviewed_repo's rule."""
+        return reviewed_repo(self.prompt or "", cwd, scope_root=self.scope_root, follow_first_path=follow_first_path)
 
     def launched_agent(self, tool_use_id):
         """The agent id that the dispatch's tool_result names, or None."""
@@ -310,6 +309,30 @@ class LoopTranscript:
 def last_code_step(transcript):
     """The transcript line of the loop's last coder dispatch or message to a coder, 0 when there is none."""
     return max(transcript.steps(script_utils.CODERS), default=0)
+
+
+def reviewed_repo(prompt, cwd, scope_root=None, follow_first_path=True):
+    """The real path of the work tree a review-loop dispatch reviews: the ROOT= that review-scope printed, else the
+    prompt's `repo:` line (a trailing parenthetical dropped) read from cwd, else the first absolute path the prompt
+    names when a work tree holds it and follow_first_path is set, else cwd. None when the scope root, the `repo:`
+    line, or cwd lies in no work tree."""
+    if scope_root:
+        return script_utils.work_tree_top(scope_root, timeout=GIT_TIMEOUT_SECONDS)
+
+    named = PROMPT_REPO.search(prompt)
+    if named:
+        named_value = PARENTHETICAL_TAIL.sub("", named.group(1).strip("`\"'"))
+        named_dir = os.path.expanduser(named_value)
+        named_path = os.path.join(cwd or "", named_dir)
+        return script_utils.work_tree_top(named_path, timeout=GIT_TIMEOUT_SECONDS)
+
+    first_path = script_utils.first_absolute_path(prompt) if follow_first_path else None
+    if first_path:
+        path_folder = script_utils.nearest_existing_folder(first_path)
+        path_top = script_utils.work_tree_top(path_folder, timeout=GIT_TIMEOUT_SECONDS)
+        if path_top:
+            return path_top
+    return script_utils.work_tree_top(cwd, timeout=GIT_TIMEOUT_SECONDS)
 
 
 def scan(transcript, final=None, full_suite_in_ci=False):

@@ -12,8 +12,8 @@
       dispatch, or a SendMessage to a coder it dispatched — is the last code change; with none, the loop start
       is, since the phase changed code before the loop ran. A handoff `tests-run` never exempts it. A loop returning
       `status: plan-impact` owes no check, and neither does a loop in a repo whose CLAUDE.md holds the line
-      `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. That repo is the one the loop
-      reviewed (reviewed_root), else the hook cwd. A stop with a
+      `Full suite: CI` (full_check.full_suite_runs_in_ci): CI runs that repo's full suite. That repo is the repo of
+      the ROOT= or `repo:` line, else the hook cwd (handback.full_suite_in_ci). A stop with a
       delivered SubagentHandback (one no hook denied) skips this check and the plan-file check.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
@@ -322,7 +322,10 @@ def log_run_rows(hook, transcript):
         if not session_id:
             return
         runs, lane, phase = reviewer_runs(transcript)
-        root = transcript.reviewed_root()
+        if not runs:
+            return
+
+        root = transcript.reviewed_repo(hook.get("cwd"))
         state_file = state_file_for(session_id)
         marks = {}
         for row in script_utils.read_jsonl(state_file):

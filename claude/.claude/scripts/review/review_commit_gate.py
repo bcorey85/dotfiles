@@ -50,7 +50,7 @@ A dirty session still commits in four more cases, each checked against something
     that converged in a review-loop commits after a later coder dispatch that edited nothing
   - the session's latest review-loop hand-back is current, converged or deferred, came after the coder work that
     made the session dirty, and answers a review-loop dispatch of that repo (its `repo:` line, else the first
-    absolute path the prompt names, else the session cwd; a path in no work tree falls back to the cwd), however
+    absolute path the prompt names, else the session cwd; a `repo:` line in no work tree names no repo), however
     the run that launched the loop closed.
 The last three credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git

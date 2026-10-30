@@ -223,14 +223,20 @@ def print_plan(context):
         if untracked:
             lines.append(f"  {untracked}: read them too.")
         lines.append("  ---")
-        lines.append("  Route its findings with /review and fix them. THEN log the review, after the fixes. Write the "
-                     "findings to a JSON list ([] when none) of")
+        lines.append("  A finding is a blocker when its desc starts with `[blocker]` (the code-reviewer's tag). "
+                     "Keep the reviewer's `[blocker]` tag at the start of that finding's `desc`.")
+        lines.append("  If no finding is a `[blocker]`, do not fix: log each fix finding with actioned `deferred`, "
+                     "list each `ask` finding to the user and log it with disposition `ask` and actioned `ask`, "
+                     "then log the review with the command below, rerun verify-prep and go on to STEP 2.")
+        lines.append("  If any finding is a `[blocker]`, route the findings with /review and fix them, THEN log the "
+                     "review, after the fixes. A blocker is logged only `fixed` or `skipped_fp`.")
+        lines.append("  Write the findings to a JSON list ([] when none) of")
         lines.append(
             '  {"desc","file","line","actioned", optional "class","disposition"} and run. `actioned` is required '
             "(fixed|skipped_fp|deferred|ask|none);"
         )
         lines.append('  a finding with disposition fix (the default) cannot have actioned none: fix it, mark it '
-                     'skipped_fp, or defer it.')
+                     'skipped_fp, or defer it (not a blocker).')
         lines.append("  verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->")
         lines.append("  Then rerun verify-prep (it must report the review as ran) before STEP 2.")
         step += 1

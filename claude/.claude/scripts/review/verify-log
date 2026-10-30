@@ -17,7 +17,9 @@ Empty rows are an error unless --result NA, which logs a run row with no result 
 review: logs the branch-wide code-reviewer run row (stamped with a fingerprint of the tree as it stands, so prep can
 tell a later change) and one finding row per reviewer finding. --rows is a JSON list of
 {"desc","file","line","actioned", optional "class","disposition"}; `actioned` is required and cannot be `none` on a
-`fix` finding. --findings, when given, must equal its length. A second review for a tree a row already covers exits 2.
+`fix` finding. A blocker is a finding whose `desc` starts with `[blocker]` (any case); its actioned must be `fixed`
+or `skipped_fp`. A fix finding that is not a blocker may be deferred. --findings, when given, must equal its length.
+A second review for a tree a row already covers exits 2.
 
 Every value the loggers own (class, disposition, actioned, result, guard) is checked by the loggers themselves:
 before the first write each row goes through its logger once with `--check` as the first argument, and a refusal
@@ -39,6 +41,8 @@ import verify_common as vc
 VERDICTS = ("done", "partial", "missing", "failed-check", "needs-manual", "overridden")
 REVIEW_RESULTS = ("PASS", "PASS WITH WARNINGS", "NEEDS CHANGES")
 LEADING_INT = re.compile(r"^\s*(\d+)")
+BLOCKER_TAG = re.compile(rf"^\s*{script_utils.BLOCKER_TAG_PATTERN}", re.IGNORECASE)
+BLOCKER_OUTCOMES = ("fixed", "skipped_fp")
 
 
 def log_text(text, limit=200):
@@ -132,9 +136,13 @@ def load_review_findings(source):
             )
         finding.setdefault("class", "correctness")
         finding.setdefault("disposition", "fix")
+        is_blocker = BLOCKER_TAG.match(str(finding["desc"]))
+        if is_blocker and finding["actioned"] not in BLOCKER_OUTCOMES:
+            raise vc.VerifyError(f"finding {index}: a blocker cannot be deferred or left open; fix it (or mark it "
+                                 "skipped_fp) before logging the review")
         if finding["disposition"] == "fix" and finding["actioned"] == "none":
             raise vc.VerifyError(f"finding {index}: a `fix` finding cannot have actioned `none`; fix it, mark it "
-                          "skipped_fp, or defer it")
+                                 "skipped_fp, or defer it (not a blocker)")
         finding["line"] = normalize_line(finding.get("line"), f"finding {index}")
     return findings
 

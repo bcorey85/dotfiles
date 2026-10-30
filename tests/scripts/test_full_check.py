@@ -285,6 +285,32 @@ class FullCheckTest(unittest.TestCase):
             in_ci = self.check("pytest tests/test_a.py", claude_md="# Repo\n\n- Full suite: CI\n")
             self.assertEqual(in_ci.stdout.splitlines()[0], "full check: not run (CI)")
 
+    def test_run_refuses_a_scoped_or_unresolved_command_as_main_does(self):
+        marker = self.repo / "ran"
+        (self.repo / "Makefile").write_text("test:\n\tpytest\n")
+
+        for command, refusal in ((f"touch {marker}; pytest tests/test_a.py", "not run (scoped command"),
+                                 (f"touch {marker}; make missing", "not run (unresolved command")):
+            with self.subTest(command=command):
+                result, _tail, _details = full_check.run(self.repo, command, self.log, 60)
+
+                self.assertTrue(result.startswith(refusal), result)
+                self.assertFalse(marker.exists())
+
+    def test_run_runs_the_declared_check_with_its_expected_red_steps_left_out(self):
+        marker = self.repo / "ran"
+        fake_pytest = self.repo / "bin" / "pytest"
+        fake_pytest.parent.mkdir()
+        fake_pytest.write_text(f"#!/bin/sh\ntouch {marker}\necho '3 passed in 0.1s'\n")
+        fake_pytest.chmod(0o755)
+        (self.repo / "CLAUDE.md").write_text(f"Quality check: `pytest tests/ && {PASSING_SUITE}`\n")
+        env = {**os.environ, "PATH": f"{fake_pytest.parent}{os.pathsep}{os.environ['PATH']}"}
+
+        result, _tail, _details = full_check.run(self.repo, "pytest tests/", self.log, 60, env=env)
+
+        self.assertEqual(result, full_check.PASSED)
+        self.assertTrue(marker.exists())
+
     def test_a_ci_repo_refuses_a_subset_of_its_quality_check_steps_scoped_to_tests(self):
         marker = self.repo / "ran"
         claude_md = "- Full suite: CI\n- Quality check: `pytest tests/unit && pytest tests/integration`\n"
@@ -871,10 +897,10 @@ class PhaseExpectedRedTest(unittest.TestCase):
         self.log = self.repo / "review-gate.log"
         (self.repo / "CLAUDE.md").write_text(f"Quality check: `{self.QUALITY_CHECK}`\n")
 
-    def check(self, *plan_args, expected_red="exit 1"):
+    def check(self, *plan_args, expected_red="exit 1", command=QUALITY_CHECK):
         (self.repo / "plan.md").write_text(self.PLAN.format(command=expected_red))
         argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log), *plan_args]
-        return subprocess.run([*argv, "--", self.QUALITY_CHECK], capture_output=True, text=True, timeout=60)
+        return subprocess.run([*argv, "--", command], capture_output=True, text=True, timeout=60)
 
     def test_the_phase_runs_its_check_without_the_expected_red_step(self):
         completed = self.check("--plan", "plan.md", "--phase", "1")
@@ -890,6 +916,13 @@ class PhaseExpectedRedTest(unittest.TestCase):
 
         self.assertEqual(0, completed.returncode, completed.stdout)
         self.assertEqual("full check: not run (expected red until Phase 2)", completed.stdout.splitlines()[0])
+        self.assertFalse(self.log.exists())
+
+    def test_an_undeclared_scoped_step_left_after_the_expected_red_cut_is_refused(self):
+        completed = self.check("--plan", "plan.md", "--phase", "1", command="pytest tests/test_a.py && exit 1")
+
+        self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
+        self.assertIn("expected red: `exit 1` until Phase 2", completed.stdout)
         self.assertFalse(self.log.exists())
 
     def test_a_plan_without_its_phase_or_an_unreadable_plan_is_refused(self):

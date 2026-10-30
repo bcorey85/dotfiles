@@ -77,13 +77,49 @@ def latest(session_id):
     no_reviewer, unreviewed_fix; a stop row also agent_id, open_dispatches (the background agents and shells the loop
     still waited on when it stopped) and ask_rows. A stop the gate blocked is not a stop: the loop went on, so such a
     row is skipped. Rows are ordered by append, not by clock."""
-    standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
+    return standing_of(stored_session_rows(session_id))
+
+
+def latest_for_repo(session_id, repo_top):
+    """`latest` over only the rows of review-loops that reviewed repo_top: each dispatch whose repo, after any
+    DISPATCH_REPO_KIND row, is repo_top, and the stop and hand-back rows that follow such a dispatch before the next
+    dispatch. A review of another repo then neither answers nor voids this repo's hand-back."""
+    stored_rows = stored_session_rows(session_id)
+
+    dispatch_repos = []
+    for row in stored_rows:
+        if row.get("kind") == "dispatch":
+            dispatch_repos.append(row.get("repo"))
+        elif row.get("kind") == DISPATCH_REPO_KIND and dispatch_repos:
+            dispatch_repos[-1] = row.get("repo")
+
+    repo_rows = []
+    dispatch_count = 0
+    for row in stored_rows:
+        if row.get("kind") == "dispatch":
+            dispatch_count += 1
+        if row.get("kind") == DISPATCH_REPO_KIND or dispatch_count == 0:
+            continue
+        reviewed_repo = dispatch_repos[dispatch_count - 1]
+        if repo_top is None or reviewed_repo != repo_top:
+            continue
+        repo_rows.append({**row, "repo": reviewed_repo} if row.get("kind") == "dispatch" else row)
+    return standing_of(repo_rows)
+
+
+def stored_session_rows(session_id):
+    """The session's rows, or none for an empty or unusable session id."""
     if not session_id:
-        return standing
+        return []
     try:
-        stored_rows = session_rows(session_id)
+        return session_rows(session_id)
     except ValueError:
-        return standing
+        return []
+
+
+def standing_of(stored_rows):
+    """The `latest` result of these rows, read in order."""
+    standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
     for row in stored_rows:
         if row.get("kind") == "dispatch":
             standing["dispatch"] = row

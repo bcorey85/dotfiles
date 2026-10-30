@@ -58,6 +58,9 @@ PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{
 AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", re.I)
 PLAN_IMPACT_OPENING = re.compile(r"plan[-_ ]?impact(?![*`_]*:[ \t*`_]*yes\b)", re.I)
 PLAN_IMPACT_CAUSE = re.compile(r"^[ \t>*`_-]*cause[*`_]*:[ \t*`_]*(.*?)[ \t*`_]*$", re.I | re.M)
+PLAN_IMPACT_ASSUMED_FOUND = re.compile(r"^[ \t>*`_-]*(?:assumed|found)[*`_]*:[ \t*`_]*(.*)$", re.I | re.M)
+TOOLKIT_WORD = re.compile(r"\b(?:hand-?back|later-phase|code-step|coder)[ -](?:hook|gate)s?\b", re.I)
+PLAN_STEP_WORD = re.compile(r"\b(?:phase|step)\s+\d", re.I)
 # plan: the plan and the code disagree. toolkit: a toolkit gate or script is at fault and nothing in the plan is wrong.
 PLAN_IMPACT_CAUSES = ("plan", "toolkit")
 # A packet's cause for a block that names none where one is required; never a cause a block can write.
@@ -768,6 +771,14 @@ def plan_impact_cause(block, missing="plan"):
     if not match:
         return missing
     return match.group(1).strip().lower()
+
+
+def names_only_toolkit(block):
+    """True when the block's `assumed:` or `found:` lines name a code-step hook or gate (`TOOLKIT_WORD`) and no plan
+    step (`phase 2`, `step 3`): the disagreement is with the toolkit, not the plan. The `cause:` line does not change
+    the answer."""
+    text = " ".join(PLAN_IMPACT_ASSUMED_FOUND.findall(block))
+    return bool(TOOLKIT_WORD.search(text)) and not PLAN_STEP_WORD.search(text)
 
 
 def block_must_name_cause(block):

@@ -309,6 +309,16 @@ class ReviewCommitGateTest(GateCase):
         self.fire_raw(json.dumps(payload))
         self.assertEqual(self.state("unknown"), "dirty\n")
 
+    def test_a_leftover_clean_line_is_no_event_and_a_plain_dirty_line_still_denies(self):
+        self.state_dir.mkdir(parents=True)
+        state_file = self.state_dir / "s1"
+
+        state_file.write_text("clean\nclean\n")
+        self.assert_silent(self.bash("git commit -m x"))
+
+        state_file.write_text("clean\ndirty\n")
+        self.assert_commit_denied(self.bash("git commit -m x"))
+
     def test_old_state_files_are_pruned(self):
         self.state_dir.mkdir(parents=True)
         old = self.state_dir / "stale"

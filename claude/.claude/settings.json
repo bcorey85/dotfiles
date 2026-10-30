@@ -1,7 +1,6 @@
 {
   "cleanupPeriodDays": 36500,
   "skillListingBudgetFraction": 0.0001,
-  "promptSuggestionEnabled": false,
   "env": {
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "180000",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
@@ -848,6 +847,7 @@
       "effortLevel": "medium"
     }
   },
+  "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "autoMemoryEnabled": false,

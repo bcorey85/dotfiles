@@ -628,7 +628,11 @@ def false_clean_reason(session_id):
     """Why the session's review earns no commit credit, or None when its latest review-loop hand-back is current and
     converged or deferred. Takes the hook event's session_id, the value of CLAUDE_CODE_SESSION_ID in a Bash
     call. An empty session id is refused."""
-    seen = latest(session_id)
+    return standing_false_clean_reason(latest(session_id))
+
+
+def standing_false_clean_reason(seen):
+    """false_clean_reason of a `latest` or `latest_for_repo` result."""
     gap = hand_back_gap(seen)
     if gap == LOOP_WAITING:
         return "the review-loop is waiting on a background agent or shell it started and has not handed back"

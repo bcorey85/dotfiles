@@ -2259,6 +2259,57 @@ class CodeStepTest(unittest.TestCase):
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("ACTION: auto-advance", self.step("resume"))
 
+    def finish_headless_last_phase(self, *start_options):
+        self.coder_round(start_options=("--headless", *start_options))
+        self.hook("review-loop", self.LOOP_OK)
+        return self.step("resume")
+
+    def run_printed_commit(self, out):
+        commit_line = out[out.index("git add -- "):].splitlines()[0]
+        subprocess.run(["bash", "-c", commit_line], cwd=self.repo, check=True, capture_output=True, env=self.env)
+
+    def test_a_headless_run_commits_its_last_phase_by_path_and_hands_back_with_no_wait_to_stage(self):
+        out = self.finish_headless_last_phase("--phase", "1")
+
+        self.assertIn("ACTION: commit-and-hand-back", out)
+        self.assertIn("git add -- ", out)
+        self.assertIn("If the commit is refused, hand back with the refusal as a stop; do not retry it.", out)
+        self.assertNotIn("stage", out)
+        self.assertNotIn("/stage", self.said())
+        self.assertIn("Files this run commits", self.said())
+
+    def test_a_headless_run_stops_before_a_gated_phase_after_committing_the_phase_before_it(self):
+        self.gate_phases(2)
+
+        out = self.finish_headless_last_phase()
+
+        self.assertIn("ACTION: commit-and-hand-back", out)
+        self.assertIn("No phase starts on its own", self.said())
+        self.assertNotIn("Auto-advancing", self.said())
+        self.assertEqual("1", self.state()["phase"])
+
+    def test_a_headless_last_phase_commit_leaves_a_file_staged_by_hand_staged_and_names_it(self):
+        (self.repo / "notes.md").write_text("mine\n")
+        subprocess.run(["git", "add", "notes.md"], cwd=self.repo, check=True, capture_output=True, env=self.env)
+
+        out = self.finish_headless_last_phase("--phase", "1")
+        self.run_printed_commit(out)
+
+        self.assertIn("Staged before the commit and left staged, not committed: notes.md", self.said())
+        staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=self.repo, capture_output=True,
+                                text=True, env=self.env).stdout.split()
+        self.assertEqual(["notes.md"], staged)
+
+    def test_a_headless_last_phase_commit_message_is_one_subject_line_with_no_attribution(self):
+        out = self.finish_headless_last_phase("--phase", "1")
+        self.run_printed_commit(out)
+
+        message = subprocess.run(["git", "log", "-1", "--format=%B"], cwd=self.repo, capture_output=True, text=True,
+                                 env=self.env).stdout.strip()
+        self.assertEqual(1, len(message.splitlines()))
+        self.assertNotIn("Co-Authored-By", message)
+        self.assertNotIn("Claude", message)
+
     def test_cap_reached_and_blocker_stop_without_marking(self):
         self.coder_round()
         self.hook(

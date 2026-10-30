@@ -46,6 +46,11 @@ def status_codes(root):
     return status_entries(root)[0]
 
 
+def staged_paths(root):
+    """The paths the index holds changes for: the index status column is neither blank nor untracked."""
+    return [name for name, code in status_codes(root).items() if code[0] not in " ?"]
+
+
 def file_hash(root, path):
     """The SHA-256 of the file's bytes, None when it does not exist, or UNREADABLE when it cannot be read."""
     target = root / path

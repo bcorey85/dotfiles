@@ -647,7 +647,7 @@ def is_askable(item):
 def drop_unaskable_asks(packet):
     """Removes each ask entry with no question, finding or change from packet["ask"]. packet["dropped_asks"]
     holds one warning line per dropped entry, naming its file_line and gate when it has them, so the rest of the
-    review survives it."""
+    review survives it. An entry with a drop_reason gets that reason and its text as its warning."""
     askable_asks = [item for item in packet["ask"] if is_askable(item)]
     packet["dropped_asks"] = [dropped_ask_warning(item) for item in packet["ask"] if not is_askable(item)]
     packet["ask"] = askable_asks
@@ -657,6 +657,8 @@ def dropped_ask_warning(item):
     warning = "ask entry has no question, finding or change, so it was dropped"
     if not isinstance(item, dict):
         return f"{warning}: {one_line(item, 80)!r}"
+    if item.get("drop_reason"):
+        return f"{item['drop_reason']}, so it was dropped: {one_line(item.get('text'), 80)!r}"
     named = [f"{key} {item[key]}" for key in ("file_line", "gate") if item.get(key)]
     return f"{warning}: {', '.join(named)}" if named else warning
 

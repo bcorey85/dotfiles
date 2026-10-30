@@ -5,6 +5,7 @@ Imports run one way: code_step_core, code_step_verification, code_step_boundary,
 code_step_gates, code_step_start, code_step_report, code_step_review, code_step. The phase-end block text is in
 code_step_phase_end; the Automated Verification reader is in code_step_verification, and skill-done in
 code_step_closing."""
+import contextlib
 import datetime
 import os
 import pathlib
@@ -18,11 +19,13 @@ import script_utils
 from check_output import failing_test_quote
 from code_step_core import (
     INSTALLED_COMMAND,
+    MISSING_PLAN_STOP,
     RESUME_LINE,
     RESUME_VERB,
     REVIEW_SAME_DIFF_AGAIN_LINE,
     branch_label,
     clear_stop,
+    current_phase_text,
     emit,
     file_hashes,
     is_dispatch_open,
@@ -388,7 +391,7 @@ def load_finishing_plan(repo_dir, state):
     # plan file is gone, its Phase Status does not parse, or the phase moved to another ticket while the coder ran.
     plan_path = repo_dir / state["plan"]
     if not plan_path.is_file():
-        return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
+        return emit("stop", MISSING_PLAN_STOP.format(plan=state["plan"]))
 
     plan_lines = plan_path.read_text().splitlines()
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
@@ -598,19 +601,6 @@ def finish_phase(repo_dir, state, skip_verification=False, verification=None):
 
 # ---------- closing verbs ----------
 
-def tick_entry_stop(state, plan, number):
-    # The stop text when the phase cannot be ticked, or None when it can.
-    entry = next((e for e in plan["entries"] if e["number"] == number), None)
-    if entry is None:
-        listed = ", ".join(e["number"] for e in plan["entries"]) or "none"
-        return f"Phase {number} is not in the Phase Status of {state['plan']}. Listed phases: {listed}."
-    if entry["moved"]:
-        return plan_format.moved_phase_stop(entry, state["plan"])
-    if entry["done"]:
-        return f"Phase {number} is already marked done in {state['plan']}."
-    return None
-
-
 def tick_plan_stop(repo_dir, state, args):
     # The stop text when `tick` has no plan run to act on, or None.
     if len(args) != 1:
@@ -620,12 +610,12 @@ def tick_plan_stop(repo_dir, state, args):
 
     plan_path = repo_dir / state["plan"]
     if not plan_path.is_file():
-        return f"The plan file {state['plan']} is missing (a branch switch?). Tell the user."
+        return MISSING_PLAN_STOP.format(plan=state["plan"])
 
     plan = plan_format.parse_plan_with_closing_phases(plan_path.read_text().splitlines())
     if plan["failures"]:
         return plan_format.plan_failure_message(plan, state["plan"])
-    return tick_entry_stop(state, plan, args[0])
+    return plan_format.phase_entry_stop(plan["entries"], args[0], state["plan"])
 
 
 def stop_for_failed_tick_verification(number, failed):
@@ -642,8 +632,7 @@ def tick_verification_failures(repo_dir, state, number):
     # The failed (command, exit code, output) of the phase's Automated Verification commands, run now, and how many
     # commands ran. Whole-suite commands run too: after a stop or an abort nothing else ran the suite. An item that
     # names no command is left to the user, whose word `tick` is.
-    plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
-    section = plan_format.phase_text(plan_lines, number) or ""
+    section = current_phase_text(repo_dir, state["plan"], number) or ""
     verify_results, _, _ = run_verification_commands(repo_dir, section, run_whole_suites=True)
     failed = [(command, code, output) for command, code, output in verify_results if code != 0]
     return failed, len(verify_results)
@@ -696,11 +685,7 @@ def command_verify(repo_dir, state, args):
     # The user's fix of the plan's verification lines is the phase text from here on, so a later stop does not call it
     # stale.
     if state.get("plan") and state.get("phase") is not None:
-        try:
-            plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
-        except OSError:
-            plan_lines = None
-        if plan_lines is not None:
-            state["phaseText"] = plan_format.phase_text(plan_lines, state["phase"])
+        with contextlib.suppress(OSError):
+            state["phaseText"] = current_phase_text(repo_dir, state["plan"], state["phase"])
 
     finish_phase(repo_dir, state)

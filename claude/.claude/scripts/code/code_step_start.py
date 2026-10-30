@@ -658,16 +658,8 @@ def load_start_plan(repo_dir, plan_arg, args):
 
 def named_phase_stop(entries, phase_id, plan_rel):
     # The stop text for a `--phase` that cannot run, or None when it can.
-    entry = next((e for e in entries if e["number"] == phase_id), None)
-    if entry is None:
-        listed = ", ".join(e["number"] for e in entries) or "none"
-        return f"Phase {phase_id} is not in the Phase Status of {plan_rel}. Listed phases: {listed}. Tell the user."
-    if entry["moved"]:
-        return plan_format.moved_phase_stop(entry, plan_rel)
-    if entry["done"]:
-        return (f"Phase {phase_id} is already marked done in {plan_rel}. No coder was dispatched. Tell the user; to "
-                "run it again, they uncheck it in Phase Status first.")
-    return None
+    done_tail = " No coder was dispatched. Tell the user; to run it again, they uncheck it in Phase Status first."
+    return plan_format.phase_entry_stop(entries, phase_id, plan_rel, done_tail, unlisted_tail=" Tell the user.")
 
 
 def next_phase_stop(entries, pending):

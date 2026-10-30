@@ -43,8 +43,8 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 task nor the plan
   code_step.py hook                             PreToolUse hook on SubagentHandback: deny the fork's hand-back while a
                                                 dispatched agent is still out
-  code_step.py log-hook                         PostToolUse hook on Agent|SubagentHandback|SendMessage: log launch,
-                                                hand-back and resume events of the run
+  code_step.py log-hook                         PostToolUse hook on Agent|SubagentHandback|SendMessage|TaskStop: log
+                                                launch, hand-back, resume and task-stop events of the run
   code_step.py dispatch-hook                    PreToolUse hook on Agent: deny a coder or review-loop launch whose
                                                 prompt lacks the saved dispatch prompt, or a repeat launch of a coder
   code_step.py launch-hook                      PreToolUse hook on Skill: deny a /code resume of a run stopped on its

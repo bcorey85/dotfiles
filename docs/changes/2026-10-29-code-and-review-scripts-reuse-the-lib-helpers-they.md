@@ -28,8 +28,8 @@ unmeasured: ""
 - `coder_gate.append_gate_log` and the `calls.jsonl` write use `script_utils.append_jsonl`; the calls lock stays.
 - `review_loop_packet.crash_outcome` fills a copy of one `EMPTY_OUTCOME`; a test checks the crash packet carries every
   key a finished outcome has.
-- Deleted: `hook_input.jq_output` and `code_step_core.say_file` (no callers), and the `asksAlso` and review_fix
-  `"repo"` state keys (no readers).
+- Deleted: `hook_input.jq_output` and `code_step_core.say_file` (no callers), and review_fix's `"repo"` state key
+  (no reader). `asksAlso` stays: the ruling correction now reads it.
 
 ## Evidence
 

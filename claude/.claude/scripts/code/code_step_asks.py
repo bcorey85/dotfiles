@@ -4,7 +4,7 @@ import os
 
 import script_utils
 from code_step_core import state_dir
-from code_step_report import ENG_SPEC_MARKER
+from code_step_report import CODER_CHECKS_LINE, eng_spec_brief
 from review_asks import ASK_OUTCOMES
 from script_utils import ask_text
 
@@ -62,13 +62,60 @@ def asks_coder_prompt(accepted_asks, also_text=""):
         lines += ["", "Also do this, as the user instructed alongside the asks:", also_text]
     lines += [
         "",
-        "Run the typecheck, and lint and tests for only the files you changed, once, after all edits. "
-        f"If an ask turns out architectural, end your report with the line `{ENG_SPEC_MARKER}`.",
+        f"{CODER_CHECKS_LINE} {eng_spec_brief('an ask')}",
         "For each ask whose change the code already makes, so that it needs no edit, add one line to your report: "
         "`ALREADY-DONE: <ask number> — <file:line>`. For an ask that only asks you to run checks, when they pass "
         "with no edit, the line is `ALREADY-DONE: <ask number> — `<command>` -> exit 0`. Add that line for no "
         "other ask.",
     ]
+    return "\n".join(lines)
+
+
+def ruling_text(outcome, change_text):
+    return f"{outcome} (the user's change: {change_text})" if change_text else outcome
+
+
+def changed_ruling_indexes(old_rulings, new_rulings):
+    # The positions of the asks whose outcome or change text differs. A ruling is {"outcomes": [...], "changes":
+    # [...]} in the order of the asks.
+    old_pairs = zip(old_rulings["outcomes"], old_rulings["changes"], strict=True)
+    new_pairs = zip(new_rulings["outcomes"], new_rulings["changes"], strict=True)
+    return [index for index, (old, new) in enumerate(zip(old_pairs, new_pairs, strict=True)) if old != new]
+
+
+def accepted_asks_of(asks, outcomes, change_texts):
+    # The [item, outcome, change text] rows of the asks the rulings did not reject.
+    return [[item, outcome, change_text]
+            for item, outcome, change_text in zip(asks, outcomes, change_texts, strict=False)
+            if outcome != "rejected"]
+
+
+def correction_coder_prompt(asks, old_rulings, new_rulings, changed_indexes, also_text="", old_also_text=""):
+    lines = ["The user corrected the rulings while the asks coder worked. The phase coder's and the asks coder's "
+             "changes are in the working tree."]
+    if changed_indexes:
+        lines += ["For each ask below, undo the work done for the old ruling where the new ruling is rejected or "
+                  "modified, and make the new ruling's change. Change nothing else.", ""]
+    for number, index in enumerate(changed_indexes, 1):
+        item = asks[index]
+        location = item.get("file_line", "")
+        old_text = ruling_text(old_rulings["outcomes"][index], old_rulings["changes"][index])
+        new_text = ruling_text(new_rulings["outcomes"][index], new_rulings["changes"][index])
+        lines.append(f"{number}. {ask_text(item)}" + (f" ({location})" if location else ""))
+        lines.append(f"   Old ruling: {old_text}")
+        lines.append(f"   New ruling: {new_text}")
+        if item.get("change"):
+            lines.append(f"   The proposed change: {item['change']}")
+    if also_text and old_also_text:
+        lines += ["", "The user changed the instruction given alongside the asks.",
+                  "Old instruction:", old_also_text, "New instruction:", also_text,
+                  "Undo the old instruction's work where the new one drops it, and do the new instruction."]
+    elif also_text:
+        lines += ["", "Also do this, as the user instructed alongside the rulings:", also_text]
+    elif old_also_text:
+        lines += ["", "The user dropped the instruction given alongside the asks:", old_also_text,
+                  "Undo the work done for it."]
+    lines += ["", f"{CODER_CHECKS_LINE} {eng_spec_brief('an ask')}"]
     return "\n".join(lines)
 
 

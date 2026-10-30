@@ -22,6 +22,7 @@ SIBLING_FOLDERS = ("code", "lib", "review", "telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in SIBLING_FOLDERS]
 import plan_format
 import script_utils
+from code_guidance import coder_guidance_lines
 from script_utils import git_output
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -374,6 +375,7 @@ def record_ruled_asks(cwd, state, outcomes, change_texts):
     # impact or refactor pass of the same plan reads it so that it does not raise the same ask again. `change` holds
     # the change the ruling names: the ask's proposal for an accepted or rejected ask, the user's change for a modified
     # one. An ask with no proposed change of its own carries its question as its change, so that copy is no proposal.
+    # A later ruling of the same plan, phase and ask replaces the earlier entry.
     ruled = read_ruled_asks(cwd)
     for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=True):
         question = str(item.get("question") or "")
@@ -382,8 +384,11 @@ def record_ruled_asks(cwd, state, outcomes, change_texts):
             proposed = ""
 
         named_change = (change_text or "") if outcome == "modified" else proposed
+        ask = script_utils.ask_text(item)
+        ruled = [earlier for earlier in ruled if (earlier["plan"], earlier["phase"], earlier["ask"])
+                 != (state.get("plan"), state.get("phase"), ask)]
         ruled.append({"plan": state.get("plan"), "phase": state.get("phase"), "file_line": item.get("file_line", ""),
-                      "ask": script_utils.ask_text(item), "outcome": outcome, "change": named_change})
+                      "ask": ask, "outcome": outcome, "change": named_change})
     state_dir(cwd).mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(ruled_asks_path(cwd), json.dumps(ruled, indent=1))
 
@@ -451,6 +456,19 @@ def file_hashes(repo_dir):
         # A deleted file has no content to hash: its hash is None, which still differs from a baseline that had it.
         hashes[name] = git_output(repo_dir, "hash-object", name) if (repo_dir / name).exists() else None
     return hashes
+
+
+def changed_since_baseline(state, changed_now):
+    # The files of the working tree that differ from the run's baseline.
+    baseline = state["baseline"]
+    return [name for name, digest in changed_now.items() if name not in baseline or baseline[name] != digest]
+
+
+def coder_changed_files(repo_dir, state, changed_now):
+    # The files the phase changed since its baseline, and the files the coder committed itself.
+    changed_files = changed_since_baseline(state, changed_now)
+    committed = committed_since(repo_dir, state.get("baseHead"))
+    return changed_files + [name for name in committed if name not in changed_files]
 
 
 def load_handback():
@@ -551,7 +569,10 @@ def checkout_line(repo_dir):
 
 def emit_dispatch(repo_dir, state, *lines, prompt, agent, model=None):
     # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
-    # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt.
+    # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt. A coder also gets the run's
+    # guidance from the main session.
+    if agent == CODER:
+        prompt = "\n".join([prompt, *coder_guidance_lines(state)])
     prompt_in_checkout = f"{checkout_line(repo_dir)}\n\n{prompt}"
     prompt = prompt_with_gate_env(repo_dir, state, prompt_in_checkout)
 

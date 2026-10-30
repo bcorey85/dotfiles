@@ -1,5 +1,6 @@
 {
  "tool_name": "SubagentHandback",
+ "tool_use_id": "toolu_01Handback",
  "tool_input": {
   "message": "<report text>"
  },

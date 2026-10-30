@@ -4,7 +4,7 @@
   handback.py check < packet            exit 0 and one `ok` line for a packet that parses and validates; exit 1 and the
                                         problems on stderr for a bad one. A packet is one JSON object; the old
                                         free-text `key: value` form still parses, with a stderr note
-  handback.py hook dispatch|handback < hook event JSON
+  handback.py hook dispatch|handback|ran < hook event JSON
                                         PreToolUse hook. Matcher Agent records each review-loop dispatch; matcher
                                         SubagentHandback validates and records each review-loop hand-back, and denies a
                                         bad packet once per agent so the loop can repair it, denies a hand-back (any
@@ -13,7 +13,9 @@
                                         result after its last code change (once per code change), denies a
                                         hand-back (any status but plan-impact) whose files_touched names the
                                         dispatch prompt's plan file, and denies any call from an agent whose
-                                        report is already stored. Any other argument does nothing.
+                                        report is already stored. `ran` is the PostToolUse hook (matcher
+                                        Agent): it records a `dispatch-ran` row for a review-loop dispatch whose
+                                        call ran. Any other argument does nothing.
 
 Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths, unreviewed_fix_section
 and full_suite_in_ci; they read the store (record, latest, hand_back_gap, ended_on_unreviewed_fix, unreviewed_streak)
@@ -36,13 +38,16 @@ import loop_transcript
 import reviewed_tree
 import script_utils
 from handback_store import (
+    DISPATCH_RAN,
     LOOP_WAITING,
     NO_DISPATCH,
     REDISPATCHED,
     hand_back_gap,
     latest,
+    ran_dispatch_rows,
     record,
     session_rows,
+    settled_stop,
     was_recorded,
 )
 from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
@@ -845,7 +850,7 @@ def settled_stop_row(session_id, agent_id, since):
     """The newest stop row of agent_id written at or after `since` that the gate did not block, or None. The hand-back
     row lands before the stop row of the same loop, so a reader of the hand-back looks here for the stop that
     follows it."""
-    settled = [row for row in stop_rows_after(session_id, agent_id, since) if not row.get("blocked")]
+    settled = [row for row in stop_rows_after(session_id, agent_id, since) if settled_stop(row)]
     return settled[-1] if settled else None
 
 
@@ -899,7 +904,7 @@ def claim_no_review(session_id, agent_id):
     exempted = [row for row in stored_rows if row.get("kind") == "no-review-exempt"]
     if any(row.get("agent_id") == agent_id for row in exempted):
         return True
-    no_review_dispatches = [row for row in stored_rows if row.get("kind") == "dispatch" and row.get("no_review")]
+    no_review_dispatches = [row for row in ran_dispatch_rows(session_id) if row.get("no_review")]
     if len(no_review_dispatches) <= len(exempted):
         return False
     record(session_id, "no-review-exempt", agent_id=agent_id)
@@ -998,7 +1003,16 @@ def handle_dispatch(event, session_id, tool_input):
         prompt = str(tool_input.get("prompt") or "")
         record(session_id, "dispatch", no_review=loop_transcript.NO_REVIEW_MODE.search(prompt) is not None,
                resolved_plan_impact=RESOLVED_PLAN_IMPACT.search(prompt) is not None,
-               repo=reviewed_repo(prompt, event.get("cwd")))
+               repo=reviewed_repo(prompt, event.get("cwd")), tool_use_id=event.get("tool_use_id"))
+
+
+def handle_dispatch_ran(event, session_id):
+    """PostToolUse on Agent: the call ran, so the dispatch row it named at PreToolUse now counts. Only a review-loop
+    dispatch from outside the loop has such a row."""
+    tool_use_id = event.get("tool_use_id")
+    is_loop_dispatch = (event.get("tool_input") or {}).get("subagent_type") == REVIEW_LOOP
+    if tool_use_id and is_loop_dispatch and event.get("agent_type") != REVIEW_LOOP:
+        record(session_id, DISPATCH_RAN, tool_use_id=tool_use_id)
 
 
 def reviewed_repo(prompt, cwd):
@@ -1030,6 +1044,9 @@ def handle_hook(event, kind):
     tool_input = event.get("tool_input") or {}
     if kind == "dispatch":
         handle_dispatch(event, session_id, tool_input)
+        return None
+    if kind == "ran":
+        handle_dispatch_ran(event, session_id)
         return None
     if kind != "handback" or event.get("agent_type") != REVIEW_LOOP:
         return None
@@ -1068,8 +1085,8 @@ def handle_hook(event, kind):
 def command_hook(argv):
     """Never blocks on its own error."""
     try:
-        if argv not in (["dispatch"], ["handback"]):
-            print(f"handback hook: unknown kind {' '.join(argv)!r}; want dispatch or handback", file=sys.stderr)
+        if argv not in (["dispatch"], ["handback"], ["ran"]):
+            print(f"handback hook: unknown kind {' '.join(argv)!r}; want dispatch, handback or ran", file=sys.stderr)
             return 0
         reason = handle_hook(json.load(sys.stdin), argv[0])
         if reason:

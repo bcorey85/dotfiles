@@ -1407,6 +1407,44 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertEqual(self.hand_back(steps), "")
         self.assertEqual(len(self.handback_rows()), 1)
 
+    def test_a_hand_back_that_dispatched_no_reviewer_and_logged_only_a_not_dispatched_metrics_line_passes(self):
+        not_dispatched = ('~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 '
+                          'result="NOT DISPATCHED"')
+        fix_first = {"type": "user", "message": {"role": "user", "content": "review loop\nmode: fix-first"}}
+        cases = {
+            "setup-fault": ("status: setup-fault\niter: 1\nblockers:\n  - \"no test runner installed\"\n", [],
+                            ""),
+            "critical-blocker": ("status: critical-blocker\niter: 1\nblockers:\n  - \"migration drops a column\"\n",
+                                 [], ""),
+            "fix-first plan-impact": ("status: plan-impact\niter: 1\nspec_iter: 0\n"
+                                      "plan_impact: assumed a, found b\n", [fix_first], ""),
+            "no-review converged": ("status: converged\niter: 1\nfixed: []\nskipped_fp: []\nask: []\nnit: []\n"
+                                    "findings_remaining: []\n", [coder_step("t1"), full_check_run("t2")],
+                                    "no-review"),
+        }
+
+        for name, (message, steps, loop_prompt) in cases.items():
+            with self.subTest(name):
+                shutil.rmtree(self.store, ignore_errors=True)
+                self.dispatch("review-loop", prompt=loop_prompt)
+                self.dispatch("coder", "a1")
+                out = self.hand_back([*steps, ledger_call("tl1", not_dispatched)], message=message, ledger=False)
+
+                self.assertEqual(out, "")
+                self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_converged_hand_back_with_no_coder_step_and_no_full_check_is_still_denied(self):
+        message = ("status: converged\niter: 1\nfixed: []\nskipped_fp: []\nask: []\nnit: []\n"
+                   "findings_remaining: []\n")
+        not_dispatched = ('~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 '
+                          'result="NOT DISPATCHED"')
+        self.dispatch("review-loop", prompt="")
+
+        out = self.hand_back([ledger_call("tl1", not_dispatched)], message=message, ledger=False)
+
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("No passed full_check.py result", reason)
+
     def test_a_hand_back_whose_metrics_call_failed_is_denied_once_and_the_second_passes(self):
         steps = [coder_step("t1"), full_check_run("t2"), ledger_call("tl1", FINDING_ROW),
                  ledger_call("tl2", METRICS_ROW), refused_logger_result("tl2")]

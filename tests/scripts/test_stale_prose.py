@@ -371,15 +371,168 @@ class StaleProseTest(unittest.TestCase):
         self.assertEqual(1, done.returncode, done.stderr)
         self.assertIn("handle_order (removed):", done.stdout)
 
-    def test_a_symbol_moved_between_files_is_changed_not_removed(self):
+    def test_a_symbol_moved_between_files_and_edited_is_changed_not_removed(self):
         self.commit_files({"a.py": "def move_me(x):\n    return x\n", "b.py": "VALUE_ONE = 1\n",
                            "docs/o.md": "Call move_me.\n"})
         self.write("a.py", "VALUE_TWO = 2\n")
+        self.write("b.py", "VALUE_ONE = 1\ndef move_me(x):\n    return x + 1\n")
+
+        done = self.run_script()
+
+        self.assertIn("move_me (changed):", done.stdout)
+
+    def test_a_moved_symbol_with_reordered_statements_is_still_changed(self):
+        self.commit_files({"a.py": "def move_me(x):\n    audit(x)\n    charge(x)\n    return x\n",
+                           "b.py": "VALUE_ONE = 1\n", "docs/o.md": "Call move_me.\n"})
+        self.write("a.py", "")
+        self.write("b.py", "VALUE_ONE = 1\ndef move_me(x):\n    charge(x)\n    audit(x)\n    return x\n")
+
+        done = self.run_script()
+
+        self.assertIn("move_me (changed):", done.stdout)
+
+    def test_two_functions_that_swap_names_over_their_bodies_keep_their_prose_hits(self):
+        self.commit_files({"a.py": "def alpha_step(x):\n    return 1\n\ndef beta_step(x):\n    return 2\n",
+                           "docs/o.md": "Call alpha_step.\n"})
+        self.write("a.py", "def beta_step(x):\n    return 1\n\ndef alpha_step(x):\n    return 2\n")
+
+        done = self.run_script()
+
+        self.assertIn("docs/o.md:1:", done.stdout)
+
+    def test_a_symbol_that_gains_a_line_in_its_new_file_is_still_changed(self):
+        self.commit_files({"a.py": "def move_me(x):\n    return x\n", "b.py": "VALUE_ONE = 1\n",
+                           "docs/o.md": "Call move_me.\n"})
+        self.write("a.py", "")
+        self.write("b.py", "VALUE_ONE = 1\ndef move_me(x):\n    x += 1\n    return x\n")
+
+        done = self.run_script()
+
+        self.assertIn("move_me (changed):", done.stdout)
+
+    def test_a_symbol_moved_with_its_doc_line_lists_no_prose(self):
+        move_block = "# move_me doubles its input.\ndef move_me(x):\n    return x * 2\n"
+        self.commit_files({"a.py": "def keep_this(x):\n    return x\n\n" + move_block,
+                           "b.py": "VALUE_ONE = 1\n",
+                           "docs/o.md": "Call move_me or keep_this.\n",
+                           "c.py": "# move_me is the doubling step.\nOTHER_VALUE = 3\n"})
+        self.write("a.py", "from b import move_me\n\ndef keep_this(x):\n    return x\n")
+        self.write("b.py", "VALUE_ONE = 1\n\n" + move_block)
+
+        done = self.run_script()
+
+        self.assertEqual((0, stale_prose.NOTHING_NEW), (done.returncode, done.stdout.strip()), done.stdout)
+
+    def test_a_doc_line_edited_during_a_move_keeps_the_symbols_prose_hits(self):
+        self.commit_files({"a.py": "# move_me doubles.\ndef move_me(x):\n    return x * 2\n",
+                           "b.py": "VALUE_ONE = 1\n", "docs/o.md": "Call move_me.\n"})
+        self.write("a.py", "")
+        self.write("b.py", "VALUE_ONE = 1\n# move_me triples.\ndef move_me(x):\n    return x * 2\n")
+
+        done = self.run_script()
+
+        self.assertIn("move_me (changed):", done.stdout)
+        self.assertIn("docs/o.md:1:", done.stdout)
+
+    def test_a_symbol_that_loses_a_line_in_its_new_file_is_still_changed(self):
+        self.commit_files({"a.py": "def move_me(x):\n    x += 1\n    return x\n", "b.py": "VALUE_ONE = 1\n",
+                           "docs/o.md": "Call move_me.\n"})
+        self.write("a.py", "")
         self.write("b.py", "VALUE_ONE = 1\ndef move_me(x):\n    return x\n")
 
         done = self.run_script()
 
         self.assertIn("move_me (changed):", done.stdout)
+
+    def test_a_local_declaration_moved_between_two_functions_keeps_both_functions_prose_hits(self):
+        self.commit_files({"src/o.ts": "export function handleOrder(x) {\n  const total = sum(x);\n  return x;\n}\n\n"
+                                       "export function auditOrder(x) {\n  return x;\n}\n",
+                           "docs/o.md": "handleOrder then auditOrder.\n"})
+        self.write("src/o.ts", "export function handleOrder(x) {\n  return x;\n}\n\n"
+                               "export function auditOrder(x) {\n  const total = sum(x);\n  return x;\n}\n")
+
+        done = self.run_script()
+
+        self.assertIn("handleOrder (body changed):", done.stdout)
+        self.assertIn("auditOrder (body changed):", done.stdout)
+
+    def test_a_statement_moved_between_two_functions_keeps_both_functions_prose_hits(self):
+        self.commit_files({"a.py": "def handle_order(x):\n    first(x)\n    audit(x)\n    return x\n\n\n"
+                                   "def audit_order(x):\n    second(x)\n    return x\n",
+                           "docs/o.md": "Call handle_order and audit_order.\n"})
+        self.write("a.py", "def handle_order(x):\n    first(x)\n    return x\n\n\n"
+                           "def audit_order(x):\n    second(x)\n    audit(x)\n    return x\n")
+
+        done = self.run_script()
+
+        self.assertIn("handle_order (body changed):", done.stdout)
+        self.assertIn("audit_order (body changed):", done.stdout)
+
+    def test_a_method_moved_to_a_module_function_with_other_indent_and_blank_lines_lists_no_prose(self):
+        self.commit_files({"a.py": "class Holder:\n    def keep_this(self):\n        return 1\n\n"
+                                   "    def move_me(self, x):\n        # moved comment\n        return x\n",
+                           "b.py": "VALUE_ONE = 1\nVALUE_TWO = 2\n",
+                           "docs/o.md": "Call move_me or keep_this.\n"})
+        self.write("a.py", "class Holder:\n    def keep_this(self):\n        return 1\n")
+        self.write("b.py", "VALUE_ONE = 1\ndef move_me(self, x):\n    # moved comment\n    return x\nVALUE_TWO = 2\n")
+
+        done = self.run_script()
+
+        self.assertEqual((0, stale_prose.NOTHING_NEW), (done.returncode, done.stdout.strip()), done.stdout)
+
+    def test_a_reordered_declaration_inside_a_python_body_keeps_the_symbols_prose_hits(self):
+        body = "def handle_order(x):\n    first = 1\n    second = 2\n    third = 3\n    fourth = 4\n"
+        audit = "    def audit_step(y):\n        return y\n"
+        charge = "    def charge_step(y):\n        return y\n"
+        self.commit_files({"a.py": body + audit + charge + "    return x\n",
+                           "docs/o.md": "Call handle_order.\n"})
+        self.write("a.py", body + charge + audit + "    return x\n")
+
+        done = self.run_script()
+
+        self.assertIn("handle_order (body changed):", done.stdout)
+        self.assertIn("docs/o.md:1:", done.stdout)
+
+    def test_a_declaration_moved_inside_a_typescript_body_keeps_the_symbols_prose_hits(self):
+        head = "export function handleOrder(items) {\n  const a = 1;\n  const b = 2;\n  const c = 3;\n"
+        self.commit_files({"src/o.ts": head + "  log(items);\n  audit(items);\n  const total = compute(items);\n"
+                                       "  return total;\n}\n",
+                           "docs/o.md": "handleOrder logs before it computes.\n"})
+        self.write("src/o.ts", head + "  const total = compute(items);\n  log(items);\n  audit(items);\n"
+                               "  return total;\n}\n")
+
+        done = self.run_script()
+
+        self.assertEqual(1, done.returncode, done.stdout)
+        self.assertIn("handleOrder (body changed):", done.stdout)
+        self.assertIn("docs/o.md:1:", done.stdout)
+
+    def test_a_typescript_function_with_a_local_declaration_moved_whole_leaves_the_symbol_above_it_alone(self):
+        self.commit_files({"src/a.ts": "export function prevThing() {\n  return 1;\n}\n\n"
+                                       "export function movedThing(items) {\n  const total = items.length;\n"
+                                       "  return total;\n}\n",
+                           "src/b.ts": "export const OTHER_VALUE = 3;\n",
+                           "docs/o.md": "prevThing returns one and movedThing counts.\n"})
+        self.write("src/a.ts", "export function prevThing() {\n  return 1;\n}\n")
+        self.write("src/b.ts", "export const OTHER_VALUE = 3;\n\nexport function movedThing(items) {\n"
+                               "  const total = items.length;\n  return total;\n}\n")
+
+        done = self.run_script()
+
+        self.assertEqual((0, stale_prose.NOTHING_NEW), (done.returncode, done.stdout.strip()), done.stdout)
+
+    def test_a_python_class_with_a_method_moved_whole_leaves_the_symbol_above_it_alone(self):
+        self.commit_files({"a.py": "def prev_thing():\n    return 1\n\n\nclass MovedThing:\n"
+                                   "    def run(self, items):\n        return len(items)\n",
+                           "b.py": "OTHER_VALUE = 3\n",
+                           "docs/o.md": "prev_thing returns one and MovedThing counts.\n"})
+        self.write("a.py", "def prev_thing():\n    return 1\n")
+        self.write("b.py", "OTHER_VALUE = 3\n\n\nclass MovedThing:\n    def run(self, items):\n"
+                           "        return len(items)\n")
+
+        done = self.run_script()
+
+        self.assertEqual((0, stale_prose.NOTHING_NEW), (done.returncode, done.stdout.strip()), done.stdout)
 
     def test_a_diff_that_does_not_parse_exits_two(self):
         self.rename_scenario()
@@ -410,6 +563,17 @@ class StaleProseTest(unittest.TestCase):
 
         self.assertEqual(1, done.returncode, done.stderr)
         self.assertIn("docs/guide.md:1:", done.stdout)
+
+    def test_a_function_moved_to_another_file_with_a_new_export_keyword_is_changed(self):
+        self.commit_files({"a.ts": "const KEEP_ONE = 1;\n\nfunction moveMe() {\n  return 1;\n}\n",
+                           "b.ts": "const VALUE_ONE = 1;\n", "docs/o.md": "Call moveMe.\n"})
+        self.write("a.ts", "const KEEP_ONE = 1;\n")
+        self.write("b.ts", "const VALUE_ONE = 1;\nexport function moveMe() {\n  return 1;\n}\n")
+
+        done = self.run_script()
+
+        self.assertIn("moveMe (changed):", done.stdout)
+        self.assertIn("docs/o.md:1:", done.stdout)
 
     def test_a_deleted_code_file_removes_its_symbols(self):
         self.commit_files({"src/gone.ts": "export function goneThing() {\n  return 1;\n}\n",

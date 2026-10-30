@@ -1094,6 +1094,13 @@ class PreloadedSkillsPromptTest(unittest.TestCase):
         self.assertEqual("", script_utils.preloaded_skills_prompt("code-reviewer", home))
         self.assertEqual([], script_utils.frontmatter_skills("---\nname: coder\n---\n\nskills:\n  - body-text\n"))
 
+    def test_json_string_list_reads_only_a_json_list_of_strings(self):
+        self.assertEqual(["a", "b"], script_utils.json_string_list('["a", "b"]'))
+        self.assertEqual([], script_utils.json_string_list("[]"))
+        for text in ("not json", '["a", 1]', '{"a": "b"}', '"a"', "null"):
+            with self.subTest(text):
+                self.assertIsNone(script_utils.json_string_list(text))
+
 
 if __name__ == "__main__":
     unittest.main()

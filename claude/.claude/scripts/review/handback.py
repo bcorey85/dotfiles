@@ -54,9 +54,11 @@ CLEAN_STATUSES = ("converged", "deferred")
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "files_touched",
                "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean", "tool_fault",
-               "blocked_agents", "scoped_tests"]
+               "blocked_agents", "scoped_tests", "open_classes"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
-             "check_rewrote_edited", "check_created", "blocked_agents"]
+             "check_rewrote_edited", "check_created", "blocked_agents", "open_classes"]
+# The list fields whose every JSON entry is a string.
+STRING_LIST_KEYS = ("open_classes",)
 SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "full_check_command", "full_check_summary",
                "load_bearing_clean", "tool_fault", "scoped_tests")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
@@ -125,11 +127,12 @@ def json_packet_text(message):
 
 
 def json_field_problem_or_text(key, value):
-    """(problem, text) of one JSON field: the raw text validate reads, or why the value has the wrong shape."""
+    """(problem, value) of one JSON field: the raw value validate reads (a list stays a list, a scalar becomes text),
+    or why the value has the wrong shape."""
     if key in LIST_KEYS:
         if not isinstance(value, list):
             return f"{key} must be a JSON list, not {script_utils.json_type_name(value)}", None
-        return None, json.dumps(value)
+        return None, value
     if isinstance(value, str):
         return None, value
     is_integer = isinstance(value, int) and not isinstance(value, bool)
@@ -180,7 +183,7 @@ def parse(message):
 
 # ---------- the old free-text form ----------
 # Everything from here to the end of read_list reads the old `key: value` packet form. It is kept for one release and
-# removed after it. read_list's first branch (a JSON list) also serves the JSON path.
+# removed after it. The JSON path reads its lists in read_json_entries and never reaches this code.
 
 def is_block_scalar(value_lines):
     return BLOCK_INDICATOR.match(value_lines[0].strip()) is not None
@@ -545,6 +548,7 @@ def normalize_ask(item):
         question_source = item.get("finding") or item.get("change")
         if question_source:
             item["question"] = question_source
+
     item["gate"] = first_token(item.get("gate")) or DEFAULT_GATE
 
     ask_class = str(item.get("class") or "").strip()
@@ -622,6 +626,12 @@ def continues_lead_ask(entry):
     return not any(script_utils.PATH_LINE.match(field.strip()) for field in location_fields)
 
 
+def fill_fixed_finding(item):
+    """Gives fixed entry `item` its smell as its finding when it has no finding."""
+    if not item.get("finding") and item.get("smell"):
+        item["finding"] = item["smell"]
+
+
 def normalize_items(key, entries):
     """The entries of list field `key`, a text entry made a mapping when the field is in ENTRY_TEXT_KEYS. Any other
     entry stays as it is, for item_problems to refuse."""
@@ -637,9 +647,44 @@ def normalize_items(key, entries):
             continue
         if key == "ask":
             normalize_ask(item)
-        elif key == "fixed" and not item.get("finding") and item.get("smell"):
-            item["finding"] = item["smell"]
+        elif key == "fixed":
+            fill_fixed_finding(item)
     return items
+
+
+def read_json_entries(key, entries):
+    """(the entries of the JSON list field `key`, their problems). A mapping list holds only mappings, each with its
+    required text field; the entry is never read as free text. An ask that names no file_line is unlocated. A
+    string list holds only strings. Any other list passes as it is."""
+    if key in STRING_LIST_KEYS:
+        if script_utils.is_string_list(entries):
+            return entries, []
+        return [], [f"{key} must be a JSON list of strings, not {one_line(json.dumps(entries), 80)!r}"]
+    required = ENTRY_TEXT_KEYS.get(key)
+    if required is None:
+        return entries, []
+
+    items = []
+    problems = []
+    for position, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            problems.append(f"{key}[{position}] must be a JSON object, not {script_utils.json_type_name(entry)}: "
+                            f"{one_line(json.dumps(entry), 80)!r}")
+            continue
+
+        item = dict(entry)
+        if key == "fixed":
+            fill_fixed_finding(item)
+        if key == "ask":
+            normalize_ask(item)
+        if not str(item.get(required) or "").strip():
+            problems.append(f"{key}[{position}] has no {required}: {one_line(json.dumps(entry), 80)!r}")
+            continue
+
+        if key == "ask":
+            item.setdefault("file_line", UNLOCATED)
+        items.append(item)
+    return items, problems
 
 
 def is_askable(item):
@@ -677,8 +722,9 @@ def print_dropped_asks(packet):
 def item_problems(raw, packet):
     problems = [f"fixed entry has no finding: {one_line(item, 80)!r}" for item in packet["fixed"]
                 if not (isinstance(item, dict) and item.get("finding"))]
-    if raw.get("ask", "").strip() and not packet["ask"] and not NONE_VALUE.match(raw["ask"].strip()):
-        problems.append(f"ask holds text but yields no ask entries: {one_line(raw['ask'], 80)!r}")
+    ask_text = raw.get("ask") if isinstance(raw.get("ask"), str) else ""
+    if ask_text.strip() and not packet["ask"] and not NONE_VALUE.match(ask_text.strip()):
+        problems.append(f"ask holds text but yields no ask entries: {one_line(ask_text, 80)!r}")
     for item in packet["ask"]:
         if not is_askable(item):
             continue
@@ -718,14 +764,21 @@ def validate(raw):
     packet, problems = read_header(raw)
 
     trailer = [raw.get("trailer", "")]
+    list_problems = []
     for key in LIST_KEYS:
-        lead, entries = read_list(raw.get(key, ""))
+        value = raw.get(key, "")
+        if isinstance(value, list):
+            packet[key], entry_problems = read_json_entries(key, value)
+            list_problems += entry_problems
+            continue
+
+        lead, entries = read_list(value)
         packet[key] = normalize_items(key, entries)
         if lead:
             trailer.append(lead)
     packet["trailer"] = "\n".join(part for part in trailer if part).strip()
 
-    problems += item_problems(raw, packet) + status_problems(raw, packet)
+    problems += list_problems + item_problems(raw, packet) + status_problems(raw, packet)
     if problems:
         raise PacketError(problems)
 

@@ -1587,6 +1587,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
         self.assertEqual((packet["status"], packet["iter"]), ("converged", 3))
+        self.assertEqual(packet["open_classes"], [])
         self.assertIn(open_member, [entry["finding"] for entry in packet["fixed"]])
         self.assertTrue(self.stored_packet()[0]["unreviewed_fix"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)

@@ -15,6 +15,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from shell_command import (
     and_steps,
+    cd_folder,
     command_after_wrappers,
     docker_forwarded_variables,
     docker_set_variables,
@@ -34,6 +35,20 @@ from shell_command import (
     unwrap_docker,
     without_assignments,
 )
+
+
+class CdFolderTest(unittest.TestCase):
+    def test_a_literal_folder_is_returned_and_a_bare_cd_goes_home(self):
+        for words, folder in ((["cd", "sub"], "sub"), (["cd", "-P", "--", "sub"], "sub"), (["pushd", "sub"], "sub"),
+                              (["cd"], "~"), (["cd", "~/sub"], "~/sub")):
+            with self.subTest(words):
+                self.assertEqual(folder, cd_folder(words))
+
+    def test_a_folder_the_shell_resolves_gives_none(self):
+        for words in (["popd"], ["pushd"], ["cd", "-"], ["cd", "a", "b"], ["cd", "$D"], ["cd", "sub*"],
+                      ["cd", "~someone"], ["pushd", "+1"], ["pushd", "-1"], ["cd", "-1"], ["cd", "+2"]):
+            with self.subTest(words):
+                self.assertIsNone(cd_folder(words))
 
 
 class AndStepsTest(unittest.TestCase):

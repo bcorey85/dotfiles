@@ -51,6 +51,7 @@ import functools
 import operator
 
 import handback
+import handback_hook
 import script_utils  # noqa: F401  (loaded before handback, so handback and code-step share the script directory's copy)
 
 STEP_LIMIT = 30
@@ -337,7 +338,7 @@ def write_ledger_calls(transcript_file, message):
         return
 
     commands = []
-    for key in handback.loop_transcript.PACKET_ROW_KEYS:
+    for key in handback_hook.loop_transcript.PACKET_ROW_KEYS:
         disposition = "nit" if key == "nit" else "fix"
         commands += [f"log-review-finding kind=finding lane=code iter=1 gate=code-reviewer disposition={disposition}"
                      for _ in packet.get(key) or []]
@@ -360,9 +361,9 @@ def store_review_loop_report(repo, message, agent_id="a1"):
     event = {"session_id": GIT_ENV["CLAUDE_CODE_SESSION_ID"], "agent_type": "review-loop", "agent_id": agent_id,
              "agent_transcript_path": str(loop_transcript), "tool_input": {"message": message}}
     with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(repo / ".git/handback-store")}):
-        handback.handle_hook({**event, "tool_input": {"subagent_type": "review-loop"}}, "dispatch")
+        handback_hook.handle_hook({**event, "tool_input": {"subagent_type": "review-loop"}}, "dispatch")
         for _ in range(2):
-            handback.handle_hook(event, "handback")
+            handback_hook.handle_hook(event, "handback")
 
 
 def save_report(repo, agent_type, message, agent_id="a1"):

@@ -20,7 +20,8 @@ VERB_USAGES = {
                   'to the coder. --repo names the checkout of the run that waits, when the shell is in none of them.'),
     "correct-ruling": ('usage: code_step.py correct-ruling [--repo <path>] [--by <user|session>] [--also "<text>"] '
                        '<accepted|rejected|modified>...\n'
-                       'The same words as asks-done, to correct the rulings while the asks coder runs.'),
+                       'The same words as asks-done, to correct the rulings while the asks coder runs; at the asks '
+                       'stage it applies them as asks-done.'),
     "skill-done": ('usage: code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...\n'
                    'A closing phase\'s skill returned.'),
     "verify": ("usage: code_step.py verify\nRuns the phase gates and closes the phase, after a failed Automated "

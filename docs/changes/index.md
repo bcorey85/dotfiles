@@ -30,6 +30,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [the commit gate and the decide verbs each read one shared option list](2026-10-29-the-commit-gate-and-the-decide-verbs-each-read-one.md) [script/review-commit-gate, script/review-fix, script/code-step] The commit gate reads git's value options only from shell_command, and both plan-impact decide verbs take their vocabulary from plan_format, so two pairs of drifting copies become one each.
 * [Callers read the review store from handback_store, not through handback](2026-10-29-callers-read-the-review-store-from-handback-store.md) [script/review] handback.py drops its re-export block; every caller imports the hand-back store names from handback_store and the finding-id constants from loop_transcript.
 * [The Automated Verification reader and skill-done evidence leave code_step_boundary](2026-10-29-the-automated-verification-reader-and-skill-done.md) [script/code-step] The Automated Verification reader moves to code_step_verification.py and the skill-done evidence to code_step_closing.py, so code_step_boundary.py drops from 1021 to 706 lines.
 * [The summary after an asks round leads with the current asks coder](2026-10-29-the-summary-after-an-asks-round-leads-with-the.md) [script/code-step] After a round of review asks, the /code review summary leads with the current asks coder's report, shows earlier asks rounds as one line each, and drops the why notes the asks coder replaced.

@@ -60,13 +60,9 @@ from script_utils import one_line, run_command, split_location
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
 SOURCES = ["conversation", "cc", "handoff"]
 ASK_LOGGER = CLAUDE_DIR / "skills/review/log-review-finding"
-PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
-DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 DECIDE_SCRIPT = "python3 ~/.claude/scripts/review/review_fix.py"
 PLAN_ARG_NOTE = "--plan <the plan path, when the handoff names one>"
-DECIDE_USAGE = f'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" {PLAN_ARG_NOTE}'
-DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
-                  "place of `--by user`. A session ruling never changes the acceptance criteria.")
+DECIDE_USAGE = f"{plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}"
 MARK_CLEAN = "~/.claude/scripts/review/review-gate-mark clean"
 MARK_DIRTY = "~/.claude/scripts/review/review-gate-mark dirty"
 KEEP_DIRTY = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
@@ -302,12 +298,12 @@ def present_plan_impact(packet, state):
         "end the turn and wait for the reply. Do not re-dispatch and do not triage this as an ask. Question: assumed, "
         "then found, then what changes, taken from this block:",
         packet["plan_impact"],
-        f"Options, in this order: {' / '.join(PLAN_IMPACT_OPTIONS)}.",
+        f"Options, in this order: {' / '.join(plan_format.PLAN_IMPACT_OPTIONS)}.",
         "Map the answer, picked or typed, to adopt, keep or discuss. For adopt or keep, put the user's words in "
         "--ruling; for discuss, run `decide discuss`.",
         f'Then run: {DECIDE_SCRIPT} decide <adopt|keep> --by user --ruling "<the decision in one line>" '
         f"{PLAN_ARG_NOTE}",
-        DECIDE_BY_NOTE,
+        plan_format.DECIDE_BY_NOTE,
         f"Counters held for the re-dispatch: iter={packet['iter']} "
         f"spec_iter={packet['spec_iter'] if packet['spec_iter'] is not None else 'absent'}",
     )
@@ -777,7 +773,7 @@ def asks_done_options(argv):
     outcome_words, decided_by = script_utils.pop_option(argv, "--by")
     if decided_by is None:
         decided_by = "user"
-    if decided_by not in ("user", "session"):
+    if not plan_format.is_ruling_by(decided_by):
         raise UsageError(f"asks-done --by needs user or session, not {decided_by!r}")
 
     outcome_words, packet_id = script_utils.pop_option(outcome_words, "--packet")
@@ -833,7 +829,7 @@ def discuss_commands():
 
 def command_decide(argv):
     parser = argument_parser("decide")
-    parser.add_argument("decision", choices=sorted(DECISION_WORDS))
+    parser.add_argument("decision", choices=sorted(plan_format.DECISION_WORDS))
     parser.add_argument("--ruling", default="")
     parser.add_argument("--plan", default="")
     parser.add_argument("--by", nargs="?", const="", default=None)
@@ -843,10 +839,10 @@ def command_decide(argv):
         raise UsageError("no plan-impact is waiting.")
     if options.decision == "discuss":
         return print_action("discuss", "Discuss the plan impact with the user, then run one of these. Do not "
-                            "re-dispatch yet.", *discuss_commands(), DECIDE_BY_NOTE)
-    if options.by not in ("user", "session"):
+                            "re-dispatch yet.", *discuss_commands(), plan_format.DECIDE_BY_NOTE)
+    if not plan_format.is_ruling_by(options.by):
         raise UsageError(f"decide {options.decision} needs --by user or --by session. Usage: `{DECIDE_USAGE}`. "
-                         f"{DECIDE_BY_NOTE}")
+                         f"{plan_format.DECIDE_BY_NOTE}")
     if not options.ruling.strip():
         raise UsageError(f"decide {options.decision} needs --ruling. Usage: `{DECIDE_USAGE}`.")
     plan_path = pathlib.Path(options.plan) if options.plan else None
@@ -863,7 +859,7 @@ ADOPT_NO_PLAN_LINE = "Add these lines under ## Plan Deviations in the plan yours
 def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no_plan_line=NO_PLAN_LINE):
     """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds) and print the
     re-dispatch. `user_lines` go first, for the main session to show the user."""
-    choice = DECISION_WORDS[decision]
+    choice = plan_format.DECISION_WORDS[decision]
     owner = plan_format.ruling_owner(".", by)
     ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, state["plan_impact"])

@@ -775,6 +775,18 @@ def ruling_owner(repo_dir, by):
     return script_utils.git_output(repo_dir, "config", "user.name") or "the user"
 
 
+PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
+DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
+DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
+                  "place of `--by user`. A session ruling never changes the acceptance criteria.")
+DECIDE_USAGE_STEM = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
+
+
+def is_ruling_by(by):
+    """True when a `--by` value names who ruled: the user or the session."""
+    return by in ("user", "session")
+
+
 def ruling_deviation(phase, decision, owner, ruled_at, ruling_words, disagreement):
     """The `## Plan Deviations` entry lines for one plan-impact ruling. `ruled_at` is "YYYY-MM-DD HH:MM"; a phase of
     None leaves the phase out of the entry's first line."""

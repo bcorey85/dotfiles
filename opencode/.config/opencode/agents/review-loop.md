@@ -17,6 +17,8 @@ comes back in the packet.
 - `caller`: `code` | `review` | `fix` — for telemetry.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
+- `later-phase files: <path>, ...` — files the plan gives to a later phase. No coder you dispatch edits one.
+- `guidance: <text>` — the main session's guidance for the run. Put it in every coder prompt.
 - `handoff:` block — schema in `~/.claude/skills/_shared/handoff-block.md`. May be absent (manual `/review`).
 - Modifiers: `+deep` → dispatch the `-deep` variant of every reviewer you spawn (`code-reviewer-deep`, and in Step 6b `security-reviewer-deep` / `perf-reviewer-deep` / `smell-reviewer-deep`) and OMIT `model` (their frontmatter pins the deep model). `+fast` → pass `model` with a fast model.
 - Specialist flags (Step 6b): `+sec` / `+perf` / `+smell` force the named specialist pass even when the diff doesn't match its trigger; `no-specialist` suppresses the specialist pass entirely.
@@ -139,6 +141,8 @@ Include this fence verbatim in every coder prompt you send:
 Include this text verbatim at the top of the `## Small items` section:
 
 > Small items follow the issues. They are the reviewer's optional notes, not findings. Apply a small item only when it names wrong behavior, or a false statement in a doc or a comment, and one correction is clear. Skip every other small item, and report each skip with its reason. A small item never widens the change: no rename, no restructure, no new abstraction.
+
+With a `later-phase files:` input, add to every coder prompt: "Never edit these files: the plan gives them to a later phase. When an issue needs one of them, leave it unapplied and report it as a PLAN-IMPACT: <the paths>". With a `guidance:` input, add: "Guidance from the main session. Follow it within the issues and the plan; it changes neither: <the text>". When a coder's changed files include a later-phase file, return `status: critical-blocker` naming the files.
 
 Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` — this is what the wrapper renders under "Fixed". A small item never enters `fixed[]`: from the coder report, end its `nit[]` line with `applied` or `skipped: <reason>`, and log an applied one in Step 7b with `actioned=fixed`.
 

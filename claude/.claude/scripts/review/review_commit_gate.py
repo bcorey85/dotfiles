@@ -79,6 +79,7 @@ import reviewed_tree
 import script_utils
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
+    GIT_VALUE_OPTIONS,
     LINE_CONTINUATION,
     git_options,
     git_subcommand,
@@ -134,16 +135,16 @@ HEREDOC_MESSAGE = re.compile(r'"' + HEREDOC_WORD.pattern + r'"')
 # A quoted heredoc, a `$( )` with no parens inside, or a backtick span. Its spaces and newlines do not end the word it
 # sits in, so is_commit_command also reads the text with each span shrunk to `$S`.
 SUBSTITUTION_SPAN = re.compile(HEREDOC_WORD.pattern + r"|\$\([^()]*\)|`[^`]*`")
-GIT_GLOBAL_OPTIONS_WITH_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix",
-                                 "--config-env", "--attr-source")
 GIT_GLOBAL_FLAGS = ("-p", "--paginate", "-P", "--no-pager", "--bare", "--no-replace-objects", "--literal-pathspecs",
                     "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks",
-                    "--no-lazy-fetch", "--no-advice")
+                    "--no-lazy-fetch", "--no-advice", "--exec-path")
+# Options that take a value in the `--name=value` form; --exec-path takes one only in this form.
+GIT_EQUALS_OPTIONS = GIT_VALUE_OPTIONS | {"--exec-path"}
 # Run on the text, so a command shlex reads wrongly or not at all still counts: git, then only git's global options
 # (a known option that takes a value is followed by it; any other option-like word stands alone), then commit.
-GIT_VALUE_OPTIONS = "|".join(re.escape(option) for option in GIT_GLOBAL_OPTIONS_WITH_VALUE)
-GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+(?:(?:" + GIT_VALUE_OPTIONS + r")[ \t]+" + OPTION_VALUE + r"|-\S+))*"
-                             r"[ \t]+commit\b(?!-)")
+GIT_VALUE_OPTION_PATTERN = "|".join(re.escape(option) for option in sorted(GIT_VALUE_OPTIONS))
+GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+(?:(?:" + GIT_VALUE_OPTION_PATTERN + r")[ \t]+" + OPTION_VALUE
+                             + r"|-\S+))*[ \t]+commit\b(?!-)")
 COMMIT_FLAGS = {"-q", "-v", "-s", "-n", "-e", "-o", "--quiet", "--verbose", "--signoff", "--no-verify", "--edit",
                 "--no-edit", "--allow-empty", "--allow-empty-message", "--no-gpg-sign", "--no-post-rewrite",
                 "--only", "--status", "--no-status"}
@@ -230,7 +231,7 @@ def runs_substitution(word):
 
 def is_known_git_global_option(option):
     name, has_value, _ = option.partition("=")
-    return option in GIT_GLOBAL_FLAGS or (bool(has_value) and name in GIT_GLOBAL_OPTIONS_WITH_VALUE)
+    return option in GIT_GLOBAL_FLAGS or (bool(has_value) and name in GIT_EQUALS_OPTIONS)
 
 
 def runs_git_commit(words):
@@ -260,15 +261,9 @@ def is_safe_probe(words):
 
 
 def commit_follows_git(words, git_index):
-    index = git_index + 1
-    unknown_option = False
-    while index < len(words) and words[index].startswith("-"):
-        option = words[index]
-        if option in GIT_GLOBAL_OPTIONS_WITH_VALUE:
-            index += 2
-            continue
-        unknown_option = unknown_option or not is_known_git_global_option(option)
-        index += 1
+    options, option_end = git_options(words[git_index:])
+    index = git_index + option_end
+    unknown_option = any(value is None and not is_known_git_global_option(option) for option, value in options)
     if index < len(words) and words[index] == "commit":
         return True
     return unknown_option and "commit" in words[index:]
@@ -605,17 +600,13 @@ def commit_dir(words, directory):
     command whose options the gate does not follow; None for any other command."""
     if posixpath.basename(words[0]) != "git":
         return None
-    index = 1
-    while index < len(words) and words[index].startswith("-"):
-        option = words[index]
-        if option == "-C" and index + 1 < len(words):
-            if not words[index + 1]:
+    options, index = git_options(words)
+    for option, value in options:
+        if option == "-C" and value is not None:
+            if not value:
                 return ""
-            directory = os.path.join(directory, words[index + 1])
-            index += 2
-        elif is_known_git_global_option(option) and not option.startswith(("--git-dir", "--work-tree")):
-            index += 1
-        else:
+            directory = os.path.join(directory, value)
+        elif not is_known_git_global_option(option) or option.startswith(("--git-dir", "--work-tree")):
             return ""
     if index < len(words) and words[index] == "commit":
         return os.path.normpath(directory)

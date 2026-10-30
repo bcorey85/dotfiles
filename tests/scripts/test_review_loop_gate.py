@@ -91,7 +91,7 @@ def loop_repo(test, unchecked):
 
 
 class StopHookMixin:
-    def stop(self, records, old_packet_form=False, unchecked=False, **extra):
+    def stop(self, records, unchecked=False, **extra):
         """Run the hook on `records`. The loop's repo (the hook's cwd, unless the test names one) holds a valid
         full-check receipt, unless `unchecked` says no full check ran."""
         extra.setdefault("cwd", loop_repo(self, unchecked))
@@ -105,10 +105,7 @@ class StopHookMixin:
         hook.update(extra)
         proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
                               text=True, check=True)
-        if old_packet_form:
-            self.assertIn("old free-text packet", proc.stderr)
-        else:
-            self.assertEqual(proc.stderr, "")
+        self.assertEqual(proc.stderr, "")
         return proc.stdout
 
 
@@ -146,13 +143,6 @@ class ReviewLoopGateTest(StopHookMixin, unittest.TestCase):
                       {"type": "tool_result", "tool_use_id": "toolu_hb", "content": "denied", "is_error": True}]}}]
         out = self.stop([*records, *denied], unchecked=True)
         self.assertIn(NO_RECEIPT, json.loads(out)["reason"])
-
-    def test_a_plan_impact_report_owes_no_full_check(self):
-        records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
-        self.assertIn(NO_RECEIPT, json.loads(self.stop(records, unchecked=True))["reason"])
-        out = self.stop(records, old_packet_form=True, unchecked=True,
-                        last_assistant_message="status: plan-impact\niter: 1\nplan_impact: a, b\n")
-        self.assertNotIn(NO_RECEIPT, out)
 
     def test_a_json_plan_impact_report_owes_no_full_check(self):
         records = [user("review loop"), dispatch("toolu_coder", "coder"), result("toolu_coder", "done")]
@@ -658,7 +648,8 @@ class RunRowTest(unittest.TestCase):
         scope_call = [bash(f"~/.claude/skills/review/review-scope caller=review root={worktree}", "t_scope"),
                       result("t_scope", f"ROOT={worktree}\nMODE=worktree\n")]
         cases = {"the review-scope ROOT= line": ([user("review loop\nlane: code")], scope_call),
-                 "the prompt's repo: line": ([user(f"review loop\nlane: code\nrepo: {worktree}")], [])}
+                 "the prompt's repo: line": ([user(f"review loop\nlane: code\nrepo: {worktree}")], []),
+                 "the prompt's first path": ([user(f"review loop\nlane: code\nChanges in {worktree}/src/a.py")], [])}
         for case, (prompt, scope) in cases.items():
             with self.subTest(case=case):
                 state_dir = os.path.join(self.tmp.name, "state")
@@ -932,10 +923,10 @@ The edited assertions match:
         self.assertEqual([], self.rows())
 
 
-def run_dispatch_hook(prompt, **caller):
-    """The gate's stdout for a review-loop Agent dispatch with this prompt, from the caller the fields name."""
+def run_dispatch_hook(prompt, subagent_type="review-loop", **caller):
+    """The gate's stdout for an Agent dispatch with this prompt, from the caller the fields name."""
     hook = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "session-1", **caller,
-            "tool_input": {"subagent_type": "review-loop", "prompt": prompt}}
+            "tool_input": {"subagent_type": subagent_type, "prompt": prompt}}
     environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}
     proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
                           text=True, check=True, env=environment)
@@ -966,7 +957,7 @@ class NestedDispatchTest(unittest.TestCase):
                 self.assertEqual("", run_dispatch_hook(REVIEW_PROMPT, **caller))
 
 
-LOG_METRICS = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 result=PASS"
+LOG_METRICS ="~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 result=PASS"
 
 
 class MetricsTimingTest(unittest.TestCase):
@@ -1032,6 +1023,66 @@ class MetricsTimingTest(unittest.TestCase):
 
     def test_a_metrics_call_from_another_agent_passes(self):
         self.assertEqual("", self.metrics_hook([user("mode: review-first")], agent_type="coder"))
+
+
+class ReviewerRepoDispatchTest(unittest.TestCase):
+    """A loop dispatched on a sibling worktree must name that worktree to each reviewer it dispatches."""
+
+    REVIEWERS = ("code-reviewer", "smell-reviewer", "test-reviewer", "test-reviewer-deep")
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.session_repo = os.path.join(tmp.name, "session-repo")
+        self.reviewed_repo = os.path.join(tmp.name, "sibling-worktree")
+        for repo in (self.session_repo, self.reviewed_repo):
+            subprocess.run(["git", "init", "-q", repo], check=True)
+        self.transcript = os.path.join(tmp.name, "loop.jsonl")
+
+    def dispatch_reviewer(self, loop_repo, subagent_type, reviewer_prompt, agent_type="review-loop"):
+        """The gate's stdout for a reviewer dispatch from a caller whose transcript names loop_repo."""
+        with open(self.transcript, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(user(f"mode: review-first\ncaller: review\nrepo: {loop_repo}")) + "\n")
+        return run_dispatch_hook(reviewer_prompt, subagent_type, agent_id="loop-1", agent_type=agent_type,
+                                 agent_transcript_path=self.transcript, cwd=self.session_repo)
+
+    def test_a_reviewer_brief_without_the_sibling_repo_is_refused_with_that_repo(self):
+        for reviewer in self.REVIEWERS:
+            with self.subTest(reviewer):
+                denial = json.loads(self.dispatch_reviewer(self.reviewed_repo, reviewer, "Review the diff."))
+                reason = denial["hookSpecificOutput"]["permissionDecisionReason"]
+                self.assertEqual("deny", denial["hookSpecificOutput"]["permissionDecision"])
+                self.assertIn(f"Repo root: {os.path.realpath(self.reviewed_repo)}", reason)
+
+    def test_a_reviewer_brief_that_names_the_sibling_repo_passes(self):
+        subdirectory = os.path.join(self.reviewed_repo, "src")
+        os.makedirs(subdirectory)
+        root_lines = {
+            "plain path": f"Repo root: {self.reviewed_repo}",
+            "backtick-wrapped path": f"Repo root: `{self.reviewed_repo}`",
+            "bold key": f"**Repo root:** {self.reviewed_repo}",
+            "subdirectory of the reviewed repo": f"Repo root: {subdirectory}",
+            "trailing parenthetical": f"Repo root: {self.reviewed_repo} (the sibling worktree)",
+        }
+        for label, root_line in root_lines.items():
+            with self.subTest(label):
+                self.assertEqual("", self.dispatch_reviewer(self.reviewed_repo, "code-reviewer",
+                                                            f"{root_line}\nReview the diff."))
+
+    def test_a_non_reviewer_dispatch_from_a_sibling_repo_loop_passes(self):
+        self.assertEqual("", self.dispatch_reviewer(self.reviewed_repo, "coder", "Fix the finding."))
+
+    def test_a_reviewer_dispatch_from_a_caller_other_than_a_review_loop_passes(self):
+        self.assertEqual("", self.dispatch_reviewer(self.reviewed_repo, "code-reviewer", "Review the diff.",
+                                                    agent_type="general-purpose"))
+
+    def test_a_reviewer_brief_naming_another_repo_is_refused(self):
+        brief = f"Repo root: {self.session_repo}\nReview the diff."
+        denial = json.loads(self.dispatch_reviewer(self.reviewed_repo, "test-reviewer", brief))
+        self.assertEqual("deny", denial["hookSpecificOutput"]["permissionDecision"])
+
+    def test_a_loop_on_the_session_repo_needs_no_repo_root_line(self):
+        self.assertEqual("", self.dispatch_reviewer(self.session_repo, "test-reviewer", "Review the diff."))
 
 
 if __name__ == "__main__":

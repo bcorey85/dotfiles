@@ -19,6 +19,9 @@ UNLOCATED = handback.UNLOCATED
 PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
 # The marker before the one edit an accepted ask makes: `... — the question — change: the edit`.
 ASK_CHANGE_MARK = re.compile(r"\bchange(?:\s+if\s+accepted)?:", re.I)
+# An ask that names another ask in place of a question: "The open ask about pinning the window still stands."
+ASK_POINTER = re.compile(r"\b(?:the|that|this|my)\s+(?:open|earlier|same|previous|prior|above|first|existing|standing)"
+                         r"\s+ask\b|\bask\s+#?\d+\b", re.I)
 ITEM_MARKER = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
 ITEM_MARKER_STRIP = re.compile(r"^\s*(?:[-*]+|\d+[.)])\s+")
 ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
@@ -144,11 +147,18 @@ def last_json_object(reply, keys):
 RETRY_ERROR_CHARS = 200
 
 
-def reply_with_one_retry(claude_call, role, prompt, repo, out, keys, shape, **options):
-    """The parsed JSON object of a model reply that holds any of `keys`. A reply with none is retried once under
-    "<role>-retry", so the retry has its own row in calls.jsonl; a second miss raises ValueError."""
+def reply_with_one_retry(claude_call, role, prompt, repo, out, keys, shape, recover=None, **options):
+    """The parsed JSON object of a model reply that holds any of `keys`. A reply with none is read by `recover`, when
+    given, then retried once under "<role>-retry", so the retry has its own row in calls.jsonl; a second miss raises
+    ValueError."""
+    def parsed_reply(reply):
+        parsed = last_json_object(reply, keys)
+        if parsed is None and recover:
+            return recover(reply)
+        return parsed
+
     reply = claude_call(role, prompt, repo, out, **options)
-    parsed = last_json_object(reply, keys)
+    parsed = parsed_reply(reply)
     if parsed is not None:
         return parsed
 
@@ -156,7 +166,7 @@ def reply_with_one_retry(claude_call, role, prompt, repo, out, keys, shape, **op
     retry_note = f"A previous reply to this prompt could not be parsed: {error[:RETRY_ERROR_CHARS]}"
     retry_prompt = prompt + f"\n\n{retry_note}\nReply with the JSON object only."
     reply = claude_call(f"{role}-retry", retry_prompt, repo, out, **options)
-    parsed = last_json_object(reply, keys)
+    parsed = parsed_reply(reply)
     if parsed is None:
         raise ValueError(f"the {role} reply holds no {shape} object: {reply!r}")
     return parsed
@@ -235,6 +245,23 @@ def names_absent_file(repo, tree_paths, finding):
 def plan_change_items(items):
     """The items that say the fix would change the approved plan."""
     return [item for item in items if PLAN_CHANGE_MARK.match(item.text)]
+
+
+def points_back_to_an_ask(ask):
+    """Whether ask record `ask` only points back to another ask: it names one, asks no question and proposes no change
+    of its own."""
+    return bool(ASK_POINTER.search(ask.text)) and "?" not in ask.text and not ASK_CHANGE_MARK.search(ask.text)
+
+
+def pointer_ask_split(asks, open_asks):
+    """(`asks` without each ask that only points back to another ask, those pointer asks). A pointer ask leaves only
+    when another ask is there to point to: one of `asks` that is not a pointer, or one of `open_asks`, the asks of
+    earlier rounds."""
+    pointer_asks = [ask for ask in asks if points_back_to_an_ask(ask)]
+    has_a_target = len(pointer_asks) < len(asks) or bool(open_asks)
+    if not has_a_target:
+        return asks, []
+    return [ask for ask in asks if ask not in pointer_asks], pointer_asks
 
 
 def absent_file_split(repo, tree_paths, review):

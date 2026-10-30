@@ -1,8 +1,9 @@
-"""loop_transcript.py: one read of a review-loop transcript, and the checks that read the transcript: the last
+"""loop_transcript.py: one read of a review-loop transcript, and the checks that read a transcript: the last
 code step, whether a valid full-check receipt exists for the tree the loop reviewed (lib/full_check_receipt), the open
 background dispatches, a packet that names the plan file, and a packet that owes ledger rows (per-finding rows and a
-metrics line) the loop did not log. review_loop_gate.py (the SubagentStop backstop), handback.py (the hand-back hook)
-and open_child_gate.py read transcripts through it. Not a hook itself."""
+metrics line) the loop did not log; and the repo a loop reviewed, which also reads cwd and the git work tree.
+review_loop_gate.py (the SubagentStop backstop), handback.py (the hand-back hook) and open_child_gate.py read
+transcripts through it. Not a hook itself."""
 import json
 import os
 import re
@@ -20,14 +21,12 @@ AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
 ASYNC_LAUNCH = "Async agent launched"
 RESUMED_AGENT_ID = re.compile(r"resumedAgentId\W+([A-Za-z0-9-]+)")
 RESUMING_MESSAGE = re.compile(r"Resuming agent\s+([A-Za-z0-9-]+)")
-# The status line of the old free-text packet form, or the "status" key of a JSON packet (minified or indented).
 # The statuses whose protocol ends the loop for a human ruling in place of Step 6's full check,
 # so a hand-back with one owes no full check.
 UNVERIFIED_TREE_STATUSES = frozenset({"plan-impact", "setup-fault", "critical-blocker"})
 _UNVERIFIED_STATUS = "(?:" + "|".join(sorted(UNVERIFIED_TREE_STATUSES)) + ")"
-UNVERIFIED_TREE_STATUS = re.compile(
-    r'(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*' + _UNVERIFIED_STATUS + r'\b'
-    r'|"status"[ \t]*:[ \t]*"[ \t`\'*]*' + _UNVERIFIED_STATUS + r'\b')
+# The "status" key of a JSON packet (minified or indented).
+UNVERIFIED_TREE_STATUS = re.compile(r'(?i)"status"[ \t]*:[ \t]*"[ \t`\'*]*' + _UNVERIFIED_STATUS + r'\b')
 # One shell command ends at a ;, a | or && that joins the next command, or at a newline no backslash escapes.
 SEGMENT_END = re.compile(r"&&|\|\||[;|]|(?<!\\)\n")
 AGENT_MESSAGE = re.compile(r"<agent-message\s+from=\"([\w-]+)\">(.*?)(?=</agent-message>|<agent-message\s|\Z)", re.S)
@@ -52,7 +51,10 @@ METRICS_CALL = re.compile(r"log-review-metrics\b")
 METRICS_REFUSAL = "refusing to log"
 SCOPE_CALL = re.compile(r"review-scope\b")
 SCOPE_ROOT = re.compile(r"(?m)^ROOT=(\S.*?)\s*$")
-PROMPT_REPO = prompt_field("repo", r"(\S+?)[`*]*[ \t]*$")
+PROMPT_REPO = prompt_field("repo", r"(\S[^\n]*?)[`*]*[ \t]*$")
+PROMPT_REPO_ROOT = prompt_field("repo root", r"(\S[^\n]*?)[`*]*[ \t]*$")
+PARENTHETICAL_TAIL = re.compile(r"\s*\([^()]*\)$")
+GIT_TIMEOUT_SECONDS = 10
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
                     "that edit, and return the finding that needs a plan change with `status` set to `plan-impact`.")
 RUN_GATES = re.compile(r"-reviewer(-deep)?$")
@@ -273,13 +275,9 @@ class LoopTranscript:
         if SCOPE_CALL.search(command):
             self.scope_calls.add(tool_use_id)
 
-    def reviewed_root(self):
-        """The repo the loop reviewed: the ROOT= review-scope printed, else the prompt's `repo:` line, when it names a
-        directory that still exists; else None."""
-        repo = PROMPT_REPO.search(self.prompt or "")
-        named = os.path.expanduser(repo.group(1).strip("`\"'")) if repo else None
-        candidates = [path for path in (self.scope_root, named) if path and os.path.isdir(path)]
-        return candidates[0] if candidates else None
+    def reviewed_repo(self, cwd, follow_first_path=True):
+        """The repo the loop reviewed, by the module-level function reviewed_repo's rule."""
+        return reviewed_repo(self.prompt or "", cwd, scope_root=self.scope_root, follow_first_path=follow_first_path)
 
     def launched_agent(self, tool_use_id):
         """The agent id that the dispatch's tool_result names, or None."""
@@ -343,11 +341,41 @@ def last_code_step(transcript):
     return max(transcript.steps(script_utils.CODERS), default=0)
 
 
+def prompt_path_work_tree(named, cwd):
+    """The real path of the work tree that holds the path a prompt `key: <path>` match names (quotes and a trailing
+    parenthetical dropped, `~` expanded, a relative path read from cwd). None when no work tree holds it."""
+    named_value = PARENTHETICAL_TAIL.sub("", named.group(1).strip("`\"'"))
+    named_dir = os.path.expanduser(named_value)
+    named_path = os.path.join(cwd or "", named_dir)
+    return script_utils.work_tree_top(named_path, timeout=GIT_TIMEOUT_SECONDS)
+
+
+def reviewed_repo(prompt, cwd, scope_root=None, follow_first_path=True):
+    """The real path of the work tree a review-loop dispatch reviews: the ROOT= that review-scope printed, else the
+    prompt's `repo:` line (a trailing parenthetical dropped) read from cwd, else the first absolute path the prompt
+    names when a work tree holds it and follow_first_path is set, else cwd. None when the scope root, the `repo:`
+    line, or cwd lies in no work tree."""
+    if scope_root:
+        return script_utils.work_tree_top(scope_root, timeout=GIT_TIMEOUT_SECONDS)
+
+    named = PROMPT_REPO.search(prompt)
+    if named:
+        return prompt_path_work_tree(named, cwd)
+
+    first_path = script_utils.first_absolute_path(prompt) if follow_first_path else None
+    if first_path:
+        path_folder = script_utils.nearest_existing_folder(first_path)
+        path_top = script_utils.work_tree_top(path_folder, timeout=GIT_TIMEOUT_SECONDS)
+        if path_top:
+            return path_top
+    return script_utils.work_tree_top(cwd, timeout=GIT_TIMEOUT_SECONDS)
+
+
 def missing_receipt_reason(transcript, cwd=None):
     """Why no full-check receipt is valid for the repo the loop reviewed (else the repo holding cwd, the process cwd
     when empty), or None when one is. None too when that place is no git work tree: it keeps no receipts, so the gate
     fails open there rather than ask for one that cannot exist."""
-    repo = script_utils.repo_root(transcript.reviewed_root() or cwd or os.getcwd())
+    repo = transcript.reviewed_repo(cwd or os.getcwd())
     if repo is None:
         return None
     return full_check_receipt.receipt_problem(repo)

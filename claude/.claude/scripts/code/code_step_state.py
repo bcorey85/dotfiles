@@ -160,6 +160,7 @@ class RunState:
     asks: list | None = None
     ask_ids: dict | None = None
     ask_ids_handback: str | None = None
+    asks_packet_id: str | None = None
     accepted_asks: list | None = None
     asks_also: str = ""
     rulings: dict | None = None

@@ -1,6 +1,8 @@
 """code_guidance.py: the main session's implementation guidance for a running /code. The `guide` verb records it in
-state.json, so it survives a resume; every later coder and review dispatch carries it. It never changes the task or
-the plan."""
+the phase's state.json, so it survives a resume; every later coder and review dispatch of that phase carries it. It
+never changes the task or the plan. The run notes given after the plan at start are saved there too, and every coder
+code_step dispatches for the phase carries them; the review-loop agent's own fix coders do not. A later phase starts
+with neither."""
 import script_utils
 
 GUIDANCE_HEADING = "## Guidance from the main session"
@@ -12,11 +14,14 @@ def record_guidance(state, text):
 
 
 def coder_guidance_lines(state):
-    """The prompt section that carries the run's guidance to a coder, or [] when there is none."""
+    """The prompt section that carries the phase's run notes and guidance to every coder code_step dispatches for
+    the phase, or [] when it has neither. The review-loop agent's own fix coders do not get it."""
+    notes_lines = script_utils.run_notes_lines(state.run_notes)
     guidance = state.guidance or []
     if not guidance:
-        return []
-    return ["", GUIDANCE_HEADING, "", GUIDANCE_RULE, ""] + [f"- {text}" for text in guidance]
+        return notes_lines
+
+    return [*notes_lines, "", GUIDANCE_HEADING, "", GUIDANCE_RULE, ""] + [f"- {text}" for text in guidance]
 
 
 def guidance_header_line(state):

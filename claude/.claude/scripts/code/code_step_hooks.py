@@ -42,6 +42,7 @@ from code_step_core import (
     session_repo_dirs,
     state_dir,
     stop_kind,
+    stopped_awaited_agent_id,
     timed_command,
 )
 from code_step_routes import STAGE_FACTS, StageFact
@@ -136,7 +137,7 @@ def open_fork_block(call, kind, limit, requires_dispatch=False):
         return False
 
     blocks_of_kind = sum(1 for block in standing["blocks"] if block.get("kind") == kind)
-    if blocks_of_kind >= limit or not is_dispatch_open(repo, state):
+    if blocks_of_kind >= limit or not is_dispatch_open(repo, state) or stopped_awaited_agent_id(repo, state):
         return False
 
     log_event(repo, call.run_id, "fork-block", state.session_id, dispatch=standing["dispatch"]["id"], kind=kind)
@@ -262,9 +263,19 @@ def log_launch(call):
     if marker is None or marker[0] != call.run_id:
         return
 
-    # A launch with no agent id is logged too: the dispatch counts as launched, and the wait stops on it.
+    # A launch with no agent id is logged too: the dispatch counts as launched, and the wait stops on it. launched_by
+    # is the launching fork's id, so a TaskStop of the fork counts as a stop of its coder.
     agent_id = tool_response_agent_id(call.event.get("tool_response"))
-    log_event(call.repo, call.run_id, "launch", call.session_id, agent_id=agent_id, dispatch=marker[1])
+    log_event(call.repo, call.run_id, "launch", call.session_id, agent_id=agent_id, dispatch=marker[1],
+              launched_by=call.event.get("agent_id"))
+
+
+def stopped_task_id(call):
+    # The id of the task a TaskStop call stopped: its result names the id when the call named the task by name.
+    tool_response = call.event.get("tool_response")
+    if isinstance(tool_response, dict) and tool_response.get("task_id"):
+        return tool_response["task_id"]
+    return call.tool_input.get("task_id")
 
 
 def log_tool_call(call):
@@ -273,6 +284,8 @@ def log_tool_call(call):
         log_launch(call)
     elif tool_name == "SendMessage":
         log_event(call.repo, call.run_id, "resume", call.session_id, agent_id=call.tool_input.get("to"))
+    elif tool_name == "TaskStop":
+        log_event(call.repo, call.run_id, "task-stop", call.session_id, task_id=stopped_task_id(call))
     elif tool_name == "SubagentHandback":
         message = str(call.tool_input.get("message", ""))
         log_event(call.repo, call.run_id, "handback", call.session_id, agent_id=call.event.get("agent_id"),
@@ -280,8 +293,8 @@ def log_tool_call(call):
 
 
 def command_log_hook():
-    # PostToolUse on Agent, SubagentHandback and SendMessage: one event per call that went through. A hand-back that
-    # the PreToolUse gates denied never reaches PostToolUse, so it is never logged.
+    # PostToolUse on Agent, SubagentHandback, SendMessage and TaskStop: one event per call that went through. A
+    # hand-back that the PreToolUse gates denied never reaches PostToolUse, so it is never logged.
     try:
         for call in read_hook_calls():
             if call.state.stage != Stage.DONE:

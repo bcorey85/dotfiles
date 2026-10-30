@@ -21,8 +21,10 @@ import test_code_step as base
 # isort: split
 import code_step_core
 import code_step_state
+import handback_store
 
-FAKE_LOOP_SCRIPT = """import os
+FAKE_LOOP_SCRIPT = """import json
+import os
 import pathlib
 import signal
 import sys
@@ -51,19 +53,20 @@ if mode == "hang":
     time.sleep(60)
 if mode in ("converged", "plan-impact", "plan-impact-dropped-ask", "plan-impact-below-criteria-dropped-ask",
             "unreviewed-fix"):
-    message = "status: converged\\niter: 1\\nfixed: []\\nask: []\\nnit: []"
+    packet = {"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": []}
     if mode == "unreviewed-fix":
-        message = ("status: converged\\niter: 2\\nfixed: [{finding: f, file_line: src/orders.ts:4, blocker: false}]"
-                   "\\nask: []\\nnit: []")
+        packet = {**packet, "iter": 2,
+                  "fixed": [{"finding": "f", "file_line": "src/orders.ts:4", "blocker": False}]}
+    dropped_ask = {"file_line": "a.ts:1", "gate": "code-reviewer", "class": "bug"}
     if mode == "plan-impact":
-        message = "status: plan-impact\\niter: 1\\nplan_impact: |\\n    PLAN-IMPACT:\\n      found: B\\n"
+        packet = {"status": "plan-impact", "iter": 1, "plan_impact": "PLAN-IMPACT:\\n  found: B"}
     if mode == "plan-impact-dropped-ask":
-        message = ("status: plan-impact\\niter: 1\\nplan_impact: |\\n    PLAN-IMPACT:\\n      found: B\\n"
-                   "ask:\\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}\\n")
+        packet = {"status": "plan-impact", "iter": 1, "plan_impact": "PLAN-IMPACT:\\n  found: B",
+                  "ask": [dropped_ask]}
     if mode == "plan-impact-below-criteria-dropped-ask":
-        message = ("status: plan-impact\\niter: 1\\nplan_impact: |\\n    PLAN-IMPACT:\\n      found: B\\n"
-                   "      acceptance_criteria: none\\n"
-                   "ask:\\n  - {file_line: a.ts:1, gate: code-reviewer, class: bug}\\n")
+        packet = {"status": "plan-impact", "iter": 1,
+                  "plan_impact": "PLAN-IMPACT:\\n  found: B\\n  acceptance_criteria: none", "ask": [dropped_ask]}
+    message = json.dumps(packet)
     code_step_core.log_event(arguments[0], options["--run-id"], "handback", options["--session"],
                              agent_id=options["--agent-id"], agent_type="review-loop", message=message)
     handback_store.record(options["--session"], "handback", agent_id=options["--agent-id"], status="converged",
@@ -130,6 +133,9 @@ class ReviewScriptTest(base.CodeStepTest):
         prompt_text = pathlib.Path(options["--prompt-file"]).read_text()
         self.assertTrue(prompt_text.startswith("mode: review-first\ncaller: code\n"), prompt_text)
         self.assertIn(f"repo: {self.repo}\n", prompt_text)
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            stored_dispatch = handback_store.latest(self.SESSION)["dispatch"]
+        self.assertEqual(os.path.realpath(self.repo), stored_dispatch["repo"])
         self.wait_for_script_exit(state["reviewScriptPid"])
 
         out = self.step("resume")

@@ -24,6 +24,7 @@ import finding_record
 import handback
 import handback_store
 import plan_format
+import review_loop_closure
 import review_loop_findings
 import review_loop_packet
 
@@ -133,6 +134,48 @@ class LastJsonObjectTest(unittest.TestCase):
         for message, reply, keys, expected in cases:
             with self.subTest(message):
                 self.assertEqual(expected, review_loop_findings.last_json_object(reply, keys))
+
+
+class ClosureCheckTest(unittest.TestCase):
+    def closure(self, reply):
+        def claude_call(*_args, **_kwargs):
+            return reply
+
+        return review_loop_closure.closure_check(pathlib.Path("/repo"), pathlib.Path("/out"), ["app.py:3 - limit"],
+                                                 claude_call)
+
+    def test_a_receipt_with_a_raw_quote_still_reads_its_open_list(self):
+        cases = [
+            ("empty open list", 'Done.\n{"receipt": "load_state(repo)["stage"] re-read", "open": []}', [],
+             'load_state(repo)["stage"] re-read'),
+            ("one open member", '{"receipt": "a "b" c", "open": ["app.py:4 - same limit - fix it"]}',
+             ["app.py:4 - same limit - fix it"], 'a "b" c'),
+            ("receipt ending in an escaped quote", '{"receipt": "a "b" and \\"c\\"", "open": []}', [],
+             'a "b" and \\"c\\"'),
+            ("no receipt key", 'Done.\n{"open": [], "note": "a "b""}', [], ""),
+        ]
+        for message, reply, expected, expected_receipt in cases:
+            with self.subTest(message):
+                closure = self.closure(reply)
+
+                self.assertEqual(expected, closure["open"])
+                self.assertEqual(expected_receipt, closure["receipt"])
+
+    def test_an_open_list_that_does_not_decode_still_raises(self):
+        with self.assertRaises(ValueError):
+            self.closure('{"receipt": "a "b" c", "open": ["app.py:4 - unclosed]}')
+
+    def test_the_prompt_tells_the_model_to_escape_quotes_in_the_receipt(self):
+        prompts = []
+
+        def claude_call(_label, prompt, *_args, **_kwargs):
+            prompts.append(prompt)
+            return '{"receipt": "none", "open": []}'
+
+        review_loop_closure.closure_check(pathlib.Path("/repo"), pathlib.Path("/out"), ["app.py:3 - limit"],
+                                          claude_call)
+
+        self.assertIn('escape every double quote inside the receipt as \\"', prompts[0])
 
 
 class ReviewLoopScriptTest(unittest.TestCase):
@@ -761,7 +804,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((sent["status"], sent["iter"], sent["files_touched"]), ("converged", 2, ["app.py"]))
         self.assertEqual(sent["fixed"][0]["file_line"], "app.py:2")
         self.assertEqual(handback.load(row["message"]), packet)
-        self.assertNotIn("old free-text packet", completed.stderr)
 
     def test_the_crash_packet_is_one_json_object_with_its_blocker_and_tool_fault(self):
         progress = {"iter": 1, "fixed": [], "files_touched": {"app.py"}}
@@ -1624,6 +1666,41 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(packet["ask"]), 2)
         asks = [row for row in self.finding_rows() if row["disposition"] == "ask"]
         self.assertEqual(len(asks), 2)
+
+    def test_an_ask_that_only_points_back_to_another_ask_is_dropped(self):
+        asks_with_a_pointer = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the window be pinned?\n"
+                               "- `app.py:4` should the limit be cached?\n"
+                               "- The open ask about pinning the window still stands.\n"
+                               "- After ask 1 is answered, should the cache key change too?\n\n## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": asks_with_a_pointer}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([item["question"] for item in packet["ask"]][-1],
+                         "After ask 1 is answered, should the cache key change too?")
+        self.assertEqual(len(packet["ask"]), 3)
+        asks = [row for row in self.finding_rows() if row["disposition"] == "ask"]
+        self.assertEqual(len(asks), 3)
+        self.assertEqual(packet["dropped_asks"], ["ask only points back to another ask, so it was dropped: "
+                                                  "'The open ask about pinning the window still stands.'"])
+
+    def test_a_pointer_ask_repeated_in_a_later_round_is_one_dropped_ask_warning(self):
+        pointer_and_ask = ("## Ask\n- `app.py:3` should the window be pinned?\n"
+                           "- The open ask about pinning the window still stands.\n\n## Nit\nNone\n")
+        first_round = "## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n" + pointer_and_ask
+        second_round = "## Fix\nNone\n\n" + pointer_and_ask
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": first_round}, {"result": second_round}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["dropped_asks"], ["ask only points back to another ask, so it was dropped: "
+                                                  "'The open ask about pinning the window still stands.'"])
 
     def test_two_fixes_at_one_line_are_two_rows_with_distinct_ids(self):
         two_at_one_line = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"

@@ -1,7 +1,8 @@
 """What /code does with a plan's Expected red lines and later-phase files, and with the main session's guidance: the
 plan check refuses a wrong Expected red line, a coder's hand-back of an edit to a file only a later phase names is
 denied once per file per agent and the repeat goes through and is flagged, the review dispatch carries the
-later-phase files, and `guide` records guidance that every later dispatch of the run carries.
+later-phase files, `guide` records guidance that every later dispatch of the phase carries, and the run notes given
+at start reach every coder.
 
 run: python3 -m unittest test_code_step_expected_red
 """
@@ -275,6 +276,21 @@ class ExpectedRedTest(base.CodeStepTest):
         self.step("resume")
         coder_out = self.step("asks-done", "accepted")
         return review_out, coder_out
+
+    def test_run_notes_after_the_plan_reach_the_first_coder_once_and_the_ask_fix_coder(self):
+        run_notes = "report to the orchestrator pane; run only the orders tests"
+        first_coder_out = self.start_phase_one("--phase", "1", run_notes)
+        self.pass_coder_gate()
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", self.LATER_PHASE_REPORT)
+        self.step("resume")
+        self.hook("review-loop", self.ASK)
+        self.step("resume")
+
+        ask_fix_coder_out = self.step("asks-done", "accepted")
+
+        self.assertEqual(1, first_coder_out.count(run_notes))
+        self.assertIn(run_notes, ask_fix_coder_out)
 
     def test_two_guides_share_one_review_header_line_and_one_coder_bullet_each(self):
         review_out, coder_out = self.guided_asks_round("use the money helper", "keep ints")

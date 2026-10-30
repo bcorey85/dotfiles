@@ -82,14 +82,6 @@ def code_step_pending_review(session_id, stored_row):
     return code_step_owner(code_step)
 
 
-def hand_back_id(stored_row, session_id):
-    """The run id of a stored hand-back row; `none:<session>` when the session has no hand-back yet, so sessions in
-    one repo never share a miss count."""
-    if stored_row is None:
-        return f"none:{session_id}"
-    return f"handback:{stored_row.get('agent_id')}:{stored_row.get('ts')}"
-
-
 def saved_hand_back(session_id):
     """The latest review-loop hand-back row of this session. Raises NoHandbackError when the loop was dispatched and
     never handed back, and LoopWaitingError when it stopped to wait on a background agent or shell."""
@@ -112,7 +104,7 @@ def saved_hand_back(session_id):
     if gap == handback_store.LOOP_WAITING:
         raise LoopWaitingError(seen["stop"]["ts"])
     if gap in (handback_store.NO_HANDBACK, handback_store.REDISPATCHED):
-        raise NoHandbackError(hand_back_id(seen["handback"], session_id))
+        raise NoHandbackError(handback_store.hand_back_id(seen["handback"], session_id))
     if gap == handback_store.NO_DISPATCH:
         raise PacketError([f"this session has no review-loop dispatch on record (session {session_id}): a hand-back "
                            "from another session or an older run is never taken as current"])
@@ -131,7 +123,8 @@ def read_message():
     stored_row = saved_hand_back(session_id)
     unreviewed_in_a_row = handback_store.unreviewed_streak(session_id)
     unreviewed_fix = handback_store.ended_on_unreviewed_fix(session_id, stored_row.get("agent_id"))
-    return stored_row["message"], hand_back_id(stored_row, session_id), unreviewed_in_a_row, unreviewed_fix
+    packet_id = handback_store.hand_back_id(stored_row, session_id)
+    return stored_row["message"], packet_id, unreviewed_in_a_row, unreviewed_fix
 
 
 def dispatched_repo():

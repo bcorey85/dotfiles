@@ -2,7 +2,6 @@
 reads of the per-session store that only it uses. handback.py owns the packet; this module records dispatches and
 hand-backs and denies a hand-back whose gates fail."""
 import json
-import os
 import pathlib
 import re
 import sys
@@ -10,19 +9,16 @@ import sys
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import loop_transcript
 import script_utils
-from capped_review import effective_status
+from capped_review import CAP_REACHED, effective_status
 from handback import (
     CLEAN_STATUSES,
     REVIEW_LOOP,
     PacketError,
     load,
 )
-from handback_store import DISPATCH_RAN, hand_back_dispatch_rows, record, session_rows, was_recorded
+from handback_store import DISPATCH_RAN, DISPATCH_REPO_KIND, hand_back_dispatch_rows, record, session_rows, was_recorded
 
 RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
-REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
-ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])/[^\s`'\"<>|;:,()]+")
-GIT_TIMEOUT_SECONDS = 10
 
 
 def loop_steps(session_id, agent_id):
@@ -49,6 +45,9 @@ def claim_no_review(session_id, agent_id):
 
 ALREADY_DELIVERED_REASON = ("Your report was already delivered; a second hand-back cannot reach the caller. Use "
                             "SendMessage for anything further, then stop.")
+CAPPED_ON_A_FIX_REASON = ("This cap-reached hand-back follows a coder that no reviewer read. Dispatch one reviewer "
+                          "scoped to the coder's files, even at iter 0, then hand back again. If it cannot run, hand "
+                          "back again with findings_remaining naming the unreviewed files.")
 OPEN_WORK_REASON = ("{count} agent(s) or shell(s) you started in the background have not reported back. Do not hand "
                     "back yet: end your turn and wait for each task notification, act on what it reports, then hand "
                     "back.")
@@ -124,11 +123,22 @@ def packet_gate_reason(transcript, packet, session_id, agent_id):
             or hand_back_ledger_reason(transcript, packet, session_id, agent_id))
 
 
+def rerecord_dispatch_repo(session_id, transcript, cwd):
+    """Record the repo the loop's ROOT= line names as its dispatch's repo, so the commit gate credits the repo the
+    run rows name. The dispatch row was written before review-scope printed ROOT=. A transcript with no ROOT= line
+    records nothing."""
+    if not transcript.scope_root:
+        return
+
+    record(session_id, DISPATCH_REPO_KIND, repo=transcript.reviewed_repo(cwd))
+
+
 def transcript_gate_reason(event, session_id, agent_id, message, packet):
     """The deny reason of the first gate that reads the loop's own transcript, in order: a background dispatch or
     shell still open, no valid full-check receipt for the tree, a plan file in the packet's files_touched,
     finding rows or a metrics line the packet owes and the loop did not log (the ledger reason, denied once per state).
-    The transcript is read once. One that cannot be read never blocks, and a failed full-check scan skips the
+    The transcript is read once, and once it has been read its ROOT= line re-records the dispatch's repo before any
+    gate runs. One that cannot be read never blocks and records nothing, and a failed full-check scan skips the
     full-check gate only."""
     try:
         transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
@@ -136,6 +146,7 @@ def transcript_gate_reason(event, session_id, agent_id, message, packet):
     except Exception as error:
         print(f"handback hook: transcript gates skipped, {type(error).__name__}: {error}", file=sys.stderr)
         return None
+    rerecord_dispatch_repo(session_id, transcript, event.get("cwd"))
     open_work = open_work_reason(open_dispatches)
     if open_work:
         return open_work
@@ -160,7 +171,7 @@ def handle_dispatch(event, session_id, tool_input):
         prompt = str(tool_input.get("prompt") or "")
         record(session_id, "dispatch", no_review=loop_transcript.NO_REVIEW_MODE.search(prompt) is not None,
                resolved_plan_impact=RESOLVED_PLAN_IMPACT.search(prompt) is not None,
-               repo=reviewed_repo(prompt, event.get("cwd")), tool_use_id=event.get("tool_use_id"))
+               repo=loop_transcript.reviewed_repo(prompt, event.get("cwd")), tool_use_id=event.get("tool_use_id"))
 
 
 def handle_dispatch_ran(event, session_id):
@@ -172,34 +183,17 @@ def handle_dispatch_ran(event, session_id):
         record(session_id, DISPATCH_RAN, tool_use_id=tool_use_id)
 
 
-def reviewed_repo(prompt, cwd):
-    """The top level of the repo a review-loop dispatch reviews, by the rule the loop itself follows: the prompt's
-    `repo:` line, read from cwd, else the first absolute path the prompt names, else cwd. None when that lies in no
-    work tree."""
-    named = REPO_LINE.search(prompt)
-    first_path = ABSOLUTE_PATH.search(prompt)
-    if named:
-        directory = os.path.join(cwd or "", os.path.expanduser(named.group(1)))
-    elif first_path:
-        directory = script_utils.nearest_existing_folder(first_path.group(0))
-    else:
-        directory = cwd
-    if not directory:
-        return None
-    top = script_utils.repo_root(directory, timeout=GIT_TIMEOUT_SECONDS)
-    return str(top) if top else None
-
-
 def record_script_dispatch(session_id, repo_dir):
     """The dispatch row the Agent hook writes for a review-loop, for a loop that runs as a script instead."""
-    record(session_id, "dispatch", no_review=False, repo=reviewed_repo("", str(repo_dir)))
+    record(session_id, "dispatch", no_review=False, repo=loop_transcript.reviewed_repo("", str(repo_dir)))
 
 
 def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back, or for kind `ran` the dispatch-ran row of a dispatch whose call ran.
     Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
-    unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no valid full-check
+    unreviewed reason for a clean packet with no reviewer run, CAPPED_ON_A_FIX_REASON once for a cap-reached packet
+    whose last step is a coder no reviewer read, loop_transcript.GATE_REASON when no valid full-check
     receipt exists for the tree the loop reviewed, loop_transcript.PLAN_EDIT_REASON when the packet names the plan
     file, or the ledger reason when the packet owes finding rows or a metrics line (once, until the loop makes another
     logger call)."""
@@ -241,6 +235,11 @@ def handle_hook(event, kind):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
+    capped_on_a_fix = (clean_status == CAP_REACHED and steps[-1:] == ["coder"]
+                       and not claim_no_review(session_id, agent_id))
+    if capped_on_a_fix and not was_recorded(session_id, agent_id, "unreviewed-cap"):
+        record(session_id, "unreviewed-cap", agent_id=agent_id)
+        return CAPPED_ON_A_FIX_REASON
     gate_reason = transcript_gate_reason(event, session_id, agent_id, message, packet)
     if gate_reason:
         return gate_reason

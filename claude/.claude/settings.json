@@ -342,7 +342,7 @@
         ]
       },
       {
-        "matcher": "Agent|SubagentHandback|SendMessage",
+        "matcher": "Agent|SubagentHandback|SendMessage|TaskStop",
         "hooks": [
           {
             "type": "command",

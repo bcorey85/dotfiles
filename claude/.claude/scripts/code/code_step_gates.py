@@ -236,11 +236,8 @@ def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, pha
     if not derives_tests:
         return commands
 
-    # `manage.py test` finds tests only in modules that match its default pattern, test*.py.
-    if django_options is not None:
-        test_paths = [p for p in python_paths if p.rsplit("/", 1)[-1].startswith("test")]
-    else:
-        test_paths = [p for p in python_paths if is_runnable_test_file(p)]
+    discovers_django_tests = django_options is not None
+    test_paths = [p for p in python_paths if is_runnable_test_file(p, discovers_django_tests=discovers_django_tests)]
     test_command = python_test_command(runner, test_paths, django_options, manage_script)
     if test_command:
         commands.append(test_command)

@@ -31,7 +31,7 @@ VERB_USAGES = {
     "tick": "usage: code_step.py tick <phase id>\nMarks a phase done that the user finished outside /code.",
     "abort": "usage: code_step.py abort\nEnds the open run on purpose. The working tree stays as it is.",
     "guide": ('usage: code_step.py guide "<text>"\nRecords the main session\'s guidance in the open run. Every later '
-              'coder and review dispatch carries it. It changes neither the task nor the plan.'),
+              'coder and review dispatch of this phase carries it. It changes neither the task nor the plan.'),
     "status": "usage: code_step.py status\nPrints the saved state.",
     "plan": "usage: code_step.py plan check [--final]|parse <path>",
 }

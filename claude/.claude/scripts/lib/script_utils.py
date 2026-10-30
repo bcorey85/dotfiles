@@ -24,7 +24,6 @@ PATH_LINE = re.compile(rf"`?({PATH_TEXT}:\d+(?:[-,]\d+)*)`?")
 # The code-reviewer's blocker tag, bold or plain; callers anchor it and pick the case rule.
 BLOCKER_TAG_PATTERN = r"\*{0,2}\[blocker\]\*{0,2}"
 FILE_NAME = re.compile(rf"^{PATH_TEXT}(?::\d|$)")
-QUOTE_OPENERS = " :[{,\t\n"
 BACKTICKED = re.compile(r"`([^`]+)`")
 # Subagent types: the agents that change code, and the agents that review it (code-reviewer, perf-reviewer-deep, ...).
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
@@ -259,6 +258,14 @@ def text_before_marker(text, marker):
     return text.split(marker, 1)[0]
 
 
+def run_notes_lines(run_notes):
+    """The prompt lines for the user's run notes, or [] when there are none."""
+    if not run_notes:
+        return []
+
+    return ["", "Run notes from the user. They bind this run; the plan stays the spec:", run_notes]
+
+
 def path_is_under(path, prefix):
     # True when path is prefix itself or lies below it, compared as text so "ab" is not under "a".
     return path == prefix or path.startswith(prefix.rstrip("/") + "/")
@@ -334,6 +341,14 @@ def head_blob_hashes(cwd, names):
         meta, _tab, name = entry.partition("\t")
         hashes[name] = meta.split()[2]
     return hashes
+def work_tree_top(path, timeout=None):
+    """The real path of the work tree that holds path, an existing file or a directory, as a string; None for no path
+    or outside a work tree."""
+    if not path:
+        return None
+    directory = os.path.dirname(path) if os.path.isfile(path) else path
+    top = repo_root(directory, timeout=timeout)
+    return os.path.realpath(top) if top else None
 
 
 def current_branch(cwd, timeout=None):
@@ -782,58 +797,10 @@ def sortable_unique_id(now=None):
     return stamp + "-" + uuid.uuid4().hex[:6]
 
 
-def unquote(text):
-    """The text without one pair of matching outer quotes."""
-    text = text.strip()
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
-        return text[1:-1]
-    return text
-
-
 def first_number(text):
     """The first run of digits in the text as an int, or None."""
     found = re.search(r"\d+", text or "")
     return int(found.group()) if found else None
-
-
-def quote_opens_at(text, position):
-    return text[position] in "\"'" and (position == 0 or text[position - 1] in QUOTE_OPENERS)
-
-
-def unquoted_mask(text):
-    """The text with every quoted span blanked, so a word inside a quoted value is not read as a key."""
-    masked = list(text)
-    quote = None
-    for position, character in enumerate(text):
-        if quote:
-            masked[position] = "x"
-            quote = None if character == quote else quote
-        elif quote_opens_at(text, position):
-            quote = character
-            masked[position] = "x"
-    return "".join(masked)
-
-
-def top_level_braces(text):
-    """The {...} groups of a flow list, split on depth-0 braces outside quotes."""
-    groups = []
-    depth = 0
-    quote = None
-    start = 0
-    for position, character in enumerate(text):
-        if quote:
-            quote = None if character == quote else quote
-        elif quote_opens_at(text, position):
-            quote = character
-        elif character == "{":
-            if depth == 0:
-                start = position
-            depth += 1
-        elif character == "}" and depth:
-            depth -= 1
-            if depth == 0:
-                groups.append(text[start:position + 1])
-    return groups
 
 
 def normalize_path(text):
@@ -870,6 +837,29 @@ def paths_named(*texts):
             if path and path not in paths:
                 paths.append(path)
     return paths
+
+
+URL_TOKEN = re.compile(r"[A-Za-z][\w+.-]*://\S*")
+FIRST_ABSOLUTE_PATH = re.compile(r"(?<![\w.~:/-])/[^\s`'\"<>|;:,()]+")
+PATH_GOES_ON_AFTER_SPACE = re.compile(r" [\w.-]+/")
+
+
+def first_absolute_path(text):
+    """The first absolute path the text names, or None when it names none.
+
+    A path that does not exist and goes on after a space as another path segment was cut at the space, so it names
+    none: its head could lie in a different repo.
+    """
+    url_free_text = URL_TOKEN.sub(" ", text)
+    found = FIRST_ABSOLUTE_PATH.search(url_free_text)
+    if not found:
+        return None
+
+    path = found.group(0)
+    cut_at_space = PATH_GOES_ON_AFTER_SPACE.match(url_free_text, found.end())
+    if cut_at_space and not os.path.exists(path):
+        return None
+    return path
 
 
 def nearest_existing_folder(path):

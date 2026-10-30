@@ -4,19 +4,24 @@ the user.
 
 run: python3 -m unittest test_code_step_hand_back
 """
+import json
 import time
 
 import test_code_step as base
 
-SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
-FIX_REMOVED_PACKET = ("status: fix-removed-change\niter: 1\nblockers:\n  - finding: the fix passes removed 9 of the "
-                      "10 source lines the change under review adds\n    file_line: none")
-BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
-UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
-                     "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
-CHECK_ONLY_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
-                     "full_check: passed (check only; CI runs the full suite)\nfull_check_command: cargo check")
-CONVERGED_PACKET_HEAD = "status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
+SETUP_FAULT_PACKET = json.dumps({"status": "setup-fault", "iter": 1,
+                                 "blockers": [{"finding": "no package.json", "file_line": "none"}]})
+FIX_REMOVED_PACKET = json.dumps({"status": "fix-removed-change", "iter": 1, "blockers": [
+    {"finding": "the fix passes removed 9 of the 10 source lines the change under review adds", "file_line": "none"}]})
+BLOCKER_PACKET = json.dumps({"status": "critical-blocker", "iter": 1,
+                             "blockers": [{"finding": "b", "file_line": "backend/src/orders.ts:1"}]})
+UNVERIFIED_PACKET = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": [],
+                                "full_check": "unverified (exit 0, no runner summary)",
+                                "full_check_command": "npm run lint"})
+CHECK_ONLY_PACKET = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": [],
+                                "full_check": "passed (check only; CI runs the full suite)",
+                                "full_check_command": "cargo check"})
+CONVERGED_FIELDS = {"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": []}
 QUALITY_CHECK_FIX = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
 # The full-check results of a check that did not run, so the review verified nothing.
 CHECK_NOT_RUN_RESULTS = (
@@ -25,11 +30,11 @@ CHECK_NOT_RUN_RESULTS = (
     ("not run (unresolved command: what it runs cannot be read, so it is no full check)", QUALITY_CHECK_FIX),
 )
 # A converged and a deferred review stop and finish alike on the full check.
-REVIEW_PACKET_HEADS = {
-    "converged": CONVERGED_PACKET_HEAD,
+REVIEW_PACKET_FIELDS = {
+    "converged": CONVERGED_FIELDS,
     # An empty findings_remaining is an unreadable deferred packet: one open finding makes it readable.
-    "deferred": "status: deferred\niter: 1\nfixed: []\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n"
-                "ask: []\nnit: []\n",
+    "deferred": {"status": "deferred", "iter": 1, "fixed": [],
+                 "findings_remaining": [{"finding": "x", "file_line": "a.ts:1"}], "ask": [], "nit": []},
 }
 # The not-run results that leave the phase to finish: CI runs the suite, the repo names no check, the plan expects
 # the check red until a later phase, or the check hit a check-command error or an environment gap.
@@ -40,11 +45,12 @@ CHECK_NOT_OWED_RESULTS = (
     "not run (check-command error: sh: 1: cd: can't cd to gone)",
     "not run (environment gap: No module named 'requests')",
 )
-CACHE_ASK = ('{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?", '
-             '"change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}')
-# A converged packet with no fixed or ask line: the questions test appends its own.
-NO_ASK_HEAD = "status: converged\niter: 1\nnit: []\n"
-CAP_PACKET = "status: cap-reached\niter: 2\nfindings_remaining:\n  - finding: x\n    file_line: a.ts:1"
+CACHE_ASK = {"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?",
+             "change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}
+# A converged packet with no fixed or ask key: the questions test adds its own.
+NO_ASK_FIELDS = {"status": "converged", "iter": 1, "nit": []}
+CAP_PACKET = json.dumps({"status": "cap-reached", "iter": 2,
+                         "findings_remaining": [{"finding": "x", "file_line": "a.ts:1"}]})
 
 
 class HandBackTest(base.CodeStepTest):
@@ -221,16 +227,16 @@ class HandBackTest(base.CodeStepTest):
 
     def test_a_check_not_run_stop_carries_the_fix_ruling_only_when_claude_md_changed(self):
         self.coder_round()
-        self.hook("review-loop", CONVERGED_PACKET_HEAD + f"full_check: {CHECK_NOT_RUN_RESULTS[0][0]}\n"
-                  "full_check_command: npm test")
+        self.hook("review-loop", json.dumps({**CONVERGED_FIELDS, "full_check": CHECK_NOT_RUN_RESULTS[0][0],
+                                             "full_check_command": "npm test"}))
         self.step("resume")
         self.assertEqual("check-not-run", self.state()["stop"]["kind"])
 
         self.step("review-again")
 
         self.assertEqual("none", self.state()["planImpact"])
-        self.hook("review-loop", CONVERGED_PACKET_HEAD + f"full_check: {CHECK_NOT_RUN_RESULTS[1][0]}\n"
-                  "full_check_command: npm test")
+        self.hook("review-loop", json.dumps({**CONVERGED_FIELDS, "full_check": CHECK_NOT_RUN_RESULTS[1][0],
+                                             "full_check_command": "npm test"}))
         self.step("resume")
         (self.repo / "CLAUDE.md").write_text("- Quality check: `npm test`\n")
 
@@ -255,7 +261,7 @@ class HandBackTest(base.CodeStepTest):
 
     def test_a_review_after_a_stop_that_is_not_a_check_stop_carries_no_fix_ruling(self):
         self.coder_round()
-        self.hook("review-loop", CONVERGED_PACKET_HEAD + "tool_fault: reviewer crashed")
+        self.hook("review-loop", json.dumps({**CONVERGED_FIELDS, "tool_fault": "reviewer crashed"}))
         self.step("resume")
         self.assertEqual(("stopped", "tool-fault"), (self.state()["stage"], self.state()["stop"]["kind"]))
 
@@ -279,8 +285,8 @@ class HandBackTest(base.CodeStepTest):
                 self.setUp()
                 (self.repo / "CLAUDE.md").write_text("- Quality check: `npm test`\n")
                 self.coder_round()
-                self.hook("review-loop",
-                          CONVERGED_PACKET_HEAD + f"full_check: {result}\nfull_check_command: npm t a.test.ts")
+                self.hook("review-loop", json.dumps({**CONVERGED_FIELDS, "full_check": result,
+                                                     "full_check_command": "npm t a.test.ts"}))
 
                 out = self.step("resume")
 
@@ -291,12 +297,13 @@ class HandBackTest(base.CodeStepTest):
                 self.assertNotIn("Quality check:", out)
 
     def test_a_converged_or_deferred_review_whose_full_check_did_not_run_stops_the_phase_naming_the_result(self):
-        for status, packet_head in REVIEW_PACKET_HEADS.items():
+        for status, packet_fields in REVIEW_PACKET_FIELDS.items():
             for result, fix_text in CHECK_NOT_RUN_RESULTS:
                 with self.subTest(f"{status}: {result}"):
                     self.setUp()
                     self.coder_round()
-                    self.hook("review-loop", packet_head + f"full_check: {result}\nfull_check_command: npm test")
+                    self.hook("review-loop", json.dumps({**packet_fields, "full_check": result,
+                                                         "full_check_command": "npm test"}))
 
                     out = self.step("resume")
 
@@ -311,12 +318,12 @@ class HandBackTest(base.CodeStepTest):
                     self.assertIn(self.own_command("review-again"), question_text)
 
     def test_a_converged_or_deferred_review_whose_full_check_was_not_owed_finishes_the_phase(self):
-        for status, packet_head in REVIEW_PACKET_HEADS.items():
+        for status, packet_fields in REVIEW_PACKET_FIELDS.items():
             for result in CHECK_NOT_OWED_RESULTS:
                 with self.subTest(f"{status}: {result}"):
                     self.setUp()
                     self.coder_round()
-                    self.hook("review-loop", packet_head + f"full_check: {result}")
+                    self.hook("review-loop", json.dumps({**packet_fields, "full_check": result}))
 
                     out = self.step("resume")
 
@@ -328,17 +335,18 @@ class HandBackTest(base.CodeStepTest):
             ("critical blocker", {"blockerCarried": True}, BLOCKER_PACKET,
              "`" + self.own_command("review-again") + "`"),
             ("review cap", {"capCarried": True}, CAP_PACKET, "start --restart"),
-            ("check not run", {}, NO_ASK_HEAD + "full_check: not run (timeout)\nfull_check_command: npm test",
-             "review-again"),
-            ("check unverified", {}, NO_ASK_HEAD + "full_check: unverified (exit 0, no runner summary)\n"
-                                                   "full_check_command: npm run lint", "review-again"),
+            ("check not run", {}, json.dumps({**NO_ASK_FIELDS, "full_check": "not run (timeout)",
+                                              "full_check_command": "npm test"}), "review-again"),
+            ("check unverified", {}, json.dumps({**NO_ASK_FIELDS,
+                                                 "full_check": "unverified (exit 0, no runner summary)",
+                                                 "full_check_command": "npm run lint"}), "review-again"),
         ]
         for label, carried, packet, next_command in stops:
             with self.subTest(label):
                 self.setUp()
                 self.coder_round()
                 self.set_state(**carried)
-                self.hook("review-loop", packet + f"\nfixed: []\nask: [{CACHE_ASK}]")
+                self.hook("review-loop", base.packet_with(packet, fixed=[], ask=[CACHE_ASK]))
 
                 out = self.step("resume")
 

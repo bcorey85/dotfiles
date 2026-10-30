@@ -56,8 +56,6 @@ ALLOWED_HITS = [
     ("scripts/lib/script_utils.py", "Installed as ~/.claude/scripts/lib/script_utils.py", "docstring text"),
     ("scripts/lib/script_utils.py", "under ~/.claude, where the ledger's readers", PRINTED),
     ("scripts/review/review_fix.py", "DECIDE_SCRIPT = ", PRINTED),
-    ("scripts/review/review_fix.py", "MARK_CLEAN = ", PRINTED),
-    ("scripts/review/review_fix.py", "MARK_DIRTY = ", PRINTED),
     ("scripts/review/review_fix.py", "After the user answers, run once", PRINTED),
     ("scripts/review/review_loop_gate.py", "handoff-block.md and dispatch again", PRINTED),
     ("scripts/telemetry/log-escape", "Run the ratchet (", PRINTED),

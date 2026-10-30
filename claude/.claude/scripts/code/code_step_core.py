@@ -361,6 +361,14 @@ def newest_later_phase_deny_reason(events, agent_id):
     return reasons[-1] if reasons else None
 
 
+def agent_still_out(events, agent_id):
+    # Whether the agent's newest launch or SendMessage resume came after its newest hand-back: it may still be editing
+    # the tree.
+    of_coder = [event for event in events
+                if event.get("agent_id") == agent_id and event.get("event") in ("launch", "resume", "handback")]
+    return bool(of_coder) and of_coder[-1]["event"] != "handback"
+
+
 def dispatch_marker(prompt_text):
     # (run id, dispatch id) of the last marker in the prompt of an Agent call, or None. The marker counts wherever it
     # stands: on its own line, after other text on a folded line, or with text after it.
@@ -444,7 +452,7 @@ def checkout_line(repo_dir):
 def emit_dispatch(repo_dir, state, *lines, prompt, agent, model=None):
     # The one way a dispatch reaches the fork: logged and saved first, then printed with the path of the saved prompt.
     # Every agent it dispatches runs a gate, so the repo's gate env vars go in the prompt. A coder also gets the run's
-    # guidance from the main session.
+    # notes and guidance from the main session.
     if agent == CODER:
         prompt = "\n".join([prompt, *coder_guidance_lines(state)])
     prompt_in_checkout = f"{checkout_line(repo_dir)}\n\n{prompt}"
@@ -537,6 +545,27 @@ def awaited_agent_id(repo_dir, state):
         return state.stop.agent_id
     launched = newest_dispatch_standing(repo_dir, state)["launched"]
     return launched.get("agent_id") if launched else None
+
+
+def stopped_awaited_agent_id(repo_dir, state):
+    # The id of the agent the next verb waits for when the session stopped it, or the agent that launched it, with
+    # TaskStop after its newest launch or resume, unless a hand-back of that agent came after its newest launch or
+    # resume: no hand-back will come. None otherwise.
+    agent_id = awaited_agent_id(repo_dir, state)
+    if agent_id is None:
+        return None
+
+    stopped = False
+    stoppable_ids = {agent_id}
+    events = read_events(repo_dir, state.run_id)
+    for event in events:
+        if event.get("event") in ("launch", "resume") and event.get("agent_id") == agent_id:
+            stopped = False
+            if event.get("launched_by"):
+                stoppable_ids.add(event["launched_by"])
+        elif event.get("event") == "task-stop" and event.get("task_id") in stoppable_ids:
+            stopped = True
+    return agent_id if stopped and agent_still_out(events, agent_id) else None
 
 
 def dispatch_since(state):
@@ -1058,15 +1087,18 @@ def carried_start_words(state):
     return modifier_words + headless_words
 
 
+def plan_restart_command(state, restart_command):
+    # The restart of a plan run: it keeps its single phase, its modifier and --headless.
+    phase_words = ["--phase", str(state.only_phase)] if state.only_phase else []
+    return " ".join([restart_command, *phase_words, *carried_start_words(state)])
+
+
 def restart_instruction(state, restart_command="start --restart"):
     # A restart with no task text resolves the branch's plan, which is the wrong work for a run that had no plan.
-    # A plan run keeps its single phase, its modifier and --headless through the restart.
-    modifier_words = carried_start_words(state)
     if state.plan:
-        phase_words = ["--phase", str(state.only_phase)] if state.only_phase else []
-        return "run `" + " ".join([restart_command, *phase_words, *modifier_words]) + "`"
+        return "run `" + plan_restart_command(state, restart_command) + "`"
 
-    planless_words = [restart_command, *modifier_words, "--task", "\"<the task text>\""]
+    planless_words = [restart_command, *carried_start_words(state), "--task", "\"<the task text>\""]
     return "ask the user for the task text, then run `" + " ".join(planless_words) + "`"
 
 

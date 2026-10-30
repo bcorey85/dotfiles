@@ -6,7 +6,7 @@
       latest full check run finished and verified the tree, and the tree has not changed since; a checker run by hand,
       a scoped run and a handoff `tests-run` never make one. The gate matches no command or result text. A loop
       returning `status: plan-impact`, `setup-fault` or `critical-blocker` owes no check. The repo is the one the loop
-      reviewed (reviewed_root), else the hook cwd; outside a git work tree the gate lets the stop through. A stop with a
+      reviewed (reviewed_repo), else the hook cwd; outside a git work tree the gate lets the stop through. A stop with a
       delivered SubagentHandback (one no hook denied) skips this check and the plan-file check.
       A second stop in a row passes (stop_hook_active), so a stuck loop cannot spin. The block
       reason reaches the loop as context and it keeps working. Register with matcher
@@ -28,6 +28,8 @@
   PreToolUse (Agent): a review-loop dispatch whose prompt says `caller: code` must carry a
       `handoff:` line. A review-loop dispatch from a subagent other than the /code fork is refused: the
       nested loop cannot ask for permission or wake on its reviewer's report, so it never hands back.
+      A reviewer dispatch from a review-loop whose reviewed repo (LoopTranscript.reviewed_repo) is not its cwd's
+      work tree is refused unless the reviewer prompt names that repo on a `Repo root: <path>` line.
   PreToolUse (Bash), a review-loop agent: a shell call of log-review-metrics is refused while the loop's transcript
       holds no reviewer dispatch (`*-reviewer`, `*-reviewer-deep`), unless its prompt is a no-review mode or the
       call's `result=` field is NOT DISPATCHED (a loop that ends before any reviewer runs), and while a
@@ -60,7 +62,9 @@ import handback_store
 import script_utils
 from loop_transcript import (
     DELIVERED_TAIL,
+    GIT_TIMEOUT_SECONDS,
     NO_REVIEW_MODE,
+    PROMPT_REPO_ROOT,
     RETURN_TAIL,
     RUN_GATES,
     LoopTranscript,
@@ -68,6 +72,7 @@ from loop_transcript import (
     packet_ledger_reasons,
     plan_edit_reason,
     prompt_field,
+    prompt_path_work_tree,
     scan,
 )
 
@@ -113,6 +118,8 @@ METRICS_OPEN_REASON = ("A reviewer dispatch has not reported yet. Wait for the r
                        "Step 7 metrics line once, with the final counts, at Step 7, after the last reviewer reports.")
 NESTED_REASON = ("Run /review from the main session: a review-loop that a subagent dispatches cannot ask for "
                  "permission or wake on its reviewer's report, so it ends with no hand-back.")
+REVIEWER_REPO_REASON = ("This loop reviews {repo}, not your cwd. Put the line `Repo root: {repo}` in the "
+                        "{reviewer} prompt and dispatch again.")
 
 
 def reasons_for(scanned):
@@ -286,7 +293,10 @@ def log_run_rows(hook, transcript):
         if not session_id:
             return
         runs, lane, phase = reviewer_runs(transcript)
-        root = transcript.reviewed_root()
+        if not runs:
+            return
+
+        root = transcript.reviewed_repo(hook.get("cwd"))
         state_file = state_file_for(session_id)
         marks = {}
         for row in script_utils.read_jsonl(state_file):
@@ -317,8 +327,28 @@ def dispatch_deny_reason(hook):
     return None
 
 
+def reviewer_repo_deny_reason(hook):
+    """Why a review-loop's reviewer dispatch is refused, or None: a loop on a repo other than its cwd's work tree
+    must name that repo on a `Repo root:` line of each reviewer prompt."""
+    tool_input = hook.get("tool_input") or {}
+    reviewer = tool_input.get("subagent_type") or ""
+    if hook.get("agent_type") != "review-loop" or not RUN_GATES.search(reviewer):
+        return None
+
+    cwd = hook.get("cwd")
+    transcript = LoopTranscript(script_utils.agent_transcript_path(hook))
+    repo = transcript.reviewed_repo(cwd)
+    if not repo or repo == script_utils.work_tree_top(cwd, timeout=GIT_TIMEOUT_SECONDS):
+        return None
+
+    named = PROMPT_REPO_ROOT.search(tool_input.get("prompt") or "")
+    if named and prompt_path_work_tree(named, cwd) == repo:
+        return None
+    return REVIEWER_REPO_REASON.format(repo=repo, reviewer=reviewer)
+
+
 def check_dispatch(hook):
-    reason = dispatch_deny_reason(hook)
+    reason = dispatch_deny_reason(hook) or reviewer_repo_deny_reason(hook)
     if reason:
         script_utils.pre_tool_use_deny(reason)
 

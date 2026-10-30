@@ -44,10 +44,10 @@ posts the Aikido replies, and prints what the model still judges.
                                          Only --by user is the user's own word.
   review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
 
-State lives in <git dir>/review-fix/state.json. A packet that does not parse stops with exit 2 and an instruction to
-mark the gate dirty. Env REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH
-override the nvim-jump and gh commands; REVIEW_FIX_LOOP_SCRIPT overrides the loop script `launch` runs;
-HANDBACK_STORE_DIR overrides the hand-back store; CLAUDE_CODE_SESSION_ID names the session."""
+State lives in <git dir>/review-fix/state.json. A packet that does not parse stops with exit 2. Env
+REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH override the nvim-jump
+and gh commands; REVIEW_FIX_LOOP_SCRIPT overrides the loop script `launch` runs; HANDBACK_STORE_DIR overrides the
+hand-back store; CLAUDE_CODE_SESSION_ID names the session."""
 import argparse
 import datetime
 import json
@@ -62,6 +62,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import capped_review
 import handback
 import handback_hook
+import handback_store
 import plan_format
 import review_asks
 import script_utils
@@ -79,9 +80,6 @@ ASK_LOGGER = CLAUDE_DIR / "skills/review/log-review-finding"
 DECIDE_SCRIPT = "python3 ~/.claude/scripts/review/review_fix.py"
 PLAN_ARG_NOTE = "--plan <the plan path, when the handoff names one>"
 DECIDE_USAGE = f"{plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}"
-MARK_CLEAN = "~/.claude/scripts/review/review-gate-mark clean"
-MARK_DIRTY = "~/.claude/scripts/review/review-gate-mark dirty"
-KEEP_DIRTY = f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now as its own Bash command."
 NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
 LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
@@ -140,6 +138,21 @@ def save_fix_state(state):
     path = review_fix_state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=1))
+
+
+def record_packet_asks_logged(packet_id):
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if not session_id:
+        return
+    repo = script_utils.work_tree_top(".")
+    handback_store.record_asks_logged(session_id, packet_id, repo)
+
+
+def repo_that_logged_packet_asks(packet_id):
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if not session_id:
+        return None
+    return handback_store.repo_that_logged_the_asks(session_id, packet_id)
 
 
 # ---------- options ----------
@@ -213,7 +226,6 @@ def stop_for_parse_failure(error, raw_message):
     print_action("stop-parse-failure",
                  "The review-loop packet did not parse. Nothing was routed, logged or posted.",
                  *[f"- {problem}" for problem in error.problems],
-                 KEEP_DIRTY,
                  "Then show the user the raw packet and the problems above. Do not guess the missing fields.",
                  "Do not re-dispatch to repair the packet unless the user asks.")
     print("RAW PACKET (first 1500 chars):")
@@ -256,14 +268,12 @@ def stop_for_missing_hand_back(skill, last_hand_back_id):
                      "routed, logged or posted, and the earlier run's state is untouched.",
                      "Re-dispatch review-loop once with the same arguments"
                      + ("" if skill == "fix" else " (run `launch` again when the script started it)")
-                     + ", then run `packet` again.",
-                     KEEP_DIRTY)
+                     + ", then run `packet` again.")
         return
     print_action("stop-no-handback",
                  f"The review-loop ended {misses} times in a row without calling SubagentHandback. Nothing was routed, "
                  "logged or posted, and the earlier run's state is untouched.",
-                 "Stop. Do not re-dispatch again. Show the user the loop's final text as it returned.",
-                 KEEP_DIRTY)
+                 "Stop. Do not re-dispatch again. Show the user the loop's final text as it returned.")
 
 
 def waited_on_stop(skill, stop_ts):
@@ -298,13 +308,13 @@ def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
     if unreviewed_in_a_row < 2:
         lines = ("The review-loop handed back clean but dispatched no reviewer. Nothing was routed, logged or posted.",
                  f"Re-dispatch review-loop once with the same arguments plus the line below, in place of any "
-                 f"`iter=` line, then run `packet --skill {skill}` again. Do not mark the gate clean.",
+                 f"`iter=` line, then run `packet --skill {skill}` again.",
                  f"iter={packet['iter']}")
     else:
         lines = (f"The review-loop handed back clean with no reviewer run {unreviewed_in_a_row} times in a row. "
                  "Nothing was routed, logged or posted.",
-                 "Stop. Do not re-dispatch again. Tell the user no reviewer ran, so the gate stays dirty.")
-    print_action("stop-no-reviewer", *lines, KEEP_DIRTY)
+                 "Stop. Do not re-dispatch again. Tell the user no reviewer ran, so the commit gate stays closed.")
+    print_action("stop-no-reviewer", *lines)
     return 2
 
 
@@ -330,10 +340,6 @@ def present_plan_impact(packet, state):
         f"Counters held for the re-dispatch: iter={packet['iter']} "
         f"spec_iter={packet['spec_iter'] if packet['spec_iter'] is not None else 'absent'}",
     )
-
-
-def gate_mark_line():
-    return f"Gate: `{MARK_CLEAN}` as its own Bash command, unless it already ran in parallel with this call."
 
 
 def save_packet_asks(packet, state):
@@ -368,7 +374,6 @@ def present_packet_asks(packet, state):
         "Never auto-fix an ask. If the repo's CLAUDE.md hands ask decisions to the session, decide each ask "
         "yourself and add `--by session` to asks-done; otherwise wait for the user.",
         asks_done_line(asks, state),
-        gate_mark_line(),
         *review_asks.numbered_ask_lines(asks, detail=True),
     ]
     print_action("present-asks", *lines)
@@ -525,16 +530,16 @@ def remaining_lines(packet):
 
 # The statuses that stop the caller: (the instruction, the packet's entry lines under it).
 STOP_STATUSES = {
-    "critical-blocker": ("Present these blockers and wait for direction. Do not re-dispatch. Do not run /fix. "
-                         "Do not mark the gate.", blocker_lines),
+    "critical-blocker": ("Present these blockers and wait for direction. Do not re-dispatch. Do not run /fix.",
+                         blocker_lines),
     "setup-fault": ("The full check could not run in this environment. This is a toolkit or environment fault, not a "
-                    "code failure. Present these lines and wait for direction. Do not re-dispatch. Do not run /fix. "
-                    "Do not mark the gate.", blocker_lines),
+                    "code failure. Present these lines and wait for direction. Do not re-dispatch. Do not run /fix.",
+                    blocker_lines),
     FIX_REMOVED_CHANGE: ("The fix passes removed half or more of the change under review. Present these lines "
-                         "and wait for direction. Do not re-dispatch. Do not run /fix. Do not mark the gate.",
+                         "and wait for direction. Do not re-dispatch. Do not run /fix.",
                          blocker_lines),
     CAP_REACHED: ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
-                    "run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.",
+                    "run /fix. The session stays dirty, so git commit stays blocked.",
                     remaining_lines),
 }
 
@@ -543,7 +548,7 @@ SCOPED_RERUN = ("The review cap was reached with a class still open. Report thes
                 "would find one more member at a time, so do not offer one: the next run is a scoped review of the "
                 "files the capped run's fixes touched. When the user asks to go on, dispatch review-loop "
                 "(model: \"sonnet\") with the dispatch lines below. "
-                "Do not run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.")
+                "Do not run /fix. The session stays dirty, so git commit stays blocked.")
 
 
 def scoped_rerun_lines(packet, skill):
@@ -611,6 +616,10 @@ def command_packet(argv):
     if state.get("stage") in FINISHED_STAGES:
         return print_action("done", f"This packet was already processed (stage {state['stage']}). Nothing was "
                             "logged or posted again. Continue from the step the first output named.")
+    logged_in_repo = repo_that_logged_packet_asks(packet_id)
+    if logged_in_repo:
+        return print_action("done", f"This packet's ask outcomes were already logged in "
+                            f"{logged_in_repo}. Nothing was logged or posted again. Run any later step there.")
 
     if packet["status"] == "plan-impact":
         return present_plan_impact(packet, state)
@@ -625,7 +634,7 @@ def command_packet(argv):
         fill_packet_ask_ids(packet, state)
         present_packet_asks(packet, state)
     else:
-        print_action("render-and-finish", gate_mark_line())
+        print_action("render-and-finish")
     sections = packet_sections(packet, state, replies, unreviewed_fix, capped_defer)
     print_user_block(handback.render(packet, options.skill, sections))
     print_logged(notes)
@@ -846,6 +855,8 @@ def command_asks_done(argv):
     if not failures and target is not state:
         state["waiting_packets"] = [kept for kept in state["waiting_packets"] if kept is not target]
     save_fix_state(state)
+    if not failures:
+        record_packet_asks_logged(target["packet_id"])
 
     rows_logged = sum(1 for index in target["asks_logged"] if not is_plan_impact_ask(asks[index]))
     summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."
@@ -964,9 +975,7 @@ def main():
             pass
         return 2
     except UsageError as error:
-        print_action("stop-usage", f"review_fix.py {command}: {error}",
-                     f"If you ran `{MARK_CLEAN}` alongside this call, run `{MARK_DIRTY}` now. Fix the call and run "
-                     "it again.")
+        print_action("stop-usage", f"review_fix.py {command}: {error}", "Fix the call and run it again.")
         return 2
 
 

@@ -1,0 +1,12 @@
+{
+ "tool_name": "TaskStop",
+ "tool_input": {
+  "task_id": "code"
+ },
+ "tool_response": {
+  "message": "Successfully stopped task: a38adc6939662fba6 (/code --task \"<task text>\")",
+  "task_id": "a38adc6939662fba6",
+  "task_type": "local_agent",
+  "command": "/code --task \"<task text>\""
+ }
+}

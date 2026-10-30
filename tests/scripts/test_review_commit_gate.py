@@ -23,7 +23,8 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("lib", "full_check_receipt.py"), ("lib", "pytest_config.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
-                 "the commit ships only Markdown files under the repo's top-level docs/ folder, run it as a "
+                 "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
+                 "in the repo's .claude/notes-paths, run it as a "
                  "plain `git commit` (with `git add` of single named files if needed) from the repo root in its "
                  "own Bash call, with no `cd`, `env` or `git -C`, because the gate passes that form. A commit "
                  "after a `cd` earns no credit even when a review converged: run it as `git -C <dir> commit`.")
@@ -421,6 +422,99 @@ class NotesOnlyCommitTest(GateCase):
         self.stage("src/a.py")
         self.assert_commit_denied(self.commit_in('git commit -q -m "code"'))
         self.assertEqual(self.state(), "dirty\n")
+
+    def commit_notes_list(self, text="# queue notes\nqueue/\n\nQUEUE.md\n", repo=None):
+        """Commit `.claude/notes-paths` in the test repo, so HEAD holds the list."""
+        repo = repo or self.repo
+        self.stage(".claude/notes-paths", repo=repo)
+        (repo / ".claude" / "notes-paths").write_text(text)
+        self.git(repo, "add", "--", ".claude/notes-paths")
+        self.git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "list")
+
+    def test_a_commit_of_listed_notes_is_not_denied_in_a_dirty_session(self):
+        self.commit_notes_list()
+        self.stage("queue/item.md", "QUEUE.md", "docs/x.md")
+        self.assert_silent(self.commit_in('git commit -q -m "queue"'))
+        self.assertEqual(self.state(), "dirty\n")
+
+    def test_a_listed_folder_with_a_non_markdown_file_is_denied(self):
+        self.commit_notes_list()
+        self.stage("queue/item.txt")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "queue"'))
+
+    def test_an_unlisted_markdown_path_is_denied(self):
+        self.commit_notes_list()
+        self.stage("other/item.md")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "other"'))
+
+        for path in ("queue-old/item.md", "src/queue/item.md", "src/QUEUE.md", "QUEUE.md/item.md"):
+            with self.subTest(path=path):
+                repo = self.make_repo("unlisted-" + path.replace("/", "-"))
+                self.commit_notes_list(repo=repo)
+                self.stage(path, repo=repo)
+                self.assert_commit_denied(self.commit_in('git commit -q -m "other"', repo))
+
+    def test_no_list_in_head_denies_a_queue_note(self):
+        self.stage("queue/item.md")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "queue"'))
+
+    def test_a_list_edited_only_in_the_working_tree_grants_nothing(self):
+        self.commit_notes_list("# nothing listed\n")
+        self.stage("queue/item.md")
+        (self.repo / ".claude" / "notes-paths").write_text("queue/\n")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "queue"'))
+
+    def test_a_commit_that_ships_the_list_itself_is_denied(self):
+        self.commit_notes_list("queue/\n.claude/\n.claude/notes-paths\n")
+        (self.repo / ".claude" / "notes-paths").write_text("queue/\n.claude/\n.claude/notes-paths\n# edited\n")
+        self.git(self.repo, "add", "--", ".claude/notes-paths")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "list"'))
+
+    def test_a_list_entry_that_is_not_a_normalized_literal_denies_and_names_its_line(self):
+        for entry in ("/queue/", "./queue/", "queue/*.md", "queue/../x.md", "../x.md", "./", "queue//",
+                      "queue/./a.md", "../queue/", "."):
+            with self.subTest(entry=entry):
+                repo = self.make_repo("bad-" + entry.replace("/", "-").replace("*", "x"))
+                self.commit_notes_list(f"# notes\n{entry}\n", repo=repo)
+                self.stage("queue/item.md", repo=repo)
+                finished = self.commit_in('git commit -q -m "queue"', repo)
+                self.assert_denies(finished, f".claude/notes-paths:2: entry {entry!r}")
+
+    def test_the_check_verb_prints_each_bad_entry_with_its_line_and_exits_1(self):
+        list_file = self.tmp / "list"
+        list_file.write_text("# notes\nqueue/\n/queue/\nQUEUE.md\n")
+        finished = subprocess.run([sys.executable, str(self.script), "check", str(list_file)], capture_output=True,
+                                  text=True)
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn(f"{list_file}:3: entry '/queue/'", finished.stderr)
+        list_file.write_text("queue/\nQUEUE.md\n")
+        finished = subprocess.run([sys.executable, str(self.script), "check", str(list_file)], capture_output=True,
+                                  text=True)
+        self.assertEqual((finished.returncode, finished.stderr), (0, ""))
+
+    def test_a_bad_list_does_not_change_the_verdict_of_a_code_or_docs_only_commit(self):
+        self.commit_notes_list("/queue/\n")
+        self.stage("src/a.py")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "code"'))
+        repo = self.make_repo("bad-list-docs")
+        self.commit_notes_list("/queue/\n", repo=repo)
+        self.stage("docs/a.md", repo=repo)
+        self.assert_silent(self.commit_in('git commit -q -m "docs"', repo))
+
+    def test_a_bad_list_does_not_replace_the_review_deny_of_code_mixed_with_a_note(self):
+        self.commit_notes_list("/queue/\n")
+        self.stage("src/a.py", "queue/item.md")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "mixed"'))
+
+    def test_the_check_verb_with_a_wrong_argument_count_prints_usage_and_exits_2(self):
+        finished = subprocess.run([sys.executable, str(self.script), "check"], capture_output=True, text=True)
+        self.assertEqual(finished.returncode, 2)
+        self.assertIn("usage: review_commit_gate.py check <file>", finished.stderr)
+
+    def test_a_listed_note_mixed_with_code_is_denied(self):
+        self.commit_notes_list()
+        self.stage("queue/item.md", "src/a.py")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "mixed"'))
 
     def test_add_then_commit_of_a_notes_file_is_not_denied_with_an_empty_or_a_docs_index(self):
         command = f'git add {self.NOTES} && git commit -q -m "notes"'

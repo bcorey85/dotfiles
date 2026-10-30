@@ -44,6 +44,7 @@ STOP_ROW_WAIT_SECONDS = 15
 LAUNCH_EXPECTED_SECONDS = 60
 PLAN_EDIT_STAGES = ("plan-coder", "impact-coder", "impact-review")
 PLAN_EDIT_STOP_REASONS = ("verification", "plan-format")
+MISSING_PLAN_STOP = "The plan file {plan} is missing (a branch switch?). Tell the user."
 BASH_TIMEOUT_MS = 600000
 CODER = "coder"
 REVIEW_LOOP = "review-loop"
@@ -754,6 +755,13 @@ def take_handback(repo_dir, state, agent_type, missing_text):
     return handback
 
 
+def current_phase_text(repo_dir, plan_rel, phase):
+    # The plan's text for the phase, or None when the plan has no such phase. An unreadable plan raises OSError,
+    # so a caller can tell it from a phase that is gone.
+    plan_lines = (repo_dir / plan_rel).read_text().splitlines()
+    return plan_format.phase_text(plan_lines, phase)
+
+
 def own_phase_text(repo_dir, state):
     # The plan's current section for the run's phase when the run's own agent may have left it: the plan reads, the
     # phase exists and its heading is the saved one. Otherwise None, and the stale check decides.
@@ -761,11 +769,10 @@ def own_phase_text(repo_dir, state):
         return None
 
     try:
-        plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+        current_text = current_phase_text(repo_dir, state["plan"], state["phase"])
     except OSError:
         return None
 
-    current_text = plan_format.phase_text(plan_lines, state["phase"])
     if current_text is None:
         return None
 
@@ -1191,11 +1198,10 @@ def stale_phase_reason(repo_dir, state):
     is_plan_fix_stop = stop_kind(state) in PLAN_EDIT_STOP_REASONS
 
     try:
-        plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
+        current_text = current_phase_text(repo_dir, state["plan"], state["phase"])
     except OSError:
         return None if is_plan_fix_stop else f"{state['plan']} cannot be read"
 
-    current_text = plan_format.phase_text(plan_lines, state["phase"])
     if current_text is None:
         return f"Phase {state['phase']} is no longer in {state['plan']}"
     if is_plan_fix_stop:

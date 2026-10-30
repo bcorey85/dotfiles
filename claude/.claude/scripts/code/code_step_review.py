@@ -31,6 +31,7 @@ from code_step_boundary import (
 )
 from code_step_core import (
     CLAUDE_DIR,
+    MISSING_PLAN_STOP,
     PLAN_EDIT_STOP_REASONS,
     RESUME_VERB,
     REVIEW_LOOP,
@@ -43,6 +44,7 @@ from code_step_core import (
     awaits_resumed_review,
     branch_label,
     clear_stop,
+    current_phase_text,
     dispatch_marker,
     emit,
     emit_dispatch,
@@ -262,7 +264,7 @@ def command_decide(repo_dir, state, args, ruling_by=None):
     if problem:
         return emit("stop", problem)
     if state.get("plan") and not (repo_dir / state["plan"]).is_file():
-        return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
+        return emit("stop", MISSING_PLAN_STOP.format(plan=state["plan"]))
 
     record_ruling(repo_dir, state, decision, by, ruling_words, ruling_by)
     if decision == plan_format.PLAN_IMPACT_OPTIONS[0]:
@@ -395,8 +397,7 @@ def settle_plan_edit(repo_dir, state, edited_files):
     allowed_files = (state["plan"], criteria_path) if state["ruling"]["byUser"] else (state["plan"],)
     flag_stray_plan_edits(state, [name for name in edited_files if name not in allowed_files])
 
-    plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
-    state["phaseText"] = plan_format.phase_text(plan_lines, state["phase"])
+    state["phaseText"] = current_phase_text(repo_dir, state["plan"], state["phase"])
 
     plan_note = f"The plan {state['plan']} now states the ruling."
     if criteria_path and criteria_path in edited_files and state["ruling"]["byUser"]:

@@ -43,6 +43,20 @@ class ItemVerdictTest(unittest.TestCase):
         self.assertIn(criteria_verdict.NO_TEST_MATCHED_NOTE, verdict.output)
         self.assertIn("matches no test", verdict.flag)
 
+    def test_a_filtered_run_that_prints_no_runner_summary_and_passes_no_test_is_red(self):
+        for command in ("echo pytest -k nothing", "! cargo test x"):
+            with self.subTest(command=command):
+                verdict = criteria_verdict.item_verdict(command, f"`{command}` passes", 0, "")
+                self.assertEqual((verdict.outcome, verdict.code), ("RED", 1))
+                self.assertIn(criteria_verdict.NO_TEST_MATCHED_NOTE, verdict.output)
+
+    def test_a_presence_search_for_a_filtered_runner_command_line_is_red_with_the_flag(self):
+        command = "rg -n 'pytest -k foo' docs"
+        output = "docs/a.md:1:pytest -k foo\n"
+        verdict = criteria_verdict.item_verdict(command, f"`{command}` finds the line", 0, output)
+        self.assertEqual((verdict.outcome, verdict.code), ("RED", 1))
+        self.assertIn("matches no test", verdict.flag)
+
     def test_a_git_grep_line_with_presence_and_ban_wording_is_a_ban(self):
         line = "- [ ] **Prohibition**: no match, the call must not exist - `git grep -n x -- src`"
         self.assertTrue(criteria_verdict.is_search_ban("git grep -n x -- src", line))

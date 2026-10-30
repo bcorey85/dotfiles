@@ -21,6 +21,11 @@ class GuidanceRulesTest(unittest.TestCase):
                 self.assertIn("zsh", text)
                 self.assertIn('files=(a b); for f in "${files[@]}"', text)
 
+    def test_a_child_session_in_list_agents_is_not_taken_for_a_rival_worker(self):
+        text = guidance_text("orchestration.md")
+        self.assertIn("A ListAgents peer named `child of <name>` is a headless step of that session's run, not a "
+                      "rival worker", text)
+
     def test_the_code_fork_acts_on_a_stop_question_the_user_already_answered(self):
         text = guidance_text("agents/code-fork.md")
         self.assertIn("When the user already answered the run's last stop question in this conversation, run the "
@@ -37,6 +42,11 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("only after the branch reports `/verify-branch` done and, where the repo's CLAUDE.md names a "
                       "non-negotiables check, that check passed", text)
         self.assertIn("A green gate or CI run alone never produces that line.", text)
+
+    def test_the_orchestrator_never_answers_a_question_put_to_the_user_in_another_session_s_pane(self):
+        text = guidance_text("orchestration.md")
+        self.assertIn("Never submit text in another session's input box to answer a question put to the user", text)
+        self.assertIn("tell the user to answer in that pane", text)
 
     def test_a_coder_runs_a_changed_test_file_through_the_sharding_runner(self):
         text = repo_doc_text("toolkit-script-rules.md")

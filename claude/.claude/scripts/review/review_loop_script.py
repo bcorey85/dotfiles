@@ -62,6 +62,7 @@ from concurrent.futures import ThreadPoolExecutor
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 # The file in the loop's state folder that holds the whole output of a red scoped test run.
 SCOPED_TESTS_LOG = "scoped-tests.log"
+STALE_PROSE_LOG = "stale-prose.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import change_removal
 import code_step_core
@@ -776,12 +777,58 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")
 
-    def scoped_tests_pass(self, gate_commands):
-        """The phase's scoped tests after a fix that no passed full check ran after. A red one stops the loop."""
+    def scoped_tests_pass(self, check_command, gate_commands):
+        """The phase's scoped tests after a fix that no passed full check ran after. A red one stops the loop. The
+        stale-prose check is no test: its hits go to the coder."""
+        test_commands = [command for command in gate_commands if not coder_gate.is_stale_prose_check(command)]
+        if not self.run_test_commands(test_commands):
+            return
+
+        prose_commands = [command for command in gate_commands if coder_gate.is_stale_prose_check(command)]
+        if self.stale_prose_pass(check_command, prose_commands) and self.status == "converged" and self.untested_fix:
+            self.run_test_commands(test_commands)
+
+    def run_test_commands(self, test_commands):
+        """Run the scoped test commands and keep their result. False, with the loop stopped, when one is red."""
         log_path = self.out / SCOPED_TESTS_LOG
-        self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, gate_commands, self.gate_env, log_path)
+        self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, test_commands, self.gate_env, log_path)
         if tails:
             self.stop("critical-blocker", ["scoped tests failing after the last fix:\n" + "\n\n".join(tails)])
+            return False
+
+        return True
+
+    def stale_prose_pass(self, check_command, prose_commands):
+        """One coder pass on the stale-prose hits of the last fix. Only a real hit (exit 1) goes to the coder, who
+        fixes each claim that no longer holds and leaves the rest; with no edit the last pass stays the one before it,
+        and with one the full check runs again. Any other failure of the check stops as `critical-blocker`, and a
+        result that is neither a pass nor a hit joins `scoped_tests`. True when the coder edited a file."""
+        if not prose_commands:
+            return False
+
+        log_path = self.out / STALE_PROSE_LOG
+        result, hit_outputs, script_failures = coder_gate.run_stale_prose_check(self.repo, prose_commands,
+                                                                                self.gate_env, log_path)
+        if script_failures:
+            self.stop("critical-blocker", ["stale-prose check failing:\n" + "\n\n".join(script_failures)])
+            return False
+
+        if not hit_outputs:
+            if result != coder_gate.SCOPED_PASSED:
+                self.scoped_tests += f"; stale-prose check {result}"
+            return False
+
+        hits = [parse_finding("\n\n".join(hit_outputs))]
+        pass_before_repair = self.last_pass
+        _report, _diffs, prose_changed = self.repair("coder-prose", hits)
+        self.mark_repaired(hits, prose_changed)
+        if not prose_changed:
+            self.last_pass = pass_before_repair
+            return False
+
+        self.next_round()
+        self.recheck_full_check(check_command, "full check failing after the stale-prose repair")
+        return True
 
     def outcome(self, ask_ids, ask_rows):
         return {
@@ -827,7 +874,7 @@ def walk(loop, check_command, gate_commands):
     if loop.status == "converged":
         loop.class_closure_pass(check_command)
     if loop.status == "converged" and loop.untested_fix:
-        loop.scoped_tests_pass(list(gate_commands))
+        loop.scoped_tests_pass(check_command, list(gate_commands))
 
 
 def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):

@@ -788,6 +788,10 @@ class TicketOnlyLogTest(VerifyBranchBase):
 class ReviewGateTest(VerifyBranchBase):
     """verify-log refuses to write unless a marked branch review covers the tree prep measured."""
 
+    # What verify-prep saved for this class's base repo and task dir before the tree fingerprint moved to
+    # reviewed_tree: a context written then must still match the unchanged tree.
+    EARLIER_FINGERPRINT = "sha256:a6badc15fc873e85a88eec3363cf8d7e76e146e26e29f2aed7d19f8463914782"
+
     def setUp(self):
         super().setUp()
         self.task_dir()
@@ -845,6 +849,20 @@ class ReviewGateTest(VerifyBranchBase):
         self.git("checkout", "--", "src/a.py")
         self.write("late.txt", "x\n")
         self.assertEqual(self.log("--rows", "-", stdin=self.rows()).returncode, 2)
+
+    def test_a_context_saved_with_the_earlier_fingerprint_of_an_unchanged_tree_passes_the_tree_check(self):
+        self.task_dir()
+        self.assertEqual(self.prep().returncode, 0)
+        context_file = next((self.temp_root / "state").glob("*.json"))
+        context = json.loads(context_file.read_text())
+        context["fingerprint"] = self.EARLIER_FINGERPRINT
+        context_file.write_text(json.dumps(context))
+        self.assertEqual(self.log_review().returncode, 0)
+
+        done = self.log("--rows", "-", stdin=self.rows())
+
+        self.assertNotIn("changed since verify-prep", done.stderr)
+        self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_review_logged_for_a_new_tree_without_a_new_prep_exits_2(self):
         self.write("src/a.py", "print(2)\n")

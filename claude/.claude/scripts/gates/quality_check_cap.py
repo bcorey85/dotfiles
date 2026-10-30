@@ -183,7 +183,7 @@ def timed_git_output(cwd, *args):
     return script_utils.git_output(cwd, *args, timeout=GIT_TIMEOUT_SECONDS)
 
 
-def tree_fingerprint(cwd):
+def git_state_hash(cwd):
     """A hash of HEAD, the diff against HEAD and the untracked file list: it changes when git (merge, pull,
     checkout, reset, rebase, apply...) or any shell write changes the tree. None when cwd is not a repo or git fails."""
     top = timed_git_output(cwd, "rev-parse", "--show-toplevel")
@@ -330,7 +330,7 @@ def record_runs(checks, steps, succeeded, state_dir, has_formatter):
             continue
 
         start_ns = take_run_start(check.run_file)
-        record = [tree_fingerprint(check.cwd) or ""]
+        record = [git_state_hash(check.cwd) or ""]
         if check.output_cut:
             record.append(CUT_MARK)
         if start_ns is not None and not has_formatter:
@@ -359,7 +359,7 @@ def tree_changed_since_run(cwd, run_file):
     recorded = recorded_fingerprint(run_file)
     if not recorded:
         return False
-    return tree_fingerprint(cwd) != recorded
+    return git_state_hash(cwd) != recorded
 
 
 def normalize(segment):

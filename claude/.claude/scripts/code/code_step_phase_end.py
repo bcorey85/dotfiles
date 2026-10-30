@@ -39,13 +39,18 @@ def block_heading(block, number, risk_label, state, has_open_gate):
     return f"Phase {number} complete." if has_open_gate else f"Phase {number} complete (last phase)."
 
 
-def block_sections(state, manual_groups):
+def block_sections(state, manual_groups, committed_files=None):
+    # committed_files is set when a headless run commits the phase itself: the block names them in place of the
+    # /stage queue a person reads.
     parts = []
     behavior = state.behavior or []
     if behavior:
         parts += ["Behavior delta (observable change + its proof, max 3 - no internals, no paths):",
                   *[f"- {line}" for line in behavior[:3]], ""]
-    parts += ["Read first (/stage queue, blast-radius order):", "<<STAGE QUEUE>>", ""]
+    if committed_files is None:
+        parts += ["Read first (/stage queue, blast-radius order):", "<<STAGE QUEUE>>", ""]
+    else:
+        parts += [f"Files this run commits: {', '.join(committed_files) or 'nothing (no file changed)'}", ""]
     if manual_groups["verified"]:
         parts += ["Verified (checked, or marked agent-verified in the plan):", *manual_groups["verified"], ""]
     if manual_groups["notRun"]:
@@ -87,10 +92,11 @@ def block_c_next_steps(is_only_phase, gate_block_message, moved_text):
             "human-only checks), then you open the PR."]
 
 
-def block_b_or_c(block, number, risk_label, state, manual_groups, next_number, gate_block_message="", moved_text=""):
+def block_b_or_c(block, number, risk_label, state, manual_groups, next_number, gate_block_message="", moved_text="",
+                 committed_files=None):
     has_open_gate = number is not None and bool(gate_block_message)
     heading = block_heading(block, number, risk_label, state, has_open_gate)
-    parts = [heading, "", *block_sections(state, manual_groups)]
+    parts = [heading, "", *block_sections(state, manual_groups, committed_files)]
     if block == "B":
         return "\n".join(parts + block_b_next_steps(number, next_number, manual_groups))
 

@@ -89,7 +89,7 @@ class CleanStatusOneOwnerTest(unittest.TestCase):
         return review_commit_gate.review_handed_back_since(SESSION, 0, str(self.repo))
 
     def clean_by_phase_gate(self):
-        # The /code run stores the effective status of the packet it read as reviewStatus.
+        # The /code run stores the effective status of the packet it read as review_status.
         seen = handback_store.latest(SESSION)
         review_status = handback.stored_effective_status(seen) if seen["handback"] else None
         state = code_step_state.RunState(stage="review", session_id=SESSION, review_status=review_status)

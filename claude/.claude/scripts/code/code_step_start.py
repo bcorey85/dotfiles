@@ -67,7 +67,6 @@ from code_step_start_args import (
     is_flag,
     outside_repo_plan_refusal,
     read_task_file,
-    run_notes_lines,
     split_plan_words,
     split_quoted_flags,
     start_repo_path,
@@ -770,12 +769,12 @@ def start_phase_coder(repo_dir, previous, branch, parsed, phase):
     phase_description = f"Phase {number} of `{plan_rel}`" if use_packet else f"`{plan_rel}`"
     prompt = (f"Implement {phase_description}. Read the plan phase-scoped.\n"
               f"{ENG_SPEC_BRIEF}\n\n" + packet_body).rstrip()
-    prompt = "\n".join([prompt, *run_notes_lines(parsed.run_notes)])
     state = {"stage": "coder", "plan": plan_rel, "lane": phase["lane"], "phase": state_phase, "branch": branch,
              "modifier": parsed.modifier, "risk": entry["risk"] if entry else "high",
              "title": entry["title"] if entry else "", "gateCommands": commands, "baseline": baseline,
              "baseHead": base_head, "startedAt": time.time(), "phaseText": section if use_packet else None,
-             "onlyPhase": parsed.phase_id, "headless": parsed.headless, "sessionId": session_pin(), "runId": run_id}
+             "onlyPhase": parsed.phase_id, "headless": parsed.headless, "sessionId": session_pin(), "runId": run_id,
+             "runNotes": parsed.run_notes}
     open_dispatch(state)
     save_state(repo_dir, state)
     model = coder_model(parsed.modifier)
@@ -830,7 +829,7 @@ def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section, run_no
         f"Phase {number} ({title}) is a closing phase. Invoke the Skill tool with "
         f"`{skill}`; a coder is not dispatched.",
         *section_lines,
-        *run_notes_lines(run_notes),
+        *script_utils.run_notes_lines(run_notes),
         *ruled_lines,
         *gate_report,
         *evidence_request_lines(open_items),

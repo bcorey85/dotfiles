@@ -39,8 +39,8 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 and texts, archive state.json as aborted-<UTC time>.json; the working
                                                 tree stays as it is
   code_step.py guide "<text>"                   record the main session's guidance in the open run; every later coder
-                                                and review dispatch carries it (code_guidance). It changes neither the
-                                                task nor the plan
+                                                and review dispatch of this phase carries it (code_guidance).
+                                                It changes neither the task nor the plan
   code_step.py hook                             PreToolUse hook on SubagentHandback: deny the fork's hand-back while a
                                                 dispatched agent is still out
   code_step.py log-hook                         PostToolUse hook on Agent|SubagentHandback|SendMessage|TaskStop: log
@@ -718,7 +718,7 @@ def command_guide(args):
 
     record_guidance(state, text)
     save_state(repo_dir, state)
-    emit("go-on", "Guidance recorded. Every later coder and review dispatch of this run carries it.")
+    emit("go-on", "Guidance recorded. Every later coder and review dispatch of this phase carries it.")
 
 
 def command_status():

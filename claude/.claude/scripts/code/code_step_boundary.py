@@ -458,6 +458,11 @@ def run_phase_verification(repo_dir, state, section):
     return verify_results, skipped
 
 
+def not_run_label(tag):
+    # An agent-run item is the session's to run, so its done line says who runs it; the other tags name only themselves.
+    return f"{tag}, the session runs it" if tag == plan_format.AGENT_RUN_TAG else tag
+
+
 def done_line_of(state, section, verify_results, skipped, reopened):
     # The one line that says what the phase's close ran.
     number = state["phase"]
@@ -471,7 +476,8 @@ def done_line_of(state, section, verify_results, skipped, reopened):
         commands = "; ".join(c for c, _, _ in verify_results) or "none"
         done_line = (f"{done_text} Verification run: {len(verify_results)} command(s) green ({commands}); "
                      f"skipped as covered by the review loop: {len(skipped)}.")
-        not_run_here = [f"not run here: {tag} - {text[:120]}" for tag, text in deferred_verification_items(section)]
+        not_run_here = [f"not run here: {not_run_label(tag)} - {text[:120]}"
+                        for tag, text in deferred_verification_items(section)]
         if not_run_here:
             done_line += " " + "; ".join(not_run_here) + "."
     if reopened:

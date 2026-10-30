@@ -35,12 +35,14 @@ VERIFICATION_ITEM_SHAPE = (
     "'- [ ] **Name**: what it checks - `npm test`'. A check that needs a variable assignment, `&&`, a pipe or a "
     "subshell goes in an executable repo script, run as `path/to/script args`; the script's comments name no ticket "
     "or plan path. Never wrap a command in `sh -c` or `bash -c`. (2) N/A, for example '- [ ] N/A - docs only'. "
-    "(3) A tag that says CI or a person runs it, for example '- [ ] **CI-verified**: the pipeline runs it' or "
-    "'- [ ] Human-only: look at the page'. This script never runs the third shape.")
+    "(3) A tag that says CI, a person, or an agent runs it, for example '- [ ] **CI-verified**: the pipeline runs "
+    "it', '- [ ] Human-only: look at the page' or '- [ ] **Agent-run**: time the import on the real data'. This "
+    "script never runs the third shape.")
 
 
 def deferred_verification_items(phase_section):
-    # (tag, item text) for each Automated Verification item the plan leaves to CI or to a person, in file order.
+    # (tag, item text) for each Automated Verification item the plan leaves to CI, a person, or an agent (Agent-run),
+    # in file order.
     deferred = []
     for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
         tag = plan_format.deferred_verification_tag(line)
@@ -135,7 +137,7 @@ def verification_item_problem(line, repo_dir):
 
     spans = script_utils.backticked_spans(line)
     if not spans:
-        return "it has no backticked command and is not marked N/A, CI-verified or human-only"
+        return "it has no backticked command and is not marked N/A, CI-verified, human-only or agent-run"
 
     start_words = []
     for span in spans:

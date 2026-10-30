@@ -731,6 +731,27 @@ class GateEnvTest(unittest.TestCase):
             with self.subTest(item=item):
                 self.assertTrue(plan_format.runs_no_command(item))
 
+    def test_an_agent_run_item_is_tagged_in_any_case_with_or_without_a_bold_label(self):
+        for item in ("- [ ] **Agent-run**: time the import on the real data",
+                     "- [ ] Agent-run: run it on the live home", "- [x] agent-run: done", "- [ ] **AGENT-RUN**: x"):
+            with self.subTest(item=item):
+                self.assertEqual("agent-run", plan_format.deferred_verification_tag(item))
+                self.assertTrue(plan_format.runs_no_command(item))
+
+    def test_an_agent_run_item_gives_no_gate_variables(self):
+        plan = "#### Automated Verification:\n\n- [ ] **Agent-run**: time `SLOW=1 make import`\n"
+
+        self.assertEqual([], plan_format.gate_env(plan))
+
+    def test_an_open_agent_run_box_still_needs_evidence_but_ci_and_human_only_boxes_do_not(self):
+        lines = ["#### Automated Verification:", "", "- [ ] **Agent-run**: time the import",
+                 "- [ ] **CI-verified**: the pipeline", "- [ ] Human-only: look", "- [ ] N/A - docs",
+                 "- [ ] `make test`"]
+
+        items = plan_format.open_success_items(lines)
+
+        self.assertEqual([2, 6], [item["index"] for item in items])
+
     def test_an_item_with_a_command_runs_it_even_when_it_mentions_ci_or_n_a_later(self):
         for item in ("- [ ] **Unit**: `npm test`, not CI-verified", "- [ ] **Check**: `make check` (N/A on mac)",
                      "- [ ] `RUN x`"):

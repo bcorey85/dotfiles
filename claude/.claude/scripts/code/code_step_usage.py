@@ -5,19 +5,22 @@ parser in code_step_start_args.
 Imports run one way: script_utils, code_step_usage, then code_step_boundary and code_step_review, then code_step."""
 import sys
 
+import plan_format
 import script_utils
 
-DECIDE_COMMAND = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
 ANSWER_USAGE = ('usage: code_step.py resume ["<the user\'s answer to the stopped coder>"]\n'
                 'Goes on with the saved run, whatever stage or stop it is in. Only a coder that waits for the user\'s '
                 'answer takes one, and the answer must not start with "-".')
 VERB_USAGES = {
     "resume": ANSWER_USAGE,
-    "decide": f"usage: code_step.py {DECIDE_COMMAND}\n       code_step.py decide discuss",
+    "decide": f"usage: code_step.py {plan_format.DECIDE_USAGE_STEM}\n       code_step.py decide discuss",
     "asks-done": ('usage: code_step.py asks-done [--by <user|session>] [--also "<text>"] '
                   '<accepted|rejected|modified>...\n'
                   'One outcome per ask, in order. --also carries other work the user named alongside the outcomes '
                   'to the coder.'),
+    "correct-ruling": ('usage: code_step.py correct-ruling [--by <user|session>] [--also "<text>"] '
+                       '<accepted|rejected|modified>...\n'
+                       'The same words as asks-done, to correct the rulings while the asks coder runs.'),
     "skill-done": ('usage: code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...\n'
                    'A closing phase\'s skill returned.'),
     "verify": ("usage: code_step.py verify\nRuns the phase gates and closes the phase, after a failed Automated "
@@ -26,6 +29,8 @@ VERB_USAGES = {
                      "Dispatches the review loop again on the same diff, after a stop that names it."),
     "tick": "usage: code_step.py tick <phase id>\nMarks a phase done that the user finished outside /code.",
     "abort": "usage: code_step.py abort\nEnds the open run on purpose. The working tree stays as it is.",
+    "guide": ('usage: code_step.py guide "<text>"\nRecords the main session\'s guidance in the open run. Every later '
+              'coder and review dispatch carries it. It changes neither the task nor the plan.'),
     "status": "usage: code_step.py status\nPrints the saved state.",
     "plan": "usage: code_step.py plan check [--final]|parse <path>",
 }

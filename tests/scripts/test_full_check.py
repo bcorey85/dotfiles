@@ -251,6 +251,17 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(["full check: passed (check only; CI runs the full suite)"], completed.stdout.splitlines())
         self.assertTrue(marker.exists())
 
+    def test_a_trimmed_and_step_of_the_declared_check_of_a_repo_whose_full_suite_runs_in_ci_runs(self):
+        completed = self.check("echo two", claude_md="- Full suite: CI\n- Quality check: `echo one && echo two`\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(["full check: passed (check only; CI runs the full suite)"], completed.stdout.splitlines())
+
+    def test_a_step_missing_from_the_declared_check_of_a_repo_whose_full_suite_runs_in_ci_is_not_run(self):
+        completed = self.check("echo three", claude_md="- Full suite: CI\n- Quality check: `echo one && echo two`\n")
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
+
     def test_a_failing_declared_check_of_a_repo_whose_full_suite_runs_in_ci_fails(self):
         completed = self.check("exit 3", claude_md="- Full suite: CI\n- Quality check: `exit 3`\n")
 
@@ -273,6 +284,17 @@ class FullCheckTest(unittest.TestCase):
         with self.subTest(command="pytest tests/test_a.py", repo="CI"):
             in_ci = self.check("pytest tests/test_a.py", claude_md="# Repo\n\n- Full suite: CI\n")
             self.assertEqual(in_ci.stdout.splitlines()[0], "full check: not run (CI)")
+
+    def test_a_ci_repo_refuses_a_subset_of_its_quality_check_steps_scoped_to_tests(self):
+        marker = self.repo / "ran"
+        claude_md = "- Full suite: CI\n- Quality check: `pytest tests/unit && pytest tests/integration`\n"
+
+        completed = self.check(f"touch {marker}; pytest tests/unit", claude_md=claude_md)
+        self.assertTrue(completed.stdout.startswith("full check: not run (CI)"), completed.stdout)
+
+        completed = self.check("pytest tests/unit", claude_md=claude_md)
+        self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
+        self.assertFalse(marker.exists())
 
     def test_a_runner_that_check_scope_reads_by_its_flags_is_not_run_on_named_files_or_tests(self):
         marker = self.repo / "ran"
@@ -314,6 +336,27 @@ class FullCheckTest(unittest.TestCase):
                 self.assertTrue(completed.stdout.startswith("full check: not run (unresolved command"),
                                 completed.stdout)
                 self.assertFalse(marker.exists())
+
+    def test_run_refuses_a_scoped_command_for_a_caller_that_does_not_go_through_main(self):
+        marker = self.repo / "ran"
+
+        result, tail, details = full_check.run(self.repo, f"touch {marker}; cargo test -p core", self.log, 60)
+
+        self.assertEqual(result, full_check.NOT_RUN_SCOPED)
+        self.assertEqual(tail, "")
+        self.assertEqual(details, full_check.empty_details())
+        self.assertFalse(marker.exists())
+        self.assertFalse(self.log.exists())
+
+    def test_run_still_runs_the_declared_command_when_it_names_a_tests_folder(self):
+        marker = self.repo / "ran"
+        declared = f"touch {marker}; pytest tests/"
+        (self.repo / "CLAUDE.md").write_text(f"Quality check: `{declared}`\n")
+
+        result, _, _ = full_check.run(self.repo, declared, self.log, 60)
+
+        self.assertNotEqual(result, full_check.NOT_RUN_SCOPED)
+        self.assertTrue(marker.exists())
 
     def test_the_command_the_claude_md_declares_runs_even_when_it_names_a_tests_folder(self):
         marker = self.repo / "ran"
@@ -486,6 +529,14 @@ class BaseComparisonTest(unittest.TestCase):
         check = "grep -q 'limit = 1' app.py || { echo 'FAIL: test_new'; exit 1; }"
 
         self.assertIsNone(self.base_lines(check))
+
+    def test_a_base_run_of_a_declared_scoped_looking_command_is_not_refused_when_the_claude_md_is_untracked(self):
+        declared = "echo 'FAIL: test_old'; pytest tests/; exit 1"
+        (self.repo / "CLAUDE.md").write_text(f"Quality check: `{declared}`\n")
+
+        base = self.base_lines(declared)
+
+        self.assertEqual((base.result, base.failing_lines), ("failed (exit 1)", {"FAIL: test_old"}))
 
     def test_a_base_run_that_hits_a_setup_fault_has_no_base_failure(self):
         self.assertIsNone(self.base_lines("echo 'ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND'; exit 1"))
@@ -806,6 +857,44 @@ class LinkedInstallsTest(unittest.TestCase):
         env = {"CONDA_PREFIX": str(self.scratch / "conda")}
 
         self.assertTrue(linked_installs.holds_editable_install(self.repo, env))
+
+
+class PhaseExpectedRedTest(unittest.TestCase):
+    QUALITY_CHECK = f"{PASSING_SUITE} && exit 1"
+    PLAN = ("## Phase Status\n\n- [ ] Phase 1: Totals (risk: low)\n- [ ] Phase 2: Audit (risk: low)\n\n"
+            "## Phase 1: Totals\n\nExpected red: `{command}` until Phase 2\n\n## Phase 2: Audit\n")
+
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name)
+        self.log = self.repo / "review-gate.log"
+        (self.repo / "CLAUDE.md").write_text(f"Quality check: `{self.QUALITY_CHECK}`\n")
+
+    def check(self, *plan_args, expected_red="exit 1"):
+        (self.repo / "plan.md").write_text(self.PLAN.format(command=expected_red))
+        argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log), *plan_args]
+        return subprocess.run([*argv, "--", self.QUALITY_CHECK], capture_output=True, text=True, timeout=60)
+
+    def test_the_phase_runs_its_check_without_the_expected_red_step(self):
+        completed = self.check("--plan", "plan.md", "--phase", "1")
+
+        self.assertEqual(0, completed.returncode, completed.stdout)
+        self.assertIn("expected red: `exit 1` until Phase 2", completed.stdout)
+
+    def test_without_a_plan_the_step_still_fails_the_check(self):
+        self.assertEqual(1, self.check().returncode)
+
+    def test_the_whole_check_expected_red_is_not_run(self):
+        completed = self.check("--plan", "plan.md", "--phase", "1", expected_red=self.QUALITY_CHECK)
+
+        self.assertEqual(0, completed.returncode, completed.stdout)
+        self.assertEqual("full check: not run (expected red until Phase 2)", completed.stdout.splitlines()[0])
+        self.assertFalse(self.log.exists())
+
+    def test_a_plan_without_its_phase_or_an_unreadable_plan_is_refused(self):
+        self.assertEqual(2, self.check("--plan", "plan.md").returncode)
+        self.assertEqual(2, self.check("--plan", "missing.md", "--phase", "1").returncode)
 
 
 if __name__ == "__main__":

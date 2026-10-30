@@ -1,17 +1,23 @@
 """The review half of code_step: plan-impact modal, plan-edit dispatch, review dispatch, review packet and asks."""
 import os
+import pathlib
 import re
 import shutil
 import subprocess
 import sys
 import time
 
+import expected_red
 import plan_format
 import review_asks
 import script_utils
+from code_guidance import guidance_header_line
 from code_step_asks import (
     ASKS_DONE_USAGE,
+    accepted_asks_of,
     asks_coder_prompt,
+    changed_ruling_indexes,
+    correction_coder_prompt,
     numbered_ask_lines,
     preset_ask_outcome,
     split_asks_done_args,
@@ -25,6 +31,7 @@ from code_step_boundary import (
 )
 from code_step_core import (
     CLAUDE_DIR,
+    MISSING_PLAN_STOP,
     PLAN_EDIT_STOP_REASONS,
     RESUME_VERB,
     REVIEW_LOOP,
@@ -37,6 +44,7 @@ from code_step_core import (
     awaits_resumed_review,
     branch_label,
     clear_stop,
+    current_phase_text,
     dispatch_marker,
     emit,
     emit_dispatch,
@@ -71,15 +79,12 @@ from code_step_core import (
     wait_for_handback,
     wait_for_loop_stop,
 )
-from code_step_report import change_line, coder_message_without_gate_stamp
+from code_step_report import change_line, coder_message_without_gate_stamp, coder_model
 from code_step_review_stops import is_capped_review, left_findings_open, stop_on_review_status
-from code_step_usage import DECIDE_COMMAND
 from script_utils import git_output, run_command
 from source_paths import counts_toward_size, is_large_change
 from worktree_snapshot import working_tree_changes
 
-PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
-DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 # The state each guarded verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped",
 # and the refusal text when the state is anything else. `start`, `tick` and `resume` run at any stage and are not in
 # the table. A review-loop resumed after the wait cap also counts for review-again, and a converged review of the
@@ -94,6 +99,9 @@ STAGE_GUARDS = {
                                 "call, unmarked review gate, critical blocker, setup fault, a full check that showed "
                                 "no test run or silent review-loop pending."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
+    "correct-ruling": {"stages": ("asks-coder",), "goOnRefusal": True,
+                       "message": "No asks coder is running, so the ruling cannot be corrected in this run. Put the "
+                                  "change in a new /code run."},
     "skill-done": {"stages": ("skill",), "message": "skill-done ran with no closing-phase skill pending."},
     "verify": {"stages": ("stopped",), "stopReasons": PLAN_EDIT_STOP_REASONS,
                "message": "verify ran with no converged review, failed Automated Verification or unparsed Manual "
@@ -135,10 +143,6 @@ def decide_call(word):
     return f"`decide {word} --by user --ruling \"<the decision in one line>\"`"
 
 
-DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
-                  "place of `--by user`. A session ruling never changes the acceptance criteria.")
-
-
 def carried_question_lines(carried):
     # The findings the plan-impact round left open, shown under the question so the user sees them with the ruling.
     if not carried:
@@ -165,12 +169,12 @@ def emit_plan_impact_modal(impact, repo_dir, carried=()):
              "line, in your own words, as the --ruling text. Do not quote the user.",
              impact, "",
              *carried_question_lines(carried),
-             f"1. {PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "
+             f"1. {plan_format.PLAN_IMPACT_OPTIONS[0]} (a coder rewrites the plan steps to match the ruling): "
              f"{decide_call('adopt')}",
-             f"2. {PLAN_IMPACT_OPTIONS[1]}: {decide_call('keep')}",
-             f"3. {PLAN_IMPACT_OPTIONS[2]}: talk it through here, then invoke Skill code with "
+             f"2. {plan_format.PLAN_IMPACT_OPTIONS[1]}: {decide_call('keep')}",
+             f"3. {plan_format.PLAN_IMPACT_OPTIONS[2]}: talk it through here, then invoke Skill code with "
              f"{decide_call('adopt')} or {decide_call('keep')}",
-             DECIDE_BY_NOTE)
+             plan_format.DECIDE_BY_NOTE)
 
 
 def record_deviation(repo_dir, state):
@@ -215,22 +219,23 @@ def decision_for_word(repo_dir, state, word):
     # discuss).
     if not word:
         return emit("stop", STAGE_GUARDS["decide"]["message"])
-    decision = DECISION_WORDS.get(word)
+    decision = plan_format.DECISION_WORDS.get(word)
     if decision is None:
         return emit("stop", "decide takes adopt, keep or discuss.")
     if decision == "Discuss":
         return ask_user(repo_dir, "discuss this disagreement between the code and the plan with the user in plain "
                         f"words. When the user chooses, invoke Skill code with {decide_call('adopt')} or "
-                        f"{decide_call('keep')}. {DECIDE_BY_NOTE}", state["impact"])
+                        f"{decide_call('keep')}. {plan_format.DECIDE_BY_NOTE}", state["impact"])
     return decision
 
 
 def ruling_problem(word, by, ruling_words):
     # The stop text for a ruling that lacks who made it or what it says, or None.
-    if by not in ("user", "session"):
-        return f"decide {word} needs --by user or --by session. Usage: `{DECIDE_COMMAND}`. {DECIDE_BY_NOTE}"
+    if not plan_format.is_ruling_by(by):
+        usage = plan_format.DECIDE_USAGE_STEM
+        return f"decide {word} needs --by user or --by session. Usage: `{usage}`. {plan_format.DECIDE_BY_NOTE}"
     if not ruling_words:
-        return (f"decide {word} needs the ruling's words: {decide_call(word)}. {DECIDE_BY_NOTE} "
+        return (f"decide {word} needs the ruling's words: {decide_call(word)}. {plan_format.DECIDE_BY_NOTE} "
                 "Hand back and ask the main session for them.")
     return None
 
@@ -260,10 +265,10 @@ def command_decide(repo_dir, state, args, ruling_by=None):
     if problem:
         return emit("stop", problem)
     if state.get("plan") and not (repo_dir / state["plan"]).is_file():
-        return emit("stop", f"The plan file {state['plan']} is missing (a branch switch?). Tell the user.")
+        return emit("stop", MISSING_PLAN_STOP.format(plan=state["plan"]))
 
     record_ruling(repo_dir, state, decision, by, ruling_words, ruling_by)
-    if decision == PLAN_IMPACT_OPTIONS[0]:
+    if decision == plan_format.PLAN_IMPACT_OPTIONS[0]:
         return emit_plan_edit_dispatch(repo_dir, state)
     emit_review_dispatch(repo_dir, state)
 
@@ -393,8 +398,7 @@ def settle_plan_edit(repo_dir, state, edited_files):
     allowed_files = (state["plan"], criteria_path) if state["ruling"]["byUser"] else (state["plan"],)
     flag_stray_plan_edits(state, [name for name in edited_files if name not in allowed_files])
 
-    plan_lines = (repo_dir / state["plan"]).read_text().splitlines()
-    state["phaseText"] = plan_format.phase_text(plan_lines, state["phase"])
+    state["phaseText"] = current_phase_text(repo_dir, state["plan"], state["phase"])
 
     plan_note = f"The plan {state['plan']} now states the ruling."
     if criteria_path and criteria_path in edited_files and state["ruling"]["byUser"]:
@@ -523,6 +527,14 @@ def behavior_text(behavior_lines):
     return "; ".join(behavior_lines) or "see the diff."
 
 
+def later_phase_header_lines(repo_dir, state):
+    # The review prompt's `later-phase files:` line: the files the plan names only in later open phases, which no
+    # review coder edits. [] when there are none.
+    plan_lines = (pathlib.Path(repo_dir) / state["plan"]).read_text().splitlines()
+    later_files = expected_red.later_phase_paths(plan_lines, state["phase"])
+    return [f"later-phase files: {', '.join(later_files)}"] if later_files else []
+
+
 def emit_review_dispatch(repo_dir, state):
     report = handoff_report(repo_dir, state)
     untracked_text = git_output(repo_dir, "ls-files", "--others", "--exclude-standard") or ""
@@ -538,6 +550,10 @@ def emit_review_dispatch(repo_dir, state):
         header.append(f"plan: {state['plan']}")
         if state.get("phase"):
             header.append(f"phase: {state['phase']}")
+            header += later_phase_header_lines(repo_dir, state)
+    guidance_line = guidance_header_line(state)
+    if guidance_line:
+        header.append(guidance_line)
     if state.get("modifier"):
         header.append(state["modifier"])
     # The structure pass runs on the first review of a phase. A re-review after a ruling, or after a follow-up coder
@@ -745,7 +761,8 @@ def ask_the_user(repo_dir, state, asks):
         "`asks-done accepted modified --change \"<text>\" modified --change \"<text>\"` (the example only shows the "
         "shape of the arguments, not how many words). If the repo's CLAUDE.md "
         "hands ask decisions to the session, decide each ask yourself instead of asking, and add `--by session` to "
-        "asks-done.",
+        "asks-done. To correct a ruling after asks-done, send the running /code fork the full corrected `asks-done "
+        "...` line by SendMessage while its asks coder runs.",
         *numbered_ask_lines(asks),
         *open_findings_lines,
     )
@@ -810,11 +827,7 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
     # the diff is docs only) before the phase can finish. After a review that left findings open (a cap or a critical
     # blocker), that review covers the whole phase and runs even on a docs-only diff, or when every ask was rejected
     # with no coder before it.
-    accepted_asks = [
-        [item, outcome, change_text]
-        for item, outcome, change_text in zip(state["asks"], outcomes, change_texts, strict=False)
-        if outcome != "rejected"
-    ]
+    accepted_asks = accepted_asks_of(state["asks"], outcomes, change_texts)
     # Extra text the user gave alongside the outcomes is owed work too: it keeps a coder dispatched when every ask
     # was rejected.
     if not accepted_asks and not also_text and left_findings_open(state):
@@ -825,11 +838,12 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
         save_state(repo_dir, state)
         return finish_phase(repo_dir, state)
 
-    state.update({"stage": "asks-coder", "acceptedAsks": accepted_asks, "asksAlso": also_text})
+    state.update({"stage": "asks-coder", "acceptedAsks": accepted_asks, "asksAlso": also_text,
+                  "rulings": {"outcomes": outcomes, "changes": change_texts}})
     record_snapshot(state, asks=file_hashes(repo_dir), followUp=change_snapshot(repo_dir))
     open_dispatch(state)
     save_state(repo_dir, state)
-    model = "haiku" if state.get("modifier") == "+fast" else None
+    model = coder_model(state.get("modifier"))
     if left_findings_open(state):
         review_sentence = ("One more review of the whole phase runs after it, with the findings the last review "
                            "left open.")
@@ -840,19 +854,91 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
                   + review_sentence, prompt=asks_coder_prompt(accepted_asks, also_text), agent="coder", model=model)
 
 
-def command_asks_done(repo_dir, state, args):
+def parse_rulings(state, args, refusal_action="stop"):
+    # (outcomes, change texts, also text, who ruled) from the words of asks-done, or None after printing the refusal
+    # for words that do not give one outcome per ask.
     outcome_args, decided_by = script_utils.pop_option(args, "--by")
     if decided_by is None:
         decided_by = "user"
     outcomes, given_changes, also_text = split_asks_done_args(outcome_args)
-    if decided_by not in ("user", "session") or len(outcomes) != len(state["asks"]) \
+    if not plan_format.is_ruling_by(decided_by) or len(outcomes) != len(state["asks"]) \
             or any(outcome not in review_asks.ASK_OUTCOMES for outcome in outcomes) or given_changes is None \
             or len(given_changes) != outcomes.count("modified"):
         ask_count = len(state["asks"])
-        return emit("stop", f"{ASKS_DONE_USAGE} {ask_count} ask(s) wait: give {ask_count} outcome(s), in order.")
+        emit(refusal_action, f"{ASKS_DONE_USAGE} {ask_count} ask(s) wait: give {ask_count} outcome(s), in order.")
+        return None
 
     remaining_changes = iter(given_changes)
     change_texts = [next(remaining_changes) if outcome == "modified" else None for outcome in outcomes]
+    return outcomes, change_texts, also_text, decided_by
+
+
+def command_asks_done(repo_dir, state, args):
+    rulings = parse_rulings(state, args)
+    if rulings is None:
+        return
+
+    outcomes, change_texts, also_text, decided_by = rulings
     log_ask_outcomes(repo_dir, state, outcomes, decided_by)
     record_ruled_asks(repo_dir, state, outcomes, change_texts)
     apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text)
+
+
+def command_correct_ruling(repo_dir, state, args):
+    # Valid while an asks coder runs. The corrected rulings wait in the state until that coder reports; a correction
+    # equal to the rulings the coder works from is dropped. Every refusal is a `go-on`: the run goes on.
+    if "rulings" not in state:
+        return emit("go-on", "This run's asks coder started before corrections were supported, so the ruling cannot "
+                    "be corrected in this run. Put the change in a new /code run.")
+
+    rulings = parse_rulings(state, args, refusal_action="go-on")
+    if rulings is None:
+        return
+
+    outcomes, change_texts, also_text, decided_by = rulings
+    corrected = {"outcomes": outcomes, "changes": change_texts}
+    changed_indexes = changed_ruling_indexes(state["rulings"], corrected)
+    recorded = state.get("pendingCorrection") or state["rulings"]
+    logged_indexes = changed_ruling_indexes(recorded, corrected)
+    state.pop("pendingCorrection", None)
+
+    logged_state = {**state, "asks": [state["asks"][index] for index in logged_indexes]}
+    logged_outcomes = [outcomes[index] for index in logged_indexes]
+    logged_texts = [change_texts[index] for index in logged_indexes]
+    log_ask_outcomes(repo_dir, logged_state, logged_outcomes, decided_by)
+    record_ruled_asks(repo_dir, logged_state, logged_outcomes, logged_texts)
+
+    if not changed_indexes and also_text == state.get("asksAlso", ""):
+        save_state(repo_dir, state)
+        drop_line = ("The corrected rulings equal the rulings the asks coder works from; any earlier "
+                     "correction is dropped.")
+        say(repo_dir, drop_line, replaces_blocks_starting=("The corrected rulings",))
+        return emit("go-on", drop_line)
+
+    state["pendingCorrection"] = {**corrected, "also": also_text}
+    save_state(repo_dir, state)
+
+    saved_line = "The corrected rulings are saved. A correction coder applies them when the asks coder reports."
+    say(repo_dir, saved_line, replaces_blocks_starting=("The corrected rulings",))
+    emit("go-on", saved_line)
+
+
+def dispatch_correction_coder(repo_dir, state):
+    # One more asks coder, for the rulings corrected while the first ran. The asks snapshot stays the one taken at the
+    # first dispatch, so the review that follows covers both coders' changes.
+    correction = state.pop("pendingCorrection")
+    changed_indexes = changed_ruling_indexes(state["rulings"], correction)
+    old_also_text = state.get("asksAlso", "")
+    also_changed = correction["also"] != old_also_text
+    prompt = correction_coder_prompt(state["asks"], state["rulings"], correction, changed_indexes,
+                                     correction["also"] if also_changed else "", old_also_text if also_changed else "")
+
+    accepted_asks = accepted_asks_of(state["asks"], correction["outcomes"], correction["changes"])
+    state.update({"acceptedAsks": accepted_asks, "asksAlso": correction["also"], "correctionCoder": True,
+                  "rulings": {"outcomes": correction["outcomes"], "changes": correction["changes"]}})
+    open_dispatch(state)
+    save_state(repo_dir, state)
+
+    emit_dispatch(repo_dir, state, "The user corrected a ruling while the asks coder worked. Dispatch a coder to "
+                  "apply the correction. A review of the changes of both coders runs after it.",
+                  prompt=prompt, agent="coder", model=coder_model(state.get("modifier")))

@@ -35,6 +35,8 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 a closing phase's skill returned: mark it done (pass) or stop (fail);
                                                 at pass, give one --evidence per open Success Criteria item and the
                                                 script writes it into the plan
+  code_step.py session-done <phase id>          a session phase's steps are done: run its Automated Verification,
+                                                mark it done and print its commit command
   code_step.py verify                           re-run the phase gates after a failed Automated Verification was fixed
   code_step.py review-again                     dispatch the review loop again on the same diff, after a stop that
                                                 names it (unreadable packet, cap, false-clean, tool fault,
@@ -71,11 +73,12 @@ hooks write only that log; the verbs read it and write state.json.
 The code is split in files that import one way: code_step_state (the run's record), code_step_routes (the route table
 and stage facts), code_step_core (state, event log, hand-back matcher, output), code_step_verification (Automated
 Verification reader and runner), code_step_boundary (criteria guard, phase boundary, tick and verify),
-code_step_closing (skill-done), code_step_hooks, code_step_gates (gate commands), code_step_start (the start verb),
-code_step_report (reading a coder report), code_step_review (plan-impact modal, plan-edit dispatch, review dispatch,
-review packet, asks), code_step_asks (the asks route's words: ask listing, pre-set outcome, asks-done arguments, asks
-coder prompt, prior issues; ask ids and outcome rows come from review/review_asks.py), code_step_usage (usage text and
-the leading-dash check of `resume`) and this file."""
+code_step_closing (skill-done and session-done), code_step_hooks, code_step_gates (gate commands),
+code_step_start (the start verb), code_step_report (reading a coder report), code_step_review (plan-impact modal,
+plan-edit dispatch, review dispatch, review packet, asks),
+code_step_asks (the asks route's words: ask listing, pre-set outcome, asks-done arguments, asks coder prompt, prior
+issues; ask ids and outcome rows come from review/review_asks.py), code_step_usage
+(usage text and the leading-dash check of `resume`) and this file."""
 import contextlib
 import fcntl
 import json
@@ -97,7 +100,7 @@ from code_step_boundary import (
     settle_criteria_guard,
     stop_for_finished_planless_run,
 )
-from code_step_closing import command_skill_done_with_question
+from code_step_closing import command_session_done, command_skill_done_with_question
 from code_step_core import (
     CODER,
     RESUME_VERB,
@@ -190,6 +193,7 @@ from code_step_routes import GUARDED_VERBS, ROUTES, STAGE_FACTS, STALE_PHASE_STE
 from code_step_start import (
     command_start,
     emit_closing_skill,
+    emit_session_phase,
     phase_label,
     resume_text_refusal,
     stopped_run_restart_instruction,
@@ -673,6 +677,22 @@ def resume_closing_skill(repo_dir, state):
     emit_closing_skill(repo_dir, state.plan, state.phase, state.title, skill, section, state.run_notes)
 
 
+def resume_session_phase(repo_dir, state):
+    # A session phase that outlives its session: a resume says its steps again, with the phase's plan section.
+    try:
+        plan_lines = (repo_dir / state.plan).read_text().splitlines()
+    except OSError:
+        return ask_about_saved_state(repo_dir, state)
+
+    section = plan_format.phase_text(plan_lines, state.phase)
+    agent = plan_format.session_only_agent(section) if section else None
+    if agent is None:
+        return ask_about_saved_state(repo_dir, state)
+
+    entry = {"number": state.phase, "title": state.title}
+    emit_session_phase(state.plan, plan_lines, entry, agent, section, state.run_notes)
+
+
 def ask_about_review_cap(repo_dir, state):
     ask_user(repo_dir, "The review-loop never handed back. If the user resumes it with SendMessage, run "
              f"resume. If it died, {REVIEW_AGAIN_INVOKE}.")
@@ -725,6 +745,7 @@ STEPS = {
     "ask-impact": resume_impact_question,
     "ask-asks": lambda repo_dir, state: ask_the_user(repo_dir, state, state.asks),
     "closing-skill": resume_closing_skill,
+    "session-phase": resume_session_phase,
     "ask-coder": ask_about_stopped_coder, "ask-review-cap": ask_about_review_cap,
     "ask-coder-cap": ask_about_coder_cap, "ask-stale-phase": ask_about_stale_phase,
     "ask-critical-blocker": ask_about_critical_blocker, "ask-cause-fixed": ask_to_fix_the_cause,
@@ -918,8 +939,9 @@ HOOK_VERBS = {
     "plan-hook": command_plan_hook, "stop-hook": command_stop_hook, "say-hook": command_say_hook,
     "launch-hook": command_launch_hook,
 }
-VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|correct-ruling|skill-done|verify|review-again|tick"
-              "|abort|guide|hook|log-hook|dispatch-hook|launch-hook|stop-hook|say-hook|status|plan|plan-hook")
+VERB_USAGE = ("usage: code_step.py start|resume|decide|asks-done|correct-ruling|skill-done|session-done|verify"
+              "|review-again|tick|abort|guide|hook|log-hook|dispatch-hook|launch-hook|stop-hook|say-hook|status|plan"
+              "|plan-hook")
 
 
 @contextlib.contextmanager
@@ -993,9 +1015,9 @@ def main():
     check_verb_arguments(verb, args)
     verbs = {"start": command_start, RESUME_VERB: command_resume, "decide": command_decide,
              "asks-done": command_asks_done, "correct-ruling": command_correct_ruling,
-             "skill-done": command_skill_done_with_question, "verify": command_verify,
-             "tick": command_tick, "review-again": command_review_again, "abort": command_abort,
-             "guide": command_guide}
+             "skill-done": command_skill_done_with_question, "session-done": command_session_done,
+             "verify": command_verify, "tick": command_tick, "review-again": command_review_again,
+             "abort": command_abort, "guide": command_guide}
     if verb in HOOK_VERBS:
         return HOOK_VERBS[verb]()
     if verb == "plan":

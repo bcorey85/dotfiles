@@ -103,6 +103,7 @@ class HerdrPhaseChangeTest(unittest.TestCase):
             ("bare code", ("/code",), "/code"),
             ("resume verb", ("/code resume",), "/code resume"),
             ("tick verb", ("/code tick 2",), "/code tick 2"),
+            ("session-done verb", ("/code session-done 2",), "/code session-done 2"),
             ("headless in task text", ("/code fix the --headless flag",), "/code --headless fix the --headless flag"),
             ("headless after task", ("/code --task drop --headless from restart",),
              "/code --headless --task drop --headless from restart"),

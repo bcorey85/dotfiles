@@ -63,7 +63,8 @@ PLAN_EDIT_NODE_BUDGET = 1500
 SCRIPT_NODE_BUDGET = 1500
 HAND_BACK_ACTIONS = ("ask-user", "stop", "rerun", "judgment", "stop-block-B", "stop-block-C", "commit-and-hand-back")
 # The verbs a hand-back may name for the user to run.
-NAMEABLE_VERBS = ("start", "resume", "decide", "asks-done", "skill-done", "review-again", "tick", "verify")
+NAMEABLE_VERBS = ("start", "resume", "decide", "asks-done", "skill-done", "review-again", "tick", "verify",
+                 "session-done")
 BACKTICKED_TEXT = re.compile(r"`([^`\n]+)`")
 
 TMP_DIR_NAME = re.compile(r"termination-(\d+)-")
@@ -213,6 +214,8 @@ Check every criterion.
 
 - none
 """
+PLAN_SESSION = f"{PLAN_DIR}/session.md"
+PLAN_SESSION_TEXT = PLAN_A_TEXT.replace("**File**: `backend/src/totals.ts`", "**Session phase**: `mutation-tester`")
 PLAN_NO_PHASE_STATUS = "# P\n\n## Overview\n\nx\n\n## Phase 1: One\n\nDo it.\n"
 PLAN_NO_CRITERIA = (
     "# P\n\n## Acceptance Criteria\n\n- c\n\n## Phase Status\n\n- [ ] Phase 1: One (risk: low)\n\n## "
@@ -422,6 +425,7 @@ def build_template(name="template"):
     )
     write_text(template, "backend/src/existing.ts", "export const a = 1\n")
     write_text(template, PLAN_A, PLAN_A_TEXT)
+    write_text(template, PLAN_SESSION, PLAN_SESSION_TEXT)
     write_text(template, f"{PLAN_DIR}/acceptance-criteria.md", "AC-1 orders exist\n")
     for path, text in PLAN_EDIT_PLANS.items():
         write_text(template, path, text)
@@ -691,6 +695,8 @@ def user_answers(state):
             ("skill-done pass", ["skill-done", "pass"], None),
             ("skill-done fail", ["skill-done", "fail"], None),
         ]
+    if stage == "session":
+        answers += [("session-done", ["session-done", state["phase"]], None)]
     if is_stopped and reason in ("invalid-packet", "cap-reached", "critical-blocker", "setup-fault"):
         answers += [("review-again", ["review-again"], None)]
     if is_stopped and code_step_core.awaits_resumed_review(run_state):
@@ -1045,6 +1051,7 @@ def entry_verbs():
     verbs = [
         ["start", PLAN_A],
         ["start", PLAN_A, "+fast"],
+        ["start", PLAN_SESSION, "--phase", "2"],
         ["start"],
         ["start", "--task", "add a thing"],
         ["start", "docs/other/single.md"],

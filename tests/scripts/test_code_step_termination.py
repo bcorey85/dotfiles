@@ -593,8 +593,9 @@ def state_signature(repo):
 
     # a stop with only a reason carried no timestamp before, and a resumable stop's time and agent are part of the state
     stop = state.get("stop")
-    if stop and stop.get("kind") not in (code_step_core.CODER_RESUMABLE, code_step_core.REVIEW_RESUMABLE):
-        state["stop"] = {key: value for key, value in stop.items() if key not in ("at", "waitAt")}
+    if stop and stop.get("kind") not in (code_step_state.StopKind.CODER_RESUMABLE,
+                                         code_step_state.StopKind.REVIEW_RESUMABLE):
+        state["stop"] = {key: value for key, value in stop.items() if key != "at"}
     state_text = MINUTE_STAMP.sub("<minute>", json.dumps(state, sort_keys=True))
     return state_text + "#" + plan_progress(repo)
 

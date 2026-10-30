@@ -79,6 +79,7 @@ from code_step_core import (
 )
 from code_step_report import change_line, coder_message_without_gate_stamp, coder_model
 from code_step_review_stops import is_capped_review, left_findings_open, stop_on_review_status
+from code_step_state import Stage
 from review_asks import numbered_ask_lines
 from script_utils import git_output
 from source_paths import counts_toward_size, is_large_change
@@ -489,7 +490,7 @@ def follow_up_is_small(before, after):
 
 def handoff_report(repo_dir, state):
     # The coders' last hand-back of this run: the phase coders', and the asks coders' after an asks round, joined.
-    stages = ["coder"] + (["asks-coder"] if state.coder_stage == "asks-coder" else [])
+    stages = [Stage.CODER] + ([Stage.ASKS_CODER] if state.coder_stage == Stage.ASKS_CODER else [])
     last_messages = [coder_message_without_gate_stamp(report["messages"][-1])
                      for report in phase_coder_reports(repo_dir, state)
                      if report["stage"] in stages and report["messages"]]

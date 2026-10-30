@@ -20,13 +20,14 @@ unmeasured: ""
 - `code_step_state.py` holds a run as a `RunState` record with a `Stop` record, and names the stages and stop kinds as
   the `Stage` and `StopKind` enums. Every code-step module, `review_loop_script` and `saved_handback` read and write
   fields on the record instead of keys on a dict.
-- A state file loads only when its stage, its stop kind and every key are ones the record names. Any other file stops
-  the verb with a line that names the file and the keys it does not know, and tells the user to delete it and run
-  `start`. A field with no value is left out of the file.
+- A state file loads only when its stage, its stop kind and every key are ones the record names, except a stop
+  record's `waitAt`, which loads and is dropped. Any other file stops the verb with a line that names the file and the keys it does not know, and tells the
+  user to delete it and run `start`. A field with no value is left out of the file.
 - `migrate_old_state` is deleted. A state file in the format before the stop record stops the verb and names its old
   keys.
 - `code_step_routes.py` holds the route table: one row per stage, and per stop kind for a stopped run. Each row names
-  the step `resume` takes and the one verb it lets run. It replaces the stage-to-step map, the stopped-run route code,
+  the step `resume` takes and the one verb it lets run (and `verify` runs once the phase's review converged, at a stage
+  marked VERIFY_ON_CLEAN_REVIEW). It replaces the stage-to-step map, the stopped-run route code,
   the per-verb stage guards and the search that named a verb in the fallback stop. A row whose step depends on the
   run's log names what it reads there, and `code_step.py` reads it.
 - The same file names each stage's facts: an agent is out, a code agent is out, the plan was edited, `resume` clears
@@ -38,16 +39,18 @@ unmeasured: ""
   hand-back module loaded.
 - A stage set on the record becomes a `Stage` at once, so an unknown one raises where it is set.
 - A property test walks every row: each state has one row, each step has a handler, and each verb runs from the rows
-  that name it and from no other.
+  that name it and from no other, except `verify` once the phase's review converged, at a stage marked
+  VERIFY_ON_CLEAN_REVIEW.
 - Each verb writes `state.json` once, atomically, at its end, and only then prints what to do next. A verb that fails
-  part way or exits with an error writes nothing and prints nothing it held, so the saved state never runs ahead of a
-  crash.
+  part way or exits with an error saves no state file and prints nothing it held, so the saved state never runs ahead
+  of a crash. Files written on the way (say.md, question.md, the run log, handback_store rows, dispatch prompts, plan
+  edits, the detached review script) stay.
 - A state file that changed on disk while a verb ran, as an `abort` from another shell does, is not written over: the
-  verb writes nothing, drops its output and stops with a line that names the file. A state file the verb dropped always
+  verb saves no state file, drops its output and stops with a line that names the file. A state file the verb dropped always
   goes, so an abort always ends the run.
 - `abort` archives the run as it stood and drops its state file at the verb's end.
-- A verb that waits for a hand-back writes the state it holds just before the wait, so a wait killed part way keeps
-  the time a resumed agent's wait cap counts from.
+- A verb that waits logs the first wait on a resumed agent as a run-log event, so a wait killed part way keeps the time
+  the cap counts from.
 
 ## Evidence
 
@@ -60,12 +63,18 @@ the two left a saved state the session was never told about, and a save after an
 
 ## Result
 
-The full suite passes: 4557 tests in 111 files, 0 failed, run before the write before a wait was added. After it, the
-code-step, review-loop-script and review-fix test modules, ruff, the code-step complexity check and the
-duplicate-code check pass. A state file a run in progress wrote before this change loads and writes back unchanged.
-A verb that crashes after its save leaves the state as it was, and a resumed coder's first wait time survives a wait
-killed part way. The route property test passes, and the walk of every verb path from each start finds no failing
-path in 3204 paths.
+Measured on the committed code before this review round's fixes: the full suite passed, 4557 tests in 111 files, 0
+failed. The code-step, review-loop-script and review-fix test modules, ruff, the code-step complexity check and the
+duplicate-code check passed. A state file a run in progress wrote before this change loaded and wrote back the same
+values: keys that held null were left out, and keys it lacked were written with their defaults. The route property
+test passed, and the walk of every verb path from each start found no failing path in 3204 paths.
+
+Checked on the current tree: `ruff check` on `code_step_state.py` passes, and five tests pass. They are the stop
+record's `waitAt` key loading and being dropped, so a resumed agent's cap counts from its first wait after the change;
+a verb that crashes after its save leaving the state as it was; the first wait time of a resumed coder being logged
+once and at the time the cap counts from; and that first wait time surviving a kill during the wait. The full suite,
+the complexity check, the duplicate-code check, the route property test and the 3204-path walk were not re-run on
+this tree.
 
 ## Watch
 

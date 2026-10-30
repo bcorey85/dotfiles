@@ -94,7 +94,6 @@ from code_step_boundary import (
 from code_step_closing import command_skill_done_with_question
 from code_step_core import (
     CODER,
-    CODER_RESUMABLE,
     RESUME_VERB,
     REVIEW_AGAIN_INVOKE,
     StateFileError,
@@ -187,6 +186,7 @@ from code_step_start import (
     resume_text_refusal,
     stopped_run_restart_instruction,
 )
+from code_step_state import Stage, StopKind
 from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
 from code_step_verification import verification_format_failure
 
@@ -284,7 +284,7 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     # does it or the check that passed; "recommended-eng-spec" for a report whose marker line recommends /eng-spec;
     # "undone" when a correction coder put the tree back where the asks round began and no ask stays accepted;
     # "no-change" for a report with no reviewable change (a failed edit, a blocked hook, a question); else None.
-    is_ask_fix = state.stage == "asks-coder"
+    is_ask_fix = state.stage == Stage.ASKS_CODER
     asks_coder_changed_nothing = is_ask_fix and changed_now == snapshot_part(state, "asks")
     escalates = recommends_eng_spec(report)
     report_raises_blocker = escalates or bool(first_plan_impact([report])) or bool(open_questions(report))
@@ -312,7 +312,7 @@ def stop_on_coder_report(repo_dir, state, report, agent_id, cause_text, restart_
     # The run stops on the coder's report: the user answers it, and the coder resumed with SendMessage goes on.
     # cause_text finishes the sentence "The coder ...". restart_only names the restart as the one way out, for a
     # stop where the coder cannot go on.
-    set_stop(state, CODER_RESUMABLE, agent_id=agent_id or "unknown", coder_stage=state.stage)
+    set_stop(state, StopKind.CODER_RESUMABLE, agent_id=agent_id or "unknown", coder_stage=state.stage)
     state.dispatch_at = None
     save_state(repo_dir, state)
     tick_text = (f" If the user says Phase {state.phase} is already done, invoke Skill code with `tick "
@@ -343,7 +343,7 @@ def record_coder_report(repo_dir, state, report, gate, changed_files, asks_chang
     # for when no asks snapshot exists), while changed_files is the review scope. A correction coder replaces only
     # the paths in its own why_groups.
     coder_stage = state.stage
-    is_ask_fix = coder_stage == "asks-coder"
+    is_ask_fix = coder_stage == Stage.ASKS_CODER
     behavior = behavior_lines(report)
     why_groups = resolve_report_paths(why_by_file(report), changed_files)
     tests_run = tests_run_text(gate, state)
@@ -435,7 +435,7 @@ def end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_
     # the tree back, or the coder stopped on a blocker. True when it ended the step.
     coder_stage = state.stage
     is_open = left_findings_open(state)
-    has_pending_correction = coder_stage == "asks-coder" and state.pending_correction is not None
+    has_pending_correction = coder_stage == Stage.ASKS_CODER and state.pending_correction is not None
     if outcome == "converged" and not is_open and not has_pending_correction:
         finish_without_review(
             repo_dir, state, changed_files, coder_stage,
@@ -464,15 +464,15 @@ def end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_
 def review_coder_report(repo_dir, state, handback):
     # The hand-back gate stays up through a stop that resumes the same coder, whose next hand-back runs the checks
     # again. Any other outcome ends the coder's gate.
-    is_ask_fix = state.stage == "asks-coder"
+    is_ask_fix = state.stage == Stage.ASKS_CODER
     route_coder_report(repo_dir, state, handback)
-    if not is_ask_fix and stop_kind(state) != CODER_RESUMABLE:
+    if not is_ask_fix and stop_kind(state) != StopKind.CODER_RESUMABLE:
         run_coder_gate(repo_dir, "clear")
 
 
 def route_coder_report(repo_dir, state, handback):
     coder_stage = state.stage
-    is_ask_fix = coder_stage == "asks-coder"
+    is_ask_fix = coder_stage == Stage.ASKS_CODER
     report = coder_message_without_gate_stamp(handback.get("message", ""))
 
     if stop_when_head_left_base(repo_dir, state, report, handback):
@@ -571,8 +571,8 @@ def review_answer_sent(repo_dir, state):
 
 
 def review_goes_on(repo_dir, state):
-    # The review-loop the wait cap stopped on goes on: its review script still runs, the user resumed it, or it handed
-    # back late on its own.
+    # The review-loop the wait cap stopped on goes on: a review script is on record (after-review stops on one that
+    # has gone), the user resumed it, or it handed back late on its own.
     return bool(state.review_script_pid) or review_answer_sent(repo_dir, state)
 
 
@@ -755,7 +755,7 @@ def command_abort(args):
         return refuse("abort takes no arguments.", script_command("abort"))
 
     state = load_state(repo_dir)
-    if state is None or state.stage == "done":
+    if state is None or state.stage == Stage.DONE:
         return emit("stop", "No /code run is open here. Nothing was dropped.")
 
     criteria_message = None
@@ -787,7 +787,7 @@ def command_guide(args):
         return emit("go-on", "The guidance was not recorded: no text was given to guide.")
 
     state = load_state(repo_dir)
-    if state is None or state.stage == "done":
+    if state is None or state.stage == Stage.DONE:
         return emit("go-on", "The guidance was not recorded: no /code run is open here.")
 
     record_guidance(state, text)

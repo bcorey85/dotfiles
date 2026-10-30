@@ -14,7 +14,6 @@ import code_step  # noqa: E402
 import code_step_core  # noqa: E402
 import code_step_review  # noqa: E402
 import code_step_review_stops  # noqa: E402
-import handback  # noqa: E402
 from code_step_routes import (  # noqa: E402
     GUARDED_VERBS,
     ROUTES,
@@ -86,11 +85,18 @@ class RouteTableTest(unittest.TestCase):
                     self.assertEqual(route.verb == verb, code_step_core.guarded_verb_runs(verb, state))
 
     def test_verify_also_runs_once_the_phase_review_converged_with_no_coder_at_work(self):
-        converged_review = RunState(Stage.REVIEW, review_status="converged")
-        converged_coder = RunState(Stage.CODER, review_status="converged")
+        runs_after_converged_review = (Stage.REVIEW, Stage.IMPACT_CODER, Stage.IMPACT_REVIEW, Stage.ASKS, Stage.STOPPED)
+        refused_after_converged_review = (Stage.CODER, Stage.ASKS_CODER, Stage.PLAN_CODER, Stage.SKILL, Stage.DONE)
 
-        self.assertTrue(code_step_core.guarded_verb_runs("verify", converged_review))
-        self.assertFalse(code_step_core.guarded_verb_runs("verify", converged_coder))
+        for stage in runs_after_converged_review:
+            with self.subTest(stage):
+                converged = RunState(stage, review_status="converged")
+                self.assertTrue(code_step_core.guarded_verb_runs("verify", converged))
+        for stage in refused_after_converged_review:
+            with self.subTest(stage):
+                converged = RunState(stage, review_status="converged")
+                self.assertFalse(code_step_core.guarded_verb_runs("verify", converged))
+        self.assertFalse(code_step_core.guarded_verb_runs("verify", RunState(Stage.REVIEW, review_status=None)))
 
     def test_every_guarded_verb_has_a_refusal(self):
         self.assertEqual(GUARDED_VERBS, set(code_step_review.VERB_REFUSALS))
@@ -107,9 +113,6 @@ class RouteTableTest(unittest.TestCase):
         blocker_kinds = {key[1] for key, route in ROUTES.items() if "ask-critical-blocker" in steps_of(route)}
 
         self.assertLessEqual(blocker_kinds, set(code_step_review_stops.blocker_stop_text()))
-
-    def test_the_fix_removed_change_stop_kind_is_the_one_the_review_loop_writes(self):
-        self.assertEqual(handback.FIX_REMOVED_CHANGE, StopKind.FIX_REMOVED_CHANGE)
 
 
 class StageFactsTest(unittest.TestCase):

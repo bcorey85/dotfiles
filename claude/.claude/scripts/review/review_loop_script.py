@@ -268,7 +268,8 @@ def disposition_call(text, repo, out):
     parsed = last_json_object(reply, ("fix", "ask", "nit"))
     if parsed is None:
         error = f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}'
-        retry_prompt = (prompt + f"\n\nYour last reply could not be parsed: {error[:DISPOSITION_ERROR_CHARS]}\n"
+        retry_note = f"A previous reply to this prompt could not be parsed: {error[:DISPOSITION_ERROR_CHARS]}"
+        retry_prompt = (prompt + f"\n\n{retry_note}\n"
                         "Reply with the JSON object only.")
         # The retry's own role gives it its own row in calls.jsonl.
         reply = claude_call("disposition-retry", retry_prompt, repo, out, model="sonnet")

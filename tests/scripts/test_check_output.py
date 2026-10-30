@@ -547,7 +547,7 @@ class CheckVerdictTest(unittest.TestCase):
 
     def coder_gate_outcome(self, command, code, output):
         with mock.patch.object(script_utils, "run_process", return_value=(code, output, "")):
-            failures, _skipped, timed_out = self.coder_gate.run_commands(
+            failures, _skipped, timed_out, _not_started = self.coder_gate.run_commands(
                 {"repoRoot": str(self.repo), "commands": [command]})
 
         with mock.patch.object(self.coder_gate, "changed_files", return_value=[]):

@@ -846,7 +846,7 @@ def enter_run_checkout(verb="", named_repo=None):
         return True
 
     if len(open_run_repos) > 1 and verb == "asks-done":
-        asks_run_repos = [repo for repo in open_run_repos if load_state(repo)["stage"] == "asks"]
+        asks_run_repos = [repo for repo in open_run_repos if load_state(repo).stage == Stage.ASKS]
         if len(asks_run_repos) > 1:
             checkout_lines = [f"- {repo}" for repo in asks_run_repos]
             emit("stop", "This session has open asks in each of these checkouts, and the current directory is in "

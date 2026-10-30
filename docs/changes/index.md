@@ -1079,7 +1079,6 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [`plan-verifier` now checks the plan once per branch, not after every phase](2026-08-04-per-phase-plan-verifier-retired-branch-scope-only.md) - no reason recorded
 * [A fresh-eyes `smell-reviewer` now checks structure in place of the author's self-sweep](2026-08-04-author-self-sweep-fresh-eyes-smell-reviewer.md) - no reason recorded
 * [`smell-reviewer` runs on changes of 40 or more added lines or one new source file](2026-08-04-smell-reviewer-size-trigger-40-added-lines-or-1.md) - no reason recorded
-
 # Tried and rejected
 
 * [Raw Opus review caught 26 of 41 real bugs against 24 for the live code reviewer, at more cost](../../../agent-evals/findings/2026-10-30-raw-opus-review-caught-26-of-41-real-bugs-against.md) - HOLD: Replacing the live code reviewer with a raw Opus review gains no measurable catches (24 → 26 of 41 real bugs, +2 on one pass with no spread measured) and costs 25% more Opus output (460K → 574K), so the round dropped before any registration was sealed. The two reviews together caught 28 of 41, an unbenched idea at about 2.2x the output.

@@ -5,15 +5,27 @@ import re
 import coder_gate
 import script_utils
 
+OPEN_QUESTIONS_LINE = re.compile(r"^[ \t>*`_-]*OPEN QUESTIONS[*`_]*:[*`_]*[ \t]*(.*)$", re.M)
+UNREADABLE_QUOTE_LIMIT = 120
 
-def coder_flags(report):
-    flagged = []
-    for line in report.splitlines():
-        mentions_open_point = re.search(r"\bambigu(ous|ity|ities)\b|open question", line, re.I)
-        denies_open_point = re.search(r"\b(no|none)\b", line, re.I)
-        if mentions_open_point and not denies_open_point:
-            flagged.append(line.strip())
-    return flagged
+
+def open_questions(report):
+    # The strings of the report's `OPEN QUESTIONS: <JSON list of strings>` line. `none` or no such line means none. Any
+    # other value that is not a JSON list of strings comes back as one flagged item. Only the first such line is read.
+    found = OPEN_QUESTIONS_LINE.search(report)
+    if not found:
+        return []
+    value = found.group(1).strip()
+    if value.lower() == "none":
+        return []
+    try:
+        questions = json.loads(value)
+    except ValueError:
+        questions = None
+    if isinstance(questions, list) and all(isinstance(question, str) for question in questions):
+        return questions
+    quoted = script_utils.one_line(value, UNREADABLE_QUOTE_LIMIT)
+    return [f"the OPEN QUESTIONS line could not be read as a JSON list of strings: {quoted}"]
 
 
 PLAN_IMPACT_HEADER = re.compile(r"^[ \t>*`_-]*PLAN-IMPACT[*`_]*:?[*`_]*[ \t]*$")

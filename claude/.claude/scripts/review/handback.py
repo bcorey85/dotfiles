@@ -9,8 +9,10 @@
                                         bad packet once per agent so the loop can repair it, denies a hand-back (any
                                         status but plan-impact, in a repo whose CLAUDE.md does not say
                                         `Full suite: CI`) whose own transcript shows no passed full_check.py
-                                        result after its last code change (once per code change), denies a
-                                        hand-back (any status but plan-impact) whose files_touched names the
+                                        result after its last code change (once per code change), denies once a
+                                        cap-reached hand-back that is not a no-review run and whose last step is a
+                                        coder with no reviewer after it,
+                                        denies a hand-back (any status but plan-impact) whose files_touched names the
                                         dispatch prompt's plan file, and denies any call from an agent whose
                                         report is already stored. Any other argument does nothing.
 
@@ -678,6 +680,9 @@ ALREADY_DELIVERED_REASON = ("Your report was already delivered; a second hand-ba
 OPEN_WORK_REASON = ("{count} agent(s) or shell(s) you started in the background have not reported back. Do not hand "
                     "back yet: end your turn and wait for each task notification, act on what it reports, then hand "
                     "back.")
+CAPPED_ON_A_FIX_REASON = ("This cap-reached hand-back follows a coder that no reviewer read. Dispatch one reviewer "
+                          "scoped to the coder's files, even at iter 0, then hand back again. If it cannot run, hand "
+                          "back again with findings_remaining naming the unreviewed files.")
 UNCHECKED_KIND = "unchecked-code"
 
 
@@ -781,8 +786,9 @@ def handle_dispatch(event, session_id, tool_input):
 def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back. Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
-    unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no passed full_check.py
-    result follows the last code change, or loop_transcript.PLAN_EDIT_REASON when the packet names the plan file."""
+    unreviewed reason for a clean packet with no reviewer run, CAPPED_ON_A_FIX_REASON the first time a cap-reached
+    packet follows a coder with no reviewer after it, loop_transcript.GATE_REASON when no passed full_check.py result
+    follows the last code change, or loop_transcript.PLAN_EDIT_REASON when the packet names the plan file."""
     session_id = event.get("session_id")
     if not session_id:
         return None
@@ -813,6 +819,11 @@ def handle_hook(event, kind):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
+    capped_on_a_fix = (status == "cap-reached" and steps[-1:] == ["coder"]
+                       and not claim_no_review(session_id, agent_id))
+    if capped_on_a_fix and not was_recorded(session_id, agent_id, "unreviewed-cap"):
+        record(session_id, "unreviewed-cap", agent_id=agent_id)
+        return CAPPED_ON_A_FIX_REASON
     gate_reason = transcript_gate_reason(event, session_id, agent_id, message, packet)
     if gate_reason:
         return gate_reason

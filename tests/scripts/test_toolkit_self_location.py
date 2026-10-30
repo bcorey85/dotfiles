@@ -7,12 +7,16 @@ is a data path. Each remaining hit is printed text or a deliberate check of the 
 ALLOWED_HITS."""
 import pathlib
 import re
+import sys
+import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
 TREE_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
 SCANNED_FOLDERS = ("scripts", "hooks", "skills", "commands", "rules")
+TOOL_CACHE_FOLDERS = {"__pycache__", ".ruff_cache"}
 
 HOME_REFERENCE = re.compile(r"~|home|expanduser|getenv", re.IGNORECASE)
 CLAUDE_FOLDER = re.compile(r"\.claude(?![\w-])")
@@ -80,7 +84,7 @@ ALLOWED_HITS = [
 def scanned_files():
     for folder in SCANNED_FOLDERS:
         for path in sorted((TREE_CLAUDE_DIR / folder).rglob("*")):
-            if not path.is_file() or path.suffix == ".md" or "__pycache__" in path.parts:
+            if not path.is_file() or path.suffix == ".md" or TOOL_CACHE_FOLDERS.intersection(path.parts):
                 continue
 
             relative = path.relative_to(TREE_CLAUDE_DIR).as_posix()
@@ -139,6 +143,23 @@ class LocateCodeThroughHomeRuleTest(unittest.TestCase):
         for line, flagged in cases:
             with self.subTest(line=line):
                 self.assertEqual(flagged, locates_code_through_home(line))
+
+
+class ScannedFilesTest(unittest.TestCase):
+    def test_a_lint_cache_file_is_not_scanned_and_a_script_is(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        scripts_dir = pathlib.Path(scratch.name) / "scripts"
+        cache_dir = scripts_dir / ".ruff_cache" / "0.17.2"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "1234").write_text("~/.claude/scripts\n")
+        script = scripts_dir / "tool.py"
+        script.write_text("pass\n")
+
+        with mock.patch.object(sys.modules[__name__], "TREE_CLAUDE_DIR", pathlib.Path(scratch.name)):
+            found = list(scanned_files())
+
+        self.assertEqual([script], found)
 
 
 class ToolkitSelfLocationTest(unittest.TestCase):

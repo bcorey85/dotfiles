@@ -21,6 +21,11 @@ class GuidanceRulesTest(unittest.TestCase):
                 self.assertIn("zsh", text)
                 self.assertIn('files=(a b); for f in "${files[@]}"', text)
 
+    def test_a_child_session_in_list_agents_is_not_taken_for_a_rival_worker(self):
+        text = guidance_text("orchestration.md")
+        self.assertIn("A ListAgents peer named `child of <name>` is a headless step of that session's run, not a "
+                      "rival worker", text)
+
     def test_the_code_fork_acts_on_a_stop_question_the_user_already_answered(self):
         text = guidance_text("agents/code-fork.md")
         self.assertIn("When the user already answered the run's last stop question in this conversation, run the "

@@ -14,6 +14,8 @@ Only the main session hands the user a command. A subagent never writes a comman
 
 Never wrap text for the user to paste (a comment, message or reply) in a Markdown blockquote (`>`): the terminal renders it with a `▎` bar on every line, which the copy picks up. Give it as plain text.
 
+In zsh, `path` is tied to `PATH`: never name a shell variable `path`. Assigning it (`path=…` or `for path in …`) replaces the command search path, and later commands fail with "command not found". Name the variable for what it holds, such as `log_file`.
+
 ## Quality Checks
 
 Coders run only the tests for the files they changed. The full suite runs once, at the end of review.

@@ -799,6 +799,13 @@ def append_jsonl(path, row):
         os.close(descriptor)
 
 
+def state_file_path(state_dir, name, suffix):
+    """`name` plus `suffix` in `state_dir`, with every character outside letters, digits, dot, dash and underscore in
+    `name` replaced by an underscore, so an id from a hook event or a branch name is one safe file name."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(name))
+    return pathlib.Path(state_dir) / (safe + suffix)
+
+
 def read_jsonl(path):
     """The rows of a JSON-lines file; a missing file is no rows and a torn or non-object line is skipped."""
     path = pathlib.Path(path)

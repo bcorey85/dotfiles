@@ -1242,12 +1242,6 @@ def say_file_in(directory):
     return directory / "say.md"
 
 
-def say_file(repo_dir):
-    # The real path of say.md for this repo.
-    directory = state_dir(repo_dir)
-    return say_file_in(directory) if directory is not None else pathlib.Path("say.md")
-
-
 def say(repo_dir, text, replaces_blocks_starting=None):
     # User-facing text goes to a file the /code subagent hands back verbatim, so the model never has to copy it.
     # A block that starts with one of the `replaces_blocks_starting` prefixes takes the place of the earlier blocks

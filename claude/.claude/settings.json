@@ -390,23 +390,11 @@
           },
           {
             "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py",
-            "if": "Bash(*git*)"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py"
           },
           {
             "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py",
-            "if": "Bash(*gh*)"
-          },
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py",
-            "if": "Bash(*git*)"
-          },
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py",
-            "if": "Bash(*review-gate-mark*)"
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py"
           },
           {
             "type": "command",

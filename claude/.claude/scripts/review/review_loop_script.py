@@ -93,7 +93,7 @@ from review_loop_prompts import coder_prompt, reviewer_prompt
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
-LARGE_ADDED_LINES = 40
+LARGE_ADDED_LINES = source_paths.LARGE_ADDED_LINES
 SPLIT_FILES = 5
 SPLIT_LINES = 300
 DIFF_CONTEXT = 12
@@ -200,34 +200,19 @@ def git_lines(repo, *args):
 def scope(repo):
     """{path: [added, status]} for the working tree against HEAD, untracked files included."""
     files = {}
-    for path, code in worktree_snapshot.status_codes(repo).items():
-        status = code.strip()
-        files[path] = [0, "??" if status == "??" else status[0]]
-    for line in git_lines(repo, "diff", "--numstat", "HEAD"):
-        added, _deleted, path = line.split("\t")
-        if path in files and added != "-":
-            files[path][0] = int(added)
-    for path, entry in files.items():
-        if entry[1] == "??":
-            entry[0] = len((pathlib.Path(repo) / path).read_bytes().splitlines())
+    for path, change in worktree_snapshot.working_tree_changes(repo).items():
+        status = change["code"].strip()
+        files[path] = [change["added"], "??" if status == "??" else status[0]]
     return files
-
-
-def counts_toward_size(path):
-    """Whether a changed file's added lines count toward the source-size bar.
-
-    Counted source by source_paths (not a test, lockfile, generated or built file) and not a doc.
-    """
-    return source_paths.is_counted_source(path) and not path.endswith(".md")
 
 
 def first_round_plan(files, structure_pass_skipped=False):
     """Which reviewers go out in the first round, and who owns which files."""
     source = [path for path in files if not source_paths.is_test_path(path)]
     tests = [path for path in files if source_paths.is_test_path(path)]
-    added = sum(files[path][0] for path in files if counts_toward_size(path))
-    new_source = any(files[path][1] in ("??", "A") for path in source)
-    large = bool(source) and (added >= LARGE_ADDED_LINES or new_source)
+    added = sum(files[path][0] for path in files if source_paths.counts_toward_size(path))
+    new_paths = [path for path in source if files[path][1] in ("??", "A")]
+    large = source_paths.is_large_change(added, new_paths)
 
     dispatches = []
     if large and tests:
@@ -312,12 +297,12 @@ def file_texts(repo):
 
 
 def added_source_lines(diffs):
-    """Lines the given unified diffs add to files that count toward the size bar (`counts_toward_size`)."""
+    """Lines the given unified diffs add to files that count toward the size bar (`source_paths.counts_toward_size`)."""
     total, source = 0, False
     for diff in diffs:
         for line in diff.splitlines():
             if line.startswith("+++ b/"):
-                source = counts_toward_size(line[6:])
+                source = source_paths.counts_toward_size(line[6:])
             elif line.startswith("+") and source:
                 total += 1
     return total

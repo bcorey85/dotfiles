@@ -107,7 +107,10 @@ herdr-api tab rename "$code_tab" code >/dev/null
 herdr-api pane rename "$agent" claude >/dev/null
 claude_cmd="claude"
 if [ -n "$claude_session" ]; then
-    claude_cmd="claude --resume $claude_session --fork-session"
+    # The fork takes the worktree's name, so peers can tell it from the session
+    # it was forked from.
+    fork_name=$(printf '%q' "$(basename "$dir")")
+    claude_cmd="claude --resume $claude_session --fork-session --name $fork_name"
     if [ -n "$start_prompt" ]; then
         # The pane shell would expand quotes, $ and backticks typed into it, so
         # the text travels in a file; the text is never re-parsed.

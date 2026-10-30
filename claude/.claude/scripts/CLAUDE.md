@@ -14,8 +14,8 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - Hand-back rows (dispatch, hand-back, stop, step): `review/handback_store.py`.
 - Full-check result and scope: `review/full_check.py` owns the result values. `lib/check_scope.py` owns whether a command is whole or targeted.
 - Test file and test path: `lib/source_paths.py` (`is_test_path`, `is_runnable_test_file`).
-- Whether a command runs tests, and test runner output: `lib/test_run_output.py`. Whether a check passed or could not run: `lib/check_output.py`.
-- Check command classification: `lib/check_scope.py` `command_check_scope`. Add no per-gate runner or flag table.
+- Test runner output: `lib/test_run_output.py`. Whether a check passed or could not run: `lib/check_output.py`.
+- Every question about a command (runs tests, runner family, is a check, test filter, cargo test target): `lib/check_scope.py` (`runs_tests`, `runner_family`, `is_check`, `command_check_scope`, `names_test_filter`, `names_cargo_test_target`, `names_test_runner`, `prints_own_runner_summary`). Add no per-gate runner or flag table.
 - Shell command parsing in a gate: `lib/shell_command.py`. Never use a bare `shlex.split`, `str.split` or operator regex on a command.
 - Plan text: `lib/plan_format.py`.
 - State file paths and writes: `lib/script_utils.py` (`state_file_path`, `write_text_atomically`, `read_jsonl`).

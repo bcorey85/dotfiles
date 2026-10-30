@@ -1,8 +1,12 @@
-"""Reads a shell command line and says how wide a check it runs: a whole test suite, lint or build, a targeted run, or
-none. A whole run of a runner in RUNNER_VALUE_FLAGS reads none, not whole. A make target or a docker exec or run call
-is judged by the commands it runs (make is read from the Makefile text; a NAME=value argument, a missing Makefile or a
-missing target lets the call through, and make -n, -q, -t or -h runs no recipe line except one marked `+` or one that
-names `$(MAKE)`, which is not judged). Runner wrappers (poetry, pipenv or uv run, env, timeout and the like) are peeled
+"""The one owner of every question about a shell command line. It says whether the command runs tests (runs_tests,
+names_test_runner), whether a step can print a runner summary of its own (prints_own_runner_summary), which runner
+families it runs (runner_family), whether it is a test, lint, typecheck or build run (is_check), whether it names a
+test filter (names_test_filter) or a cargo test target (names_cargo_test_target), and how wide a check it runs: a
+whole test suite, lint or build, a targeted run, or none (command_check_scope). A whole run of a runner in
+RUNNER_VALUE_FLAGS reads none, not whole. A make target or a docker exec or run call is judged by the commands it
+runs (make is read from the Makefile text; a NAME=value argument, a missing Makefile or a missing target lets the call
+through, and make -n, -q, -t or -h runs no recipe line except one marked `+` or one that names `$(MAKE)`, which is not
+judged). Runner wrappers (poetry, pipenv or uv run, env, timeout and the like) are peeled
 first, so the command they run is the one judged."""
 import os
 import pathlib
@@ -16,6 +20,7 @@ from shell_command import (
     docker_set_variables,
     resolved_command_words,
     split_simple_commands,
+    step_words,
     unwrap_docker,
     without_assignments,
     without_flag_values,
@@ -121,6 +126,61 @@ MAKE_PROGRAMS = ("make", "gmake")
 MAX_MAKE_DEPTH = 5
 CHANGED_FILES_FLAGS = ("--changed", "--onlyChanged")
 WHOLE_PACKAGE_PATHS = {".", "./"}
+
+# What runs tests. A word that is one of these runs tests wherever it stands in a step.
+TEST_RUNNER_WORDS = ("pytest", "vitest", "jest", "mocha")
+# The wide text reading of a test runner: a runner word, `cargo test`, `go test`, `bun test`, or a package manager
+# with a `test` word anywhere after it. A search or print step that names a runner matches it too.
+TEST_RUNNER = re.compile(r"\b(?:" + "|".join(TEST_RUNNER_WORDS) + r"|cargo\s+test|go\s+test|bun\s+test"
+                         r"|(?:npm|pnpm|yarn|npx)\b.*\btest\b)\b")
+# A command-line flag that names which tests to run.
+TEST_FILTER = re.compile(r"(?:^|\s)(?:-k|-t|-run|--testNamePattern|--test-name-pattern|--grep|--filter|--skip)"
+                         r"(?:[\s=]|$)|\S::\w")
+TEST_WORD = re.compile(r"^(?:test(?:[:-][\w:.-]*)?|nextest)$")
+# Programs that run a named script or target, and Django's `manage.py`: a `test` word given to one runs tests.
+SCRIPT_RUNNERS = ("npm", "pnpm", "yarn", "bun", "make", "just", "task", "cargo", "go", "deno", "manage.py")
+# Programs whose arguments only name a test: a search, a file check, a print, a directory change.
+NON_TEST_PROGRAMS = ("test", "cd", "git", "rg", "grep", "echo", "cat", "ls", "find", "diff",
+                     "head", "tail", "sed", "less", "more", "tac", "nl", "awk", "cut", "sort", "uniq", "wc", "jq",
+                     "strings", "bat")
+# The runner families a test command can run, read from its text.
+RUNNER_FAMILY_PATTERNS = {
+    "js": re.compile(r"\b(?:vitest|jest|mocha)\b|\b(?:npm|pnpm|yarn|bun|npx)\b.*\btest\b"),
+    "python": re.compile(r"\bpytest\b|\bmanage\.py\s+test\b"),
+    "cargo": re.compile(r"\bcargo\s+(?:test|nextest)\b"),
+}
+
+# What is a check: a test, lint, typecheck or build run. A program here is a check with any arguments.
+CHECK_PROGRAMS = {"tsc", "eslint", "ruff", "mypy", "golangci-lint", "rspec", "phpunit", "shellcheck", "luacheck",
+                  "stylua", "bats", "pyright", *TEST_RUNNER_WORDS}
+# By program: the subcommands that make it a check.
+CHECK_SUBCOMMANDS = {
+    "go": {"test", "vet"}, "cargo": {"test", "nextest", "clippy", "check"}, "dotnet": {"test"}, "mvn": {"test"},
+    "gradle": {"test"}, "make": {"test", "lint", "check", "typecheck"},
+}
+PACKAGE_SCRIPT_RUNNERS = {"npm", "pnpm", "yarn", "bun"}
+# Package-manager verbs that add, remove or change a package: a test word after one names a package.
+PACKAGE_VERBS = {"install", "i", "ci", "add", "remove", "uninstall", "rm", "update", "link", "upgrade", "up",
+                 "un"}
+# Programs that add a package or look one up. One of these programs given a verb of PACKAGE_VERBS_AND_LOOKUPS is a
+# package step.
+PACKAGE_MANAGERS = {"pip", "pip3", "uv", "npm", "pnpm", "yarn", "bun", "poetry", "pipenv", "pdm", "cargo", "pipx",
+                    "brew", "apt", "apt-get", "dnf", "yum", "apk"}
+PACKAGE_VERBS_AND_LOOKUPS = PACKAGE_VERBS | {"show", "list", "ls", "info", "view", "download", "search", "why",
+                                             "outdated"}
+# The package-manager flags that take a value word, which is no verb. `-w` takes one in npm only; elsewhere it is a
+# switch (pnpm `--workspace-root`).
+PACKAGE_VALUE_FLAGS = {"--prefix", "--filter", "-F", "--dir", "-w", "--workspace", "--cwd", "-C"}
+LOOKUP_PROGRAMS = {"which", "whereis", "type"}
+# A package runner's argument that runs the next word as a program (`npm exec jest`, `bun x vitest`).
+PACKAGE_EXEC_WORDS = (["exec"], ["x"], ["dlx"])
+CHECK_SCRIPTS = {"test", "lint", "typecheck", "type-check", "check", "build"}
+# A `cargo test` run of a whole workspace or of every target kind is no named target.
+CARGO_WHOLE_TREE_FLAGS = {"--workspace", "--all", "--all-targets"}
+# The `cargo test` flags that pick a crate or a target kind, which still runs a crate's whole suite. A run limited by
+# them alone is no named target for the repeat cap. The first three take a value.
+CARGO_CRATE_VALUE_FLAGS = {"-p", "--package", "--exclude"}
+CARGO_CRATE_WIDE_FLAGS = CARGO_CRATE_VALUE_FLAGS | {"--tests", "--bins", "--benches", "--examples", "--ignored"}
 
 
 def matches_prefix(words, prefix):
@@ -369,5 +429,196 @@ def runs_cargo_clippy(command):
         subcommand_words = without_flag_values(words[1:], RUNNER_VALUE_FLAGS["cargo"])
         cargo_words = [word for word in subcommand_words if not word.startswith(("+", "-"))]
         if cargo_words[:1] == ["clippy"]:
+            return True
+    return False
+
+
+def runs_tests(command):
+    """True when a step of the shell command runs tests: a word that is `pytest`, `vitest`, `jest` or `mocha`, or
+    `test`, `nextest` or a script or target name that starts `test:` or `test-`, given to a script runner (`npm test`,
+    `make test-unit`, `pnpm --filter api test`, `python manage.py test`, `cargo nextest run`). A search, a file
+    check, a `cd`, a tool whose argument merely names a test folder, or a package-verb step whose `test-` word names
+    a package (`npm install test-x`) is not. False for text shlex cannot split."""
+    try:
+        simple_command_list = split_simple_commands(command)
+    except ValueError:
+        return False
+
+    return any(step_runs_tests(without_assignments(words)) for words in simple_command_list)
+
+
+def step_runs_tests(words):
+    # True when one step (assignments already removed) runs tests, by a runner word or a script runner's test word.
+    if not words or words[0] in NON_TEST_PROGRAMS:
+        return False
+
+    return any(word in TEST_RUNNER_WORDS for word in words) or step_runs_test_script(words)
+
+
+def step_installs_or_looks_up(words):
+    # True when the step is a `PACKAGE_MANAGERS` step with a verb of `PACKAGE_VERBS_AND_LOOKUPS`, a
+    # `LOOKUP_PROGRAMS` step, or `command -v` (`pip install pytest`, `pip show pytest`,
+    # `npm install -D jest`, `uv add pytest`, `which pytest`, `command -v pytest`): a runner word there names a
+    # package, not a run.
+    program = os.path.basename(words[0])
+    if program in LOOKUP_PROGRAMS:
+        return True
+
+    if program == "command":
+        return bool({"-v", "-V"}.intersection(words[1:2]))
+
+    return package_manager_verb(words) in PACKAGE_VERBS_AND_LOOKUPS
+
+
+def package_manager_verb(words):
+    # The verb of a package-manager step: the first word after the program that is no flag, or the second after
+    # `uv pip` or `uv tool`. `python -m pip` is `pip`. None when the step is no package-manager step.
+    program = os.path.basename(words[0])
+    arguments = words[1:]
+    if PYTHON_PROGRAM.fullmatch(program):
+        if arguments[:2] != ["-m", "pip"]:
+            return None
+        arguments = arguments[2:]
+    elif program not in PACKAGE_MANAGERS:
+        return None
+
+    value_flags = PACKAGE_VALUE_FLAGS if program == "npm" else PACKAGE_VALUE_FLAGS - {"-w"}
+    flagless_arguments = without_flag_values(arguments, value_flags)
+    verb_words = [word for word in flagless_arguments if not word.startswith("-")]
+    if program == "uv" and verb_words[:1] in (["pip"], ["tool"]):
+        verb_words = verb_words[1:]
+    if program == "yarn" and verb_words[:1] == ["global"]:
+        verb_words = verb_words[1:]
+    elif program == "yarn" and verb_words[:1] == ["workspace"]:
+        verb_words = verb_words[2:]
+    return verb_words[0] if verb_words else None
+
+
+def step_runs_test_script(words):
+    # True when a script runner in the step is followed by a test word (`npm test`, `make test-unit`, `cargo nextest`).
+    # A package manager's verb in command position (`npm install test-x`) names a package to change, not a test.
+    if package_manager_verb(words) in PACKAGE_VERBS:
+        return False
+
+    runner_seen = False
+    for word in words:
+        if runner_seen and TEST_WORD.match(word):
+            return True
+        if pathlib.PurePosixPath(word).name in SCRIPT_RUNNERS:
+            runner_seen = True
+    return False
+
+
+def names_test_runner(command):
+    # True when the command text names a test runner anywhere, a search or print step included. runs_tests is the
+    # narrower reading; a caller that must not miss a runner takes either.
+    return bool(TEST_RUNNER.search(command))
+
+
+def prints_own_runner_summary(command):
+    """False when no step of the shell command can print a runner summary of its own: every step is a search, a file
+    print, a `cd` or similar program, or is negated with `!`, so a summary in the output is quoted text. True for any
+    other step (a test runner or a script wrapper such as `bash tests/run.sh`) and for text shlex cannot split."""
+    try:
+        simple_command_list = split_simple_commands(command)
+    except ValueError:
+        return True
+
+    for words in simple_command_list:
+        words = without_assignments(words)
+        if words and words[0] != "!" and words[0] not in NON_TEST_PROGRAMS:
+            return True
+    return False
+
+
+def runner_family(command):
+    # The runner families the command runs, as a set of "js", "python" and "cargo", read from its text. Empty when it
+    # names none of them, such as `make test-consistency` or `just test`.
+    return {family for family, runs_family in RUNNER_FAMILY_PATTERNS.items() if runs_family.search(command)}
+
+
+def cargo_test_arguments(words):
+    # The words after `cargo [+toolchain] test`, or None when the step is no `cargo test`.
+    if not words or os.path.basename(words[0]) != "cargo":
+        return None
+    cargo_words = [word for word in words[1:] if not word.startswith("+")]
+    return cargo_words[1:] if cargo_words[:1] == ["test"] else None
+
+
+def names_test_filter(command):
+    # True when the command names which tests to run: a filter flag, or a `cargo test` with a name or any word after
+    # `--`. A cargo option's value (`-p core`) is no filter.
+    if TEST_FILTER.search(command):
+        return True
+
+    cargo_value_flags = RUNNER_VALUE_FLAGS["cargo"] | RUNNER_SELECTOR_VALUE_FLAGS["cargo"]
+    for words in step_words(command):
+        arguments = cargo_test_arguments(words)
+        if arguments is None:
+            continue
+        if "--" in arguments[:-1]:
+            return True
+        option_words = arguments[:arguments.index("--")] if "--" in arguments else arguments
+        run_words = without_flag_values(option_words, cargo_value_flags)
+        if any(not word.startswith("-") for word in run_words):
+            return True
+    return False
+
+
+def words_run_a_check(words):
+    # True when the step is a test, lint, typecheck or build run: a program of CHECK_PROGRAMS, a subcommand of
+    # CHECK_SUBCOMMANDS, a package script of CHECK_SCRIPTS, or anything direct_check_scope reads as a check.
+    words = launched_runner(words)
+    if not words:
+        return False
+
+    program = os.path.basename(words[0])
+    if program in CHECK_PROGRAMS:
+        return True
+
+    arguments = [word for word in words[1:] if not word.startswith("+")] if program == "cargo" else words[1:]
+    if program in CHECK_SUBCOMMANDS:
+        return bool(arguments) and arguments[0] in CHECK_SUBCOMMANDS[program]
+
+    if program in PACKAGE_SCRIPT_RUNNERS:
+        script_words = arguments[1:] if arguments[:1] == ["run"] else arguments
+        if script_words[:1] and script_words[0] in CHECK_SCRIPTS:
+            return True
+        if arguments[:1] in PACKAGE_EXEC_WORDS:
+            return words_run_a_check(arguments[1:])
+    return direct_check_scope(words) != "none"
+
+
+def is_check(command):
+    # True when a step of the command is a test, lint, typecheck or build run, whole or on named files, or a
+    # script runner given a test word, or any other step that runs tests (a runner word anywhere in the step). A
+    # `PACKAGE_MANAGERS` step with a verb of `PACKAGE_VERBS_AND_LOOKUPS`, a `LOOKUP_PROGRAMS` step, or `command -v`
+    # is no check, even when it names a runner.
+    return any(not step_installs_or_looks_up(words)
+               and (words_run_a_check(words) or step_runs_tests(words))
+               for words in step_words(command))
+
+
+def without_crate_wide_flags(flag_words):
+    # The cargo flags without the CARGO_CRATE_WIDE_FLAGS, as `-p core`, `--package=core` or `--tests`.
+    value_free_words = without_flag_values(flag_words, CARGO_CRATE_VALUE_FLAGS)
+    return [word for word in value_free_words if word.split("=", 1)[0] not in CARGO_CRATE_WIDE_FLAGS]
+
+
+def names_cargo_test_target(command):
+    # True when a `cargo test` in the command names a test target for the repeat cap: --lib, --doc, --test, --bin,
+    # --example or --bench with a name, or a test-name filter. A run of a whole workspace, of every target kind, of a
+    # chosen crate (-p) or with no scope is a full suite. Words after `--` are the test binary's, not a target.
+    for words in step_words(command):
+        arguments = cargo_test_arguments(words)
+        if arguments is None:
+            continue
+
+        option_words = arguments[:arguments.index("--")] if "--" in arguments else arguments
+        if CARGO_WHOLE_TREE_FLAGS & set(option_words):
+            continue
+
+        target_words = without_crate_wide_flags(option_words)
+        if runner_names_part_of_suite(["cargo", "test", *target_words]):
             return True
     return False

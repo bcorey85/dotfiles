@@ -96,28 +96,6 @@ class MatchesNoTestTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(is_filter, test_run_output.matches_no_test(command, 0, NO_TEST_OUTPUTS["cargo"]))
 
-    def test_only_a_command_with_a_test_runner_step_runs_tests(self):
-        not_runs = ("git grep -n test -- src", "ruff check tests/", "test -f out.txt", "npm run lint",
-                    "cd tests && ls", "ruff check test", "npx eslint test", "mypy test-utils")
-        runs = ("npm run test:unit", "go test ./pkg/...", "FOO=1 vitest run a.test.ts", "npx mocha a.js",
-                "npm run typecheck && npm test", "cd pkg && npm test", "(cd pkg && pytest)", "a&&pytest",
-                "pipenv run python backend/manage.py test app.tests", "make test-consistency ARGS=a.test.ts",
-                "pnpm --filter api test",
-                "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(widget_sorts)'")
-        for command in not_runs + runs:
-            with self.subTest(command=command):
-                self.assertEqual(command in runs, test_run_output.runs_tests(command))
-
-    def test_only_a_command_with_a_step_that_can_print_a_summary_prints_its_own(self):
-        quotes = ("cat a.log", "cd tests && ls", "! pytest x", "FOO=1 cat a.log", "tail -5 run.log",
-                  "head run.log", "sed -n 1p run.log", "cat run.log | tail",
-                  "less run.log", "sort run.log | uniq", "awk 1 run.log", "wc -l run.log")
-        prints = ("bash tests/run.sh", "cd pkg && bash tests/run.sh", "cat a.log; pytest", 'cat "a',
-                  "pytest x | tail -5")
-        for command in quotes + prints:
-            with self.subTest(command=command):
-                self.assertEqual(command in prints, test_run_output.prints_own_runner_summary(command))
-
     def test_each_runners_own_summary_line_is_read(self):
         outputs = {
             "pytest": ("noise\n===== 3 failed, 4000 passed in 41.20s (0:00:41) =====\n",

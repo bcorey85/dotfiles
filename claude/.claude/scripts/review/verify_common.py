@@ -184,8 +184,7 @@ def review_state(repo, branch, fingerprint, logged_tree):
 
 def context_path(repo, branch):
     state_dir = pathlib.Path(os.environ.get("VERIFY_STATE_DIR") or STATE_ROOT / "verify-branch")
-    safe = re.sub(r"[^A-Za-z0-9._-]", "_", f"{repo}-{branch}")
-    return state_dir / f"{safe}.json"
+    return script_utils.state_file_path(state_dir, f"{repo}-{branch}", ".json")
 
 
 def save_context(path, context):

@@ -309,24 +309,6 @@ def present_plan_impact(packet, state):
     )
 
 
-def run_nvim_jump(asks):
-    command = os.environ.get("REVIEW_FIX_NVIM_JUMP", "nvim-jump")
-    arguments = []
-    for item in asks:
-        if not item.get("file_line"):
-            continue
-        path, line = split_location(item["file_line"])
-        arguments += ["--note", one_line(item["question"], 160), f"{path}:{line}" if line else path]
-    if not arguments:
-        return "no ask names a file:line: nothing to jump to."
-    code, output = run_command([command, *arguments])
-    if code == 2 or code == 127:
-        return "nvim-jump is not installed: skip jumping."
-    if code == 1:
-        return "no nvim owns this directory: anchors printed only."
-    return "jumped to the first ask: ]k and [k step the rest." if code == 0 else f"nvim-jump exit {code}: {output}"
-
-
 def gate_mark_line():
     return f"Gate: `{MARK_CLEAN}` as its own Bash command, unless it already ran in parallel with this call."
 
@@ -335,7 +317,7 @@ def save_packet_asks(packet, state):
     """Run nvim-jump once, save the packet's asks with stage `asks`, and return them."""
     asks = packet["ask"]
     if "jumped" not in state:
-        state["jumped"] = run_nvim_jump(asks)
+        state["jumped"] = review_asks.run_nvim_jump(os.environ.get("REVIEW_FIX_NVIM_JUMP", "nvim-jump"), asks)
     state.update({"stage": "asks", "asks": asks})
     save_fix_state(state)
     return asks
@@ -355,17 +337,6 @@ def asks_done_line(asks, state):
             "stored)")
 
 
-def ask_listing_lines(asks):
-    lines = []
-    for number, item in enumerate(asks, 1):
-        ask_class = item["class"] + (f" (was {item['class_raw']})" if item.get("class_raw") else "")
-        lines.append(f"{number}. {item.get('file_line') or 'no file:line'}  [{item['gate']}/{ask_class}]")
-        lines += script_utils.hanging_indent_lines("   ", item["question"])
-        if item.get("change"):
-            lines += script_utils.hanging_indent_lines("   Proposed change: ", item["change"])
-    return lines
-
-
 def present_packet_asks(packet, state):
     asks = save_packet_asks(packet, state)
     lines = [
@@ -375,7 +346,7 @@ def present_packet_asks(packet, state):
         "yourself and add `--by session` to asks-done; otherwise wait for the user.",
         asks_done_line(asks, state),
         gate_mark_line(),
-        *ask_listing_lines(asks),
+        *review_asks.numbered_ask_lines(asks, detail=True),
     ]
     print_action("present-asks", *lines)
 
@@ -473,7 +444,7 @@ def new_state(options, packet, packet_id):
     waiting_packets = [] if same_run else carried_waiting_packets(previous)
     fixed_paths = handback.fixed_paths(packet)
     state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
-             "spec_iter": packet["spec_iter"], "status": packet["status"], "repo": script_utils.repo_name("."),
+             "spec_iter": packet["spec_iter"], "status": packet["status"],
              "branch": script_utils.current_branch(".") or "-", "packet_id": packet_id,
              "source": options.source, "fixed_paths": fixed_paths}
     if same_run:
@@ -596,7 +567,8 @@ def stop_for_status(packet, options, state):
         entries += ["Dispatch lines (pass exactly these):", *rerun_lines]
     ask_lines = []
     if packet["ask"]:
-        ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state), *ask_listing_lines(packet["ask"])]
+        ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
+                     *review_asks.numbered_ask_lines(packet["ask"], detail=True)]
     print_action("stop", instruction, *entries, *ask_lines)
     if replies:
         print("AIKIDO REPLIES POSTED:")

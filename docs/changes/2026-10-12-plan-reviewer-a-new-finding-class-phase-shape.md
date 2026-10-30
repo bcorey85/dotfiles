@@ -9,6 +9,8 @@ kind: "behavior"
 components: ["agent/plan-reviewer"]
 evidence: ["seeded round", "census"]
 watches: ["plan-review-phase-shape"]
+proof: ["2026-10-09-planfmt-sealed-planfmt-md-graded-edit"]
+impact: {"metric": "quality", "before": 9, "after": 0, "unit": "planted shape defects missed (of 9)", "finding": "2026-10-09-planfmt-sealed-planfmt-md-graded-edit", "better": "lower"}
 ---
 
 ## Change

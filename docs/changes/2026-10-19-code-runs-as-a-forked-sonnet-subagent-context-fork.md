@@ -9,6 +9,7 @@ kind: "behavior"
 components: ["skill/code", "script/code-step"]
 evidence: ["bench run", "judgment"]
 watches: ["code-forked-sonnet-router"]
+proof: ["2026-10-19-forked-sonnet-router-for-code-opus-main-session"]
 ---
 
 ## Change

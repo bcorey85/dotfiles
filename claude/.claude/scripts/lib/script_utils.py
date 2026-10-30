@@ -240,6 +240,14 @@ def text_before_marker(text, marker):
     return text.split(marker, 1)[0]
 
 
+def run_notes_lines(run_notes):
+    """The prompt lines for the user's run notes, or [] when there are none."""
+    if not run_notes:
+        return []
+
+    return ["", "Run notes from the user. They bind this run; the plan stays the spec:", run_notes]
+
+
 def path_is_under(path, prefix):
     # True when path is prefix itself or lies below it, compared as text so "ab" is not under "a".
     return path == prefix or path.startswith(prefix.rstrip("/") + "/")

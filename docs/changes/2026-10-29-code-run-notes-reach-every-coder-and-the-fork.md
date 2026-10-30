@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "code run notes reach every coder code_step dispatches for the phase and the fork takes routing notes mid-run as guidance"
 description: "The run notes given after a plan now reach every coder code_step dispatches for the phase, not only the first, and a mid-run message that only routes the run or sets a constraint is recorded as guidance instead of being turned away as a scope change."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T21:53:07-05:00"}
-seq: 297
+seq: 298
 kind: "fix"
 components: ["script/code-step", "skill/code"]
 evidence: ["judgment"]

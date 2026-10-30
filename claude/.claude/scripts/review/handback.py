@@ -35,6 +35,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import loop_transcript
 import script_utils
 from handback_store import (
+    DISPATCH_REPO_KIND,
     LOOP_WAITING,
     NO_DISPATCH,
     REDISPATCHED,
@@ -945,10 +946,21 @@ def hand_back_plan_edit_reason(transcript, packet):
     return loop_transcript.plan_edit_reason(transcript, packet)
 
 
+def rerecord_dispatch_repo(session_id, transcript, cwd):
+    """Record the repo the loop's ROOT= line names as its dispatch's repo, so the commit gate credits the repo the
+    run rows name. The dispatch row was written before review-scope printed ROOT=. A transcript with no ROOT= line
+    records nothing."""
+    if not transcript.scope_root:
+        return
+
+    record(session_id, DISPATCH_REPO_KIND, repo=transcript.reviewed_repo(cwd))
+
+
 def transcript_gate_reason(event, session_id, agent_id, message, packet):
     """The deny reason of the first gate that reads the loop's own transcript, in order: a background dispatch or
     shell still open, no passed full check after the last code change, a plan file in the packet's files_touched.
-    The transcript is read once. One that cannot be read never blocks, and a failed full-check scan skips the
+    The transcript is read once, and once it has been read its ROOT= line re-records the dispatch's repo before any
+    gate runs. One that cannot be read never blocks and records nothing, and a failed full-check scan skips the
     full-check gate only."""
     try:
         transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
@@ -956,6 +968,7 @@ def transcript_gate_reason(event, session_id, agent_id, message, packet):
     except Exception as error:
         print(f"handback hook: transcript gates skipped, {type(error).__name__}: {error}", file=sys.stderr)
         return None
+    rerecord_dispatch_repo(session_id, transcript, event.get("cwd"))
     open_work = open_work_reason(open_dispatches)
     if open_work:
         return open_work

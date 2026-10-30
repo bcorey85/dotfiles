@@ -508,6 +508,14 @@ def read_events(cwd, run_id):
     return script_utils.read_jsonl(run_events_path(cwd, run_id))
 
 
+def agent_still_out(events, agent_id):
+    # Whether the agent's newest launch or SendMessage resume came after its newest hand-back: it may still be editing
+    # the tree.
+    of_coder = [event for event in events
+                if event.get("agent_id") == agent_id and event.get("event") in ("launch", "resume", "handback")]
+    return bool(of_coder) and of_coder[-1]["event"] != "handback"
+
+
 def dispatch_marker(prompt_text):
     # (run id, dispatch id) of the last marker in the prompt of an Agent call, or None. The marker counts wherever it
     # stands: on its own line, after other text on a folded line, or with text after it.
@@ -653,6 +661,27 @@ def awaited_agent_id(repo_dir, state):
         return state["stop"].get("agentId")
     launched = newest_dispatch_standing(repo_dir, state)["launched"]
     return launched.get("agent_id") if launched else None
+
+
+def stopped_awaited_agent_id(repo_dir, state):
+    # The id of the agent the next verb waits for when the session stopped it, or the agent that launched it, with
+    # TaskStop after its newest launch or resume, unless a hand-back of that agent came after its newest launch or
+    # resume: no hand-back will come. None otherwise.
+    agent_id = awaited_agent_id(repo_dir, state)
+    if agent_id is None:
+        return None
+
+    stopped = False
+    stoppable_ids = {agent_id}
+    events = read_events(repo_dir, state["runId"])
+    for event in events:
+        if event.get("event") in ("launch", "resume") and event.get("agent_id") == agent_id:
+            stopped = False
+            if event.get("launched_by"):
+                stoppable_ids.add(event["launched_by"])
+        elif event.get("event") == "task-stop" and event.get("task_id") in stoppable_ids:
+            stopped = True
+    return agent_id if stopped and agent_still_out(events, agent_id) else None
 
 
 def dispatch_since(state):

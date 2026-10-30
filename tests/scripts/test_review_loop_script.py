@@ -1346,6 +1346,23 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["dropped_asks"], ["ask only points back to another ask, so it was dropped: "
                                                   "'The open ask about pinning the window still stands.'"])
 
+    def test_a_pointer_ask_repeated_in_a_later_round_is_one_dropped_ask_warning(self):
+        pointer_and_ask = ("## Ask\n- `app.py:3` should the window be pinned?\n"
+                           "- The open ask about pinning the window still stands.\n\n## Nit\nNone\n")
+        first_round = "## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n" + pointer_and_ask
+        second_round = "## Fix\nNone\n\n" + pointer_and_ask
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": first_round}, {"result": second_round}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["dropped_asks"], ["ask only points back to another ask, so it was dropped: "
+                                                  "'The open ask about pinning the window still stands.'"])
+
     def test_two_fixes_at_one_line_are_two_rows_with_distinct_ids(self):
         two_at_one_line = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
                            "- `app.py:2` the name `limit` shadows the module setting\n\n"

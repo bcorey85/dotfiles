@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """full_check.py — the review loop's one full check of a phase, under a time limit.
 
-    full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] [--plan <path> --phase <id>] -- '<command>'
+    full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] [--plan <path> --phase <id>] [-- '<command>']
+
+With no command, the script picks one: the repo CLAUDE.md's `Quality check:` command, else the command that last
+passed there. When there is neither and the repo's CLAUDE.md does not hand the full suite to CI, it prints
+`full check: setup fault (no Quality check line, and no full check has passed here)` and a `fix:` line, and exits 1.
 
 With --plan and --phase, the phase's `Expected red:` lines whose later phase is still open leave their `&&` steps out
 of the command (lib/expected_red.py), and each left-out line prints as `expected red: <command> until Phase <id>`
@@ -14,9 +18,12 @@ printed no test runner's own summary line, `failed (exit N)` with the failing st
 error, each lint error with its file:line, the FAIL and ERROR lines, vitest's leading-space FAIL and \xd7 lines and the
 `FAILED: <steps>` step-summary lines; else the failing tests and the log's last lines), `setup fault (exit N)` with
 the same when the environment could not run the check (no program, a runner that cannot start, no package manifest,
-no test found, a package-manager or engine version mismatch), `not run (check-command error: <line>)` when a step of
-the command stops on a path that does not exist and did not exist at the diff base either (`--base`, HEAD by
-default; a path the diff removed or moved is a failure), `not run (timeout)` when the command runs past the limit, or
+no test found, a package-manager or engine version mismatch; a run that found no test is a setup fault at exit 0
+too, and in a repo whose CLAUDE.md names no `Quality check:` the log tail printed under the result opens with a
+`fix:` line that names the line to add, with the command that last passed there when one did and is not the command
+that ran), `not run (check-command error: <line>)` when a step of the command stops on a path that does not exist
+and did not exist at the diff base either (`--base`, HEAD by default; a path the diff removed or moved is a failure),
+`not run (timeout)` when the command runs past the limit, or
 `not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and the command does not equal its
 `Quality check:` command or one of its && steps (the command does not run then, scoped or not),
 `passed (check only; CI runs the full suite)` when the command equals that repo's `Quality check:` command, or is
@@ -30,7 +37,8 @@ calls, refuses a scoped or unresolved command the same way; there a command that
 command counts as that command. `base_run` skips the refusal, since the head run has applied it.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
-(`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
+(`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure. A `passed` check
+in a repo whose CLAUDE.md names no `Quality check:` is kept in the git common dir's `full-check-last-passed` file.
 A command past the limit is killed with its whole process group, so no test process outlives the check. A repo with
 a `.python-version` file runs the command with the pyenv shims first on PATH. A failed check whose log says
 `No module named X`, for an X that the repo declares as a dependency (requirements*.txt, pyproject.toml, setup.cfg
@@ -63,10 +71,12 @@ import script_utils
 import shell_command
 from check_output import (
     FAILING_TEST_LINE,
+    NO_TESTS_EXIT_ZERO,
     failing_block_details,
     is_setup_fault,
     missing_path,
     normalized_log_line,
+    ran_no_test,
     tail_with_failing_tests,
 )
 from linked_installs import VENV_FOLDERS, holds_editable_install, import_path_enters_repo
@@ -110,6 +120,18 @@ LINT_LOCATION_LINE = re.compile(r"^\s*--> \S+:\d+:\d+")
 FAILED_STEPS_LINE = re.compile(r"^FAILED: ")
 # Where the base worktree lives, under the repo's git common dir.
 BASE_TREE_FOLDER = "full-check-base"
+# The file under the repo's git common dir that holds the last check that passed in a repo with no `Quality check:`
+# line, shared by all its worktrees.
+LAST_PASSED_FILE = "full-check-last-passed"
+# The fix clause that names the `Quality check:` line to add; the no-test and no-check fixes share it.
+QUALITY_CHECK_FIX = "add a Quality check: `{command}` line to {claude_md}"
+# The fix line, a template, that opens the log tail printed under a no-test setup fault in a repo with no
+# `Quality check:` line.
+NO_TEST_FIX = "fix: the check ran no test; " + QUALITY_CHECK_FIX
+ANY_SUITE_COMMAND = "<the command that runs every test>"
+# Run with no command, in a repo with neither a `Quality check:` line nor a check that passed before.
+NO_CHECK_PICKED = f"{SETUP_FAULT} (no Quality check line, and no full check has passed here)"
+NO_CHECK_FIX = "fix: " + QUALITY_CHECK_FIX
 # The check fails the same way on HEAD without the diff. Not a failure: it starts with neither "failed" nor "not run".
 # A check that stops early on the old failure (lint before test, a collection error, -x) never ran the diff's tests.
 PRE_EXISTING = "pre-existing failure (the check fails the same way without this diff, so it did not verify this diff)"
@@ -142,6 +164,62 @@ def configured_check_command(repo):
         return None
 
     return match.group(1)
+
+
+def last_passed_path(repo):
+    """The repo's last-passed-check file, or None outside a git repo."""
+    common_dir = script_utils.git_output(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common_dir is None:
+        return None
+
+    return pathlib.Path(common_dir) / LAST_PASSED_FILE
+
+
+def last_passed_command(repo):
+    """The full check that last passed in the repo while its CLAUDE.md named none, or None."""
+    path = last_passed_path(repo)
+    if path is None or not path.is_file():
+        return None
+
+    command = path.read_text(errors="replace").rstrip("\n")
+    return command or None
+
+
+def picked_check_command(repo):
+    """The full check to run when the caller names none: the `Quality check:` command, else, when CI does not run the
+    repo's full suite, the check that last passed here. None when there is neither."""
+    configured = configured_check_command(repo)
+    if configured or full_suite_runs_in_ci(repo):
+        return configured
+
+    return last_passed_command(repo)
+
+
+def remember_passed_command(repo, check_command):
+    """Keep `check_command` as the repo's last passed full check; keep nothing outside a git repo or in a repo whose
+    CLAUDE.md names a `Quality check:`."""
+    path = last_passed_path(repo)
+    if path is None or configured_check_command(repo) is not None:
+        return
+
+    script_utils.write_text_atomically(path, check_command + "\n")
+
+
+def no_test_fix_lines(repo, lines, check_command, configured):
+    """`lines` under a first line that names the fix for `check_command`, a check that ran no test, when the repo's
+    CLAUDE.md names no check (`configured` is None): a `Quality check:` line, holding the command that last passed
+    here when one did and `check_command` is not that command or && steps of it (a phase cut its Expected red
+    steps)."""
+    if configured:
+        return lines
+
+    claude_md = pathlib.Path(repo) / "CLAUDE.md"
+    passed_before = last_passed_command(repo)
+    if passed_before is None or is_configured_check(check_command, passed_before):
+        fix_line = NO_TEST_FIX.format(command=ANY_SUITE_COMMAND, claude_md=claude_md)
+    else:
+        fix_line = NO_TEST_FIX.format(command=passed_before, claude_md=claude_md) + " (that command last passed here)"
+    return f"{fix_line}\n{lines}"
 
 
 def is_configured_check(check_command, configured):
@@ -332,7 +410,8 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
     the check leads. A scoped or unresolved command (it names files or tests, or its scope cannot be read) is not run
     and returns `NOT_RUN_SCOPED` or `NOT_RUN_UNRESOLVED` unless `declared`: True when the command, before its
     Expected red steps were left out, equals the `Quality check:` command, or when the caller already passed it
-    through the refusal (`base_run`); None counts the command when it equals that command or is && steps of it."""
+    through the refusal (`base_run`); None counts the command when it equals that command or is && steps of it. The
+    caller keeps a passing run's command with `remember_passed_command`; `run` saves nothing."""
     details = empty_details()
     configured = configured_check_command(repo)
     in_ci = full_suite_runs_in_ci(repo)
@@ -363,17 +442,27 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
         return NOT_RUN_TIMEOUT, tail, details
     if exit_code == 0 and SUMMARY_FAILURE.search("\n".join(all_summaries)):
         return FAILED_EXIT_ZERO, tail_with_failing_tests(output, tail), details
-    if exit_code == 0 and all_summaries:
-        return PASSED, tail, details
-    if exit_code == 0:
-        return (CHECK_ONLY_PASSED if in_ci else UNVERIFIED), tail, details
 
-    result, failure_lines = failed_run_result(repo, base, exit_code, output, tail)
+    if exit_code == 0:
+        result, lines = exit_zero_result(repo, check_command, output, all_summaries, tail, in_ci, configured)
+        return result, lines, details
+
+    result, failure_lines = failed_run_result(repo, base, exit_code, output, tail, check_command, configured)
     return result, failure_lines, details
 
 
-def failed_run_result(repo, base, exit_code, output, tail):
-    """(result, the lines that show it) for a check that exited non-zero."""
+def exit_zero_result(repo, check_command, output, all_summaries, tail, in_ci, configured):
+    """(result, the lines that show it) for a check that exited 0 with no failure summary."""
+    test_run_summaries = [summary for summary in all_summaries if not NO_TESTS_EXIT_ZERO.search(summary)]
+    if ran_no_test(0, output) and not test_run_summaries:
+        return f"{SETUP_FAULT} (exit 0)", no_test_fix_lines(repo, tail, check_command, configured)
+    if all_summaries:
+        return PASSED, tail
+    return (CHECK_ONLY_PASSED if in_ci else UNVERIFIED), tail
+
+
+def failed_run_result(repo, base, exit_code, output, tail, check_command, configured):
+    """(result, the lines that show it) for `check_command`, a check that exited non-zero."""
     log_lines = output.splitlines()
     gap = environment_gap(repo, output)
     if gap:
@@ -389,6 +478,8 @@ def failed_run_result(repo, base, exit_code, output, tail):
     tail = tail_with_failing_tests(output, tail)
     # An undeclared missing module is a code failure here: the change may use a dependency it did not declare.
     if is_setup_fault(exit_code, output, repo, include_missing_modules=False):
+        if ran_no_test(exit_code, output):
+            tail = no_test_fix_lines(repo, tail, check_command, configured)
         return f"{SETUP_FAULT} (exit {exit_code})", tail
 
     failing_lines = failing_step_lines(log_lines)
@@ -598,20 +689,25 @@ def main(argv):
     parser.add_argument("--base", default="HEAD")
     parser.add_argument("--plan")
     parser.add_argument("--phase")
-    if "--" not in argv:
-        parser.error("no command after --")
-
-    separator = argv.index("--")
+    separator = argv.index("--") if "--" in argv else len(argv)
     args = parser.parse_args(argv[:separator])
     if UNFILLED_LOG_NAME.search(pathlib.Path(args.log).name):
         parser.error(f"--log name {pathlib.Path(args.log).name!r} holds an unfilled placeholder (`...`, `<` or `>`)")
     if bool(args.plan) != bool(args.phase):
         parser.error("--plan and --phase go together")
 
-    command_words = argv[separator + 1:]
-    check_command = shlex.join(command_words) if len(command_words) > 1 else "".join(command_words)
-    if not check_command:
-        parser.error("no command after --")
+    if separator == len(argv):
+        check_command = picked_check_command(args.repo)
+        if check_command is None and not full_suite_runs_in_ci(args.repo):
+            print(f"full check: {NO_CHECK_PICKED}")
+            claude_md = pathlib.Path(args.repo) / "CLAUDE.md"
+            print(NO_CHECK_FIX.format(command=ANY_SUITE_COMMAND, claude_md=claude_md))
+            return 1
+    else:
+        command_words = argv[separator + 1:]
+        check_command = shlex.join(command_words) if len(command_words) > 1 else "".join(command_words)
+        if not check_command:
+            parser.error("no command after --")
 
     try:
         phase_command, left_out = phase_check(args.repo, check_command, args.plan, args.phase)
@@ -619,11 +715,13 @@ def main(argv):
         parser.error(f"--plan {args.plan}: {error.strerror}")
 
     declared = check_command == configured_check_command(args.repo)
-    if phase_command is None:
+    if check_command is not None and phase_command is None:
         result, tail, details = expected_red.not_run_result(left_out), "", empty_details()
     else:
         result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base,
                                     declared=declared)
+        if result == PASSED:
+            remember_passed_command(args.repo, check_command)
     print_result(result, details, left_out)
 
     if is_failure(result) or is_setup_fault_result(result):

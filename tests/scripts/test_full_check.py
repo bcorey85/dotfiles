@@ -140,6 +140,123 @@ class FullCheckTest(unittest.TestCase):
         self.assertTrue(full_check.is_unverified("unverified (exit 0, no runner summary)"))
         self.assertFalse(full_check.is_unverified("passed"))
 
+    def test_an_exit_zero_run_of_no_test_is_a_setup_fault_not_a_pass(self):
+        no_test_runs = {"jest": "echo 'Tests:       0 total'",
+                        "jest pass with no tests": "echo 'No tests found, exiting with code 0'",
+                        "unittest": "printf 'Ran 0 tests in 0.000s\\n\\nOK\\n'"}
+        for runner, command in no_test_runs.items():
+            with self.subTest(runner):
+                completed = self.check(command)
+
+                self.assertEqual(completed.returncode, 1, completed.stdout)
+                self.assertEqual(completed.stdout.splitlines()[0], "full check: setup fault (exit 0)")
+
+    def test_a_chained_check_whose_other_step_ran_tests_still_passes(self):
+        completed = self.check("echo 'Tests:       0 total' && " + PASSING_SUITE)
+
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
+
+    def test_a_discover_that_finds_no_test_in_a_subfolder_repo_names_the_quality_check_fix(self):
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        (self.repo / "bin").mkdir()
+        (self.repo / "bin" / "test_tally.py").write_text(
+            "import unittest\n\n\nclass TallyTest(unittest.TestCase):\n"
+            "    def test_tally(self):\n        self.assertEqual(1 + 1, 2)\n")
+        root_discover = "python3 -m unittest discover"
+        subfolder_discover = "cd bin && python3 -m unittest discover -p 'test_*.py'"
+        claude_md = self.repo / "CLAUDE.md"
+
+        first_root_run = self.check(root_discover)
+        self.assertIsNone(full_check.last_passed_command(self.repo))
+        subfolder_run = self.check(subfolder_discover)
+        second_root_run = self.check(root_discover)
+
+        self.assertEqual(first_root_run.returncode, 1, first_root_run.stdout)
+        self.assertIn(f"fix: the check ran no test; add a Quality check: `<the command that runs every test>` line "
+                      f"to {claude_md}", first_root_run.stdout)
+        self.assertEqual(subfolder_run.stdout.splitlines()[0], "full check: passed", subfolder_run.stdout)
+        self.assertIn(f"fix: the check ran no test; add a Quality check: `{subfolder_discover}` line to {claude_md} "
+                      "(that command last passed here)", second_root_run.stdout)
+
+    def test_a_phase_with_an_expected_red_step_saves_the_full_command_as_the_last_passed_check(self):
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        full_command = f"{PASSING_SUITE} && exit 1"
+        (self.repo / "plan.md").write_text(
+            "## Phase Status\n\n- [ ] Phase 1: Totals (risk: low)\n- [ ] Phase 2: Audit (risk: low)\n\n"
+            "## Phase 1: Totals\n\nExpected red: `exit 1` until Phase 2\n\n## Phase 2: Audit\n")
+        argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log),
+                "--plan", "plan.md", "--phase", "1", "--", full_command]
+
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        self.assertEqual(full_check.last_passed_command(self.repo), full_command)
+
+    def test_a_saved_check_whose_expected_red_step_was_cut_does_not_name_itself_as_the_fix(self):
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        full_check.remember_passed_command(self.repo, "echo 'Tests:       0 total' && exit 1")
+        claude_md = self.repo / "CLAUDE.md"
+
+        completed = self.check("echo 'Tests:       0 total'")
+
+        self.assertIn(f"fix: the check ran no test; add a Quality check: `{full_check.ANY_SUITE_COMMAND}` line "
+                      f"to {claude_md}", completed.stdout)
+        self.assertNotIn("last passed here", completed.stdout)
+
+    def test_a_worktree_reads_the_last_passed_check_saved_from_its_main_checkout(self):
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t",
+                        "commit", "-q", "--allow-empty", "-m", "first"], check=True)
+        worktree = self.repo / "wt"
+        subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "-q", str(worktree)], check=True)
+
+        full_check.remember_passed_command(self.repo, PASSING_SUITE)
+
+        self.assertEqual(full_check.last_passed_command(worktree), PASSING_SUITE)
+
+    def test_with_no_command_a_repo_whose_full_suite_runs_in_ci_skips_or_runs_its_check_only_line(self):
+        argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log)]
+        claude_md = self.repo / "CLAUDE.md"
+        claude_mds = {"CI line only": ("- Full suite: CI\n", "full check: not run (CI)"),
+                      "CI line and a Quality check": ("- Full suite: CI\n- Quality check: `echo one`\n",
+                                                      "full check: passed (check only; CI runs the full suite)")}
+        for case, (text, first_line) in claude_mds.items():
+            with self.subTest(case):
+                claude_md.write_text(text)
+
+                completed = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+
+                self.assertEqual(completed.returncode, 0, completed.stdout)
+                self.assertEqual(completed.stdout.splitlines()[0], first_line)
+
+    def test_a_no_test_run_in_a_repo_with_a_quality_check_line_does_not_ask_for_one(self):
+        no_test_command = "echo 'Tests:       0 total'"
+
+        completed = self.check(no_test_command, claude_md=f"- Quality check: `{no_test_command}`\n")
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: setup fault (exit 0)")
+        self.assertNotIn("add a Quality check", completed.stdout)
+
+    def test_with_no_command_the_check_runs_the_quality_check_line_else_the_last_passed_check_else_stops(self):
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log)]
+        claude_md = self.repo / "CLAUDE.md"
+
+        no_pick = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+        full_check.remember_passed_command(self.repo, "echo '3 passed in 0.1s'")
+        last_passed_pick = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+        claude_md.write_text("Quality check: `echo '5 passed in 0.1s'`\n")
+        declared_pick = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+
+        self.assertEqual(no_pick.returncode, 1, no_pick.stdout)
+        self.assertEqual(no_pick.stdout.splitlines()[0],
+                         "full check: setup fault (no Quality check line, and no full check has passed here)")
+        self.assertIn(f"fix: add a Quality check: `{full_check.ANY_SUITE_COMMAND}` line to {claude_md}",
+                      no_pick.stdout)
+        self.assertEqual(last_passed_pick.stdout.splitlines()[:2], ["full check: passed", "summary: 3 passed in 0.1s"])
+        self.assertEqual(declared_pick.stdout.splitlines()[:2], ["full check: passed", "summary: 5 passed in 0.1s"])
+
     def test_a_chained_command_prints_each_summary_joined_with_a_bar(self):
         completed = self.check("echo '3 passed in 0.1s'; echo '  8 passing (2ms)'")
 

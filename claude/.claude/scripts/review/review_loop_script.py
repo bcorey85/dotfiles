@@ -27,10 +27,10 @@ blocker, the autofix formatters run on the touched files and the check reruns on
 Model steps are `claude -p` calls in auto permission mode, each named `child of <parent session> (<role>)` so
 ListAgents tells it from a worker, and each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
-judgment (Sonnet). When the repo CLAUDE.md names no `Quality check` line, a Haiku check-finder call names the full
-check; when it names none, the review runs with no full check. A Sonnet disposition call runs
-only when a reviewer's output has no Fix/Ask/Nit sections the parser can read. Every call is logged to
-<state dir>/loop-script/<agent id>/calls.jsonl with its session id, role, wall time and token counts.
+judgment (Sonnet). When the repo CLAUDE.md names no `Quality check` line and no full check has passed there, a Haiku
+check-finder call names the full check; when it names none, the review runs with no full check. A Sonnet
+disposition call runs only when a reviewer's output has no Fix/Ask/Nit sections the parser can read. Every call is
+logged to <state dir>/loop-script/<agent id>/calls.jsonl with its session id, role, wall time and token counts.
 
 On finish, or on any uncaught error, the script validates its packet with handback.load, then appends the rows the
 review-loop agent leaves: the run event of a hand-back, the hand-back store row, the stop row, and, when the telemetry
@@ -269,15 +269,13 @@ def disposition_call(text, repo, out):
 
 
 def check_command_for(repo, out):
-    """The repo's full check: a CLAUDE.md `Quality check: \\`<command>\\`` line, else what a haiku call reads from the
-    repo's docs, task runners and CI config. When CI runs the repo's full suite, only the `Quality check:` line counts.
-    None when there is no such line in that repo or the finder names no check: full_check.run then runs nothing."""
-    if full_check.full_suite_runs_in_ci(repo):
-        return full_check.configured_check_command(repo)
-
-    configured = full_check.configured_check_command(repo)
-    if configured:
-        return configured
+    """The repo's full check: a CLAUDE.md `Quality check: \\`<command>\\`` line, else the check that last passed in the
+    repo, else what a haiku call reads from the repo's docs, task runners and CI config. When CI runs the repo's full
+    suite, only the `Quality check:` line counts. None when there is no such line in that repo or the finder names no
+    check: full_check.run then runs nothing."""
+    picked = full_check.picked_check_command(repo)
+    if picked or full_check.full_suite_runs_in_ci(repo):
+        return picked
 
     reply = claude_call("check-finder", CHECK_FINDER.format(repo=repo), repo, out, model="haiku",
                         tools="Read,Glob,Grep")
@@ -845,6 +843,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     plan = header.get("plan")
     plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
     check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, header.get("phase"))
+    loop.remember_as = found_command
 
     loop.files = scope(repo)
     loop.dispatches = first_round_plan(loop.files, structure_pass_skipped)

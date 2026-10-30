@@ -822,6 +822,16 @@ def split_location(text):
     return path, int(found.group()) if found else 0
 
 
+def location_line_ranges(location):
+    """The (first, last) line ranges of a `path:10-20,30` location; a span with more dashes keeps its two ends."""
+    numbers = location.partition(":")[2]
+    ranges = []
+    for span in numbers.split(","):
+        parts = span.split("-")
+        ranges.append((int(parts[0]), int(parts[-1])))
+    return tuple(ranges)
+
+
 def paths_named(*texts):
     """Every normalized path that the texts name, each once, in order: a text that starts with a file name, then
     every `path:line` token inside it."""

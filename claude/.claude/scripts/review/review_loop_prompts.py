@@ -34,6 +34,13 @@ LATER_PHASE_RULE = (
     "unapplied and report it as a PLAN-IMPACT: "
 )
 
+NEW_CODE_RULE = (
+    "The first review pass is over, so this pass closes the change and does not grow it. Add no new source file "
+    "and no new public function outside test files. When an issue needs one, leave it unapplied and write one "
+    "line in your report in the form `NEW CODE <n>: <the file or function it needs>`, where n is the issue "
+    "number above. A [blocker] issue may add what it needs."
+)
+
 GUIDANCE_RULE = "Guidance from the main session. Follow it within the issues and the plan; it changes neither: "
 
 CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, right after its file:line, or first when "
@@ -76,12 +83,15 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
     return "\n".join(lines)
 
 
-def coder_prompt(repo, findings, small_items, files, gate_env=(), later_phase_files=(), guidance=""):
+def coder_prompt(repo, findings, small_items, files, gate_env=(), later_phase_files=(), guidance="",
+                 no_new_code=False):
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
     body += [f"{index}. {finding}" for index, finding in enumerate(findings, 1)]
     body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
                  "where n is the issue number above. When you stop on a PLAN-IMPACT, write that line for each issue "
                  "you left unapplied.", "", SCOPED_TESTS]
+    if no_new_code:
+        body += ["", NEW_CODE_RULE]
     if small_items:
         body += ["", "## Small items", "", SMALL_ITEMS, ""] + [f"- {item}" for item in small_items]
     body += ["", "Files in scope: " + ", ".join(files)]

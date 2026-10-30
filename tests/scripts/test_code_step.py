@@ -2529,7 +2529,7 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertIn("ACTION: dispatch", out)
         self.assertIn("AGENT: coder", out)
-        self.assertNotIn("review-loop", out)
+        self.assertNotIn("AGENT: review-loop", out)
         self.assertIn("keep?", out)
         self.assertIn("Old ruling: accepted", out)
         self.assertIn("New ruling: rejected", out)

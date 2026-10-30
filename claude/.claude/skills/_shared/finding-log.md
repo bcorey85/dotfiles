@@ -19,7 +19,7 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 ~/.claude/skills/review/log-review-finding kind=finding lane=<lane> scope=<phase|branch-exit|standalone> [phase=<index>] iter=<N> \
   gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
   class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other> \
-  <file=<path> line=<n>|file=unlocated> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|class|gate|scoped>]
+  <file=<path> line=<n>|file=unlocated> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|class|gate|scoped|later-round>]
 # Prints finding_id=<id>.
 ```
 
@@ -37,7 +37,9 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 - **`fix_induced=bug`** — the tool sets `blocker=yes`; a loop-introduced bug cannot defer. Set `actioned=fixed`.
 - **`source=`** — review-loop only, on every `fix` row: `round` (a full review), `class` (an open class member at
   the cap), `gate` (the execution gate), `scoped` (the one reviewer scoped to the files a coder changed after the
-  cap). A `code-reviewer` `fix` row with `actioned=deferred` needs `source=class` or `source=scoped`.
+  cap), `later-round` (a finding past the first review that neither blocks, names a bug, correctness or security defect, nor
+  cleans up the last fix). A
+  `code-reviewer` `fix` row with `actioned=deferred` needs `source=class`, `source=scoped` or `source=later-round`.
   The tool refuses any other: that finding gets a coder.
 - `class=` uses the escape vocabulary so the caught and escaped sides
   cross-tabulate. Do not invent values — unknown ones store as `other` and are counted in the yield header.

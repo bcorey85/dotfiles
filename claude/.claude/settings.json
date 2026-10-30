@@ -244,6 +244,15 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/handback.py hook ran"
+          }
+        ]
+      },
+      {
         "matcher": "Write|Edit",
         "hooks": [
           {

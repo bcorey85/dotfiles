@@ -1,4 +1,4 @@
-"""handback_hook.py: the PreToolUse hook of the review-loop hand-back (`handback.py hook dispatch|handback`), and the
+"""handback_hook.py: the hooks of the review-loop hand-back (`handback.py hook dispatch|handback|ran`), and the
 reads of the per-session store that only it uses. handback.py owns the packet; this module records dispatches and
 hand-backs and denies a hand-back whose gates fail."""
 import json
@@ -17,7 +17,7 @@ from handback import (
     PacketError,
     load,
 )
-from handback_store import latest, record, session_rows, was_recorded
+from handback_store import DISPATCH_RAN, hand_back_dispatch_rows, record, session_rows, was_recorded
 
 RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
 REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
@@ -39,7 +39,7 @@ def claim_no_review(session_id, agent_id):
     exempted = [row for row in stored_rows if row.get("kind") == "no-review-exempt"]
     if any(row.get("agent_id") == agent_id for row in exempted):
         return True
-    no_review_dispatches = [row for row in stored_rows if row.get("kind") == "dispatch" and row.get("no_review")]
+    no_review_dispatches = [row for row in hand_back_dispatch_rows(session_id) if row.get("no_review")]
     if len(no_review_dispatches) <= len(exempted):
         return False
     record(session_id, "no-review-exempt", agent_id=agent_id)
@@ -170,7 +170,16 @@ def handle_dispatch(event, session_id, tool_input):
         prompt = str(tool_input.get("prompt") or "")
         record(session_id, "dispatch", no_review=loop_transcript.NO_REVIEW_MODE.search(prompt) is not None,
                resolved_plan_impact=RESOLVED_PLAN_IMPACT.search(prompt) is not None,
-               repo=reviewed_repo(prompt, event.get("cwd")))
+               repo=reviewed_repo(prompt, event.get("cwd")), tool_use_id=event.get("tool_use_id"))
+
+
+def handle_dispatch_ran(event, session_id):
+    """PostToolUse on Agent: the call ran, so the dispatch row it named at PreToolUse now counts. Only a review-loop
+    dispatch from outside the loop has such a row."""
+    tool_use_id = event.get("tool_use_id")
+    is_loop_dispatch = (event.get("tool_input") or {}).get("subagent_type") == REVIEW_LOOP
+    if tool_use_id and is_loop_dispatch and event.get("agent_type") != REVIEW_LOOP:
+        record(session_id, DISPATCH_RAN, tool_use_id=tool_use_id)
 
 
 def reviewed_repo(prompt, cwd):
@@ -192,7 +201,8 @@ def reviewed_repo(prompt, cwd):
 
 
 def handle_hook(event, kind):
-    """Record a review-loop dispatch or hand-back. Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
+    """Record a review-loop dispatch or hand-back, or for kind `ran` the dispatch-ran row of a dispatch whose call ran.
+    Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
     unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no passed full_check.py
     result follows the last code change, loop_transcript.PLAN_EDIT_REASON when the packet names the plan file, or the
@@ -204,6 +214,9 @@ def handle_hook(event, kind):
     tool_input = event.get("tool_input") or {}
     if kind == "dispatch":
         handle_dispatch(event, session_id, tool_input)
+        return None
+    if kind == "ran":
+        handle_dispatch_ran(event, session_id)
         return None
     if kind != "handback" or event.get("agent_type") != REVIEW_LOOP:
         return None
@@ -223,7 +236,8 @@ def handle_hook(event, kind):
                 "Return packet section in your instructions.")
     clean_status = status
     if packet is not None:
-        dispatch = latest(session_id)["dispatch"] or {}
+        dispatch_rows = hand_back_dispatch_rows(session_id)
+        dispatch = dispatch_rows[-1] if dispatch_rows else {}
         clean_status = effective_status(packet, dispatch.get("repo"))
     steps = loop_steps(session_id, agent_id)
     unreviewed = (clean_status in CLEAN_STATUSES and "reviewer" not in steps
@@ -246,8 +260,8 @@ def handle_hook(event, kind):
 def command_hook(argv):
     """Never blocks on its own error."""
     try:
-        if argv not in (["dispatch"], ["handback"]):
-            print(f"handback hook: unknown kind {' '.join(argv)!r}; want dispatch or handback", file=sys.stderr)
+        if argv not in (["dispatch"], ["handback"], ["ran"]):
+            print(f"handback hook: unknown kind {' '.join(argv)!r}; want dispatch, handback or ran", file=sys.stderr)
             return 0
         reason = handle_hook(json.load(sys.stdin), argv[0])
         if reason:

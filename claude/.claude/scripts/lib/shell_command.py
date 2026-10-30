@@ -538,6 +538,11 @@ def path_word(word):
     return os.path.expanduser(word)
 
 
+def path_word_is_absolute(raw):
+    """True when the path a shell word names (see path_word) starts with `/`, outer blanks ignored."""
+    return path_word(raw.strip(" \t\n\r\f\v")).startswith("/")
+
+
 CD_OPTION = re.compile(r"-[LPe@]+|--")
 # A folder word the shell expands or looks up: a parameter, a substitution, a glob or brace, or `~user`.
 UNREAD_FOLDER = re.compile(r"[$`*?\[{]|^~[^/]")

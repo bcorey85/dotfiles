@@ -183,7 +183,7 @@ def timed_git_output(cwd, *args):
     return script_utils.git_output(cwd, *args, timeout=GIT_TIMEOUT_SECONDS)
 
 
-def tree_fingerprint(cwd):
+def git_state_hash(cwd):
     """A hash of HEAD, the diff against HEAD and the untracked file list: it changes when git (merge, pull,
     checkout, reset, rebase, apply...) or any shell write changes the tree. None when cwd is not a repo or git fails."""
     top = timed_git_output(cwd, "rev-parse", "--show-toplevel")
@@ -208,7 +208,7 @@ def tree_fingerprint(cwd):
 
 
 def run_record_lines(run_file):
-    """The lines of a run record: the tree fingerprint, then CUT_MARK when that run's output was cut, then
+    """The lines of a run record: the git state hash, then CUT_MARK when that run's output was cut, then
     `start <ns>` when the cap marked the run's start."""
     try:
         with open(run_file) as handle:
@@ -217,7 +217,7 @@ def run_record_lines(run_file):
         return []
 
 
-def recorded_fingerprint(run_file):
+def recorded_git_state_hash(run_file):
     record_lines = run_record_lines(run_file)
     return record_lines[0].strip() if record_lines else ""
 
@@ -330,7 +330,7 @@ def record_runs(checks, steps, succeeded, state_dir, has_formatter):
             continue
 
         start_ns = take_run_start(check.run_file)
-        record = [tree_fingerprint(check.cwd) or ""]
+        record = [git_state_hash(check.cwd) or ""]
         if check.output_cut:
             record.append(CUT_MARK)
         if start_ns is not None and not has_formatter:
@@ -355,11 +355,11 @@ def changed_since_run(cwd, run_file):
 
 
 def tree_changed_since_run(cwd, run_file):
-    """True when the run recorded a tree fingerprint and the tree now differs from it, or git cannot say."""
-    recorded = recorded_fingerprint(run_file)
+    """True when the run recorded a git state hash and the tree now differs from it, or git cannot say."""
+    recorded = recorded_git_state_hash(run_file)
     if not recorded:
         return False
-    return tree_fingerprint(cwd) != recorded
+    return git_state_hash(cwd) != recorded
 
 
 def normalize(segment):

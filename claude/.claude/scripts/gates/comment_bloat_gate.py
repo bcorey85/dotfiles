@@ -165,9 +165,10 @@ def prose_comment_count(lines):
 
 
 def block_inside_repo(file_path, reason):
-    """Exit 2 with the reason, except for a file outside a git work tree: a scratch probe there is free to name plan
-    paths and other workflow strings."""
-    if not script_utils.inside_git_work_tree(file_path, GIT_PROBE_TIMEOUT_SECONDS):
+    """Exit 2 with the reason, except for a file outside a git work tree or one git ignores: a scratch probe there is
+    free to name plan paths and other workflow strings."""
+    if (not script_utils.inside_git_work_tree(file_path, GIT_PROBE_TIMEOUT_SECONDS)
+            or script_utils.is_git_ignored(file_path, GIT_PROBE_TIMEOUT_SECONDS)):
         return 0
     emit_stderr(reason)
     return 2

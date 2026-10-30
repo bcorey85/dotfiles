@@ -20,7 +20,8 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("lib", "expected_red.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
-                 "the commit ships only Markdown files under the repo's top-level docs/ folder, run it as a "
+                 "the commit ships only Markdown files under the repo's top-level docs/ folder, QUEUE.md or "
+                 "queue/*.md pages, run it as a "
                  "plain `git commit` (with `git add` of single named files if needed) from the repo root in its "
                  "own Bash call, with no `cd`, `env` or `git -C`, because the gate passes that form.")
 
@@ -299,6 +300,16 @@ class NotesOnlyCommitTest(GateCase):
         self.stage("src/a.py")
         self.assert_commit_denied(self.commit_in('git commit -q -m "code"'))
         self.assertEqual(self.state(), "dirty\n")
+
+    def test_a_commit_of_queue_pages_passes_and_one_outside_them_is_denied(self):
+        self.stage("QUEUE.md", "queue/an-item.md")
+        self.assert_silent(self.commit_in('git commit -q -m "queue"'))
+        self.assert_silent(self.commit_in('git add queue/other.md && git commit -q -m "queue"'))
+        for path in ("queue/sub/an-item.md", "queue/an-item.py", "sub/QUEUE.md", "sub/queue/an-item.md"):
+            with self.subTest(path=path):
+                repo = self.make_repo(path.replace("/", "-"))
+                self.stage(path, repo=repo)
+                self.assert_commit_denied(self.commit_in('git commit -q -m "queue"', repo))
 
     def test_add_then_commit_of_a_notes_file_is_not_denied_with_an_empty_or_a_docs_index(self):
         command = f'git add {self.NOTES} && git commit -q -m "notes"'
@@ -905,6 +916,27 @@ class ReviewedWorkCommitTest(GateCase):
         self.seed_handback(other)
         self.assert_commit_denied(self.commit("git commit -a -m x"))
         self.assert_silent(self.commit("git commit -a -m x", cwd=other))
+
+    def test_a_converged_hand_back_keeps_its_repo_credit_after_a_review_of_another_repo(self):
+        other = self.make_repo("other")
+        (self.repo / "base.py").write_text("changed\n")
+        (other / "base.py").write_text("changed\n")
+        self.seed_handback(self.repo)
+        self.seed_handback(other)
+        self.assert_silent(self.commit("git commit -a -m x"))
+        self.assert_silent(self.commit("git commit -a -m x", cwd=other))
+
+    def test_an_open_or_failed_review_of_another_repo_leaves_this_repo_credit_and_denies_that_repo(self):
+        other = self.make_repo("other")
+        (self.repo / "base.py").write_text("changed\n")
+        (other / "base.py").write_text("changed\n")
+        self.seed_handback(self.repo)
+        self.seed_handback(other, handed_back=False)
+        self.assert_silent(self.commit("git commit -a -m x"))
+        self.assert_commit_denied(self.commit("git commit -a -m x", cwd=other))
+        self.seed_handback(other, "critical-blocker", dispatches=0)
+        self.assert_silent(self.commit("git commit -a -m x"))
+        self.assert_commit_denied(self.commit("git commit -a -m x", cwd=other))
 
     def test_a_second_commit_in_another_repo_or_behind_a_wrapper_gets_no_credit_from_the_cwd_hand_back(self):
         other = self.make_repo("other")

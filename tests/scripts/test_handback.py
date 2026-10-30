@@ -23,7 +23,9 @@ SESSION = "sess-1"
 spec = importlib.util.spec_from_file_location("handback_under_test", str(SCRIPT))
 handback = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(handback)
+import handback_hook  # noqa: E402
 import handback_store  # noqa: E402
+import reviewed_tree  # noqa: E402
 
 CONVERGED = """status: converged
 iter: 1
@@ -780,12 +782,12 @@ class StoreTest(HandbackTestBase):
             for repo in (named, cwd_repo):
                 subprocess.run(["git", "init", "-q", repo], check=True)
             os.mkdir(outside)
-            self.assertEqual(handback.reviewed_repo("mode: review-first\nrepo: ../named\n", cwd_repo),
+            self.assertEqual(handback_hook.reviewed_repo("mode: review-first\nrepo: ../named\n", cwd_repo),
                              os.path.realpath(named))
-            self.assertEqual(handback.reviewed_repo("mode: review-first\n", cwd_repo), os.path.realpath(cwd_repo))
-            self.assertIsNone(handback.reviewed_repo("mode: review-first\n", outside))
+            self.assertEqual(handback_hook.reviewed_repo("mode: review-first\n", cwd_repo), os.path.realpath(cwd_repo))
+            self.assertIsNone(handback_hook.reviewed_repo("mode: review-first\n", outside))
             handoff_prompt = f"mode: review-first\nUncommitted changes in {named}/src/a.py (branch b)\n"
-            self.assertEqual(handback.reviewed_repo(handoff_prompt, cwd_repo), os.path.realpath(named))
+            self.assertEqual(handback_hook.reviewed_repo(handoff_prompt, cwd_repo), os.path.realpath(named))
 
     def test_the_dispatch_hook_stores_the_repo_a_review_loop_dispatch_reviews(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -1086,6 +1088,42 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
+    def test_a_capped_packet_that_reads_deferred_is_flagged_by_its_effective_status(self):
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@t"}
+        for argv in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "base"]):
+            subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
+        tree = reviewed_tree.fingerprint(str(repo))[1]
+        capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
+                             full_check="passed", full_check_tree=tree)
+        self.dispatch("review-loop", prompt=f"repo: {repo}\n")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("backend-coder-deep", "a1")
+
+        self.assertEqual(self.hand_back(message=capped), (0, ""))
+
+        self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
+
+    def test_a_capped_packet_that_reads_deferred_with_no_reviewer_is_denied_once_then_flagged(self):
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@t"}
+        for argv in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "base"]):
+            subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
+        tree = reviewed_tree.fingerprint(str(repo))[1]
+        capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
+                             full_check="passed", full_check_tree=tree)
+        self.dispatch("review-loop", prompt=f"repo: {repo}\n")
+        self.dispatch("backend-coder-deep", "a1")
+
+        self.assert_denied(self.hand_back(message=capped))
+        self.assertEqual(self.hand_back(message=capped), (0, ""))
+
+        self.assertIn("no reviewer", handback.false_clean_reason(SESSION))
+
     def test_no_review_mode_dispatch_passes_with_no_reviewer(self):
         self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
         self.dispatch("coder", "a1")
@@ -1097,8 +1135,8 @@ class ReviewerRequiredTest(HandbackTestBase):
         for line in ("plan_impact: RESOLVED - adopt.", "- plan_impact: RESOLVED - adopt.",
                      "> * plan_impact: RESOLVED - adopt."):
             prompt = f"scope: branch\n{line}\n"
-            self.assertIsNotNone(handback.RESOLVED_PLAN_IMPACT.search(prompt), line)
-        self.assertIsNone(handback.RESOLVED_PLAN_IMPACT.search("see plan_impact: RESOLVED"))
+            self.assertIsNotNone(handback_hook.RESOLVED_PLAN_IMPACT.search(prompt), line)
+        self.assertIsNone(handback_hook.RESOLVED_PLAN_IMPACT.search("see plan_impact: RESOLVED"))
 
     def test_a_normal_loop_is_denied_after_a_later_no_review_loop_claimed_the_exemption(self):
         self.dispatch("review-loop")
@@ -1486,11 +1524,11 @@ class OneCheckedHandBackTest(HandbackTestBase):
         event = {"agent_transcript_path": str(self.transcript), "cwd": str(self.tmp)}
         packet = {"status": "converged", "files_touched": ["src/orders.ts", "docs/plans/orders.md"]}
 
-        with unittest.mock.patch.object(handback.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
+        with unittest.mock.patch.object(handback_hook.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
-            reason = handback.transcript_gate_reason(event, SESSION, "a1", CONVERGED, packet)
+            reason = handback_hook.transcript_gate_reason(event, SESSION, "a1", CONVERGED, packet)
 
-        self.assertEqual(reason, handback.loop_transcript.PLAN_EDIT_REASON.format(plan="docs/plans/orders.md"))
+        self.assertEqual(reason, handback_hook.loop_transcript.PLAN_EDIT_REASON.format(plan="docs/plans/orders.md"))
         self.assertIn("full-check gate skipped", stderr.getvalue())
 
     def test_a_second_hand_back_from_an_agent_with_a_stored_report_is_denied_and_adds_no_row(self):

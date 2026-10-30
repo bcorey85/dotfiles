@@ -9,6 +9,8 @@ kind: "behavior"
 components: ["agent/code-reviewer", "rule/global-claude-md", "skill/fix"]
 evidence: ["sealed bench round"]
 watches: []
+proof: ["2026-10-12-namefix-sealed-8-runs-per-arm"]
+impact: {"metric": "quality", "before": 15, "after": 1, "unit": "planted naming breaks not filed as fix (of 64)", "finding": "2026-10-12-namefix-sealed-8-runs-per-arm", "better": "lower"}
 ---
 
 ## Change

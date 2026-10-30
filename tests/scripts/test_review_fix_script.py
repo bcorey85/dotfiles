@@ -2,12 +2,18 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 
 import fake_ledger
 import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import reviewed_tree
+
+LOGGED_MARK = "LOGGED / POSTED"
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_fix.py")
 HANDBACK = SCRIPT.parent / "handback.py"
@@ -290,6 +296,75 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: stop", output)
         self.assertIn("still racy", output)
         self.assertIn("stays blocked", output)
+
+    def capped_packet(self, tree="current", dispatched=True, **fields):
+        """A cap-reached packet with no blocker whose passed full check covered `tree`, with the dispatch of this
+        repo stored for the session (none stored when `dispatched` is False)."""
+        if tree == "current":
+            tree = reviewed_tree.fingerprint(self.repo)[1]
+        if dispatched:
+            self.store_dir.mkdir(exist_ok=True)
+            dispatch = {"kind": "dispatch", "session_id": SESSION, "ts": time.time(),
+                        "repo": str(self.repo.resolve())}
+            (self.store_dir / f"{SESSION}.jsonl").write_text(json.dumps(dispatch) + "\n")
+        packet = {"status": "cap-reached", "iter": 2, "full_check": "passed", "full_check_tree": tree,
+                  "fixed": [{"finding": "retry loop", "file_line": "src/retry.ts:4", "blocker": False}],
+                  "files_touched": ["src/retry.ts", "src/queue.ts"],
+                  "findings_remaining": [{"disposition": "fix", "finding": "edge case in the retry parser",
+                                          "file_line": "src/retry.ts:9", "blocker": False}], **fields}
+        return json.dumps(packet)
+
+    def test_a_cap_reached_with_no_blocker_and_a_passed_check_of_the_final_tree_renders_as_deferred(self):
+        code, output = self.packet(self.capped_packet())
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
+        self.assertNotIn("ACTION: stop", output)
+        self.assertIn("Deferred to branch exit", output)
+        self.assertIn("edge case in the retry parser", output)
+        self.assertEqual("deferred", self.stored_state()["status"])
+
+    def test_a_capped_packet_with_no_dispatch_on_record_stays_a_stop(self):
+        code, output = self.packet(self.capped_packet(dispatched=False))
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertNotIn("render-and-finish", output)
+
+    def test_a_capped_packet_is_fingerprinted_in_the_dispatched_repo_not_in_the_cwd(self):
+        other_repo = self.temp_root / "other"
+        other_repo.mkdir()
+        (other_repo / "other.txt").write_text("other\n")
+        for argv in (["init", "-q"], ["add", "other.txt"], ["commit", "-q", "-m", "init"]):
+            subprocess.run(["git", *argv], cwd=other_repo, env={**os.environ, **GIT_ENV}, check=True,
+                           capture_output=True)
+
+        code, output = self.run_script(["packet", "--skill", "review"], self.capped_packet(), cwd=other_repo)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
+
+    def test_a_deferred_from_cap_packet_names_the_files_the_loop_touched_in_the_user_text(self):
+        code, output = self.packet(self.capped_packet())
+        self.assertEqual(code, 0, output)
+        user_text, _, _logged = output.partition(LOGGED_MARK)
+        self.assertIn("### Deferred at the review cap", user_text)
+        self.assertIn("src/retry.ts, src/queue.ts", user_text)
+
+    def test_a_cap_reached_whose_check_is_older_than_the_last_fix_or_that_holds_a_blocker_stays_a_stop(self):
+        blocker = {"disposition": "fix", "finding": "data loss", "file_line": "src/q.ts:1", "blocker": True}
+        cases = {"old check": {"tree": "sha256:0"}, "blocker": {"findings_remaining": [blocker]},
+                 "check not passed": {"full_check": "failed (exit 1)"}}
+        for label, fields in cases.items():
+            with self.subTest(label):
+                code, output = self.packet(self.capped_packet(**fields))
+                self.assertEqual(code, 0, output)
+                self.assertIn("ACTION: stop", output)
+                self.assertNotIn("render-and-finish", output)
+
+    def test_a_cap_reached_with_an_open_class_and_a_passed_check_of_the_final_tree_keeps_the_scoped_rerun(self):
+        code, output = self.packet(self.capped_packet(open_classes=["a log with a trailing blank line"]))
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("files the capped run's fixes touched", output)
+        self.assertNotIn("render-and-finish", output)
 
     def test_a_cap_reached_with_an_open_class_routes_the_next_run_to_the_files_the_fixes_touched_only(self):
         code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)

@@ -47,13 +47,15 @@ import time
 
 SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
+import capped_review
 import handback
 import plan_format
 import review_asks
 import script_utils
+from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
-from saved_handback import LoopWaitingError, NoHandbackError, dispatched_with_ruling, read_message
+from saved_handback import LoopWaitingError, NoHandbackError, dispatched_repo, dispatched_with_ruling, read_message
 from script_utils import one_line, run_command, split_location
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -509,7 +511,7 @@ STOP_STATUSES = {
     FIX_REMOVED_CHANGE: ("The fix passes removed half or more of the change under review. Present these lines "
                          "and wait for direction. Do not re-dispatch. Do not run /fix. Do not mark the gate.",
                          blocker_lines),
-    "cap-reached": ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
+    CAP_REACHED: ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
                     "run /fix. Do not mark the gate: the session stays dirty, so git commit stays blocked.",
                     remaining_lines),
 }
@@ -552,7 +554,7 @@ def stop_for_status(packet, options, state):
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
     entries = entry_lines(packet)
-    rerun_lines = scoped_rerun_lines(packet, options.skill) if packet["status"] == "cap-reached" else []
+    rerun_lines = scoped_rerun_lines(packet, options.skill) if packet["status"] == CAP_REACHED else []
     if rerun_lines:
         instruction = SCOPED_RERUN
         entries += ["Dispatch lines (pass exactly these):", *rerun_lines]
@@ -578,6 +580,9 @@ def command_packet(argv):
         return wait_for_loop(options.skill, error.stop_ts)
     packet = handback.load(message)
     handback.print_dropped_asks(packet)
+    stored_status = packet["status"]
+    packet["status"] = capped_review.effective_status(packet, dispatched_repo())
+    capped_defer = packet["status"] != stored_status
     if unreviewed_in_a_row:
         return stop_for_unreviewed(options.skill, packet, unreviewed_in_a_row)
     state = new_state(options, packet, packet_id)
@@ -599,7 +604,7 @@ def command_packet(argv):
         present_packet_asks(packet, state)
     else:
         print_action("render-and-finish", gate_mark_line())
-    sections = packet_sections(packet, state, replies, unreviewed_fix)
+    sections = packet_sections(packet, state, replies, unreviewed_fix, capped_defer)
     print_user_block(handback.render(packet, options.skill, sections))
     print_logged(notes)
     if options.skill == "review" and not is_outstanding(packet):
@@ -607,8 +612,26 @@ def command_packet(argv):
     print("MODEL STILL DOES: " + model_duties(packet, options))
 
 
-def packet_sections(packet, state, replies, unreviewed_fix):
+def deferred_files_line(packet):
+    """One line that states the findings left open at the cap are deferred, then names the files the capped loop
+    touched: files_touched, else the paths fixed[] names."""
+    touched_paths = packet["files_touched"] or handback.fixed_paths(packet)
+    named_paths = ", ".join(touched_paths) or "none named in files_touched or fixed[]"
+    return f"The findings left open at the cap are deferred, not fixed. Files the loop touched: {named_paths}"
+
+
+def deferred_from_cap_section(packet):
+    """The (heading, lines) section for a packet that deferred from the cap."""
+    return ("Deferred at the review cap",
+            ["- The review capped with no blocker and a passed full check of the final tree, so its leftovers are "
+             "deferred to the branch-exit queue.",
+             "- " + deferred_files_line(packet)])
+
+
+def packet_sections(packet, state, replies, unreviewed_fix, capped_defer):
     sections = [("Aikido replies", replies)] if replies else []
+    if capped_defer:
+        sections.append(deferred_from_cap_section(packet))
     if state.get("adopted_deviations"):
         deviation_lines = [f"- {deviation_summary}" for deviation_summary in state["adopted_deviations"]]
         sections.append(("Plan deviations adopted (the code won; no acceptance criterion changed)", deviation_lines))

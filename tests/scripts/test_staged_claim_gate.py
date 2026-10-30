@@ -109,7 +109,9 @@ class StagedClaimGateTest(unittest.TestCase):
                 self.assert_blocked(message)
 
     def test_staged_review_data_passes_with_an_empty_index(self):
-        for message in ("The fix diffs are staged under fix-diffs.", "Two rows are staged for the ledger."):
+        for message in ("The fix diffs are staged under fix-diffs.", "Two rows are staged for the ledger.",
+                        "The diffs I staged are under fix-diffs.", "The two rows I staged are in the ledger.",
+                        "The rows I've staged wait in the ledger."):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
@@ -118,6 +120,77 @@ class StagedClaimGateTest(unittest.TestCase):
                         "Two rows are staged, and all files are staged.",
                         "The rows are staged. All files are staged.",
                         "The diff of the file is staged.", "The file for each finding is staged."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_a_description_of_staging_behavior_passes_with_an_empty_index(self):
+        for message in ("The script keeps your work: files you staged stay staged.",
+                        "Files the user staged remain staged after the commit.",
+                        "A staged file stays staged.", "`staged` files stay staged.",
+                        "The gate quotes the rule \"all files are staged\" in its reason.",
+                        "It printed `the files are staged` and went on.",
+                        "“all files are staged” is the rule text."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_report_of_another_sessions_work_passes_with_an_empty_index(self):
+        for message in ("Another session's two files are staged.", "The coordinator's files are staged.",
+                        "The coordinator\N{RIGHT SINGLE QUOTATION MARK}s files are staged.",
+                        "The workers' files are staged.", "The worker left staged a list of pages.",
+                        "The other session's files are staged.", "The other agent's files are staged.",
+                        "Another peer's fix was staged.", "The peer's files are staged.",
+                        "Another worker's files are staged."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_claim_by_this_session_still_blocks_beside_a_description(self):
+        for message in ("I staged the two files you edited.", "The files you edited are staged.",
+                        "The script is staged.", "`a.txt` is staged.",
+                        "Files you staged stay staged, and the new tests are staged.",
+                        "Another session finished, and all files are staged.",
+                        "`a.txt` is staged and `b.txt` is ready.",
+                        "Edited `a.txt`; the files are staged; see `b.txt`.",
+                        "The files stay staged.", "a.txt remains staged.", "The fix stays staged.",
+                        "The worker's fix I staged.", "The coordinator's files I've staged.",
+                        "Files from another session I staged.",
+                        "I left staged the two files.", "The fix was left staged.",
+                        "The files left staged are a.txt and b.txt.",
+                        "The fix for the coordinator's queue is staged.",
+                        "The note on the worker's queue is staged.",
+                        'A 3" gap.\nAll files are staged.\nSee "x".',
+                        'Edited `a.txt\nAll files are staged.\nSee `b.txt`.',
+                        "The “draft\nAll files are staged.\nSee the ”end”.",
+                        "The worker fix was left staged.", "The note from the peer left staged a.txt."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_a_hyphenated_name_or_a_bare_actor_word_does_not_exempt_a_claim(self):
+        for message in ("`docs/staged-claim.md` is staged.",
+                        "`/srv/dotfiles-staged-claim-gate/a.txt` is staged.",
+                        "The staged-claim gate fix is staged.", "docs/staged-claim.md is staged.",
+                        "/srv/dotfiles-staged-claim-gate/a.txt is staged.",
+                        "src/workers/q.py is staged.", "`src/workers/q.py` is staged.",
+                        "The worker pool fix is staged.", "The peer review fixes are staged.",
+                        "I told the coordinator the files are staged.", "I told the worker I staged the fix.",
+                        "`docs/staged-claim.md` stays staged.", "The staged-claim gate fix stays staged.",
+                        "/srv/dotfiles-staged-claim-gate/a.txt remains staged.", "staged.md stays staged.",
+                        "The staged_list stays staged.", "The unstaged list stays staged.",
+                        "src/staged stays staged.", "The pre-staged list stays staged.",
+                        "staged/a.txt stays staged."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_an_actor_named_only_as_an_object_or_a_path_does_not_exempt_a_claim(self):
+        for message in ("The fix to the worker is staged.", "The fix for the coordinator is staged.",
+                        "src/coordinator is staged.", "claude/.claude/agents/worker is staged.",
+                        "The note from the peer is staged.", "The worker is staged.",
+                        "The coordinator is staged."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_an_earlier_staged_word_exempts_only_a_stay_or_remain_claim(self):
+        for message in ("The fix for staged files is staged.", "The tests of the staged list are staged.",
+                        "The rule on staged paths was staged."):
             with self.subTest(message=message):
                 self.assert_blocked(message)
 

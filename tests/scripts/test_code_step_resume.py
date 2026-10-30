@@ -10,6 +10,7 @@ import fcntl
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,8 @@ import time
 
 import test_code_step as base
 
+# The word stale as the script's prose says it, not inside a path such as the checkout folder or stale_prose.py.
+CALLED_STALE = re.compile(r"(?<![\w./-])stale(?![\w-]|\.\w)")
 SETUP_FAULT_PACKET = json.dumps({"status": "setup-fault", "iter": 1,
                                  "blockers": [{"finding": "no package.json", "file_line": "none"}]})
 BLOCKER_PACKET = json.dumps({"status": "critical-blocker", "iter": 1,
@@ -1274,7 +1277,7 @@ class ResumeTest(base.CodeStepTest):
         out = self.step("resume")
 
         self.assertIn("AGENT: review-loop", out)
-        self.assertNotIn("stale", out)
+        self.assertNotRegex(out, CALLED_STALE)
 
     def test_a_resume_during_the_plan_coder_does_not_call_an_edited_phase_stale(self):
         self.adopt_plan_change_with_the_plan_coder_out()
@@ -1284,7 +1287,7 @@ class ResumeTest(base.CodeStepTest):
         out = self.step("resume")
 
         self.assertNotIn("ACTION: ask-user", out)
-        self.assertNotIn("stale", out)
+        self.assertNotRegex(out, CALLED_STALE)
         self.assertIn("AGENT: review-loop", out)
         self.assertEqual("review", self.state()["stage"])
 
@@ -1295,10 +1298,10 @@ class ResumeTest(base.CodeStepTest):
 
         out = self.step("resume")
 
-        self.assertNotIn("stale", out)
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(out, CALLED_STALE)
+        self.assertNotRegex(self.said(), CALLED_STALE)
         question_path = self.repo / ".git/code-step/question.md"
-        self.assertTrue(not question_path.exists() or "stale" not in question_path.read_text())
+        self.assertTrue(not question_path.exists() or not CALLED_STALE.search(question_path.read_text()))
         self.assertEqual("impact-coder", self.state()["stage"])
 
     def test_a_resume_at_a_plan_format_stop_does_not_call_an_edited_phase_stale(self):
@@ -1312,7 +1315,7 @@ class ResumeTest(base.CodeStepTest):
         self.step("resume")
 
         self.assertIn("verify", self.said())
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(self.said(), CALLED_STALE)
 
     def test_a_resume_answer_over_a_stale_phase_says_the_phase_is_stale_not_that_no_coder_waits(self):
         self.stop_the_coder_at_the_wait_cap(launched_as="a1")
@@ -1334,8 +1337,8 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertEqual(0, finished.returncode)
         self.assertIn("no hand-back can be matched", finished.stdout)
-        self.assertNotIn("stale", finished.stdout)
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(finished.stdout, CALLED_STALE)
+        self.assertNotRegex(self.said(), CALLED_STALE)
         self.assertEqual(os.getpid(), self.state()["reviewScriptPid"])
 
     def test_a_resume_at_the_review_cap_while_the_review_script_runs_does_not_call_the_phase_stale(self):
@@ -1347,7 +1350,7 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertEqual(0, finished.returncode)
         self.assertIn("The resumed review-loop has not handed back yet", finished.stdout)
-        self.assertNotIn("stale", finished.stdout)
+        self.assertNotRegex(finished.stdout, CALLED_STALE)
         self.assertNotIn("ACTION: ask-user", finished.stdout)
         self.assertEqual(os.getpid(), self.state()["reviewScriptPid"])
 
@@ -1443,7 +1446,7 @@ class ResumeTest(base.CodeStepTest):
 
         out = self.step("resume")
 
-        self.assertNotIn("stale", out)
+        self.assertNotRegex(out, CALLED_STALE)
         self.assertIn("AGENT: review-loop", out)
 
     def test_a_resume_after_a_phase_was_inserted_above_the_runs_phase_while_the_coder_was_out_is_stale(self):
@@ -1468,7 +1471,7 @@ class ResumeTest(base.CodeStepTest):
 
         out = self.step("resume")
 
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(self.said(), CALLED_STALE)
         self.assertEqual("asks", self.state()["stage"])
         self.assertIn("ACTION: ask-user", out)
         self.assertIn("Proposed change: export o as a const", (self.repo / ".git/code-step/question.md").read_text())
@@ -1496,7 +1499,7 @@ class ResumeTest(base.CodeStepTest):
 
         self.step("resume")
 
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(self.said(), CALLED_STALE)
         self.assertEqual("asks", self.state()["stage"])
 
     def test_start_over_an_open_stale_run_names_the_stale_phase_in_the_refusal(self):
@@ -1593,7 +1596,7 @@ class ResumeTest(base.CodeStepTest):
         self.step("resume")
 
         self.assertIn("verify", self.said())
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(self.said(), CALLED_STALE)
 
     def test_verify_takes_the_users_fixed_verification_lines_as_the_phase_text(self):
         self.coder_round(source="console.log(1)\n")

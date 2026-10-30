@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "review loop cannot log its metrics row before its reviewer reports"
 description: "A review loop's metrics row is refused while no reviewer has been dispatched or one is still open, so a loop can no longer log a row before its first reviewer reports."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T17:13:04-05:00"}
-seq: 281
+seq: 296
 kind: "fix"
 components: ["agent/review-loop"]
 evidence: ["judgment"]

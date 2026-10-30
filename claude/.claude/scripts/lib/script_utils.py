@@ -21,6 +21,8 @@ CHECKBOX = re.compile(r"\[[xX]\]")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
 PATH_TEXT = r"[\w@./-]+\.\w+"
 PATH_LINE = re.compile(rf"`?({PATH_TEXT}:\d+(?:[-,]\d+)*)`?")
+# The code-reviewer's blocker tag, bold or plain; callers anchor it and pick the case rule.
+BLOCKER_TAG_PATTERN = r"\*{0,2}\[blocker\]\*{0,2}"
 FILE_NAME = re.compile(rf"^{PATH_TEXT}(?::\d|$)")
 QUOTE_OPENERS = " :[{,\t\n"
 BACKTICKED = re.compile(r"`([^`]+)`")

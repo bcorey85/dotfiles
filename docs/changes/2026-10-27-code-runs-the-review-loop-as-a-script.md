@@ -8,7 +8,7 @@ seq: 73
 kind: "structured"
 components: ["script/code-step", "script/review-loop-script", "script/format-changed"]
 evidence: ["replacement bench", "tests"]
-watches: ["scripted-review-loop-tokens", "scripted-review-loop-escapes"]
+watches: ["code-scripted-loop-cache-read", "scripted-review-loop-escapes"]
 test: "tests/scripts/test_code_step_review_script.py"
 asked: "Port the benched loop driver into /code; keep its routes, no extra reviewer; work repos get no new CLAUDE.md line."
 proof: ["2026-10-26-scripted-review-loop-with-bounded-re-review-vs"]
@@ -43,8 +43,8 @@ overlap: "The open escape watches read every review run; this one guards against
 
 ## Watch
 
-- `scripted-review-loop-tokens`: review-loop cache read per dispatch, down.
-- `scripted-review-loop-escapes`: review escapes per review run, flat.
+- `code-scripted-loop-cache-read`: review-loop cache-read tokens per `/code` loop run (caller `code`), down. The agent path counts the review-loop and every agent it dispatched; the script path counts its `claude -p` sessions. It replaces `scripted-review-loop-tokens`, closed NOT TRACKED because its per-dispatch agent rows cannot see the script's `claude -p` sessions.
+- `scripted-review-loop-escapes`: review escapes per code-reviewer run, flat.
 
 ## Back-out
 

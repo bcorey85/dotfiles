@@ -812,7 +812,7 @@ class ResumeTest(base.CodeStepTest):
         refused = self.step("start", "--task", "fix the totals")
 
         self.assert_refused_with_rerun(refused, "start --restart --coder-stopped --task 'fix the totals'")
-        self.assertIn("agent c1 was stopped", refused)
+        self.assertIn("agent c1, or the fork that launched it, was stopped with TaskStop", refused)
         self.assertEqual(before, self.state_bytes())
         self.assertEqual("", self.stop_hook())
 
@@ -831,6 +831,57 @@ class ResumeTest(base.CodeStepTest):
 
         self.assert_refused_with_rerun(refused, "start --restart --coder-stopped")
         self.assertEqual("", self.stop_hook())
+
+    def test_a_stop_whose_result_names_no_agent_id_is_logged_by_name_and_offers_no_coder_stopped_rerun(self):
+        self.start_phase_one()
+        dispatch_id = self.events_named("dispatch")[-1]["id"]
+        self.log_fixture("agent_launch", {"prompt": f"code-step-dispatch: {self.state()['runId']}/{dispatch_id}"},
+                         {"agentId": "c1"}, agent_id="f1", agent_type=base.code_step_core.FORK_AGENT_TYPE)
+        self.task_stop("code", None)
+
+        refused = self.step("start")
+
+        self.assertEqual("code", self.events_named("task-stop")[-1]["task_id"])
+        self.assert_refused_with_rerun(refused, "resume")
+        self.assertNotIn("--coder-stopped", refused)
+
+    def test_a_coder_that_handed_back_before_its_stop_is_not_offered_the_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.hook("coder", self.CODER_REPORT, agent_id="c1")
+        self.task_stop("c1", "c1")
+
+        refused = self.step("start", "--task", "fix the totals")
+
+        self.assertIn("a /code run is open here", refused)
+        self.assertIn("`resume` goes on with the open run", refused)
+        self.assertIn("`abort` closes the open run", refused)
+        self.assertNotIn("--coder-stopped", refused)
+        self.assertNotIn("no hand-back will come", refused)
+
+    def test_a_coder_resumed_after_its_hand_back_and_then_stopped_reruns_a_restart_with_coder_stopped(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.hook("coder", self.CODER_REPORT, agent_id="c1")
+        self.send_message("c1")
+        self.task_stop("c1", "c1")
+
+        self.assert_refused_with_rerun(self.step("start"), "start --restart --coder-stopped")
+
+    def test_a_stopped_coder_of_another_sessions_run_is_not_offered_the_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.set_state(sessionId="other-session")
+        before = self.state_bytes()
+
+        refused = self.step("start", "--task", "fix the totals")
+
+        self.assert_refused_with_choices(refused, "status")
+        self.assertIn("started by another session", refused)
+        self.assertNotIn("--coder-stopped", refused)
+        self.assertNotIn(self.own_command("start --restart --task 'fix the totals'"), refused)
+        self.assertEqual(before, self.state_bytes())
 
     def test_a_coder_resumed_after_its_stop_is_waited_on_again(self):
         self.start_phase_one()

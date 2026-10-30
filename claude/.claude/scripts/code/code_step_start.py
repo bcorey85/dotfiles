@@ -22,6 +22,7 @@ from code_step_core import (
     VERB_WORDS_REPLACED_BY_RESUME,
     Refusal,
     abandon_open_dispatch,
+    agent_still_out,
     ask_user,
     branch_label,
     clear_say,
@@ -300,8 +301,8 @@ def open_run_refusal(repo_dir, previous, args, parsed, repo_flags):
     if stopped_agent_id and not is_run_of_another_session(previous):
         # `resume` would wait out the cap for a hand-back that never comes, so the start goes on over the open run.
         restart_command = restart_command_for(args, parsed, repo_flags, "--coder-stopped")
-        return (f"{reason} Its agent {stopped_agent_id} was stopped with TaskStop, so no hand-back will come.",
-                [restart_command], ())
+        return (f"{reason} Its agent {stopped_agent_id}, or the fork that launched it, was stopped with TaskStop, "
+                "so no hand-back will come.", [restart_command], ())
     if not args:
         return reason, verify_commands or [resume_command], ()
 
@@ -356,14 +357,6 @@ def stopped_run_coder_id(previous, events):
     return launches[-1].get("agent_id") if launches else None
 
 
-def coder_still_out(events, coder_id):
-    # Whether the coder's newest launch or SendMessage resume came after its newest hand-back: it may still be editing
-    # the tree.
-    of_coder = [event for event in events
-                if event.get("agent_id") == coder_id and event.get("event") in ("launch", "resume", "handback")]
-    return bool(of_coder) and of_coder[-1]["event"] != "handback"
-
-
 def out_coder_id(repo_dir, state):
     # The id of the stopped run's coder that has not handed back, or None.
     if not is_stopped(state) or not state.get("runId"):
@@ -371,7 +364,7 @@ def out_coder_id(repo_dir, state):
 
     events = read_events(repo_dir, state["runId"])
     coder_id = stopped_run_coder_id(state, events)
-    if coder_id is None or not coder_still_out(events, coder_id):
+    if coder_id is None or not agent_still_out(events, coder_id):
         return None
     return coder_id
 

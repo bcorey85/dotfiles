@@ -20,11 +20,11 @@ for folder in (toolkit_paths.LIB_DIR, toolkit_paths.REVIEW_DIR, toolkit_paths.CO
 import code_step_core  # noqa: E402
 import code_step_state  # noqa: E402
 
-# The state file of a run in progress, with every key the code-step before the typed record wrote.
+# The state file of a run in progress, with every key the code-step before the typed record wrote except the stop
+# record's waitAt, which loads and is dropped.
 CURRENT_STATE = {
     "stage": "stopped",
-    "stop": {"kind": "coder-resumable", "at": 1761800000.5, "agentId": "a1", "coderStage": "asks-coder",
-             "waitAt": 1761800100.25},
+    "stop": {"kind": "coder-resumable", "at": 1761800000.5, "agentId": "a1", "coderStage": "asks-coder"},
     "plan": "docs/plans/ABC-1-orders/spec.md",
     "phase": "2",
     "title": "Totals add up",
@@ -75,7 +75,7 @@ CURRENT_STATE = {
     "planImpact": "none",
     "priorIssues": ["an unchecked total"],
     "asks": [{"finding": "the retry loop has no cap", "file_line": "src/queue.py:40", "question": "cap it?"}],
-    "askIds": ["f1"],
+    "askIds": {"ask-1": "f1"},
     "askIdsHandback": "h1",
     "acceptedAsks": [{"finding": "the retry loop has no cap", "outcome": "accepted"}],
     "asksAlso": "",
@@ -105,25 +105,10 @@ class StateFileTest(unittest.TestCase):
 
         self.assertEqual(code_step_state.Stage.STOPPED, state.stage)
         self.assertEqual(code_step_state.StopKind.CODER_RESUMABLE, state.stop.kind)
-        self.assertEqual(("a1", "asks-coder", 1761800100.25),
-                         (state.stop.agent_id, state.stop.coder_stage, state.stop.wait_at))
+        self.assertEqual(("a1", "asks-coder"), (state.stop.agent_id, state.stop.coder_stage))
         self.assertEqual((2, 1, 4242), (state.iter, state.spec_iter, state.review_script_pid))
         written_text = json.dumps(state.to_json())
         self.assertEqual(CURRENT_STATE, json.loads(written_text))
-
-    def test_a_stop_record_with_no_kind_loads_and_writes_its_kind_back(self):
-        state = self.load({"stage": "stopped", "stop": {"kind": None, "at": 1.5}})
-
-        self.assertIsNone(code_step_core.stop_kind(state))
-        self.assertEqual({"kind": None, "at": 1.5}, state.to_json()["stop"])
-
-    def test_a_key_the_record_does_not_name_stops_the_load_and_is_named(self):
-        old_format = {**CURRENT_STATE, "stopReason": "coder-cap"}
-
-        with self.assertRaises(code_step_state.StateFileError) as raised:
-            self.load(old_format)
-
-        self.assertIn("does not know: stopReason", str(raised.exception))
 
     def test_a_state_file_this_code_step_cannot_read_stops_the_load(self):
         unreadable_states = [
@@ -145,6 +130,16 @@ class StateFileTest(unittest.TestCase):
         self.assertIs(code_step_state.Stage.ASKS, state.stage)
         with self.assertRaises(ValueError):
             state.stage = "paused"
+
+    def test_the_first_wait_on_a_resumed_coder_is_logged_at_the_time_the_cap_counts_from(self):
+        subprocess.run(["git", "init", "-q", str(self.state_dir)], check=True)
+        stop = code_step_state.Stop(code_step_state.StopKind.CODER_RESUMABLE, 100.0, agent_id="a1")
+        state = code_step_state.RunState(code_step_state.Stage.STOPPED, stop=stop, run_id="r1", session_id="s1")
+
+        cap_start = code_step_core.wait_clock_start(self.state_dir, state, since=150.0, wait_started=200.0)
+
+        first_waits = code_step_core.read_events(self.state_dir, "r1")
+        self.assertEqual([cap_start], [event["ts"] for event in first_waits])
 
 
 class VerbTransactionTest(unittest.TestCase):
@@ -235,6 +230,17 @@ class VerbTransactionTest(unittest.TestCase):
         self.assertEqual([None, True], seen_inside)
         self.assertFalse(self.state_path.exists())
 
+    def test_a_state_file_the_verb_drops_goes_even_when_another_verb_rewrote_it_meanwhile(self):
+        def drop_across_a_rewrite():
+            code_step_core.drop_state(self.repo)
+            self.state_path.write_text(json.dumps({"stage": "review"}))
+            print("ACTION: stop")
+
+        self.run_verb(drop_across_a_rewrite)
+
+        self.assertFalse(self.state_path.exists())
+        self.assertEqual("ACTION: stop\n", self.printed.getvalue())
+
     def test_a_state_file_an_abort_removed_while_the_verb_ran_stays_removed_and_the_verb_stops(self):
         def save_across_an_abort():
             state = code_step_core.load_state(self.repo)
@@ -249,40 +255,6 @@ class VerbTransactionTest(unittest.TestCase):
         self.assertIn("ACTION: stop", self.printed.getvalue())
         self.assertIn("changed while this verb ran", self.printed.getvalue())
         self.assertNotIn("ACTION: dispatch", self.printed.getvalue())
-
-    def test_a_write_before_a_wait_puts_the_staged_state_on_disk_and_the_verb_still_ends_cleanly(self):
-        stages_on_disk = []
-
-        def save_then_wait():
-            self.save_review_stage()
-            code_step_core.write_staged_state(self.repo)
-            stages_on_disk.append(self.saved_stage())
-            print("ACTION: wait")
-
-        self.run_verb(save_then_wait)
-
-        self.assertEqual(["review"], stages_on_disk)
-        self.assertEqual("ACTION: wait\n", self.printed.getvalue())
-
-    def test_a_write_before_a_wait_leaves_a_state_file_an_abort_removed(self):
-        def save_then_wait_across_an_abort():
-            self.save_review_stage()
-            self.state_path.unlink()
-            code_step_core.write_staged_state(self.repo)
-            print("ACTION: wait")
-
-        self.run_verb(save_then_wait_across_an_abort)
-
-        self.assertFalse(self.state_path.exists())
-        self.assertIn("changed while this verb ran", self.printed.getvalue())
-
-    def test_a_save_outside_a_verb_writes_at_once(self):
-        state = code_step_core.load_state(self.repo)
-        state.stage = "review"
-
-        code_step_core.save_state(self.repo, state)
-
-        self.assertEqual("review", self.saved_stage())
 
 
 if __name__ == "__main__":

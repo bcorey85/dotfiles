@@ -28,7 +28,7 @@ import script_utils
 import worktree_snapshot
 from code_guidance import coder_guidance_lines
 from code_step_routes import ROUTES, STAGE_FACTS, StageFact, state_key
-from code_step_state import RunState, StateFileError, Stop
+from code_step_state import RunState, Stage, StateFileError, Stop, StopKind
 from script_utils import git_output, run_command
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -204,16 +204,12 @@ def started_after_abort(directory, archived_run_id):
 # ---------- stop record and snapshot ----------
 # A stopped run keeps stage "stopped" (printed texts and the verb guards name it) and one Stop record.
 
-STOPPED = "stopped"
-CODER_RESUMABLE = "coder-resumable"
-REVIEW_RESUMABLE = "review-resumable"
-
 
 def set_stop(state, kind=None, *, at=None, agent_id=None, coder_stage=None):
-    # The run stops here, whatever it was doing: the record replaces any earlier stop, its resume wait included.
+    # The run stops here, whatever it was doing: the record replaces any earlier stop.
     # coder_stage is the stage of the stopped coder, which a resume of that coder goes back to.
     stopped_at = time.time() if at is None else at
-    state.stage = STOPPED
+    state.stage = Stage.STOPPED
     state.stop = Stop(kind, stopped_at, agent_id=agent_id, coder_stage=coder_stage)
 
 
@@ -224,7 +220,7 @@ def clear_stop(state):
 
 def stop_record(state):
     # The stop record of a stopped run, or None for a run that is not stopped and for no run.
-    if state is None or state.stage != STOPPED:
+    if state is None or state.stage != Stage.STOPPED:
         return None
     return state.stop
 
@@ -238,18 +234,13 @@ def stop_kind(state):
     return record.kind if record else None
 
 
-def note_resume_wait(state, wait_started):
-    # The first wait on an agent the user resumed after a stop counts the cap from here.
-    state.stop = dataclasses.replace(state.stop, wait_at=wait_started)
-
-
 def end_review_wait(state):
     # A killed review script leaves nothing to resume: the stop stays, without its review wait.
     record = stop_record(state)
     if record is None:
         return
-    kind = None if record.kind == REVIEW_RESUMABLE else record.kind
-    state.stop = dataclasses.replace(record, kind=kind, wait_at=None)
+    kind = None if record.kind == StopKind.REVIEW_RESUMABLE else record.kind
+    state.stop = dataclasses.replace(record, kind=kind)
 
 
 def snapshot_part(state, name):
@@ -317,7 +308,9 @@ def write_state_text(path, text, cwd, session_id):
 def verb_transaction():
     """Runs one verb as one change. Its saves and drops of a state file stay in memory and what it prints is held.
     When it returns, each state file it changed is written once, atomically, and then its output prints. A verb that
-    raises, or exits with an error, writes nothing and prints nothing it held. sys.exit(0) counts as a return."""
+    raises, or exits with an error, saves no state file and prints nothing it held. Files it wrote on the way (say.md,
+    question.md, the run log, handback_store rows, dispatch prompts, plan edits, the detached review script) stay.
+    sys.exit(0) counts as a return."""
     verb_files = {}
     held_output = io.StringIO()
     OPEN_VERBS.append(verb_files)
@@ -339,14 +332,16 @@ def verb_transaction():
 
 def finish_verb(verb_files, held_output):
     # A state file that changed on disk while the verb ran (an `abort`, which takes no lock) stays as it is: the verb
-    # writes nothing, and its output, which rests on the old state, is dropped. A verb that drops the file is never
+    # saves no state file, and its output, which rests on the old state, is dropped. A verb that drops the file is never
     # held back, so an abort always ends the run.
     changed_paths = [path for path, verb_file in verb_files.items()
                      if verb_file.kept is not None and state_text_on_disk(path) != verb_file.found]
     if changed_paths:
         changed_names = ", ".join(str(path) for path in changed_paths)
-        emit("stop", f"{changed_names} changed while this verb ran, so the verb wrote nothing and its output is "
-             f"dropped. Run `{script_command('status')}` and tell the user what it shows.")
+        emit("stop", f"{changed_names} changed while this verb ran, so the verb saved no state file and its output is "
+             f"dropped. Files it wrote on the way (say.md, question.md, the run log, handback_store rows, dispatch "
+             f"prompts, plan edits, the detached review script) stay. "
+             f"Run `{script_command('status')}` and tell the user what it shows.")
         return
 
     for path, verb_file in verb_files.items():
@@ -361,21 +356,6 @@ def write_verb_state_file(path, verb_file):
         return
     if verb_file.saved_from is not None:
         write_state_text(path, verb_file.kept, verb_file.saved_from, verb_file.session_id)
-
-
-def write_staged_state(cwd):
-    # Writes what the open verb has staged so far before it blocks, so a kill during the block keeps it: the cap of a
-    # resumed agent's wait counts from the first wait the verb saved. A file that changed on disk since the verb read
-    # it is left for the verb's end to stop on.
-    path = state_file(cwd)
-    verb_file = verb_state_file(path)
-    if verb_file is None or verb_file.kept == verb_file.found:
-        return
-    if state_text_on_disk(path) != verb_file.found:
-        return
-
-    write_verb_state_file(path, verb_file)
-    verb_file.found = verb_file.kept
 
 
 def session_repos_file(session_id):
@@ -412,7 +392,7 @@ def register_session_repo(cwd, session_id):
 
 
 def is_run_open(state):
-    return state is not None and state.stage != "done"
+    return state is not None and state.stage != Stage.DONE
 
 
 def holds_open_run(repo, session_id):
@@ -742,14 +722,14 @@ def handback_event(events, agent_id, since):
 def awaits_resumed_coder(state):
     # The run stopped on a coder's report and the user answered: that coder, resumed with SendMessage, has no dispatch
     # of its own. The verb that finds its hand-back puts the stage back to the stopped coder's stage.
-    return stop_kind(state) == CODER_RESUMABLE
+    return stop_kind(state) == StopKind.CODER_RESUMABLE
 
 
 def awaits_resumed_review(state):
     # The wait for a review-loop gave up at the cap and stopped the run. The user may resume that review-loop with
     # SendMessage, or keep waiting on a review script that still runs: its hand-back, still after dispatchAt, then
     # counts as the pending review.
-    return stop_kind(state) == REVIEW_RESUMABLE
+    return stop_kind(state) == StopKind.REVIEW_RESUMABLE
 
 
 def phase_code_in_place(state):
@@ -944,7 +924,7 @@ def sent_message_since(repo_dir, state, since, agent_id=None):
 def put_resumed_coder_back(repo_dir, state):
     # A coder resumed after the run stopped on its report is the same coder: its next hand-back goes to review. Its
     # dispatch time is the stop.
-    state.stage = state.stop.coder_stage or "coder"
+    state.stage = state.stop.coder_stage or Stage.CODER
     state.dispatch_at = state.stop.at
     clear_stop(state)
     save_state(repo_dir, state)
@@ -982,14 +962,14 @@ def phase_coder_reports(repo_dir, state):
     events = read_events(repo_dir, state.run_id)
     dispatch_stages = {event["id"]: event.get("stage") for event in events if event.get("event") == "dispatch"}
     asks_dispatches = [event["id"] for event in events
-                       if event.get("event") == "dispatch" and event.get("stage") == "asks-coder"]
+                       if event.get("event") == "dispatch" and event.get("stage") == Stage.ASKS_CODER]
     newest_asks_dispatch = asks_dispatches[-1] if asks_dispatches else None
     reports = []
     for launch in (event for event in events if event.get("event") == "launch"):
         stage = dispatch_stages.get(launch.get("dispatch"))
-        if stage not in ("coder", "asks-coder") or not launch.get("agent_id"):
+        if stage not in (Stage.CODER, Stage.ASKS_CODER) or not launch.get("agent_id"):
             continue
-        if stage == "asks-coder" and launch.get("dispatch") != newest_asks_dispatch:
+        if stage == Stage.ASKS_CODER and launch.get("dispatch") != newest_asks_dispatch:
             continue
         of_agent = [event for event in events if event.get("agent_id") == launch["agent_id"]]
         messages = [event.get("message", "") for event in of_agent if event.get("event") == "handback"]
@@ -1007,7 +987,7 @@ def next_after():
 
 
 def expected_agent(state):
-    return REVIEW_LOOP if state.stage == "review" or awaits_resumed_review(state) else CODER
+    return REVIEW_LOOP if state.stage == Stage.REVIEW or awaits_resumed_review(state) else CODER
 
 
 def dispatch_time_text(since):
@@ -1056,19 +1036,23 @@ def emit_unlaunched_dispatch(dispatch):
 
 def wait_clock_start(repo_dir, state, since, wait_started):
     # The time the cap counts from. A resumed agent's dispatch time is the stop that came before the user's answer, so
-    # the cap counts from the first wait on it. That first wait is saved once; the verb that finds the hand-back
-    # clears it. Any other agent counts from the launch of the newest dispatch when one is logged (the dispatch is
-    # printed before the Agent call, and the worker may hold it a long time), and never earlier than `since`.
+    # the cap counts from the first wait on it. That first wait is logged once as a run-log event for this stop. Any
+    # other agent counts from the launch of the newest dispatch when one is logged (the dispatch is printed before the
+    # Agent call, and the worker may hold it a long time), and never earlier than `since`.
     if not (awaits_resumed_coder(state) or awaits_resumed_review(state)):
         launched = newest_dispatch_standing(repo_dir, state)["launched"]
         launched_at = launched.get("ts") if launched else None
         if isinstance(launched_at, (int, float)):
             return max(since, launched_at)
         return since
-    if state.stop.wait_at is None:
-        note_resume_wait(state, wait_started)
-        save_state(repo_dir, state)
-    return state.stop.wait_at
+
+    first_waits = [event["ts"] for event in read_events(repo_dir, state.run_id)
+                   if event.get("event") == "resume-wait" and event.get("stop_at") == state.stop.at]
+    if first_waits:
+        return min(first_waits)
+
+    log_event(repo_dir, state.run_id, "resume-wait", state.session_id, ts=wait_started, stop_at=state.stop.at)
+    return wait_started
 
 
 def launch_has_no_agent_id(repo_dir, state):
@@ -1166,8 +1150,6 @@ def wait_for_handback(repo_dir, state, verb):
     # The wait ends at the cap, not at the end of the wait that passes it.
     until_cap = max(0.0, clock_start + total_cap - wait_started)
 
-    # A wait killed part way still leaves the clock its cap counts from.
-    write_staged_state(repo_dir)
     found = script_utils.wait_for(lambda: handback_or_unlaunched(repo_dir, state, agent_type, until_cap <= 0),
                                   min(limit, until_cap), interval)
     if found and found[0] == "unlaunched":
@@ -1254,12 +1236,12 @@ def stop_on_launch_without_agent_id(repo_dir, state, agent_type):
 def stop_at_wait_cap(repo_dir, state, agent_type, clock_start, total_cap):
     stopped_at = time.time()
     if agent_type == REVIEW_LOOP and state.review_script_pid:
-        set_stop(state, REVIEW_RESUMABLE, at=stopped_at)
+        set_stop(state, StopKind.REVIEW_RESUMABLE, at=stopped_at)
         resume_text = (f" The review loop runs as a script; its log is {state.review_script_log or ''}. If the user "
                        f"wants it to keep waiting, run {timed_command()}. If the user wants it killed and a "
                        f"new loop started on the same diff, run `{INSTALLED_COMMAND} review-again`.")
     elif agent_type == REVIEW_LOOP:
-        set_stop(state, REVIEW_RESUMABLE, at=stopped_at)
+        set_stop(state, StopKind.REVIEW_RESUMABLE, at=stopped_at)
         resume_text = (f" If the user resumes it with SendMessage, run {timed_command()}. If it died, "
                        f"the user's word to review the same diff again runs `{INSTALLED_COMMAND} review-again`.")
     else:
@@ -1304,7 +1286,7 @@ def stale_phase_reason(repo_dir, state):
     # stale. It also returns None while a review script is still running, and at a plan-fix stop whose phase was
     # edited or whose plan cannot be read.
     saved_text = state.phase_text
-    if state.stage == "done" or not state.plan or state.phase is None or saved_text is None:
+    if state.stage == Stage.DONE or not state.plan or state.phase is None or saved_text is None:
         return None
 
     # The plan is edited on purpose at a plan-edit coder and a ruling on a plan change. The run reads the plan again
@@ -1362,7 +1344,7 @@ def stop_a_silent_coder(repo_dir, state, stopped_at):
     if agent_id:
         stopped_restart_text = restart_instruction(state, script_command("start --restart --coder-stopped"))
         restart_instruction_text = f"stop coder {agent_id} with TaskStop, then {stopped_restart_text}"
-    if state.stage == "plan-coder":
+    if state.stage == Stage.PLAN_CODER:
         set_stop(state, "coder-cap", at=stopped_at)
         return (" The plan-edit coder cannot be resumed: only the phase coder and the asks coder can. To dispatch "
                 f"the phase coder again, {restart_instruction_text}.")
@@ -1372,8 +1354,8 @@ def stop_a_silent_coder(repo_dir, state, stopped_at):
         return (f" Its launch has no agent id, so it cannot be resumed: {restart_instruction_text} "
                 "to dispatch a new one.")
 
-    coder_stage = (state.stop.coder_stage or "coder") if awaits_resumed_coder(state) else state.stage
-    set_stop(state, CODER_RESUMABLE, at=stopped_at, agent_id=agent_id, coder_stage=coder_stage)
+    coder_stage = (state.stop.coder_stage or Stage.CODER) if awaits_resumed_coder(state) else state.stage
+    set_stop(state, StopKind.CODER_RESUMABLE, at=stopped_at, agent_id=agent_id, coder_stage=coder_stage)
     state.dispatch_at = None
     return (f" If the user resumes coder {agent_id} with SendMessage, run {timed_command()}. To dispatch a "
             f"new coder instead, {restart_instruction_text}.")

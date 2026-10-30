@@ -45,6 +45,7 @@ from code_step_core import (
     timed_command,
 )
 from code_step_routes import STAGE_FACTS, StageFact
+from code_step_state import Stage
 from code_step_verification import verification_format_failure
 
 HookCall = collections.namedtuple("HookCall", "event repo state run_id session_id tool_input")
@@ -135,7 +136,7 @@ def open_fork_block(call, kind, limit, requires_dispatch=False):
 
 
 def log_handback_attempt(call):
-    if call.state.stage == "done":
+    if call.state.stage == Stage.DONE:
         return
 
     log_event(call.repo, call.run_id, "handback-attempt", call.session_id, agent_id=call.event.get("agent_id"),
@@ -235,7 +236,7 @@ def command_log_hook():
     # the PreToolUse gates denied never reaches PostToolUse, so it is never logged.
     try:
         for call in read_hook_calls():
-            if call.state.stage != "done":
+            if call.state.stage != Stage.DONE:
                 log_tool_call(call)
     except Exception as error:
         print(f"code-step log-hook: {error}", file=sys.stderr)

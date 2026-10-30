@@ -42,6 +42,7 @@ from code_step_core import (
     set_stop,
 )
 from code_step_phase_end import block_a, block_b_or_c, manual_groups_of
+from code_step_state import Stage
 from code_step_usage import VERB_USAGES
 from code_step_verification import (
     VERIFICATION_ITEM_SHAPE,
@@ -146,7 +147,7 @@ def delete_new_criteria(repo_dir, guard, criteria_path):
 def stop_while_plan_edit_coder_is_out(repo_dir, state, verb_text):
     # A restore or a drop of the saved criteria while the plan-edit coder is still out would leave its later write
     # unchecked. Returns True after printing the stop, with no state changed.
-    if state.stage != "plan-coder" or not is_dispatch_open(repo_dir, state):
+    if state.stage != Stage.PLAN_CODER or not is_dispatch_open(repo_dir, state):
         return False
     emit("stop", "The plan-edit coder has not reported yet, so the saved acceptance criteria stay as they are. Run "
          f"`! {INSTALLED_COMMAND} {RESUME_VERB}` from the repo root first: it waits for the "

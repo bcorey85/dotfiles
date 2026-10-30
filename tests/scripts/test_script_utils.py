@@ -1045,5 +1045,55 @@ class PopOptionTest(unittest.TestCase):
                 self.assertEqual(expected, script_utils.pop_repeated_option(arguments, "--e"))
 
 
+class PreloadedSkillsPromptTest(unittest.TestCase):
+    def claude_home(self, agent_text, skill_texts):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        home = pathlib.Path(folder.name)
+        (home / "agents").mkdir()
+        (home / "agents" / "coder.md").write_text(agent_text)
+        for name, skill_text in skill_texts.items():
+            (home / "skills" / name).mkdir(parents=True)
+            (home / "skills" / name / "SKILL.md").write_text(skill_text)
+        return home
+
+    def test_each_preloaded_skill_comes_without_its_frontmatter_under_its_base_directory(self):
+        skill_texts = {"coder-core": "---\nname: coder-core\n---\n\n# Core\nRule one.\n", "extra": "# Extra\n"}
+        home = self.claude_home("---\nname: coder\nskills:\n  - coder-core\n  - extra\n---\n\nBody.\n", skill_texts)
+
+        prompt = script_utils.preloaded_skills_prompt("coder", home)
+
+        self.assertEqual(f"Base directory for this skill: {home}/skills/coder-core\n\n# Core\nRule one.\n\n"
+                         f"Base directory for this skill: {home}/skills/extra\n\n# Extra", prompt)
+
+    def test_an_inline_skills_value_raises(self):
+        with self.assertRaises(ValueError):
+            script_utils.frontmatter_skills("---\nskills: [coder-core]\n---\n")
+
+    def test_an_inline_skills_value_raises_naming_the_agent_file(self):
+        home = self.claude_home("---\nname: coder\nskills: [coder-core]\n---\n\nBody.\n", {})
+
+        with self.assertRaises(ValueError) as raised:
+            script_utils.preloaded_skills_prompt("coder", home)
+
+        self.assertIn(str(home / "agents" / "coder.md"), str(raised.exception))
+
+    def test_a_missing_skill_raises_naming_the_agent_file_and_the_skill_path(self):
+        home = self.claude_home("---\nname: coder\nskills:\n  - gone\n---\n\nBody.\n", {})
+
+        with self.assertRaises(FileNotFoundError) as raised:
+            script_utils.preloaded_skills_prompt("coder", home)
+
+        self.assertIn(str(home / "agents" / "coder.md"), str(raised.exception))
+        self.assertIn(str(home / "skills" / "gone" / "SKILL.md"), str(raised.exception))
+
+    def test_no_skills_key_or_no_agent_file_gives_no_prompt(self):
+        home = self.claude_home("---\nname: coder\n---\n\nBody.\n", {})
+
+        self.assertEqual("", script_utils.preloaded_skills_prompt("coder", home))
+        self.assertEqual("", script_utils.preloaded_skills_prompt("code-reviewer", home))
+        self.assertEqual([], script_utils.frontmatter_skills("---\nname: coder\n---\n\nskills:\n  - body-text\n"))
+
+
 if __name__ == "__main__":
     unittest.main()

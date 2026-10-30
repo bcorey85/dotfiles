@@ -6,6 +6,7 @@ import pathlib
 import re
 import shutil
 
+import full_check_receipt
 import plan_format
 import script_utils
 import shell_command
@@ -198,8 +199,11 @@ def log_prohibition_scan(repo_dir, command, verdict):
 
 
 def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
-    # The repo's configured `Quality check:` command is left to the review loop's own run unless the caller says
-    # nothing else will run it. Every other command runs, and a repo with no configured check skips nothing.
+    # The repo's configured `Quality check:` command is skipped while a valid full-check receipt covers the work tree
+    # as it stands, unless that receipt is the no-check-found result (NOT_RUN_NO_CHECK); `not run (CI)` and
+    # all-expected-red receipts ran nothing but still skip, by design. With no such receipt, or when the caller says
+    # nothing else will run it, it runs here. Every other command runs, and a repo with no configured check skips
+    # nothing.
     results = []
     skipped = []
     unparsed = []
@@ -215,7 +219,9 @@ def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
             unparsed.append(line.strip())
             continue
         is_configured_check_command = full_check.is_configured_check(command, configured_check)
-        if is_configured_check_command and not run_whole_suites:
+        receipt = full_check_receipt.valid_receipt(repo_dir) if is_configured_check_command and not run_whole_suites \
+            else None
+        if receipt and receipt["result"] != full_check.NOT_RUN_NO_CHECK:
             skipped.append(command)
             continue
         code, output = run_command(command, repo_dir, timeout=timeout)

@@ -8,11 +8,11 @@
                                         PreToolUse hook. Matcher Agent records each review-loop dispatch; matcher
                                         SubagentHandback validates and records each review-loop hand-back, and denies a
                                         bad packet once per agent so the loop can repair it, denies a hand-back (any
-                                        status but plan-impact, in a repo whose CLAUDE.md does not say
-                                        `Full suite: CI`) whose own transcript shows no passed full_check.py
-                                        result after its last code change (once per code change), denies a
-                                        hand-back (any status but plan-impact) whose files_touched names the
-                                        dispatch prompt's plan file, denies a hand-back whose packet owes
+                                        status but plan-impact, setup-fault or critical-blocker) when no valid
+                                        full-check receipt exists for the tree the loop reviewed
+                                        (lib/full_check_receipt; once per code change), denies a hand-back (any
+                                        status but plan-impact) whose files_touched names the dispatch prompt's plan
+                                        file, denies a hand-back whose packet owes
                                         per-finding rows or a metrics line the loop did not log (a `ledger` row;
                                         it repeats once only: a second hand-back with no new logger call goes
                                         through), and denies any call from an agent whose
@@ -21,7 +21,7 @@
                                         call ran. Any other argument does nothing.
 
 Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths and
-unreviewed_fix_section; the hook (handle_hook, full_suite_in_ci, reviewed_repo) is in handback_hook.py. They read
+unreviewed_fix_section; the hook (handle_hook, unchecked_code_reason, reviewed_repo) is in handback_hook.py. They read
 the store (record, latest, hand_back_gap, ended_on_unreviewed_fix, unreviewed_streak) from handback_store and the
 finding-id constants from loop_transcript. The store also holds a `stop` row that review_loop_gate.py writes at each
 review-loop stop (agent_id, open_dispatches). `latest` keeps the last one after the last dispatch; while it shows

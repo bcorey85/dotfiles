@@ -8,17 +8,18 @@ optional `structure-pass: skip`), a blank line, then the handoff block. The scri
 scope, first-round reviewers (code, plus smell and test reviewers on a large diff), disposition routing, one fix coder,
 re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
 two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
-The full check runs through full_check.py. In a repo whose CLAUDE.md holds `Full suite: CI`, where the coder
-calls run the changed files' tests, it runs only the `Quality check:` command; a run with no runner summary or that ran
-no test is `passed (check only; CI runs the full suite)`; it runs none in a repo where no check is found. A check past
+The full check runs through full_check.py and writes the full-check receipt. It runs only the `Quality check:` command
+of the repo's CLAUDE.md; it runs none in a repo with no such line. In a repo whose CLAUDE.md holds `Full suite: CI`,
+where the coder calls run the changed files' tests, a run with no runner summary or that ran no test is
+`passed (check only; CI runs the full suite)`. A check past
 full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process
 group, and a check whose step stops on a missing path is a check-command error. A check that fails on a missing
 module the repo declares as a dependency is an environment gap. None is a failure: the packet's `full_check` says
 `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
-`not run (check-command error: ...)`, `not run (environment gap: ...)`, `not run (scoped command: ...)`,
-`not run (unresolved command: ...)` or, when the phase's Expected red lines leave out the whole check,
-`not run (expected red until Phase <id>[, <id>...])`. An exit 0 with no runner summary, or that ran no test, is no
-failure either: it says `unverified (exit 0, no test result shown)`. So is a failure that the check shows the same way
+`not run (check-command error: ...)`, `not run (environment gap: ...)` or, when the phase's Expected red lines
+leave out the whole check, `not run (expected red until Phase <id>[, <id>...])`. An exit 0 with no runner summary, or
+that ran no test, is no failure either: it says `unverified (exit 0, no test result shown)`. So is a failure that the
+check shows the same way
 on HEAD without the diff: it says `pre-existing failure (...)` and did not verify the diff. To tell, a failed check is
 rerun once per loop (the base run) in a detached worktree of HEAD, up to full_check_gate.CHECK_TIMEOUT_SECONDS. A
 failed check's blocker holds the failing step's lines; after a repair coder, before recheck_full_check stops as a
@@ -27,8 +28,7 @@ blocker, the autofix formatters run on the touched files and the check reruns on
 Model steps are `claude -p` calls in auto permission mode, each named `child of <parent session> (<role>)` so
 ListAgents tells it from a worker, and each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
-judgment (Sonnet). When the repo CLAUDE.md names no `Quality check` line, a Haiku check-finder call names the full
-check; when it names none, the review runs with no full check. A Sonnet disposition call runs
+judgment (Sonnet). A Sonnet disposition call runs
 only when a reviewer's output has no Fix/Ask/Nit sections the parser can read. Every call is logged to
 <state dir>/loop-script/<agent id>/calls.jsonl with its session id, role, wall time and token counts.
 
@@ -108,19 +108,6 @@ NO_CHANGE_REASON = "the coder made no change"
 TERMINAL_PANE_ENV = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET")
 CHILD_ENV = {**{name: value for name, value in os.environ.items() if name not in TERMINAL_PANE_ENV},
              "CLAUDE_FORMAT_HOOK_OFF": "1"}
-
-CHECK_FINDER = (
-    'Repo root: {repo}\n\n'
-    'Name the one shell command, run from the repo root, that runs this repo\'s full quality check: the lint, type '
-    'check and test steps its CI gate runs. Read CLAUDE.md, AGENTS.md, the README, the Makefile, package.json, '
-    'pyproject.toml and the files under .github/workflows to find it. Chain steps with && when no single target '
-    'runs them all. A workflow\'s or job\'s defaults.run.working-directory holds for every run step that sets no '
-    'working-directory of its own: write each such step as (cd <dir> && <step>), so no step\'s directory carries '
-    'into the next. A step for a package in a subfolder is written the same way. Leave a JS step out when the repo '
-    'has no package.json. Name only commands those files name. Run nothing.\n\n'
-    'End your reply with one JSON object: {{"command": "<shell command>"}}, or {{"command": null, "reason": '
-    '"<what is missing>"}} when the files name no check.'
-)
 
 CALLS = []
 CALLS_LOCK = threading.Lock()
@@ -278,30 +265,6 @@ def disposition_call(text, repo, out):
         raise ValueError(f'the disposition reply holds no {{"fix": [..], "ask": [..], "nit": [..]}} object: {reply!r}')
     return finding_records({"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []),
                             "assessment": ""})
-
-
-def check_command_for(repo, out):
-    """The repo's full check: a CLAUDE.md `Quality check: \\`<command>\\`` line, else what a haiku call reads from the
-    repo's docs, task runners and CI config. When CI runs the repo's full suite, only the `Quality check:` line counts.
-    None when there is no such line in that repo or the finder names no check: full_check.run then runs nothing."""
-    if full_check.full_suite_runs_in_ci(repo):
-        return full_check.configured_check_command(repo)
-
-    configured = full_check.configured_check_command(repo)
-    if configured:
-        return configured
-
-    reply = claude_call("check-finder", CHECK_FINDER.format(repo=repo), repo, out, model="haiku",
-                        tools="Read,Glob,Grep")
-    parsed = last_json_object(reply, ("command", "reason"))
-    if parsed is not None:
-        command = parsed.get("command")
-        if isinstance(command, str) and command.strip():
-            return command.strip()
-        print(f"review-loop-script: no full check found in {repo}: "
-              f"{parsed.get('reason') or 'the check finder named none'}", file=sys.stderr)
-        return None
-    raise ValueError(f'the check-finder reply holds no {{"command": ..}} object: {reply!r}')
 
 
 def file_texts(repo):
@@ -892,7 +855,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     loop.change_added = change_under_review(repo)
 
     log_call(repo, [str(SKILLS / "review-scope"), "caller=code"])
-    found_command = check_command_for(repo, out)
+    found_command = full_check.configured_check_command(repo)
     plan = header.get("plan")
     plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
     check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, header.get("phase"))

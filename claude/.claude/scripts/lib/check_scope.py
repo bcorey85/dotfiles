@@ -4,21 +4,25 @@ families it runs (runner_family), whether it is a test, lint, typecheck or build
 test filter (names_test_filter) or a cargo test target (names_cargo_test_target), and how wide a check it runs: a
 whole test suite, lint or build, a targeted run, or none (command_check_scope). A whole run of a runner in
 RUNNER_VALUE_FLAGS reads none, not whole. A make target or a docker exec or run call is judged by the commands it
-runs (make is read from the Makefile text; a NAME=value argument, a missing Makefile or a missing target lets the call
-through, and make -n, -q, -t or -h runs no recipe line except one marked `+` or one that names `$(MAKE)`, which is not
-judged). Runner wrappers (poetry, pipenv or uv run, env, timeout and the like) are peeled
-first, so the command they run is the one judged."""
+runs (make is read from the Makefile text; a NAME=value argument, a missing Makefile or a missing target makes the
+coder gate and a full-check receipt let the call through, and make -n, -q, -t or -h runs no
+recipe line except one marked `+` or one that names `$(MAKE)`, which is not judged). Runner wrappers (poetry,
+pipenv or uv run, env, timeout and the like) are peeled first, so the command they run is the one judged."""
 import os
 import pathlib
 import re
 import shlex
 
 from makefile_text import load_makefile, parse_make_arguments
+from pytest_config import pytest_options
 from shell_command import (
+    and_steps_or_whole,
     command_after_wrappers,
+    contains_word_run,
     docker_forwarded_variables,
     docker_set_variables,
     resolved_command_words,
+    split_command_steps,
     split_simple_commands,
     step_words,
     unwrap_docker,
@@ -38,7 +42,8 @@ MANAGE_TEST_VALUE_OPTIONS = {
 # the flags of every runner but ruff.
 LEAVES_OUT_FLAGS = {
     "manage.py": {"--exclude-tag"},
-    "pytest": {"--ignore", "--ignore-glob", "--deselect"},
+    "pytest": {"--ignore", "--ignore-glob", "--deselect", "--lf", "--last-failed", "--sw", "--stepwise", "--co",
+               "--collect-only"},
     "vitest": {"--exclude"},
     "jest": {"--testPathIgnorePatterns"},
     "eslint": {"--ignore-pattern", "--ignore-path"},
@@ -48,8 +53,10 @@ LEAVES_OUT_FLAGS = {
 NON_RUFF_LEAVE_OUT_FLAG_SETS = [flags for runner, flags in LEAVES_OUT_FLAGS.items() if runner != "ruff"]
 CHECK_RUN_LEAVES_OUT_FLAGS = set().union(*NON_RUFF_LEAVE_OUT_FLAG_SETS)
 
-# A simple command that starts with one of these runs tests or lint. With no path, test name, changed-files flag or
-# exclude flag after it, it covers the whole package. "test" and "lint" also match script names such as "test:unit".
+# The command starts of a test or lint run. A simple command that starts with one covers the whole package when no
+# path, test name, changed-files flag or exclude flag follows it. The words "test" and "lint" in a prefix also match
+# script names such as "test:unit". A test root folder after a lint start (`ruff check tests`) is a path that limits
+# the run, so it counts as scope.
 CHECK_RUN_PREFIXES = [
     ["npm", "test"], ["npm", "t"], ["npm", "run", "test"], ["yarn", "test"], ["yarn", "run", "test"],
     ["pnpm", "test"], ["pnpm", "run", "test"], ["bun", "test"], ["npx", "vitest"], ["npx", "jest"],
@@ -57,6 +64,14 @@ CHECK_RUN_PREFIXES = [
     ["npm", "run", "lint"], ["yarn", "lint"], ["yarn", "run", "lint"], ["pnpm", "lint"], ["pnpm", "run", "lint"],
     ["npx", "eslint"], ["eslint"], ["ruff", "check"],
 ]
+# These are the only prefixes after which naming a test root folder is no scope.
+PYTEST_RUN_PREFIXES = [["pytest"], ["python", "-m", "pytest"]]
+UNITTEST_PREFIX = ["python", "-m", "unittest"]
+UNITTEST_SELECTION_FLAGS = ("-k", "-p", "--pattern")
+# `unittest discover` options that take the next word as their value, which is not a start directory or pattern.
+DISCOVER_VALUE_OPTIONS = {"-s", "-t", "--start-directory", "--top-level-directory"}
+# The words that make any step a unittest run, wherever the step puts them.
+UNITTEST_MODULE_WORDS = ["-m", "unittest"]
 # A build always covers the whole package.
 BUILD_PREFIXES = [
     ["npm", "run", "build"], ["yarn", "build"], ["yarn", "run", "build"], ["pnpm", "build"], ["pnpm", "run", "build"],
@@ -133,9 +148,13 @@ TEST_RUNNER_WORDS = ("pytest", "vitest", "jest", "mocha")
 # with a `test` word anywhere after it. A search or print step that names a runner matches it too.
 TEST_RUNNER = re.compile(r"\b(?:" + "|".join(TEST_RUNNER_WORDS) + r"|cargo\s+test|go\s+test|bun\s+test"
                          r"|(?:npm|pnpm|yarn|npx)\b.*\btest\b)\b")
-# A command-line flag that names which tests to run.
-TEST_FILTER = re.compile(r"(?:^|\s)(?:-k|-t|-run|--testNamePattern|--test-name-pattern|--grep|--filter|--skip)"
-                         r"(?:[\s=]|$)|\S::\w")
+# The flags that select tests by name or path and take a value.
+SELECTION_VALUE_FLAGS = ("-k", "-m", "-t", "-run", "--testNamePattern", "--test-name-pattern", "--testPathPattern",
+                         "--grep", "--filter")
+# A command-line flag that names which tests to run. `-m` is left out: `python -m pytest` is no filter.
+TEST_FILTER_FLAGS = [flag for flag in SELECTION_VALUE_FLAGS if flag != "-m"] + ["--skip"]
+TEST_FILTER = re.compile(r"(?:^|\s)(?:" + "|".join(re.escape(flag) for flag in TEST_FILTER_FLAGS)
+                         + r")(?:[\s=]|$)|\S::\w")
 TEST_WORD = re.compile(r"^(?:test(?:[:-][\w:.-]*)?|nextest)$")
 # Programs that run a named script or target, and Django's `manage.py`: a `test` word given to one runs tests.
 SCRIPT_RUNNERS = ("npm", "pnpm", "yarn", "bun", "make", "just", "task", "cargo", "go", "deno", "manage.py")
@@ -194,9 +213,39 @@ def matches_prefix(words, prefix):
     return True
 
 
-def direct_check_scope(words):
+def pytest_testpaths(repo_dir):
+    # The directories the repo's pytest config names as `testpaths`: pytest.ini, pyproject.toml
+    # [tool.pytest.ini_options], tox.ini [pytest] and setup.cfg [tool:pytest]. Empty when none names any.
+    testpaths = set()
+    for options in pytest_options(repo_dir):
+        value = options.get("testpaths", [])
+        names = value.split() if isinstance(value, str) else [name for name in value if isinstance(name, str)]
+        testpaths |= {os.path.normpath(name) for name in names}
+    return testpaths
+
+
+def test_root_directories(repo_dir):
+    # The paths that a test path may name to run the whole suite: the folders or files the pytest
+    # `testpaths` name (globs expanded), else the top-level `tests` folder when it is a folder in the repo.
+    repo_path = pathlib.Path(repo_dir)
+    testpaths = pytest_testpaths(repo_dir)
+    if not testpaths:
+        return {"tests"} if (repo_path / "tests").is_dir() else set()
+
+    roots = set()
+    for testpath in testpaths:
+        if os.path.isabs(testpath):
+            continue
+        matches = repo_path.glob(testpath)
+        roots |= {os.path.normpath(match.relative_to(repo_path)) for match in matches if match.exists()}
+    return roots
+
+
+def direct_check_scope(words, cwd=None):
     # "whole" for a build or a test or lint run with no path, test name, changed-files flag or exclude flag,
     # "targeted" for one with, "none" for any other command and for a whole run of a runner in RUNNER_VALUE_FLAGS.
+    # After a pytest prefix, path words that name every test root of cwd between them are no scope; naming only some
+    # is a scope.
     # The caller has peeled the runner wrappers. A python program is judged by its basename.
     if words and PYTHON_PROGRAM.fullmatch(os.path.basename(words[0])):
         words = ["python", *words[1:]]
@@ -217,11 +266,46 @@ def direct_check_scope(words):
         if not matches_prefix(words, prefix):
             continue
         leave_out_flags = LEAVES_OUT_FLAGS["ruff"] if prefix == ["ruff", "check"] else CHECK_RUN_LEAVES_OUT_FLAGS
+        roots = test_root_directories(cwd) if cwd is not None and prefix in PYTEST_RUN_PREFIXES else frozenset()
+        named_roots = {os.path.normpath(word) for word in words[len(prefix):]} & roots
+        # Naming one root of several leaves the others out, so the roots are no scope only when all are named.
+        roots = roots if named_roots == roots else frozenset()
+        # A word that starts with a selection flag has its value attached (`-kfoo`, `--testNamePattern=foo`); the
+        # space form already reads its value as a scope word.
+        selection_flags = () if prefix == ["ruff", "check"] else SELECTION_VALUE_FLAGS
         scope_words = [word for word in words[len(prefix):]
-                      if word.startswith(CHANGED_FILES_FLAGS) or word.split("=", 1)[0] in leave_out_flags
-                      or not (word.startswith("-") or word == "run" or word in WHOLE_PACKAGE_PATHS)]
+                      if word.startswith(CHANGED_FILES_FLAGS) or word.startswith(selection_flags)
+                      or word.split("=", 1)[0] in leave_out_flags
+                      or not (word.startswith("-") or word == "run" or word in WHOLE_PACKAGE_PATHS
+                              or os.path.normpath(word) in roots)]
         return "targeted" if scope_words else "whole"
+    if names_unittest_module(words):
+        return "targeted"
     return "targeted" if runner_names_part_of_suite(words) else "none"
+
+
+def names_unittest_module(words):
+    # True for `python -m unittest` given a test name, a module, a selection flag (-k, -p, --pattern) or `discover`
+    # with both a start directory and a pattern. A bare run and `discover` with at most a start directory run the
+    # suite and stay "none".
+    if words[:len(UNITTEST_PREFIX)] != UNITTEST_PREFIX:
+        return False
+
+    unittest_words = words[len(UNITTEST_PREFIX):]
+    if any(word.startswith(UNITTEST_SELECTION_FLAGS) for word in unittest_words):
+        return True
+
+    positional_words = [word for word in unittest_words if not word.startswith("-")]
+    if not positional_words:
+        return False
+    if positional_words[0] != "discover":
+        return True
+
+    # `discover` takes its start directory and pattern positionally; -s and -t carry theirs as the next word.
+    discover_words = unittest_words[unittest_words.index("discover") + 1:]
+    discover_positionals = [word for word in without_flag_values(discover_words, DISCOVER_VALUE_OPTIONS)
+                            if not word.startswith("-")]
+    return len(discover_positionals) > 1
 
 
 def launched_runner(words):
@@ -306,10 +390,33 @@ def scan_command(command, cwd, scan, depth=0, recipe=None):
         command_words = without_assignments(words)
         assigned_names = {word.split("=", 1)[0] for word in words[:len(words) - len(command_words)]}
         words = command_words
-        if len(words) == 2 and words[0] == "cd":
-            cwd = pathlib.Path(cwd) / words[1]
+        moved_cwd = cwd_after_cd(words, cwd)
+        if moved_cwd is not None:
+            cwd = moved_cwd
             continue
         scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names)
+
+
+def cwd_after_cd(words, cwd):
+    # The directory a bare `cd X` (the words of one simple command) moves to, or None when the command is no such cd.
+    if len(words) == 2 and words[0] == "cd":
+        return pathlib.Path(cwd) / words[1]
+    return None
+
+
+def cwd_after_command(command, cwd):
+    # The directory the shell is in after the command: each bare `cd X` among its simple commands, in order, moves it.
+    # The cwd unchanged when the text cannot be split.
+    try:
+        simple_command_list = split_simple_commands(command)
+    except ValueError:
+        return cwd
+
+    for words in simple_command_list:
+        moved_cwd = cwd_after_cd(without_assignments(words), cwd)
+        if moved_cwd is not None:
+            cwd = moved_cwd
+    return cwd
 
 
 def dropped_assignment_names(words, peeled_words):
@@ -347,7 +454,7 @@ def scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names=
         scan_make(words, written_command, cwd, scan, depth, recipe)
         return
 
-    scope = direct_check_scope(words)
+    scope = direct_check_scope(words, cwd)
     scan.note(scope)
     if scope == "whole" and recipe:
         scan.whole_recipes.append((*recipe, written_command))
@@ -360,7 +467,8 @@ def scan_make(words, written_command, cwd, scan, depth, recipe):
     if arguments.runs_no_recipe:
         return
 
-    # A NAME=value argument can narrow the target, so the call is let through.
+    # A NAME=value argument can narrow the target, so the coder gate and a full-check receipt both let the call
+    # through.
     if arguments.has_variable_assignment or depth >= MAX_MAKE_DEPTH:
         scan.note("unresolved")
         return
@@ -410,9 +518,32 @@ def scanned_command(command, cwd):
 
 def command_check_scope(command, cwd):
     # "whole" when the command runs a whole test suite, lint or build, "targeted" when it runs one on named files,
-    # "unresolved" when what it runs cannot be read from the text (so it is let through), else "none". A make target
-    # or docker exec is judged by the commands it runs.
+    # "unresolved" when what it runs cannot be read from the text (the coder gate and the full-check receipt both let
+    # it through), else "none". A make target or docker exec is judged by the commands it runs.
     return scanned_command(command, cwd).scope
+
+
+def step_check_scope(step, cwd):
+    """The check scope of one step. A step that joins commands with `;`, `||` or a pipe is "targeted" when any of its
+    test commands is targeted, since the scan keeps only the widest scope and a whole lint would hide a test run on
+    one file. Each piece is judged in the directory the earlier `cd X` pieces moved to."""
+    piece_cwd = cwd
+    for _operator, piece in split_command_steps(step):
+        piece = piece.strip()
+        if runs_tests(piece) and command_check_scope(piece, piece_cwd) == "targeted":
+            return "targeted"
+        piece_cwd = cwd_after_command(piece, piece_cwd)
+    return command_check_scope(step, cwd)
+
+
+def and_step_scopes(command, cwd):
+    """[(step, its check scope)] for each && step of the command (the whole command when it joins its steps another
+    way). A `cd X` step moves the directory the later steps are judged in."""
+    step_scopes = []
+    for step in and_steps_or_whole(command):
+        step_scopes.append((step, step_check_scope(step, cwd)))
+        cwd = cwd_after_command(step, cwd)
+    return step_scopes
 
 
 def runs_whole_check(command, cwd):
@@ -449,11 +580,13 @@ def runs_tests(command):
 
 
 def step_runs_tests(words):
-    # True when one step (assignments already removed) runs tests, by a runner word or a script runner's test word.
+    # True when one step (assignments already removed) runs tests, by a runner word, a `-m unittest` module run or a
+    # script runner's test word.
     if not words or words[0] in NON_TEST_PROGRAMS:
         return False
 
-    return any(word in TEST_RUNNER_WORDS for word in words) or step_runs_test_script(words)
+    return (any(word in TEST_RUNNER_WORDS for word in words) or contains_word_run(words, UNITTEST_MODULE_WORDS)
+            or step_runs_test_script(words))
 
 
 def step_installs_or_looks_up(words):

@@ -679,6 +679,157 @@ class CommandCheckScopeTests(unittest.TestCase):
     def scope(self, command):
         return check_scope.command_check_scope(command, self.project)
 
+    def test_a_directory_only_test_path_is_whole_only_when_it_is_the_repos_test_root(self):
+        (self.project / "tests/unit").mkdir(parents=True)
+        (self.project / "spec").mkdir()
+        (self.project / "src/tests").mkdir(parents=True)
+        cases = {
+            "pytest tests/": "whole",
+            "pytest tests": "whole",
+            "pytest ./tests": "whole",
+            "python -m pytest -q tests/": "whole",
+            "pytest tests/unit": "targeted",
+            "pytest tests/unit/": "targeted",
+            "pytest tests/test_x.py": "targeted",
+            "pytest src/tests": "targeted",
+            "pytest spec": "targeted",
+            "pytest tests/ --ignore=tests/slow": "targeted",
+            "pytest tests/ -k slow": "targeted",
+            "pytest tests/ tests/unit": "targeted",
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.scope(command))
+
+    def test_a_selection_flag_with_its_value_attached_and_a_rerun_flag_are_a_scope(self):
+        cases = {
+            "pytest -kfoo": "targeted",
+            "uv run pytest -kfoo": "targeted",
+            "pytest -mslow": "targeted",
+            "npm test -- --testNamePattern=foo": "targeted",
+            "npx jest --testPathPattern=src": "targeted",
+            "pytest --lf": "targeted",
+            "pytest --last-failed": "targeted",
+            "pytest --sw": "targeted",
+            "pytest --collect-only": "targeted",
+            "pytest -q": "whole",
+            "python -m unittest tests.test_a": "targeted",
+            "python -m unittest -v tests.test_a": "targeted",
+            "python -m unittest": "none",
+            "python -m unittest discover": "none",
+            "python -m unittest -v discover -s tests": "none",
+            "python -m unittest -kfoo": "targeted",
+            "python -m unittest discover -k foo": "targeted",
+            "python -m unittest discover -s tests -p test_a*.py": "targeted",
+            "python -m unittest discover tests test_a.py": "targeted",
+            "python -m unittest discover tests": "none",
+            "npx vitest run --test-name-pattern=foo": "targeted",
+            "bun test --test-name-pattern=foo": "targeted",
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.scope(command))
+
+    def test_a_test_root_folder_is_a_path_for_a_javascript_test_run(self):
+        (self.project / "tests").mkdir()
+
+        for command in ("npx jest tests", "vitest tests", "npm test tests", "bun test tests"):
+            with self.subTest(command):
+                self.assertEqual("targeted", self.scope(command))
+
+    def test_a_directory_only_test_path_is_whole_only_when_the_paths_cover_every_test_root(self):
+        (self.project / "spec").mkdir()
+        (self.project / "integration").mkdir()
+        (self.project / "pytest.ini").write_text("[pytest]\ntestpaths = spec integration\n")
+        cases = {
+            "pytest spec": "targeted",
+            "pytest integration/": "targeted",
+            "pytest spec integration": "whole",
+            "pytest integration ./spec/": "whole",
+            "pytest spec integration -k slow": "targeted",
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.scope(command))
+
+    def test_a_tests_folder_beside_the_testpaths_is_not_a_test_root(self):
+        (self.project / "tests").mkdir()
+        (self.project / "spec").mkdir()
+        (self.project / "pytest.ini").write_text("[pytest]\ntestpaths = spec\n")
+        cases = {
+            "pytest spec": "whole",
+            "pytest tests": "targeted",
+            "pytest spec tests": "targeted",
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.scope(command))
+
+    def test_testpaths_globs_name_the_test_root_folders_they_match(self):
+        (self.project / "tests/unit").mkdir(parents=True)
+        (self.project / "tests/slow").mkdir()
+        (self.project / "pkg_a/tests").mkdir(parents=True)
+        (self.project / "pkg_b/tests").mkdir(parents=True)
+        configs = {
+            "tests/*": {"pytest tests/unit tests/slow": "whole", "pytest tests/unit": "targeted",
+                        "pytest tests": "targeted"},
+            "pkg_*/tests": {"pytest pkg_a/tests pkg_b/tests": "whole", "pytest pkg_a/tests": "targeted"},
+        }
+        for testpaths, cases in configs.items():
+            (self.project / "pytest.ini").write_text(f"[pytest]\ntestpaths = {testpaths}\n")
+            for command, expected in cases.items():
+                with self.subTest(testpaths=testpaths, command=command):
+                    self.assertEqual(expected, self.scope(command))
+
+    def test_testpaths_naming_a_file_keep_the_file_as_a_test_root(self):
+        (self.project / "tests").mkdir()
+        (self.project / "test_smoke.py").write_text("")
+        (self.project / "pytest.ini").write_text("[pytest]\ntestpaths = tests test_smoke.py\n")
+        cases = {"pytest tests": "targeted", "pytest tests test_smoke.py": "whole"}
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.scope(command))
+
+    def test_a_directory_only_test_path_with_no_tests_folder_is_targeted(self):
+        self.assertEqual("targeted", self.scope("pytest tests/"))
+
+    def test_the_pytest_testpaths_of_the_repo_are_a_test_root(self):
+        (self.project / "spec").mkdir()
+        configs = {
+            "pytest.ini": "[pytest]\ntestpaths = spec\n",
+            "tox.ini": "[pytest]\ntestpaths =\n    spec\n",
+            "setup.cfg": "[tool:pytest]\ntestpaths = spec\n",
+            "pyproject.toml": "[tool.pytest.ini_options]\ntestpaths = ['spec']\n",
+        }
+        for name, text in configs.items():
+            with self.subTest(name):
+                config_file = self.project / name
+                config_file.write_text(text)
+                try:
+                    self.assertEqual("whole", self.scope("pytest spec"))
+                    self.assertEqual("whole", self.scope("pytest spec/"))
+                finally:
+                    config_file.unlink()
+
+    def test_a_test_root_folder_is_a_path_for_a_lint_run(self):
+        (self.project / "tests").mkdir()
+
+        for command in ("ruff check tests", "eslint tests", "npm run lint tests"):
+            with self.subTest(command):
+                self.assertEqual("targeted", self.scope(command))
+
+    def test_a_pyproject_testpaths_string_is_a_test_root(self):
+        (self.project / "spec").mkdir()
+        (self.project / "pyproject.toml").write_text("[tool.pytest.ini_options]\ntestpaths = 'spec'\n")
+
+        self.assertEqual("whole", self.scope("pytest spec"))
+
+    def test_a_pyproject_that_cannot_be_read_names_no_testpaths(self):
+        (self.project / "spec").mkdir()
+        (self.project / "pyproject.toml").write_text("[tool.pytest.ini_options\n")
+
+        self.assertEqual("targeted", self.scope("pytest spec"))
+
     def test_a_direct_command_is_judged_whole_targeted_or_none(self):
         cases = {
             "pytest": "whole",

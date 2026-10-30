@@ -1,14 +1,12 @@
 """Gate commands derived from a phase section: what to run for the files the phase names."""
-import configparser
-import contextlib
 import json
 import pathlib
 import re
 import shlex
-import tomllib
 
 import check_scope
 import plan_format
+import pytest_config
 import script_utils
 from code_step_verification import verification_command
 from linked_installs import VENV_FOLDERS
@@ -29,7 +27,6 @@ SHELL_OPERATORS = {"&&", "||", ";", "|", "&"}
 ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 # `manage.py test` asks before it deletes a test database a killed run left behind; the gate has no one to answer.
 NO_INPUT_OPTIONS = {"--noinput", "--no-input"}
-PYTEST_DJANGO_SETTINGS = re.compile(r"DJANGO_SETTINGS_MODULE|--ds\b", re.IGNORECASE)
 
 
 def nearest_directory_with(repo_dir, rel_path, manifest_name):
@@ -165,36 +162,6 @@ def nearest_manage_script(repo_dir, python_paths):
     return None
 
 
-def has_pytest_django_settings(repo_dir):
-    # True when pytest finds Django settings in the repo's pytest.ini, pyproject [tool.pytest.ini_options], setup.cfg
-    # [tool:pytest], tox.ini [pytest] or conftest.py: DJANGO_SETTINGS_MODULE or the --ds option.
-    sections = []
-    for name in ("pytest.ini", "conftest.py"):
-        if (repo_dir / name).is_file():
-            sections.append((repo_dir / name).read_text())
-
-    pyproject = repo_dir / "pyproject.toml"
-    if pyproject.is_file():
-        try:
-            options = tomllib.loads(pyproject.read_text()).get("tool", {}).get("pytest", {}).get("ini_options", {})
-        except tomllib.TOMLDecodeError:
-            options = {}
-        sections.append(str(options))
-
-    for name, section in (("setup.cfg", "tool:pytest"), ("tox.ini", "pytest")):
-        config_file = repo_dir / name
-        if not config_file.is_file():
-            continue
-
-        parser = configparser.ConfigParser(interpolation=None, strict=False)
-        with contextlib.suppress(configparser.Error):
-            parser.read_string(config_file.read_text())
-        if parser.has_section(section):
-            sections.append(str(dict(parser[section])))
-
-    return any(PYTEST_DJANGO_SETTINGS.search(text) for text in sections)
-
-
 def project_python_runner(repo_dir):
     # The runner the repo's lock file or virtualenv names, or None when it names none.
     for lock_file, runner in PYTHON_RUNNERS:
@@ -250,7 +217,7 @@ def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, pha
         listed_runner, django_options, manage_script = listed_django
     elif not phase_lists_pytest and manage_script:
         manage_dir = (repo_dir / manage_script).parent
-        if not has_pytest_django_settings(repo_dir) and not has_pytest_django_settings(manage_dir):
+        if not pytest_config.has_django_settings(repo_dir) and not pytest_config.has_django_settings(manage_dir):
             django_options = []
 
     runner = listed_runner if listed_runner is not None else project_python_runner(repo_dir)

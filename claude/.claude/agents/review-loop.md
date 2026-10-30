@@ -224,9 +224,11 @@ return `status: cap-reached` with `findings_remaining` naming the unreviewed fil
 
 ## Step 6: Convergence — the execution gate
 
-**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from `<ROOT>/CLAUDE.md` (read it)) ONCE, after the last code change, with the Bash timeout at 600000:
+**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command ONCE, after the last code change, with the Bash timeout at 600000:
 
-`python3 ~/.claude/scripts/review/full_check.py <ROOT> --log /tmp/review-gate-<branch>.log [--plan <plan> --phase <N>] -- '<command>'`
+`python3 ~/.claude/scripts/review/full_check.py <ROOT> --log /tmp/review-gate-<branch>.log [--plan <plan> --phase <N>]`
+
+The script runs the CLAUDE.md quality-check command and no other; pass no command.
 
 Pass `--plan` and `--phase` when the inputs hold both. The script then leaves out the phase's `Expected red` steps and prints each as `expected red: <command> until Phase <id>`; a left-out step is no finding.
 
@@ -238,14 +240,12 @@ Pass `--plan` and `--phase` when the inputs hold both. The script then leaves ou
 - `not run (timeout)` → no finding. Proceed.
 - `not run (environment gap: No module named 'X')` → the check's interpreter lacks a module the repo declares as a dependency. No finding; never a blocker. Proceed.
 - `not run (check-command error: <line>)` → a step of the command stopped on a path that does not exist. No finding. Proceed.
-- `not run (scoped command: it names files or tests, so it is no full check)` → you passed a command other than the CLAUDE.md quality-check command, or narrowed it. Run the CLAUDE.md quality-check command as written, else the whole-suite command with no file, directory or test-name argument.
 - `not run (expected red until Phase <id>[, <id>...])` → the plan expects the whole check to fail until that phase. No finding. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
-- `not run (unresolved command: what it runs cannot be read, so it is no full check)` → you passed a command other than the CLAUDE.md quality-check command, and its scope cannot be read, such as a make call with a NAME=value argument or a missing target. Run the CLAUDE.md quality-check command as written, else the test runner's whole-suite command directly.
 - `not run (CI)` or `passed (check only; CI runs the full suite)` → the repo's CLAUDE.md holds `Full suite: CI`. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
 
 Any test count you report comes from the script's `summary:` line, never from other output. Call a run the full suite only when it ran the CLAUDE.md quality-check command and the result is not `passed (check only; CI runs the full suite)`, which is a check with no tests; name any other run by its exact command. Paths on the `changed by the check:` and `created by the check:` lines are the check's own writes, left in place: neither goes in `files_touched`. Paths on `rewrote edited files:` hold coder edits the check then rewrote: they stay in `files_touched`. A path an earlier run in this invocation named on `changed by the check:` or `created by the check:` stays there unless a coder edited it.
 
-When neither CLAUDE.md nor the repo's task runners or CI config name a full check, do not run the script: set `full_check` to `not run (no check found; the coder's scoped tests stand)` and proceed.
+When CLAUDE.md names no quality-check command, the script prints `not run (no check found; the coder's scoped tests stand)`: copy it into `full_check` and proceed.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 
@@ -311,7 +311,7 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
   "class_closure": "<the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a - fixed[] empty>",
   "open_classes": ["<one entry per class member still open, or []>"],
   "full_check": "passed",
-  "full_check_command": "<the exact command full_check.py ran>",
+  "full_check_command": "<the `command:` line of full_check.py's output>",
   "full_check_summary": "<the script's summary: line>",
   "full_check_tree": "<the script's tree: line value, or omit the key>",
   "files_touched": ["<path>"],
@@ -337,7 +337,7 @@ Every value is a JSON string, a list, or (for `iter` and `spec_iter`) an integer
 - `open_classes`: status=cap-reached with a class not closed: one string per unenumerated member; otherwise `[]`.
 - `plan_impact`: status=plan-impact. The verbatim PLAN-IMPACT block, as one string.
 - `ask`: never auto-fixed; the user answers these. question is never empty: an ask with no question takes its finding, or else its change, as its question. `change` is the one edit an accepted answer makes. `gate` and `class` ride along so the caller can log the outcome. Log each ask row with the same file and line as its `file_line`; the caller reads the id from that row, so leave `finding_id` out.
-- `full_check`: the Step 6 result, one of: passed | unverified (exit 0, no test result shown) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | passed (check only; CI runs the full suite) | not run (timeout) | not run (scoped command: it names files or tests, so it is no full check) | not run (unresolved command: what it runs cannot be read, so it is no full check) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | not run (expected red until Phase <id>[, <id>...]) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only).
+- `full_check`: the Step 6 result, one of: passed | unverified (exit 0, no test result shown) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | passed (check only; CI runs the full suite) | not run (timeout) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | not run (expected red until Phase <id>[, <id>...]) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only).
 - `full_check_summary`: passed | unverified only (not for passed (check only; CI runs the full suite)).
 - `full_check_tree`: the value of the `tree:` line right after the result line of the last full_check.py run, whatever the result; omit it when the script printed none.
 - `scoped_tests`: optional; the scoped test rerun after a fix no passed full check followed: passed | failed: <cmds>[; failing tests: <lines>]; full output: <log path> | setup fault / not run (timeout): <cmds>; full output: <log path> | command error: <cmd> (<line>)[; ...]; full output: <log path> | not run (<reason>).

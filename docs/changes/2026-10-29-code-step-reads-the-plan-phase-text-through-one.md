@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "changed"
 title: "Code-step reads the plan phase text through one helper"
-description: "One phase-text reader, one missing-plan stop and one phase-entry stop replace the copies in the code-step scripts, with no change in what a run prints or saves."
+description: "One phase-text reader, one missing-plan stop and one phase-entry stop replace the copies in the code-step scripts, with one difference in what a run prints: a resumed closing phase prints its plan section as a fresh start does."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-29T19:04:51-05:00"}
 seq: 288
 kind: "fix"
@@ -35,7 +35,7 @@ The tests that pin each stop's wording pass unchanged. The full suite passes.
 
 ## Watch
 
-None; a refactor with no behavior change has no intake number.
+None; a refactor whose one behavior change is small has no intake number. The change: a resumed closing phase used to split the plan on newlines and now reads it line by line through the helper, so its printed plan section loses the trailing blank line and a kept carriage return on a CRLF plan.
 
 ## Back-out
 

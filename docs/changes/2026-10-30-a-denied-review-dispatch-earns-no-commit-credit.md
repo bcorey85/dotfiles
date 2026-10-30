@@ -20,7 +20,8 @@ unmeasured: "No intake number counts denied dispatches; the defect was found by 
 `handback.py hook dispatch` (handled in `handback_hook.py`) writes the review-loop dispatch row at PreToolUse with the
 call's `tool_use_id`. The new `handback.py hook ran`, a PostToolUse hook on Agent, writes a `dispatch-ran` row for the same call. `handback_store`
 counts a dispatch row that names its call only once a `dispatch-ran` row names it too; a row with no call id (a
-script wrote it) counts as before. `latest()` clears the stop row on every dispatch row, run or not, so a foreground
+script wrote it) counts as before. The hand-back hook's own reads (the no-review exemption and the reviewed repo) also count the
+session's last dispatch row before it runs, since a foreground loop hands back before its `ran` row lands. `latest()` clears the stop row on every dispatch row, run or not, so a foreground
 loop never reads an earlier loop's stop as its own. Hand-back rows count as written: no sibling hook denies a
 review-loop hand-back, and `handback.py`'s own deny stores nothing.
 

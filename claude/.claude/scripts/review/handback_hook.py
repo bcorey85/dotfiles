@@ -17,7 +17,7 @@ from handback import (
     PacketError,
     load,
 )
-from handback_store import DISPATCH_RAN, latest, ran_dispatch_rows, record, session_rows, was_recorded
+from handback_store import DISPATCH_RAN, hand_back_dispatch_rows, record, session_rows, was_recorded
 
 RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
 REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
@@ -39,7 +39,7 @@ def claim_no_review(session_id, agent_id):
     exempted = [row for row in stored_rows if row.get("kind") == "no-review-exempt"]
     if any(row.get("agent_id") == agent_id for row in exempted):
         return True
-    no_review_dispatches = [row for row in ran_dispatch_rows(session_id) if row.get("no_review")]
+    no_review_dispatches = [row for row in hand_back_dispatch_rows(session_id) if row.get("no_review")]
     if len(no_review_dispatches) <= len(exempted):
         return False
     record(session_id, "no-review-exempt", agent_id=agent_id)
@@ -201,7 +201,8 @@ def reviewed_repo(prompt, cwd):
 
 
 def handle_hook(event, kind):
-    """Record a review-loop dispatch or hand-back. Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
+    """Record a review-loop dispatch or hand-back, or for kind `ran` the dispatch-ran row of a dispatch whose call ran.
+    Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
     unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no passed full_check.py
     result follows the last code change, loop_transcript.PLAN_EDIT_REASON when the packet names the plan file, or the
@@ -235,7 +236,8 @@ def handle_hook(event, kind):
                 "Return packet section in your instructions.")
     clean_status = status
     if packet is not None:
-        dispatch = latest(session_id)["dispatch"] or {}
+        dispatch_rows = hand_back_dispatch_rows(session_id)
+        dispatch = dispatch_rows[-1] if dispatch_rows else {}
         clean_status = effective_status(packet, dispatch.get("repo"))
     steps = loop_steps(session_id, agent_id)
     unreviewed = (clean_status in CLEAN_STATUSES and "reviewer" not in steps

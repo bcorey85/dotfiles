@@ -35,6 +35,8 @@ A command past the limit is killed with its whole process group, so no test proc
 a `.python-version` file runs the command with the pyenv shims first on PATH. A failed check whose log says
 `No module named X`, for an X that the repo declares as a dependency (requirements*.txt, pyproject.toml, setup.cfg
 or Pipfile, by normalized name), prints `not run (environment gap: No module named 'X')`.
+Right after the result line, `tree: <fingerprint>` names the repo's tree as the check left it (the log left out),
+as lib/reviewed_tree.py computes it; the line is absent when the repo cannot be fingerprinted.
 Exit 0, or 1 when the check failed or hit a setup fault; 2 for a usage error, such as a --log path that still holds
 a template placeholder.
 """
@@ -59,6 +61,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 
 import check_scope
 import expected_red
+import reviewed_tree
 import script_utils
 import shell_command
 from check_output import (
@@ -581,9 +584,37 @@ def scope_refusal(check_command, repo):
     return None
 
 
-def print_result(result, details, left_out):
-    """The result lines: the result, each Expected red entry left out, the summary and the files the check touched."""
+def checked_tree_fingerprint(repo, log):
+    """The fingerprint (lib/reviewed_tree.py) of the repo's tree as the check left it, the log file left out, or
+    None when the repo is no git work tree or git cannot fingerprint it (the result then carries no tree line)."""
+    top = script_utils.repo_root(repo, timeout=reviewed_tree.GIT_TIMEOUT_SECONDS)
+    if top is None:
+        return None
+
+    top = top.resolve()
+    log_path = pathlib.Path(log).resolve()
+    exclude_rel = log_path.relative_to(top).as_posix() if log_path.is_relative_to(top) else None
+
+    found = reviewed_tree.fingerprint_base(top, timeout=reviewed_tree.GIT_TIMEOUT_SECONDS)
+    if found is None:
+        print("full_check: tree not fingerprinted: git could not name the base tree", file=sys.stderr)
+        return None
+
+    _, base = found
+    try:
+        return reviewed_tree.tree_fingerprint(top, base=base, exclude_rel=exclude_rel,
+                                              timeout=reviewed_tree.GIT_TIMEOUT_SECONDS)
+    except reviewed_tree.TreeFingerprintError as error:
+        print(f"full_check: tree not fingerprinted: {error}", file=sys.stderr)
+        return None
+
+
+def print_result(result, details, left_out, tree=None):
+    """The result lines: the result, the tree the check covered, each Expected red entry left out, the summary and
+    the files the check touched."""
     print(f"full check: {result}")
+    if tree:
+        print(f"tree: {tree}")
     for entry in left_out:
         print("expected red: " + expected_red.entry_text(entry))
     summary = summary_text(result, details["summaries"])
@@ -631,7 +662,7 @@ def main(argv):
     else:
         result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base,
                                     declared=declared)
-    print_result(result, details, left_out)
+    print_result(result, details, left_out, checked_tree_fingerprint(args.repo, args.log))
 
     if is_failure(result) or is_setup_fault_result(result):
         print(tail)

@@ -44,6 +44,9 @@ it stays denied. The joined path is normalized before the tracked-file check, so
 folder is denied like one through an existing folder. The test count is unchanged (79) because the new shapes are
 cases in the existing denied-roots test.
 
+Known limit: a target that starts with a string literal (`Path('/tmp/x') / 'a'`, `'/tmp/x/' + R`) has no root, so
+its relative literal is still checked under the session cwd and each cd folder, as before this change.
+
 ## Watch
 
 None; a fix with no intake number.

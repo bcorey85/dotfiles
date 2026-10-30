@@ -525,7 +525,9 @@ def absolute_root(code, target):
     root is the target's first name that is not called or followed by a `.`, followed by a join operator, and whose
     every binding (an assignment, an augmented assignment, a loop or a call argument) is only one string
     literal (a call head or attribute may surround it, no other name), an absolute path, the same one in all of
-    them. A name bound to different paths, to a relative one, or to a join with another name is no root."""
+    them. A name bound to different paths, to a relative one, or to a join with another name is no root. The name
+    scan does not skip quoted text, so a target whose first name sits inside a leading string literal
+    (`Path('/tmp/x') / 'a'`, `'/tmp/x/' + R`, `'sub/' + R`) has no root."""
     for match in CODE_NAME.finditer(target):
         if re.match(r"\s*[(.]", target[match.end():]):
             continue

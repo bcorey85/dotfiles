@@ -40,7 +40,7 @@ Never block on it. If it fails, continue, and take the file list from `git statu
 
 A coder dispatch marks the session `dirty`. The only clean transition is your
 caller running `review-gate-mark clean` after rendering a packet whose `status`
-is `converged` or `deferred` — those two are the normal exits; the other three
+is `converged` or `deferred` — those two are the normal exits; the other five
 statuses leave the session dirty by design. Your caller routes on `status`, so
 a dishonest `converged` becomes an unearned mark.
 
@@ -193,7 +193,7 @@ a second failure returns `status: critical-blocker`, or `status: setup-fault` wh
 Exception to "no full review": when any coder (a second-round fix coder, or a gate-repair coder before its gate re-run)
 changed files after the last reviewer, dispatch one reviewer scoped to the changed files (not a full review). Its `fix`
 findings get no coder: they go to `findings_remaining` and the status is `cap-reached`. If that reviewer cannot run,
-return `status: cap-reached` with `findings_remaining` naming the unreviewed files.
+return `status: cap-reached` with `findings_remaining` naming the unreviewed files, each with `blocker: yes`.
 
 ## Step 6: Convergence — the execution gate
 
@@ -221,7 +221,7 @@ If a fixed finding is class-shaped and the class is NOT closed, the loop has not
 converged: re-enter step 5 with the unenumerated members as findings (counts
 toward `iter` — this is correctness, not a specialist channel; the correctness
 cap still bounds it). If the cap hits first, return
-`cap-reached` with them in `findings_remaining` — never `converged`.
+`cap-reached` with them in `findings_remaining` and `open_classes` — never `converged`.
 
 **Report the denominator, always.** `class_closure` carries the enumeration, `n/a — fixed[] empty`, or `none` plus each fixed finding with why it fits neither shape. A bare `none` is an unrun check, not a receipt.
 
@@ -283,18 +283,19 @@ that returned nothing. Runs after Step 6b so `actioned` is real.
 Return exactly this, and nothing else of substance:
 
 ```
-status: converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault
+status: converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault | fix-removed-change
 iter: <n>                                # correctness rounds run
 spec_iter: <n>                           # specialist re-entries consumed (cap 2)
 fixed: [{finding, file_line, blocker}]   # `fix` findings you resolved — NEVER omit; a silent repair is a bug
 skipped_fp: [{item, reason}]             # `fix` findings dropped as false positives
-blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here)
-findings_remaining: [{disposition, finding, file_line}]  # status=deferred | cap-reached
+blockers: [<one line each>]              # status=critical-blocker | setup-fault (the full check could not run here) | fix-removed-change (the fix passes removed half or more of the source lines of a change under review that adds 10 or more; the scripted loop sets it)
+findings_remaining: [{disposition, finding, file_line, blocker}]  # status=deferred | cap-reached
 plan_impact: <verbatim PLAN-IMPACT block>  # status=plan-impact
 ask: [{finding, file_line, question, change, gate, class}]  # never auto-fixed; the user answers these; question is never empty: an ask with no question takes its finding, or else its change, as its question; change is the one edit an accepted answer makes; gate/class ride along so the caller can log the outcome
 perf: [{finding, principle, file_line}]
 specialists: [security | perf | smell]   # Step 6b — which specialists ran (or "none (no match)" / "none (suppressed)"); same name as the Step 7 telemetry field
 class_closure: <the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a — fixed[] empty>
+open_classes: [<one string per unenumerated class member>]  # status=cap-reached with a class not closed; otherwise []
 files_touched: [<path>]
 nit: [<one line each>]                   # a small item ends `applied` or `skipped: <reason>`
 load_bearing_clean: <one line, or omitted>
@@ -312,6 +313,6 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 - **Never run `review-gate-mark`.** The clean mark belongs to your CALLER.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
 - **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**
-- **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.
+- **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files, each with `blocker: yes`. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.
 - **Never poll for a dispatched subagent.** After the launch stub, end your response. The result arrives as a notification that re-invokes you. No `sleep`, no `until` loop, no `echo waiting`.
 - **Independent tool calls go in one response.** Batch them whenever neither call's input depends on the other's output — every log call of Steps 7 and 7b in one response.

@@ -1,0 +1,13 @@
+Both issues are fixed.
+
+1. Prettier: I ran `npx prettier --write` on `backend/src/modules/invoices/schema.test.ts`. The follow-up `npx prettier --check` printed "All matched files use Prettier code style!" and exited 0.
+2. Plan Deviations: I split the single entry into three dated `- 2026-10-25 (Phase 0):` entries. They cover the migration 0003 extra statement, the partial-index predicate, and the `defaultRateCents` comment. Each has its own Assumed, Found and Resolved lines, plus Decision and Owner lines. The Assumed, Found and Resolved facts are unchanged. I added the Decision and Owner lines, and the Owner wording is mine, not from the spec. The Decision line reuses the old ruling: "keep plan as written", the pre-set decision at 2026-10-25 08:32, no user asked. The Owner line says code-reviewer filed the PLAN-IMPACT and the pre-set decision closed it. Please confirm that owner wording.
+
+Tests: `npx vitest run src/modules/invoices/schema`, run from `backend/`, exited 0. The log is at `/tmp/vitest.log`. Nothing else in the repo calls or consumes either change.
+
+Blocks: none. One of my Bash calls was a heredoc write to `/tmp/new.txt`. It was a mistake and wrote nothing useful, and I did not retry it.
+
+BEHAVIOR: none
+WHY: docs/plans/BILL-212-invoicing/spec.md 2497-2519 — one entry per resolved PLAN-IMPACT, as plan-format.md requires; the decision and owner lines repeat the original ruling.
+REFACTOR CANDIDATES: none
+REVIEW: recommended — /home/captured/dev/evals/ab-full/kit/repo/backend/src/modules/invoices/schema.test.ts (formatting only), /home/captured/dev/evals/ab-full/kit/repo/docs/plans/BILL-212-invoicing/spec.md

@@ -39,6 +39,7 @@ def stage_script(source_root, name, destination_root):
 module_spec = importlib.util.spec_from_file_location("code_step", SCRIPT)
 code_step = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(code_step)
+import check_scope  # noqa: E402
 import code_step_boundary  # noqa: E402
 import code_step_concentration  # noqa: E402
 import code_step_core  # noqa: E402
@@ -48,6 +49,7 @@ import code_step_verification  # noqa: E402
 import coder_gate  # noqa: E402
 import criteria_verdict  # noqa: E402
 import plan_format  # noqa: E402
+import reviewed_tree  # noqa: E402
 
 PLAN = """# Orders Plan
 
@@ -504,10 +506,54 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual(f"python3 {stale_prose_script} --base {first_base_head}", self.stored_gate_commands()[-1])
         self.assertEqual(first_base_head, self.state()["baseHead"])
 
+    def seed_older_failed_gate(self):
+        # A gate left by a run that has ended: a coder result of failed, and no state file for the run.
+        gate = {"setAt": time.time(), "repoRoot": str(self.repo), "commands": ["echo older"],
+                "coders": {"a1": {"runs": 1, "denies": 1, "result": "failed", "commands": {}}}}
+        (self.repo / ".git/coder-gate.json").write_text(json.dumps(gate))
+
     def test_planless_start_keeps_no_stale_prose_gate(self):
+        self.seed_older_failed_gate()
+
         self.step("start", "fix the typo in the orders page")
 
         self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
+    def test_a_start_that_dispatches_no_gated_coder_clears_an_older_gate(self):
+        self.on_feature_branch()
+        self.mark_phases_done(1, 2, 3)
+        starts = {"a closing phase": lambda: self.step("start", "--restart", self.plan),
+                  "a phase that derives no commands": lambda: self.step("start", "--restart", self.single_plan())}
+        for name, start in starts.items():
+            with self.subTest(name):
+                self.seed_older_failed_gate()
+
+                start()
+
+                self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
+    def single_plan(self):
+        self.use_single_phase_plan()
+        return self.plan
+
+    def test_a_planless_start_that_drops_an_open_run_leaves_no_live_gate(self):
+        self.start_phase_one()
+        self.assertTrue((self.repo / ".git/coder-gate.json").exists())
+
+        out = self.step("start", "--restart", "--task", "fix the typo in the orders page")
+
+        self.assertIn("Implement: fix the typo in the orders page", out)
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
+    def test_a_failed_packet_leaves_no_live_gate_for_the_run_that_never_started(self):
+        (self.claude / "scripts/code/coder_packet.py").write_text("raise SystemExit('packet broke')\n")
+
+        done = run(self.repo, self.env, "start", self.plan)
+
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn("coder-packet failed", done.stderr)
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+        self.assertEqual({}, self.state())
 
     def test_gate_skips_a_package_in_a_sibling_repo(self):
         sibling = self.tmp / "sibling/evals"
@@ -548,13 +594,14 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("cd backend && npm run typecheck", gate["commands"])
         self.assertEqual({}, gate["env"])
 
-    def make_helper_phase_with_verification(self, verification_line, start_arguments=()):
+    def make_helper_phase_with_verification(self, verification_line, start_arguments=(),
+                                            rust_file="crate/tests/common/mod.rs"):
         (self.repo / "crate/src").mkdir(parents=True)
         (self.repo / "crate/tests/common").mkdir(parents=True)
         (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
         (self.repo / "crate/src/lib.rs").write_text("")
-        (self.repo / "crate/tests/common/mod.rs").write_text("")
-        helper_file = "**File**: `backend/src/orders.test.ts`\n**File**: `crate/tests/common/mod.rs`"
+        (self.repo / rust_file).write_text("")
+        helper_file = f"**File**: `backend/src/orders.test.ts`\n**File**: `{rust_file}`"
         plan_text = self.plan_text().replace("**File**: `backend/src/orders.test.ts`", helper_file)
         old = "- [ ] **Prohibition**: no console.log - `git grep -n --untracked console.log -- backend/src/orders.ts`"
         self.assertIn(old, plan_text)
@@ -567,7 +614,8 @@ class CodeStepTest(unittest.TestCase):
 
         self.assertEqual(1, commands.count("cargo test --test orders"))
         self.assertEqual([], [command for command in commands if "cargo test --tests" in command])
-        self.assertEqual([], [command for command in commands if "cargo clippy" in command])
+        self.assertEqual(["cd crate && cargo clippy --tests -- -D warnings"],
+                         [command for command in commands if "cargo clippy" in command])
         self.assertIn("cd backend && npx vitest run src/orders.test.ts", commands)
 
     def test_gate_takes_the_listed_cargo_commands_when_the_phase_is_started_with_the_phase_option(self):
@@ -579,7 +627,112 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("cargo test --test orders", commands)
         self.assertIn("cargo nextest run --test orders", commands)
         self.assertEqual([], [command for command in commands if "cargo test --tests" in command])
-        self.assertEqual([], [command for command in commands if "cargo clippy" in command])
+        self.assertEqual(["cd crate && cargo clippy --tests -- -D warnings"],
+                         [command for command in commands if "cargo clippy" in command])
+
+    def test_a_phase_that_lists_its_cargo_tests_gets_clippy_on_the_test_target_it_changed(self):
+        commands = self.make_helper_phase_with_verification("- [ ] Orders test passes: `cargo test --test orders`",
+                                                            rust_file="crate/tests/orders.rs")
+
+        self.assertEqual(["cd crate && cargo clippy --test orders -- -D warnings", "cargo test --test orders"],
+                         [command for command in commands if "cargo" in command])
+
+    def test_scoped_clippy_lints_each_named_target_of_a_crate_once_and_a_manifest_as_library_and_binaries(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        (self.repo / "crate/src/lib.rs").write_text("")
+        (self.repo / "tool").mkdir()
+        (self.repo / "tool/Cargo.toml").write_text('[package]\nname = "tool"\n')
+        paths = ["crate/tests/orders.rs", "crate/src/a.rs", "crate/tests/orders.rs", "crate/src/b.rs",
+                 "crate/tests/side_streams.rs", "crate/src/bin/tool.rs", "tool/Cargo.toml", "notes.md"]
+
+        commands = code_step_gates.scoped_clippy_commands(self.repo, paths)
+
+        # A src file adds --lib --bins --tests so its #[cfg(test)] module is linted through the test targets.
+        self.assertEqual(["cd crate && cargo clippy --test orders --lib --bins --tests --test side_streams --bin tool"
+                          " -- -D warnings",
+                          "cd tool && cargo clippy --bins --tests -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_changed_example_as_that_example(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+
+        commands = code_step_gates.scoped_clippy_commands(
+            self.repo, ["crate/examples/demo.rs", "crate/examples/wide/main.rs"])
+
+        self.assertEqual(["cd crate && cargo clippy --example demo --example wide -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_helper_directory_of_examples_and_benches_as_all_of_them(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+
+        commands = code_step_gates.scoped_clippy_commands(
+            self.repo, ["crate/examples/common/helpers.rs", "crate/benches/common/helpers.rs"])
+
+        self.assertEqual(["cd crate && cargo clippy --examples --benches -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_helper_file_in_an_example_or_bench_folder_as_that_target(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        target_folders = {"example": "examples", "bench": "benches"}
+        for folder in target_folders.values():
+            (self.repo / f"crate/{folder}/wide").mkdir(parents=True)
+            (self.repo / f"crate/{folder}/wide/main.rs").write_text("")
+
+        for kind, folder in target_folders.items():
+            with self.subTest(kind=kind):
+                commands = code_step_gates.scoped_clippy_commands(self.repo, [f"crate/{folder}/wide/args.rs"])
+
+                self.assertEqual([f"cd crate && cargo clippy --{kind} wide -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_lone_binary_source_file_with_the_test_targets(self):
+        (self.repo / "crate/src/bin").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+
+        commands = code_step_gates.scoped_clippy_commands(self.repo, ["crate/src/bin/tool.rs"])
+
+        self.assertEqual(["cd crate && cargo clippy --bin tool --tests -- -D warnings"], commands)
+
+    def test_scoped_clippy_lints_a_build_script_as_library_binaries_and_tests(self):
+        (self.repo / "crate/src").mkdir(parents=True)
+        (self.repo / "crate/Cargo.toml").write_text('[package]\nname = "crate"\n')
+        (self.repo / "crate/src/lib.rs").write_text("")
+
+        commands = code_step_gates.scoped_clippy_commands(self.repo, ["crate/build.rs"])
+
+        self.assertEqual(["cd crate && cargo clippy --lib --bins --tests -- -D warnings"], commands)
+
+    def test_a_phase_that_lists_its_own_clippy_gets_no_derived_clippy(self):
+        listed_rows = ("- [ ] Orders test passes: `cargo test --test orders`\n"
+                       "- [ ] Orders lints clean: `cargo clippy --test orders -- -D warnings`")
+        commands = self.make_helper_phase_with_verification(listed_rows, rust_file="crate/tests/orders.rs")
+
+        self.assertEqual(["cargo test --test orders", "cargo clippy --test orders -- -D warnings"],
+                         [command for command in commands if "cargo" in command])
+
+    def test_a_quoted_cargo_clippy_inside_a_listed_command_is_no_clippy_run(self):
+        listed = "cargo test --test orders -- 'cargo clippy'"
+        commands = self.make_helper_phase_with_verification(f"- [ ] Orders test passes: `{listed}`",
+                                                            rust_file="crate/tests/orders.rs")
+
+        self.assertIn("cd crate && cargo clippy --test orders -- -D warnings", commands)
+
+    def test_runs_cargo_clippy_ignores_a_quoted_cargo_clippy_word(self):
+        quoted_commands = ["echo 'cargo clippy' && cargo test --test orders",
+                           "git grep -n 'cargo clippy' -- crate"]
+
+        for command in quoted_commands:
+            with self.subTest(command=command):
+                self.assertFalse(check_scope.runs_cargo_clippy(command))
+
+    def test_runs_cargo_clippy_sees_clippy_behind_wrappers_toolchains_and_global_flags(self):
+        commands = ["cd crate && nice -n 19 cargo +nightly clippy --lib",
+                    "cargo --locked clippy --lib",
+                    "cargo --manifest-path crate/Cargo.toml clippy"]
+
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertTrue(check_scope.runs_cargo_clippy(command))
 
     def test_gate_takes_the_listed_cargo_commands_behind_nice_env_and_taskset_wrappers(self):
         nextest = "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(orders_total)'"
@@ -587,13 +740,15 @@ class CodeStepTest(unittest.TestCase):
         listed_rows = f"- [ ] Orders total passes: `{nextest}`\n- [ ] Crate builds: `{check}`"
         commands = self.make_helper_phase_with_verification(listed_rows)
 
-        self.assertEqual([nextest, check], [command for command in commands if "cargo" in command])
+        self.assertEqual(["cd crate && cargo clippy --tests -- -D warnings", nextest, check],
+                         [command for command in commands if "cargo" in command])
 
     def test_gate_takes_a_listed_cargo_command_that_runs_after_a_cd(self):
         listed = "cd crate && cargo test --test orders"
         commands = self.make_helper_phase_with_verification(f"- [ ] Orders test passes: `{listed}`")
 
-        self.assertEqual([listed], [command for command in commands if "cargo" in command])
+        self.assertEqual(["cd crate && cargo clippy --tests -- -D warnings", listed],
+                         [command for command in commands if "cargo" in command])
 
     def test_gate_keeps_the_derived_cargo_commands_when_the_phase_lists_no_cargo_command(self):
         commands = self.make_helper_phase_with_verification("- [ ] No stray logging: `git grep -n TODO -- crate/src`")
@@ -1007,8 +1162,9 @@ class CodeStepTest(unittest.TestCase):
 
     def test_after_coder_does_not_read_the_gate_stamp_as_the_coders_report(self):
         stamp = ('\n\nHAND-BACK GATE: timeout after 1 run(s), failed: none, skipped (no changed files): none.\n'
-                 'HAND-BACK GATE TIMEOUT: these commands timed out after 1200 s with no test result:\n'
-                 '  `cargo test --tests`, output tail:\nERROR: column reference "id" is ambiguous')
+                 'HAND-BACK GATE TIMEOUT: these commands timed out with no test result:\n'
+                 '  `cargo test --tests`, timed out after 1200 s, output tail:\n'
+                 'ERROR: column reference "id" is ambiguous')
         self.begin_coder()
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended" + stamp)
 
@@ -1019,8 +1175,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_handoff_takes_no_file_change_from_the_gate_stamp_output_tail(self):
         stamp = ('\n\nHAND-BACK GATE: timeout after 1 run(s), failed: none, skipped (no changed files): none.\n'
-                 'HAND-BACK GATE TIMEOUT: these commands timed out after 1200 s with no test result:\n'
-                 '  `cargo test --tests`, output tail:\n- backend/src/orders.ts: 1 failed')
+                 'HAND-BACK GATE TIMEOUT: these commands timed out with no test result:\n'
+                 '  `cargo test --tests`, timed out after 1200 s, output tail:\n- backend/src/orders.ts: 1 failed')
         self.begin_coder()
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended" + stamp)
 
@@ -1029,20 +1185,30 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("path: backend/src/orders.ts", out)
         self.assertNotIn("change: 1 failed", out)
 
-    def test_after_coder_reports_a_gate_command_that_timed_out_as_timed_out_not_exit_0(self):
+    def resume_after_gate_outcome(self, outcome):
+        # Resumes after a coder whose gate stored the outcome for the gate's first command; returns (command, output).
         self.begin_coder()
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
         gate_path = self.repo / ".git/coder-gate.json"
         gate = json.loads(gate_path.read_text())
-        timed_out_command = gate["commands"][0]
+        command = gate["commands"][0]
         gate["coders"]["a1"] = {"runs": 1, "denies": 0, "result": "timeout",
-                                "commands": {timed_out_command: {"outcome": "timed-out", "detail": ""}}}
+                                "commands": {command: {"outcome": outcome, "detail": ""}}}
         gate_path.write_text(json.dumps(gate))
 
-        out = self.step("resume")
+        return command, self.step("resume")
+
+    def test_after_coder_reports_a_gate_command_that_timed_out_as_timed_out_not_exit_0(self):
+        timed_out_command, out = self.resume_after_gate_outcome("timed-out")
 
         self.assertIn(f"{timed_out_command} -> timed out at the hand-back gate, no test result", out)
         self.assertNotIn(f"{timed_out_command} -> exit 0", out)
+
+    def test_after_coder_reports_a_gate_command_the_budget_never_started_as_not_started_not_exit_0(self):
+        command, out = self.resume_after_gate_outcome("not-started")
+
+        self.assertIn(f"{command} -> not started at the hand-back gate (time budget used up), no test result", out)
+        self.assertNotIn(f"{command} -> exit 0", out)
 
     def test_after_coder_reports_a_gate_setup_fault_as_no_test_result_not_exit_0(self):
         self.begin_coder()
@@ -1066,7 +1232,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("path: backend/src/existing.ts", out)
 
     def test_plan_impact_asks_then_decide_records_deviation(self):
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
         out = self.coder_round(report)
         self.assertIn("ACTION: ask-user", out)
         self.assertIn("## Question for the user", self.said())
@@ -1087,7 +1253,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_plan_impact_preset_decision_skips_the_question(self):
         self.env["CODE_STEP_IMPACT_DECISION"] = "adopt"
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
         out = self.coder_round(report)
         self.assertNotIn("ACTION: ask-user", out)
         self.assertIn("AGENT: coder", out)
@@ -1099,7 +1265,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_plan_impact_that_changes_no_acceptance_criterion_is_adopted_without_asking(self):
         report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
-                  "PLAN-IMPACT: yes")
+                  "  cause: plan\nPLAN-IMPACT: yes")
         out = self.coder_round(report)
         self.assertNotIn("ACTION: ask-user", out)
         self.assertNotIn("## Question for the user", self.said())
@@ -1112,13 +1278,152 @@ class CodeStepTest(unittest.TestCase):
 
     def test_plan_impact_that_changes_an_acceptance_criterion_still_asks(self):
         report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: AC-3\n"
-                  "PLAN-IMPACT: yes")
+                  "  cause: plan\nPLAN-IMPACT: yes")
         out = self.coder_round(report)
         self.assertIn("ACTION: ask-user", out)
 
+    def test_a_plan_impact_with_a_toolkit_cause_stops_and_dispatches_no_plan_rewrite(self):
+        report = ("PLAN-IMPACT:\n  assumed: the gate checks this phase\n  found: its base is the old commit\n"
+                  "  changes: nothing in the plan\n  acceptance_criteria: none\n  cause: toolkit\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertNotIn("AGENT: coder", out)
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertNotIn("## Plan Deviations", self.plan_text())
+
+    def test_a_plan_impact_with_an_unknown_cause_stops_and_names_both_causes(self):
+        report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
+                  "  cause: gate\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("`cause: gate` that does not parse: the cause is plan or toolkit", out)
+        self.assertNotIn("Edit only the plan file", out)
+
+    def test_a_plan_impact_with_a_plan_cause_is_adopted_as_before(self):
+        report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
+                  "  cause: plan\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("Edit only the plan file", out)
+
+    def test_a_coder_resumed_after_the_toolkit_stop_is_not_stopped_on_the_same_block_again(self):
+        report = ("PLAN-IMPACT:\n  assumed: the gate checks this phase\n  found: its base is the old commit\n"
+                  "  changes: nothing in the plan\n  acceptance_criteria: none\n  cause: toolkit\nPLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.send_message("a1")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended", agent_id="a1")
+        out = self.step("resume")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("toolkit gate or script fault", out)
+
+    def test_two_toolkit_blocks_then_a_clean_hand_back_do_not_stop_again(self):
+        template = ("PLAN-IMPACT:\n  assumed: the gate checks this phase\n  found: {found}\n"
+                    "  changes: nothing in the plan\n  acceptance_criteria: none\n  cause: toolkit\nPLAN-IMPACT: yes")
+        self.coder_round(template.format(found="its base is the old commit"))
+        self.assertEqual("stopped", self.state()["stage"])
+        self.send_message("a1")
+        self.hook("coder", template.format(found="its log is unreadable"), agent_id="a1")
+        out = self.step("resume")
+        self.assertIn("toolkit gate or script fault", out)
+        self.send_message("a1")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended", agent_id="a1")
+        out = self.step("resume")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("toolkit gate or script fault", out)
+
+    def test_a_review_loop_plan_impact_with_a_toolkit_cause_stops_and_opens_no_plan_modal(self):
+        self.coder_round()
+        self.hook("review-loop", "status: plan-impact\niter: 1\nplan_impact: |\n    PLAN-IMPACT:\n      found: B\n"
+                                 "      cause: toolkit\n")
+        out = self.step("resume")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertIn("review-again", out)
+        self.assertNotIn("Edit only the plan file", out)
+        self.assertEqual("stopped", self.state()["stage"])
+        self.assertIn("AGENT: review-loop", self.step("review-again"))
+
+    def test_a_restart_after_a_reset_off_the_start_commit_takes_a_fresh_start_commit(self):
+        (self.repo / "backend/src/early.ts").write_text("export const e = 1\n")
+        self.commit_all()
+        self.start_phase_one()
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        self.assertIn("ACTION: stop", self.step("resume"))
+        self.step("start", self.plan, "--restart")
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.state()["baseHead"])
+
+    def test_a_coder_hand_back_after_a_reset_off_the_start_commit_stops_and_names_both_commits(self):
+        (self.repo / "backend/src/early.ts").write_text("export const e = 1\n")
+        self.commit_all()
+        self.start_phase_one()
+        base_head = self.state()["baseHead"]
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        out = self.step("resume")
+        head = self.git("rev-parse", "HEAD").strip()
+        self.assertIn("ACTION: stop", out)
+        self.assertIn(base_head, out)
+        self.assertIn(head, out)
+        self.assertNotIn("AGENT: review-loop", out)
+        self.assertNotIn("resume that coder with SendMessage", out)
+        self.assertIn("start --restart", out)
+
+    def test_a_restart_after_a_reset_keeps_the_baseline_so_the_phase_work_stays_in_the_diff(self):
+        (self.repo / "backend/src/early.ts").write_text("export const e = 1\n")
+        self.commit_all()
+        self.start_phase_one()
+        baseline = self.state()["baseline"]
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+        self.step("resume")
+        self.step("start", self.plan, "--restart")
+        self.assertEqual(baseline, self.state()["baseline"])
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.state()["baseHead"])
+
+    def test_a_toolkit_cause_report_with_no_file_change_stops_on_the_cause_and_not_again_after_resume(self):
+        report = ("PLAN-IMPACT:\n  assumed: the gate checks this phase\n  found: its base is the old commit\n"
+                  "  changes: nothing in the plan\n  acceptance_criteria: none\n  cause: toolkit\nPLAN-IMPACT: yes")
+        self.start_phase_one()
+        self.pass_coder_gate()
+        self.hook("coder", report)
+        out = self.step("resume")
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertNotIn("no reviewable change", out)
+        self.assertEqual(1, len(self.state()["handledImpacts"]))
+        self.send_message("a1")
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended", agent_id="a1")
+        out = self.step("resume")
+        self.assertIn("AGENT: review-loop", out)
+        self.assertNotIn("toolkit gate or script fault", out)
+
+    def test_a_coder_plan_impact_with_no_cause_line_stops_as_unparsed(self):
+        report = ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  acceptance_criteria: none\n"
+                  "PLAN-IMPACT: yes")
+        out = self.coder_round(report)
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("no `cause:` line: the cause is plan or toolkit", out)
+        self.assertNotIn("Edit only the plan file", out)
+
+    def test_a_script_shaped_review_packet_with_a_toolkit_cause_stops_and_opens_no_plan_modal(self):
+        self.coder_round()
+        packet = json.dumps({"status": "plan-impact", "iter": 1, "plan_impact_cause": "toolkit",
+                             "plan_impact": "PLAN-IMPACT: found: B; cause: toolkit"})
+        self.hook("review-loop", packet)
+        out = self.step("resume")
+        self.assertIn("ACTION: stop", out)
+        self.assertIn("toolkit gate or script fault", out)
+        self.assertNotIn("Edit only the plan file", out)
+
     def test_the_phase_end_block_lists_the_deviation_adopted_in_the_phase(self):
         self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
-                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\n"
+                         "  cause: plan\nPLAN-IMPACT: yes")
         (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
@@ -1131,7 +1436,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_run_end_block_lists_the_deviation_adopted_in_phase_one(self):
         self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
-                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\n"
+                         "  cause: plan\nPLAN-IMPACT: yes")
         (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
@@ -1152,7 +1458,8 @@ class CodeStepTest(unittest.TestCase):
 
     def test_the_phase_end_block_omits_a_deviation_adopted_in_phase_1(self):
         self.coder_round("PLAN-IMPACT:\n  assumed: the importer reads a header row\n  found: the file has none\n"
-                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\nPLAN-IMPACT: yes")
+                         "  changes: step 2 drops the header skip\n  acceptance_criteria: none\n"
+                         "  cause: plan\nPLAN-IMPACT: yes")
         (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
@@ -1167,7 +1474,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("the importer reads a header row", phase_two_text)
 
     def test_adopt_rewrites_the_plan_before_the_review(self):
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
         self.coder_round(report)
         out = self.step("decide", "adopt", "--by", "user", "--ruling", "adopt it, drop the header")
         self.assertIn("AGENT: coder", out)
@@ -1905,7 +2212,7 @@ class CodeStepTest(unittest.TestCase):
     def test_gate_cap_forces_stop_block(self):
         self.advance_to_phase_two()
         (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
-        self.hook("coder", "BEHAVIOR: totals\nThere is an ambiguity in the rounding rule.")
+        self.hook("coder", 'BEHAVIOR: totals\nOPEN QUESTIONS: ["Which rounding rule applies?"]')
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
         out = self.step("resume")
@@ -1934,7 +2241,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("2", self.state()["phase"])
         self.assertTrue(self.state()["headless"])
         (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
-        self.hook("coder", "BEHAVIOR: totals\nThere is an ambiguity in the rounding rule.")
+        self.hook("coder", 'BEHAVIOR: totals\nOPEN QUESTIONS: ["Which rounding rule applies?"]')
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("ACTION: auto-advance", self.step("resume"))
@@ -1947,6 +2254,20 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: stop", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_a_cap_reached_with_no_blocker_and_a_passed_check_of_the_final_tree_finishes_the_phase(self):
+        self.coder_round()
+        tree = reviewed_tree.fingerprint(self.repo)[1]
+        packet = {"status": "cap-reached", "iter": 2, "full_check": "passed", "full_check_tree": tree,
+                  "findings_remaining": [{"disposition": "fix", "finding": "x", "file_line": "a.ts:1",
+                                          "blocker": False}]}
+        self.hook("review-loop", json.dumps(packet))
+
+        out = self.step("resume")
+
+        self.assertNotIn("cap-reached", out)
+        self.assertIn("Phase 1 marked done", out)
+        self.assertIn("- [x] Phase 1:", self.plan_text())
 
     def test_the_question_for_the_user_names_each_asks_proposed_change_and_what_each_answer_does(self):
         self.coder_round()
@@ -1963,7 +2284,8 @@ class CodeStepTest(unittest.TestCase):
 
         self.step("resume")
 
-        self.assertIn('`asks-done accepted modified --change "<text>" modified --change "<text>"`', self.said())
+        example = f'`asks-done --repo {self.repo.resolve()} accepted modified --change "<text>" modified'
+        self.assertIn(example + ' --change "<text>"`', self.said())
 
     def test_an_accepted_ask_sends_its_proposed_change_to_the_asks_coder(self):
         self.coder_round()
@@ -2085,7 +2407,7 @@ class CodeStepTest(unittest.TestCase):
         out = self.step("resume")
         self.assertIn("ACTION: ask-user", out)
         self.assert_marked_clean(out)
-        self.assertIn("`asks-done`", self.said())
+        self.assertIn(f"`asks-done --repo {self.repo.resolve()}`", self.said())
         self.assertIn("- [ ] Phase 1:", self.plan_text())
         out = self.step("asks-done", "accepted")
         self.assertIn("ask_outcome=accepted", self.log.read_text())
@@ -2737,6 +3059,20 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("stopped", self.state()["stage"])
         self.assertIn("The coder produced no reviewable change.", out)
         self.assertNotIn("recommended /eng-spec", out)
+
+    def test_a_coder_resumed_after_a_no_change_stop_is_still_gated_at_its_next_hand_back(self):
+        self.start_phase_one()
+        self.hook("coder", "Blocked: the schema is missing.")
+        self.step("resume")
+        self.assertTrue((self.repo / ".git/coder-gate.json").exists())
+
+        (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
+        self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
+
+        gate = json.loads((self.repo / ".git/coder-gate.json").read_text())
+        self.assertEqual(2, gate["coders"]["a1"]["runs"])
+        self.step("resume")
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
 
     def test_coder_recommending_eng_spec_stops_instead_of_reviewing(self):
         self.begin_coder()
@@ -3601,13 +3937,11 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn(f"Implement: {text}", out)
         self.assertNotIn("Phase 1 of", out)
 
-    def test_a_positional_argument_that_starts_with_a_real_plan_file_and_holds_text_is_refused_with_both_commands(self):
+    def test_a_positional_argument_that_starts_with_a_real_plan_file_and_holds_text_takes_the_text_as_run_notes(self):
         out = self.step("start", f"{self.plan} fix the typo")
-        self.assertIn("Refused: ", out)
-        self.assertIn("ACTION: stop", out)
-        self.assertIn(self.own_command(f"start {self.plan}"), out)
-        self.assertIn(self.own_command("start --task 'fix the typo'"), out)
-        self.assertNotIn("AGENT:", out)
+        self.assertIn(f"Implement Phase 1 of `{self.plan}`", out)
+        self.assertIn("Run notes from the user. They bind this run; the plan stays the spec:\nfix the typo", out)
+        self.assertNotIn("Refused: ", out)
 
     def test_a_positional_argument_with_whitespace_that_is_a_real_plan_file_is_a_plan_path(self):
         spaced_plan = "docs/plans/orders/spec copy.md"
@@ -3643,7 +3977,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("The saved run is stale", (self.repo / ".git/code-step/question.md").read_text())
 
     def test_missing_plan_at_decide_stops(self):
-        self.coder_round("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.coder_round("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes")
         (self.repo / self.plan).unlink()
         self.assertIn("ACTION: stop", self.step("decide", "keep", "--by", "user", "--ruling", "keep it"))
 
@@ -3665,7 +3999,7 @@ class CodeStepTest(unittest.TestCase):
     def test_plan_impact_survives_a_retry_that_sends_only_the_fix(self):
         self.begin_coder()
         self.gate_commands = ["echo lint broke; exit 1"]
-        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes")
         self.assertEqual([], self.events_named("handback"))
         self.assertEqual(1, len(self.events_named("handback-attempt")))
         self.gate_commands = ["true"]
@@ -3687,11 +4021,11 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("ACTION: ask-user", out)
 
-    def test_no_ambiguity_line_does_not_force_block_b(self):
+    def test_empty_open_questions_line_does_not_force_block_b(self):
         self.finish_phase_one()
         self.step("start")
         (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
-        self.hook("coder", "BEHAVIOR: totals\nNo ambiguities found.\nThe spec was unambiguous.")
+        self.hook("coder", "BEHAVIOR: totals\nOPEN QUESTIONS: []")
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("ACTION: auto-advance", self.step("resume"))
@@ -3865,7 +4199,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("prior-issues:", out)
 
     SKIP_LINE = "structure-pass: skip"
-    IMPACT_REPORT = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+    IMPACT_REPORT = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
 
     def asks_follow_up(self, write_files):
         self.apply_first_ask()
@@ -4066,7 +4400,8 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
     def test_asks_coder_already_done_line_with_an_open_question_stops(self):
-        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nOpen question: which name should it use?")
+        report = self.ALREADY_DONE_REPORT + '\nOPEN QUESTIONS: ["which name should it use?"]'
+        self.assert_unchanged_asks_coder_stops(report)
 
     def test_asks_coder_already_done_line_with_an_eng_spec_recommendation_stops(self):
         out = self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: eng-spec")
@@ -4172,12 +4507,27 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("plan", out)
         self.assertIn("is complete", out)
 
-    def test_ambiguous_wording_is_flagged_but_unambiguous_is_not(self):
-        self.assertEqual(["The plan is ambiguous about rounding."],
-                         code_step_report.coder_flags("The plan is ambiguous about rounding."))
-        self.assertEqual(["Two ambiguities remain."], code_step_report.coder_flags("Two ambiguities remain."))
-        self.assertEqual([], code_step_report.coder_flags("The spec was unambiguous."))
-        self.assertEqual([], code_step_report.coder_flags("No ambiguities found."))
+    def test_open_questions_line_is_read_as_a_json_list(self):
+        refund = "no test covers the refund path"
+        self.assertEqual([refund, "round up?"],
+                         code_step_report.open_questions(f'BEHAVIOR: x\nOPEN QUESTIONS: ["{refund}", "round up?"]'))
+        self.assertEqual([], code_step_report.open_questions("OPEN QUESTIONS: []"))
+        self.assertEqual([], code_step_report.open_questions("OPEN QUESTIONS: none"))
+        self.assertEqual([], code_step_report.open_questions("The plan is ambiguous about rounding."))
+
+    def test_unreadable_open_questions_line_comes_back_flagged_not_dropped(self):
+        for value in ('["unclosed', "no test covers refunds", '[1, "a"]', '{"a": "b"}'):
+            flagged = code_step_report.open_questions("OPEN QUESTIONS: " + value)
+            self.assertEqual(1, len(flagged), value)
+            self.assertIn("could not be read", flagged[0])
+            self.assertIn(value, flagged[0])
+        long_value = "x" * 500
+        self.assertLess(len(code_step_report.open_questions("OPEN QUESTIONS: " + long_value)[0]), 300)
+
+    def test_an_open_question_containing_no_stops_an_asks_coder_that_changed_nothing(self):
+        out = self.assert_unchanged_asks_coder_stops(
+            self.ALREADY_DONE_REPORT + '\nOPEN QUESTIONS: ["Open question: no test covers the refund path"]')
+        self.assertIn("no test covers the refund path", out)
 
     def test_start_clears_say_text_left_by_a_finished_phase_but_keeps_the_auto_advance_text(self):
         self.finish_phase_one()
@@ -4713,6 +5063,28 @@ class CodeStepTest(unittest.TestCase):
         self.assertNotIn("AGENT: coder", out)
         self.commit_all()
         self.assertIn("AGENT: coder", self.step("start"))
+
+    def test_a_phase_commit_made_after_the_next_start_is_not_the_next_coders_work(self):
+        self.finish_phase_two_as_auto_advance()
+        # A boundary that stops for the user does not check the commit before the next start.
+        self.set_state(autoAdvance=False)
+        self.assertIn("AGENT: coder", self.step("start"))
+        self.commit_all()
+        (self.repo / "backend/src/audit.ts").write_text("export const a = 1\n")
+        self.hook("coder", "BEHAVIOR: audit\nREVIEW: recommended")
+        out = self.step("resume")
+        self.assertIn("- path: backend/src/audit.ts", out)
+        self.assertNotIn("backend/src/totals.ts", out)
+
+    def test_a_file_dirty_at_the_start_that_the_coder_changes_and_commits_is_its_work(self):
+        self.finish_phase_two_as_auto_advance()
+        self.set_state(autoAdvance=False)
+        self.step("start")
+        (self.repo / "backend/src/totals.ts").write_text("export const t = 2\n")
+        self.commit_all()
+        self.hook("coder", "BEHAVIOR: totals\nREVIEW: recommended")
+        out = self.step("resume")
+        self.assertIn("- path: backend/src/totals.ts", out)
 
     # ---------- tick ----------
 
@@ -5426,15 +5798,17 @@ class CodeStepTest(unittest.TestCase):
                  "acceptance_criteria: none")
         shapes = {
             "indented": "BEHAVIOR: none\nPLAN-IMPACT:\n  " + block.replace("\n", "\n  ") + "\nPLAN-IMPACT: yes",
-            "keys at column 0": "BEHAVIOR: none\nPLAN-IMPACT:\n" + block + "\nPLAN-IMPACT: yes",
+            "keys at column 0": "BEHAVIOR: none\nPLAN-IMPACT:\n" + block + "\ncause: toolkit\nPLAN-IMPACT: yes",
             "bold header and a blank line": "PLAN-IMPACT:**\n\n  " + block.replace("\n", "\n  "),
             "bold keys": ("**PLAN-IMPACT:**\n- **assumed:** a\n- **found:** b\n- **changes:** c\n"
-                          "- **acceptance_criteria:** none"),
+                          "- **acceptance_criteria:** none\n- **cause:** toolkit"),
         }
+        causes = {"keys at column 0": "toolkit", "bold keys": "toolkit"}
         for name, report in shapes.items():
             with self.subTest(name):
                 found = code_step_report.plan_impact_block(report)
                 self.assertIsNotNone(found)
+                self.assertEqual(causes.get(name, "plan"), plan_format.plan_impact_cause(found))
                 self.assertNotIn("block not found", found)
                 self.assertIn("assumed", found)
                 self.assertIn("changes", found)
@@ -5544,7 +5918,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_plan_impact_of_a_coder_that_stopped_on_no_reviewable_change_is_raised_after_the_resume(self):
         self.start_phase_one()
-        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes")
         self.assertIn("ACTION: stop", self.step("resume"))
         (self.repo / "backend/src/orders.ts").write_text("export const o = 1\n")
         self.hook("coder", "BEHAVIOR: orders exist\nREVIEW: recommended")
@@ -5596,7 +5970,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual([], unreadable)
 
     def adopt_plan_change_with_the_plan_coder_out(self):
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
         self.coder_round(report)
         out = self.step("decide", "adopt", "--by", "user", "--ruling", "adopt it, drop the header")
         self.assertIn("AGENT: coder", out)
@@ -6031,7 +6405,7 @@ class CodeStepTest(unittest.TestCase):
 
     def test_a_second_stop_on_no_reviewable_change_keeps_the_plan_impact_of_the_first(self):
         self.start_phase_one()
-        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes")
+        self.hook("coder", "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes")
         self.assertIn("ACTION: stop", self.step("resume"))
         self.hook("coder", "BEHAVIOR: none\nstill blocked")
         out = self.step("resume")
@@ -6429,7 +6803,7 @@ class CodeStepTest(unittest.TestCase):
         return (self.repo / ".git/code-step/question.md").resolve()
 
     def test_the_ask_user_action_for_a_plan_impact_names_the_real_question_file(self):
-        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\nPLAN-IMPACT: yes"
+        report = "PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: C\n  cause: plan\nPLAN-IMPACT: yes"
 
         out = self.coder_round(report)
 
@@ -6913,10 +7287,23 @@ class CodeStepTest(unittest.TestCase):
     def test_the_item_shape_text_names_the_three_shapes(self):
         shape = code_step_verification.VERIFICATION_ITEM_SHAPE
 
-        for text in ("one of three shapes", "N/A", "CI-verified", "Human-only", "executable file in the repo",
-                     "'- [ ] **Name**: what it checks - `npm test`'"):
+        for text in ("one of three shapes", "N/A", "CI-verified", "Human-only", "Agent-run",
+                     "executable file in the repo", "'- [ ] **Name**: what it checks - `npm test`'",
+                     "'- [ ] **Agent-run**: time the import on the real data'"):
             self.assertIn(text, shape)
         self.assertNotIn("``", shape)
+
+    def test_finish_phase_says_an_agent_run_item_is_left_to_the_session(self):
+        self.coder_round_then_edit_verification("- [ ] **Check**: runs - `test -d backend`\n"
+                                                "- [ ] **Agent-run**: time the import on the real data")
+        self.hook("review-loop", self.LOOP_OK)
+
+        out = self.step("resume")
+
+        self.assertEqual("done", self.state()["stage"])
+        self.assertIn("not run here: agent-run, the session runs it - **Agent-run**: time the import on the real data",
+                      out)
+        self.assertIn("1 command(s) green (test -d backend)", out)
 
     def test_plan_check_leaves_a_done_phase_item_without_a_command_alone(self):
         text = self.bad_item_plan("- [ ] **Check**: the orders pass, see the log").replace(
@@ -6975,6 +7362,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] **Check**: the streams pass, see the log - it has no backticked command", out)
         self.assertIn("- [ ] **Check**: the orders pass - `RUN npx vitest run` - no backticked span starts with", out)
         self.assertIn("one of three shapes", out)
+        self.assertIn("human-only or agent-run", out)
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
     # ---------- the repo's gate environment variables ----------

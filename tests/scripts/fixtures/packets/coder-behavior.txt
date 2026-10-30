@@ -1,0 +1,19 @@
+Ask 1 is done: finalizeInvoice now builds its result in memory, so it no longer re-reads the lines while the counter row is locked.
+
+- **Change:** `finalizeInvoice` in `/home/captured/dev/evals/ab-full/kit/repo/backend/src/modules/invoices/service.ts` (line ~549) now returns `toInvoiceDetail(finalizedInvoice, lines, frozenBilling(finalizedInvoice))`. `lines` was already in scope.
+- **Plan wording:** I did not edit the plan. Spec step 8 still says `readInvoiceDetail`, so the plan needs that line updated.
+
+**Checks:**
+- `npx tsc --noEmit` exited 0.
+- `npx eslint src/modules/invoices/service.ts` exited 0.
+- `npx vitest run src/modules/invoices/service.test.ts` exited 0.
+- Logs are in `/tmp/tc.log`, `/tmp/lint.log` and `/tmp/test.log`.
+
+No hook blocks.
+
+SET BY: not applicable. I added no new branch on an existing field.
+
+BEHAVIOR: Finalizing an invoice returns its detail without a second database read of the lines inside the transaction.
+WHY: none
+REFACTOR CANDIDATES: none
+REVIEW: recommended — backend/src/modules/invoices/service.ts

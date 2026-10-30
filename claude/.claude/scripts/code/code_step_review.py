@@ -31,6 +31,7 @@ from code_step_core import (
     MISSING_PLAN_STOP,
     PLAN_EDIT_STOP_REASONS,
     RESUME_VERB,
+    REVIEW_AGAIN_INVOKE,
     REVIEW_LOOP,
     REVIEW_LOOP_SCRIPT,
     REVIEW_SAME_DIFF_AGAIN_LINE,
@@ -70,6 +71,7 @@ from code_step_core import (
     state_dir,
     stop_kind,
     stop_review_script,
+    stop_with_question,
     take_handback,
     take_snapshot_part,
     timed_command,
@@ -92,11 +94,12 @@ STAGE_GUARDS = {
                "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
     "review-again": {"stages": ("stopped",),
                      "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "tool-fault", "critical-blocker",
-                                     "setup-fault", "check-unverified",
-                                     "check-not-run"),
+                                     "setup-fault", "check-unverified", "check-not-run", "plan-impact-cause"),
                      "message": "review-again ran with no unreadable review packet, capped review, crashed review "
-                                "call, unmarked review gate, critical blocker, setup fault, a full check that showed "
-                                "no test run or did not run, or silent review-loop pending."},
+                                "call, unmarked review gate, critical blocker, setup fault, a fix pass that removed "
+                                "the change under review, a full check that showed no test run or did not run, "
+                                "silent review-loop pending, or a plan impact stop on a toolkit, unparseable or "
+                                "missing cause."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
     "correct-ruling": {"stages": ("asks-coder",), "goOnRefusal": True,
                        "message": "No asks coder is running, so the ruling cannot be corrected in this run. Put the "
@@ -108,6 +111,16 @@ STAGE_GUARDS = {
 }
 
 
+def guard_stop_reasons(verb):
+    # The stop reasons a STAGE_GUARDS verb runs after. review-again also runs after a fix-removed-change stop.
+    reasons = STAGE_GUARDS[verb].get("stopReasons", ())
+    module, _import_error = load_handback()
+    if verb != "review-again" or module is None:
+        return reasons
+
+    return (*reasons, module.FIX_REMOVED_CHANGE)
+
+
 def guarded_verb_runs(verb, state):
     # The saved state lets a STAGE_GUARDS verb run.
     if state is None:
@@ -115,7 +128,7 @@ def guarded_verb_runs(verb, state):
 
     guard = STAGE_GUARDS[verb]
     at_stage = state["stage"] in guard["stages"]
-    reason_allowed = "stopReasons" not in guard or stop_kind(state) in guard["stopReasons"]
+    reason_allowed = "stopReasons" not in guard or stop_kind(state) in guard_stop_reasons(verb)
     if at_stage and reason_allowed:
         return True
     if verb == "review-again":
@@ -600,6 +613,7 @@ def launch_review_script(repo_dir, state, prompt):
     if module is None:
         return emit("stop", f"Cannot launch the review loop script: {import_error}. Tell the user.")
 
+    import handback_hook
     import handback_store  # after the load check: a missing hand-back module must stop the run, not crash the import
 
     prompt = prompt_with_gate_env(repo_dir, state, prompt)
@@ -607,7 +621,7 @@ def launch_review_script(repo_dir, state, prompt):
     _run_id, dispatch_id = dispatch_marker(marked_prompt)
     agent_id = f"{REVIEW_SCRIPT_AGENT_PREFIX}{state['runId']}-{dispatch_id}"
     session_id = run_session_id(state)
-    handback_store.record(session_id, "dispatch", no_review=False, repo=module.reviewed_repo("", repo_dir))
+    handback_store.record(session_id, "dispatch", no_review=False, repo=handback_hook.reviewed_repo("", repo_dir))
 
     code_step_dir = state_dir(repo_dir)
     script_dir = code_step_dir / "loop-script" / agent_id
@@ -644,8 +658,30 @@ def load_review_packet(repo_dir, state, message):
                     + "; ".join(error.problems), message,
                     REVIEW_SAME_DIFF_AGAIN_LINE)
 
+    import capped_review  # beside handback in scripts/review; on sys.path once load_handback imported handback
+
+    packet["status"] = capped_review.effective_status(packet, repo_dir)
     module.print_dropped_asks(packet)
     return module, packet
+
+
+def route_review_plan_impact(repo_dir, state, module, packet):
+    stop_cause = plan_format.cause_stop(packet["plan_impact_cause"])
+    if stop_cause:
+        set_stop(state, "plan-impact-cause")
+        save_state(repo_dir, state)
+        stop_with_question(
+            repo_dir, f"the review {stop_cause}.", [packet["plan_impact"]],
+            f"to run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.",
+            f"The review {stop_cause}. Do not dispatch a plan rewrite. Do not mark the phase done.",
+            packet["plan_impact"], f"To run the review again on the same diff, {REVIEW_AGAIN_INVOKE}.")
+        return
+
+    state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
+    save_state(repo_dir, state)
+    state["carriedFindings"] = module.carried_findings(packet)
+    save_state(repo_dir, state)
+    emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
 
 
 def command_after_review(repo_dir, state, args):
@@ -681,12 +717,7 @@ def command_after_review(repo_dir, state, args):
     state["checkRewroteEdited"] = sorted(rewrote_edited)
     state["reviewStatus"] = packet["status"]
     if packet["status"] == "plan-impact":
-        state.update({"stage": "impact-review", "impact": packet["plan_impact"]})
-        save_state(repo_dir, state)
-        state["carriedFindings"] = module.carried_findings(packet)
-        save_state(repo_dir, state)
-        emit_plan_impact_modal(state["impact"], repo_dir, state["carriedFindings"])
-        return
+        return route_review_plan_impact(repo_dir, state, module, packet)
     if stop_on_review_status(repo_dir, state, module, packet):
         return
 
@@ -744,9 +775,11 @@ def ask_the_user(repo_dir, state, asks):
         repo_dir,
         f"ask the user about each review ask below in plain text and wait for the answers. Each answer is accepted "
         f"(make the proposed change), rejected (leave the code as it stands) or modified (make the user's change "
-        f"instead). Then invoke Skill code with the args `asks-done` and {len(asks)} outcome word(s), in order. Put "
+        f"instead). Then invoke Skill code with the args `asks-done --repo {repo_dir}` and {len(asks)} outcome "
+        "word(s), in order. Put "
         "`--change \"<the user's change text>\"` right after each `modified` word, one per modified ask, as in "
-        "`asks-done accepted modified --change \"<text>\" modified --change \"<text>\"` (the example only shows the "
+        f"`asks-done --repo {repo_dir} accepted modified --change \"<text>\" modified --change \"<text>\"` "
+        "(the example only shows the "
         "shape of the arguments, not how many words). If the repo's CLAUDE.md "
         "hands ask decisions to the session, decide each ask yourself instead of asking, and add `--by session` to "
         "asks-done. To correct a ruling after asks-done, send the running /code fork the full corrected `asks-done "

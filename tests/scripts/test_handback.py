@@ -23,7 +23,9 @@ SESSION = "sess-1"
 spec = importlib.util.spec_from_file_location("handback_under_test", str(SCRIPT))
 handback = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(handback)
+import handback_hook  # noqa: E402
 import handback_store  # noqa: E402
+import reviewed_tree  # noqa: E402
 
 CONVERGED = """status: converged
 iter: 1
@@ -480,7 +482,7 @@ class JsonPacketTest(HandbackTestBase):
             "ask entry has no file_line": json_packet(ask=[{**JSON_ASK, "file_line": ""}]),
             "status is 'done'": json_packet(status="done"),
             "iter is missing": json.dumps({"status": "converged", "fixed": []}),
-            "fixed entry has no finding": json_packet(fixed=[{"blocker": True}]),
+            "fixed[0] has no finding": json_packet(fixed=[{"blocker": True}]),
         }
         for problem, message in cases.items():
             with self.subTest(problem), self.assertRaises(handback.PacketError) as raised:
@@ -488,11 +490,44 @@ class JsonPacketTest(HandbackTestBase):
             self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],
                             raised.exception.problems)
 
-    def test_an_ask_with_no_question_finding_or_change_is_dropped_with_a_warning_in_json_too(self):
-        packet = handback.load(json_packet(ask=[{"question": "", "file_line": "unlocated", "gate": "code-reviewer"},
-                                                JSON_ASK]))
-        self.assertEqual([item["question"] for item in packet["ask"]], ["cap at 3?"])
-        self.assertIn("file_line unlocated, gate code-reviewer", packet["dropped_asks"][0])
+    def test_a_json_packet_with_n_asks_some_without_file_line_yields_n_asks(self):
+        asks = [{**JSON_ASK, "question": f"question {number}?"} for number in range(4)]
+        del asks[1]["file_line"]
+        del asks[3]["file_line"]
+        packet = handback.load(json_packet(ask=asks))
+        self.assertEqual([item["question"] for item in packet["ask"]], [f"question {number}?" for number in range(4)])
+        self.assertEqual([item["file_line"] for item in packet["ask"]],
+                         ["src/retry.ts:10", handback.UNLOCATED, "src/retry.ts:10", handback.UNLOCATED])
+        self.assertEqual(packet["dropped_asks"], [])
+
+    def test_a_json_ask_with_no_question_asks_its_finding_or_change_and_gets_the_defaults(self):
+        asks = [{"finding": "retries never stop", "file_line": "a.ts:1", "change": "cap at 3"},
+                {"file_line": "b.ts:2", "change": "read the limit from settings", "class": "ops"}]
+        packet = handback.load(json_packet(ask=asks))
+        self.assertEqual([item["question"] for item in packet["ask"]],
+                         ["retries never stop", "read the limit from settings"])
+        self.assertEqual(packet["ask"][1]["gate"], handback.DEFAULT_GATE)
+        self.assertEqual((packet["ask"][1]["class"], packet["ask"][1]["class_raw"]), ("other", "ops"))
+
+    def test_a_json_list_entry_that_is_not_a_mapping_or_lacks_its_text_field_is_a_problem_that_names_it(self):
+        cases = {
+            "ask[1] must be a JSON object, not a string": json_packet(ask=[JSON_ASK, "cap at 3? | a.ts:1"]),
+            "ask[0] has no question": json_packet(ask=[{"file_line": "a.ts:1"}]),
+            "fixed[0] must be a JSON object, not a string": json_packet(fixed=["removed the dead branch"]),
+            "findings_remaining[0] has no finding": json_packet(status="cap-reached", findings_remaining=[{}]),
+            "skipped_fp[0] has no item": json_packet(skipped_fp=[{"reason": "r"}]),
+            "open_classes must be a JSON list of strings": json_packet(open_classes=[{"class": "x"}]),
+        }
+        for problem, message in cases.items():
+            with self.subTest(problem), self.assertRaises(handback.PacketError) as raised:
+                handback.load(message)
+            self.assertTrue([found for found in raised.exception.problems if found.startswith(problem)],
+                            raised.exception.problems)
+
+    def test_a_json_packet_carries_its_open_classes_as_a_list(self):
+        packet = handback.load(json_packet(open_classes=["log with a trailing blank line"]))
+        self.assertEqual(packet["open_classes"], ["log with a trailing blank line"])
+        self.assertEqual(handback.load(json_packet())["open_classes"], [])
 
     def test_check_accepts_a_json_packet(self):
         code, out, _err = self.run_cli(["check"], json_packet(ask=[JSON_ASK]))
@@ -548,6 +583,7 @@ class ValidateTest(HandbackTestBase):
                         "a.ts:1}\n",
             "critical-blocker": "status: critical-blocker\niter: 1\nblockers:\n- bad thing\n",
             "setup-fault": "status: setup-fault\niter: 1\nblockers:\n- full check could not run\n",
+            "fix-removed-change": "status: fix-removed-change\niter: 1\nblockers:\n- the fix passes removed 9 of 10\n",
             "cap-reached": "status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n",
             "plan-impact": "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n",
         }
@@ -564,6 +600,7 @@ class ValidateTest(HandbackTestBase):
                  "status: plan-impact\niter: 1\nplan_impact:\n",
                  "status: critical-blocker\niter: 1\nblockers: []\n",
                  "status: setup-fault\niter: 1\nblockers: []\n",
+                 "status: fix-removed-change\niter: 1\nblockers: []\n",
                  "status: cap-reached\niter: 2\n",
                  "status: cap-reached\niter: 2\nfindings_remaining: []\n",
                  "status: deferred\niter: 1\nfixed: []\nfindings_remaining: []\n"]
@@ -745,12 +782,12 @@ class StoreTest(HandbackTestBase):
             for repo in (named, cwd_repo):
                 subprocess.run(["git", "init", "-q", repo], check=True)
             os.mkdir(outside)
-            self.assertEqual(handback.reviewed_repo("mode: review-first\nrepo: ../named\n", cwd_repo),
+            self.assertEqual(handback_hook.reviewed_repo("mode: review-first\nrepo: ../named\n", cwd_repo),
                              os.path.realpath(named))
-            self.assertEqual(handback.reviewed_repo("mode: review-first\n", cwd_repo), os.path.realpath(cwd_repo))
-            self.assertIsNone(handback.reviewed_repo("mode: review-first\n", outside))
+            self.assertEqual(handback_hook.reviewed_repo("mode: review-first\n", cwd_repo), os.path.realpath(cwd_repo))
+            self.assertIsNone(handback_hook.reviewed_repo("mode: review-first\n", outside))
             handoff_prompt = f"mode: review-first\nUncommitted changes in {named}/src/a.py (branch b)\n"
-            self.assertEqual(handback.reviewed_repo(handoff_prompt, cwd_repo), os.path.realpath(named))
+            self.assertEqual(handback_hook.reviewed_repo(handoff_prompt, cwd_repo), os.path.realpath(named))
 
     def test_the_dispatch_hook_stores_the_repo_a_review_loop_dispatch_reviews(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -984,7 +1021,7 @@ class HookTest(HandbackTestBase):
         self.fire(self.event("Agent"))
         denied = self.event("SubagentHandback", message="not a packet")
 
-        reason = handback.handle_hook(denied, "handback")
+        reason = handback_hook.handle_hook(denied, "handback")
 
         self.assertIsNotNone(reason)
         self.assertEqual(handback_store.session_rows(SESSION, "handback"), [])
@@ -1096,6 +1133,42 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
+    def test_a_capped_packet_that_reads_deferred_is_flagged_by_its_effective_status(self):
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@t"}
+        for argv in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "base"]):
+            subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
+        tree = reviewed_tree.fingerprint(str(repo))[1]
+        capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
+                             full_check="passed", full_check_tree=tree)
+        self.dispatch("review-loop", prompt=f"repo: {repo}\n")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("backend-coder-deep", "a1")
+
+        self.assertEqual(self.hand_back(message=capped), (0, ""))
+
+        self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
+
+    def test_a_capped_packet_that_reads_deferred_with_no_reviewer_is_denied_once_then_flagged(self):
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@t"}
+        for argv in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "base"]):
+            subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
+        tree = reviewed_tree.fingerprint(str(repo))[1]
+        capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
+                             full_check="passed", full_check_tree=tree)
+        self.dispatch("review-loop", prompt=f"repo: {repo}\n")
+        self.dispatch("backend-coder-deep", "a1")
+
+        self.assert_denied(self.hand_back(message=capped))
+        self.assertEqual(self.hand_back(message=capped), (0, ""))
+
+        self.assertIn("no reviewer", handback.false_clean_reason(SESSION))
+
     def test_no_review_mode_dispatch_passes_with_no_reviewer(self):
         self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
         self.dispatch("coder", "a1")
@@ -1107,8 +1180,8 @@ class ReviewerRequiredTest(HandbackTestBase):
         for line in ("plan_impact: RESOLVED - adopt.", "- plan_impact: RESOLVED - adopt.",
                      "> * plan_impact: RESOLVED - adopt."):
             prompt = f"scope: branch\n{line}\n"
-            self.assertIsNotNone(handback.RESOLVED_PLAN_IMPACT.search(prompt), line)
-        self.assertIsNone(handback.RESOLVED_PLAN_IMPACT.search("see plan_impact: RESOLVED"))
+            self.assertIsNotNone(handback_hook.RESOLVED_PLAN_IMPACT.search(prompt), line)
+        self.assertIsNone(handback_hook.RESOLVED_PLAN_IMPACT.search("see plan_impact: RESOLVED"))
 
     def test_a_normal_loop_is_denied_after_a_later_no_review_loop_claimed_the_exemption(self):
         self.dispatch("review-loop")
@@ -1224,6 +1297,20 @@ def full_check_run(tool_use_id):
     return {"type": "assistant", "message": {"role": "assistant", "content": [call, printed]}}
 
 
+FINDING_ROW = ("~/.claude/skills/review/log-review-finding kind=finding lane=code scope=phase iter=1 "
+               "gate=code-reviewer disposition=fix class=bug file=src/orders.ts line=42 actioned=fixed")
+METRICS_ROW = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=1 ask=0 nit=0 fixed=1 result=PASS"
+
+
+def ledger_call(tool_use_id, command):
+    return transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Bash", "input": {"command": command}})
+
+
+def refused_logger_result(tool_use_id):
+    return transcript_line({"type": "tool_result", "tool_use_id": tool_use_id, "is_error": True,
+                            "content": [{"type": "text", "text": "log-review-metrics: failed"}]}, "user")
+
+
 def background_reviewer_launch(tool_use_id, agent_id):
     """A code-reviewer dispatch and the result that says it runs in the background."""
     launch = transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Agent",
@@ -1256,7 +1343,11 @@ class OneCheckedHandBackTest(HandbackTestBase):
                  "tool_input": {"message": message}}
         return self.run_cli(["hook", "handback"], json.dumps(event))
 
-    def hand_back(self, steps, agent_id="a1", message=CONVERGED, cwd=None):
+    def hand_back(self, steps, agent_id="a1", message=CONVERGED, cwd=None, ledger=True):
+        """Hand back after `steps`. The ledger rows CONVERGED owes (one finding row and a metrics line) follow them
+        unless `ledger` is False."""
+        if ledger:
+            steps = [*steps, ledger_call("tl1", FINDING_ROW), ledger_call("tl2", METRICS_ROW)]
         self.transcript.write_text("".join(json.dumps(step) + "\n" for step in steps), encoding="utf-8")
         _code, out, _err = self.send_hand_back(agent_id, message, cwd)
         return out
@@ -1283,7 +1374,8 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
     def test_a_plan_impact_hand_back_with_a_code_change_after_the_last_full_check_passes(self):
         message = "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n"
-        out = self.hand_back([full_check_run("t1"), coder_step("t2")], message=message)
+        metrics = ledger_call("tl1", METRICS_ROW.replace("fixed=1", "fixed=0"))
+        out = self.hand_back([full_check_run("t1"), coder_step("t2"), metrics], message=message, ledger=False)
         self.assertEqual(out, "")
         self.assertEqual(len(self.handback_rows()), 1)
 
@@ -1382,6 +1474,94 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertEqual(self.hand_back(steps), "")
         self.assertEqual(len(self.handback_rows()), 1)
 
+    def test_a_fix_first_hand_back_with_fixed_entries_and_no_finding_rows_is_denied_until_the_rows_are_logged(self):
+        prompt = {"type": "user", "message": {"role": "user", "content": "review loop\nmode: fix-first"}}
+        steps = [prompt, coder_step("t1"), full_check_run("t2")]
+
+        out = self.hand_back(steps, ledger=False)
+
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("1 finding(s)", reason)
+        self.assertIn("only 0 per-finding row(s)", reason)
+        self.assertIn("no metrics line", reason)
+        self.assertIn("then return the packet.", reason)
+        self.assertEqual(self.handback_rows(), [])
+
+        self.assertEqual(self.hand_back(steps), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_hand_back_that_dispatched_no_reviewer_and_logged_only_a_not_dispatched_metrics_line_passes(self):
+        not_dispatched = ('~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 '
+                          'result="NOT DISPATCHED"')
+        fix_first = {"type": "user", "message": {"role": "user", "content": "review loop\nmode: fix-first"}}
+        cases = {
+            "setup-fault": ("status: setup-fault\niter: 1\nblockers:\n  - \"no test runner installed\"\n", [],
+                            ""),
+            "critical-blocker": ("status: critical-blocker\niter: 1\nblockers:\n  - \"migration drops a column\"\n",
+                                 [], ""),
+            "fix-first plan-impact": ("status: plan-impact\niter: 1\nspec_iter: 0\n"
+                                      "plan_impact: assumed a, found b\n", [fix_first], ""),
+            "no-review converged": ("status: converged\niter: 1\nfixed: []\nskipped_fp: []\nask: []\nnit: []\n"
+                                    "findings_remaining: []\n", [coder_step("t1"), full_check_run("t2")],
+                                    "no-review"),
+        }
+
+        for name, (message, steps, loop_prompt) in cases.items():
+            with self.subTest(name):
+                shutil.rmtree(self.store, ignore_errors=True)
+                self.dispatch("review-loop", prompt=loop_prompt)
+                self.dispatch("coder", "a1")
+                out = self.hand_back([*steps, ledger_call("tl1", not_dispatched)], message=message, ledger=False)
+
+                self.assertEqual(out, "")
+                self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_converged_hand_back_with_no_coder_step_and_no_full_check_is_still_denied(self):
+        message = ("status: converged\niter: 1\nfixed: []\nskipped_fp: []\nask: []\nnit: []\n"
+                   "findings_remaining: []\n")
+        not_dispatched = ('~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 '
+                          'result="NOT DISPATCHED"')
+        self.dispatch("review-loop", prompt="")
+
+        out = self.hand_back([ledger_call("tl1", not_dispatched)], message=message, ledger=False)
+
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("No passed full_check.py result", reason)
+
+    def test_a_hand_back_whose_metrics_call_failed_is_denied_once_and_the_second_passes(self):
+        steps = [coder_step("t1"), full_check_run("t2"), ledger_call("tl1", FINDING_ROW),
+                 ledger_call("tl2", METRICS_ROW), refused_logger_result("tl2")]
+
+        first = self.hand_back(steps, ledger=False)
+
+        reason = json.loads(first)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn('result="NOT DISPATCHED"', reason)
+        self.assertEqual(self.handback_rows(), [])
+
+        self.assertEqual(self.hand_back(steps, ledger=False), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_hand_back_is_denied_again_when_the_loop_made_another_logger_call_that_also_failed(self):
+        steps = [coder_step("t1"), full_check_run("t2"), ledger_call("tl1", FINDING_ROW),
+                 ledger_call("tl2", METRICS_ROW), refused_logger_result("tl2")]
+        self.hand_back(steps, ledger=False)
+
+        retry = [*steps, ledger_call("tl3", METRICS_ROW), refused_logger_result("tl3")]
+        out = self.hand_back(retry, ledger=False)
+
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("no metrics line", reason)
+        self.assertEqual(self.handback_rows(), [])
+
+    def test_a_hand_back_whose_metrics_line_has_other_counts_than_the_packet_is_denied(self):
+        steps = [coder_step("t1"), full_check_run("t2"), ledger_call("tl1", FINDING_ROW),
+                 ledger_call("tl2", METRICS_ROW.replace("fixed=1", "fixed=0"))]
+
+        out = self.hand_back(steps, ledger=False)
+
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("fixed=1, skipped_fp=0", reason)
+
     def test_a_failed_full_check_scan_skips_only_the_full_check_gate_and_the_plan_edit_gate_still_denies(self):
         steps = [{"type": "user", "message": {"role": "user", "content": "review loop\nplan: docs/plans/orders.md"}},
                  coder_step("t1")]
@@ -1389,11 +1569,11 @@ class OneCheckedHandBackTest(HandbackTestBase):
         event = {"agent_transcript_path": str(self.transcript), "cwd": str(self.tmp)}
         packet = {"status": "converged", "files_touched": ["src/orders.ts", "docs/plans/orders.md"]}
 
-        with unittest.mock.patch.object(handback.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
+        with unittest.mock.patch.object(handback_hook.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
-            reason = handback.transcript_gate_reason(event, SESSION, "a1", CONVERGED, packet)
+            reason = handback_hook.transcript_gate_reason(event, SESSION, "a1", CONVERGED, packet)
 
-        self.assertEqual(reason, handback.loop_transcript.PLAN_EDIT_REASON.format(plan="docs/plans/orders.md"))
+        self.assertEqual(reason, handback_hook.loop_transcript.PLAN_EDIT_REASON.format(plan="docs/plans/orders.md"))
         self.assertIn("full-check gate skipped", stderr.getvalue())
 
     def test_a_second_hand_back_from_an_agent_with_a_stored_report_is_denied_and_adds_no_row(self):

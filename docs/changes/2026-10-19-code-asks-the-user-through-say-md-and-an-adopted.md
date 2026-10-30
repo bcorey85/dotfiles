@@ -9,6 +9,8 @@ kind: "behavior"
 components: ["skill/code", "script/code-step"]
 evidence: ["bench run"]
 watches: ["code-one-question-per-plan-disagreement"]
+proof: ["2026-10-19-plan-impact-bench-for-code-one-disagreement-asked"]
+impact: {"metric": "wall-clock", "before": 3680, "after": 2540, "unit": "seconds", "finding": "2026-10-19-plan-impact-bench-for-code-one-disagreement-asked"}
 ---
 
 ## Change

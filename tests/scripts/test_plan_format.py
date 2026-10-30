@@ -36,6 +36,24 @@ def parse(text):
     return plan_format.manual_verification(text, "plan.md")
 
 
+class BlockCauseTest(unittest.TestCase):
+    def test_a_missing_cause_reads_as_plan_unless_it_is_required_and_a_toolkit_or_unknown_cause_stops(self):
+        cases = {
+            "toolkit": ("PLAN-IMPACT:\n  found: B\n  cause: toolkit", False, "toolkit gate or script fault"),
+            "unknown": ("PLAN-IMPACT:\n  found: B\n  cause: gate", False, "`cause: gate` that does not parse"),
+            "plan": ("PLAN-IMPACT:\n  found: B\n  cause: plan", True, None),
+            "missing, reviewer": ("PLAN-IMPACT:\n  found: B", False, None),
+            "missing, required": ("PLAN-IMPACT:\n  found: B", True, "no `cause:` line"),
+        }
+        for name, (block, cause_required, expected) in cases.items():
+            with self.subTest(name):
+                found = plan_format.plan_impact_stop_cause(block, cause_required=cause_required)
+                if expected is None:
+                    self.assertIsNone(found)
+                else:
+                    self.assertIn(expected, found)
+
+
 class SectionShapeTest(unittest.TestCase):
     def test_template_items_carry_phase_text_checked_state_and_line(self):
         items = parse(TEMPLATE)
@@ -712,6 +730,27 @@ class GateEnvTest(unittest.TestCase):
                      "- [ ] **CI-verified**: the pipeline runs `npm test`", "- [ ] Human-only: look at the page"):
             with self.subTest(item=item):
                 self.assertTrue(plan_format.runs_no_command(item))
+
+    def test_an_agent_run_item_is_tagged_in_any_case_with_or_without_a_bold_label(self):
+        for item in ("- [ ] **Agent-run**: time the import on the real data",
+                     "- [ ] Agent-run: run it on the live home", "- [x] agent-run: done", "- [ ] **AGENT-RUN**: x"):
+            with self.subTest(item=item):
+                self.assertEqual("agent-run", plan_format.deferred_verification_tag(item))
+                self.assertTrue(plan_format.runs_no_command(item))
+
+    def test_an_agent_run_item_gives_no_gate_variables(self):
+        plan = "#### Automated Verification:\n\n- [ ] **Agent-run**: time `SLOW=1 make import`\n"
+
+        self.assertEqual([], plan_format.gate_env(plan))
+
+    def test_an_open_agent_run_box_still_needs_evidence_but_ci_and_human_only_boxes_do_not(self):
+        lines = ["#### Automated Verification:", "", "- [ ] **Agent-run**: time the import",
+                 "- [ ] **CI-verified**: the pipeline", "- [ ] Human-only: look", "- [ ] N/A - docs",
+                 "- [ ] `make test`"]
+
+        items = plan_format.open_success_items(lines)
+
+        self.assertEqual([2, 6], [item["index"] for item in items])
 
     def test_an_item_with_a_command_runs_it_even_when_it_mentions_ci_or_n_a_later(self):
         for item in ("- [ ] **Unit**: `npm test`, not CI-verified", "- [ ] **Check**: `make check` (N/A on mac)",

@@ -19,11 +19,13 @@ ACTION lines, does exactly that, and runs the next verb. The script builds every
                                                 a criterion
   code_step.py decide discuss                   ask the user how to rule when the code and the plan disagree; records
                                                 nothing
-  code_step.py asks-done [--by <user|session>] [--also "<text>"] <outcome>...
+  code_step.py asks-done [--repo <path>] [--by <user|session>] [--also "<text>"] <outcome>...
+                                                --repo: the checkout of the run, when the shell is in none of them;
                                                 log the answer to each ask[] entry, then run the phase gates;
                                                 --by session when the session ruled itself, default user;
                                                 --also: other work for the coder, kept even if every ask is rejected
-  code_step.py correct-ruling [--by <user|session>] [--also "<text>"] <outcome>...
+  code_step.py correct-ruling [--repo <path>] [--by <user|session>] [--also "<text>"] <outcome>...
+                                                --repo: as for asks-done;
                                                 while the asks coder runs: save corrected rulings; a correction coder
                                                 applies them when the asks coder reports, before the review
   code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...
@@ -98,7 +100,6 @@ from code_step_core import (
     HOOK_STAGES,
     RESUME_VERB,
     REVIEW_AGAIN_INVOKE,
-    SCRIPTS_DIR,
     StateFileError,
     ask_user,
     awaited_agent_id,
@@ -115,6 +116,9 @@ from code_step_core import (
     dispatch_since,
     emit,
     file_hashes,
+    head_commit,
+    head_left_phase_start,
+    is_run_open,
     load_state,
     own_phase_text,
     phase_coder_reports,
@@ -123,6 +127,7 @@ from code_step_core import (
     restart_instruction,
     resume_run_repos,
     review_script_running,
+    run_coder_gate,
     save_state,
     say,
     script_command,
@@ -152,11 +157,11 @@ from code_step_hooks import (
 )
 from code_step_report import (
     behavior_lines,
-    coder_flags,
     coder_message_without_gate_stamp,
     every_accepted_ask_already_done,
     first_plan_impact,
     gate_results,
+    open_questions,
     recommends_eng_spec,
     resolve_report_paths,
     tests_run_text,
@@ -174,9 +179,10 @@ from code_step_review import (
     dispatch_correction_coder,
     emit_plan_impact_modal,
     emit_review_dispatch,
+    guard_stop_reasons,
     guarded_verb_runs,
 )
-from code_step_review_stops import BLOCKER_STOP_TEXT, blocker_stop_next_step, left_findings_open
+from code_step_review_stops import blocker_stop_next_step, blocker_stop_text, left_findings_open
 from code_step_start import (
     command_start,
     emit_closing_skill,
@@ -186,7 +192,6 @@ from code_step_start import (
 )
 from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
 from code_step_verification import verification_format_failure
-from script_utils import run_command
 
 WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")
 # These verbs open a new /code run after the user answered. The last run's say.md text was already handed back.
@@ -278,7 +283,7 @@ def coder_flagged(state, gate, report, is_ask_fix):
         for command, line in script_utils.details_with_outcome(coder_commands, coder_gate.COMMAND_ERROR).items():
             flagged.append(f"hand-back gate command error, not a code failure: `{command}` names a missing path "
                            f"({line})")
-    return flagged + coder_flags(report)
+    return flagged + open_questions(report)
 
 
 def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
@@ -289,7 +294,7 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     is_ask_fix = state["stage"] == "asks-coder"
     asks_coder_changed_nothing = is_ask_fix and changed_now == snapshot_part(state, "asks")
     escalates = recommends_eng_spec(report)
-    report_raises_blocker = escalates or bool(first_plan_impact([report])) or bool(coder_flags(report))
+    report_raises_blocker = escalates or bool(first_plan_impact([report])) or bool(open_questions(report))
     if asks_coder_changed_nothing and not report_raises_blocker and every_accepted_ask_already_done(
             repo_dir, state, report):
         return "converged"
@@ -306,10 +311,14 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
 
 
 CODER_REPORT_STOP_LINES = 6
+# The unreviewable outcomes that stop the run on the coder's report, and the words that finish "The coder ...".
+CODER_STOP_CAUSES = {"no-change": "produced no reviewable change", "recommended-eng-spec": "recommended /eng-spec"}
 
 
-def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
+def stop_on_coder_report(repo_dir, state, report, agent_id, cause_text, restart_only=False):
     # The run stops on the coder's report: the user answers it, and the coder resumed with SendMessage goes on.
+    # cause_text finishes the sentence "The coder ...". restart_only names the restart as the one way out, for a
+    # stop where the coder cannot go on.
     set_stop(state, CODER_RESUMABLE, agent_id=agent_id or "unknown", coder_stage=state["stage"])
     state.pop("dispatchAt", None)
     save_state(repo_dir, state)
@@ -318,8 +327,6 @@ def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
                 else "")
     resume_text = (" If the user answers the coder's blocker, resume that coder with SendMessage, then run "
                   f"{timed_command()}.")
-    cause_text = ("recommended /eng-spec" if outcome == "recommended-eng-spec"
-                  else "produced no reviewable change")
     report_lines = [line for line in report.splitlines() if line.strip()][:CODER_REPORT_STOP_LINES]
     if "pendingCorrection" in state:
         report_lines.append("A corrected ruling is saved; a correction coder applies it when the asks coder's work "
@@ -327,6 +334,9 @@ def stop_on_coder_report(repo_dir, state, report, agent_id, outcome):
     next_step = (f"if the user answers the coder's blocker, resume that coder with SendMessage, then run "
                  f"`{script_command(RESUME_VERB)}`. To dispatch a new coder for the phase, "
                  f"{restart_instruction(state)}.")
+    if restart_only:
+        resume_text = f" To dispatch a new coder for the phase, {restart_instruction(state)}."
+        next_step = f"to dispatch a new coder for the phase, {restart_instruction(state)}."
     stop_with_question(
         repo_dir, f"the coder {cause_text}.", report_lines, next_step,
         f"The coder {cause_text}. Do not dispatch a "
@@ -368,42 +378,119 @@ def record_coder_report(repo_dir, state, report, gate, changed_files, asks_chang
 
 def stage_plan_impact(repo_dir, state, coder_stage):
     # The first PLAN-IMPACT block in any hand-back, or attempt to hand back, of the coders this run dispatched at this
-    # stage. A hand-back that a gate denied still counts: the coder may send only the fix on its retry.
+    # stage. A hand-back that a gate denied still counts: the coder may send only the fix on its retry. The block the
+    # run already stopped on is skipped, so a resumed coder's next hand-back is not read as that block again.
     messages = [coder_message_without_gate_stamp(message)
                 for report in phase_coder_reports(repo_dir, state) if report["stage"] == coder_stage
                 for message in report["attempts"] + report["messages"]]
-    return first_plan_impact(messages)
+    return first_plan_impact(messages, state.get("handledImpacts"))
+
+
+def stop_when_head_left_base(repo_dir, state, report, handback):
+    base_head = state.get("baseHead")
+    if not head_left_phase_start(repo_dir, base_head):
+        return False
+
+    head = head_commit(repo_dir) or "unreadable"
+    stop_on_coder_report(
+        repo_dir, state, report, handback.get("agent_id"),
+        f"handed back when HEAD {head} does not descend from, or git cannot read, the phase's start commit "
+        f"{base_head} (a rebase or reset, or a git failure), so the phase's own changes cannot be told apart",
+        restart_only=True)
+    return True
+
+
+def coder_impact_stop_cause(impact):
+    # A coder's block names its cause. A report that says PLAN-IMPACT: yes with no block to read has none to name, and
+    # goes to the user's modal.
+    return plan_format.plan_impact_stop_cause(impact, cause_required=True)
+
+
+def stop_on_plan_impact_cause(repo_dir, state, handback, impact, stop_cause):
+    # The stop leaves the stage at the coder; the block is marked so the resumed coder's hand-back is not stopped on
+    # it again.
+    state["handledImpacts"] = [*state.get("handledImpacts", []), impact]
+    stop_on_coder_report(repo_dir, state, impact, handback.get("agent_id"), stop_cause)
+
+
+def route_coder_plan_impact(repo_dir, state, handback, coder_stage):
+    impact = stage_plan_impact(repo_dir, state, coder_stage)
+    if not impact:
+        return False
+
+    stop_cause = coder_impact_stop_cause(impact)
+    if stop_cause:
+        stop_on_plan_impact_cause(repo_dir, state, handback, impact, stop_cause)
+        return True
+
+    state.update({"stage": "impact-coder", "impact": impact})
+    save_state(repo_dir, state)
+    emit_plan_impact_modal(impact, repo_dir)
+    return True
+
+
+def end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_files):
+    # Ends the step on a report with nothing to review: the asks coder found every ask already done, a correction put
+    # the tree back, or the coder stopped on a blocker. True when it ended the step.
+    coder_stage = state["stage"]
+    is_open = left_findings_open(state)
+    has_pending_correction = coder_stage == "asks-coder" and "pendingCorrection" in state
+    if outcome == "converged" and not is_open and not has_pending_correction:
+        finish_without_review(
+            repo_dir, state, changed_files, coder_stage,
+            "The asks coder changed nothing, and named where each confirmed ask is already in the code or the passing "
+            "check that confirms it. No review "
+            "runs. The coder reported:\n" + report)
+        return True
+    if outcome == "undone" and not is_open and not has_pending_correction:
+        finish_without_review(
+            repo_dir, state, changed_files, coder_stage,
+            "After the correction no ask stays accepted and the tree is back where the asks round began, so no "
+            "review runs. The coder reported:\n" + report)
+        return True
+    if outcome in CODER_STOP_CAUSES:
+        # A report that blames the toolkit, or names no cause, stops on that cause even when it changed no file.
+        impact = first_plan_impact([report], state.get("handledImpacts"))
+        stop_cause = coder_impact_stop_cause(impact) if impact else None
+        if stop_cause:
+            stop_on_plan_impact_cause(repo_dir, state, handback, impact, stop_cause)
+            return True
+        stop_on_coder_report(repo_dir, state, report, handback.get("agent_id"), CODER_STOP_CAUSES[outcome])
+        return True
+    return False
 
 
 def review_coder_report(repo_dir, state, handback):
+    # The hand-back gate stays up through a stop that resumes the same coder, whose next hand-back runs the checks
+    # again. Any other outcome ends the coder's gate.
+    is_ask_fix = state["stage"] == "asks-coder"
+    route_coder_report(repo_dir, state, handback)
+    if not is_ask_fix and stop_kind(state) != CODER_RESUMABLE:
+        run_coder_gate(repo_dir, "clear")
+
+
+def route_coder_report(repo_dir, state, handback):
     coder_stage = state["stage"]
     is_ask_fix = coder_stage == "asks-coder"
     report = coder_message_without_gate_stamp(handback.get("message", ""))
+
+    if stop_when_head_left_base(repo_dir, state, report, handback):
+        return
+
     gate = None if is_ask_fix else gate_results(repo_dir)
     gate_lines = state.get("gateLines", "")
     if not is_ask_fix:
-        _code, gate_lines = run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), "clear"], repo_dir)
+        _code, gate_lines = run_coder_gate(repo_dir, "summary")
     state["flagged"] = coder_flagged(state, gate, report, is_ask_fix)
 
     changed_now = file_hashes(repo_dir)
     changed_files = coder_changed_files(repo_dir, state, changed_now)
     outcome = unreviewable_outcome(repo_dir, state, report, changed_files, changed_now)
+    if end_unreviewable_report(repo_dir, state, handback, report, outcome, changed_files):
+        return
+
     is_open = left_findings_open(state)
     has_pending_correction = is_ask_fix and "pendingCorrection" in state
-    if outcome == "converged" and not is_open and not has_pending_correction:
-        return finish_without_review(
-            repo_dir, state, changed_files, coder_stage,
-            "The asks coder changed nothing, and named where each confirmed ask is already in the code or the passing "
-            "check that confirms it. No review "
-            "runs. The coder reported:\n" + report)
-    if outcome == "undone" and not is_open and not has_pending_correction:
-        return finish_without_review(
-            repo_dir, state, changed_files, coder_stage,
-            "After the correction no ask stays accepted and the tree is back where the asks round began, so no "
-            "review runs. The coder reported:\n" + report)
-    if outcome in ("no-change", "recommended-eng-spec"):
-        return stop_on_coder_report(repo_dir, state, report, handback.get("agent_id"), outcome)
-
     asks_baseline = snapshot_part(state, "asks")
     asks_changed_files = None
     if is_ask_fix and asks_baseline is not None:
@@ -423,11 +510,8 @@ def review_coder_report(repo_dir, state, handback):
 
     record_coder_report(repo_dir, state, report, gate, changed_files, asks_changed_files)
     state["gateLines"] = gate_lines
-    impact = stage_plan_impact(repo_dir, state, coder_stage)
-    if impact:
-        state.update({"stage": "impact-coder", "impact": impact})
-        save_state(repo_dir, state)
-        return emit_plan_impact_modal(impact, repo_dir)
+    if route_coder_plan_impact(repo_dir, state, handback, coder_stage):
+        return
 
     state["planImpact"] = "none"
     save_state(repo_dir, state)
@@ -498,7 +582,7 @@ def stopped_route(repo_dir, state):
     kind = stop_kind(state)
     if kind == "coder-cap":
         return "ask-coder-cap"
-    if kind in BLOCKER_STOP_TEXT:
+    if kind in blocker_stop_text():
         return "ask-critical-blocker"
     # A review gate refused as false-clean is reviewed again, not stopped on again.
     return "review-again" if kind == "false-clean" else "ask-unknown"
@@ -559,7 +643,7 @@ def ask_about_unrecorded_state(repo_dir, state):
     stop_reason = stop_kind(state)
     saved = f"The run is at stage {stage}" + (f" with stop reason {stop_reason}." if stop_reason else ".")
     guarded_verb = next((verb for verb, guard in STAGE_GUARDS.items()
-                        if stage in guard["stages"] and stop_reason in guard.get("stopReasons", ())), None)
+                        if stage in guard["stages"] and stop_reason in guard_stop_reasons(verb)), None)
     if guarded_verb:
         next_step = f"When the cause is fixed, run `{guarded_verb}`."
     else:
@@ -585,7 +669,7 @@ def ask_about_review_cap(repo_dir, state):
 
 def ask_about_critical_blocker(repo_dir, state):
     status_command = script_command("status")
-    opening_sentence = BLOCKER_STOP_TEXT[stop_kind(state)][0]
+    opening_sentence = blocker_stop_text()[stop_kind(state)][0]
     ask_user(repo_dir, f"The run stopped: {opening_sentence} Present it to the user. Run "
              f"`{status_command}` to read the saved state. Then, {blocker_stop_next_step(state)}")
 
@@ -695,7 +779,7 @@ def command_abort(args):
     script_pid = stop_review_script(state)
     clear_say(repo_dir)
     clear_question(repo_dir)
-    run_command(["python3", str(SCRIPTS_DIR / "code" / "coder_gate.py"), "clear"], repo_dir)
+    run_coder_gate(repo_dir, "clear")
 
     directory = state_dir(repo_dir)
     archive_path = directory / f"aborted-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
@@ -726,17 +810,55 @@ def command_status():
     print(json.dumps(state, indent=1) if state else "no code-step state")
 
 
-def enter_run_checkout():
+VERBS_THAT_TAKE_REPO = ("asks-done", "correct-ruling")
+
+
+def enter_named_checkout(named_repo):
+    # The checkout `--repo` names must hold an open run, of any session: a session started after /clear resumes a run
+    # that still names the old session. The stage guard of the verb refuses a wrong stage. False after a stop.
+    named_root = script_utils.repo_root(named_repo) if named_repo else None
+    if named_root is None:
+        emit("stop", f"--repo {named_repo or ''} is not a path inside a git repo. Tell the user.")
+        return False
+
+    named_state = load_state(named_root)
+    if named_state is None or not is_run_open(named_state):
+        emit("stop", f"{named_root} holds no open /code run, so --repo {named_repo} names no run. "
+             f"Tell the user. `{script_command('status')}` run from a checkout shows its run.")
+        return False
+
+    os.chdir(named_root)
+    return True
+
+
+def enter_run_checkout(verb="", named_repo=None):
     # Every verb after `start` runs in the checkout of the session's open run, wherever the shell stands: a run started
-    # in a worktree or another repo keeps every step there. False after a stop.
+    # in a worktree or another repo keeps every step there. `--repo` (asks-done, correct-ruling) names that checkout.
+    # With several open runs and none in the cwd, asks-done goes on with the one run that waits at its asks. False
+    # after a stop.
+    if named_repo is not None:
+        return enter_named_checkout(named_repo)
+
     session_id = session_pin()
-    cwd_repo = script_utils.repo_root(os.getcwd())
     if session_id is None:
         return True
 
+    cwd_repo = script_utils.repo_root(os.getcwd())
     open_run_repos = resume_run_repos(cwd_repo, session_id)
     if open_run_repos == [cwd_repo]:
         return True
+
+    if len(open_run_repos) > 1 and verb == "asks-done":
+        asks_run_repos = [repo for repo in open_run_repos if load_state(repo)["stage"] == "asks"]
+        if len(asks_run_repos) > 1:
+            checkout_lines = [f"- {repo}" for repo in asks_run_repos]
+            emit("stop", "This session has open asks in each of these checkouts, and the current directory is in "
+                 "none of them:", *checkout_lines,
+                 "Run asks-done again with `--repo <checkout>` for the run the user answered.")
+            return False
+
+        if asks_run_repos:
+            open_run_repos = asks_run_repos
 
     if len(open_run_repos) > 1:
         checkout_lines = [f"- {repo}" for repo in open_run_repos]
@@ -797,7 +919,10 @@ def verb_lock(repo, verb):
 
 def run_verb(verb, handler, args):
     try:
-        if verb != "start" and not enter_run_checkout():
+        named_repo = None
+        if verb in VERBS_THAT_TAKE_REPO:
+            args, named_repo = script_utils.pop_option(args, "--repo")
+        if verb != "start" and not enter_run_checkout(verb, named_repo):
             return
 
         repo = repo_root_or_exit()

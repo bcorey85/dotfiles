@@ -1,6 +1,7 @@
 """loop_transcript.py: one read of a review-loop transcript, and the checks that read only the transcript: the last
 code step, whether a passed full check follows it, the open background dispatches, and a packet that names the plan
-file. review_loop_gate.py (the SubagentStop backstop), handback.py (the hand-back hook) and open_child_gate.py read
+file, and a packet that owes ledger rows (per-finding rows and a metrics line) the loop did not log.
+review_loop_gate.py (the SubagentStop backstop), handback.py (the hand-back hook) and open_child_gate.py read
 transcripts through it. Not a hook itself."""
 import json
 import os
@@ -19,8 +20,13 @@ ASYNC_LAUNCH = "Async agent launched"
 RESUMED_AGENT_ID = re.compile(r"resumedAgentId\W+([A-Za-z0-9-]+)")
 RESUMING_MESSAGE = re.compile(r"Resuming agent\s+([A-Za-z0-9-]+)")
 # The status line of the old free-text packet form, or the "status" key of a JSON packet (minified or indented).
-PLAN_IMPACT = re.compile(r'(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*plan-impact\b'
-                         r'|"status"[ \t]*:[ \t]*"[ \t`\'*]*plan-impact\b')
+# The statuses whose protocol ends the loop for a human ruling in place of Step 6's full check,
+# so a hand-back with one owes no full check.
+UNVERIFIED_TREE_STATUSES = frozenset({"plan-impact", "setup-fault", "critical-blocker"})
+_UNVERIFIED_STATUS = "(?:" + "|".join(sorted(UNVERIFIED_TREE_STATUSES)) + ")"
+UNVERIFIED_TREE_STATUS = re.compile(
+    r'(?im)^[ \t>*`-]*status[`*]*[ \t]*:[ \t`*]*' + _UNVERIFIED_STATUS + r'\b'
+    r'|"status"[ \t]*:[ \t]*"[ \t`\'*]*' + _UNVERIFIED_STATUS + r'\b')
 # One shell command ends at a ;, a | or && that joins the next command, or at a newline no backslash escapes.
 SEGMENT_END = re.compile(r"&&|\|\||[;|]|(?<!\\)\n")
 # A shell call that ran the review loop's full-check script, and the first line that script prints: its result.
@@ -53,6 +59,21 @@ SCOPE_ROOT = re.compile(r"(?m)^ROOT=(\S.*?)\s*$")
 PROMPT_REPO = prompt_field("repo", r"(\S+?)[`*]*[ \t]*$")
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
                     "that edit, and return the finding that needs a plan change with `status` set to `plan-impact`.")
+RUN_GATES = re.compile(r"-reviewer(-deep)?$")
+PACKET_ROW_KEYS = ("fixed", "skipped_fp", "findings_remaining", "ask", "nit")
+RETURN_TAIL = "then return the packet."
+DELIVERED_TAIL = "then stop: the packet was already delivered, and a second hand-back is denied."
+LEDGER_REASON = ("The packet lists {owed} finding(s) (fixed, skipped, deferred, ask, nit) but only {logged} "
+                 "per-finding row(s) were logged{metrics}. Run Step 7 and Step 7b now, one "
+                 "`log-review-finding kind=finding` call per finding, then return the packet.")
+METRICS_ONLY_REASON = ("The loop logged its per-finding rows but there is no metrics line. Log the Step 7 metrics "
+                       "line now (log-review-metrics); for a loop where no reviewer ran, use "
+                       "result=\"NOT DISPATCHED\", then return the packet.")
+NIT_REASON = ("The packet lists {owed} nit(s) but only {logged} `disposition=nit` row(s) were logged. Log one "
+              "`log-review-finding kind=finding disposition=nit` row per nit, then return the packet.")
+METRICS_REASON = ("The last metrics line was logged before the last reviewer round, or its counts differ from the "
+                  "packet's. Log the Step 7 metrics line again with the final counts (fixed={fixed}, "
+                  "skipped_fp={skipped_fp}), then return the packet.")
 GATE_REASON = ("No passed full_check.py result follows the last code change in this phase. A scoped run, "
                "including the handoff's tests-run, does not count. If a full_check.py result already follows the "
                "last code change and was not passed, do not run it again: follow Step 6's route for that result "
@@ -113,6 +134,8 @@ class LoopTranscript:
         self.handback_ids = set()  # tool_use_ids of the SubagentHandback calls
         self.handback_lines = []  # the transcript lines of the SubagentHandback calls a hook did not deny
         self.finding_rows_logged = 0  # per-finding ledger rows the loop's own Bash calls wrote
+        # log-review-finding and log-review-metrics calls the loop made, refused ones too
+        self.ledger_calls_attempted = 0
         self.metrics_calls = []  # (transcript line, key=value fields, Bash tool_use_id) of each log-review-metrics call
         self.scope_calls = set()  # Bash tool_use_ids of the review-scope calls
         self.scope_root = None  # the ROOT= that the last review-scope call printed
@@ -238,12 +261,15 @@ class LoopTranscript:
 
     def read_command(self, n, tool_use_id, command):
         command = command.replace("\\\n", " ")
-        self.finding_rows_logged += len(finding_call_pattern(command, FINDING_CALL_TAIL).findall(command))
+        finding_rows = len(finding_call_pattern(command, FINDING_CALL_TAIL).findall(command))
+        self.finding_rows_logged += finding_rows
         arguments_pattern = finding_call_pattern(command, FINDING_CALL_ARGUMENTS_TAIL)
         finding_calls = [finding_call_fields(arguments) for arguments in arguments_pattern.findall(command)]
         if finding_calls:
             self.finding_calls[tool_use_id] = finding_calls
-        self.metrics_calls += [(n, fields, tool_use_id) for fields in metrics_calls(command)]
+        logged_metrics = [(n, fields, tool_use_id) for fields in metrics_calls(command)]
+        self.metrics_calls += logged_metrics
+        self.ledger_calls_attempted += finding_rows + len(logged_metrics)
         if SCOPE_CALL.search(command):
             self.scope_calls.add(tool_use_id)
         call_count = len(FULL_CHECK_SCRIPT.findall(command))
@@ -327,8 +353,8 @@ def scan(transcript, final=None, full_suite_in_ci=False):
     last_step = last_code_step(transcript)
     last_full = max(transcript.full_checks, default=-1)
 
-    plan_impact = PLAN_IMPACT.search(transcript.last_text if final is None else final)
-    ungated = last_full < last_step and not plan_impact and not full_suite_in_ci
+    unverified_tree = UNVERIFIED_TREE_STATUS.search(transcript.last_text if final is None else final)
+    ungated = last_full < last_step and not unverified_tree and not full_suite_in_ci
     return ungated, transcript.open_dispatches()
 
 
@@ -338,6 +364,56 @@ def plan_edit_reason(transcript, packet):
     if plan and touches_plan(packet.get("files_touched") or [], plan.group(1)):
         return PLAN_EDIT_REASON.format(plan=plan.group(1))
     return None
+
+
+def packet_ledger_reasons(transcript, packet):
+    """The reasons for a block when the packet owes ledger rows the loop did not write: too few per-finding rows or no
+    metrics line, else too few nit rows, else a metrics line older than the last reviewer round or with other counts
+    than the packet. The reasons end in RETURN_TAIL."""
+    owed = sum(len(packet.get(key) or []) for key in PACKET_ROW_KEYS)
+    missing_metrics = not transcript.metrics_calls
+    if transcript.finding_rows_logged >= owed and missing_metrics:
+        return [METRICS_ONLY_REASON]
+    if transcript.finding_rows_logged < owed or missing_metrics:
+        metrics = " and no metrics line" if missing_metrics else ""
+        return [LEDGER_REASON.format(owed=owed, logged=transcript.finding_rows_logged, metrics=metrics)]
+    if unlogged_nits(transcript, packet):
+        return [NIT_REASON.format(owed=len(packet.get("nit") or []), logged=nit_rows(transcript))]
+    if stale_metrics(transcript, packet):
+        return [METRICS_REASON.format(fixed=len(packet.get("fixed") or []),
+                                      skipped_fp=len(packet.get("skipped_fp") or []))]
+    return []
+
+
+def nit_rows(transcript):
+    return sum(fields.get("disposition") == "nit" for calls in transcript.finding_calls.values() for fields in calls)
+
+
+def unlogged_nits(transcript, packet):
+    """True when the packet lists more nits than the loop logged `disposition=nit` rows. A finding call whose
+    disposition is not spelled out (a shell variable, or no `disposition=` at all) leaves the count unknown, so
+    nothing is claimed."""
+    calls = [fields for calls in transcript.finding_calls.values() for fields in calls]
+    if any(not fields.get("disposition", "").isalpha() for fields in calls):
+        return False
+    return nit_rows(transcript) < len(packet.get("nit") or [])
+
+
+def stale_metrics(transcript, packet):
+    """True when the last metrics line came before the last reviewer round, or when a fixed= or skipped_fp= count it
+    logged differs from the packet's. A count the line leaves out or sends as a shell variable is not compared."""
+    line, fields, _ = transcript.metrics_calls[-1]
+    reviews = [transcript.dispatched_at[tool_use_id] for tool_use_id, kind in transcript.kinds.items()
+               if RUN_GATES.search(kind)]
+    last_review = max(reviews, default=-1)
+    if line < last_review:
+        return True
+
+    for key in ("fixed", "skipped_fp"):
+        logged = fields.get(key, "")
+        if logged.isdigit() and int(logged) != len(packet.get(key) or []):
+            return True
+    return False
 
 
 def touches_plan(files_touched, plan):

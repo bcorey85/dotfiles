@@ -12,21 +12,24 @@
                                         `Full suite: CI`) whose own transcript shows no passed full_check.py
                                         result after its last code change (once per code change), denies a
                                         hand-back (any status but plan-impact) whose files_touched names the
-                                        dispatch prompt's plan file, and denies any call from an agent whose
+                                        dispatch prompt's plan file, denies a hand-back whose packet owes
+                                        per-finding rows or a metrics line the loop did not log (a `ledger` row;
+                                        it repeats once only: a second hand-back with no new logger call goes
+                                        through), and denies any call from an agent whose
                                         report is already stored. `ran` is the PostToolUse hook (matcher
                                         Agent): it records a `dispatch-ran` row for a review-loop dispatch whose
                                         call ran. Any other argument does nothing.
 
-Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths, unreviewed_fix_section
-and full_suite_in_ci; they read the store (record, latest, hand_back_gap, ended_on_unreviewed_fix, unreviewed_streak)
-from handback_store and the finding-id constants from loop_transcript. The store also holds
-a `stop` row that review_loop_gate.py writes at each review-loop stop (agent_id, open_dispatches). `latest` keeps the
-last one after the last dispatch; while it shows open_dispatches > 0 and no hand-back is current, hand_back_gap returns
-LOOP_WAITING, and a later stop with none open, a hand-back or a new dispatch ends the wait. A validated packet's
-fixed, skipped_fp, findings_remaining and ask entries are all mappings. The store is keyed by the hook event's
-session_id, which is the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
+Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths and
+unreviewed_fix_section; the hook (handle_hook, full_suite_in_ci, reviewed_repo) is in handback_hook.py. They read
+the store (record, latest, hand_back_gap, ended_on_unreviewed_fix, unreviewed_streak) from handback_store and the
+finding-id constants from loop_transcript. The store also holds a `stop` row that review_loop_gate.py writes at each
+review-loop stop (agent_id, open_dispatches). `latest` keeps the last one after the last dispatch; while it shows
+open_dispatches > 0 and no hand-back is current, hand_back_gap returns LOOP_WAITING,
+and a later stop with none open, a hand-back or a new dispatch ends the wait. A validated packet's fixed,
+skipped_fp, findings_remaining and ask entries are all mappings. The store is keyed by the hook event's session_id,
+which is the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
 import json
-import os
 import pathlib
 import re
 import secrets
@@ -34,36 +37,41 @@ import sys
 import textwrap
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
-import loop_transcript
 import reviewed_tree
 import script_utils
+from capped_review import CAP_REACHED, DEFERRED, effective_status
 from handback_store import (
-    DISPATCH_RAN,
     LOOP_WAITING,
     NO_DISPATCH,
     REDISPATCHED,
     hand_back_gap,
     latest,
-    ran_dispatch_rows,
-    record,
     session_rows,
     settled_stop,
-    was_recorded,
 )
 from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
-from plan_format import PLAN_CHANGE_MARK
-from script_utils import first_number, one_line, unquote
+from plan_format import PLAN_CHANGE_MARK, plan_impact_cause
+from script_utils import first_number, is_blocker, one_line, unquote
 
-STATUSES = ["converged", "deferred", "plan-impact", "critical-blocker", "cap-reached", "setup-fault"]
-CLEAN_STATUSES = ("converged", "deferred")
+# The status for a loop that stopped because the fix passes removed the change under review.
+FIX_REMOVED_CHANGE = "fix-removed-change"
+STATUSES = ["converged", DEFERRED, "plan-impact", "critical-blocker", CAP_REACHED, "setup-fault",
+            FIX_REMOVED_CHANGE]
+CLEAN_STATUSES = ("converged", DEFERRED)
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
-               "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "files_touched",
-               "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean", "tool_fault",
-               "blocked_agents", "scoped_tests"]
+               "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "full_check_tree",
+               "files_touched", "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean",
+               "tool_fault", "blocked_agents", "scoped_tests", "open_classes",
+               "unrun_reviewer"]
+# Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
+SCRIPT_PACKET_KEYS = ["plan_impact_cause"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
-             "check_rewrote_edited", "check_created", "blocked_agents"]
+             "check_rewrote_edited", "check_created", "blocked_agents", "open_classes"]
+# The list fields whose every JSON entry is a string.
+STRING_LIST_KEYS = ("open_classes",)
 SCALAR_KEYS = ("status", "iter", "spec_iter", "full_check", "full_check_command", "full_check_summary",
-               "load_bearing_clean", "tool_fault", "scoped_tests")
+               "full_check_tree", "load_bearing_clean", "tool_fault", "scoped_tests", "unrun_reviewer",
+               "plan_impact_cause")
 # The list fields whose entries validate turns into mappings, and the key a plain-text entry's text goes under.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
 # The free-text fields of an ask that a continuation mapping joins to the lead ask's;
@@ -73,8 +81,9 @@ ASK_JOINED_TEXT_KEYS = ("question", "change")
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
 STATUS_REQUIRES = {"plan-impact": ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
-                   "setup-fault": ("blockers", "empty"), "cap-reached": ("findings_remaining", "empty"),
-                   "deferred": ("findings_remaining", "missing or empty")}
+                   "setup-fault": ("blockers", "empty"), FIX_REMOVED_CHANGE: ("blockers", "empty"),
+                   CAP_REACHED: ("findings_remaining", "empty"),
+                   DEFERRED: ("findings_remaining", "missing or empty")}
 BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
 ITEM_KEYS = [
     "disposition",
@@ -98,10 +107,6 @@ ITEM_START = re.compile(r"^\s*(?:-|\d+[.)])\s+", re.M)
 CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap", "weak-assertion", "security", "perf",
            "correctness", "docs", "other"]
 REVIEW_LOOP = "review-loop"
-RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
-REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
-ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])/[^\s`'\"<>|;:,()]+")
-GIT_TIMEOUT_SECONDS = 10
 DEFAULT_GATE = "code-reviewer"
 FENCE_OPEN = "```"
 BLOCKER_TEXT = re.compile(r"\[blocker\]|\bblocker\s*[:=]\s*(?:yes|true)\b", re.I)
@@ -130,11 +135,12 @@ def json_packet_text(message):
 
 
 def json_field_problem_or_text(key, value):
-    """(problem, text) of one JSON field: the raw text validate reads, or why the value has the wrong shape."""
+    """(problem, value) of one JSON field: the raw value validate reads (a list stays a list, a scalar becomes text),
+    or why the value has the wrong shape."""
     if key in LIST_KEYS:
         if not isinstance(value, list):
             return f"{key} must be a JSON list, not {script_utils.json_type_name(value)}", None
-        return None, json.dumps(value)
+        return None, value
     if isinstance(value, str):
         return None, value
     is_integer = isinstance(value, int) and not isinstance(value, bool)
@@ -156,7 +162,7 @@ def parse_json_packet(text):
     packet = {}
     trailer = []
     for key, value in loaded.items():
-        if key not in PACKET_KEYS:
+        if key not in PACKET_KEYS and key not in SCRIPT_PACKET_KEYS:
             value_text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
             trailer.append(f"{key}: {value_text}")
             continue
@@ -185,7 +191,7 @@ def parse(message):
 
 # ---------- the old free-text form ----------
 # Everything from here to the end of read_list reads the old `key: value` packet form. It is kept for one release and
-# removed after it. read_list's first branch (a JSON list) also serves the JSON path.
+# removed after it. The JSON path reads its lists in read_json_entries and never reaches this code.
 
 def is_block_scalar(value_lines):
     return BLOCK_INDICATOR.match(value_lines[0].strip()) is not None
@@ -376,10 +382,6 @@ def read_list(raw):
 
 # ---------- items ----------
 
-def is_blocker(item):
-    return isinstance(item, dict) and str(item.get("blocker", "")).strip().lower() in ("true", "yes")
-
-
 def item_text(item, *keys):
     if isinstance(item, dict):
         return " - ".join(str(item[key]) for key in keys if item.get(key))
@@ -531,15 +533,21 @@ def read_header(raw):
     if raw.get("spec_iter", "").strip() and spec_iter is None:
         problems.append("spec_iter has no number")
 
+    plan_impact = raw.get("plan_impact", "").strip()
+    # The review-loop script one-lines the block and sends its cause; a reviewer agent's block keeps its lines and
+    # a block with no cause reads as plan.
+    cause = raw.get("plan_impact_cause", "").strip().lower() or plan_impact_cause(plan_impact)
     header = {"status": status, "iter": iter_round, "spec_iter": spec_iter,
               "class_closure": raw.get("class_closure", "").strip(),
               "full_check": raw.get("full_check", "").strip(),
               "full_check_command": raw.get("full_check_command", "").strip(),
               "full_check_summary": raw.get("full_check_summary", "").strip(),
+              "full_check_tree": raw.get("full_check_tree", "").strip(),
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "tool_fault": raw.get("tool_fault", "").strip(),
               "scoped_tests": raw.get("scoped_tests", "").strip(),
-              "plan_impact": raw.get("plan_impact", "").strip()}
+              "unrun_reviewer": raw.get("unrun_reviewer", "").strip(),
+              "plan_impact": plan_impact, "plan_impact_cause": cause}
     return header, problems
 
 
@@ -550,6 +558,7 @@ def normalize_ask(item):
         question_source = item.get("finding") or item.get("change")
         if question_source:
             item["question"] = question_source
+
     item["gate"] = first_token(item.get("gate")) or DEFAULT_GATE
 
     ask_class = str(item.get("class") or "").strip()
@@ -627,6 +636,12 @@ def continues_lead_ask(entry):
     return not any(script_utils.PATH_LINE.match(field.strip()) for field in location_fields)
 
 
+def fill_fixed_finding(item):
+    """Gives fixed entry `item` its smell as its finding when it has no finding."""
+    if not item.get("finding") and item.get("smell"):
+        item["finding"] = item["smell"]
+
+
 def normalize_items(key, entries):
     """The entries of list field `key`, a text entry made a mapping when the field is in ENTRY_TEXT_KEYS. Any other
     entry stays as it is, for item_problems to refuse."""
@@ -642,9 +657,44 @@ def normalize_items(key, entries):
             continue
         if key == "ask":
             normalize_ask(item)
-        elif key == "fixed" and not item.get("finding") and item.get("smell"):
-            item["finding"] = item["smell"]
+        elif key == "fixed":
+            fill_fixed_finding(item)
     return items
+
+
+def read_json_entries(key, entries):
+    """(the entries of the JSON list field `key`, their problems). A mapping list holds only mappings, each with its
+    required text field; the entry is never read as free text. An ask that names no file_line is unlocated. A
+    string list holds only strings. Any other list passes as it is."""
+    if key in STRING_LIST_KEYS:
+        if script_utils.is_string_list(entries):
+            return entries, []
+        return [], [f"{key} must be a JSON list of strings, not {one_line(json.dumps(entries), 80)!r}"]
+    required = ENTRY_TEXT_KEYS.get(key)
+    if required is None:
+        return entries, []
+
+    items = []
+    problems = []
+    for position, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            problems.append(f"{key}[{position}] must be a JSON object, not {script_utils.json_type_name(entry)}: "
+                            f"{one_line(json.dumps(entry), 80)!r}")
+            continue
+
+        item = dict(entry)
+        if key == "fixed":
+            fill_fixed_finding(item)
+        if key == "ask":
+            normalize_ask(item)
+        if not str(item.get(required) or "").strip():
+            problems.append(f"{key}[{position}] has no {required}: {one_line(json.dumps(entry), 80)!r}")
+            continue
+
+        if key == "ask":
+            item.setdefault("file_line", UNLOCATED)
+        items.append(item)
+    return items, problems
 
 
 def is_askable(item):
@@ -682,8 +732,9 @@ def print_dropped_asks(packet):
 def item_problems(raw, packet):
     problems = [f"fixed entry has no finding: {one_line(item, 80)!r}" for item in packet["fixed"]
                 if not (isinstance(item, dict) and item.get("finding"))]
-    if raw.get("ask", "").strip() and not packet["ask"] and not NONE_VALUE.match(raw["ask"].strip()):
-        problems.append(f"ask holds text but yields no ask entries: {one_line(raw['ask'], 80)!r}")
+    ask_text = raw.get("ask") if isinstance(raw.get("ask"), str) else ""
+    if ask_text.strip() and not packet["ask"] and not NONE_VALUE.match(ask_text.strip()):
+        problems.append(f"ask holds text but yields no ask entries: {one_line(ask_text, 80)!r}")
     for item in packet["ask"]:
         if not is_askable(item):
             continue
@@ -712,7 +763,7 @@ def status_problems(raw, packet):
     field, absence = STATUS_REQUIRES.get(status, (None, ""))
     if field is None or packet[field]:
         return problems
-    if status == "cap-reached" and field not in raw:
+    if status == CAP_REACHED and field not in raw:
         absence = "missing"
     problems.append(f"status is {status} but {field} is {absence}")
     return problems
@@ -723,14 +774,21 @@ def validate(raw):
     packet, problems = read_header(raw)
 
     trailer = [raw.get("trailer", "")]
+    list_problems = []
     for key in LIST_KEYS:
-        lead, entries = read_list(raw.get(key, ""))
+        value = raw.get(key, "")
+        if isinstance(value, list):
+            packet[key], entry_problems = read_json_entries(key, value)
+            list_problems += entry_problems
+            continue
+
+        lead, entries = read_list(value)
         packet[key] = normalize_items(key, entries)
         if lead:
             trailer.append(lead)
     packet["trailer"] = "\n".join(part for part in trailer if part).strip()
 
-    problems += item_problems(raw, packet) + status_problems(raw, packet)
+    problems += list_problems + item_problems(raw, packet) + status_problems(raw, packet)
     if problems:
         raise PacketError(problems)
 
@@ -822,7 +880,7 @@ def render(packet, skill, sections=()):
     if load_bearing and load_bearing.lower() not in ("none", "omitted"):
         lines.append("Load-bearing: " + load_bearing)
 
-    remaining_heading = "Deferred to branch exit" if packet["status"] == "deferred" else "Findings remaining"
+    remaining_heading = "Deferred to branch exit" if packet["status"] == DEFERRED else "Findings remaining"
     render_items(lines, remaining_heading, packet["findings_remaining"], remaining_line)
     render_items(lines, "Blocked agents (not reviewed)", packet["blocked_agents"], lambda entry: f"- {entry}")
     for heading, section_lines in sections:
@@ -854,6 +912,17 @@ def settled_stop_row(session_id, agent_id, since):
     return settled[-1] if settled else None
 
 
+def stored_effective_status(seen):
+    """The effective_status of the hand-back that `latest` returned, read against the work tree now."""
+    row = seen["handback"]
+    status = row.get("status")
+    if status != CAP_REACHED:
+        return status
+
+    packet = load(row.get("message", ""))
+    return effective_status(packet, seen["dispatch"].get("repo"))
+
+
 def false_clean_reason(session_id):
     """Why `review-gate-mark clean` is refused for the session, or None when its latest review-loop hand-back is
     current and converged or deferred. Takes the hook event's session_id, the value of CLAUDE_CODE_SESSION_ID in a Bash
@@ -868,7 +937,7 @@ def false_clean_reason(session_id):
         return "a hand-back is stored but this session has no review-loop dispatch on record"
     if gap == REDISPATCHED:
         return "the review-loop was dispatched again and has not handed back"
-    status = seen["handback"].get("status")
+    status = stored_effective_status(seen)
     if status not in CLEAN_STATUSES:
         return f"the latest review-loop hand-back is {status}"
     if seen["handback"].get("no_reviewer"):
@@ -890,212 +959,6 @@ def record_clean_review(session_id, committing_session=None):
     return None, repo
 
 
-def loop_steps(session_id, agent_id):
-    """The review-loop agent `agent_id`'s coder and reviewer dispatches, in order. Coders resumed with SendMessage are
-    not counted: the hook sees only the recipient's id, not its type."""
-    return [row["step"] for row in session_rows(session_id, "step", agent_id)]
-
-
-def claim_no_review(session_id, agent_id):
-    """True when `agent_id` is exempt from the reviewer rule: it was exempted before, or the session holds more
-    no-review dispatches than exemptions, and this claims one. A dispatch row has no agent id, so a normal loop that
-    skips review while an unclaimed no-review loop runs in parallel can take that exemption."""
-    stored_rows = session_rows(session_id)
-    exempted = [row for row in stored_rows if row.get("kind") == "no-review-exempt"]
-    if any(row.get("agent_id") == agent_id for row in exempted):
-        return True
-    no_review_dispatches = [row for row in ran_dispatch_rows(session_id) if row.get("no_review")]
-    if len(no_review_dispatches) <= len(exempted):
-        return False
-    record(session_id, "no-review-exempt", agent_id=agent_id)
-    return True
-
-
-# ---------- hook ----------
-
-ALREADY_DELIVERED_REASON = ("Your report was already delivered; a second hand-back cannot reach the caller. Use "
-                            "SendMessage for anything further, then stop.")
-OPEN_WORK_REASON = ("{count} agent(s) or shell(s) you started in the background have not reported back. Do not hand "
-                    "back yet: end your turn and wait for each task notification, act on what it reports, then hand "
-                    "back.")
-UNCHECKED_KIND = "unchecked-code"
-
-
-def open_work_reason(open_dispatches):
-    """OPEN_WORK_REASON when the count of background dispatches or shells that have not reported back is above zero,
-    else None."""
-    if not open_dispatches:
-        return None
-    return OPEN_WORK_REASON.format(count=open_dispatches)
-
-
-def full_suite_in_ci(transcript, cwd):
-    """True when the repo the loop reviewed (else the repo holding cwd, the process cwd when empty) leaves its full
-    suite to CI."""
-    import full_check
-
-    repo = script_utils.repo_root(transcript.reviewed_root() or cwd or os.getcwd())
-    return repo is not None and full_check.full_suite_runs_in_ci(repo)
-
-
-def last_unchecked_step(session_id, agent_id):
-    """The last code step the hook saw when it denied agent_id for an unchecked change, or None."""
-    steps = [row.get("last_code_step", 0) for row in session_rows(session_id, UNCHECKED_KIND, agent_id)]
-    return max(steps, default=None)
-
-
-def unchecked_code_reason(ungated, last_step, session_id, agent_id):
-    """The deny reason when `ungated` says the loop's transcript shows no passed full_check.py result after its last
-    code change (`last_step` is the line of that change), else None.
-    The denial is recorded with the last code step it saw and repeats only after a later code change, so a loop that
-    hands back again on the same state passes."""
-    if not ungated:
-        return None
-    denied_at = last_unchecked_step(session_id, agent_id)
-    if denied_at is not None and last_step <= denied_at:
-        return None
-    record(session_id, UNCHECKED_KIND, agent_id=agent_id, last_code_step=last_step)
-    return loop_transcript.GATE_REASON
-
-
-def hand_back_plan_edit_reason(transcript, packet):
-    """loop_transcript.PLAN_EDIT_REASON when the packet, of any status but plan-impact, has a files_touched that
-    names the plan file of the loop's dispatch prompt, else None."""
-    if packet is None or packet["status"] == "plan-impact":
-        return None
-
-    return loop_transcript.plan_edit_reason(transcript, packet)
-
-
-def transcript_gate_reason(event, session_id, agent_id, message, packet):
-    """The deny reason of the first gate that reads the loop's own transcript, in order: a background dispatch or
-    shell still open, no passed full check after the last code change, a plan file in the packet's files_touched.
-    The transcript is read once. One that cannot be read never blocks, and a failed full-check scan skips the
-    full-check gate only."""
-    try:
-        transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
-        open_dispatches = transcript.open_dispatches()
-    except Exception as error:
-        print(f"handback hook: transcript gates skipped, {type(error).__name__}: {error}", file=sys.stderr)
-        return None
-    open_work = open_work_reason(open_dispatches)
-    if open_work:
-        return open_work
-    try:
-        in_ci = full_suite_in_ci(transcript, event.get("cwd"))
-        ungated, _open_dispatches = loop_transcript.scan(transcript, message, in_ci)
-        last_step = loop_transcript.last_code_step(transcript)
-    except Exception as error:
-        print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
-        return hand_back_plan_edit_reason(transcript, packet)
-    return (unchecked_code_reason(ungated, last_step, session_id, agent_id)
-            or hand_back_plan_edit_reason(transcript, packet))
-
-
-def handle_dispatch(event, session_id, tool_input):
-    """Record a review-loop dispatch, or a coder or reviewer step inside one."""
-    subagent_type = str(tool_input.get("subagent_type") or "")
-    if event.get("agent_type") == REVIEW_LOOP:
-        step = "coder" if script_utils.CODERS.match(subagent_type) else "reviewer"
-        if step == "coder" or script_utils.REVIEWERS.match(subagent_type):
-            record(session_id, "step", agent_id=event.get("agent_id") or "unknown", step=step)
-    elif subagent_type == REVIEW_LOOP:
-        prompt = str(tool_input.get("prompt") or "")
-        record(session_id, "dispatch", no_review=loop_transcript.NO_REVIEW_MODE.search(prompt) is not None,
-               resolved_plan_impact=RESOLVED_PLAN_IMPACT.search(prompt) is not None,
-               repo=reviewed_repo(prompt, event.get("cwd")), tool_use_id=event.get("tool_use_id"))
-
-
-def handle_dispatch_ran(event, session_id):
-    """PostToolUse on Agent: the call ran, so the dispatch row it named at PreToolUse now counts. Only a review-loop
-    dispatch from outside the loop has such a row."""
-    tool_use_id = event.get("tool_use_id")
-    is_loop_dispatch = (event.get("tool_input") or {}).get("subagent_type") == REVIEW_LOOP
-    if tool_use_id and is_loop_dispatch and event.get("agent_type") != REVIEW_LOOP:
-        record(session_id, DISPATCH_RAN, tool_use_id=tool_use_id)
-
-
-def reviewed_repo(prompt, cwd):
-    """The top level of the repo a review-loop dispatch reviews, by the rule the loop itself follows: the prompt's
-    `repo:` line, read from cwd, else the first absolute path the prompt names, else cwd. None when that lies in no
-    work tree."""
-    named = REPO_LINE.search(prompt)
-    first_path = ABSOLUTE_PATH.search(prompt)
-    if named:
-        directory = os.path.join(cwd or "", os.path.expanduser(named.group(1)))
-    elif first_path:
-        directory = script_utils.nearest_existing_folder(first_path.group(0))
-    else:
-        directory = cwd
-    if not directory:
-        return None
-    top = script_utils.repo_root(directory, timeout=GIT_TIMEOUT_SECONDS)
-    return str(top) if top else None
-
-
-def handle_hook(event, kind):
-    """Record a review-loop dispatch or hand-back. Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
-    agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
-    unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no passed full_check.py
-    result follows the last code change, or loop_transcript.PLAN_EDIT_REASON when the packet names the plan file."""
-    session_id = event.get("session_id")
-    if not session_id:
-        return None
-    tool_input = event.get("tool_input") or {}
-    if kind == "dispatch":
-        handle_dispatch(event, session_id, tool_input)
-        return None
-    if kind == "ran":
-        handle_dispatch_ran(event, session_id)
-        return None
-    if kind != "handback" or event.get("agent_type") != REVIEW_LOOP:
-        return None
-    message = str(tool_input.get("message", ""))
-    agent_id = event.get("agent_id") or "unknown"
-    if was_recorded(session_id, agent_id, "handback"):
-        return ALREADY_DELIVERED_REASON
-    try:
-        packet = load(message)
-        status, problems = packet["status"], []
-    except PacketError as error:
-        packet, status, problems = None, "invalid", error.problems
-    if problems and not was_recorded(session_id, agent_id, "rejected"):
-        record(session_id, "rejected", agent_id=agent_id, problems=problems)
-        return ("The review-loop packet does not parse: " + "; ".join(problems) +
-                ". Hand back one JSON object alone (no fence, no prose around it) with the keys and rules of the "
-                "Return packet section in your instructions.")
-    steps = loop_steps(session_id, agent_id)
-    unreviewed = (status in CLEAN_STATUSES and "reviewer" not in steps
-                  and not claim_no_review(session_id, agent_id))
-    if unreviewed and not was_recorded(session_id, agent_id, "unreviewed"):
-        record(session_id, "unreviewed", agent_id=agent_id)
-        return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
-                "what it finds, then hand back again.")
-    gate_reason = transcript_gate_reason(event, session_id, agent_id, message, packet)
-    if gate_reason:
-        return gate_reason
-
-    unreviewed_fix = (status in CLEAN_STATUSES and "reviewer" in steps
-                      and steps[-1:] == ["coder"])
-    record(session_id, "handback", agent_id=agent_id, status=status, problems=problems, message=message,
-           no_reviewer=unreviewed, unreviewed_fix=unreviewed_fix)
-    return None
-
-
-def command_hook(argv):
-    """Never blocks on its own error."""
-    try:
-        if argv not in (["dispatch"], ["handback"], ["ran"]):
-            print(f"handback hook: unknown kind {' '.join(argv)!r}; want dispatch, handback or ran", file=sys.stderr)
-            return 0
-        reason = handle_hook(json.load(sys.stdin), argv[0])
-        if reason:
-            script_utils.pre_tool_use_deny(reason)
-    except Exception as error:
-        print(f"handback hook: {error}", file=sys.stderr)
-    return 0
-
-
 def command_check():
     message = sys.stdin.read()
     try:
@@ -1114,7 +977,9 @@ def main(argv):
     if argv[:1] == ["check"]:
         return command_check()
     if argv[:1] == ["hook"]:
-        return command_hook(argv[1:])
+        import handback_hook
+
+        return handback_hook.command_hook(argv[1:])
     print(__doc__, file=sys.stderr)
     return 2
 

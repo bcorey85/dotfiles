@@ -20,6 +20,7 @@ import test_code_step as base
 
 # isort: split
 import code_step_core
+import handback_store
 
 FAKE_LOOP_SCRIPT = """import os
 import pathlib
@@ -129,6 +130,9 @@ class ReviewScriptTest(base.CodeStepTest):
         prompt_text = pathlib.Path(options["--prompt-file"]).read_text()
         self.assertTrue(prompt_text.startswith("mode: review-first\ncaller: code\n"), prompt_text)
         self.assertIn(f"repo: {self.repo}\n", prompt_text)
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            stored_dispatch = handback_store.latest(self.SESSION)["dispatch"]
+        self.assertEqual(os.path.realpath(self.repo), stored_dispatch["repo"])
         self.wait_for_script_exit(state["reviewScriptPid"])
 
         out = self.step("resume")

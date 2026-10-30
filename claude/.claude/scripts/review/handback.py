@@ -94,9 +94,6 @@ CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap"
 REVIEW_LOOP = "review-loop"
 NO_REVIEW_MODE = re.compile(r"(?im)^[ \t>*`-]*no-review\b")
 RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
-REPO_LINE = re.compile(r"(?m)^[ \t]*repo:[ \t]*(\S[^\n]*?)[ \t]*$")
-ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])/[^\s`'\"<>|;:,()]+")
-GIT_TIMEOUT_SECONDS = 10
 DEFAULT_GATE = "code-reviewer"
 FENCE_OPEN = "```"
 BLOCKER_TEXT = re.compile(r"\[blocker\]|\bblocker\s*[:=]\s*(?:yes|true)\b", re.I)
@@ -911,11 +908,11 @@ def open_work_reason(open_dispatches):
 
 
 def full_suite_in_ci(transcript, cwd):
-    """True when the repo the loop reviewed (else the repo holding cwd, the process cwd when empty) leaves its full
-    suite to CI."""
+    """True when the repo the loop reviewed (loop_transcript.reviewed_repo from cwd, the process cwd when empty, by
+    the ROOT= and `repo:` lines only: a path the prompt names never exempts) leaves its full suite to CI."""
     import full_check
 
-    repo = script_utils.repo_root(transcript.reviewed_root() or cwd or os.getcwd())
+    repo = transcript.reviewed_repo(cwd or os.getcwd(), follow_first_path=False)
     return repo is not None and full_check.full_suite_runs_in_ci(repo)
 
 
@@ -984,27 +981,7 @@ def handle_dispatch(event, session_id, tool_input):
         prompt = str(tool_input.get("prompt") or "")
         record(session_id, "dispatch", no_review=NO_REVIEW_MODE.search(prompt) is not None,
                resolved_plan_impact=RESOLVED_PLAN_IMPACT.search(prompt) is not None,
-               repo=reviewed_repo(prompt, event.get("cwd")))
-
-
-def reviewed_repo(prompt, cwd):
-    """The top level of the repo a review-loop dispatch reviews: the prompt's `repo:` line, read from cwd, else
-    the first absolute path the prompt names, else cwd. A first path in no work tree falls back to cwd (review-loop.md's
-    `repo:` line, else the first absolute path the prompt names, else the cwd). None when the `repo:` line, or cwd,
-    lies in no work tree."""
-    named = REPO_LINE.search(prompt)
-    if named:
-        named_dir = os.path.expanduser(named.group(1))
-        named_path = os.path.join(cwd or "", named_dir)
-        return script_utils.work_tree_top(named_path, timeout=GIT_TIMEOUT_SECONDS)
-
-    first_path = ABSOLUTE_PATH.search(prompt)
-    if first_path:
-        path_folder = script_utils.nearest_existing_folder(first_path.group(0))
-        path_top = script_utils.work_tree_top(path_folder, timeout=GIT_TIMEOUT_SECONDS)
-        if path_top:
-            return path_top
-    return script_utils.work_tree_top(cwd, timeout=GIT_TIMEOUT_SECONDS)
+               repo=loop_transcript.reviewed_repo(prompt, event.get("cwd")))
 
 
 def handle_hook(event, kind):

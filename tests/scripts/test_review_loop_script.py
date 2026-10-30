@@ -698,50 +698,15 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn(limit_hit, packet["blockers"][0])
         self.assertIn("changed app.py before it died", packet["blockers"][0])
 
-    def test_check_finder_names_the_full_check_when_claude_md_has_no_line(self):
-        found = 'Found it in the Makefile. {"command": "touch full-check-ran.flag"}'
-        completed = self.run_script({"check-finder": [{"result": found}],
-                                     "code-reviewer": [{"result": CLEAN_REVIEW}],
-                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
+    def test_a_repo_with_no_declared_check_is_reviewed_and_its_packet_says_no_full_check_ran(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
                                     claude_md="Run make ci before you push.\n")
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], "converged")
-        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
-        self.assertEqual(self.fake_calls()[0]["key"], "check-finder")
-
-    def test_check_finder_command_holding_braces_still_runs(self):
-        found = json.dumps({"command": 'test -z "${SKIP}" && touch full-check-ran.flag'})
-        completed = self.run_script({"check-finder": [{"result": found}],
-                                     "code-reviewer": [{"result": CLEAN_REVIEW}],
-                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
-                                    claude_md="Run make ci before you push.\n")
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
-
-    def test_check_finder_reply_with_a_later_object_still_reads_the_command(self):
-        found = '{"command": "touch full-check-ran.flag"}\nCI config: {"ci": "github"}'
-        completed = self.run_script({"check-finder": [{"result": found}],
-                                     "code-reviewer": [{"result": CLEAN_REVIEW}],
-                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
-                                    claude_md="Run make ci before you push.\n")
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertTrue((self.repo / "full-check-ran.flag").is_file())
-
-    def test_a_repo_with_no_check_found_is_reviewed_and_its_packet_says_no_full_check_ran(self):
-        no_check = '{"command": null, "reason": "no CI config or task runner"}'
-
-        completed = self.run_script({"check-finder": [{"result": no_check}],
-                                     "code-reviewer": [{"result": CLEAN_REVIEW}]},
-                                    claude_md="No check named here.\n")
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
         self.assertEqual(packet["full_check"], "not run (no check found; the coder's scoped tests stand)")
+        self.assertNotIn("check-finder", [call["key"] for call in self.fake_calls()])
         self.assertIn("code-reviewer", [call["key"] for call in self.fake_calls()])
 
     def test_a_plan_change_ask_maps_to_plan_impact_bare_tagged_or_opening_with_its_file_line(self):
@@ -1048,17 +1013,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertTrue(packet["full_check"].startswith("not run (check-command error: "), packet["full_check"])
         self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
-
-    def test_the_check_finder_runs_each_ci_step_in_the_workflow_default_directory(self):
-        completed = self.run_script({"check-finder": [{"result": '{"command": "true"}'}],
-                                     "code-reviewer": [{"result": CLEAN_REVIEW}],
-                                     "smell-reviewer": [{"result": CLEAN_REVIEW}]},
-                                    claude_md="Run make ci before you push.\n")
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        finder_prompt = self.fake_calls()[0]["prompt"]
-        self.assertIn("defaults.run.working-directory", finder_prompt)
-        self.assertIn("(cd <dir> && <step>)", finder_prompt)
 
     def test_a_failing_full_check_keeps_the_failing_test_name_that_the_tail_cut_off(self):
         failing_line = "FAIL: test_x (app.tests.T)"
@@ -2260,14 +2214,13 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([(row["file"], row["line"]) for row in stop["ask_rows"]], [("app.py", 3)])
 
     def test_prose_that_mentions_a_quality_check_does_not_name_the_check_command(self):
-        completed = self.run_script({"check-finder": [{"result": '{"command": "true"}'}],
-                                     "code-reviewer": [{"result": CLEAN_REVIEW}]},
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
                                     claude_md="Run a quality check before you push; `false` is not it.\n")
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
-        self.assertEqual(self.fake_calls()[0]["key"], "check-finder")
+        self.assertTrue(packet["full_check"].startswith("not run (no check found"), packet["full_check"])
 
     def test_child_calls_do_not_inherit_the_terminal_pane_variables(self):
         for name in ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET"):
@@ -2303,7 +2256,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def assert_every_headless_role_is_named_as_a_child_of(self, label):
         finding = "`app.py:2` the limit is 5, should be 20"
         scenario = {
-            "check-finder": [{"result": '{"command": "true"}'}],
             "code-reviewer": [{"result": "The limit looks wrong."}, {"result": CLEAN_REVIEW}],
             "smell-reviewer": [{"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
             "test-reviewer": [{"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
@@ -2313,10 +2265,10 @@ class ReviewLoopScriptTest(unittest.TestCase):
                       {"result": "Closed the class.", "edits": {"app.py": APP_FIXED + "limit = 7\n"}}],
             "closure": [{"result": '{"receipt": "one site left", "open": ["app.py:4 - same limit - fix it"]}'}],
         }
-        roles = ["check-finder", "review1-code-reviewer", "disposition", "disposition-retry", "coder1",
+        roles = ["review1-code-reviewer", "disposition", "disposition-retry", "coder1",
                  "class-closure", "coder-class"]
 
-        completed = self.run_script(scenario, claude_md="Run make ci before you push.\n")
+        completed = self.run_script(scenario, quality_check="test -f app.py")
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         launched = {call["name"] for call in self.fake_calls()}

@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """full_check.py — the review loop's one full check of a phase, under a time limit.
 
-    full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] [--plan <path> --phase <id>] -- '<command>'
+    full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] [--plan <path> --phase <id>]
+
+Runs only the repo's declared check: the command of the CLAUDE.md `Quality check:` line. A command handed after `--`
+never runs; when it differs from the declared one a note on stderr says so and the declared check runs.
 
 With --plan and --phase, the phase's `Expected red:` lines whose later phase is still open leave their `&&` steps out
 of the command (lib/expected_red.py), and each left-out line prints as `expected red: <command> until Phase <id>`
 after the result line. When they leave out the whole command, nothing runs and the result is
 `not run (expected red until Phase <id>[, <id>...])`.
 
-Runs the command, given as one quoted word or as plain words, through the shell in the repo, output to the log, and
+Runs the command in one shell in the repo, output to the log, and
 prints `full check: <result>` first: `passed`, `unverified (exit 0, no test result shown)` when the command exited 0 but
 printed no test runner's own summary line or ran no test, `failed (exit N)` with the failing step's lines after it
 (on a lint error, each lint error with its file:line, the FAIL and ERROR lines, vitest's leading-space FAIL and \xd7
@@ -17,18 +20,16 @@ lines and the
 the same when the environment could not run the check (no program, a runner that cannot start, no package manifest,
 no test found, a package-manager or engine version mismatch), `not run (check-command error: <line>)` when a step of
 the command stops on a path that does not exist and did not exist at the diff base either (`--base`, HEAD by
-default; a path the diff removed or moved is a failure), `not run (timeout)` when the command runs past the limit, or
-`not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and the command does not equal its
-`Quality check:` command or one of its && steps (the command does not run then, scoped or not),
-`passed (check only; CI runs the full suite)` when the command equals that repo's `Quality check:` command, or is
-&& steps of it, and exits 0 with no runner summary or ran no test, `not run (scoped command: ...)` when the command
-runs tests or lint on named files or tests, or with a changed-files flag, and its text does not equal the CLAUDE.md
-`Quality check:` command (it does not run then), or `not run (unresolved command: ...)` when lib/check_scope cannot
-read what it runs, such as a make call with a NAME=value argument or a target no Makefile names, under the same
-exception. A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">`
-or `summary: not found`. `run` with no command returns `not run (no check found; ...)`. `run`, which the review loop
-calls, refuses a scoped or unresolved command the same way; there a command that is && steps of the `Quality check:`
-command counts as that command. `base_run` skips the refusal, since the head run has applied it.
+default; a path the diff removed or moved is a failure), `not run (timeout)` when the command runs past the limit,
+`not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and names no `Quality check:` command,
+`passed (check only; CI runs the full suite)` when that repo's check exits 0 with no runner summary or ran no test.
+A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">`
+or `summary: not found`. With no `Quality check:` line the result is `not run (no check found; ...)`.
+`base_run` runs the same check on HEAD for the pre-existing comparison and writes no receipt.
+Every run writes the full-check receipt (lib/full_check_receipt.py): a started row before the check starts, one row per
+&& step (none when there is no command to run), and a finished row with the exit and the tree fingerprint after the
+check ran (the `tree:` line). The receipt is satisfied by an exit 0, except when the runner's summary reports failures
+(`failed (exit 0, ...)`); a missing summary does not change it. The gates read the receipt, never this output.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
 (`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
@@ -37,7 +38,8 @@ a `.python-version` file runs the command with the pyenv shims first on PATH. A 
 `No module named X`, for an X that the repo declares as a dependency (requirements*.txt, pyproject.toml, setup.cfg
 or Pipfile, by normalized name), prints `not run (environment gap: No module named 'X')`.
 Right after the result line, `tree: <fingerprint>` names the repo's tree as the check left it (the log left out),
-as lib/reviewed_tree.py computes it; the line is absent when the repo cannot be fingerprinted.
+as lib/reviewed_tree.py computes it; the line is absent when the repo cannot be fingerprinted. Then
+`command: <the command run>` (`command: none` when nothing runs).
 Exit 0, or 1 when the check failed or hit a setup fault; 2 for a usage error, such as a --log path that still holds
 a template placeholder.
 """
@@ -63,6 +65,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import check_output
 import check_scope
 import expected_red
+import full_check_receipt
 import reviewed_tree
 import script_utils
 import shell_command
@@ -79,7 +82,8 @@ from test_run_output import MAX_RUNNER_SUMMARIES, runner_summaries
 from worktree_snapshot import CHANGE_KINDS, changes_since, take
 
 FULL_SUITE_IN_CI = "Full suite: CI"
-LIST_MARKER = re.compile(r"^\s*[-*]\s+")
+# The marker line in any of its markdown forms: bare, a list item, a heading, bold or in backticks, in any case.
+FULL_SUITE_IN_CI_LINE = re.compile(r"^\s*(?:[-*]\s+)?(?:#{1,6}\s+)?[*`]*full suite[*`]*:[*`]*\s*[*`]*ci[*`]*\s*$", re.I)
 # The CLAUDE.md line that names the repo's full check; group 1 is the command.
 QUALITY_CHECK_LINE = re.compile(r"^\s*[-*]?\s*Quality check:\s*`([^`]+)`", re.I | re.M)
 # A log name that still holds a template placeholder: `...`, or a `<branch>` never filled in.
@@ -98,6 +102,8 @@ NOT_RUN_TIMEOUT = "not run (timeout)"
 # package-manager or engine version mismatch.
 SETUP_FAULT = "setup fault"
 NOT_RUN_NO_CHECK = "not run (no check found; the coder's scoped tests stand)"
+# Results an earlier full_check.py gave a command it refused; a packet may still carry them. This script now runs only
+# the declared check and no longer gives them.
 NOT_RUN_SCOPED = "not run (scoped command: it names files or tests, so it is no full check)"
 NOT_RUN_UNRESOLVED = "not run (unresolved command: what it runs cannot be read, so it is no full check)"
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)'?")
@@ -124,13 +130,14 @@ UNTRACKED_DEPENDENCY_FOLDERS = ("node_modules", *VENV_FOLDERS)
 
 
 def full_suite_runs_in_ci(repo):
-    """True when the repo's CLAUDE.md holds the line `Full suite: CI`, alone or as a list item."""
+    """True when the repo's CLAUDE.md holds the line `Full suite: CI`: alone, as a list item, as a heading, in bold or
+    in backticks, in any case."""
     claude_md = pathlib.Path(repo) / "CLAUDE.md"
     if not claude_md.is_file():
         return False
 
     lines = claude_md.read_text(errors="replace").splitlines()
-    return any(LIST_MARKER.sub("", line).strip() == FULL_SUITE_IN_CI for line in lines)
+    return any(FULL_SUITE_IN_CI_LINE.match(line) for line in lines)
 
 
 def configured_check_command(repo):
@@ -326,28 +333,36 @@ def empty_details():
     return {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
 
 
-def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD", declared=None):
+def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD", left_out=(), receipt=True):
     """Run the full check once. Returns (result, the log's last lines, details). The details hold `summaries` (the
     runner's own summary lines), `changed` (tracked files the command rewrote) and `created` (files it created), all
-    lists; both kinds of file are left in place. On a lint failure the lines are the failing step's lines, not the
-    log's last lines. `on_start`, when given, is called with the pid of the process group
-    the check leads. A scoped or unresolved command (it names files or tests, or its scope cannot be read) is not run
-    and returns `NOT_RUN_SCOPED` or `NOT_RUN_UNRESOLVED` unless `declared`: True when the command, before its
-    Expected red steps were left out, equals the `Quality check:` command, or when the caller already passed it
-    through the refusal (`base_run`); None counts the command when it equals that command or is && steps of it."""
-    details = empty_details()
-    configured = configured_check_command(repo)
-    in_ci = full_suite_runs_in_ci(repo)
-    if in_ci and (check_command is None or not is_configured_check(check_command, configured)):
-        return NOT_RUN_CI, "", details
-    if check_command is None:
-        return NOT_RUN_NO_CHECK, "", details
+    lists, both kinds of file left in place. On a lint
+    failure the lines are the failing step's lines, not the log's last lines. `on_start`, when given, is called with
+    the pid of the process group the check leads.
 
-    if declared is None:
-        declared = is_configured_check(check_command, configured)
-    refusal = None if declared else scope_refusal(check_command, repo)
-    if refusal:
-        return refusal, "", details
+    `check_command` is the declared `Quality check:` command, or it with the Expected red steps in `left_out` taken out
+    (phase_check); None when there is none or the entries leave out all of it. The command is run as given: the
+    caller takes it from the declared check. It runs in one shell. With `receipt` the run writes its receipt rows and
+    `details["tree"]` holds the fingerprint of the tree after the check (None without a receipt, outside a git work
+    tree, or when git cannot fingerprint it)."""
+    details = {**empty_details(), "tree": None}
+    in_ci = full_suite_runs_in_ci(repo)
+    run_id = None
+    if receipt:
+        run_id = full_check_receipt.write_started_row(repo, configured_check_command(repo), check_command, left_out)
+
+    def finish(result, tail, exit_code=0, satisfied=False):
+        if run_id:
+            details["tree"] = checked_tree_fingerprint(repo, log)
+            full_check_receipt.write_finished_row(repo, run_id, result, exit_code, result == NOT_RUN_TIMEOUT, in_ci,
+                                                  satisfied, details["tree"], log)
+        return result, tail, details
+
+    if check_command is None:
+        return finish(no_command_result(in_ci, left_out), "", satisfied=True)
+
+    if run_id:
+        write_step_rows(repo, run_id, check_command)
 
     env = pinned_interpreter_env(repo, env)
     before = take(repo)
@@ -363,16 +378,40 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
     details["summaries"] = all_summaries[:MAX_RUNNER_SUMMARIES]
     verdict = check_output.check_verdict(check_command, exit_code, output)
     if verdict == check_output.NOT_RUN:
-        return NOT_RUN_TIMEOUT, tail, details
-    if verdict == check_output.FAILED_EXIT_ZERO:
-        return FAILED_EXIT_ZERO, tail_with_failing_tests(output, tail), details
-    if verdict == check_output.PASSED and all_summaries:
-        return PASSED, tail, details
-    if verdict in (check_output.PASSED, check_output.NO_TESTS_RAN):
-        return (CHECK_ONLY_PASSED if in_ci else UNVERIFIED), tail, details
+        return finish(NOT_RUN_TIMEOUT, tail, None)
+    if exit_code == 0:
+        # An exit 0 satisfies the receipt unless the runner's summary reports failures (a swallowed red suite). No
+        # summary at all leaves the verdict to the exit code.
+        result, result_tail = clean_exit_result(verdict, output, tail, bool(all_summaries), in_ci)
+        return finish(result, result_tail, 0, satisfied=result != FAILED_EXIT_ZERO)
 
     result, failure_lines = failed_run_result(repo, base, exit_code, output, tail)
-    return result, failure_lines, details
+    return finish(result, failure_lines, exit_code)
+
+
+def clean_exit_result(verdict, output, tail, has_summaries, in_ci):
+    """(result, the lines that show it) for a check whose command exited 0, from check_output.check_verdict."""
+    if verdict == check_output.FAILED_EXIT_ZERO:
+        return FAILED_EXIT_ZERO, tail_with_failing_tests(output, tail)
+    if verdict == check_output.PASSED and has_summaries:
+        return PASSED, tail
+    return (CHECK_ONLY_PASSED if in_ci else UNVERIFIED), tail
+
+
+def no_command_result(in_ci, left_out):
+    """The result of a run with no command: the Expected red entries left out all of it, CI runs the suite and the repo
+    names no check, or the repo names no check at all."""
+    if left_out:
+        return expected_red.not_run_result(left_out)
+    return NOT_RUN_CI if in_ci else NOT_RUN_NO_CHECK
+
+
+def write_step_rows(repo, run_id, check_command):
+    """Write one receipt row per && step of the command (the whole command when it joins its steps another way): its
+    text, whether it runs tests and its check scope. A `cd X` step moves the directory the later steps are judged in."""
+    step_scopes = check_scope.and_step_scopes(check_command, pathlib.Path(repo))
+    for index, (step, scope) in enumerate(step_scopes):
+        full_check_receipt.write_step_row(repo, run_id, index, step, check_scope.runs_tests(step), scope)
 
 
 def failed_run_result(repo, base, exit_code, output, tail):
@@ -459,8 +498,7 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
     the repo's folder (an untracked one). The user's
     working tree is never touched. A cache the check writes through a linked folder lands in the user's folder.
     `live_trees`, when given, is a set that holds (repo root, worktree) while the worktree exists, so a signal
-    handler can remove it. The caller must have run `check_command` through `run()` on the head tree first, so the
-    scope refusals have already passed: this run skips them (`declared=True`)."""
+    handler can remove it. The run writes no receipt: only a run on the work tree is one."""
     root = script_utils.repo_root(repo)
     if root is None:
         return None
@@ -495,7 +533,7 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
 
             link_dependency_folders(repo_path, base_repo)
             result, _lines, _details = run(base_repo, check_command, log, timeout, env=env, on_start=on_start,
-                                           declared=True)
+                                           receipt=False)
         finally:
             remove_worktree(root, tree)
             if live_trees is not None:
@@ -577,48 +615,23 @@ def phase_check(repo, check_command, plan, phase):
     return expected_red.check_for_phase(check_command, plan_lines, phase)
 
 
-def scope_refusal(check_command, repo):
-    """The not-run result for a check command that is no full check: one that runs on named files or tests, or one
-    whose scope cannot be read. None for a whole-suite command."""
-    scope = check_scope.command_check_scope(check_command, repo)
-    if scope == "targeted":
-        return NOT_RUN_SCOPED
-    if scope == "unresolved":
-        return NOT_RUN_UNRESOLVED
-    return None
-
-
 def checked_tree_fingerprint(repo, log):
     """The fingerprint (lib/reviewed_tree.py) of the repo's tree as the check left it, the log file left out, or
     None when the repo is no git work tree or git cannot fingerprint it (the result then carries no tree line)."""
-    top = script_utils.repo_root(repo, timeout=reviewed_tree.GIT_TIMEOUT_SECONDS)
-    if top is None:
-        return None
-
-    top = top.resolve()
-    log_path = pathlib.Path(log).resolve()
-    exclude_rel = log_path.relative_to(top).as_posix() if log_path.is_relative_to(top) else None
-
-    found = reviewed_tree.fingerprint_base(top, timeout=reviewed_tree.GIT_TIMEOUT_SECONDS)
-    if found is None:
-        print("full_check: tree not fingerprinted: git could not name the base tree", file=sys.stderr)
-        return None
-
-    _, base = found
     try:
-        return reviewed_tree.tree_fingerprint(top, base=base, exclude_rel=exclude_rel,
-                                              timeout=reviewed_tree.GIT_TIMEOUT_SECONDS)
+        return reviewed_tree.work_tree_fingerprint(repo, log)
     except reviewed_tree.TreeFingerprintError as error:
         print(f"full_check: tree not fingerprinted: {error}", file=sys.stderr)
         return None
 
 
-def print_result(result, details, left_out, tree=None):
-    """The result lines: the result, the tree the check covered, each Expected red entry left out, the summary and
-    the files the check touched."""
+def print_result(result, details, left_out, tree=None, command=None):
+    """The result lines: the result, the tree the check covered, the command run, each Expected red entry left out,
+    the summary and the files the check touched."""
     print(f"full check: {result}")
     if tree:
         print(f"tree: {tree}")
+    print(f"command: {command or 'none'}")
     for entry in left_out:
         print("expected red: " + expected_red.entry_text(entry))
     summary = summary_text(result, details["summaries"])
@@ -640,33 +653,27 @@ def main(argv):
     parser.add_argument("--base", default="HEAD")
     parser.add_argument("--plan")
     parser.add_argument("--phase")
-    if "--" not in argv:
-        parser.error("no command after --")
-
-    separator = argv.index("--")
+    separator = argv.index("--") if "--" in argv else len(argv)
     args = parser.parse_args(argv[:separator])
     if UNFILLED_LOG_NAME.search(pathlib.Path(args.log).name):
         parser.error(f"--log name {pathlib.Path(args.log).name!r} holds an unfilled placeholder (`...`, `<` or `>`)")
     if bool(args.plan) != bool(args.phase):
         parser.error("--plan and --phase go together")
 
+    declared = configured_check_command(args.repo)
     command_words = argv[separator + 1:]
-    check_command = shlex.join(command_words) if len(command_words) > 1 else "".join(command_words)
-    if not check_command:
-        parser.error("no command after --")
+    handed_command = shlex.join(command_words) if len(command_words) > 1 else "".join(command_words)
+    if handed_command and handed_command != declared:
+        note = f"full check: the handed command is not run; the declared check is: {declared or 'none'}"
+        print(note, file=sys.stderr)
 
     try:
-        phase_command, left_out = phase_check(args.repo, check_command, args.plan, args.phase)
+        phase_command, left_out = phase_check(args.repo, declared, args.plan, args.phase)
     except OSError as error:
         parser.error(f"--plan {args.plan}: {error.strerror}")
 
-    declared = check_command == configured_check_command(args.repo)
-    if phase_command is None:
-        result, tail, details = expected_red.not_run_result(left_out), "", empty_details()
-    else:
-        result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base,
-                                    declared=declared)
-    print_result(result, details, left_out, checked_tree_fingerprint(args.repo, args.log))
+    result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base, left_out=left_out)
+    print_result(result, details, left_out, details["tree"], phase_command)
 
     if is_failure(result) or is_setup_fault_result(result):
         print(tail)

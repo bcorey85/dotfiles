@@ -32,13 +32,24 @@ class FullCheckTest(unittest.TestCase):
         self.repo = pathlib.Path(scratch.name)
         self.log = self.repo / "review-gate.log"
 
+    def declare_check(self, command, claude_md=None):
+        # The runner runs only the repo's declared Quality check. A command with a backtick cannot sit in the line, so
+        # it goes in a script the line runs.
+        # With command None, or a claude_md that already has a Quality check line, no line is added.
+        claude_md = claude_md or ""
+        if command is not None and "Quality check:" not in claude_md:
+            if "`" in command:
+                (self.repo / "declared-check.sh").write_text(command + "\n")
+                command = "sh declared-check.sh"
+            claude_md += f"\nQuality check: `{command}`\n"
+        (self.repo / "CLAUDE.md").write_text(claude_md)
+
     def check(self, command, claude_md=None, timeout=None, env=None):
-        if claude_md is not None:
-            (self.repo / "CLAUDE.md").write_text(claude_md)
+        self.declare_check(command, claude_md)
         argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log)]
         if timeout is not None:
             argv += ["--timeout", str(timeout)]
-        return subprocess.run([*argv, "--", command], capture_output=True, text=True, timeout=60, env=env)
+        return subprocess.run(argv, capture_output=True, text=True, timeout=60, env=env)
 
     def pyenv_root_with_a_python3_shim(self):
         pyenv_root = self.repo / "pyenv-root"
@@ -129,7 +140,8 @@ class FullCheckTest(unittest.TestCase):
         completed = self.check(PASSING_SUITE)
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.splitlines(), ["full check: passed", "summary: 3 passed in 0.1s"])
+        self.assertEqual(completed.stdout.splitlines(),
+                         ["full check: passed", f"command: {PASSING_SUITE}", "summary: 3 passed in 0.1s"])
         self.assertEqual(self.log.read_text(), "3 passed in 0.1s\n")
 
     def test_an_exit_zero_with_no_runner_summary_is_unverified_not_passed(self):
@@ -137,14 +149,15 @@ class FullCheckTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.splitlines(),
-                         ["full check: unverified (exit 0, no test result shown)", "summary: not found"])
+                         ["full check: unverified (exit 0, no test result shown)",
+                          "command: echo 496 tests registered", "summary: not found"])
         self.assertTrue(full_check.is_unverified("unverified (exit 0, no test result shown)"))
         self.assertFalse(full_check.is_unverified("passed"))
 
     def test_a_chained_command_prints_each_summary_joined_with_a_bar(self):
         completed = self.check("echo '3 passed in 0.1s'; echo '  8 passing (2ms)'")
 
-        self.assertEqual(completed.stdout.splitlines()[1], "summary: 3 passed in 0.1s | 8 passing (2ms)")
+        self.assertEqual(completed.stdout.splitlines()[2], "summary: 3 passed in 0.1s | 8 passing (2ms)")
 
     def test_a_log_name_with_an_unfilled_placeholder_is_a_usage_error(self):
         for name in ("review-gate-....log", "review-gate-<branch>.log", "review-gate->x.log"):
@@ -160,7 +173,9 @@ class FullCheckTest(unittest.TestCase):
         completed = self.check("echo the rounding test failed; exit 3")
 
         self.assertEqual(completed.returncode, 1)
-        self.assertEqual(completed.stdout.splitlines(), ["full check: failed (exit 3)", "the rounding test failed"])
+        self.assertEqual(completed.stdout.splitlines(),
+                         ["full check: failed (exit 3)", "command: echo the rounding test failed; exit 3",
+                          "the rounding test failed"])
 
     def test_a_failing_lint_step_shows_its_error_lines_not_the_passing_test_tail(self):
         stand_in = ("printf 'C901 `command_asks_done` is too complex (12 > 10)\\n  --> app.py:12:5\\n'; "
@@ -170,7 +185,7 @@ class FullCheckTest(unittest.TestCase):
         completed = self.check(stand_in)
 
         self.assertEqual(completed.returncode, 1)
-        self.assertEqual(completed.stdout.splitlines(), ["full check: failed (exit 1)",
+        self.assertEqual(completed.stdout.splitlines(), ["full check: failed (exit 1)", "command: sh declared-check.sh",
                                                          "C901 `command_asks_done` is too complex (12 > 10)",
                                                          "  --> app.py:12:5", "FAILED: lint"])
 
@@ -218,8 +233,7 @@ class FullCheckTest(unittest.TestCase):
         failing_test = "FAILED tests/test_totals.py::test_rounding"
         completed = self.check(f"echo '{failing_test}'; seq 1 100; exit 1")
 
-        self.assertEqual(completed.stdout.splitlines()[:3],
-                         ["full check: failed (exit 1)", "Failing tests:", failing_test])
+        self.assertEqual(completed.stdout.splitlines()[2:4], ["Failing tests:", failing_test])
 
     def test_a_check_past_its_limit_is_not_run_and_leaves_no_process_behind(self):
         pid_file = self.repo / "sleeper.pid"
@@ -233,13 +247,27 @@ class FullCheckTest(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.kill(sleeper, 0)
 
-    def test_the_full_suite_in_ci_line_skips_the_check(self):
-        marker = self.repo / "ran"
-
-        completed = self.check(f"touch {marker}", claude_md="# Repo\n\n- Full suite: CI\n")
+    def test_the_full_suite_in_ci_line_with_no_declared_check_runs_nothing(self):
+        completed = self.check(None, claude_md="# Repo\n\n- Full suite: CI\n")
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
+
+    def test_a_repo_that_declares_no_check_runs_nothing(self):
+        completed = self.check(None, claude_md="# Repo\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.splitlines()[0], f"full check: {full_check.NOT_RUN_NO_CHECK}")
+
+    def test_a_handed_command_that_differs_from_the_declared_check_is_ignored(self):
+        marker = self.repo / "ran"
+        self.declare_check(PASSING_SUITE)
+        argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log), "--", f"touch {marker}"]
+
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
+        self.assertIn("the handed command is not run", completed.stderr)
         self.assertFalse(marker.exists())
 
     def test_the_declared_check_of_a_repo_whose_full_suite_runs_in_ci_runs_as_a_check_with_no_tests(self):
@@ -249,54 +277,15 @@ class FullCheckTest(unittest.TestCase):
         completed = self.check(declared, claude_md=f"- Full suite: CI\n- Quality check: `{declared}`\n")
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(["full check: passed (check only; CI runs the full suite)"], completed.stdout.splitlines())
+        self.assertEqual(["full check: passed (check only; CI runs the full suite)", f"command: {declared}"],
+                         completed.stdout.splitlines())
         self.assertTrue(marker.exists())
-
-    def test_a_trimmed_and_step_of_the_declared_check_of_a_repo_whose_full_suite_runs_in_ci_runs(self):
-        completed = self.check("echo two", claude_md="- Full suite: CI\n- Quality check: `echo one && echo two`\n")
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(["full check: passed (check only; CI runs the full suite)"], completed.stdout.splitlines())
-
-    def test_a_step_missing_from_the_declared_check_of_a_repo_whose_full_suite_runs_in_ci_is_not_run(self):
-        completed = self.check("echo three", claude_md="- Full suite: CI\n- Quality check: `echo one && echo two`\n")
-
-        self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
 
     def test_a_failing_declared_check_of_a_repo_whose_full_suite_runs_in_ci_fails(self):
         completed = self.check("exit 3", claude_md="- Full suite: CI\n- Quality check: `exit 3`\n")
 
         self.assertEqual(completed.returncode, 1, completed.stderr)
         self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 3)")
-
-    def test_a_command_scoped_to_files_or_tests_is_not_run_and_a_whole_suite_command_is(self):
-        marker = self.repo / "ran"
-
-        for command in ("pytest tests/test_a.py", "npx jest src/a.test.ts", "npm test -- -t login",
-                        "python manage.py test app.tests.TestA"):
-            with self.subTest(command=command):
-                completed = self.check(f"touch {marker}; {command}")
-                self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
-                self.assertFalse(marker.exists())
-
-        unscoped = self.check(PASSING_SUITE)
-        self.assertEqual(unscoped.stdout.splitlines()[0], "full check: passed")
-
-        with self.subTest(command="pytest tests/test_a.py", repo="CI"):
-            in_ci = self.check("pytest tests/test_a.py", claude_md="# Repo\n\n- Full suite: CI\n")
-            self.assertEqual(in_ci.stdout.splitlines()[0], "full check: not run (CI)")
-
-    def test_run_refuses_a_scoped_or_unresolved_command_as_main_does(self):
-        marker = self.repo / "ran"
-        (self.repo / "Makefile").write_text("test:\n\tpytest\n")
-
-        for command, refusal in ((f"touch {marker}; pytest tests/test_a.py", "not run (scoped command"),
-                                 (f"touch {marker}; make missing", "not run (unresolved command")):
-            with self.subTest(command=command):
-                result, _tail, _details = full_check.run(self.repo, command, self.log, 60)
-
-                self.assertTrue(result.startswith(refusal), result)
-                self.assertFalse(marker.exists())
 
     def test_run_runs_the_declared_check_with_its_expected_red_steps_left_out(self):
         marker = self.repo / "ran"
@@ -312,91 +301,31 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(result, full_check.PASSED)
         self.assertTrue(marker.exists())
 
-    def test_a_ci_repo_refuses_a_subset_of_its_quality_check_steps_scoped_to_tests(self):
-        marker = self.repo / "ran"
-        claude_md = "- Full suite: CI\n- Quality check: `pytest tests/unit && pytest tests/integration`\n"
-
-        completed = self.check(f"touch {marker}; pytest tests/unit", claude_md=claude_md)
-        self.assertTrue(completed.stdout.startswith("full check: not run (CI)"), completed.stdout)
-
-        completed = self.check("pytest tests/unit", claude_md=claude_md)
-        self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
-        self.assertFalse(marker.exists())
-
-    def test_a_runner_that_check_scope_reads_by_its_flags_is_not_run_on_named_files_or_tests(self):
-        marker = self.repo / "ran"
-
-        for command in ("cargo test tests/foo.rs",
-                        "cargo test --manifest-path /r/a/Cargo.toml -- --exact parser::tests::empty",
-                        "cargo test -p core",
-                        "cargo test --test=integration",
-                        "cargo test --bin=app",
-                        "cargo test --examples",
-                        "go test -run TestX ./...",
-                        "go test ./pkg/...",
-                        "bats -p test/login.bats",
-                        "bundle exec rspec spec/models/user_spec.rb",
-                        "phpunit --filter testLogin"):
-            with self.subTest(command=command):
-                completed = self.check(f"touch {marker}; {command}")
-
-                self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
-                self.assertFalse(marker.exists())
-
-    def test_a_make_target_whose_recipe_runs_a_scoped_runner_is_not_run(self):
-        marker = self.repo / "ran"
-        (self.repo / "Makefile").write_text("test:\n\tgo test -run TestX ./...\n")
-
-        completed = self.check(f"touch {marker}; make test")
-
-        self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
-        self.assertFalse(marker.exists())
-
-    def test_a_command_whose_scope_check_scope_cannot_read_is_not_run(self):
-        marker = self.repo / "ran"
-        (self.repo / "Makefile").write_text("test:\n\tpytest\n")
-
-        for command in ("make test TESTS=tests/a.py", "make missing"):
-            with self.subTest(command=command):
-                completed = self.check(f"touch {marker}; {command}")
-
-                self.assertTrue(completed.stdout.startswith("full check: not run (unresolved command"),
-                                completed.stdout)
-                self.assertFalse(marker.exists())
-
-    def test_run_refuses_a_scoped_command_for_a_caller_that_does_not_go_through_main(self):
-        marker = self.repo / "ran"
-
-        result, tail, details = full_check.run(self.repo, f"touch {marker}; cargo test -p core", self.log, 60)
-
-        self.assertEqual(result, full_check.NOT_RUN_SCOPED)
-        self.assertEqual(tail, "")
-        self.assertEqual(details, full_check.empty_details())
-        self.assertFalse(marker.exists())
-        self.assertFalse(self.log.exists())
-
-    def test_run_still_runs_the_declared_command_when_it_names_a_tests_folder(self):
-        marker = self.repo / "ran"
-        declared = f"touch {marker}; pytest tests/"
-        (self.repo / "CLAUDE.md").write_text(f"Quality check: `{declared}`\n")
-
-        result, _, _ = full_check.run(self.repo, declared, self.log, 60)
-
-        self.assertNotEqual(result, full_check.NOT_RUN_SCOPED)
-        self.assertTrue(marker.exists())
-
     def test_the_command_the_claude_md_declares_runs_even_when_it_names_a_tests_folder(self):
         marker = self.repo / "ran"
+        (self.repo / "tests").mkdir()
+        fake_pytest = self.repo / "bin" / "pytest"
+        fake_pytest.parent.mkdir()
+        fake_pytest.write_text("#!/bin/sh\necho '3 passed in 0.1s'\n")
+        fake_pytest.chmod(0o755)
+        env = {**os.environ, "PATH": f"{fake_pytest.parent}{os.pathsep}{os.environ['PATH']}"}
         declared = f"touch {marker}; pytest tests/"
 
-        completed = self.check(declared, claude_md=f"Quality check: `{declared}`\n")
+        completed = self.check(declared, claude_md=f"Quality check: `{declared}`\n", env=env)
 
-        self.assertFalse(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
         self.assertTrue(marker.exists())
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
+
+    def test_a_passing_unittest_suite_with_an_expected_failure_is_a_pass(self):
+        suite = "printf 'Ran 4 tests in 0.1s\\n\\nOK (expected failures=1)\\n'"
+
+        completed = self.check(suite)
+
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
 
     def test_a_missing_or_misspelled_full_suite_line_still_runs_the_check(self):
-        for line in ("Quality check: `make test`", "Full suite: ci", "Full-suite: CI", "Full suite CI",
-                     "Full suite: CI runs it"):
+        for line in ("Full suite: ci", "Full-suite: CI", "Full suite CI", "Full suite: CI runs it"):
             with self.subTest(line=line):
                 completed = self.check(PASSING_SUITE, claude_md=line + "\n")
 
@@ -427,6 +356,7 @@ class FullCheckTest(unittest.TestCase):
     def test_exit_zero_summaries_with_no_failures_stay_passed(self):
         cases = {
             "all passed": "echo '=== 4 passed in 0.1s ==='",
+            "pytest xfailed": "echo '=== 4 passed, 1 xfailed in 0.1s ==='",
             "cargo zero failed": "echo 'test result: ok. 5 passed; 0 failed; 0 ignored'",
             "mocha": "printf '  3 passing (9ms)\\n'",
             "bun": "printf ' 3 pass\\n 0 fail\\n'",
@@ -458,12 +388,13 @@ class FullCheckSideEffectsTest(unittest.TestCase):
         subprocess.run(["git", "commit", "-q", "-m", "files"], cwd=self.repo, check=True)
 
     def check(self, command, timeout=60):
+        (self.repo / "CLAUDE.md").write_text(f"Quality check: `{command}`\n")
         argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log), "--timeout", str(timeout)]
-        return subprocess.run([*argv, "--", command], capture_output=True, text=True, timeout=60)
+        return subprocess.run(argv, capture_output=True, text=True, timeout=60)
 
     def result_lines(self, completed):
-        """The result lines without the tree line, which the check's own changes make vary."""
-        return [line for line in completed.stdout.splitlines() if not line.startswith("tree: ")]
+        """The result lines without the tree line, which the check's own changes make vary, and the command line."""
+        return [line for line in completed.stdout.splitlines() if not line.startswith(("tree: ", "command: "))]
 
     def test_the_result_names_the_tree_the_check_left_as_the_reviewed_tree_fingerprint(self):
         before = reviewed_tree.tree_fingerprint(self.repo, exclude_rel=None)
@@ -928,9 +859,10 @@ class PhaseExpectedRedTest(unittest.TestCase):
         (self.repo / "CLAUDE.md").write_text(f"Quality check: `{self.QUALITY_CHECK}`\n")
 
     def check(self, *plan_args, expected_red="exit 1", command=QUALITY_CHECK):
+        (self.repo / "CLAUDE.md").write_text(f"Quality check: `{command}`\n")
         (self.repo / "plan.md").write_text(self.PLAN.format(command=expected_red))
         argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log), *plan_args]
-        return subprocess.run([*argv, "--", command], capture_output=True, text=True, timeout=60)
+        return subprocess.run(argv, capture_output=True, text=True, timeout=60)
 
     def test_the_phase_runs_its_check_without_the_expected_red_step(self):
         completed = self.check("--plan", "plan.md", "--phase", "1")
@@ -946,13 +878,6 @@ class PhaseExpectedRedTest(unittest.TestCase):
 
         self.assertEqual(0, completed.returncode, completed.stdout)
         self.assertEqual("full check: not run (expected red until Phase 2)", completed.stdout.splitlines()[0])
-        self.assertFalse(self.log.exists())
-
-    def test_an_undeclared_scoped_step_left_after_the_expected_red_cut_is_refused(self):
-        completed = self.check("--plan", "plan.md", "--phase", "1", command="pytest tests/test_a.py && exit 1")
-
-        self.assertTrue(completed.stdout.startswith("full check: not run (scoped command"), completed.stdout)
-        self.assertIn("expected red: `exit 1` until Phase 2", completed.stdout)
         self.assertFalse(self.log.exists())
 
     def test_a_plan_without_its_phase_or_an_unreadable_plan_is_refused(self):

@@ -17,6 +17,10 @@ Transform the task document into "document what exists" questions — the resear
 - A task directory under `docs/plans/` (or a slug to create one)
 - Optionally: flagged questions with intent-free rewrites from a leak-check round. When present, repair the existing questions file instead of regenerating it: replace each flagged question's whole line with the Edit tool. A dispatch that says to apply the rewrites word for word → put in each rewrite exactly as given.
 
+Change a file only with Edit or Write: never `sed -i`, `perl -pi` or a shell
+redirect. Each one skips the Write and Edit hooks, and a hook that blocks it
+costs a round trip.
+
 ## Process
 
 1. Create the task directory if it doesn't exist.

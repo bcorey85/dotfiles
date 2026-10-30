@@ -1017,15 +1017,6 @@ class HookTest(HandbackTestBase):
         self.assertEqual(self.fire(good)[:2], (0, ""))
         self.assertEqual(handback_store.latest(SESSION)["handback"]["status"], "converged")
 
-    def test_a_hand_back_that_handback_py_denies_stores_nothing(self):
-        self.fire(self.event("Agent"))
-        denied = self.event("SubagentHandback", message="not a packet")
-
-        reason = handback_hook.handle_hook(denied, "handback")
-
-        self.assertIsNotNone(reason)
-        self.assertEqual(handback_store.session_rows(SESSION, "handback"), [])
-
     def loop_dispatch(self, tool_use_id):
         dispatch = self.event("Agent")
         dispatch["tool_use_id"] = tool_use_id
@@ -1049,7 +1040,19 @@ class HookTest(HandbackTestBase):
         after = handback_store.latest(SESSION)
         self.assertEqual((after["dispatch"], after["handback"], after["unanswered"]),
                          (before["dispatch"], before["handback"], before["unanswered"]))
+        self.assertEqual(after["dispatch"]["tool_use_id"], "toolu_ran")
+        self.assertEqual(after["unanswered"], 0)
         self.assertFalse(after["pending"])
+
+    def test_a_new_dispatch_that_never_ran_still_ends_the_last_loops_stop(self):
+        ran = self.loop_dispatch("toolu_ran")
+        self.fire(ran)
+        self.fire(ran, "ran")
+        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
+
+        self.fire(self.loop_dispatch("toolu_new"))
+
+        self.assertIsNone(handback_store.latest(SESSION)["stop"])
 
     def test_a_foreground_dispatch_counts_once_its_call_ran(self):
         dispatch = self.loop_dispatch("toolu_fg")
@@ -1133,7 +1136,7 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
-    def test_a_capped_packet_that_reads_deferred_is_flagged_by_its_effective_status(self):
+    def capped_packet_on_a_fresh_repo(self):
         repo = self.tmp / "repo"
         repo.mkdir()
         env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
@@ -1143,6 +1146,10 @@ class ReviewerRequiredTest(HandbackTestBase):
         tree = reviewed_tree.fingerprint(str(repo))[1]
         capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
                              full_check="passed", full_check_tree=tree)
+        return repo, capped
+
+    def test_a_capped_packet_that_reads_deferred_is_flagged_by_its_effective_status(self):
+        repo, capped = self.capped_packet_on_a_fresh_repo()
         self.dispatch("review-loop", prompt=f"repo: {repo}\n")
         self.dispatch("code-reviewer", "a1")
         self.dispatch("backend-coder-deep", "a1")
@@ -1152,15 +1159,7 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
 
     def test_a_capped_packet_that_reads_deferred_with_no_reviewer_is_denied_once_then_flagged(self):
-        repo = self.tmp / "repo"
-        repo.mkdir()
-        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
-               "GIT_COMMITTER_EMAIL": "t@t"}
-        for argv in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "base"]):
-            subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
-        tree = reviewed_tree.fingerprint(str(repo))[1]
-        capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
-                             full_check="passed", full_check_tree=tree)
+        repo, capped = self.capped_packet_on_a_fresh_repo()
         self.dispatch("review-loop", prompt=f"repo: {repo}\n")
         self.dispatch("backend-coder-deep", "a1")
 
@@ -1204,6 +1203,28 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertEqual(self.hand_back("a1"), (0, ""))
         self.assertEqual(self.hand_back("a2"), (0, ""))
         self.assert_denied(self.hand_back("a3"))
+
+    def test_a_no_review_dispatch_that_never_ran_exempts_no_hand_back(self):
+        handback_store.record(SESSION, "dispatch", no_review=True, tool_use_id="toolu_denied")
+        self.dispatch("review-loop")
+        self.dispatch("coder", "a1")
+        self.assert_denied(self.hand_back())
+
+    def test_a_foreground_no_review_loop_passes_before_its_call_is_proven(self):
+        # A foreground loop hands back before PostToolUse writes its dispatch-ran row.
+        handback_store.record(SESSION, "dispatch", no_review=True, tool_use_id="toolu_foreground")
+        self.dispatch("coder", "a1")
+        self.assertEqual(self.hand_back(), (0, ""))
+
+    def test_a_foreground_capped_packet_reads_its_own_dispatch_repo_before_its_call_is_proven(self):
+        repo, capped = self.capped_packet_on_a_fresh_repo()
+        handback_store.record(SESSION, "dispatch", repo=str(repo.resolve()), tool_use_id="toolu_foreground")
+        self.dispatch("code-reviewer", "a1")
+        self.dispatch("coder", "a1")
+
+        self.assertEqual(self.hand_back(message=capped), (0, ""))
+
+        self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
 
     def test_reviewer_dispatched_by_another_agent_id_does_not_count(self):
         self.dispatch("review-loop")

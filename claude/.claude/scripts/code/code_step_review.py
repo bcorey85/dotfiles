@@ -75,7 +75,8 @@ from code_step_report import change_line, coder_message_without_gate_stamp
 from code_step_review_stops import is_capped_review, left_findings_open, stop_on_review_status
 from code_step_usage import DECIDE_COMMAND
 from script_utils import git_output, run_command
-from source_paths import is_counted_source
+from source_paths import counts_toward_size, is_large_change
+from worktree_snapshot import working_tree_changes
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
@@ -487,40 +488,23 @@ def handoff_block(repo_dir, state):
     return "\n".join(lines)
 
 
-SMALL_FOLLOW_UP_LINES = 40
-
-
 def change_snapshot(repo_dir):
-    # Added lines per file (tracked diff against HEAD, and the line count of each untracked file) and the files that
-    # are new, so the change a coder makes is the difference between two snapshots.
-    added = {}
-    new_files = set()
-    for row in (git_output(repo_dir, "diff", "--numstat", "HEAD") or "").split("\n"):
-        columns = row.split("\t")
-        if len(columns) == 3:
-            added[columns[2]] = int(columns[0]) if columns[0].isdigit() else 0
-    for row in (git_output(repo_dir, "diff", "--name-status", "HEAD") or "").split("\n"):
-        columns = row.split("\t")
-        if len(columns) == 2 and columns[0] == "A":
-            new_files.add(columns[1])
-    untracked = (git_output(repo_dir, "ls-files", "--others", "--exclude-standard") or "").split("\n")
-    for name in untracked:
-        if not name:
-            continue
-        new_files.add(name)
-        path = repo_dir / name
-        added[name] = path.read_bytes().count(b"\n") if path.is_file() else 0
-    return {"added": added, "newFiles": sorted(new_files)}
+    # Added lines per file and the files that are new (untracked, or added to the index), so the change a coder makes
+    # is the difference between two snapshots.
+    changes = working_tree_changes(repo_dir)
+    added = {name: change["added"] for name, change in changes.items()}
+    new_files = sorted(name for name, change in changes.items() if change["new"])
+    return {"added": added, "newFiles": new_files}
 
 
 def follow_up_is_small(before, after):
-    # True when the coder that ran between the two snapshots added under SMALL_FOLLOW_UP_LINES lines to counted
-    # non-test files and created no new non-test source file.
+    # True when the coder that ran between the two snapshots added under LARGE_ADDED_LINES lines to files that count
+    # toward the size bar and created no new counted source file.
     added_lines = sum(max(count - before["added"].get(name, 0), 0) for name, count in after["added"].items()
-                     if is_counted_source(name))
+                     if counts_toward_size(name))
     created_source = [name for name in after["newFiles"] if name not in before["newFiles"]
-                     and name not in before["added"] and is_counted_source(name)]
-    return added_lines < SMALL_FOLLOW_UP_LINES and not created_source
+                     and name not in before["added"]]
+    return not is_large_change(added_lines, created_source)
 
 
 def handoff_report(repo_dir, state):

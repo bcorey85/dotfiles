@@ -57,7 +57,8 @@ The last three credits go to the repo each `git commit` in the command runs in: 
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
 dir or work-tree option or variable, quotes and escapes resolved) or holds a `$` or backtick outside a single-quoted
 string, a comment or a double-quoted quoted-heredoc message earns no credit. So does a command with a step that is
-not a plain `git` command but has a word holding `commit` (`env -C <dir> git commit`, `time git commit`).
+not a plain `git` command but has a word holding `commit` (`env -C <dir> git commit`, `time git commit`). When
+every repo the command commits in has credit and only that form lost it, the denial names the form.
 
 State: ~/.claude/state/review-gate/<session>, one line per record: `clean` (written by
 code_step_boundary.mark_review_gate_clean; earlier lines no longer count), or a JSON event
@@ -564,11 +565,33 @@ def credit_repo_dirs(command, cwd):
     source, ., or a git dir or work-tree option or variable, quotes and escapes resolved, `c\\d` and `'c'd` counting
     as `cd`) or holds a `$` or backtick outside the spans that run nothing earns no credit. Any other command commits
     in the directories commit_repo_dirs reads."""
-    command_words = resolved_command_words(command)
-    changes_folder = CHANGES_FOLDER.search(command) or any(words[0] in FOLDER_COMMAND_WORDS for words in command_words)
-    if changes_folder or has_substitution_text(command):
+    if credit_losing_form(command):
         return [None]
     return commit_repo_dirs(command, cwd)
+
+
+def credit_losing_form(command):
+    """The part of the command that earns it no credit: the folder or repo change it holds, or `$` for a `$` or
+    backtick outside the spans that run nothing. None when the command keeps its credit."""
+    folder_change = CHANGES_FOLDER.search(command)
+    if folder_change:
+        return folder_change.group()
+
+    command_words = resolved_command_words(command)
+    folder_word = next((words[0] for words in command_words if words[0] in FOLDER_COMMAND_WORDS), None)
+    if folder_word:
+        return folder_word
+    return "$" if has_substitution_text(command) else None
+
+
+def cd_leaves_repo(command, cwd):
+    """True when a `cd` or `pushd` in the command goes to a directory in a different work tree than the cwd's."""
+    cwd_top = script_utils.work_tree_top(cwd, timeout=GIT_TIMEOUT_SECONDS)
+    for target in re.findall(r"(?<![\w./-])(?:cd|pushd)\s+(?:--\s+)?([^\s;&|()<>]+)", command):
+        target_dir = os.path.join(cwd, os.path.expanduser(target.strip("'\"")))
+        if os.path.isdir(target_dir) and script_utils.work_tree_top(target_dir, GIT_TIMEOUT_SECONDS) != cwd_top:
+            return True
+    return False
 
 
 def commit_repo_dirs(command, cwd):
@@ -666,6 +689,17 @@ def check_commit(command, root, state_file, session):
         return
     if ships_only_notes(command, cwd):
         return
+
+    lost_form = credit_losing_form(command)
+    commit_dirs = commit_repo_dirs(command, cwd)
+    commit_dirs_earn_credit = all(earns_credit(repo_dir, dirty_at, session) for repo_dir in commit_dirs)
+    if lost_form and not cd_leaves_repo(command, cwd) and commit_dirs_earn_credit:
+        raise DenyError(
+            f"[review-commit-gate] A converged /review covers this repo, but a commit command that holds `{lost_form}` "
+            "earns no review credit. Do not run /review again: rerun the commit in its own Bash call as a plain "
+            "`git commit` from the repo, or `git -C <repo> commit`, with no `cd`, `pushd`, `eval`, `source`, `.`, "
+            "`$` or backtick."
+        )
     raise DenyError(
         "[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
         "the user: invoke the /review skill now on the coder work, then commit after it converges. If the "

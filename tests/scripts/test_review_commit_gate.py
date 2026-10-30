@@ -738,6 +738,30 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_silent(self.dispatch())
         self.assert_commit_denied(self.commit(f"git --git-dir={self.repo}/.git commit -a -m x", cwd=self.tmp))
 
+    def test_a_folder_change_or_substitution_in_a_reviewed_repo_is_denied_naming_that_form(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        self.assert_silent(self.dispatch())
+        for command, lost_form in ((f"cd {self.repo} && git commit -a -m x", "cd"),
+                                   (f"pushd {self.repo} && git commit -a -m x", "pushd"),
+                                   ("eval x && git commit -a -m x", "eval"),
+                                   ('git commit -a -m "$(date)"', "$")):
+            with self.subTest(command):
+                self.assert_denies(self.commit(command), f"a commit command that holds `{lost_form}` earns no "
+                                                         "review credit. Do not run /review again")
+
+    def test_a_cd_into_an_unreviewed_other_repo_keeps_the_review_denial(self):
+        other = self.make_repo("other")
+        (other / "base.py").write_text("changed\n")
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        self.assert_silent(self.dispatch())
+        self.assert_commit_denied(self.commit(f"cd {other} && git commit -a -m x"))
+
+    def test_a_folder_change_in_an_unreviewed_repo_keeps_the_review_denial(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.assert_commit_denied(self.commit(f"cd {self.repo} && git commit -a -m x"))
+
     def test_a_commit_that_concludes_a_merge_passes(self):
         self.git(self.repo, "checkout", "-q", "-b", "side")
         (self.repo / "side.py").write_text("side\n")
@@ -910,7 +934,7 @@ class ReviewedWorkCommitTest(GateCase):
                         "git `echo -C x` commit -a -m x; git commit -a -m y",
                         f"cd {self.repo} && git commit -a -m \"$(cat <<'EOF'\nmsg\nEOF\n)\""):
             with self.subTest(command=command):
-                self.assert_commit_denied(self.commit(command))
+                self.assert_denies(self.commit(command), "[review-commit-gate] ")
         for command in ("git commit -a -m x",
                         "git commit -a -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
                         "git commit -a -m 'fix `foo`'"):

@@ -14,13 +14,12 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import coder_gate
 import plan_format
 import script_utils
-from source_paths import SCRIPT_SUFFIXES
+from source_paths import SCRIPT_SUFFIXES, is_runnable_test_file
 
 MAX_IMPORTED_FILES = 15
 SCRIPT_IMPORT = re.compile(r"""(?:from|import)\s*\(?\s*['"]([^'"]+)['"]""")
 PYTHON_IMPORT = re.compile(r"^from\s+(\.+)([\w.]*)\s+import", re.MULTILINE)
 TEST_HELPER_DIRECTORY = re.compile(r"test|fixture|factor", re.IGNORECASE)
-TEST_FILE = re.compile(r"\.(test|spec)\.|^test_|_test\.py$")
 
 
 def phase_bounds(plan_lines, phase_number):
@@ -176,10 +175,10 @@ for pattern_file in list(patterns):
 test_helper_directories = sorted({path.parent for path in imported if TEST_HELPER_DIRECTORY.search(path.parent.name)})
 for helper_directory in test_helper_directories:
     for helper_file in sorted(helper_directory.iterdir()):
-        is_test_file = TEST_FILE.search(helper_file.name)
+        runs_alone = is_runnable_test_file(helper_file.name)
         if (
             helper_file.is_file()
-            and not is_test_file
+            and not runs_alone
             and helper_file not in imported
             and len(imported) < MAX_IMPORTED_FILES
         ):

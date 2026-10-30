@@ -14,11 +14,11 @@ ANSWER_USAGE = ('usage: code_step.py resume ["<the user\'s answer to the stopped
 VERB_USAGES = {
     "resume": ANSWER_USAGE,
     "decide": f"usage: code_step.py {plan_format.DECIDE_USAGE_STEM}\n       code_step.py decide discuss",
-    "asks-done": ('usage: code_step.py asks-done [--by <user|session>] [--also "<text>"] '
+    "asks-done": ('usage: code_step.py asks-done [--repo <path>] [--by <user|session>] [--also "<text>"] '
                   '<accepted|rejected|modified>...\n'
                   'One outcome per ask, in order. --also carries other work the user named alongside the outcomes '
-                  'to the coder.'),
-    "correct-ruling": ('usage: code_step.py correct-ruling [--by <user|session>] [--also "<text>"] '
+                  'to the coder. --repo names the checkout of the run that waits, when the shell is in none of them.'),
+    "correct-ruling": ('usage: code_step.py correct-ruling [--repo <path>] [--by <user|session>] [--also "<text>"] '
                        '<accepted|rejected|modified>...\n'
                        'The same words as asks-done, to correct the rulings while the asks coder runs.'),
     "skill-done": ('usage: code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...\n'

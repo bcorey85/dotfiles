@@ -96,9 +96,10 @@ STAGE_GUARDS = {
                      "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "tool-fault", "critical-blocker",
                                      "setup-fault", "check-unverified", "check-not-run", "plan-impact-cause"),
                      "message": "review-again ran with no unreadable review packet, capped review, crashed review "
-                                "call, unmarked review gate, critical blocker, setup fault, a full check that showed "
-                                "no test run or did not run, silent review-loop pending, or a plan impact stop on a "
-                                "toolkit, unparseable or missing cause."},
+                                "call, unmarked review gate, critical blocker, setup fault, a fix pass that removed "
+                                "the change under review, a full check that showed no test run or did not run, "
+                                "silent review-loop pending, or a plan impact stop on a toolkit, unparseable or "
+                                "missing cause."},
     "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
     "correct-ruling": {"stages": ("asks-coder",), "goOnRefusal": True,
                        "message": "No asks coder is running, so the ruling cannot be corrected in this run. Put the "
@@ -110,6 +111,16 @@ STAGE_GUARDS = {
 }
 
 
+def guard_stop_reasons(verb):
+    # The stop reasons a STAGE_GUARDS verb runs after. review-again also runs after a fix-removed-change stop.
+    reasons = STAGE_GUARDS[verb].get("stopReasons", ())
+    module, _import_error = load_handback()
+    if verb != "review-again" or module is None:
+        return reasons
+
+    return (*reasons, module.FIX_REMOVED_CHANGE)
+
+
 def guarded_verb_runs(verb, state):
     # The saved state lets a STAGE_GUARDS verb run.
     if state is None:
@@ -117,7 +128,7 @@ def guarded_verb_runs(verb, state):
 
     guard = STAGE_GUARDS[verb]
     at_stage = state["stage"] in guard["stages"]
-    reason_allowed = "stopReasons" not in guard or stop_kind(state) in guard["stopReasons"]
+    reason_allowed = "stopReasons" not in guard or stop_kind(state) in guard_stop_reasons(verb)
     if at_stage and reason_allowed:
         return True
     if verb == "review-again":

@@ -18,6 +18,7 @@ import time
 import test_code_step as base
 
 SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
+FIX_REMOVED_PACKET = "status: fix-removed-change\niter: 1\nblockers:\n  - finding: removed 9 of 10\n    file_line: none"
 BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
 UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
                      "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
@@ -1375,6 +1376,8 @@ class ResumeTest(base.CodeStepTest):
              "the review found a critical blocker", review_again),
             ("setup fault", SETUP_FAULT_PACKET, "setup-fault",
              "the review's full check could not run here", review_again),
+            ("fix removed the change", FIX_REMOVED_PACKET, "fix-removed-change",
+             "the review's fix passes removed the change under review", review_again),
             ("check unverified", UNVERIFIED_PACKET, "check-unverified",
              "with stop reason check-unverified.", "When the cause is fixed, run `review-again`."),
             ("check not run", CHECK_NOT_RUN_PACKET, "check-not-run",

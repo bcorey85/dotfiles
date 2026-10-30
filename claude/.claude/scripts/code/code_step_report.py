@@ -18,11 +18,8 @@ def open_questions(report):
     value = found.group(1).strip()
     if value.lower() == "none":
         return []
-    try:
-        questions = json.loads(value)
-    except ValueError:
-        questions = None
-    if isinstance(questions, list) and all(isinstance(question, str) for question in questions):
+    questions = script_utils.json_string_list(value)
+    if questions is not None:
         return questions
     quoted = script_utils.one_line(value, UNREADABLE_QUOTE_LIMIT)
     return [f"the OPEN QUESTIONS line could not be read as a JSON list of strings: {quoted}"]

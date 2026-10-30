@@ -22,7 +22,7 @@ unmeasured: ""
 - A code runner in any step other than a plain `git add` or `git commit` (`| sh`, `bash <<<`, `sh -c`), an emptied quoted-heredoc message held as a word or a redirection target by such a step, and a command the gate cannot read all void credit. A `.` after `if`, `then`, `elif`, `else`, `while`, `until` or `do` voids it, and so does `git --config-env=...`.
 - `claude/.claude/scripts/lib/shell_command.py`: `GROUP_WORDS` now holds those seven keywords, so every hook that peels wrappers sees the command after them, and `is_git_word` lives here.
 - A command over more than one line, once its quoted-heredoc messages are emptied, earns no credit. The parser cannot follow a comment or a continuation across lines, so the gate stops trying. A one-line `git -C <wt> commit -m "msg"`, a quoted-heredoc message and a chained add then commit on one line keep credit, and the deny says to use one line or a heredoc.
-- When a command earns no credit and the session holds a review that credits a repo, the deny names that repo and `git -C <repo> commit`, and says not to run /review again. The general deny now says a commit after a `cd` earns no credit.
+- When a command earns no credit and the session holds a review that credits a repo, the deny names each such repo and its `git -C <repo> commit`, and says not to run /review again. The general deny now says a commit after a `cd` earns no credit.
 - A test pins that a deferred hand-back credits a `git -C <repo> commit`. The base branch already passed it, so no code changed for that case.
 
 ## Evidence

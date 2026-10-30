@@ -66,11 +66,11 @@ class GateCase(unittest.TestCase):
         self.assertIn(reason_part, decision["permissionDecisionReason"])
         self.assertEqual(decision["permissionDecisionReason"].count("\n"), 0)
 
-    def fire_raw(self, stdin, env_extra=None):
+    def fire_raw(self, stdin, env_extra=None, cwd=None):
         env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.tmp)}
         env.update(env_extra or {})
         return subprocess.run([sys.executable, str(self.script)], input=stdin, capture_output=True, text=True, env=env,
-                              cwd=str(self.tmp))
+                              cwd=str(cwd or self.tmp))
 
     def dispatch(self, subagent="coder", session="s1", **extra):
         payload = {"hook_event_name": "PostToolUse", "tool_name": "Agent", "session_id": session,
@@ -1048,12 +1048,60 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_silent(self.dispatch())
         self.assert_commit_denied(self.commit("git commit -a -m x"))
 
-    def seed_repo_handback(self, repo, status="converged"):
+    def seed_repo_handback(self, repo, status="converged", session="s1"):
         """A hand-back, stored now, answering a review-loop dispatch of repo."""
         self.store_dir.mkdir(parents=True, exist_ok=True)
-        rows = [{"kind": "dispatch", "session_id": "s1", "ts": time.time(), "repo": os.path.realpath(repo)},
-                {"kind": "handback", "session_id": "s1", "status": status, "message": "", "ts": time.time()}]
-        (self.store_dir / "s1.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+        rows = [{"kind": "dispatch", "session_id": session, "ts": time.time(), "repo": os.path.realpath(repo)},
+                {"kind": "handback", "session_id": session, "status": status, "message": "", "ts": time.time()}]
+        (self.store_dir / f"{session}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+    def seed_repo_dispatch_only(self, repo, session="s1"):
+        """A review-loop dispatch of repo that has no hand-back."""
+        self.store_dir.mkdir(parents=True, exist_ok=True)
+        row = {"kind": "dispatch", "session_id": session, "ts": time.time(), "repo": os.path.realpath(repo)}
+        (self.store_dir / f"{session}.jsonl").write_text(json.dumps(row) + "\n")
+
+    def test_a_review_of_a_repo_without_coder_work_that_never_handed_back_credits_nothing(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        for label, seed in (("blocked", lambda: self.seed_repo_handback(other, status="blocked", session="s2")),
+                            ("no hand-back", lambda: self.seed_repo_dispatch_only(other, session="s2"))):
+            with self.subTest(case=label):
+                seed()
+                self.assert_commit_denied(self.commit(f"cd {self.repo} && git commit -a -m x", session="s2",
+                                                      transcript_path=transcript))
+
+    def test_a_clean_other_repo_cwd_does_not_clear_a_commit_in_the_edited_repo(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2", "cwd": str(other),
+                   "transcript_path": transcript, "tool_input": {"command": f"cd {self.repo} && git commit -a -m x"}}
+        finished = self.fire_raw(json.dumps(payload), cwd=other)
+        self.assert_commit_denied(finished)
+
+    def test_a_cd_into_a_converged_repo_without_coder_work_is_denied_by_name_and_the_named_form_passes(self):
+        other = self.make_repo("other")
+        transcript = self.coder_transcript("a1", self.repo / "base.py")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        self.seed_repo_handback(other, session="s2")
+
+        finished = self.commit(f"cd {other} && git commit -a -m x", session="s2", transcript_path=transcript)
+        self.assert_denies(finished, f"covers {other.resolve()}")
+        self.assert_silent(self.commit(f"git -C {other.resolve()} commit -a -m x", session="s2",
+                                       transcript_path=transcript))
+
+    def test_every_credited_repo_is_named_with_its_own_git_c_form(self):
+        other = self.make_repo("other")
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        self.assert_silent(self.bash("review-gate-mark clean", cwd=str(self.repo)))
+        self.seed_repo_handback(other)
+
+        finished = self.commit(f"cd {self.tmp / 'gone'} && git commit -a -m x", cwd=self.tmp)
+        self.assert_denies(finished, f"`git -C {self.repo.resolve()} commit`")
+        self.assert_denies(finished, f"`git -C {other.resolve()} commit`")
 
     def test_a_deferred_hand_back_credits_a_commit_of_its_repo(self):
         (self.repo / "base.py").write_text("changed\n")
@@ -1132,7 +1180,7 @@ class ReviewedWorkCommitTest(GateCase):
                 finished = self.commit(command)
                 self.assert_lost_credit_denied(finished)
                 self.assert_denies(finished, "on one line")
-                self.assert_denies(finished, "quoted heredoc")
+                self.assert_denies(finished, "-m \"$(cat <<'EOF'")
 
     def test_a_command_with_a_trailing_newline_or_a_comment_on_its_one_line_keeps_the_credit(self):
         (self.repo / "base.py").write_text("changed\n")

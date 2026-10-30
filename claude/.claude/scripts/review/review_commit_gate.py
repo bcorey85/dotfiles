@@ -63,7 +63,7 @@ not a plain `git` command but has a word holding `commit` (`env -C <dir> git com
 
 State: ~/.claude/state/review-gate/<session>, one line per record: a JSON event {"kind": "dispatch"|"dirty", "ts",
 "agent"}. A plain `dirty` line, from before events carried a time, counts from the file's last change. A leftover
-`clean` line counts as an unreadable line. Hook JSON in, one permissionDecision line out,
+`clean` line is no event. Hook JSON in, one permissionDecision line out,
 exit 0. On an internal error PreToolUse asks the user; PostToolUse stays silent.
 """
 import json
@@ -411,7 +411,7 @@ def open_state_dir():
 
 def gate_events(state_file):
     """The state events, oldest first. A plain `dirty` line, and a line the gate cannot read, become a dirty event at
-    the file's last change."""
+    the file's last change. A leftover plain `clean` line is no event: the mark it records came before events."""
     try:
         with open(state_file, "rb") as handle:
             lines = handle.read().decode("utf-8", "replace").splitlines()
@@ -421,6 +421,8 @@ def gate_events(state_file):
 
     events = []
     for line in lines:
+        if line.strip() == "clean":
+            continue
         try:
             event = json.loads(line)
         except ValueError:

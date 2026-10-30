@@ -1905,7 +1905,7 @@ class CodeStepTest(unittest.TestCase):
     def test_gate_cap_forces_stop_block(self):
         self.advance_to_phase_two()
         (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
-        self.hook("coder", "BEHAVIOR: totals\nThere is an ambiguity in the rounding rule.")
+        self.hook("coder", 'BEHAVIOR: totals\nOPEN QUESTIONS: ["Which rounding rule applies?"]')
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
         out = self.step("resume")
@@ -1934,7 +1934,7 @@ class CodeStepTest(unittest.TestCase):
         self.assertEqual("2", self.state()["phase"])
         self.assertTrue(self.state()["headless"])
         (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
-        self.hook("coder", "BEHAVIOR: totals\nThere is an ambiguity in the rounding rule.")
+        self.hook("coder", 'BEHAVIOR: totals\nOPEN QUESTIONS: ["Which rounding rule applies?"]')
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("ACTION: auto-advance", self.step("resume"))
@@ -3687,11 +3687,11 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("ACTION: stop", out)
         self.assertNotIn("ACTION: ask-user", out)
 
-    def test_no_ambiguity_line_does_not_force_block_b(self):
+    def test_empty_open_questions_line_does_not_force_block_b(self):
         self.finish_phase_one()
         self.step("start")
         (self.repo / "backend/src/totals.ts").write_text("export const t = 1\n")
-        self.hook("coder", "BEHAVIOR: totals\nNo ambiguities found.\nThe spec was unambiguous.")
+        self.hook("coder", "BEHAVIOR: totals\nOPEN QUESTIONS: []")
         self.step("resume")
         self.hook("review-loop", self.LOOP_OK)
         self.assertIn("ACTION: auto-advance", self.step("resume"))
@@ -4066,7 +4066,8 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("- [ ] Phase 1:", self.plan_text())
 
     def test_asks_coder_already_done_line_with_an_open_question_stops(self):
-        self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nOpen question: which name should it use?")
+        report = self.ALREADY_DONE_REPORT + '\nOPEN QUESTIONS: ["which name should it use?"]'
+        self.assert_unchanged_asks_coder_stops(report)
 
     def test_asks_coder_already_done_line_with_an_eng_spec_recommendation_stops(self):
         out = self.assert_unchanged_asks_coder_stops(self.ALREADY_DONE_REPORT + "\nRECOMMEND: eng-spec")
@@ -4172,12 +4173,27 @@ class CodeStepTest(unittest.TestCase):
         self.assertIn("plan", out)
         self.assertIn("is complete", out)
 
-    def test_ambiguous_wording_is_flagged_but_unambiguous_is_not(self):
-        self.assertEqual(["The plan is ambiguous about rounding."],
-                         code_step_report.coder_flags("The plan is ambiguous about rounding."))
-        self.assertEqual(["Two ambiguities remain."], code_step_report.coder_flags("Two ambiguities remain."))
-        self.assertEqual([], code_step_report.coder_flags("The spec was unambiguous."))
-        self.assertEqual([], code_step_report.coder_flags("No ambiguities found."))
+    def test_open_questions_line_is_read_as_a_json_list(self):
+        refund = "no test covers the refund path"
+        self.assertEqual([refund, "round up?"],
+                         code_step_report.open_questions(f'BEHAVIOR: x\nOPEN QUESTIONS: ["{refund}", "round up?"]'))
+        self.assertEqual([], code_step_report.open_questions("OPEN QUESTIONS: []"))
+        self.assertEqual([], code_step_report.open_questions("OPEN QUESTIONS: none"))
+        self.assertEqual([], code_step_report.open_questions("The plan is ambiguous about rounding."))
+
+    def test_unreadable_open_questions_line_comes_back_flagged_not_dropped(self):
+        for value in ('["unclosed', "no test covers refunds", '[1, "a"]', '{"a": "b"}'):
+            flagged = code_step_report.open_questions("OPEN QUESTIONS: " + value)
+            self.assertEqual(1, len(flagged), value)
+            self.assertIn("could not be read", flagged[0])
+            self.assertIn(value, flagged[0])
+        long_value = "x" * 500
+        self.assertLess(len(code_step_report.open_questions("OPEN QUESTIONS: " + long_value)[0]), 300)
+
+    def test_an_open_question_containing_no_stops_an_asks_coder_that_changed_nothing(self):
+        out = self.assert_unchanged_asks_coder_stops(
+            self.ALREADY_DONE_REPORT + '\nOPEN QUESTIONS: ["Open question: no test covers the refund path"]')
+        self.assertIn("no test covers the refund path", out)
 
     def test_start_clears_say_text_left_by_a_finished_phase_but_keeps_the_auto_advance_text(self):
         self.finish_phase_one()

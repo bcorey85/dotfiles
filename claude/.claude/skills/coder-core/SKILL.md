@@ -79,6 +79,8 @@ Write `acceptance_criteria: none` only when every acceptance criterion holds eit
 
 `WHY: <path> <startLine>-<endLine> — <why this block looks the way it does>`, one line per note, for a choice the diff cannot explain, with new-file line numbers, or `WHY: none`.
 
+`OPEN QUESTIONS: <JSON list of strings>`, one line, each a point only the user or the plan can settle, or `OPEN QUESTIONS: []`.
+
 `REFACTOR CANDIDATES: <pre-existing smell in a file you touched that you did NOT fix — location, smell, refactor, blast radius>` or `REFACTOR CANDIDATES: none`.
 
 End with `REVIEW: recommended — <changed files>`, or `REVIEW: skip (trivial)` for a typo, single-line, rename, or comment-only edit.

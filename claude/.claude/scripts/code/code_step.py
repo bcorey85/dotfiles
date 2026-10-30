@@ -152,11 +152,11 @@ from code_step_hooks import (
 )
 from code_step_report import (
     behavior_lines,
-    coder_flags,
     coder_message_without_gate_stamp,
     every_accepted_ask_already_done,
     first_plan_impact,
     gate_results,
+    open_questions,
     recommends_eng_spec,
     resolve_report_paths,
     tests_run_text,
@@ -278,7 +278,7 @@ def coder_flagged(state, gate, report, is_ask_fix):
         for command, line in script_utils.details_with_outcome(coder_commands, coder_gate.COMMAND_ERROR).items():
             flagged.append(f"hand-back gate command error, not a code failure: `{command}` names a missing path "
                            f"({line})")
-    return flagged + coder_flags(report)
+    return flagged + open_questions(report)
 
 
 def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
@@ -289,7 +289,7 @@ def unreviewable_outcome(repo_dir, state, report, changed_files, changed_now):
     is_ask_fix = state["stage"] == "asks-coder"
     asks_coder_changed_nothing = is_ask_fix and changed_now == snapshot_part(state, "asks")
     escalates = recommends_eng_spec(report)
-    report_raises_blocker = escalates or bool(first_plan_impact([report])) or bool(coder_flags(report))
+    report_raises_blocker = escalates or bool(first_plan_impact([report])) or bool(open_questions(report))
     if asks_coder_changed_nothing and not report_raises_blocker and every_accepted_ask_already_done(
             repo_dir, state, report):
         return "converged"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""handback_store.py: the per-session store of review-loop rows (dispatch, hand-back, stop, step) and the reads of it
-that decide whether a hand-back is current. Callers import these names from handback_store directly; handback.py
-imports only the ones it uses itself. The store is one append-only JSON-lines file per session under
+"""handback_store.py: the per-session store of review-loop rows (dispatch, hand-back, stop, step) and
+the reads of it that decide whether a hand-back is current. Callers import these names from handback_store directly;
+handback.py imports only the ones it uses itself. The store is one append-only JSON-lines file per session under
 $HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
 import os
 import pathlib
@@ -12,6 +12,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import script_utils
 
 STALE_STORE_SECONDS = 7 * 86400
+DISPATCH_RAN = "dispatch-ran"
 
 
 def store_dir():
@@ -30,12 +31,41 @@ def session_file(session_id):
 ANY_AGENT = object()
 
 
+def matches(row, kind, agent_id):
+    """True when `row` is of `kind` and of `agent_id`, each only when given. `agent_id=None` selects the rows that name
+    no agent."""
+    return (kind is None or row.get("kind") == kind) and (agent_id is ANY_AGENT or row.get("agent_id") == agent_id)
+
+
+def settled_stop(row):
+    """True for a stop row the gate did not block. A blocked stop is not a stop: the loop went on."""
+    return row.get("kind") == "stop" and not row.get("blocked")
+
+
 def session_rows(session_id, kind=None, agent_id=ANY_AGENT):
     """The rows of the session's file in append order, only those of `kind` and of `agent_id` when given. Raises
     ValueError for an empty session id. `agent_id=None` selects the rows that name no agent."""
-    return [row for row in script_utils.read_jsonl(session_file(session_id))
-            if (kind is None or row.get("kind") == kind)
-            and (agent_id is ANY_AGENT or row.get("agent_id") == agent_id)]
+    return [row for row in script_utils.read_jsonl(session_file(session_id)) if matches(row, kind, agent_id)]
+
+
+def dispatch_ran(row, ran_calls):
+    """True when the dispatch `row` counts. The dispatch hook writes its row at PreToolUse, before a sibling hook can
+    deny the call, so a row that names its call (`tool_use_id`) counts only once a `dispatch-ran` row (PostToolUse,
+    after the call ran) names the same call. A row with no call id (a script wrote it) counts: fail-open on purpose,
+    since only the hook carries one."""
+    return not row.get("tool_use_id") or row["tool_use_id"] in ran_calls
+
+
+def ran_calls_of(stored_rows):
+    """The call ids the `dispatch-ran` rows of `stored_rows` name."""
+    return {row.get("tool_use_id") for row in stored_rows if row.get("kind") == DISPATCH_RAN}
+
+
+def ran_dispatch_rows(session_id):
+    """The session's dispatch rows that count (see dispatch_ran), in append order."""
+    stored_rows = session_rows(session_id)
+    ran_calls = ran_calls_of(stored_rows)
+    return [row for row in stored_rows if row.get("kind") == "dispatch" and dispatch_ran(row, ran_calls)]
 
 
 def was_recorded(session_id, agent_id, kind):
@@ -67,13 +97,13 @@ def record(session_id, kind, **fields):
 def latest(session_id):
     """{"dispatch": last review-loop dispatch row or None, "handback": last hand-back row or None, "stop": the last
     review-loop stop row after the last dispatch or None, "unanswered": the number of dispatches after the last
-    hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch before
-    it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds kind, ts,
-    session_id; a dispatch row also no_review, resolved_plan_impact and repo (the top level of the repo it reviews, or
-    None); a hand-back row also agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row also
-    agent_id, open_dispatches (the background agents and shells the loop still waited on when it stopped) and
-    ask_rows. A stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows are ordered by
-    append, not by clock."""
+    hand-back (all of them when there is none), "pending": unanswered > 0}. A hand-back clears every dispatch
+    before it, so a dispatch that another hook denied blocks nothing once a later dispatch hands back. A row holds
+    kind, ts, session_id; a dispatch row also no_review, resolved_plan_impact and repo
+    (the top level of the repo it reviews, or None); a hand-back row also agent_id, status, problems, message,
+    no_reviewer, unreviewed_fix; a stop row also agent_id, open_dispatches (the background agents and shells the
+    loop still waited on when it stopped) and ask_rows. A stop the gate blocked is not a stop: the loop went on, so
+    such a row is skipped. Rows are ordered by append, not by clock."""
     standing = {"dispatch": None, "handback": None, "stop": None, "unanswered": 0, "pending": False}
     if not session_id:
         return standing
@@ -81,12 +111,16 @@ def latest(session_id):
         stored_rows = session_rows(session_id)
     except ValueError:
         return standing
+    ran_calls = ran_calls_of(stored_rows)
     for row in stored_rows:
         if row.get("kind") == "dispatch":
-            standing["dispatch"] = row
+            # Any dispatch ends the last loop's stop, run or not: a foreground loop's dispatch is proven only when
+            # the loop returns, and until then an earlier stop is not this loop's.
             standing["stop"] = None
-            standing["unanswered"] += 1
-        elif row.get("kind") == "stop" and not row.get("blocked"):
+            if dispatch_ran(row, ran_calls):
+                standing["dispatch"] = row
+                standing["unanswered"] += 1
+        elif settled_stop(row):
             standing["stop"] = row
         elif row.get("kind") == "handback":
             standing["handback"] = row

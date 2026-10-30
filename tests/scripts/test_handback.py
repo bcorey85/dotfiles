@@ -980,6 +980,51 @@ class HookTest(HandbackTestBase):
         self.assertEqual(self.fire(good)[:2], (0, ""))
         self.assertEqual(handback_store.latest(SESSION)["handback"]["status"], "converged")
 
+    def test_a_hand_back_that_handback_py_denies_stores_nothing(self):
+        self.fire(self.event("Agent"))
+        denied = self.event("SubagentHandback", message="not a packet")
+
+        reason = handback.handle_hook(denied, "handback")
+
+        self.assertIsNotNone(reason)
+        self.assertEqual(handback_store.session_rows(SESSION, "handback"), [])
+
+    def loop_dispatch(self, tool_use_id):
+        dispatch = self.event("Agent")
+        dispatch["tool_use_id"] = tool_use_id
+        return dispatch
+
+    def hand_back_reviewed(self):
+        reviewer = {"session_id": SESSION, "tool_name": "Agent", "agent_type": "review-loop", "agent_id": "a1",
+                    "tool_input": {"subagent_type": "code-reviewer"}}
+        self.fire(reviewer)
+        return self.fire(self.event("SubagentHandback"))
+
+    def test_a_denied_re_dispatch_leaves_the_good_hand_back_current(self):
+        ran = self.loop_dispatch("toolu_ran")
+        self.fire(ran)
+        self.fire(ran, "ran")
+        self.hand_back_reviewed()
+        before = handback_store.latest(SESSION)
+
+        self.fire(self.loop_dispatch("toolu_denied"))
+
+        after = handback_store.latest(SESSION)
+        self.assertEqual((after["dispatch"], after["handback"], after["unanswered"]),
+                         (before["dispatch"], before["handback"], before["unanswered"]))
+        self.assertFalse(after["pending"])
+
+    def test_a_foreground_dispatch_counts_once_its_call_ran(self):
+        dispatch = self.loop_dispatch("toolu_fg")
+        self.fire(dispatch)
+
+        self.assertEqual(self.hand_back_reviewed()[:2], (0, ""))
+        self.fire(dispatch, "ran")
+
+        seen = handback_store.latest(SESSION)
+        self.assertEqual(seen["dispatch"]["tool_use_id"], "toolu_fg")
+        self.assertEqual(seen["handback"]["status"], "converged")
+
     def test_a_different_agent_id_is_denied_afresh(self):
         self.fire(self.event("SubagentHandback", message="junk"))
         _code, out, _err = self.fire(self.event("SubagentHandback", message="junk", agent_id="a2"))

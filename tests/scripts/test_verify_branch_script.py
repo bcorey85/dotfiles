@@ -1,5 +1,7 @@
 import glob
 import importlib
+import importlib.machinery
+import importlib.util
 import json
 import os
 import pathlib
@@ -257,6 +259,26 @@ class VerifyBranchBase(unittest.TestCase):
 class PrepTest(VerifyBranchBase):
     GATED_SPEC = SPEC + ("\n## Phase 1: Work\n\n#### Automated Verification:\n\n"
                          "- [ ] **Test-verified**: passes - `LEDGER_EDIT_WATCH_PY=/x/edit_watch.py cargo test`\n")
+
+    def test_parse_numstat_counts_a_binary_file_as_zero_and_lists_a_rename_under_its_new_path(self):
+        load_common()
+        loader = importlib.machinery.SourceFileLoader("verify_prep_under_test", str(PREP))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        prep = importlib.util.module_from_spec(spec)
+        loader.exec_module(prep)
+        raw = "-\t-\tlogo.png\0" "2\t1\t\0old.py\0new.py\0" "3\t0\tplain.py\0"
+
+        self.assertEqual([(0, 0, "logo.png"), (2, 1, "new.py"), (3, 0, "plain.py")], prep.parse_numstat(raw))
+
+    def test_parse_numstat_skips_a_malformed_row_and_a_rename_row_missing_its_new_path(self):
+        load_common()
+        loader = importlib.machinery.SourceFileLoader("verify_prep_under_test", str(PREP))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        prep = importlib.util.module_from_spec(spec)
+        loader.exec_module(prep)
+        raw = "garbage\0" "3\t0\tplain.py\0" "1\t2\t\0old.py"
+
+        self.assertEqual([(3, 0, "plain.py")], prep.parse_numstat(raw))
 
     def verifier_prompt(self, out):
         return out.split("STEP 2: dispatch Agent subagent_type=plan-verifier", 1)[1]

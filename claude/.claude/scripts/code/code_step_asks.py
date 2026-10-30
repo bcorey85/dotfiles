@@ -2,6 +2,7 @@
 prompt and the prior issues it leaves for the next review."""
 import os
 
+import script_utils
 from code_step_core import state_dir
 from code_step_report import CODER_CHECKS_LINE, eng_spec_brief
 from review_asks import ASK_OUTCOMES
@@ -110,18 +111,8 @@ def correction_coder_prompt(asks, old_rulings, new_rulings, changed_indexes, als
 def split_asks_done_args(args):
     # Outcome words in order, the text after each `--change` flag (one per modified ask, in order), and the text of
     # `--also` joined by blank lines ("" when none). A flag with no text after it makes the change texts None.
-    outcomes = []
-    change_texts = []
-    also_texts = []
-    position = 0
-    while position < len(args):
-        if args[position] in ("--change", "--also"):
-            if position + 1 >= len(args):
-                return outcomes, None, ""
-            target = change_texts if args[position] == "--change" else also_texts
-            target.append(args[position + 1])
-            position += 2
-            continue
-        outcomes.append(args[position])
-        position += 1
+    if args and args[-1] in ("--change", "--also"):
+        return [], None, ""
+    without_changes, change_texts = script_utils.pop_repeated_option(args, "--change")
+    outcomes, also_texts = script_utils.pop_repeated_option(without_changes, "--also")
     return outcomes, change_texts, "\n\n".join(also_texts)

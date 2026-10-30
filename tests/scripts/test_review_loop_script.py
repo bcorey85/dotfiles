@@ -3,6 +3,7 @@
 A stand-in `claude` on PATH answers each call with a canned reply chosen by the agent of the call. Set
 REVIEW_LOOP_SCRIPT to run against another copy, such as a staged one."""
 import collections
+import difflib
 import importlib.util
 import json
 import os
@@ -26,6 +27,7 @@ import handback_store
 import plan_format
 import review_loop_findings
 import review_loop_packet
+import source_text
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_LOOP_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_loop_script.py")
 SESSION = "session-1"
@@ -128,6 +130,140 @@ class LastJsonObjectTest(unittest.TestCase):
         for message, reply, keys, expected in cases:
             with self.subTest(message):
                 self.assertEqual(expected, review_loop_findings.last_json_object(reply, keys))
+
+
+def unified_diff(path, before, after):
+    """One file's diff in the shape the loop reads: difflib with a/ and b/ names."""
+    return "\n".join(difflib.unified_diff(before.splitlines(), after.splitlines(), f"a/{path}", f"b/{path}", n=2,
+                                          lineterm=""))
+
+
+class FixDiffReadingTest(unittest.TestCase):
+    def test_new_code_in_names_only_new_files_and_new_public_functions(self):
+        cases = [
+            ("a changed signature", unified_diff("lib.py", "def clamp(v):\n    return v\n",
+                                                 "def clamp(v, top):\n    return v\n"), []),
+            ("a moved function", unified_diff("lib.py", "def clamp(v):\n    return v\nx = 1\n",
+                                              "x = 1\ndef clamp(v):\n    return v\n"), []),
+            ("a private name", unified_diff("lib.py", "x = 1\n", "x = 1\ndef _helper():\n    pass\n"), []),
+            ("a dunder name", unified_diff("lib.py", "x = 1\n", "x = 1\ndef __init__(self):\n    pass\n"), []),
+            ("a function nested two levels deep", unified_diff("lib.py", "x = 1\n",
+                                                               "x = 1\n        def inner():\n            pass\n"), []),
+            ("a test in a new test file", unified_diff("tests/test_app.py", "", "def test_x():\n    pass\n"), []),
+            ("a new source file", unified_diff("limits.py", "", "def clamp(v):\n    return v\n"),
+             [("limits.py", 1, "limits.py")]),
+            ("a new public function", unified_diff("lib.py", "x = 1\n", "x = 1\ndef clamp(v):\n    return v\n"),
+             [("lib.py", 2, "clamp")]),
+            ("a new method", unified_diff("lib.py", "class A:\n    x = 1\n", "class A:\n    x = 1\n    def go(self):\n"
+                                                                              "        pass\n"),
+             [("lib.py", 3, "go")]),
+            ("an exported arrow const", unified_diff("lib.ts", "const a = 1\n", "const a = 1\n"
+                                                                                  "export const clamp = (v) => v\n"),
+             [("lib.ts", 2, "clamp")]),
+            ("a function that is not exported", unified_diff("lib.ts", "const a = 1\n",
+                                                             "const a = 1\nfunction helper() {}\n"), []),
+            ("an exported constant that is no function", unified_diff("lib.ts", "const a = 1\n",
+                                                                      "const a = 1\nexport const MAX = 5\n"), []),
+            ("an exported function", unified_diff("lib.ts", "const a = 1\n",
+                                                  "const a = 1\nexport function clamp(v) {}\n"),
+             [("lib.ts", 2, "clamp")]),
+            ("an exported default async function", unified_diff("lib.ts", "const a = 1\n", "const a = 1\n"
+                                                                "export default async function clamp() {}\n"),
+             [("lib.ts", 2, "clamp")]),
+            ("an exported async arrow const", unified_diff("lib.ts", "const a = 1\n", "const a = 1\n"
+                                                           "export const clamp = async (v) => v\n"),
+             [("lib.ts", 2, "clamp")]),
+            ("an exported typed arrow const", unified_diff("lib.ts", "const a = 1\n", "const a = 1\n"
+                                                           "export const foo: Handler = () => 1\n"),
+             [("lib.ts", 2, "foo")]),
+            ("an exported generic arrow const", unified_diff("lib.ts", "const a = 1\n", "const a = 1\n"
+                                                            "export const foo = <T>(x: T) => x\n"),
+             [("lib.ts", 2, "foo")]),
+            ("an exported bare-parameter arrow const", unified_diff("lib.ts", "const a = 1\n", "const a = 1\n"
+                                                                    "export const clamp = v => v\n"),
+             [("lib.ts", 2, "clamp")]),
+            ("a tab-indented method", unified_diff("lib.py", "class A:\n\tx = 1\n",
+                                                   "class A:\n\tx = 1\n\tdef go(self):\n\t\tpass\n"),
+             [("lib.py", 3, "go")]),
+            ("an async def", unified_diff("lib.py", "x = 1\n", "x = 1\nasync def clamp():\n    pass\n"),
+             [("lib.py", 2, "clamp")]),
+        ]
+        for message, diff, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, source_text.new_code_in([diff]))
+
+    def test_a_new_file_hunk_text_inside_a_later_hunk_is_not_a_new_file(self):
+        diff = unified_diff("notes.py", "x = 1\n", 'x = 1\ny = "@@ -0,0 +1 @@"\n')
+
+        self.assertEqual([], source_text.new_code_in([diff]))
+
+    def test_new_code_issues_reads_bare_bulleted_and_backticked_lines_for_listed_issues_only(self):
+        cases = [
+            ("bare", "NEW CODE 1: x", {1: "x"}),
+            ("bulleted", "- NEW CODE 1: x", {1: "x"}),
+            ("backticked", "`NEW CODE 1: x`", {1: "x"}),
+            ("number zero", "NEW CODE 0: x", {}),
+            ("number above the issue count", "NEW CODE 3: x", {}),
+        ]
+        for message, report, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, review_loop_findings.new_code_issues(report, 2))
+
+    def test_fix_diff_lines_reads_two_hunks_and_a_pure_deletion(self):
+        before = "".join(f"line{number}\n" for number in range(1, 21))
+        after_lines = [f"line{number}\n" for number in range(1, 21)]
+        after_lines[1] = "changed2\nextra2\n"
+        del after_lines[14]
+        diff = unified_diff("app.py", before, "".join(after_lines))
+
+        self.assertEqual({"app.py": {2, 3, 16}}, source_text.fix_diff_lines([diff]))
+
+    def test_later_round_split_keeps_blockers_and_clean_up_and_defers_the_rest(self):
+        changed = {"app.py": {2}}
+        structure = ("smell", "duplication", "complexity")
+        bugs = ("bug", "correctness", "security")
+        other = ("docs", "other")
+        # (classes, finding line, blocker tag, whether the pass still applies it)
+        cases = [
+            (structure, 2, "", False),
+            (structure, 4, "", False),
+            (structure, 2, "[blocker] ", True),
+            (structure, 4, "[blocker] ", True),
+            (bugs, 2, "", True),
+            (bugs, 4, "", True),
+            (other, 2, "", True),
+            (other, 4, "", False),
+            (other, 4, "[blocker] ", True),
+            (other, 4, "blocker: yes ", True),
+        ]
+        for classes, line, tag, expected_kept in cases:
+            for finding_class in classes:
+                finding = finding_record.parse_finding(f"{tag}`app.py:{line}` [{finding_class}] needs work")
+                with self.subTest(finding_class=finding_class, line=line, tag=tag):
+                    kept, deferred = review_loop_findings.later_round_split([finding], changed, [])
+                    self.assertEqual(([finding], []) if expected_kept else ([], [finding]), (kept, deferred))
+
+    def test_parse_finding_reads_every_location_shape_without_raising(self):
+        cases = [
+            ("a range", "`app.py:10-20` [bug] x", ((10, 20),)),
+            ("a range and a line", "`app.py:10-20,30` [bug] x", ((10, 20), (30, 30))),
+            ("a range with two dashes", "`app.py:10-20-30` [bug] x", ((10, 30),)),
+            ("a date in a markdown file", "`notes.md:2026-10-30` [docs] x", ((2026, 30),)),
+            ("a date in prose", "report.txt:2026-10-30 [docs] x", ((2026, 30),)),
+        ]
+        for message, text, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, finding_record.parse_finding(text).line_ranges)
+
+    def test_later_round_split_tests_every_line_a_range_finding_names(self):
+        changed = {"app.py": {16}}
+        in_range = finding_record.parse_finding("`app.py:10-20` [docs] needs work")
+        listed = finding_record.parse_finding("`app.py:3,16` [docs] needs work")
+        outside = finding_record.parse_finding("`app.py:10-15` [docs] needs work")
+
+        kept, deferred = review_loop_findings.later_round_split([in_range, listed, outside], changed, [])
+
+        self.assertEqual(([in_range, listed], [outside]), (kept, deferred))
 
 
 class ReviewLoopScriptTest(unittest.TestCase):
@@ -530,6 +666,286 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _row, packet = self.stored_packet()
         self.assertEqual(packet["fixed"][0]["file_line"], "fresh.py:2")
 
+    def run_second_round(self, finding, coder_replies, quality_check=None, claude_md=None):
+        return self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW},
+                              {"result": f"## Fix\n- {finding}\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                                         "Overall Assessment: NEEDS CHANGES\n"}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, *coder_replies],
+            "closure": [{"result": CLOSED}],
+        }, quality_check=quality_check, claude_md=claude_md)
+
+    def coder_call_count(self):
+        return sum(call["key"] == "coder" for call in self.fake_calls())
+
+    def test_a_second_round_finding_off_the_fixed_lines_defers_with_no_coder(self):
+        completed = self.run_second_round("`app.py:4` the fourth limit is also wrong", [],
+                                          quality_check="echo '4000 passed in 41.2s'")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("log-review-finding", completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "deferred")
+        self.assertEqual(packet["findings_remaining"][0]["file_line"], "app.py:4")
+        self.assertEqual(self.coder_call_count(), 1)
+        self.assertEqual(packet["full_check"], "passed")
+        self.assertIn("closure", self.call_keys())
+        second_round_row = next(row for row in self.finding_rows() if row["iter"] == "2")
+        self.assertEqual((second_round_row["actioned"], second_round_row["source"]), ("deferred", "later-round"))
+
+    def test_a_second_round_deferral_with_no_check_run_is_cap_reached(self):
+        self.run_second_round("`app.py:4` the fourth limit is also wrong", [],
+                              claude_md="Run make ci before you push.\n")
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "cap-reached")
+
+    def test_a_second_round_coder_edit_of_an_existing_file_raises_no_new_code_ask(self):
+        self.commit_files({"extra.py": "x = 1\n"})
+
+        self.run_second_round("`app.py:4` [bug] the fourth limit is wrong",
+                              [{"result": "Fixed 1.", "edits": {"extra.py": "x = 1\ny = 2\n"}}])
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+
+    def test_a_second_round_deferral_with_a_red_check_is_a_critical_blocker_that_keeps_the_finding(self):
+        review = ("## Fix\n- `app.py:4` the fourth limit is also wrong\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                  "Overall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": review}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, {"result": "Repaired."}],
+        }, quality_check="false")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("still failing after one repair", packet["blockers"][0])
+        self.assertEqual([entry["file_line"] for entry in packet["findings_remaining"]], ["app.py:4"])
+
+    def test_a_deferred_finding_that_reports_a_fixed_one_again_leaves_the_fixed_list(self):
+        smell_review = ("## Fix\n- `app.py:2` [smell] extract a helper for `limit`\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                        "Overall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": smell_review}, {"result": smell_review}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        }, quality_check="echo '4000 passed in 41.2s'")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "deferred")
+        self.assertEqual(self.coder_call_count(), 1)
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual([entry["file_line"] for entry in packet["findings_remaining"]], ["app.py:2"])
+
+    def test_a_mixed_second_round_sends_the_fixed_line_finding_to_a_coder_and_defers_the_other(self):
+        mixed_review = ("## Fix\n- `app.py:2` [bug] the new limit overflows\n- `app.py:4` the fourth limit is wrong\n\n"
+                        "## Ask\nNone\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": mixed_review}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.", "edits": {"app.py": APP_BEFORE}}],
+            "closure": [{"result": CLOSED}],
+        }, quality_check="echo '4000 passed in 41.2s'")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "deferred")
+        self.assertEqual([entry["file_line"] for entry in packet["findings_remaining"]], ["app.py:4"])
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertIn("app.py:2", coder_prompts[1])
+        self.assertNotIn("app.py:4", coder_prompts[1])
+        second_round_rows = [row for row in self.finding_rows() if row["iter"] == "2"]
+        self.assertEqual(sorted((row["line"], row["actioned"]) for row in second_round_rows),
+                         [("2", "fixed"), ("4", "deferred")])
+
+    def test_a_deferred_finding_stays_remaining_when_the_second_round_coder_reports_a_plan_change(self):
+        mixed_review = ("## Fix\n- `app.py:2` [bug] the new limit overflows\n- `app.py:4` the fourth limit is wrong\n\n"
+                        "## Ask\nNone\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": mixed_review}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        remaining = [entry["file_line"] for entry in packet["findings_remaining"]]
+        self.assertIn("app.py:4", remaining)
+
+    def test_a_second_round_bug_off_the_fixed_lines_gets_a_coder(self):
+        self.run_second_round("`app.py:4` [bug] the fourth limit overflows", [{"result": "Fixed 1.",
+                                                                              "edits": {"app.py": APP_BEFORE}}])
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(self.coder_call_count(), 2)
+
+    def test_a_second_round_blocker_may_add_new_code_with_no_ask(self):
+        self.run_second_round("[blocker] `app.py:4` the fourth limit crashes",
+                              [{"result": "Fixed 1.",
+                                "edits": {"app.py": APP_BEFORE + "def clamp(value):\n    return value\n"}}])
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["ask"], [])
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertIn("A [blocker] issue may add what it needs.", coder_prompts[1])
+
+    def test_a_second_round_blocker_left_unapplied_for_new_code_stops_the_run(self):
+        self.run_second_round("[blocker] `app.py:4` the fourth limit crashes",
+                              [{"result": "NEW CODE 1: a clamp helper in limits.py"}])
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("a clamp helper in limits.py", packet["blockers"][0])
+        self.assertNotIn("app.py:4", [entry["file_line"] for entry in packet["fixed"]])
+        self.assertEqual(["app.py:4"], [entry["file_line"] for entry in packet["findings_remaining"]])
+
+    def test_a_deferred_finding_with_an_open_class_returns_cap_reached(self):
+        open_member = "`app.py:4` the same limit is wrong here too"
+        closure = json.dumps({"receipt": "one member still open", "open": [open_member]})
+
+        self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW},
+                              {"result": "## Fix\n- `app.py:1` [docs] the header is stale\n\n## Ask\nNone\n\n"
+                                         "## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n"}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Nothing to change."}],
+            "closure": [{"result": closure}],
+        }, quality_check="echo '4000 passed in 41.2s'")
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "cap-reached")
+        self.assertTrue(packet["open_classes"])
+
+    def test_a_second_round_fix_that_needs_new_code_becomes_an_ask(self):
+        self.run_second_round("`app.py:2` [bug] the new limit overflows",
+                              [{"result": "NEW CODE 1: a clamp helper in limits.py"}])
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"][0]["file_line"], "app.py:2")
+        self.assertEqual(len(packet["fixed"]), 1)
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertIn("a clamp helper in limits.py", packet["ask"][0]["question"])
+        self.assertIn("finding_id", packet["ask"][0])
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertIn("no new public function", coder_prompts[1].lower())
+        metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
+        self.assertEqual((metrics[0]["fix"], metrics[0]["ask"]), ("1", "1"))
+
+    def test_a_merged_fix_that_needs_new_code_is_one_ask_with_one_count(self):
+        review = ("## Fix\n- `app.py:2` [bug] the new limit overflows for `limit`\n"
+                  "- `app.py:4` [bug] the fourth limit overflows for `limit`\n\n"
+                  "## Ask\nNone\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+
+        self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": review}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, {"result": "NEW CODE 1: x"}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(len(packet["ask"]), 1)
+        metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
+        self.assertEqual(metrics[0]["ask"], str(len(packet["ask"])))
+        self.assertEqual((metrics[0]["fix"], metrics[0]["fixed"]), ("1", "1"))
+        self.assertEqual([row["actioned"] for row in self.finding_rows() if row["iter"] == "2"], ["ask"])
+
+    def test_a_second_round_coder_that_holds_one_of_two_fixes_applies_the_other(self):
+        review = ("## Fix\n- `app.py:2` [bug] the new limit overflows for `limit`\n"
+                  "- `app.py:4` [bug] the offset overflows for `offset`\n\n"
+                  "## Ask\nNone\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+
+        self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": review}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.\nNEW CODE 2: a helper", "edits": {"app.py": APP_BEFORE}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(len(packet["ask"]), 1)
+        self.assertIn("app.py:4", packet["ask"][0]["file_line"])
+        self.assertIn("app.py:2", [entry["file_line"] for entry in packet["fixed"]])
+        self.assertNotIn("app.py:4", [entry["file_line"] for entry in packet["fixed"]])
+        self.assertEqual(sorted(row["actioned"] for row in self.finding_rows() if row["iter"] == "2"),
+                         ["ask", "fixed"])
+
+    def test_a_held_new_code_fix_that_refiles_a_fixed_one_is_open_and_not_fixed(self):
+        self.run_second_round("`app.py:2` the limit is wrong for `limit`",
+                              [{"result": "NEW CODE 1: a helper"}])
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(len(packet["ask"]), 1)
+
+    def test_a_held_new_code_fix_that_refiles_a_fixed_one_in_a_plan_change_stop_is_not_fixed_and_remaining(self):
+        self.run_second_round("`app.py:2` the limit is wrong for `limit`",
+                              [{"result": "NEW CODE 1: a helper\nplan-impact: yes", "edits": {"app.py": APP_BEFORE}}])
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(len(packet["findings_remaining"]), 1)
+
+    def test_a_coder_reply_with_skipped_and_new_code_for_one_issue_is_held_not_skipped(self):
+        self.run_second_round("`app.py:2` [bug] the new limit overflows",
+                              [{"result": "SKIPPED 1: not needed\nNEW CODE 1: a helper"}])
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual(len(packet["ask"]), 1)
+
+    def test_a_second_round_coder_that_adds_a_file_or_a_public_function_raises_an_ask(self):
+        self.run_second_round("`app.py:2` [bug] the new limit overflows", [{
+            "result": "Fixed 1.",
+            "edits": {"limits.py": "def clamp(value):\n    return value\n",
+                      "app.py": APP_FIXED + "def clamp_limit(value):\n    return value\n"},
+        }])
+
+        _row, packet = self.stored_packet()
+        asked = " ".join(ask["question"] for ask in packet["ask"])
+        self.assertIn("`limits.py`", asked)
+        self.assertIn("`clamp_limit`", asked)
+        self.assertTrue(all(ask.get("finding_id") for ask in packet["ask"]))
+        clamp_ask = next(ask for ask in packet["ask"] if "`clamp_limit`" in ask["question"])
+        self.assertIn("remove `clamp_limit`", clamp_ask["change"])
+        metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
+        self.assertEqual(metrics[0]["ask"], "2")
+
+    def test_a_new_code_fix_held_in_a_plan_change_stop_stays_remaining_and_not_fixed(self):
+        self.run_second_round("`app.py:2` [bug] the new limit overflows", [{
+            "result": "NEW CODE 1: a clamp helper in limits.py\nplan-impact: yes", "edits": {"app.py": APP_BEFORE}}])
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        self.assertEqual(len(packet["fixed"]), 1)
+        remaining = [entry["finding"] for entry in packet["findings_remaining"]]
+        self.assertTrue(any("the new limit overflows" in finding for finding in remaining), remaining)
+
+    def test_a_first_round_coder_that_adds_a_public_function_raises_no_ask(self):
+        coder_edits = {"app.py": APP_FIXED + "def clamp_limit(value):\n    return value\n"}
+        script_replies = {**FIX_THEN_CLEAN, "coder": [{"result": "Fixed 1.", "edits": coder_edits}]}
+
+        self.run_script(script_replies)
+
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+
+    def test_a_first_round_coder_gets_no_new_code_rule(self):
+        self.run_script(FIX_THEN_CLEAN)
+
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertNotIn("NEW CODE", coder_prompts[0])
+
     def test_a_fix_the_coder_made_no_change_for_is_skipped_not_listed_as_fixed(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
@@ -748,6 +1164,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("still failing after one repair", packet["blockers"][0])
         self.assertFalse(self.stored_packet()[0]["unreviewed_fix"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertNotIn("NEW CODE", coder_prompts[1])
 
     def test_a_full_check_failure_that_also_happens_on_head_is_pre_existing_and_gets_no_repair(self):
         check = "echo \"FAIL: test_old ($$ms)\"; exit 1"
@@ -1602,8 +2020,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": other_fix_review}],
-            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
-                      {"result": "Fixed 1.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED.replace("limit = 5", "limit = 6")}}],
             "closure": [{"result": CLOSED}],
         })
 
@@ -1611,6 +2028,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         findings = self.finding_rows()
         self.assertEqual([(row["iter"], row["line"]) for row in findings], [("1", "2"), ("2", "5")])
         self.assertEqual(len({row["finding_id"] for row in findings}), 2)
+        self.assertEqual(findings[1]["actioned"], "deferred")
 
     def test_a_finding_whose_line_moved_is_one_row(self):
         moved_review = ("## Fix\n- `app.py:3` the limit is wrong for `limit`\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
@@ -1632,7 +2050,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         two_fix_review = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
                           "- `notes.py:1` the keys of `value` are out of order\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
                           "Overall Assessment: NEEDS CHANGES\n")
-        new_fix_review = ("## Fix\n- `app.py:4` the fourth limit repeats the third\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+        new_fix_review = ("## Fix\n- `app.py:2` the second limit repeats the third\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
                           "Overall Assessment: NEEDS CHANGES\n")
 
         completed = self.run_script({
@@ -1728,6 +2146,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn(open_member, [entry["finding"] for entry in packet["fixed"]])
         self.assertTrue(self.stored_packet()[0]["unreviewed_fix"])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertNotIn("NEW CODE", coder_prompts[1])
         metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
         self.assertEqual(metrics[0]["fixed"], "2")
 
@@ -1754,7 +2174,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         app_diff_file = diff_files[0]
         self.assertIn("-limit = 2", app_diff_file.read_text())
         self.assertIn(f"- app.py (+2 -2): {app_diff_file}", closure_prompt)
-        self.assertIn("- generated/snapshot.json (+20000 -0): regenerated, do not read", closure_prompt)
+        self.assertIn("- generated/snapshot.json (+20000 -1): regenerated, do not read", closure_prompt)
         self.assertNotIn(str(diff_files[1]), closure_prompt)
 
     def test_a_class_closure_reply_with_braces_in_its_prose_still_reads_the_closing_object(self):

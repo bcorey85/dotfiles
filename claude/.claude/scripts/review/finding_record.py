@@ -27,6 +27,8 @@ class Finding:
     title: str
     identifiers: frozenset
     parts: tuple = ()
+    # Every (first, last) line range the file:line names: `10-20,30` is ((10, 20), (30, 30)). Empty with no file:line.
+    line_ranges: tuple = ()
 
     @property
     def each_part(self):
@@ -49,6 +51,7 @@ def parse_finding(text):
     code names it mentions."""
     located = script_utils.PATH_LINE.search(text)
     path, line = script_utils.split_location(located.group(1)) if located else ("", 0)
+    line_ranges = script_utils.location_line_ranges(located.group(1)) if located else ()
 
     # The tag rule puts the class right after the file:line; `other` when the reviewer tagged none.
     class_tag = FINDING_CLASS_TAG.search(text, located.end() if located else 0) or FINDING_CLASS_TAG.search(text)
@@ -60,7 +63,12 @@ def parse_finding(text):
     title = re.sub(r"\[[\w-]+\]", " ", title)
     title = re.sub(r"\W+", " ", title).strip().lower()
 
-    return Finding(text, path, line, finding_class, title, code_identifiers(text))
+    return Finding(text, path, line, finding_class, title, code_identifiers(text), line_ranges=line_ranges)
+
+
+def merged_from(finding, merged):
+    """Whether the merged finding was built from this finding's text."""
+    return finding.text in merged.text
 
 
 def combine(parts):
@@ -72,4 +80,5 @@ def combine(parts):
 
     text = MERGED_SEPARATOR.join(part.text for part in parts)
     identifiers = frozenset().union(*(part.identifiers for part in parts))
-    return Finding(text, first.path, first.line, first.finding_class, first.title, identifiers, tuple(parts))
+    return Finding(text, first.path, first.line, first.finding_class, first.title, identifiers, tuple(parts),
+                   first.line_ranges)

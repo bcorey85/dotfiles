@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
+import source_paths
+
 HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
 NO_FILE = "/dev/null"
 NO_NEWLINE_MARKER = "\\ No newline at end of file"
@@ -45,6 +47,10 @@ class Hunk:
     context: str
     removed: list = field(default_factory=list)
     added: list = field(default_factory=list)
+    # For each removed line, the number the line standing in its place has in the new file.
+    removed_new_numbers: list = field(default_factory=list)
+    old_start: int = 1
+    old_count: int = 1
 
 
 @dataclass
@@ -76,7 +82,7 @@ def unquote_c_path(quoted):
 
 
 def _header_path(line, marker):
-    """The path of a `--- path` or `+++ path` line of a diff made without prefixes, or None for /dev/null. A name that
+    """The path of a `--- path` or `+++ path` line of a diff, with its prefix kept, or None for /dev/null. A name that
     git C-quotes is decoded."""
     path = line[len(marker):].rstrip("\t")
     if len(path) >= 2 and path.startswith('"') and path.endswith('"'):
@@ -100,6 +106,7 @@ def _read_hunk_body(lines, start, hunk, old_number, new_number, old_count, new_c
             continue
         if line.startswith("-"):
             hunk.removed.append((old_number, line[1:]))
+            hunk.removed_new_numbers.append(new_number)
             old_number += 1
             old_count -= 1
         elif line.startswith("+"):
@@ -118,10 +125,11 @@ def _read_hunk_body(lines, start, hunk, old_number, new_number, old_count, new_c
 
 
 def parse_unified_diff(text):
-    """The files of `git diff --no-prefix -U0` output as FileDiff objects, in order. Each Hunk holds the text after
-    the second `@@` (git's name of the enclosing function), the removed lines as (old line number, text) and the
-    added lines as (new line number, text). A deleted file is named by its old path. A binary file or a mode change
-    has no hunks and is left out."""
+    """The files of unified diff output, with or without `a/` and `b/` prefixes, as FileDiff objects, in order. Each
+    Hunk holds the text after the second `@@` (git's name of the enclosing function), the removed lines as (old line
+    number, text), the added lines as (new line number, text), the new-file number that stands in place of each
+    removed line, and the old start and count of the hunk. A deleted file is named by its old path. A binary file or a
+    mode change has no hunks and is left out."""
     lines = text.split("\n")
     files = []
     old_path = None
@@ -142,12 +150,66 @@ def parse_unified_diff(text):
                 continue
 
             old_start, old_count, new_start, new_count, context = header.groups()
-            hunk = Hunk(context)
+            hunk = Hunk(context, old_start=int(old_start), old_count=1 if old_count is None else int(old_count))
             current.hunks.append(hunk)
             index = _read_hunk_body(lines, index, hunk, int(old_start), int(new_start),
                                     1 if old_count is None else int(old_count),
                                     1 if new_count is None else int(new_count))
     return files
+
+
+def diff_repo_path(file_diff):
+    """The repo-relative path of a parsed diff file, without a `b/` prefix."""
+    return file_diff.path.removeprefix("b/")
+
+
+def fix_diff_lines(diffs):
+    """{path: the line numbers the diffs changed}. A removed line takes the number of the line that now stands in its
+    place."""
+    changed_lines = {}
+    for diff in diffs:
+        for file_diff in parse_unified_diff(diff):
+            numbers = changed_lines.setdefault(diff_repo_path(file_diff), set())
+            for hunk in file_diff.hunks:
+                numbers.update(number for number, _text in hunk.added)
+                numbers.update(hunk.removed_new_numbers)
+    return changed_lines
+
+
+# A public function's opening line: a `def` at 0 spaces, 4 spaces or one tab of indent (a closure at that depth
+# counts), or an exported `function` or arrow `const` (typed and generic arrows included). A name that starts with
+# an underscore is private.
+PUBLIC_FUNCTION = re.compile(
+    r"(?:(?: {4}|\t)?(?:async\s+)?def\s+"
+    r"|export\s+(?:default\s+)?(?:async\s+)?function\s+"
+    r"|export\s+(?:default\s+)?const\s+"
+    r"(?=[A-Za-z]\w*\s*(?::[^=]+)?=\s*(?:async\s*)?(?:<[^>]*>\s*)?(?:\(|\w+\s*=>)))([A-Za-z]\w*)")
+
+
+def new_code_in(diffs):
+    """[(path, line, name)] of the source files and public functions the diffs add. A function the same diff removes
+    moved, so it is not new, and a test file is left out."""
+    new_code = []
+    for diff in diffs:
+        for file_diff in parse_unified_diff(diff):
+            path = diff_repo_path(file_diff)
+            if not source_paths.counts_toward_size(path) or not file_diff.hunks:
+                continue
+
+            first_hunk = file_diff.hunks[0]
+            if first_hunk.old_start == 0 and first_hunk.old_count == 0:
+                new_code.append((path, 1, path))
+                continue
+
+            removed_names = set()
+            added = []
+            for hunk in file_diff.hunks:
+                removed_matches = [PUBLIC_FUNCTION.match(text) for _number, text in hunk.removed]
+                removed_names.update(match.group(1) for match in removed_matches if match)
+                added += [(number, PUBLIC_FUNCTION.match(text)) for number, text in hunk.added]
+            new_code += [(path, number, match.group(1)) for number, match in added
+                         if match and match.group(1) not in removed_names]
+    return new_code
 
 
 def _slash_comment_numbers(lines):

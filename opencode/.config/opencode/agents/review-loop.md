@@ -52,10 +52,10 @@ each iteration:
   2. dispatch reviewer → `iter++` at the dispatch, whatever it returns
   3. scan for PLAN-IMPACT → if found: return `plan-impact` WITHOUT dispatching a coder
   4. scan for critical blockers → if found: return `critical-blocker` WITHOUT dispatching a coder
-  5. dispatch fix coder for every `fix` finding (`ask` and `nit` never dispatch)
+  5. dispatch fix coder for every `fix` finding; past the first round, only for the findings Step 5c keeps (`ask` and `nit` never dispatch)
   6. specialist re-entry only: `spec_iter++`, repeat
 
-the cap stops a reviewer, never a coder; a coder change after the last reviewer gets one scoped reviewer (see Rules)
+the cap stops a third full review and nothing else; a coder change after the last reviewer gets one scoped reviewer (see Rules)
 ```
 
 ## Step 1: Parse args
@@ -142,6 +142,8 @@ Include this text verbatim at the top of the `## Small items` section:
 
 > Small items follow the issues. They are the reviewer's optional notes, not findings. Apply a small item only when it names wrong behavior, or a false statement in a doc or a comment, and one correction is clear. Skip every other small item, and report each skip with its reason. A small item never widens the change: no rename, no restructure, no new abstraction.
 
+Past the first round, add to the coder prompt: "The first review pass is over, so this pass closes the change and does not grow it. Add no new source file and no new public function outside test files. When an issue needs one, leave it unapplied and write one line in your report in the form `NEW CODE <n>: <the file or function it needs>`, where n is the issue number above. A [blocker] issue may add what it needs." Move each such issue to `ask[]` with what it needs; a `blocker` issue with such a line returns `status: critical-blocker` naming it. When the coder's diff adds a source file or a public function anyway and no issue in the pass carries `blocker`, add one `ask` naming it, with `change` set to remove it and fix the issue in the existing code. The class-closure and execution-gate repair passes carry no such rule.
+
 With a `later-phase files:` input, add to every coder prompt: "Never edit these files: the plan gives them to a later phase. When an issue needs one of them, leave it unapplied and report it as a PLAN-IMPACT: <the paths>". With a `guidance:` input, add: "Guidance from the main session. Follow it within the issues and the plan; it changes neither: <the text>". When a coder's changed files include a later-phase file, return `status: critical-blocker` naming the files.
 
 Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` — this is what the wrapper renders under "Fixed". A small item never enters `fixed[]`: from the coder report, end its `nit[]` line with `applied` or `skipped: <reason>`, and log an applied one in Step 7b with `actioned=fixed`.
@@ -170,10 +172,18 @@ Skip any finding that is a false positive, a stylistic preference, out of scope,
 
 ## Step 5c: Deferral — the round budget
 
-The correctness loop gets TWO rounds: every `fix` finding of each full review
-gets a coder. The cap stops a third full review and nothing else. A deferred
+The correctness loop gets TWO rounds. Every `fix` finding of the first full
+review gets a coder. Past the first round, a pass closes the change and does not
+grow it: see the limit below. The cap stops a third full review and nothing else. A deferred
 finding is not discarded: it moves to the branch-exit queue, where it is read
 once, in one place, against the whole branch instead of one phase of it.
+
+**The limit past the first round.** Keep a `fix` finding for the coder only when
+it carries `blocker`, when its class is `[bug]`, `[correctness]` or `[security]`, or when it cleans up the
+last pass: it sits on a line the last fix diff changed, or it reports a `fixed[]` finding again. A `[smell]`,
+`[duplication]` or `[complexity]` finding that is no blocker never counts as
+clean-up. Every other `fix` finding is a `later-round` finding: dispatch no coder
+for it, and defer it.
 
 **The `blocker` carve-out.** A `fix` finding from the execution gate gets a
 coder (Step 5) only if it carries `blocker`, regardless of

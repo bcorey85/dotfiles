@@ -3,9 +3,12 @@ SOURCE_TEXT_MODULE overrides the module path; it defaults to the installed one."
 import importlib.util
 import os
 import pathlib
+import sys
 import unittest
 
 import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 
 MODULE = pathlib.Path(os.environ.get("SOURCE_TEXT_MODULE") or toolkit_paths.LIB_DIR / "source_text.py")
 module_spec = importlib.util.spec_from_file_location("source_text", MODULE)

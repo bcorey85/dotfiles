@@ -665,6 +665,10 @@ class TextAndFileHelpersTest(unittest.TestCase):
         self.assertEqual(script_utils.normalize_path("a.ts:1, b.ts:2"), "a.ts")
         self.assertEqual(script_utils.normalize_path("src/a.ts"), "src/a.ts")
 
+    def test_location_line_ranges_keeps_the_two_ends_of_each_span(self):
+        self.assertEqual(script_utils.location_line_ranges("a.ts:10-20,30"), ((10, 20), (30, 30)))
+        self.assertEqual(script_utils.location_line_ranges("a.ts:10-20-30"), ((10, 30),))
+
     def test_split_location_returns_path_and_first_line(self):
         self.assertEqual(script_utils.split_location("a.ts:12-20, b.ts:3"), ("a.ts", 12))
         self.assertEqual(script_utils.split_location("a.ts"), ("a.ts", 0))

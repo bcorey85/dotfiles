@@ -166,6 +166,10 @@ def reply_with_one_retry(claude_call, role, prompt, repo, out, keys, shape, **op
 
 
 REFILE_SIMILARITY = 0.8
+# The classes that add structure to a change instead of correcting it.
+STRUCTURE_CLASSES = ("smell", "duplication", "complexity")
+# The classes that name a defect, which keep a coder past the first pass wherever they sit.
+BUG_CLASSES = ("bug", "correctness", "security")
 
 
 def merge_findings(findings):
@@ -225,6 +229,57 @@ def still_fixed(fixed_items, open_fixes):
         if parts:
             kept.append(combine(parts))
     return kept
+
+
+def carries_blocker(finding):
+    """Whether a finding is marked as a blocker."""
+    return handback.BLOCKER_TEXT.search(finding.text) is not None
+
+
+def later_round_split(fixes, changed_lines, fixed_items):
+    """(the fixes a pass past the first one still applies, the fixes it defers). A blocker and a bug stay. Of the
+    rest, a structure finding defers, and a finding stays only when it cleans up the last pass: it sits on a line
+    that pass changed, or it reports a fixed finding again."""
+    fixed_parts = [part for item in fixed_items for part in item.each_part]
+    kept, deferred = [], []
+    for finding in fixes:
+        fixed_numbers = changed_lines.get(finding.path, ())
+        on_fixed_line = any(start <= number <= end for start, end in finding.line_ranges for number in fixed_numbers)
+        reports_fixed = any(same_finding(part, finding) for part in fixed_parts)
+        cleans_up = finding.finding_class not in STRUCTURE_CLASSES and (on_fixed_line or reports_fixed)
+        if carries_blocker(finding) or finding.finding_class in BUG_CLASSES or cleans_up:
+            kept.append(finding)
+        else:
+            deferred.append(finding)
+    return kept, deferred
+
+
+def numbered_report_lines(report, label, issue_count):
+    """Issue number -> (the stripped line, the text after the colon) of the coder's `<label> <n>: <text>` line, for
+    numbers that name a listed issue. The first line for a number wins."""
+    lines_by_number = {}
+    for line in report.splitlines():
+        match = re.match(rf"\s*[-*]?\s*`?{label} (\d+):\s*(.*?)`?\s*$", line)
+        if not match:
+            continue
+
+        number = int(match.group(1))
+        if 1 <= number <= issue_count:
+            lines_by_number.setdefault(number, (line.strip(), match.group(2)))
+    return lines_by_number
+
+
+def skipped_issues(report, issue_count):
+    """Issue number -> the coder's `SKIPPED <n>: <reason>` line, for numbers that name a listed issue."""
+    skip_lines = numbered_report_lines(report, "SKIPPED", issue_count)
+    return {number: line for number, (line, _text) in skip_lines.items()}
+
+
+def new_code_issues(report, issue_count):
+    """Issue number -> the file or function from the coder's `NEW CODE <n>: <what it needs>` line, for numbers that
+    name a listed issue."""
+    need_lines = numbered_report_lines(report, "NEW CODE", issue_count)
+    return {number: text for number, (_line, text) in need_lines.items()}
 
 
 def names_absent_file(repo, tree_paths, finding):

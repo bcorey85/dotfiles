@@ -94,11 +94,12 @@
 #     fix_induced=yes|no|bug      (optional) the finding names code a previous
 #       fix in this loop introduced, not code the coder originally wrote.
 #       `bug` sets blocker=yes.
-#     source=round|class|gate|scoped   (review-loop `fix` rows) where the finding came
-#       from: a full review, an open class member at the round cap, the
-#       execution gate, or the one reviewer scoped to the files a coder changed
-#       after the cap. Only class and scoped may defer. A code-reviewer `fix` row with
-#       actioned=deferred at scope phase or standalone is refused without one.
+#     source=round|class|gate|scoped|later-round   (review-loop `fix` rows) where the finding
+#       came from: a full review, an open class member at the round cap, the
+#       execution gate, the one reviewer scoped to the files a coder changed
+#       after the cap, or a finding past the first review that neither blocks, names a bug,
+#       correctness or security defect, nor cleans up the last fix. Only class, scoped and later-round may defer. A code-reviewer
+#       `fix` row with actioned=deferred at scope phase or standalone is refused without one.
 #     ask_decided_by=user|session  (optional, ask outcome rows) who ruled on the ask:
 #       the user, or the session itself when the repo hands ask decisions to it.
 #       A ledger build that refuses the field gets the row without it.
@@ -270,8 +271,9 @@ if [ "$kind" = finding ]; then
   [ "$fi_val" != bug ] || json=$(jq -c '.blocker = "yes"' <<< "$json")
 
   # The review loop sends every `fix` finding to a coder but an open class
-  # member at the round cap and a finding of the one reviewer scoped to the files a
-  # coder changed after the cap. A deferred row goes to a branch-exit queue that most
+  # member at the round cap, a finding of the one reviewer scoped to the files a
+  # coder changed after the cap, and a finding past the first review that neither
+  # blocks, names a bug, correctness or security defect, nor cleans up the last fix. A deferred row goes to a branch-exit queue that most
   # branches never read, so a wrong deferral drops the finding.
   source=$(jq -r '.source // ""' <<< "$json")
   disposition=$(jq -r '.disposition // ""' <<< "$json")
@@ -280,11 +282,12 @@ if [ "$kind" = finding ]; then
   if [ "$disposition" = fix ] && [ "$actioned" = deferred ]; then
     loop_row=no
     [ "$gate" = code-reviewer ] && { [ "$scope" = phase ] || [ "$scope" = standalone ]; } && loop_row=yes
-    if [ -n "$source" ] && [ "$source" != class ] && [ "$source" != scoped ] \
+    if [ -n "$source" ] && [ "$source" != class ] && [ "$source" != scoped ] && [ "$source" != later-round ] \
       || { [ -z "$source" ] && [ "$loop_row" = yes ]; }; then
       echo "refusing to log: a review-loop fix finding defers only as an open class member at the" >&2
-      echo "round cap (source=class) or a finding of the scoped reviewer after the cap (source=scoped)." >&2
-      echo "A full review's and the execution gate's fix findings get a" >&2
+      echo "round cap (source=class), a finding of the scoped reviewer after the cap (source=scoped)," >&2
+      echo "or a finding past the first review that neither blocks, names a bug, correctness or security defect," >&2
+      echo "nor cleans up the last fix (source=later-round). Every other fix finding gets a" >&2
       echo "coder at any iter. Dispatch one, then log the row with actioned=fixed." >&2
       exit 1
     fi

@@ -14,6 +14,7 @@ from shell_command import (
     command_after_wrappers,
     docker_forwarded_variables,
     docker_set_variables,
+    resolved_command_words,
     split_simple_commands,
     unwrap_docker,
     without_assignments,
@@ -356,3 +357,17 @@ def command_check_scope(command, cwd):
 def runs_whole_check(command, cwd):
     # True when the command runs a whole test suite, lint or build.
     return scanned_command(command, cwd).runs_whole()
+
+
+def runs_cargo_clippy(command):
+    # True when a step of the command runs `cargo clippy` once its wrappers are peeled: `cd crate && cargo clippy`,
+    # `nice -n 19 cargo +nightly clippy`. A quoted "cargo clippy" is one word of another command, so it is no run.
+    for words in resolved_command_words(command):
+        if os.path.basename(words[0]) != "cargo":
+            continue
+
+        subcommand_words = without_flag_values(words[1:], RUNNER_VALUE_FLAGS["cargo"])
+        cargo_words = [word for word in subcommand_words if not word.startswith(("+", "-"))]
+        if cargo_words[:1] == ["clippy"]:
+            return True
+    return False

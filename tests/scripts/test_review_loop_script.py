@@ -1835,6 +1835,67 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn(finding, [entry["finding"] for entry in packet["fixed"]])
         self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 1)
 
+    def disposition_calls_with(self, replies):
+        """Runs disposition_call against canned replies; returns (module, calls as (role, prompt), outcome)."""
+        module = self.load_script_module()
+        calls = []
+        queued = list(replies)
+
+        def claude_call(role, prompt, *args, **kwargs):
+            calls.append((role, prompt))
+            return queued.pop(0)
+
+        with mock.patch.object(module, "claude_call", claude_call):
+            try:
+                outcome = module.disposition_call("reviewer text", self.repo, self.scratch)
+            except ValueError as error:
+                outcome = error
+        return calls, outcome
+
+    def test_a_bad_disposition_reply_then_a_good_one_retries_once_and_returns_the_findings(self):
+        bad = "x" * 300
+        good = json.dumps({"fix": ["`app.py:2` the limit is wrong"], "ask": [], "nit": []})
+
+        calls, findings = self.disposition_calls_with([bad, good])
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(findings["fix"]), 1)
+        retry_prompt = calls[1][1]
+        self.assertTrue(retry_prompt.startswith(calls[0][1]))
+        self.assertIn("could not be parsed", retry_prompt)
+        self.assertIn("JSON object only", retry_prompt)
+        note = retry_prompt[len(calls[0][1]):]
+        self.assertIn("x" * 100, note)
+        self.assertNotIn("x" * 200, note)
+
+    def test_two_bad_disposition_replies_raise_the_value_error(self):
+        calls, outcome = self.disposition_calls_with(["no object here", "still none"])
+
+        self.assertEqual(len(calls), 2)
+        self.assertIsInstance(outcome, ValueError)
+        self.assertIn("still none", str(outcome))
+
+    def test_the_disposition_retry_is_logged_under_its_own_role(self):
+        calls, _ = self.disposition_calls_with(["no object", json.dumps({"fix": [], "ask": [], "nit": []})])
+
+        self.assertEqual([role for role, _ in calls], ["disposition", "disposition-retry"])
+
+    def test_a_round_goes_on_after_one_unparseable_disposition_reply(self):
+        finding = "`app.py:2` the limit is 5, should be 20"
+        good = json.dumps({"fix": [finding], "ask": [], "nit": []})
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": "The limit looks wrong."}, {"result": CLEAN_REVIEW}],
+            "disposition": [{"result": "not json"}, {"result": good}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("disposition"), 2)
+
     def test_a_coder_report_of_plan_impact_stops_with_the_report_and_no_second_review(self):
         report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
 

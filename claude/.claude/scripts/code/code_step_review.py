@@ -841,7 +841,7 @@ def apply_asks_or_finish(repo_dir, state, outcomes, change_texts, also_text=""):
         save_state(repo_dir, state)
         return finish_phase(repo_dir, state)
 
-    state.update({"stage": "asks-coder", "acceptedAsks": accepted_asks, "asksAlso": also_text})
+    state.update({"stage": "asks-coder", "acceptedAsks": accepted_asks})
     record_snapshot(state, asks=file_hashes(repo_dir), followUp=change_snapshot(repo_dir))
     open_dispatch(state)
     save_state(repo_dir, state)

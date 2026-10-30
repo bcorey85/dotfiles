@@ -242,6 +242,11 @@ def text_before_marker(text, marker):
     return text.split(marker, 1)[0]
 
 
+def path_is_under(path, prefix):
+    # True when path is prefix itself or lies below it, compared as text so "ab" is not under "a".
+    return path == prefix or path.startswith(prefix.rstrip("/") + "/")
+
+
 def details_with_outcome(outcomes, outcome):
     # {key: detail} for each entry of an {key: {"outcome": ..., "detail": ...}} map that has this outcome, in map order.
     return {key: entry["detail"] for key, entry in outcomes.items() if entry["outcome"] == outcome}
@@ -263,11 +268,12 @@ def run_command(command, cwd=None, stdin=None, timeout=None):
     return code, output
 
 
-def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None):
-    """Run argv and return the CompletedProcess, its output decoded as UTF-8 with no newline translation. Raise
-    error_type when argv cannot start or runs past `timeout` seconds and, with check, when its exit code is not in
-    ok_codes, naming the command and its stderr, or its stdout when stderr is empty."""
-    stdin_bytes = None if stdin is None else stdin.encode()
+def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None, as_bytes=False):
+    """Run argv and return the CompletedProcess, its output decoded as UTF-8 with no newline translation (with
+    as_bytes, stdin is bytes and stdout stays raw bytes). Raise error_type when argv cannot start or runs past
+    `timeout` seconds and, with check, when its exit code is not in ok_codes, naming the command and its stderr, or
+    its stdout when stderr is empty."""
+    stdin_bytes = stdin if as_bytes or stdin is None else stdin.encode()
     try:
         finished = subprocess.run(argv, cwd=cwd, input=stdin_bytes, capture_output=True, timeout=timeout)
     except OSError as error:
@@ -275,10 +281,12 @@ def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(
     except subprocess.TimeoutExpired as error:
         raise error_type(f"`{' '.join(argv)}` ran past {timeout} seconds") from error
 
-    finished.stdout = finished.stdout.decode("utf-8", "replace")
+    if not as_bytes:
+        finished.stdout = finished.stdout.decode("utf-8", "replace")
     finished.stderr = finished.stderr.decode("utf-8", "replace")
     if check and finished.returncode not in ok_codes:
-        detail = finished.stderr.strip() or finished.stdout.strip()
+        stdout_text = finished.stdout.decode("utf-8", "replace") if as_bytes else finished.stdout
+        detail = finished.stderr.strip() or stdout_text.strip()
         raise error_type(f"`{' '.join(argv)}` failed: {detail}")
     return finished
 

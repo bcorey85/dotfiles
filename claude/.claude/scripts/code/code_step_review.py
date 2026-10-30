@@ -1,8 +1,6 @@
 """The review half of code_step: plan-impact modal, plan-edit dispatch, review dispatch, review packet and asks."""
 import os
 import pathlib
-import re
-import shutil
 import subprocess
 import sys
 import time
@@ -18,7 +16,6 @@ from code_step_asks import (
     asks_coder_prompt,
     changed_ruling_indexes,
     correction_coder_prompt,
-    numbered_ask_lines,
     preset_ask_outcome,
     split_asks_done_args,
 )
@@ -81,7 +78,8 @@ from code_step_core import (
 )
 from code_step_report import change_line, coder_message_without_gate_stamp, coder_model
 from code_step_review_stops import is_capped_review, left_findings_open, stop_on_review_status
-from script_utils import git_output, run_command
+from review_asks import numbered_ask_lines
+from script_utils import git_output
 from source_paths import counts_toward_size, is_large_change
 from worktree_snapshot import working_tree_changes
 
@@ -707,18 +705,7 @@ def command_after_review(repo_dir, state, args):
 
 
 def present_asks(repo_dir, state, asks):
-    nvim_jump = os.environ.get("CODE_STEP_NVIM_JUMP", "nvim-jump")
-    is_nvim_jump_installed = shutil.which(nvim_jump) is not None
-
-    anchors = []
-    for item in asks:
-        file_line = item.get("file_line", "")
-        question = item.get("question", "")
-        is_single_anchor = re.match(r"^[^\s,;]+:\d+(-\d+)?$", file_line) is not None
-        if is_single_anchor and is_nvim_jump_installed:
-            anchors += ["--note", question[:120], file_line]
-    if anchors:
-        run_command([nvim_jump, *anchors], repo_dir)
+    review_asks.run_nvim_jump(os.environ.get("CODE_STEP_NVIM_JUMP", "nvim-jump"), asks, repo_dir)
     state["asks"] = asks
     preset_outcome = preset_ask_outcome(repo_dir)
     is_new_ask_after_asks_coder = preset_outcome and preset_outcome != "rejected" and has_snapshot_part(state, "asks")

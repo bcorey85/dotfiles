@@ -14,7 +14,9 @@ from code_step_core import TICKET_ID, script_command
 # Every flag `start` reads besides --help. --task makes the rest of the words task text; a value
 # flag takes the next word as its value.
 TASK_FLAG = "--task"
-VALUE_FLAGS = ("--task-file", "--phase", "--repo")
+GATE_EVIDENCE_FLAG = "--gate-evidence"
+GATE_EVIDENCE_SHAPE = "<who>, <when>: <quoted text>"
+VALUE_FLAGS = ("--task-file", "--phase", "--repo", GATE_EVIDENCE_FLAG)
 SWITCH_FLAGS = ("--restart", "--headless", "--coder-stopped")
 START_MODIFIERS = ("+fast", "+deep")
 START_FLAGS = (TASK_FLAG, *VALUE_FLAGS, *SWITCH_FLAGS, *START_MODIFIERS)

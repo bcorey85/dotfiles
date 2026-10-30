@@ -881,6 +881,7 @@ class ClosingPhaseHelpersTest(unittest.TestCase):
         self.assertIn("The next open phase without a gate is Phase 5.", text)
         self.assertTrue(text.endswith("`start --phase <id>` runs one anyway."))
         self.assertNotIn("without a gate", plan_format.gate_block_text(gated_ahead, None))
+        self.assertNotIn("--gate-evidence", text)
 
     def test_the_moved_phase_text_and_stop_name_the_target_ticket(self):
         entry = {"number": "11", "moved": True, "movedTo": "LED-16"}

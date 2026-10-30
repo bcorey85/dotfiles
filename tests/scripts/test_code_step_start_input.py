@@ -480,6 +480,105 @@ class StartInputTest(base.CodeStepTest):
         self.assertNotIn(SHELL_WRAPPER, out)
 
 
+class GateEvidenceTest(base.CodeStepTest):
+    GATED_TITLE = "- [ ] Phase 2: Totals (risk: low)"
+    GATE_EVIDENCE = 'outside session, 2026-10-30 09:15: "release phase 2"'
+
+    def gate_phase_two(self):
+        plan_path = self.repo / self.plan
+        gated_text = plan_path.read_text().replace(
+            self.GATED_TITLE, "- [ ] Phase 2: Totals — gate: an outside session sends release (risk: low)")
+        plan_path.write_text(gated_text)
+        self.finish_phase_one()
+
+    def test_a_gated_phase_started_with_gate_evidence_puts_the_evidence_in_the_coder_packet(self):
+        self.gate_phase_two()
+
+        out = self.step("start", self.plan, "--phase", "2", "--gate-evidence", self.GATE_EVIDENCE)
+
+        self.assertIn("AGENT: coder", out)
+        self.assertIn("an outside session sends release", out)
+        self.assertIn(self.GATE_EVIDENCE, out)
+        self.assertIn("The caller released this gate with the evidence above", out)
+
+    def test_gate_evidence_on_a_phase_with_no_gate_is_refused(self):
+        self.finish_phase_one()
+
+        out = self.step("start", self.plan, "--phase", "2", "--gate-evidence", self.GATE_EVIDENCE)
+
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn("Phase 2 has no gate clause", out)
+
+    def test_gate_evidence_without_a_phase_is_refused(self):
+        self.gate_phase_two()
+
+        out = self.step("start", self.plan, "--gate-evidence", self.GATE_EVIDENCE)
+
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn("--gate-evidence needs --phase", out)
+
+    def test_gate_evidence_on_task_text_is_refused(self):
+        out = self.step("start", "--gate-evidence", self.GATE_EVIDENCE, "--task", "fix the typo")
+
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn("--gate-evidence needs --phase", out)
+
+    def test_gate_evidence_on_a_phase_with_task_text_is_refused(self):
+        self.gate_phase_two()
+
+        out = self.step("start", "--phase", "2", "--gate-evidence", self.GATE_EVIDENCE, "--task", "fix")
+
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn("a --task run has no plan", out)
+
+    def test_gate_evidence_on_a_closing_phase_is_refused(self):
+        plan_path = self.repo / self.plan
+        closing_title = "- [ ] Phase 4: Refactor pass - /refactor cleanup sweep (risk: low)"
+        gated_text = plan_path.read_text().replace(
+            closing_title, closing_title.replace("(risk", "— gate: an outside session sends release (risk"))
+        plan_path.write_text(gated_text)
+        self.finish_phase_one()
+
+        out = self.step("start", self.plan, "--phase", "4", "--gate-evidence", self.GATE_EVIDENCE)
+
+        self.assertNotIn("ACTION: invoke-skill", out)
+        self.assertIn("closing phase", out)
+
+    def test_the_gate_stop_for_a_gated_closing_phase_names_no_evidence_command(self):
+        plan_path = self.repo / self.plan
+        closing_title = "- [ ] Phase 4: Refactor pass - /refactor cleanup sweep (risk: low)"
+        gated_text = plan_path.read_text().replace(
+            closing_title, closing_title.replace("(risk", "— gate: an outside session sends release (risk"))
+        gated_text = gated_text.replace(self.GATED_TITLE, self.GATED_TITLE.replace("[ ]", "[x]"))
+        gated_text = gated_text.replace("- [ ] Phase 3: Audit trail", "- [x] Phase 3: Audit trail")
+        plan_path.write_text(gated_text)
+        self.finish_phase_one()
+
+        out = self.step("start", self.plan)
+
+        self.assertIn("gate", out)
+        self.assertIn("Tell the user.", out)
+        self.assertNotIn("--gate-evidence", out)
+
+    def test_the_gate_stop_names_the_one_step_command_for_the_first_gated_phase(self):
+        self.gate_phase_two()
+
+        out = self.step("start", self.plan)
+
+        self.assertIn("start --phase 2 --gate-evidence", out)
+        self.assertIn("released the gate in their own words", out)
+        self.assertNotIn("second confirmation", out)
+
+    def test_the_placeholder_text_is_refused_as_gate_evidence(self):
+        self.gate_phase_two()
+
+        finished = base.run(self.repo, self.env, "start", self.plan, "--phase", "2", "--gate-evidence",
+                            "<who>, <when>: <quoted text>")
+
+        self.assertEqual(2, finished.returncode)
+        self.assertIn("--gate-evidence needs the evidence text", finished.stderr)
+
+
 class StartArgsTest(unittest.TestCase):
     """The phase id, plan and run notes that the start arguments read as, before any run state is touched."""
 
@@ -546,8 +645,10 @@ class StartArgsTest(unittest.TestCase):
 
 def load_tests(loader, tests, pattern):
     # The tests of CodeStepTest run in test_code_step.py: this file runs its own.
-    own_names = [name for name in loader.getTestCaseNames(StartInputTest) if name in StartInputTest.__dict__]
-    own_tests = unittest.TestSuite(StartInputTest(name) for name in own_names)
+    own_tests = unittest.TestSuite()
+    for case_class in (StartInputTest, GateEvidenceTest):
+        own_names = [name for name in loader.getTestCaseNames(case_class) if name in case_class.__dict__]
+        own_tests.addTests(case_class(name) for name in own_names)
     own_tests.addTests(loader.loadTestsFromTestCase(StartArgsTest))
     return own_tests
 

@@ -20,7 +20,7 @@ You route nothing. `code_step.py` decides, and you run what it prints. Run `star
    - `auto-advance`: run the commit command the output names, then the next-phase command it names.
    - `stop-block-B` / `stop-block-C`: invoke Skill `stage`, then hand back.
    - `ask-user`: hand back.
-   - `stop` / `judgment`: hand back.
+   - `stop` / `judgment`: hand back. When the stop is a phase gate and the task text already holds the release (who sent it, when, and the words verbatim from the user's or outside session's own message), run `start --phase <id> --gate-evidence "<who>, <when>: <quoted text>"` in the same step instead.
    - `go-on`: send the printed lines to the message's sender with SendMessage, then go on with the step you were on.
 3. Your hand-back is the contents of `<git dir>/code-step/say.md` verbatim, then the contents of `<git dir>/code-step/question.md` verbatim (`<git dir>` is the git dir of the run's checkout, the repo `start` ran in; `git -C <checkout> rev-parse --path-format=absolute --git-path code-step` prints the folder; read each file only when it exists and is not empty; a missing file adds nothing), then the `stage` queue if you ran it, then the lines printed after a `stop` or `judgment` ACTION. Add nothing else.
 4. Never write a prompt, a handoff block or a status yourself. Never edit the plan.

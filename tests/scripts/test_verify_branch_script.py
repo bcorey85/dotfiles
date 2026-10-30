@@ -734,6 +734,10 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("in the foreground", payload)
         self.assertIn("needs a process left running", payload)
         self.assertIn("Delete, move or kill nothing", payload)
+        self.assertIn("An `Agent-run` item is yours: run it as its text says and record pass/fail with its output; "
+                      "never mark it human-only. Start that row's `item` with the plan line's words from the tag on, "
+                      "for example `**Agent-run**: time the import`.", payload)
+        self.assertNotIn("Do not run CI-verified", payload)
 
     def test_the_flat_mode_verifier_payload_lists_the_ticket_labels_too(self):
         self.write("docs/plans/LED-9-flat.md", REQUIREMENTS_TICKET + "\n" + SPEC)
@@ -1222,6 +1226,42 @@ class LogTest(VerifyBranchBase):
         for bad in ("not json", '[{"item":"x","verdict":"maybe"}]'):
             self.assertEqual(self.log("--rows", "-", stdin=bad).returncode, 2, bad)
         self.assertEqual(self.verifier_rows(), [])
+
+    def test_a_done_agent_run_row_with_no_output_exits_2_names_the_item_and_writes_nothing(self):
+        for evidence in ("", "  \n", None):
+            with self.subTest(evidence=evidence):
+                row = {"item": "**Agent-run**: time the import on the real data", "verdict": "done"}
+                if evidence is not None:
+                    row["evidence"] = evidence
+                done = self.log("--rows", "-", stdin=self.dump([row]))
+                self.assertEqual(done.returncode, 2)
+                self.assertIn("time the import on the real data", done.stderr)
+                self.assertIn("output", done.stderr)
+                self.assertEqual(self.verifier_rows(), [])
+
+    def test_a_done_agent_run_row_with_output_is_logged(self):
+        row = {"item": "Agent-run: time the import on the real data", "verdict": "done", "evidence": "12.3s, exit 0"}
+
+        done = self.log("--rows", "-", stdin=self.dump([row]))
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(len(self.verifier_rows()), 1)
+
+    def assert_an_agent_run_row_is_logged_as_a_gap_without_evidence(self, verdict):
+        row = {"item": "Agent-run: time the import on the real data", "verdict": verdict}
+
+        done = self.log("--rows", "-", stdin=self.dump([row]))
+
+        self.assertNotEqual(done.returncode, 2, done.stderr)
+        logged = self.verifier_rows()
+        self.assertEqual((logged[0]["result"], logged[0]["n_findings"]), ("NEEDS_CHANGES", "1"))
+        self.assertEqual(len(logged), 2)
+
+    def test_a_missing_agent_run_row_without_evidence_is_logged(self):
+        self.assert_an_agent_run_row_is_logged_as_a_gap_without_evidence("missing")
+
+    def test_a_failed_check_agent_run_row_without_evidence_is_logged(self):
+        self.assert_an_agent_run_row_is_logged_as_a_gap_without_evidence("failed-check")
 
     def test_a_guard_the_logger_refuses_stops_the_run_before_any_write(self):
         rows = self.dump([{"item": "x", "verdict": "missing", "guard": "wish"}])

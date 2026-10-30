@@ -55,14 +55,15 @@ def remove_live_base_trees():
 
 
 class FullCheckSteps:
-    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix and
-    expected_red, and provides stop(status, remaining), repair(call_name, findings) and mark_repaired(findings,
-    changed)."""
+    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix,
+    expected_red and remember_as (the command saved when the check passes, else the command run), and provides
+    stop(status, remaining), repair(call_name, findings) and mark_repaired(findings, changed)."""
 
     def init_full_check_state(self):
         self.full_check = ""
         self.full_check_command = ""
         self.expected_red = []  # the phase's Expected red entries that the check leaves out
+        self.remember_as = None  # the check before those entries were left out: what a pass keeps as last passed
         self.base_checked = False
         self.base_run = None
         self.check_details = {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
@@ -105,6 +106,7 @@ class FullCheckSteps:
 
         self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env)
         if self.full_check == full_check.PASSED:
+            full_check.remember_passed_command(self.repo, self.remember_as or check_command)
             self.untested_fix = False
         elif self.full_check == full_check.CHECK_ONLY_PASSED:
             self.untested_fix = True

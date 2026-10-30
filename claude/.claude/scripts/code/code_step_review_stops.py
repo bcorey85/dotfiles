@@ -75,7 +75,8 @@ def unverified_check_why_and_fix(configured):
     else:
         why = ("the full check exited 0 and printed no test-runner summary, so the check did not show that any "
                "test ran.")
-        fix = "add a Quality check: `<the command that runs the tests>` line to the repo's CLAUDE.md"
+        fix = full_check.QUALITY_CHECK_FIX.format(command=full_check.ANY_SUITE_COMMAND,
+                                                  claude_md="the repo's CLAUDE.md")
     return why, fix
 
 

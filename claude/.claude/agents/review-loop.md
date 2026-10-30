@@ -218,9 +218,11 @@ return `status: cap-reached` with `findings_remaining` naming the unreviewed fil
 
 ## Step 6: Convergence — the execution gate
 
-**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command (from `<ROOT>/CLAUDE.md` (read it)) ONCE, after the last code change, with the Bash timeout at 600000:
+**Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the full check ONCE, after the last code change, with the Bash timeout at 600000:
 
-`python3 ~/.claude/scripts/review/full_check.py <ROOT> --log /tmp/review-gate-<branch>.log [--plan <plan> --phase <N>] -- '<command>'`
+`python3 ~/.claude/scripts/review/full_check.py <ROOT> --log /tmp/review-gate-<branch>.log [--plan <plan> --phase <N>]`
+
+The script picks the command: the `<ROOT>/CLAUDE.md` `Quality check:` line, else the check that last passed in that repo. Never pass it a command and never pick one yourself.
 
 Pass `--plan` and `--phase` when the inputs hold both. The script then leaves out the phase's `Expected red` steps and prints each as `expected red: <command> until Phase <id>`; a left-out step is no finding.
 
@@ -229,17 +231,15 @@ Pass `--plan` and `--phase` when the inputs hold both. The script then leaves ou
 - `unverified (exit 0, no runner summary)` → the command exited 0 but printed no test runner summary, so no test is known to have run. No finding; proceed. Never call it a pass.
 - `failed (exit N)`, or `failed (exit 0, summary reports failures)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above. A missing module from outside the repo that the repo's dependency files do not declare is a code failure and gets one coder repair.
 - `setup fault (exit N)` → the check could not run here (no program, a runner that cannot start, no package manifest, no test found, a package-manager or engine version mismatch). Return `status: setup-fault` with the printed lines in `blockers`; dispatch no coder.
+- `setup fault (no Quality check line, and no full check has passed here)` → set `full_check` to `not run (no check found; the coder's scoped tests stand)` and proceed. No finding.
 - `not run (timeout)` → no finding. Proceed.
 - `not run (environment gap: No module named 'X')` → the check's interpreter lacks a module the repo declares as a dependency. No finding; never a blocker. Proceed.
 - `not run (check-command error: <line>)` → a step of the command stopped on a path that does not exist. No finding. Proceed.
-- `not run (scoped command: it names files or tests, so it is no full check)` → you passed a command other than the CLAUDE.md quality-check command, or narrowed it. Run the CLAUDE.md quality-check command as written, else the whole-suite command with no file, directory or test-name argument.
+- `not run (scoped command: it names files or tests, so it is no full check)` or `not run (unresolved command: what it runs cannot be read, so it is no full check)` → the picked command is no full check. Return `status: setup-fault` with the printed lines in `blockers`; dispatch no coder.
 - `not run (expected red until Phase <id>[, <id>...])` → the plan expects the whole check to fail until that phase. No finding. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
-- `not run (unresolved command: what it runs cannot be read, so it is no full check)` → you passed a command other than the CLAUDE.md quality-check command, and its scope cannot be read, such as a make call with a NAME=value argument or a missing target. Run the CLAUDE.md quality-check command as written, else the test runner's whole-suite command directly.
 - `not run (CI)` or `passed (check only; CI runs the full suite)` → the repo's CLAUDE.md holds `Full suite: CI`. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.
 
-Any test count you report comes from the script's `summary:` line, never from other output. Call a run the full suite only when it ran the CLAUDE.md quality-check command and the result is not `passed (check only; CI runs the full suite)`, which is a check with no tests; name any other run by its exact command. Paths on the `changed by the check:` and `created by the check:` lines are the check's own writes, left in place: neither goes in `files_touched`. Paths on `rewrote edited files:` hold coder edits the check then rewrote: they stay in `files_touched`. A path an earlier run in this invocation named on `changed by the check:` or `created by the check:` stays there unless a coder edited it.
-
-When neither CLAUDE.md nor the repo's task runners or CI config name a full check, do not run the script: set `full_check` to `not run (no check found; the coder's scoped tests stand)` and proceed.
+Any test count you report comes from the script's `summary:` line, never from other output. Call a run the full suite only when it ran the command the script picked and the result is not `passed (check only; CI runs the full suite)`, which is a check with no tests; name any other run by its exact command. Paths on the `changed by the check:` and `created by the check:` lines are the check's own writes, left in place: neither goes in `files_touched`. Paths on `rewrote edited files:` hold coder edits the check then rewrote: they stay in `files_touched`. A path an earlier run in this invocation named on `changed by the check:` or `created by the check:` stays there unless a coder edited it.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 

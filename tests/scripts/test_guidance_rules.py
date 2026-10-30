@@ -90,6 +90,21 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("question is never empty: an ask with no question takes its finding, or else its change, "
                       "as its question", text)
 
+    def test_review_loop_and_its_opencode_port_let_the_full_check_script_pick_the_command(self):
+        repo_root = toolkit_paths.TREE_CLAUDE_DIR.parents[1]
+        opencode_port = repo_root / "opencode" / ".config" / "opencode" / "agents" / "review-loop.md"
+        opencode_text = " ".join(opencode_port.read_text().split())
+        texts = {"claude": guidance_text("agents/review-loop.md"), "opencode": opencode_text}
+        for harness, text in texts.items():
+            with self.subTest(harness=harness):
+                self.assertIn("python3 ~/.claude/scripts/review/full_check.py <ROOT> --log "
+                              "/tmp/review-gate-<branch>.log [--plan <plan> --phase <N>]`", text)
+                self.assertIn("Never pass it a command and never pick one yourself", text)
+                self.assertNotIn("-- '<command>'", text)
+                self.assertIn("`setup fault (no Quality check line, and no full check has passed here)` → set "
+                              "`full_check` to `not run (no check found; the coder's scoped tests stand)` and proceed",
+                              text)
+
     def test_review_loop_writes_each_logger_call_with_literal_arguments(self):
         text = guidance_text("agents/review-loop.md")
         self.assertIn("Write each call out with literal key=value arguments, one call per row", text)

@@ -961,10 +961,10 @@ The edited assertions match:
         self.assertEqual([], self.rows())
 
 
-def run_dispatch_hook(prompt, **caller):
-    """The gate's stdout for a review-loop Agent dispatch with this prompt, from the caller the fields name."""
+def run_dispatch_hook(prompt, subagent_type="review-loop", **caller):
+    """The gate's stdout for an Agent dispatch with this prompt, from the caller the fields name."""
     hook = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "session-1", **caller,
-            "tool_input": {"subagent_type": "review-loop", "prompt": prompt}}
+            "tool_input": {"subagent_type": subagent_type, "prompt": prompt}}
     environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}
     proc = subprocess.run([sys.executable, "-B", SCRIPT], input=json.dumps(hook), capture_output=True,
                           text=True, check=True, env=environment)
@@ -993,6 +993,66 @@ class NestedDispatchTest(unittest.TestCase):
         for message, caller in cases:
             with self.subTest(message):
                 self.assertEqual("", run_dispatch_hook(REVIEW_PROMPT, **caller))
+
+
+class ReviewerRepoDispatchTest(unittest.TestCase):
+    """A loop dispatched on a sibling worktree must name that worktree to each reviewer it dispatches."""
+
+    REVIEWERS = ("code-reviewer", "smell-reviewer", "test-reviewer", "test-reviewer-deep")
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.session_repo = os.path.join(tmp.name, "session-repo")
+        self.reviewed_repo = os.path.join(tmp.name, "sibling-worktree")
+        for repo in (self.session_repo, self.reviewed_repo):
+            subprocess.run(["git", "init", "-q", repo], check=True)
+        self.transcript = os.path.join(tmp.name, "loop.jsonl")
+
+    def dispatch_reviewer(self, loop_repo, subagent_type, reviewer_prompt, agent_type="review-loop"):
+        """The gate's stdout for a reviewer dispatch from a caller whose transcript names loop_repo."""
+        with open(self.transcript, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(user(f"mode: review-first\ncaller: review\nrepo: {loop_repo}")) + "\n")
+        return run_dispatch_hook(reviewer_prompt, subagent_type, agent_id="loop-1", agent_type=agent_type,
+                                 agent_transcript_path=self.transcript, cwd=self.session_repo)
+
+    def test_a_reviewer_brief_without_the_sibling_repo_is_refused_with_that_repo(self):
+        for reviewer in self.REVIEWERS:
+            with self.subTest(reviewer):
+                denial = json.loads(self.dispatch_reviewer(self.reviewed_repo, reviewer, "Review the diff."))
+                reason = denial["hookSpecificOutput"]["permissionDecisionReason"]
+                self.assertEqual("deny", denial["hookSpecificOutput"]["permissionDecision"])
+                self.assertIn(f"Repo root: {os.path.realpath(self.reviewed_repo)}", reason)
+
+    def test_a_reviewer_brief_that_names_the_sibling_repo_passes(self):
+        subdirectory = os.path.join(self.reviewed_repo, "src")
+        os.makedirs(subdirectory)
+        root_lines = {
+            "plain path": f"Repo root: {self.reviewed_repo}",
+            "backtick-wrapped path": f"Repo root: `{self.reviewed_repo}`",
+            "bold key": f"**Repo root:** {self.reviewed_repo}",
+            "subdirectory of the reviewed repo": f"Repo root: {subdirectory}",
+            "trailing parenthetical": f"Repo root: {self.reviewed_repo} (the sibling worktree)",
+        }
+        for label, root_line in root_lines.items():
+            with self.subTest(label):
+                self.assertEqual("", self.dispatch_reviewer(self.reviewed_repo, "code-reviewer",
+                                                            f"{root_line}\nReview the diff."))
+
+    def test_a_non_reviewer_dispatch_from_a_sibling_repo_loop_passes(self):
+        self.assertEqual("", self.dispatch_reviewer(self.reviewed_repo, "coder", "Fix the finding."))
+
+    def test_a_reviewer_dispatch_from_a_caller_other_than_a_review_loop_passes(self):
+        self.assertEqual("", self.dispatch_reviewer(self.reviewed_repo, "code-reviewer", "Review the diff.",
+                                                    agent_type="general-purpose"))
+
+    def test_a_reviewer_brief_naming_another_repo_is_refused(self):
+        brief = f"Repo root: {self.session_repo}\nReview the diff."
+        denial = json.loads(self.dispatch_reviewer(self.reviewed_repo, "test-reviewer", brief))
+        self.assertEqual("deny", denial["hookSpecificOutput"]["permissionDecision"])
+
+    def test_a_loop_on_the_session_repo_needs_no_repo_root_line(self):
+        self.assertEqual("", self.dispatch_reviewer(self.session_repo, "test-reviewer", "Review the diff."))
 
 
 if __name__ == "__main__":

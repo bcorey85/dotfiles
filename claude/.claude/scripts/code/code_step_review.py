@@ -30,7 +30,6 @@ from code_step_boundary import (
 from code_step_core import (
     CLAUDE_DIR,
     MISSING_PLAN_STOP,
-    PLAN_EDIT_STOP_REASONS,
     RESUME_VERB,
     REVIEW_AGAIN_INVOKE,
     REVIEW_LOOP,
@@ -54,7 +53,6 @@ from code_step_core import (
     load_state,
     log_event,
     open_dispatch,
-    phase_code_in_place,
     phase_coder_reports,
     plan_edit_open_choices,
     prompt_with_gate_env,
@@ -86,57 +84,22 @@ from script_utils import git_output
 from source_paths import counts_toward_size, is_large_change
 from worktree_snapshot import working_tree_changes
 
-# The state each guarded verb needs: the stages it may run at, the stop reasons it accepts when the stage is "stopped",
-# and the refusal text when the state is anything else. `start`, `tick` and `resume` run at any stage and are not in
-# the table. A review-loop resumed after the wait cap also counts for review-again, and a converged review of the
-# phase's code counts for verify.
-STAGE_GUARDS = {
-    "decide": {"stages": ("impact-coder", "impact-review"),
-               "message": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss."},
-    "review-again": {"stages": ("stopped",),
-                     "stopReasons": ("invalid-packet", "cap-reached", "false-clean", "tool-fault", "critical-blocker",
-                                     "setup-fault", "check-unverified", "check-not-run", "plan-impact-cause"),
-                     "message": "review-again ran with no unreadable review packet, capped review, crashed review "
-                                "call, unmarked review gate, critical blocker, setup fault, a fix pass that removed "
-                                "the change under review, a full check that showed no test run or did not run, "
-                                "silent review-loop pending, or a plan impact stop on a toolkit, unparseable or "
-                                "missing cause."},
-    "asks-done": {"stages": ("asks",), "message": ASKS_DONE_USAGE},
-    "correct-ruling": {"stages": ("asks-coder",), "goOnRefusal": True,
-                       "message": "No asks coder is running, so the ruling cannot be corrected in this run. Put the "
-                                  "change in a new /code run."},
-    "skill-done": {"stages": ("skill",), "message": "skill-done ran with no closing-phase skill pending."},
-    "verify": {"stages": ("stopped",), "stopReasons": PLAN_EDIT_STOP_REASONS,
-               "message": "verify ran with no converged review, failed Automated Verification or unparsed Manual "
-                          "Verification pending."},
+# What a guarded verb says when the saved run's row in the route table does not name it.
+VERB_REFUSALS = {
+    "decide": "decide needs a pending PLAN-IMPACT and one word: adopt, keep or discuss.",
+    "review-again": ("review-again ran with no unreadable review packet, capped review, crashed review call, unmarked "
+                     "review gate, critical blocker, setup fault, a fix pass that removed the change under review, a "
+                     "full check that showed no test run or did not run, silent review-loop pending, or a plan impact "
+                     "stop on a toolkit, unparseable or missing cause."),
+    "asks-done": ASKS_DONE_USAGE,
+    "correct-ruling": ("No asks coder is running, so the ruling cannot be corrected in this run. Put the change in a "
+                       "new /code run."),
+    "skill-done": "skill-done ran with no closing-phase skill pending.",
+    "verify": ("verify ran with no converged review, failed Automated Verification or unparsed Manual Verification "
+               "pending."),
 }
-
-
-def guard_stop_reasons(verb):
-    # The stop reasons a STAGE_GUARDS verb runs after. review-again also runs after a fix-removed-change stop.
-    reasons = STAGE_GUARDS[verb].get("stopReasons", ())
-    module, _import_error = load_handback()
-    if verb != "review-again" or module is None:
-        return reasons
-
-    return (*reasons, module.FIX_REMOVED_CHANGE)
-
-
-def guarded_verb_runs(verb, state):
-    # The saved state lets a STAGE_GUARDS verb run.
-    if state is None:
-        return False
-
-    guard = STAGE_GUARDS[verb]
-    at_stage = state.stage in guard["stages"]
-    reason_allowed = "stopReasons" not in guard or stop_kind(state) in guard_stop_reasons(verb)
-    if at_stage and reason_allowed:
-        return True
-    if verb == "review-again":
-        return awaits_resumed_review(state)
-    if verb == "verify":
-        return phase_code_in_place(state)
-    return False
+# The guarded verbs whose refusal lets the fork go on instead of stopping it.
+GO_ON_REFUSAL_VERBS = ("correct-ruling",)
 
 
 NO_REVIEW_PACKET = ("No review-loop packet was saved. The log-hook (code_step.py log-hook) is not installed. "
@@ -231,7 +194,7 @@ def decision_for_word(repo_dir, state, word):
     # The decision the word names, or None after the stop or the question it printed (a blank word, an unknown word, or
     # discuss).
     if not word:
-        return emit("stop", STAGE_GUARDS["decide"]["message"])
+        return emit("stop", VERB_REFUSALS["decide"])
     decision = plan_format.DECISION_WORDS.get(word)
     if decision is None:
         return emit("stop", "decide takes adopt, keep or discuss.")

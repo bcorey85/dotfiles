@@ -63,13 +63,14 @@ CODE_STEP_NVIM_JUMP overrides the nvim-jump command.
 Each run also keeps <git dir>/code-step/runs/<run id>/events.jsonl and one prompt-<dispatch id>.txt per dispatch. The
 hooks write only that log; the verbs read it and write state.json.
 
-The code is split in files that import one way: code_step_core (state, event log, hand-back matcher, output),
-code_step_verification (Automated Verification reader and runner), code_step_boundary (criteria guard, phase boundary,
-tick and verify), code_step_closing (skill-done), code_step_hooks, code_step_gates (gate
-commands), code_step_start (the start verb), code_step_report (reading a coder report), code_step_review
-(plan-impact modal, plan-edit dispatch, review dispatch, review packet, asks), code_step_asks (the asks route's
-words: ask listing, pre-set outcome, asks-done arguments, asks coder prompt, prior issues; ask ids and outcome rows
-come from review/review_asks.py), code_step_usage (usage text and the leading-dash check of `resume`) and this file."""
+The code is split in files that import one way: code_step_state (the run's record), code_step_routes (the route table
+and stage facts), code_step_core (state, event log, hand-back matcher, output), code_step_verification (Automated
+Verification reader and runner), code_step_boundary (criteria guard, phase boundary, tick and verify),
+code_step_closing (skill-done), code_step_hooks, code_step_gates (gate commands), code_step_start (the start verb),
+code_step_report (reading a coder report), code_step_review (plan-impact modal, plan-edit dispatch, review dispatch,
+review packet, asks), code_step_asks (the asks route's words: ask listing, pre-set outcome, asks-done arguments, asks
+coder prompt, prior issues; ask ids and outcome rows come from review/review_asks.py), code_step_usage (usage text and
+the leading-dash check of `resume`) and this file."""
 import contextlib
 import fcntl
 import json
@@ -94,16 +95,12 @@ from code_step_closing import command_skill_done_with_question
 from code_step_core import (
     CODER,
     CODER_RESUMABLE,
-    CODER_STAGES,
-    HOOK_STAGES,
     RESUME_VERB,
     REVIEW_AGAIN_INVOKE,
     StateFileError,
     ask_user,
     awaited_agent_id,
     awaited_handback,
-    awaits_resumed_coder,
-    awaits_resumed_review,
     branch_label,
     carried_start_words,
     changed_since_baseline,
@@ -114,6 +111,7 @@ from code_step_core import (
     dispatch_since,
     emit,
     file_hashes,
+    guarded_verb_runs,
     head_commit,
     head_left_phase_start,
     load_state,
@@ -165,7 +163,8 @@ from code_step_report import (
     why_by_file,
 )
 from code_step_review import (
-    STAGE_GUARDS,
+    GO_ON_REFUSAL_VERBS,
+    VERB_REFUSALS,
     ask_the_user,
     command_after_plan_edit,
     command_after_review,
@@ -176,10 +175,9 @@ from code_step_review import (
     dispatch_correction_coder,
     emit_plan_impact_modal,
     emit_review_dispatch,
-    guard_stop_reasons,
-    guarded_verb_runs,
 )
 from code_step_review_stops import blocker_stop_next_step, blocker_stop_text, left_findings_open
+from code_step_routes import GUARDED_VERBS, ROUTES, STAGE_FACTS, STALE_PHASE_STEP, StageFact, resume_step, state_key
 from code_step_start import (
     command_start,
     emit_closing_skill,
@@ -190,16 +188,10 @@ from code_step_start import (
 from code_step_usage import VERB_USAGES, check_verb_arguments, print_usage_if_asked
 from code_step_verification import verification_format_failure
 
-WAITING_STAGES = ("asks", "impact-coder", "impact-review", "skill", "plan-coder")
 # These verbs open a new /code run after the user answered. The last run's say.md text was already handed back.
 VERBS_THAT_CLEAR_SAY = ("decide", "asks-done", "verify", "review-again")
 # A correction or guidance arrives while a run may sit stopped on a coder's report: question.md still names that stop.
 VERBS_THAT_KEEP_QUESTION = ("correct-ruling", "guide")
-# The saved stage of a run and the step that comes next for it. `stopped` and an unknown stage are routed by code.
-STAGE_ROUTES = {
-    "coder": "after-coder", "asks-coder": "after-coder", "review": "after-review", "plan-coder": "after-plan-edit",
-    "impact-coder": "ask-impact", "impact-review": "ask-impact", "asks": "ask-asks", "done": "done",
-}
 NO_CODER_REPORT = ("No coder report was saved. The log-hook (code_step.py log-hook) is not installed or the coder "
                    "never handed back. Tell the user.")
 
@@ -526,8 +518,6 @@ def route_coder_report(repo_dir, state, handback):
 
 
 def command_after_coder(repo_dir, state, args):
-    if state.stage not in CODER_STAGES and not awaits_resumed_coder(state):
-        return refuse("no coder dispatch is pending any more.", script_command(RESUME_VERB))
     if not wait_for_handback(repo_dir, state, RESUME_VERB):
         return
 
@@ -540,16 +530,16 @@ def command_after_coder(repo_dir, state, args):
 # ---------- resume ----------
 
 def run_guarded_verb(verb, handler, args):
-    guard = STAGE_GUARDS[verb]
     repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     state = load_state(repo_dir)
-    if not guarded_verb_runs(verb, state):
-        if guard.get("goOnRefusal"):
-            return emit("go-on", guard["message"])
+    if guarded_verb_runs(verb, state):
+        return handler(repo_dir, state, args)
 
-        return refuse(guard["message"], script_command(RESUME_VERB))
-    handler(repo_dir, state, args)
+    refusal = VERB_REFUSALS[verb]
+    if verb in GO_ON_REFUSAL_VERBS:
+        return emit("go-on", refusal)
+    return refuse(refusal, script_command(RESUME_VERB))
 
 
 def stopped_coder_report(repo_dir, state):
@@ -578,47 +568,34 @@ def review_answer_sent(repo_dir, state):
             or sent_message_since(repo_dir, state, state.stop.at, launch_id))
 
 
-def stopped_route(repo_dir, state):
-    if awaits_resumed_coder(state):
-        return "after-coder" if coder_answer_sent(repo_dir, state) else "ask-coder"
-    if awaits_resumed_review(state):
-        if state.review_script_pid:
-            return "after-review"
-        return "after-review" if review_answer_sent(repo_dir, state) else "ask-review-cap"
-
-    kind = stop_kind(state)
-    if kind == "coder-cap":
-        return "ask-coder-cap"
-    if kind in blocker_stop_text():
-        return "ask-critical-blocker"
-    # A review gate refused as false-clean is reviewed again, not stopped on again.
-    return "review-again" if kind == "false-clean" else "ask-unknown"
+def review_goes_on(repo_dir, state):
+    # The review-loop the wait cap stopped on goes on: its review script still runs, the user resumed it, or it handed
+    # back late on its own.
+    return bool(state.review_script_pid) or review_answer_sent(repo_dir, state)
 
 
-def resume_route(repo_dir, state):
-    # The step that comes next for the saved run, by its stage and stop reason. Pure: it reads and changes nothing.
+# What the saved run and its log show, for a row of the route table whose step hangs on it.
+OBSERVATIONS = {
+    "dispatch-recorded": lambda repo_dir, state: dispatch_since(state) is not None,
+    "coder-answer-sent": coder_answer_sent,
+    "review-goes-on": review_goes_on,
+}
+
+
+def next_resume_step(repo_dir, state):
+    # The step that comes next for the saved run, by its row in the route table. Pure: it reads and changes nothing.
+    step = resume_step(repo_dir, state, OBSERVATIONS)
     if state is None:
-        return "start"
+        return step
 
-    route = saved_run_route(repo_dir, state)
     # The run's own coder or review-loop is back: taking its hand-back reads the plan again, so the plan edits it made
     # do not make the run stale. Only when that read adopts the phase: otherwise the stale check decides now.
-    is_own_handback = (route in ("after-coder", "after-review")
+    is_own_handback = (step in ("after-coder", "after-review")
                        and awaited_handback(repo_dir, state) is not None
                        and own_phase_text(repo_dir, state) is not None)
     if not is_own_handback and stale_phase_reason(repo_dir, state):
-        return "ask-stale-phase"
-    return route
-
-
-def saved_run_route(repo_dir, state):
-    # The step that comes next for the saved run by its stage and stop reason alone; it does not check the plan.
-    stage = state.stage
-    if stage in HOOK_STAGES and dispatch_since(state) is None:
-        return "ask-unknown"
-    if stage == "stopped":
-        return stopped_route(repo_dir, state)
-    return STAGE_ROUTES.get(stage, "ask-unknown")
+        return STALE_PHASE_STEP
+    return step
 
 
 def ask_about_stopped_coder(repo_dir, state, answer=None):
@@ -641,25 +618,25 @@ def ask_about_stopped_coder(repo_dir, state, answer=None):
     )
 
 
-def ask_about_unrecorded_state(repo_dir, state):
-    # The fallback stop for a saved state that no route covers: it prints the state and the command that goes on.
-    stage = state.stage
-    if stage == "skill":
-        return resume_closing_skill(repo_dir, state)
-
+def saved_run_line(state):
     stop_reason = stop_kind(state)
-    saved = f"The run is at stage {stage}" + (f" with stop reason {stop_reason}." if stop_reason else ".")
-    guarded_verb = next((verb for verb, guard in STAGE_GUARDS.items()
-                        if stage in guard["stages"] and stop_reason in guard_stop_reasons(verb)), None)
-    if guarded_verb:
-        next_step = f"When the cause is fixed, run `{guarded_verb}`."
-    else:
-        restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
-        status_command = script_command("status")
-        next_step = (
-            f"Run `{status_command}` to read the saved state. To start the phase over, {restart_instruction_text}."
-        )
-    ask_user(repo_dir, f"{saved} {next_step}")
+    return f"The run is at stage {state.stage}" + (f" with stop reason {stop_reason}." if stop_reason else ".")
+
+
+def ask_about_saved_state(repo_dir, state):
+    # The stop for a saved run that waits on no answer the script can take: it prints the state and how to start over.
+    saved_line = saved_run_line(state)
+    restart_instruction_text = stopped_run_restart_instruction(repo_dir, state)
+    status_command = script_command("status")
+    ask_user(repo_dir, f"{saved_line} Run `{status_command}` to read the saved state. To start the phase over, "
+             f"{restart_instruction_text}.")
+
+
+def ask_to_fix_the_cause(repo_dir, state):
+    # A stop whose cause the user fixes outside the run; the verb of the run's row goes on once it is fixed.
+    saved_line = saved_run_line(state)
+    verb = ROUTES[state_key(state)].verb
+    ask_user(repo_dir, f"{saved_line} When the cause is fixed, run `{verb}`.")
 
 
 def resume_closing_skill(repo_dir, state):
@@ -697,8 +674,8 @@ def ask_about_coder_cap(repo_dir, state):
              f"its launch has no agent id. To dispatch the phase coder again, {restart_instruction_text}.")
 
 
-# The step a route name runs. A route no entry names prints the saved state.
-RESUME_HANDLERS = {
+# The step `resume` takes, by the name the route table gives it.
+STEPS = {
     "start": lambda repo_dir, state: command_start([]),
     "done": lambda repo_dir, state: command_start(carried_start_words(state)),
     "after-coder": lambda repo_dir, state: command_after_coder(repo_dir, state, []),
@@ -708,9 +685,11 @@ RESUME_HANDLERS = {
     "ask-impact": lambda repo_dir, state: emit_plan_impact_modal(state.impact, repo_dir,
                                                                  state.carried_findings or []),
     "ask-asks": lambda repo_dir, state: ask_the_user(repo_dir, state, state.asks),
+    "closing-skill": resume_closing_skill,
     "ask-coder": ask_about_stopped_coder, "ask-review-cap": ask_about_review_cap,
     "ask-coder-cap": ask_about_coder_cap, "ask-stale-phase": ask_about_stale_phase,
-    "ask-critical-blocker": ask_about_critical_blocker,
+    "ask-critical-blocker": ask_about_critical_blocker, "ask-cause-fixed": ask_to_fix_the_cause,
+    "ask-status": ask_about_saved_state,
 }
 
 
@@ -718,26 +697,26 @@ def command_resume(args):
     repo_dir = repo_root_or_exit()
     os.chdir(repo_dir)
     state = load_state(repo_dir)
-    route = resume_route(repo_dir, state)
+    step = next_resume_step(repo_dir, state)
     # With no run open, the arguments are new work: a task file or task text that came with no verb.
-    if args and route in ("start", "done"):
+    if args and step in ("start", "done"):
         return command_start(args)
     # A stale phase outranks the route, so an answer sent while a stopped coder waits would otherwise be refused as
     # "no stopped coder waits": say the phase is stale instead.
-    if args and route == "ask-stale-phase":
+    if args and step == STALE_PHASE_STEP:
         return ask_about_stale_phase(repo_dir, state)
 
     # Only a coder that waits for the user's answer takes one: `resume <answer>`.
-    if args and route != "ask-coder":
+    if args and step != "ask-coder":
         reason, commands, notes, stop = resume_text_refusal(repo_dir, state, args)
         return refuse(reason, *commands, notes=notes, stop=stop)
 
-    if state is not None and (state.stage == "stopped" or state.stage in WAITING_STAGES):
+    if state is not None and StageFact.RESUME_CLEARS_SAY in STAGE_FACTS[state.stage]:
         clear_say(repo_dir)
 
     if args:
         return ask_about_stopped_coder(repo_dir, state, answer=" ".join(args))
-    RESUME_HANDLERS.get(route, ask_about_unrecorded_state)(repo_dir, state)
+    STEPS[step](repo_dir, state)
 
 
 def abort_dropped_lines(repo_dir, state, criteria_message, archive_path, script_pid,
@@ -906,7 +885,7 @@ def run_verb(verb, handler, args):
             if verb in VERBS_THAT_CLEAR_SAY:
                 clear_say(repo)
 
-            if verb in STAGE_GUARDS:
+            if verb in GUARDED_VERBS:
                 run_guarded_verb(verb, handler, args)
             else:
                 handler(args)

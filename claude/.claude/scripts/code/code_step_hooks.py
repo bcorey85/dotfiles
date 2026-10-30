@@ -1,8 +1,8 @@
 """code_step_hooks.py: the hook commands of code_step.py. The hooks write the run's event log and deny or block the
 fork's calls; none writes state.json.
 
-Imports run one way: code_step_core, code_step_verification, code_step_boundary, code_step_closing, code_step_hooks,
-code_step_gates, code_step_start, code_step_report, code_step_review, code_step."""
+Imports run one way: code_step_state, code_step_routes, code_step_core, code_step_verification, code_step_boundary,
+code_step_closing, code_step_hooks, code_step_gates, code_step_start, code_step_report, code_step_review, code_step."""
 import collections
 import datetime
 import json
@@ -19,7 +19,6 @@ from code_step_core import (
     CODER,
     FORK_AGENT_TYPE,
     FORK_STOP_BLOCK_LIMIT,
-    HOOK_STAGES,
     INSTALLED_COMMAND,
     PROMPT_DENIAL_LIMIT,
     RESUME_VERB,
@@ -45,11 +44,10 @@ from code_step_core import (
     stop_kind,
     timed_command,
 )
+from code_step_routes import STAGE_FACTS, StageFact
 from code_step_verification import verification_format_failure
 
 HookCall = collections.namedtuple("HookCall", "event repo state run_id session_id tool_input")
-# The stages whose coders may not edit a later phase's files. The plan-edit coder edits the plan only.
-LATER_PHASE_GUARD_STAGES = ("coder", "review", "asks-coder")
 
 
 def hook_repo_dirs(event):
@@ -121,7 +119,7 @@ def open_fork_block(call, kind, limit, requires_dispatch=False):
     # the stage takes no hook, the event is not the pinned fork's, `limit` blocks of this kind were made, or no
     # dispatch is open. requires_dispatch also returns False when the run has no dispatch.
     repo, state = call.repo, call.state
-    if state.stage not in HOOK_STAGES or not is_pinned_fork_event(call.event, state):
+    if StageFact.AGENT_OUT not in STAGE_FACTS[state.stage] or not is_pinned_fork_event(call.event, state):
         return False
 
     standing = newest_dispatch_standing(repo, state)
@@ -159,7 +157,7 @@ def later_phase_edit_denial(call):
     # The reason to deny a coder's hand-back while the run's diff since its baseline edits a file that the plan names
     # only in a later open phase, or None.
     state = call.state
-    if call.event.get("agent_type") != CODER or state.stage not in LATER_PHASE_GUARD_STAGES:
+    if call.event.get("agent_type") != CODER or StageFact.CODE_AGENT_OUT not in STAGE_FACTS[state.stage]:
         return None
     if not state.plan or not state.phase or state.baseline is None:
         return None
@@ -345,7 +343,7 @@ def command_dispatch_hook():
 def dispatch_denial(call):
     # Denies the Agent call when it breaks the pending dispatch of the call's run. True when it denied. A call that
     # carries the marker of another run belongs to that run.
-    if call.event.get("tool_name") != "Agent" or call.state.stage not in HOOK_STAGES:
+    if call.event.get("tool_name") != "Agent" or StageFact.AGENT_OUT not in STAGE_FACTS[call.state.stage]:
         return False
     marker = dispatch_marker(call.tool_input.get("prompt"))
     if marker is not None and marker[0] != call.run_id:

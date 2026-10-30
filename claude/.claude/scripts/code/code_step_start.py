@@ -30,6 +30,7 @@ from code_step_core import (
     emit,
     emit_dispatch,
     file_hashes,
+    guarded_verb_runs,
     head_commit,
     head_left_phase_start,
     is_run_open,
@@ -56,7 +57,6 @@ from code_step_core import (
 )
 from code_step_gates import derive_gate_commands
 from code_step_report import CODER_CHECKS_LINE, ENG_SPEC_BRIEF, coder_model
-from code_step_review import guarded_verb_runs
 from code_step_start_args import (
     START_MODIFIERS,
     SWITCH_FLAGS,

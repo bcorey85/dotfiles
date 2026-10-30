@@ -4,19 +4,25 @@ the user.
 
 run: python3 -m unittest test_code_step_hand_back
 """
+import json
 import time
 
 import test_code_step as base
 
-SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
-BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
-UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
-                     "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
-CHECK_ONLY_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
-                     "full_check: passed (check only; CI runs the full suite)\nfull_check_command: cargo check")
-CACHE_ASK = ('{"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?", '
-             '"change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}')
-CAP_PACKET = "status: cap-reached\niter: 2\nfindings_remaining:\n  - finding: x\n    file_line: a.ts:1"
+SETUP_FAULT_PACKET = json.dumps({"status": "setup-fault", "iter": 1,
+                                 "blockers": [{"finding": "no package.json", "file_line": "none"}]})
+BLOCKER_PACKET = json.dumps({"status": "critical-blocker", "iter": 1,
+                             "blockers": [{"finding": "b", "file_line": "backend/src/orders.ts:1"}]})
+UNVERIFIED_PACKET = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": [],
+                                "full_check": "unverified (exit 0, no runner summary)",
+                                "full_check_command": "npm run lint"})
+CHECK_ONLY_PACKET = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": [],
+                                "full_check": "passed (check only; CI runs the full suite)",
+                                "full_check_command": "cargo check"})
+CACHE_ASK = {"finding": "f", "file_line": "backend/src/orders.ts:2", "question": "keep the cache?",
+             "change": "drop the cache", "gate": "code-reviewer", "class": "correctness"}
+CAP_PACKET = json.dumps({"status": "cap-reached", "iter": 2,
+                         "findings_remaining": [{"finding": "x", "file_line": "a.ts:1"}]})
 
 
 class HandBackTest(base.CodeStepTest):
@@ -167,7 +173,7 @@ class HandBackTest(base.CodeStepTest):
                 self.setUp()
                 self.coder_round()
                 self.set_state(**carried)
-                self.hook("review-loop", packet + f"\nfixed: []\nask: [{CACHE_ASK}]")
+                self.hook("review-loop", base.packet_with(packet, fixed=[], ask=[CACHE_ASK]))
 
                 out = self.step("resume")
 

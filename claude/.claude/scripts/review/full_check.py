@@ -24,10 +24,10 @@ default; a path the diff removed or moved is a failure), `not run (timeout)` whe
 runs tests or lint on named files or tests, or with a changed-files flag, and its text does not equal the CLAUDE.md
 `Quality check:` command (it does not run then), or `not run (unresolved command: ...)` when lib/check_scope cannot
 read what it runs, such as a make call with a NAME=value argument or a target no Makefile names, under the same
-exception; `run()` applies both refusals unless the caller passes `scope_checked=True`, as `base_run` does after
-the head run has applied them. A `passed` or `unverified` result is followed
-by `summary: <the runner summary lines joined with " | ">` or `summary: not found`. `run` with no command returns
-`not run (no check found; ...)`.
+exception. A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">`
+or `summary: not found`. `run` with no command returns `not run (no check found; ...)`. `run`, which the review loop
+calls, refuses a scoped or unresolved command the same way; there a command that is && steps of the `Quality check:`
+command counts as that command. `base_run` skips the refusal, since the head run has applied it.
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
 (`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
@@ -324,27 +324,28 @@ def empty_details():
     return {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
 
 
-def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD", scope_checked=False):
+def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD", declared=None):
     """Run the full check once. Returns (result, the log's last lines, details). The details hold `summaries` (the
     runner's own summary lines), `changed` (tracked files the command rewrote) and `created` (files it created), all
     lists; both kinds of file are left in place. On a lint failure the lines are the failing step's lines, not the
     log's last lines. `on_start`, when given, is called with the pid of the process group
-    the check leads. A command that is no full check (it names files or tests, or its scope cannot be read) is not run
-    and returns `NOT_RUN_SCOPED` or `NOT_RUN_UNRESOLVED`, unless it equals the CLAUDE.md `Quality check:` command.
-    `scope_checked=True` skips the refusal, for a caller that already passed the command through it (`base_run`, and
-    `main`, which checks the command it was given before Expected red lines rewrite it)."""
+    the check leads. A scoped or unresolved command (it names files or tests, or its scope cannot be read) is not run
+    and returns `NOT_RUN_SCOPED` or `NOT_RUN_UNRESOLVED` unless `declared`: True when the command, before its
+    Expected red steps were left out, equals the `Quality check:` command, or when the caller already passed it
+    through the refusal (`base_run`); None counts the command when it equals that command or is && steps of it."""
     details = empty_details()
-    in_ci = full_suite_runs_in_ci(repo)
     configured = configured_check_command(repo)
-    declared = check_command is not None and check_command == configured
+    in_ci = full_suite_runs_in_ci(repo)
     if in_ci and (check_command is None or not is_configured_check(check_command, configured)):
         return NOT_RUN_CI, "", details
     if check_command is None:
         return NOT_RUN_NO_CHECK, "", details
-    if not declared and not scope_checked:
-        refusal = scope_refusal(check_command, repo)
-        if refusal:
-            return refusal, "", details
+
+    if declared is None:
+        declared = is_configured_check(check_command, configured)
+    refusal = None if declared else scope_refusal(check_command, repo)
+    if refusal:
+        return refusal, "", details
 
     env = pinned_interpreter_env(repo, env)
     before = take(repo)
@@ -456,7 +457,7 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
     working tree is never touched. A cache the check writes through a linked folder lands in the user's folder.
     `live_trees`, when given, is a set that holds (repo root, worktree) while the worktree exists, so a signal
     handler can remove it. The caller must have run `check_command` through `run()` on the head tree first, so the
-    scope refusals have already passed: this run skips them (`scope_checked=True`)."""
+    scope refusals have already passed: this run skips them (`declared=True`)."""
     root = script_utils.repo_root(repo)
     if root is None:
         return None
@@ -491,7 +492,7 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
 
             link_dependency_folders(repo_path, base_repo)
             result, _lines, _details = run(base_repo, check_command, log, timeout, env=env, on_start=on_start,
-                                           scope_checked=True)
+                                           declared=True)
         finally:
             remove_worktree(root, tree)
             if live_trees is not None:
@@ -617,17 +618,12 @@ def main(argv):
     except OSError as error:
         parser.error(f"--plan {args.plan}: {error.strerror}")
 
-    configured = configured_check_command(args.repo)
-    in_ci = full_suite_runs_in_ci(args.repo)
-    declared = check_command == configured
-    refusal = scope_refusal(check_command, args.repo)
+    declared = check_command == configured_check_command(args.repo)
     if phase_command is None:
         result, tail, details = expected_red.not_run_result(left_out), "", empty_details()
-    elif not declared and refusal and (not in_ci or is_configured_check(check_command, configured)):
-        result, tail, details = refusal, "", empty_details()
     else:
         result, tail, details = run(args.repo, phase_command, args.log, args.timeout, base=args.base,
-                                    scope_checked=True)
+                                    declared=declared)
     print_result(result, details, left_out)
 
     if is_failure(result) or is_setup_fault_result(result):

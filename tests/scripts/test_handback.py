@@ -1262,6 +1262,15 @@ def full_check_run(tool_use_id):
     return {"type": "assistant", "message": {"role": "assistant", "content": [call, printed]}}
 
 
+def review_scope_run(tool_use_id, root):
+    """A review-scope call: one record holds the shell call and the ROOT= line it printed."""
+    call = {"type": "tool_use", "id": tool_use_id, "name": "Bash",
+            "input": {"command": "~/.claude/skills/review/review-scope --base HEAD"}}
+    printed = {"type": "tool_result", "tool_use_id": tool_use_id,
+               "content": [{"type": "text", "text": f"ROOT={root}\nFILES=a.py"}]}
+    return {"type": "assistant", "message": {"role": "assistant", "content": [call, printed]}}
+
+
 def background_reviewer_launch(tool_use_id, agent_id):
     """A code-reviewer dispatch and the result that says it runs in the background."""
     launch = transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Agent",
@@ -1360,6 +1369,67 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         out = self.hand_back([prompt, full_check_run("t1"), coder_step("t2")], cwd=other)
         self.assertIn("Step 6 execution gate", json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_a_root_line_in_another_repo_than_the_dispatch_names_one_repo_for_the_gate(self):
+        import review_commit_gate
+
+        _, other = self.make_repos("# Repo\n", "# Other repo\n")
+        reviewed = os.path.realpath(self.tmp / "reviewed-repo")
+        prompt_without_repo_line = {"type": "user", "message": {"role": "user", "content": "review loop\n"}}
+        shutil.rmtree(self.store, ignore_errors=True)
+        event = {"session_id": SESSION, "cwd": other,
+                 "tool_input": {"subagent_type": "review-loop", "prompt": "review loop\n"}}
+        self.run_cli(["hook", "dispatch"], json.dumps(event))
+        self.dispatch("code-reviewer", "a1")
+        self.assertEqual(handback_store.latest(SESSION)["dispatch"]["repo"], os.path.realpath(other))
+
+        steps = [prompt_without_repo_line, review_scope_run("t1", reviewed), full_check_run("t2")]
+        self.assertEqual(self.hand_back(steps, cwd=other), "")
+
+        self.assertEqual(handback_store.latest(SESSION)["dispatch"]["repo"], reviewed)
+        self.assertTrue(review_commit_gate.review_handed_back_since(SESSION, 0, reviewed))
+        self.assertFalse(review_commit_gate.review_handed_back_since(SESSION, 0, os.path.realpath(other)))
+
+    def test_a_root_line_outside_any_work_tree_names_no_repo_for_the_gate(self):
+        import review_commit_gate
+
+        _, other = self.make_repos("# Repo\n", "# Other repo\n")
+        outside = self.tmp / "plain-folder"
+        outside.mkdir()
+        prompt_without_repo_line = {"type": "user", "message": {"role": "user", "content": "review loop\n"}}
+        shutil.rmtree(self.store, ignore_errors=True)
+        event = {"session_id": SESSION, "cwd": other,
+                 "tool_input": {"subagent_type": "review-loop", "prompt": "review loop\n"}}
+        self.run_cli(["hook", "dispatch"], json.dumps(event))
+        self.dispatch("code-reviewer", "a1")
+        self.assertEqual(handback_store.latest(SESSION)["dispatch"]["repo"], os.path.realpath(other))
+
+        steps = [prompt_without_repo_line, review_scope_run("t1", outside), full_check_run("t2")]
+        self.assertEqual(self.hand_back(steps, cwd=other), "")
+
+        self.assertIsNone(handback_store.latest(SESSION)["dispatch"]["repo"])
+        self.assertFalse(review_commit_gate.review_handed_back_since(SESSION, 0, os.path.realpath(other)))
+
+    def test_a_second_dispatch_with_a_repo_line_replaces_the_root_line_repo_for_the_gate(self):
+        import review_commit_gate
+
+        _, other = self.make_repos("# Repo\n", "# Other repo\n")
+        reviewed = os.path.realpath(self.tmp / "reviewed-repo")
+        prompt_without_repo_line = {"type": "user", "message": {"role": "user", "content": "review loop\n"}}
+        shutil.rmtree(self.store, ignore_errors=True)
+        event = {"session_id": SESSION, "cwd": other,
+                 "tool_input": {"subagent_type": "review-loop", "prompt": "review loop\n"}}
+        self.run_cli(["hook", "dispatch"], json.dumps(event))
+        self.dispatch("code-reviewer", "a1")
+
+        steps = [prompt_without_repo_line, review_scope_run("t1", reviewed), full_check_run("t2")]
+        self.assertEqual(self.hand_back(steps, cwd=other), "")
+
+        second_event = {"session_id": SESSION, "cwd": other,
+                        "tool_input": {"subagent_type": "review-loop", "prompt": f"review loop\nrepo: {other}\n"}}
+        self.run_cli(["hook", "dispatch"], json.dumps(second_event))
+        self.assertEqual(handback_store.latest(SESSION)["dispatch"]["repo"], os.path.realpath(other))
+        self.assertFalse(review_commit_gate.review_handed_back_since(SESSION, 0, reviewed))
 
     def test_a_clean_hand_back_after_a_full_check_passes(self):
         self.assertEqual(self.hand_back([coder_step("t1"), full_check_run("t2")]), "")

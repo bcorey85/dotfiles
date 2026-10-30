@@ -3,12 +3,9 @@
 
   PostToolUse(Agent): a coder dispatch is recorded with the id of the agent it ran.
   PreToolUse(Bash):   `git commit` in a dirty session is denied, with the reason telling the session to run /review
-                      and commit after it converges; `review-gate-mark clean|dirty` records that state.
-                      `clean` is denied unless this session's latest stored review-loop hand-back (handback.py) is
-                      converged or deferred.
+                      and commit after it converges.
 
-A coder dispatch or a `dirty` mark makes the session dirty, whatever repo the coder changed: every commit in any repo
-is judged.
+A coder dispatch makes the session dirty, whatever repo the coder changed: every commit in any repo is judged.
 
 A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
 under the repo's top-level docs/ folder: the paths already staged (`git diff --cached`, run in the hook input's
@@ -50,20 +47,22 @@ A dirty session still commits in four more cases, each checked against something
     result are not the user's prompt and are skipped)
   - the commit concludes a merge (the repo it commits in has a MERGE_HEAD)
   - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), so work
-    that converged in /code's review-loop, or in /review, commits after a later coder dispatch that edited nothing
+    that converged in a review-loop commits after a later coder dispatch that edited nothing
   - the session's latest review-loop hand-back is current, converged or deferred, came after the coder work that
-    made the session dirty, and answers a review-loop dispatch of that repo (its `repo:` line, else the session
-    cwd), however the run that launched the loop closed.
+    made the session dirty, and answers a review-loop dispatch of that repo (its `repo:` line, else the first
+    absolute path the prompt names, else the session cwd; a path in no work tree falls back to the cwd), however
+    the run that launched the loop closed.
 The last three credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
 dir or work-tree option or variable, quotes and escapes resolved) or holds a `$` or backtick outside a single-quoted
 string, a comment or a double-quoted quoted-heredoc message earns no credit. So does a command with a step that is
 not a plain `git` command but has a word holding `commit` (`env -C <dir> git commit`, `time git commit`).
 
-State: ~/.claude/state/review-gate/<session>, one line per record: `clean` (a clean mark; earlier lines no longer
-count), or a JSON event {"kind": "dispatch"|"dirty", "ts", "agent"}. A plain `dirty` line, from
-before events carried a time, counts from the file's last change. Hook JSON in, one permissionDecision line out,
-exit 0. On an internal error PreToolUse asks the user; PostToolUse stays silent.
+State: ~/.claude/state/review-gate/<session>, one line per record: `clean` (written by
+code_step_boundary.mark_review_gate_clean; earlier lines no longer count), or a JSON event
+{"kind": "dispatch", "ts", "agent"} (written by on_post_tool_use). A legacy plain `dirty` line, or a dirty event,
+is still read as dirty and counts from the file's last change. Hook JSON in, one permissionDecision
+line out, exit 0. On an internal error PreToolUse asks the user; PostToolUse stays silent.
 """
 import json
 import os
@@ -112,7 +111,6 @@ QUOTES_AND_BACKSLASHES = re.compile(r"[\"'\\]")
 OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 # For a command shlex cannot read: git, then only option-like words with an optional value each, then commit.
 UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_VALUE + r")?)*[ \t]+commit\b(?!-)")
-MARK = re.compile(r"review-gate-mark[ \t\n\r\f\v]+(clean|dirty)")
 GIT_TIMEOUT_SECONDS = 3
 NO_REVIEW_MARKER = "[no-review]"
 DOCS_FOLDER = "docs/"
@@ -407,7 +405,7 @@ def open_state_dir():
 
 
 def gate_events(state_file):
-    """The state events after the last clean mark, oldest first. A plain `dirty` line, and a line the gate cannot
+    """The state events after the last `clean` line, oldest first. A plain `dirty` line, and a line the gate cannot
     read, become a dirty event at the file's last change."""
     try:
         with open(state_file, "rb") as handle:
@@ -449,7 +447,7 @@ def worked_until(transcript_path, agent_id):
 
 
 def dirty_since(events, transcript_path):
-    """When the session became dirty: the latest dirty mark or coder dispatch. A coder counts from its dispatch or
+    """When the session became dirty: the latest dirty event or coder dispatch. A coder counts from its dispatch or
     its transcript's last change, whichever is later, since a background coder edits after its dispatch is
     recorded. A coder with no agent id on record counts as dirty now, since its last edit cannot be read."""
     dirty_times = []
@@ -648,8 +646,8 @@ def earns_credit(repo_dir, dirty_at, session):
     if concludes_merge(repo_dir) or reviewed_tree.is_reviewed(session, repo_dir):
         return True
 
-    repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
-    return review_handed_back_since(session, dirty_at, str(repo_top) if repo_top else None)
+    repo_top = script_utils.work_tree_top(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
+    return review_handed_back_since(session, dirty_at, repo_top)
 
 
 def check_commit(command, root, state_file, session):
@@ -676,35 +674,10 @@ def check_commit(command, root, state_file, session):
     )
 
 
-def apply_mark(mark, session, state_file, cwd):
-    """Record `review-gate-mark clean|dirty`. `clean` is denied without a converged or deferred hand-back."""
-    if mark == "clean":
-        # Imported here, not at load: a missing module is an internal error on a `clean` mark only, and the
-        # commit check and the dirty mark keep working.
-        import handback
-        reason = handback.false_clean_reason(session)
-        if reason:
-            raise DenyError(
-                f"[review-commit-gate] Gate not marked clean: {reason}. Only a converged or deferred review "
-                "hand-back from this session allows clean."
-            )
-    # A mark stands for every repo, so it replaces the events before it.
-    line = mark if mark == "clean" else json.dumps({"kind": "dirty", "ts": time.time()})
-    with open(state_file, "w") as handle:
-        handle.write(line + "\n")
-    if mark == "clean" and cwd:
-        reviewed_tree.record_reviewed(session, cwd)
-
-
 def on_pre_tool_use(root, session, state_file):
-    """A commit command is checked and never also marks; any other command may mark."""
     command = jq_field(root, "tool_input", "command")
     if is_commit_command(command):
         check_commit(command, root, state_file, session)
-        return
-    marked = MARK.search(command)
-    if marked:
-        apply_mark(marked.group(1), session, state_file, jq_field(root, "cwd"))
 
 
 def run(raw, state):

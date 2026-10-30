@@ -121,8 +121,8 @@ def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
         report_write_failure("hand-back row", error)
     review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)
 
-    # The /code run that launched this loop can end before the loop hands back, and then nothing marks the gate. So
-    # the loop records the tree it ended clean on itself, under the same rule as `review-gate-mark clean`.
+    # The /code run that launched this loop can end before the loop hands back, and then nothing records the tree.
+    # So the loop records the tree it ended clean on itself, under the commit gate's hand-back rule.
     try:
         if handback.false_clean_reason(args.session) is None:
             reviewed_tree.record_reviewed(args.session, repo)

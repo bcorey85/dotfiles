@@ -42,12 +42,14 @@ class GateCase(unittest.TestCase):
             shutil.copy(str(source), str(self.scripts / folder / name))
         self.script = self.scripts / "review" / "review_commit_gate.py"
 
-    def seed_handback(self, status=None, session="s1", dispatches=1, handed_back=True):
-        """Rows as handback.py's hook stores them: dispatches first, then one hand-back."""
+    def seed_handback(self, repo, status="converged", session="s1", dispatches=1, handed_back=True):
+        """Rows as handback.py's hook stores them, stored now: dispatches of repo first, then one hand-back."""
         self.store_dir.mkdir(parents=True, exist_ok=True)
-        rows = [{"kind": "dispatch", "session_id": session} for _ in range(dispatches)]
+        rows = [{"kind": "dispatch", "session_id": session, "ts": time.time(), "repo": os.path.realpath(repo)}
+                for _ in range(dispatches)]
         if handed_back:
-            rows.append({"kind": "handback", "session_id": session, "status": status, "message": ""})
+            rows.append({"kind": "handback", "session_id": session, "status": status, "message": "",
+                         "ts": time.time()})
         with open(str(self.store_dir / (session + ".jsonl")), "a") as handle:
             handle.write("".join(json.dumps(row) + "\n" for row in rows))
 
@@ -181,100 +183,14 @@ class ReviewCommitGateTest(GateCase):
         self.assert_silent(self.bash("git commit-tree abc"))
         self.assert_silent(self.bash("git --exec-path /x commit -m x"))
 
-    def test_mark_clean_then_commit_passes_and_mark_dirty_denies_again(self):
+    def test_a_review_gate_mark_command_passes_and_changes_no_state(self):
         self.dispatch()
-        self.seed_handback("converged")
-        self.assert_silent(self.bash("review-gate-mark clean"))
-        self.assertEqual(self.state(), "clean\n")
-        self.assert_silent(self.bash("git commit -m x"))
-        self.assert_silent(self.bash("~/.claude/scripts/review/review-gate-mark   dirty"))
-        self.assertEqual(self.state(), "dirty\n")
-        self.assert_commit_denied(self.bash("git commit -m x"))
-
-    def test_mark_with_other_word_is_ignored(self):
-        self.assert_silent(self.bash("review-gate-mark other"))
-        self.assertIsNone(self.state())
-
-    def test_commit_beats_mark_in_the_same_command(self):
-        self.dispatch()
-        self.assert_commit_denied(self.bash("review-gate-mark clean && git commit -m x"))
-        self.assertEqual(self.state(), "dirty\n")
-
-    def test_an_allowed_commit_that_names_a_mark_leaves_the_state(self):
-        self.dispatch()
-        self.seed_handback("converged")
-        self.bash("review-gate-mark clean")
-        self.assert_silent(self.bash('git commit -m "review-gate-mark dirty"'))
-        self.assertEqual(self.state(), "clean\n")
-
-    def test_an_allowed_commit_then_a_mark_writes_no_state(self):
-        self.seed_handback("converged")
-        self.assert_silent(self.bash("git commit -m x && review-gate-mark clean"))
-        self.assertIsNone(self.state())
-
-    def test_mark_clean_without_prior_state_creates_it(self):
-        self.seed_handback("deferred")
-        self.assert_silent(self.bash("review-gate-mark clean"))
-        self.assertEqual(self.state(), "clean\n")
-
-    def test_clean_is_denied_for_every_status_that_is_not_converged_or_deferred(self):
-        for status in ("critical-blocker", "cap-reached", "plan-impact", "invalid"):
-            session = "st-" + status
-            self.dispatch(session=session)
-            self.seed_handback(status, session=session)
-            self.assert_denies(self.bash("review-gate-mark clean", session=session), status)
-            self.assertEqual(self.state(session), "dirty\n", status)
-            self.assert_commit_denied(self.bash("git commit -m x", session=session))
-
-    def test_clean_is_denied_with_no_hand_back_and_names_the_cause(self):
-        self.dispatch()
-        self.assert_denies(self.bash("review-gate-mark clean"), "no review-loop hand-back is stored")
-        self.assertEqual(self.state(), "dirty\n")
-        self.seed_handback(handed_back=False)
-        self.assert_denies(self.bash("review-gate-mark clean"), "no review-loop hand-back is stored")
-
-    def test_clean_without_any_state_writes_no_mark_when_denied(self):
-        self.assert_denies(self.bash("review-gate-mark clean"), "no review-loop hand-back is stored")
-        self.assertIsNone(self.state())
-
-    def test_another_sessions_converged_hand_back_does_not_count(self):
-        self.seed_handback("converged", session="other")
-        self.dispatch()
-        self.assert_denies(self.bash("review-gate-mark clean", session="s1"), "no review-loop hand-back is stored")
-        self.assertEqual(self.state(), "dirty\n")
-
-    def test_a_new_dispatch_after_the_converged_hand_back_denies_clean(self):
-        self.dispatch()
-        self.seed_handback("converged")
-        self.seed_handback(handed_back=False)
-        self.assert_denies(self.bash("review-gate-mark clean"), "has not handed back")
-
-    def test_latest_hand_back_wins_over_an_earlier_converged_one(self):
-        self.dispatch()
-        self.seed_handback("converged")
-        self.seed_handback("critical-blocker")
-        self.assert_denies(self.bash("review-gate-mark clean"), "critical-blocker")
-
-    def test_a_stored_hand_back_with_no_dispatch_row_is_denied_with_its_own_reason(self):
-        self.dispatch()
-        self.seed_handback("converged", dispatches=0)
-        self.assert_denies(self.bash("review-gate-mark clean"), "no review-loop dispatch on record")
-        self.assertEqual(self.state(), "dirty\n")
-
-    def test_missing_handback_module_is_an_internal_error_on_clean_only(self):
-        self.dispatch()
-        (self.scripts / "review" / "handback.py").unlink()
-        self.assert_internal_error_asks(self.bash("review-gate-mark clean"), 1)
-        self.assertEqual(self.state(), "dirty\n")
-        self.assert_commit_denied(self.bash("git commit -m x"))
-        self.assert_silent(self.bash("review-gate-mark dirty"))
-
-    def test_dirty_always_passes(self):
-        self.dispatch()
-        self.seed_handback("critical-blocker")
-        self.assert_silent(self.bash("review-gate-mark dirty"))
-        self.assertEqual(self.state(), "dirty\n")
-        self.assert_silent(self.bash("review-gate-mark dirty", session="no-handback-session"))
+        for command in ("review-gate-mark clean", "~/.claude/scripts/review/review-gate-mark dirty"):
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(command))
+                self.assertEqual(self.state(), "dirty\n")
+        self.assert_silent(self.bash("review-gate-mark clean", session="no-state-session"))
+        self.assertIsNone(self.state("no-state-session"))
 
     def test_sessions_are_separate_and_missing_session_is_unknown(self):
         self.dispatch(session="a")
@@ -362,8 +278,9 @@ class NotesOnlyCommitTest(GateCase):
         return self.bash(command, session=session, cwd=str(repo or self.repo))
 
     def go_clean(self):
-        self.seed_handback("converged")
-        self.assert_silent(self.bash("review-gate-mark clean"))
+        """End the session clean, as /code's review-loop does."""
+        with open(str(self.state_dir / "s1"), "a") as handle:
+            handle.write("clean\n")
 
     def assert_all_denied(self, commands, repo=None):
         for command in commands:
@@ -686,8 +603,7 @@ class NotesOnlyCommitTest(GateCase):
         self.assert_commit_denied(self.commit_in("git add docs/x.md && git commit -m x", self.repo / "sub"))
 
     def test_clean_session_never_denies(self):
-        self.seed_handback("converged")
-        self.assert_silent(self.bash("review-gate-mark clean"))
+        self.go_clean()
         self.stage("src/a.py")
         self.assert_silent(self.commit_in("git commit -m x"))
         self.assert_silent(self.commit_in("git add src/b.py && git commit -a -m x"))
@@ -728,8 +644,13 @@ class ReviewedWorkCommitTest(GateCase):
         return self.bash(command, cwd=str(cwd or self.repo), **extra)
 
     def review_converged(self, repo=None):
-        self.seed_handback("converged")
-        self.assert_silent(self.bash("review-gate-mark clean", cwd=str(repo or self.repo)))
+        """Record the tree as reviewed, as /code's review-loop does via reviewed_tree."""
+        reviewed_dir = str(repo or self.repo)
+        record = ("import reviewed_tree, sys\n"
+                  f"sys.exit(0 if reviewed_tree.record_reviewed('s1', {reviewed_dir!r}) else 1)")
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "PYTHONPATH": str(self.scripts / "lib")}
+        finished = subprocess.run([sys.executable, "-c", record], capture_output=True, text=True, env=env)
+        self.assertEqual((finished.returncode, finished.stderr), (0, ""))
 
     def test_a_commit_of_a_tree_that_converged_review_covered_passes_after_a_later_coder_dispatch(self):
         (self.repo / "base.py").write_text("changed\n")
@@ -885,44 +806,86 @@ class ReviewedWorkCommitTest(GateCase):
     def test_a_coder_with_no_agent_id_gets_no_hand_back_credit(self):
         (self.repo / "base.py").write_text("changed\n")
         self.assert_silent(self.dispatch(tool_response={}))
-        self.seed_repo_handback(self.repo)
+        self.seed_handback(self.repo)
         self.assert_commit_denied(self.commit("git commit -a -m x"))
 
     def test_a_hand_back_before_a_background_coder_last_wrote_gives_no_credit(self):
         (self.repo / "base.py").write_text("changed\n")
         transcript = self.coder_transcript("a1", self.repo / "base.py")
         self.assert_silent(self.dispatch(tool_response={"agentId": "a1"}))
-        self.seed_repo_handback(self.repo)
+        self.seed_handback(self.repo)
         self.assert_silent(self.commit("git commit -a -m x", transcript_path=transcript))
         later = time.time() + 60
         os.utime(self.tmp / "session" / "subagents" / "agent-a1.jsonl", (later, later))
         self.assert_commit_denied(self.commit("git commit -a -m x", transcript_path=transcript))
 
-    def test_a_converged_hand_back_after_the_coder_lets_the_commit_through_without_a_mark(self):
+    def test_a_coder_dispatched_after_a_converged_hand_back_revokes_its_credit(self):
         (self.repo / "base.py").write_text("changed\n")
-        self.seed_repo_handback(self.repo)
+        self.assert_silent(self.dispatch())
+        self.seed_handback(self.repo)
         self.assert_silent(self.commit("git commit -a -m x"))
         self.assert_silent(self.dispatch())
         self.assert_commit_denied(self.commit("git commit -a -m x"))
 
-    def seed_repo_handback(self, repo):
-        """A converged hand-back, stored now, answering a review-loop dispatch of repo."""
-        self.store_dir.mkdir(parents=True, exist_ok=True)
-        rows = [{"kind": "dispatch", "session_id": "s1", "ts": time.time(), "repo": os.path.realpath(repo)},
-                {"kind": "handback", "session_id": "s1", "status": "converged", "message": "", "ts": time.time()}]
-        (self.store_dir / "s1.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    def test_a_review_gate_mark_command_does_not_revoke_a_converged_hand_backs_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.assert_silent(self.dispatch())
+        self.seed_handback(self.repo)
+        self.assert_silent(self.bash("review-gate-mark dirty", cwd=str(self.repo)))
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_only_a_converged_or_deferred_hand_back_credits_the_commit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        for status in ("converged", "deferred", "critical-blocker", "cap-reached", "plan-impact", "invalid"):
+            session = "st-" + status
+            with self.subTest(status=status):
+                self.assert_silent(self.dispatch(session=session))
+                self.seed_handback(self.repo, status, session=session)
+                finished = self.commit("git commit -a -m x", session=session)
+                if status in ("converged", "deferred"):
+                    self.assert_silent(finished)
+                else:
+                    self.assert_commit_denied(finished)
+
+    def test_another_sessions_converged_hand_back_gives_no_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_handback(self.repo, session="other")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_review_loop_dispatched_after_the_converged_hand_back_takes_the_credit_away(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_handback(self.repo)
+        self.seed_handback(self.repo, handed_back=False)
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_the_latest_hand_back_wins_over_an_earlier_converged_one(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_handback(self.repo)
+        self.seed_handback(self.repo, "critical-blocker")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_hand_back_with_no_dispatch_row_gives_no_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_handback(self.repo, dispatches=0)
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_missing_handback_module_gives_no_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_handback(self.repo)
+        (self.scripts / "review" / "handback.py").unlink()
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
 
     def test_a_hand_back_of_another_repo_gives_this_repo_no_credit(self):
         other = self.make_repo("other")
         (self.repo / "base.py").write_text("changed\n")
-        self.seed_repo_handback(other)
+        self.seed_handback(other)
         self.assert_commit_denied(self.commit("git commit -a -m x"))
         self.assert_silent(self.commit("git commit -a -m x", cwd=other))
 
     def test_a_second_commit_in_another_repo_or_behind_a_wrapper_gets_no_credit_from_the_cwd_hand_back(self):
         other = self.make_repo("other")
         (self.repo / "base.py").write_text("changed\n")
-        self.seed_repo_handback(self.repo)
+        self.seed_handback(self.repo)
         self.assert_silent(self.commit("git commit -a -m a"))
         for command in (f"git commit -a -m a && git -C {other} commit -a -m b",
                         f"git commit -a -m a && env -C {other} git commit -a -m b"):
@@ -931,7 +894,7 @@ class ReviewedWorkCommitTest(GateCase):
 
     def test_a_folder_change_or_an_unknown_target_earns_no_credit(self):
         (self.repo / "base.py").write_text("changed\n")
-        self.seed_repo_handback(self.repo)
+        self.seed_handback(self.repo)
         for command in (f"cd {self.repo} && git commit -a -m x",
                         "cd . ; HOME=/tmp/x; git -C ~/b commit -m x",
                         "export HOME=/tmp/x && cd . && git -C ~/b commit -m x",

@@ -1,9 +1,11 @@
 """The working tree a session's converged review covered, kept per repo so a later commit of that same tree passes.
 
-review_commit_gate.py records the tree when a review-loop ends clean (`review-gate-mark clean`, or /code finishing a
-phase) and reads it back at commit time. A tree is its fingerprint, `tree_fingerprint`: "sha256:" and the hash of
-`git diff --binary <base> -- .` (git's raw output bytes, never decoded) followed by, for each untracked, non-ignored
-file in name order, `\0untracked\0<name>\0<git hash-object>`. Any edit after the review changes the fingerprint.
+A review-loop records its tree when it ends clean: /code's phase finish (code_step_boundary.mark_review_gate_clean), or
+the scripted loop at its hand-back (review_loop_packet.write_handback_rows). Then
+review_commit_gate.py reads it back at commit time. A tree is its fingerprint, `tree_fingerprint`: "sha256:" and the
+hash of `git diff --binary <base> -- .` (git's raw output bytes, never decoded) followed by, for each untracked,
+non-ignored file in name order, `\0untracked\0<name>\0<git hash-object>`. Any edit after the review changes the
+fingerprint.
 Verify stores the same value (its context and ledger review rows), with an optional path left out of both parts. The
 bytes match what verify stored for any tree whose diff is valid UTF-8; a diff with other bytes in a tracked text edit
 hashes differently from before, so verify-prep and the branch review rerun once there.

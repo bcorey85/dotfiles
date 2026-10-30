@@ -4,20 +4,24 @@
   1. In-place editors (sed -i, perl -pi, awk -i inplace), any target.
   2. Redirection (>, >>) and tee onto a git-tracked file.
   3. Agent type `coder` (any coder variant, subagent or main session): a redirect or tee that creates a new file
-     outside a temp dir, or whose target still holds a `$` after `$TMPDIR` and `$HOME` are expanded.
+     outside a temp dir, or whose target still holds a `$` after `$TMPDIR` and `$HOME` are expanded; also any
+     relative target after any `cd`, `pushd` or `popd`.
   4. An interpreter (python, pypy, node, tsx, ts-node, bun, deno, ruby, perl; also behind npx or pnpm exec) run whose
      inline code (`-c`, `-e`, `-p`, `--print`, `--eval`, `deno eval`) or untracked, not git-ignored script file opens
      a file for writing and names a git-tracked file: as a string literal, through a name bound to one, or as an
      argument.
+  5. Any agent: a relative target after a `cd`, `pushd` or `popd` whose folder is not a literal (`cd "$D"`, `popd`,
+     `cd -`), because the gate cannot tell where the write lands.
 Only a `>` outside quotes is a redirect (a `>` inside a double-quoted `$(...)` is code and is read as one), and the
 body of a heredoc is not read as commands unless it feeds a shell interpreter (`bash <<EOF`); the `$(...)` and
 backtick spans of an unquoted heredoc body are. A command that names a program running code the parser does not read
 (a shell's `-c`, `eval`, `docker exec`, `ssh`; shell_command.CODE_RUNNERS) is also scanned as plain text for `>` and
 tee targets, quotes ignored: those targets are checked only against git-tracked files.
-A relative target resolves against the session cwd (`cwd` in the hook input); `cd` is not followed. The one
-exception is rule 3: once a `cd`, `pushd` or `popd` has run in command position before a relative target, rule 3 is
-skipped for that target, because the gate cannot know the directory. Rule 2 still checks it against the session cwd.
-Escape for rules 1, 2 and 4 in the main session: a trailing `#skip-shell-write-gate` comment. A subagent (agent_id in
+A relative target resolves against the session cwd (`cwd` in the hook input) and, for rule 2, also against each
+folder a literal `cd` or `pushd` in command position moved to before it, cumulatively; a tracked file under any of
+them denies. A relative target after a `cd`, `pushd` or `popd` whose folder is not a literal is denied (rule 5), and
+in a coder a relative target after any of them is denied (rule 3).
+Escape for rules 1, 2, 4 and 5 in the main session: a trailing `#skip-shell-write-gate` comment. A subagent (agent_id in
 the hook input) or a coder cannot use it. Fails closed on internal error.
 """
 import json
@@ -79,8 +83,8 @@ LOOP_TARGETS = r"[\w\s,()\[\]]*?"
 MAX_SCRIPT_BYTES = 1_000_000
 DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
 DIRECTORY_COMMAND_TEXT = re.compile(r"(^|[\s;&|(){`])(cd|pushd|popd)(\s|$|[;&|)])")
-DIRECTORY_CHANGE_HINT = ("This gate resolves a relative path against the session cwd, not the cd target; use an "
-                         "absolute path for the file you mean.")
+DIRECTORY_CHANGE_HINT = ("This gate checks a relative path against the session cwd and each cd folder before it; "
+                         "use an absolute path for the file you mean.")
 ESCAPE_HINT = (" If this deny is wrong (for example a command wrapper this gate does not recognize), re-run the "
                "command with a trailing #skip-shell-write-gate comment — it disarms this gate for that one command.")
 
@@ -191,31 +195,41 @@ def simple_command_texts(step):
     return texts
 
 
-def runs_directory_change(step):
-    """True when a command of the step is `cd`, `pushd` or `popd`, once keywords (`then`, `do`, `!`) and wrappers
-    (`command`, `builtin`) are dropped. A step the parser cannot read counts when the word stands in command
-    position by a text match."""
+def directory_changes(step):
+    """The folder word of each `cd`, `pushd` or `popd` the step runs, in order, once keywords (`then`, `do`, `!`) and
+    wrappers (`command`, `builtin`) are dropped; None for a folder that is not a literal. A step the parser cannot
+    read gives one None when the word stands in command position by a text match."""
     try:
         commands = shell_command.parse_piped_commands(step)
     except ValueError:
-        return bool(DIRECTORY_COMMAND_TEXT.search(step))
+        return [None] if DIRECTORY_COMMAND_TEXT.search(step) else []
+    folders = []
     for words, _redirections, _piped in commands:
         while words and words[0] in SKIP_WORDS:
             words = words[1:]
         words = shell_command.command_after_wrappers(words)
         if words and words[0] in DIRECTORY_COMMANDS:
-            return True
-    return False
+            expanded_words = [expand_env_names(word, ("TMPDIR", "HOME")) for word in words]
+            folders.append(shell_command.cd_folder(expanded_words))
+    return folders
 
 
-def step_targets(code):
-    """(raw target, after_directory_change) for every redirect and tee target of the command text, in order.
-    after_directory_change is True once an earlier step, or the step itself, runs a `cd`, `pushd` or `popd`."""
+def step_targets(code, cwd):
+    """(raw target, folders, unread_change) for every redirect and tee target of the command text, in order. folders
+    holds the session cwd, then each folder an earlier step, or the step itself, moved to with a literal `cd` or
+    `pushd`, each resolved against the one before. unread_change is True once one moved to a folder that is not a
+    literal."""
     targets = []
-    after_directory_change = False
+    folders = [cwd]
+    unread_change = False
     for _operator, step in shell_command.split_command_steps(code):
-        after_directory_change = after_directory_change or runs_directory_change(step)
-        targets += [(raw, after_directory_change) for raw in written_targets(step)]
+        for folder in directory_changes(step):
+            if folder is None:
+                unread_change = True
+                continue
+            folder_path = os.path.join(folders[-1], os.path.expanduser(folder))
+            folders = [*folders, os.path.normpath(folder_path)]
+        targets += [(raw, folders, unread_change) for raw in written_targets(step)]
     return targets
 
 
@@ -263,7 +277,7 @@ def run(raw):
     segments = [segment for text in texts
                 for _operator, step in shell_command.split_command_steps(text)
                 for segment in simple_command_texts(step)]
-    targets = [target for text in texts for target in step_targets(text)]
+    targets = [target for text in texts for target in step_targets(text, cwd)]
     text_targets = [target for text in texts if shell_command.names_code_runner(text)
                     for target in regex_written_targets(text, skip_quoted=False)]
 
@@ -271,7 +285,7 @@ def run(raw):
     if "#skip-shell-write-gate" in command and not cannot_skip:
         return
 
-    written_paths = {resolve_target(raw_target, cwd) for raw_target, _after in targets} - {None}
+    written_paths = {resolve_target(raw_target, cwd) for raw_target, _folders, _unread in targets} - {None}
     for segment in segments:
         target = interpreter_written_target(segment, cwd, written_paths, command)
         if target:
@@ -290,11 +304,11 @@ def run(raw):
         raise DenyError(deny_text("in-place editing of " + target + " bypasses the Write/Edit hook pipeline.",
                                   cannot_skip))
 
-    for raw_target, after_directory_change in targets:
-        check_written_target(raw_target, cwd, cannot_skip, coder, after_directory_change)
+    for raw_target, folders, unread_change in targets:
+        check_written_target(raw_target, folders, unread_change, cannot_skip, coder)
 
     for raw_target in text_targets:
-        check_written_target(raw_target, cwd, cannot_skip, False, False)
+        check_written_target(raw_target, [cwd], False, cannot_skip, False)
 
 
 def in_place_target(segment, editor):
@@ -529,28 +543,47 @@ def interpreter_written_target(segment, cwd, written_paths, command):
     return None
 
 
-def check_written_target(raw_target, cwd, cannot_skip, coder, after_directory_change):
-    path = resolve_target(raw_target, cwd)
+def check_tracked_target(raw_target, folder, cannot_skip, after_directory_change):
+    path = resolve_target(raw_target, folder)
     if path is None:
         return
     if os.path.islink(path):
         resolved = os.path.realpath(path)
         if resolved and os.path.exists(shell_dirname(resolved)):
             path = resolved
-    if is_git_tracked(path):
-        subject = (path + " is git-tracked. Shell writes bypass the Write/Edit hook pipeline "
-                   "(comment/prose/budget gates).")
-        if after_directory_change and not path_word_is_absolute(raw_target):
-            subject += " " + DIRECTORY_CHANGE_HINT
-        raise DenyError(deny_text(subject, cannot_skip))
+    if not is_git_tracked(path):
+        return
+
+    subject = (path + " is git-tracked. Shell writes bypass the Write/Edit hook pipeline "
+               "(comment/prose/budget gates).")
+    if after_directory_change:
+        subject += " " + DIRECTORY_CHANGE_HINT
+    raise DenyError(deny_text(subject, cannot_skip))
+
+
+def check_written_target(raw_target, folders, unread_change, cannot_skip, coder):
+    """Deny a write to a git-tracked file, a relative target after a folder change the gate cannot read, and for a
+    coder a relative target after any folder change or a new file outside a temp dir. folders holds the session cwd
+    first, then each folder a literal `cd` or `pushd` moved to before the write."""
+    cwd = folders[0]
+    expanded = expand_env_names(raw_target, ("TMPDIR", "HOME"))
+    relative = not path_word_is_absolute(expanded)
+    after_directory_change = relative and (unread_change or len(folders) > 1)
+
+    for folder in folders if relative else [cwd]:
+        check_tracked_target(raw_target, folder, cannot_skip, after_directory_change)
+
+    if relative:
+        if unread_change:
+            raise DenyError(deny_text(raw_target + " is a relative write target after a cd to a folder this gate "
+                                      "cannot read. " + DIRECTORY_CHANGE_HINT, cannot_skip))
+        if coder and after_directory_change:
+            raise DenyError(deny_text(raw_target + " is a relative write target after a cd. " + DIRECTORY_CHANGE_HINT,
+                                      True))
     if not coder:
         return
-    expanded = expand_env_names(raw_target, ("TMPDIR", "HOME"))
     coder_path = resolve_target(expanded, cwd)
     if coder_path is None:
-        return
-    relative = not path_word_is_absolute(expanded)
-    if after_directory_change and relative and "$" not in coder_path:
         return
     if "$" in coder_path:
         raise DenyError(deny_text(raw_target + " is a redirect or tee target this gate cannot resolve, so it may "

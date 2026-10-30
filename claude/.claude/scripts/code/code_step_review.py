@@ -78,7 +78,13 @@ from code_step_core import (
     wait_for_loop_stop,
 )
 from code_step_report import change_line, coder_message_without_gate_stamp, coder_model
-from code_step_review_stops import is_capped_review, left_findings_open, stop_on_review_status
+from code_step_review_stops import (
+    CHECK_STOPS,
+    carry_check_stop_fix,
+    is_capped_review,
+    left_findings_open,
+    stop_on_review_status,
+)
 from code_step_state import Stage
 from review_asks import numbered_ask_lines
 from script_utils import git_output
@@ -189,14 +195,9 @@ def resolved_plan_impact(state):
         resolved = "the pre-set decision ruled on this disagreement, not the user"
     else:
         resolved = "the session ruled on this disagreement, not the user"
-    lines = [f"RESOLVED: {resolved}. Review the code against the ruling. It is not an open question.",
-             f"Decision: {ruling['decision']}",
-             f"Ruled by: {ruling['by']}, at {ruling['at']}",
-             "The ruling:"]
-    lines += ["  " + line for line in ruling["words"].splitlines()]
-    lines.append("The disagreement it settles:")
-    lines += ["  " + line for line in state.impact.splitlines()]
-    return "\n".join(lines)
+    return plan_format.resolved_block(
+        resolved, ruling["decision"], ruling["by"], ruling["at"], ruling["words"], state.impact
+    )
 
 
 def decision_for_word(repo_dir, state, word):
@@ -359,6 +360,8 @@ def command_review_again(repo_dir, state, args):
     is_capped_stop = stop_kind(state) == "cap-reached"
     if is_capped_stop:
         state.iter = 0
+    if stop_kind(state) in CHECK_STOPS:
+        carry_check_stop_fix(repo_dir, state)
     clear_stop(state)
     # A failed review that ran the structure pass runs it again; one that skipped it skips it again. A capped review
     # ran it on this diff already.

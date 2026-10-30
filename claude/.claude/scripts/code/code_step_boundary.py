@@ -25,6 +25,7 @@ from code_step_core import (
     RESUME_VERB,
     REVIEW_SAME_DIFF_AGAIN_LINE,
     branch_label,
+    clear_say,
     clear_stop,
     current_phase_text,
     emit,
@@ -38,6 +39,7 @@ from code_step_core import (
     run_session_id,
     save_state,
     say,
+    script_command,
     session_pin,
     set_stop,
 )
@@ -295,11 +297,12 @@ def commit_message(repo_dir, state):
     return message
 
 
-def phase_commit(repo_dir, state):
+def phase_commit(repo_dir, state, only_files=None):
     # The phase's own changed files: dirty now, and either not dirty before the phase started or with content that
     # differs from the baseline hash. Files that were dirty before and are unchanged stay out of the command. The plan
     # is always in it when it changed: the script ticks the phase there. The commit names its files after `--`, so it
     # takes only those files from the index and leaves anything the user staged by hand staged and uncommitted.
+    # `only_files`, when given, limits the command to those files: a planless run commits only the files it changed.
     # Returns (text for the user, the commit command line, the files it commits); the text and line are "" with no
     # files.
     baseline = state.baseline or {}
@@ -312,8 +315,10 @@ def phase_commit(repo_dir, state):
     changed_since = [name for name in dirty_now if name in baseline and dirty_now[name] != baseline[name]]
     plan_had_earlier_edits = plan_name in changed_since
     own_files = [name for name in dirty_now if name not in baseline or name in changed_since]
+    if only_files is not None:
+        own_files = [name for name in own_files if name in only_files]
     left_out = [name for name in dirty_now if name in baseline and name not in changed_since]
-    edited_dirty = [name for name in changed_since if name != plan_name]
+    edited_dirty = [name for name in changed_since if name != plan_name and name in own_files]
     if not own_files:
         return "", "", []
 
@@ -374,12 +379,29 @@ def phase_commit(repo_dir, state):
 
 def finish_planless(repo_dir, state):
     state.stage = "done"
+    commit_text, _, commit_files = phase_commit(repo_dir, state)
+    state.commit_files = commit_files
     save_state(repo_dir, state)
-    commit_text, _, _ = phase_commit(repo_dir, state)
     if commit_text:
         say(repo_dir, commit_text)
     commit_note = " Nothing is committed: run the commit command above." if commit_text else ""
     emit("stop", f"Planless task reviewed.{commit_note} Tell the user the result.")
+
+
+def stop_for_finished_planless_run(repo_dir, state):
+    # `resume` at a finished run that had no plan: it never opens the branch's plan over the run's files. With the
+    # run's own files still uncommitted the stop carries the commit command for only those; with none it names the
+    # way to run a plan. The say text of the earlier stop is cleared: it holds a commit command that may be stale.
+    clear_say(repo_dir)
+    commit_text, _, _ = phase_commit(repo_dir, state, only_files=state.commit_files)
+    if commit_text:
+        say(repo_dir, commit_text)
+        return emit("stop", "The planless task is finished. Nothing is committed: run the commit command above. Tell "
+                    "the user the result.")
+
+    start_command = script_command("start <plan> [--phase <id>]")
+    emit("stop", "The planless task is finished and the run left no files uncommitted. To run a plan, use "
+         f"`{start_command}`.")
 
 
 def load_finishing_plan(repo_dir, state):

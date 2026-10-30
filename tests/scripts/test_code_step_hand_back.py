@@ -178,6 +178,91 @@ class HandBackTest(base.CodeStepTest):
         self.assertIn("SUMMARY_LINES", question_text)
         self.assertIn(self.own_command("review-again"), question_text)
 
+    def test_a_review_after_a_check_stop_is_told_the_claude_md_line_is_the_stops_fix_not_plan_drift(self):
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `cargo fmt --check && cargo check`\n")
+        self.coder_round()
+        self.hook("review-loop", UNVERIFIED_PACKET)
+        self.step("resume")
+        (self.repo / "CLAUDE.md").write_text("- Full suite: CI\n- Quality check: `cargo fmt --check && cargo check`\n")
+
+        self.step("review-again")
+
+        plan_impact = self.state()["planImpact"]
+        self.assertIn("RESOLVED: the check stop rule settled this disagreement, not the user or the session.",
+                      plan_impact)
+        self.assertIn("Ruled by: the check stop rule, at ", plan_impact)
+        self.assertIn("The disagreement it settles:", plan_impact)
+        self.assertIn(
+            "The repo's CLAUDE.md has an uncommitted change. That edit is taken to answer the check stop",
+            plan_impact,
+        )
+        self.assertIn("not plan drift", plan_impact)
+
+    def test_a_check_stop_ruling_follows_a_ruling_already_on_the_review(self):
+        self.coder_round(self.IMPACT_REPORT)
+        self.step("decide", "adopt", "--by", "user", "--ruling", "adopt it, drop the header")
+        (self.repo / self.plan).write_text(self.plan_text() + "\nadopted step\n")
+        self.hook("coder", "BEHAVIOR: plan rewritten", agent_id="p1")
+        self.step("resume")
+        self.hook("review-loop", UNVERIFIED_PACKET)
+        self.step("resume")
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npm test`\n")
+
+        self.step("review-again")
+
+        plan_impact = self.state()["planImpact"]
+        self.assertTrue(plan_impact.startswith("RESOLVED: the user ruled"))
+        self.assertIn("adopt it, drop the header", plan_impact)
+        self.assertIn("Ruled by: the check stop rule, at ", plan_impact)
+        self.assertLess(
+            plan_impact.index("adopt it, drop the header"),
+            plan_impact.index("The disagreement it settles:"),
+        )
+
+    def test_a_check_not_run_stop_carries_the_fix_ruling_only_when_claude_md_changed(self):
+        self.coder_round()
+        self.hook("review-loop", CONVERGED_PACKET_HEAD + f"full_check: {CHECK_NOT_RUN_RESULTS[0][0]}\n"
+                  "full_check_command: npm test")
+        self.step("resume")
+        self.assertEqual("check-not-run", self.state()["stop"]["kind"])
+
+        self.step("review-again")
+
+        self.assertEqual("none", self.state()["planImpact"])
+        self.hook("review-loop", CONVERGED_PACKET_HEAD + f"full_check: {CHECK_NOT_RUN_RESULTS[1][0]}\n"
+                  "full_check_command: npm test")
+        self.step("resume")
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npm test`\n")
+
+        self.step("review-again")
+
+        self.assertTrue(self.state()["planImpact"].startswith("RESOLVED: the check stop rule"))
+
+    def test_a_second_check_stop_keeps_one_fix_ruling(self):
+        self.coder_round()
+        self.hook("review-loop", UNVERIFIED_PACKET)
+        self.step("resume")
+        (self.repo / "CLAUDE.md").write_text("- Quality check: `npm test`\n")
+        self.step("review-again")
+        ruling = self.state()["planImpact"]
+        self.assertTrue(ruling.startswith("RESOLVED: "))
+        self.hook("review-loop", UNVERIFIED_PACKET)
+        self.step("resume")
+
+        self.step("review-again")
+
+        self.assertEqual(ruling, self.state()["planImpact"])
+
+    def test_a_review_after_a_stop_that_is_not_a_check_stop_carries_no_fix_ruling(self):
+        self.coder_round()
+        self.hook("review-loop", CONVERGED_PACKET_HEAD + "tool_fault: reviewer crashed")
+        self.step("resume")
+        self.assertEqual(("stopped", "tool-fault"), (self.state()["stage"], self.state()["stop"]["kind"]))
+
+        self.step("review-again")
+
+        self.assertEqual("none", self.state()["planImpact"])
+
     def test_a_converged_review_whose_check_ran_with_no_tests_in_a_ci_repo_finishes_the_phase(self):
         (self.repo / "CLAUDE.md").write_text("- Full suite: CI\n- Quality check: `cargo check`\n")
         self.coder_round()

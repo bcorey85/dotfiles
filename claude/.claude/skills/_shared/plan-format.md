@@ -116,6 +116,8 @@ function. **No mocks inside such a test.**
 
 List the test files the phase adds or changes too — the coder writes the phase's tests and asserts what Success Criteria and the acceptance criteria state.
 
+A phase that only the /code session can run (it dispatches a named non-coder agent, records the results, commits) carries a line `**Session phase**: <agent>` and no **File**: line. List its steps as usual. A phase without that line goes to a coder.
+
 ### Success Criteria
 
 A phase that delivers an acceptance criterion states the behavior in its own

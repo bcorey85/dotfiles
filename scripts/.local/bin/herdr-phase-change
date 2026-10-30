@@ -70,7 +70,7 @@ if [ "$watched" = false ] && [[ "$prompt" == "/code" || "$prompt" == "/code "* ]
     code_rest="${code_rest# }"
     code_first_word="${code_rest%% *}"
     case "$code_first_word" in
-        ""|resume|continue|after-plan-edit|tick|verify|decide|asks-done|review-again|skill-done|abort) ;;
+        ""|resume|continue|after-plan-edit|tick|verify|decide|asks-done|review-again|skill-done|session-done|abort) ;;
         *)
             if [[ "$prompt" != "/code --headless" && "$prompt" != "/code --headless "* ]]; then
                 prompt="/code --headless $code_rest"

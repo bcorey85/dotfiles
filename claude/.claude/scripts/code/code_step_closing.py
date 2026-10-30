@@ -1,5 +1,6 @@
 """The `skill-done` verb of code_step.py: `pass` writes each open Success Criteria item's evidence into the plan and
-ends the phase, and a failed closing-phase check writes its question.md before it stops."""
+ends the phase, and a failed closing-phase check writes its question.md before it stops. Also the `session-done`
+verb, which closes a session phase with no review gate."""
 import plan_format
 import script_utils
 from code_step_boundary import finish_phase
@@ -170,3 +171,12 @@ def command_skill_done(repo_dir, state, args, simplify_done_texts=(), rerun_comm
     if not record_closing_evidence(repo_dir, state, evidence, simplify_done_texts, rerun_command):
         return
     finish_phase(repo_dir, state, skip_verification=True)
+
+
+def command_session_done(repo_dir, state, args):
+    # The session did a session phase's steps: close it like any phase (Automated Verification, plan mark, commit
+    # line), with no review to credit; the session phase writes no deviation line.
+    if args != [str(state.phase)]:
+        return emit("stop", f"session-done takes the open phase's id: {script_command(f'session-done {state.phase}')}.")
+
+    finish_phase(repo_dir, state)

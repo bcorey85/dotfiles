@@ -30,7 +30,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
-* [Code-step reads the plan phase text through one helper](2026-10-29-code-step-reads-the-plan-phase-text-through-one.md) [skill/code] One phase-text reader, one missing-plan stop and one phase-entry stop replace the copies in the code-step scripts, with no change in what a run prints or saves.
+* [Code-step reads the plan phase text through one helper](2026-10-29-code-step-reads-the-plan-phase-text-through-one.md) [skill/code] One phase-text reader, one missing-plan stop and one phase-entry stop replace the copies in the code-step scripts, with one difference in what a run prints: a resumed closing phase prints its plan section as a fresh start does.
 * [Callers read the review store from handback_store, not through handback](2026-10-29-callers-read-the-review-store-from-handback-store.md) [script/review] handback.py drops its re-export block; every caller imports the hand-back store names from handback_store and the finding-id constants from loop_transcript.
 * [The Automated Verification reader and skill-done evidence leave code_step_boundary](2026-10-29-the-automated-verification-reader-and-skill-done.md) [script/code-step] The Automated Verification reader moves to code_step_verification.py and the skill-done evidence to code_step_closing.py, so code_step_boundary.py drops from 1021 to 706 lines.
 * [The summary after an asks round leads with the current asks coder](2026-10-29-the-summary-after-an-asks-round-leads-with-the.md) [script/code-step] After a round of review asks, the /code review summary leads with the current asks coder's report, shows earlier asks rounds as one line each, and drops the why notes the asks coder replaced.

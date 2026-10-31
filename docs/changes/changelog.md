@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-728 changes
+729 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -124,6 +124,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Fixed
 
 * [code-step resume goes on past an unreadable state file in the cwd checkout](notes/2026-10-31-code-step-resume-goes-on-past-an-unreadable-state.md) [script/code-step] A /code run in a sibling worktree finishes its steps when the session's own checkout holds another run's state file this code-step cannot read.
+* [coder_gate.py and coder_packet.py print usage on --help and change nothing](notes/2026-10-31-coder-gate-py-and-coder-packet-py-print-usage-on.md) [script/code] A session that asks coder_gate.py or coder_packet.py for help now gets the usage line and exit 0. Before, `coder_gate.py set --help` stored a gate and `coder_packet.py --help` crashed.
 * [Hand-back no longer waits on a nested agent that ended on an API error](notes/2026-10-30-hand-back-no-longer-waits-on-a-nested-agent-that.md) [script/handback, script/script-utils, script/review-loop-gate, script/open-child-gate] A review loop no longer waits on a nested reviewer that died on a usage limit, so it is not stuck behind a report that will never come; a clean packet whose latest dispatch of one reviewer kind died is denied.
 * [Staged-claim hook passes a reply that describes what it reads](notes/2026-10-30-staged-claim-hook-passes-a-reply-that-describes.md) [script/staged-claim-gate] The staged-claim Stop hook no longer blocks a reply that reports speech, such as "a reply that says files are staged", so a session can describe the hook without a false refusal. The subdirectory test now runs the passing path it names, and git_calls.py has its reading rules back.
 * [the full check does not pass a jest run that found no test](notes/2026-10-30-the-full-check-does-not-pass-a-jest-run-that-found.md) [script/check-output] A jest run that exits 0 after finding no test now reads as a run of no test, so the full check reports it unverified instead of passed.

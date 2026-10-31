@@ -111,6 +111,11 @@ def is_string_list(value):
     return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
 
 
+def help_requested(arguments):
+    # A stored check command is one argument holding a whole shell command, so it never equals either flag.
+    return any(argument in ("--help", "-h") for argument in arguments)
+
+
 def json_string_list(text):
     """The list of strings that the JSON text holds, or None when the text is not JSON or not a list of strings."""
     try:

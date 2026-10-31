@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-724 changes
+725 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -29,6 +29,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Bash hooks start 5-10 ms faster: check_scope loads its Makefile and pytest config readers only when it judges make or pytest](notes/2026-10-31-bash-hooks-start-5-10-ms-faster-check-scope-loads.md) [script/check-scope, script/quality-check-cap, script/coder-gate] check_scope imports makefile_text and pytest_config inside the two functions that use them, so quality_check_cap and coder_gate stop paying about 8 ms of imports on every Bash, Edit and Write call.
 * [The code-step state store moves out of code_step_core.py](notes/2026-10-30-the-code-step-state-store-moves-out-of-code-step.md) [script/code-step] code_step_core.py drops from 1525 to 1300 lines: the state file, the verb transaction and the session's repo list move to code_step_store.py with no behavior change, so the next code-step change has less to split first.
 * [Goal-blind research searches skip the ticket](notes/2026-10-30-goal-blind-research-searches-skip-the-ticket.md) [agent/goal-blind-researcher, agent/spec-research, agent/spec-questions, skill/eng-spec] goal-blind-researcher hands spec-research one exclude glob naming the task directory and the folder that holds the in-repo source ticket, spec-research drops Grep and Glob and puts the glob on every rg search, and both research children edit files only with Edit or Write, never sed -i.
 * [/review launches the scripted review loop](notes/2026-10-30-review-launches-the-scripted-review-loop.md) [skill/review, script/review-fix, script/review-loop-script, script/code-step, script/handback] The scripted review loop cut median review-loop cost 29% on the bench ($2.96 → $2.11); /review's own start is not benched and its cache-read watch reads it. A working-tree /review now runs that loop; the agent stays for handoff blocks, base=, file scope, +fast/+deep, iter=, a plan-impact re-dispatch and /fix. **cuts cost by 29% ($2.96 → $2.11)**

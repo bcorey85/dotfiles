@@ -1145,5 +1145,49 @@ class IsBlockerTest(unittest.TestCase):
                 self.assertFalse(script_utils.is_blocker(item))
 
 
+class EndsOnApiErrorTest(unittest.TestCase):
+    def test_only_a_last_record_flagged_as_an_api_error_counts(self):
+        fixture = pathlib.Path(__file__).resolve().parent / "fixtures" / "subagent_api_error_last_record.json"
+        error = json.dumps(json.loads(fixture.read_text(encoding="utf-8")))
+        work = json.dumps({"type": "assistant"})
+        cases = {"error last": ([work, error, ""], True), "error then blank lines": ([error, "", ""], True),
+                 "work after error": ([error, work], False),
+                 "no error": ([work], False), "empty": ([], False), "torn last line": ([error, "{"], False)}
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        for name, (lines, expected) in cases.items():
+            with self.subTest(name):
+                transcript = pathlib.Path(folder.name, "agent.jsonl")
+                transcript.write_text("\n".join(lines), encoding="utf-8")
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    self.assertEqual(script_utils.ends_on_api_error(transcript), expected)
+                self.assertEqual(stderr.getvalue(), "")
+
+    def test_a_directory_in_place_of_a_transcript_is_not_an_api_error_and_is_reported_on_stderr(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            self.assertFalse(script_utils.ends_on_api_error(folder.name))
+
+        self.assertIn("could not read", stderr.getvalue())
+
+    def test_sibling_transcript_path_shares_the_subagent_file_name(self):
+        session = "/p/sess.jsonl"
+        subagent = script_utils.subagent_transcript_path(session, "abc")
+
+        self.assertEqual(script_utils.sibling_transcript_path(subagent, "def"), "/p/sess/subagents/agent-def.jsonl")
+
+    def test_a_missing_transcript_is_not_an_api_error(self):
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            self.assertFalse(script_utils.ends_on_api_error("/nonexistent/agent.jsonl"))
+
+        self.assertEqual(stderr.getvalue(), "")
+
+
 if __name__ == "__main__":
     unittest.main()

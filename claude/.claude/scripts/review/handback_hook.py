@@ -54,6 +54,9 @@ OPEN_WORK_REASON = ("{count} agent(s) or shell(s) you started in the background 
                     "back.")
 UNCHECKED_KIND = "unchecked-code"
 LEDGER_KIND = "ledger"
+DEAD_REVIEWER_REASON = ("The latest dispatch of one reviewer kind ended on an API error, so the loop holds no finished "
+                        "review from that run. Dispatch the reviewer again on the diff, fix what it "
+                        "finds, then hand back again.")
 
 
 def open_work_reason(open_dispatches):
@@ -124,9 +127,10 @@ def packet_gate_reason(transcript, packet, session_id, agent_id):
             or hand_back_ledger_reason(transcript, packet, session_id, agent_id))
 
 
-def transcript_gate_reason(event, session_id, agent_id, message, packet):
+def transcript_gate_reason(event, session_id, agent_id, message, packet, clean_status):
     """The deny reason of the first gate that reads the loop's own transcript, in order: a background dispatch or
-    shell still open, no valid full-check receipt for the tree, a plan file in the packet's files_touched,
+    shell still open, a clean hand-back (`clean_status`) whose latest dispatch of one reviewer kind ended on an
+    API error, no valid full-check receipt for the tree, a plan file in the packet's files_touched,
     finding rows or a metrics line the packet owes and the loop did not log (the ledger reason, denied once per state).
     The transcript is read once. One that cannot be read never blocks, and a failed full-check scan skips the
     full-check gate only."""
@@ -139,6 +143,8 @@ def transcript_gate_reason(event, session_id, agent_id, message, packet):
     open_work = open_work_reason(open_dispatches)
     if open_work:
         return open_work
+    if clean_status in CLEAN_STATUSES and transcript.last_reviewer_died():
+        return DEAD_REVIEWER_REASON
     try:
         ungated, _open_dispatches = loop_transcript.scan(transcript, message, event.get("cwd"))
         last_step = loop_transcript.last_code_step(transcript)
@@ -199,7 +205,8 @@ def handle_hook(event, kind):
     """Record a review-loop dispatch or hand-back, or for kind `ran` the dispatch-ran row of a dispatch whose call ran.
     Returns a deny reason, else None: ALREADY_DELIVERED_REASON for an
     agent whose report is stored, the parse problems for a bad packet seen the first time from its agent, the
-    unreviewed reason for a clean packet with no reviewer run, loop_transcript.GATE_REASON when no valid full-check
+    unreviewed reason for a clean packet with no reviewer run, DEAD_REVIEWER_REASON for a clean packet whose latest
+    dispatch of one reviewer kind ended on an API error, loop_transcript.GATE_REASON when no valid full-check
     receipt exists for the tree the loop reviewed, loop_transcript.PLAN_EDIT_REASON when the packet names the plan
     file, or the ledger reason when the packet owes finding rows or a metrics line (once, until the loop makes another
     logger call)."""
@@ -241,7 +248,7 @@ def handle_hook(event, kind):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
-    gate_reason = transcript_gate_reason(event, session_id, agent_id, message, packet)
+    gate_reason = transcript_gate_reason(event, session_id, agent_id, message, packet, clean_status)
     if gate_reason:
         return gate_reason
 

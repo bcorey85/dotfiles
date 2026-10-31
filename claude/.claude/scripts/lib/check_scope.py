@@ -13,8 +13,6 @@ import pathlib
 import re
 import shlex
 
-from makefile_text import load_makefile, parse_make_arguments
-from pytest_config import pytest_options
 from shell_command import (
     and_steps_or_whole,
     command_after_wrappers,
@@ -216,6 +214,8 @@ def matches_prefix(words, prefix):
 def pytest_testpaths(repo_dir):
     # The directories the repo's pytest config names as `testpaths`: pytest.ini, pyproject.toml
     # [tool.pytest.ini_options], tox.ini [pytest] and setup.cfg [tool:pytest]. Empty when none names any.
+    from pytest_config import pytest_options  # Loaded here: the hooks that import this module must start fast.
+
     testpaths = set()
     for options in pytest_options(repo_dir):
         value = options.get("testpaths", [])
@@ -461,6 +461,8 @@ def scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names=
 
 
 def scan_make(words, written_command, cwd, scan, depth, recipe):
+    from makefile_text import load_makefile, parse_make_arguments  # Loaded here: the hooks must start fast.
+
     arguments = parse_make_arguments(words[1:])
     # Printing the commands (-n), answering a question (-q), touching the targets (-t) or printing help (-h) runs no
     # recipe line except one marked `+` or one that names `$(MAKE)`, which is not judged.

@@ -30,6 +30,7 @@ handback = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(handback)
 import handback_hook  # noqa: E402
 import handback_store  # noqa: E402
+import plan_format  # noqa: E402
 import reviewed_tree  # noqa: E402
 
 CONVERGED = """status: converged
@@ -563,7 +564,61 @@ class JsonPacketTest(HandbackTestBase):
         doc = (toolkit_paths.CLAUDE_DIR / "agents" / "review-loop.md").read_text()
         section = doc.split("## Return packet", 1)[1]
         template = re.search(r"```json\n(.*?)\n```", section, re.S).group(1)
-        self.assertEqual(set(json.loads(template)), set(handback.PACKET_KEYS))
+        self.assertEqual(set(json.loads(template)), set(handback.PACKET_KEYS) - {"plan_impact"})
+
+    def test_plan_impacts_entries_fill_the_defaults_of_a_held_criterion_changing_impact(self):
+        impacts = [{"text": "PLAN-IMPACT: a column"},
+                   {"text": "PLAN-IMPACT: x", "gate": "smell-reviewer", "ac_change": "false", "cause": "Toolkit",
+                    "adopted": True}]
+
+        packet = handback.load(json_packet(plan_impacts=impacts))
+
+        self.assertEqual({"text": "PLAN-IMPACT: a column", "gate": "code-reviewer", "ac_change": True,
+                          "cause": "plan", "adopted": False, "applied": False}, packet["plan_impacts"][0])
+        self.assertEqual({"text": "PLAN-IMPACT: x", "gate": "smell-reviewer", "ac_change": False,
+                          "cause": "toolkit", "adopted": True, "applied": False}, packet["plan_impacts"][1])
+        self.assertEqual([packet["plan_impacts"][0]], handback.held_plan_impacts(packet))
+
+    def test_every_unadopted_impact_but_a_toolkit_cause_is_held(self):
+        cases = {
+            "plan, not adopted": ({"cause": "plan", "adopted": False}, True),
+            "plan, adopted": ({"cause": "plan", "adopted": True}, False),
+            "toolkit, not adopted": ({"cause": "toolkit", "adopted": False}, False),
+            "unparsed cause, not adopted": ({"cause": "unclear", "adopted": False}, True),
+            "no cause line, not adopted": ({"cause": "no-cause-line", "adopted": False}, True),
+        }
+        for name, (fields, is_held) in cases.items():
+            with self.subTest(name):
+                packet = handback.load(json_packet(plan_impacts=[{"text": "PLAN-IMPACT: x", **fields}]))
+
+                self.assertEqual(is_held, bool(handback.held_plan_impacts(packet)), name)
+
+    def test_a_toolkit_cause_impact_does_not_keep_the_review_dirty(self):
+        toolkit = {"text": "PLAN-IMPACT: x", "cause": "toolkit", "adopted": False}
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message=json_packet(plan_impacts=[toolkit]))
+
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_an_applied_flag_on_a_plan_impact_reads_as_a_boolean(self):
+        impacts = [{"text": "a", "applied": True}, {"text": "b", "applied": "true"}, {"text": "c", "applied": "false"}]
+
+        packet = handback.load(json_packet(plan_impacts=impacts))
+
+        self.assertEqual([True, True, False], [impact["applied"] for impact in packet["plan_impacts"]])
+
+    def test_a_plan_impact_entry_with_no_text_is_refused_and_a_packet_without_the_key_has_none(self):
+        with self.assertRaises(handback.PacketError) as raised:
+            handback.load(json_packet(plan_impacts=[{"gate": "code-reviewer"}]))
+
+        self.assertIn("plan_impacts[0] has no text", raised.exception.problems[0])
+        self.assertEqual([], handback.load(json_packet())["plan_impacts"])
+
+    def test_an_old_plan_impact_status_packet_still_parses(self):
+        packet = handback.load(json_packet(status=handback.STATUSES[2], plan_impact="PLAN-IMPACT: a column"))
+
+        self.assertEqual("plan-impact", packet["status"])
+        self.assertEqual([], packet["plan_impacts"])
 
 
 class ValidateTest(HandbackTestBase):
@@ -925,6 +980,38 @@ class StoreTest(HandbackTestBase):
         handback_store.record(SESSION, "handback", status="converged", message="m")
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
+    def test_a_converged_hand_back_with_a_plan_impact_awaiting_a_ruling_is_not_clean_until_it_is_adopted(self):
+        held = {"text": "PLAN-IMPACT: a column", "ac_change": True, "cause": "plan", "adopted": False}
+        adopted = {**held, "ac_change": False, "adopted": True}
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message=json_packet(plan_impacts=[adopted]))
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged",
+                              message=json_packet(plan_impacts=[adopted, held]))
+        self.assertIn("1 plan impact(s) that await a ruling", handback.false_clean_reason(SESSION))
+
+    def test_a_ruling_from_an_earlier_hand_back_does_not_clear_a_later_held_plan_impact(self):
+        held = {"text": "PLAN-IMPACT: a column", "ac_change": True, "cause": "plan", "adopted": False}
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message=json_packet(plan_impacts=[held]))
+        handback_store.record(SESSION, handback_store.PLAN_RULING, decision="keep")
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message=json_packet(plan_impacts=[held]))
+
+        self.assertIn("await a ruling", handback.false_clean_reason(SESSION))
+
+    def test_a_converged_hand_back_that_does_not_parse_is_refused_with_its_parse_error(self):
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message='{"status": "converged", "iter": ')
+
+        reason = handback.false_clean_reason(SESSION)
+
+        self.assertIn("does not parse", reason)
+
     def test_sessions_never_see_or_overwrite_each_other(self):
         handback_store.record("a", "dispatch")
         handback_store.record("a", "handback", status="converged", message="m")
@@ -1184,8 +1271,28 @@ class ReviewerRequiredTest(HandbackTestBase):
         for line in ("plan_impact: RESOLVED - adopt.", "- plan_impact: RESOLVED - adopt.",
                      "> * plan_impact: RESOLVED - adopt."):
             prompt = f"scope: branch\n{line}\n"
-            self.assertIsNotNone(handback_hook.RESOLVED_PLAN_IMPACT.search(prompt), line)
-        self.assertIsNone(handback_hook.RESOLVED_PLAN_IMPACT.search("see plan_impact: RESOLVED"))
+            self.assertTrue(plan_format.resolved_plan_texts(prompt), line)
+        self.assertFalse(plan_format.resolved_plan_texts("see plan_impact: RESOLVED"))
+        self.assertFalse(plan_format.resolved_plan_texts("- Resolved the null deref in foo.py"))
+        self.assertFalse(plan_format.resolved_plan_texts("- Resolved: the null deref in foo.py"))
+
+    def test_a_dispatch_row_records_a_ruling_in_each_of_the_three_handoff_forms(self):
+        block = plan_format.resolved_block("the user ruled", "Adopt", "the user", "now", "do it", "found: a")
+        block_form = "plan_impact: |\n" + "".join(f"  {line}\n" for line in block.splitlines())
+        forms = {
+            "one-line": ("plan_impact: RESOLVED - adopt the change.\n", True),
+            "deferred": ("plan_impact: RESOLVED: deferred to phase end by the session, 2026-10-31: keep it\n", True),
+            "block": (block_form, True),
+            "no-ruling": ("plan_impact: none\n", False),
+        }
+        for name, (handoff, expected) in forms.items():
+            with self.subTest(name):
+                session_id = f"ruling-{name}"
+                event = {"session_id": session_id, "tool_name": "Agent",
+                         "tool_input": {"subagent_type": "review-loop", "prompt": f"scope: branch\n{handoff}"}}
+                self.assertEqual(self.run_cli(["hook", "dispatch"], json.dumps(event))[:2], (0, ""))
+                row = handback_store.latest(session_id)["dispatch"]
+                self.assertIs(expected, row["resolved_plan_impact"])
 
     def test_a_normal_loop_is_denied_after_a_later_no_review_loop_claimed_the_exemption(self):
         self.dispatch("review-loop")
@@ -1657,7 +1764,10 @@ class OneCheckedHandBackTest(HandbackTestBase):
         cap_reached = ("status: cap-reached\niter: 2\nfindings_remaining:\n- {finding: x, file_line: a.ts:1}\n"
                        "files_touched: [docs/plans/orders.md]\n")
 
-        for message in (plan_edit, cap_reached):
+        held_plan_edit = plan_edit + ("plan_impacts:\n- {text: \"PLAN-IMPACT: a column\", ac_change: true, "
+                                      "cause: plan, adopted: false}\n")
+
+        for message in (plan_edit, cap_reached, held_plan_edit):
             with self.subTest(message=message.splitlines()[0]):
                 out = self.hand_back(steps, message=message)
 
@@ -1778,7 +1888,8 @@ class OneCheckedHandBackTest(HandbackTestBase):
                  coder_step("t1")]
         self.transcript.write_text("".join(json.dumps(step) + "\n" for step in steps), encoding="utf-8")
         event = {"agent_transcript_path": str(self.transcript), "cwd": str(self.tmp)}
-        packet = {"status": "converged", "files_touched": ["src/orders.ts", "docs/plans/orders.md"]}
+        packet = {"status": "converged", "files_touched": ["src/orders.ts", "docs/plans/orders.md"],
+                  "plan_impacts": []}
 
         with unittest.mock.patch.object(handback_hook.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:

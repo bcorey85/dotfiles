@@ -55,7 +55,12 @@ DEVIATIONS_HEADING = "Plan Deviations"
 SESSION_RULING_OWNER = "the session, not the user"
 # A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its
 # bracketed tags, in either order.
-PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{EN DASH}:-]*)*plan[-_ ]?impact", re.I)
+LINE_RANGE = r"\d+(?:[-\N{EN DASH}]\d+)?(?:,\d+(?:[-\N{EN DASH}]\d+)?)*"
+PLAN_CHANGE_MARK = re.compile(
+    rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*plan[-_ ]?impact", re.I)
+PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
+PLAN_IMPACT_BLOCK_START = re.compile(r"^[ \t>*`_-]*PLAN-IMPACT[*`_]*:?[*`_]*[ \t]*$")
+PLAN_IMPACT_BLOCK_KEY = re.compile(r"^[ \t>*`_-]*(?:assumed|found|changes|acceptance_criteria|cause)[*`_]*:", re.I)
 # A PLAN-IMPACT's `acceptance_criteria:` line: `none`, or the criteria the change would alter.
 AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", re.I)
 PLAN_IMPACT_OPENING = re.compile(r"plan[-_ ]?impact(?![*`_]*:[ \t*`_]*yes\b)", re.I)
@@ -64,7 +69,9 @@ PLAN_IMPACT_ASSUMED_FOUND = re.compile(r"^[ \t>*`_-]*(?:assumed|found)[*`_]*:[ \
 TOOLKIT_WORD = re.compile(r"\b(?:hand-?back|later-phase|code-step|coder)[ -](?:hook|gate)s?\b", re.I)
 PLAN_STEP_WORD = re.compile(r"\b(?:phase|step)\s+\d", re.I)
 # plan: the plan and the code disagree. toolkit: a toolkit gate or script is at fault and nothing in the plan is wrong.
-PLAN_IMPACT_CAUSES = ("plan", "toolkit")
+PLAN_CAUSE = "plan"
+TOOLKIT_CAUSE = "toolkit"
+PLAN_IMPACT_CAUSES = (PLAN_CAUSE, TOOLKIT_CAUSE)
 # A packet's cause for a block that names none where one is required; never a cause a block can write.
 NO_CAUSE_LINE = "no-cause-line"
 BELOW_CRITERIA_RULING = ("No acceptance criterion changes, so the code wins: the plan follows the code. Adopted by "
@@ -801,6 +808,45 @@ def append_deviation(plan_path, entry):
     plan_path.write_text("\n".join(lines))
 
 
+def plan_impact_body(lines_after_header):
+    """The indented lines, or key lines, under a PLAN-IMPACT header. Blank lines may sit between the header and the
+    first line; the body ends at the next blank line."""
+    body = []
+    for later in lines_after_header:
+        if not later.strip():
+            if body:
+                break
+            continue
+        if later[0] in " \t":
+            body.append(later.rstrip())
+        elif PLAN_IMPACT_BLOCK_KEY.match(later):
+            body.append("  " + later.strip())
+        else:
+            break
+    return body
+
+
+def plan_impact_block(report):
+    """The `PLAN-IMPACT:` header (bold or backticked is fine) and the lines under it; a fallback line when the report
+    only says `PLAN-IMPACT: yes`; None when it has neither."""
+    lines = report.splitlines()
+    for index, line in enumerate(lines):
+        if not PLAN_IMPACT_BLOCK_START.match(line):
+            continue
+        body = plan_impact_body(lines[index + 1:])
+        if body:
+            return PLAN_IMPACT_BLOCK_HEADER + "\n".join(body)
+    if re.search(r"^PLAN-IMPACT:\s*yes\s*$", report, re.M):
+        return "PLAN-IMPACT: yes (block not found in the report; read the report)"
+    return None
+
+
+def has_plan_impact_block(report):
+    """True when the report holds a found block, not the `PLAN-IMPACT: yes (block not found…)` fallback."""
+    block = plan_impact_block(report)
+    return block is not None and block.startswith(PLAN_IMPACT_BLOCK_HEADER)
+
+
 def changes_acceptance_criteria(impact):
     """False only when each PLAN-IMPACT in impact says `acceptance_criteria: none`. A PLAN-IMPACT with no such line
     counts as an AC change, so the user is asked."""
@@ -829,7 +875,7 @@ def names_only_toolkit(block):
 def block_must_name_cause(block):
     """True for a readable PLAN-IMPACT block (header line, then its lines). A report that only says `PLAN-IMPACT: yes`
     has no block to read, so it has no cause to name."""
-    return block.startswith("PLAN-IMPACT:\n")
+    return block.startswith(PLAN_IMPACT_BLOCK_HEADER)
 
 
 def plan_impact_stop_cause(block, cause_required=False):
@@ -939,9 +985,40 @@ def resolved_block(resolved, decision, ruled_by, ruled_at, ruling_words, disagre
              f"Ruled by: {ruled_by}, at {ruled_at}",
              "The ruling:"]
     lines += ["  " + line for line in ruling_words.splitlines()]
-    lines.append("The disagreement it settles:")
+    lines.append(DISAGREEMENT_HEADER)
     lines += ["  " + line for line in disagreement.splitlines()]
     return "\n".join(lines)
+
+
+CARRIED_FINDINGS_KEY = "carried-findings:"
+DISAGREEMENT_HEADER = "The disagreement it settles:"
+RESOLVED_RULING_LINE = re.compile(r"^[ \t>*`-]*(?:(?i:plan_impact):[ \t]*RESOLVED\b|RESOLVED:)")
+
+
+def resolved_plan_texts(handoff):
+    """The texts a handoff with a ruling names as settled: the ruling line (the one-line `plan_impact: RESOLVED` form
+    or the `RESOLVED:` line of the `plan_impact: |` block), the block's disagreement, and each carried finding.
+    Empty when the handoff holds no ruling."""
+    lines = handoff.splitlines()
+    texts = []
+    ruled = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if RESOLVED_RULING_LINE.match(line):
+            ruled = True
+            texts.append(stripped)
+        elif stripped == DISAGREEMENT_HEADER or stripped.startswith(CARRIED_FINDINGS_KEY):
+            indent = len(line) - len(line.lstrip())
+            following = []
+            for later in lines[index + 1:]:
+                if later.strip() and len(later) - len(later.lstrip()) <= indent:
+                    break
+                following.append(later.strip())
+            if stripped == DISAGREEMENT_HEADER:
+                texts.append(" ".join(filter(None, following)))
+            else:
+                texts += [entry[2:] for entry in following if entry.startswith("- ")]
+    return texts if ruled else []
 
 
 def reopen_closing_phases(plan_path):

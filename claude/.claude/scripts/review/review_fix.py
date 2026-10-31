@@ -62,6 +62,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import capped_review
 import handback
 import handback_hook
+import handback_store
 import plan_format
 import review_asks
 import script_utils
@@ -315,12 +316,16 @@ def present_plan_impact(packet, state):
         return adopt_code_side_for_review(state)
 
     save_fix_state(state)
-    print_action(
-        "ask-user-plan-impact",
+    print_action("ask-user-plan-impact", *plan_impact_question_lines(packet["plan_impact"], packet))
+
+
+def plan_impact_question_lines(plan_impact, packet):
+    """The lines that tell the session to put one plan-impact question to the user and what to run on the answer."""
+    return [
         "Call AskUserQuestion now. Without that tool, ask the same question in plain text, list the options numbered, "
         "end the turn and wait for the reply. Do not re-dispatch and do not triage this as an ask. Question: assumed, "
         "then found, then what changes, taken from this block:",
-        packet["plan_impact"],
+        plan_impact,
         f"Options, in this order: {' / '.join(plan_format.PLAN_IMPACT_OPTIONS)}.",
         "Map the answer, picked or typed, to adopt, keep or discuss. For adopt or keep, put the user's words in "
         "--ruling; for discuss, run `decide discuss`.",
@@ -329,11 +334,75 @@ def present_plan_impact(packet, state):
         plan_format.DECIDE_BY_NOTE,
         f"Counters held for the re-dispatch: iter={packet['iter']} "
         f"spec_iter={packet['spec_iter'] if packet['spec_iter'] is not None else 'absent'}",
-    )
+    ]
 
 
 def gate_mark_line():
     return f"Gate: `{MARK_CLEAN}` as its own Bash command, unless it already ran in parallel with this call."
+
+
+def unresolved_gate_line(unresolved):
+    """The gate line of a packet whose plan impacts are not all adopted: the review stays dirty until they are."""
+    return (f"Gate: do not run `{MARK_CLEAN}`: {len(unresolved)} plan impact(s) wait for a ruling, so the review is "
+            f"not clean yet. {KEEP_DIRTY}")
+
+
+def plan_impact_deviation_lines(adopted):
+    """The `## Plan Deviations` lines for the plan impacts adopted by rule, no question asked."""
+    owner = plan_format.SESSION_RULING_OWNER
+    ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    choice = plan_format.DECISION_WORDS["adopt"]
+    lines = []
+    for impact in adopted:
+        ruling = plan_format.below_criteria_ruling(impact["text"])
+        lines += plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, impact["text"])
+    return lines
+
+
+APPLIED_IMPACT_LINE = ("A plan impact that changes an acceptance criterion came from a coder whose edits are already "
+                       "in the tree. Keeping the plan as written means reverting those edits; adopting the change "
+                       "keeps them.")
+APPLIED_KEEP_LINE = ("The plan stays as written: the coder's edits for the held plan impact are in the tree, so revert "
+                     "them, and nothing is re-dispatched.")
+
+
+def present_plan_impacts(packet, state):
+    """Prints the packet's plan impacts once, after the review result. The loop never stopped for them. An adopted one
+    prints as a plan deviation line to add, with no question. A toolkit-cause one prints as a toolkit fault, with no
+    question. The ones that change an acceptance criterion go to the user in one closing question; the fix waits for the
+    answer."""
+    impacts = packet["plan_impacts"]
+    if not impacts:
+        return
+
+    adopted = [impact for impact in impacts if impact["adopted"]]
+    toolkit = handback.toolkit_plan_impacts(packet)
+    held = handback.held_plan_impacts(packet)
+    lines = []
+    if adopted:
+        lines += ["Plan impacts adopted by rule (no acceptance criterion changes, so the code wins; no one was asked). "
+                  "Add these lines under ## Plan Deviations in the plan, and show the user:",
+                  *plan_impact_deviation_lines(adopted)]
+    for impact in toolkit:
+        lines += [f"Toolkit fault, not a plan change (the {impact['gate']} {plan_format.cause_stop(impact['cause'])}):",
+                  impact["text"]]
+    if not held:
+        print_action("show-plan-impacts", *lines)
+        return
+
+    held_text = handback.held_plan_impact_text(held)
+    applied = any(impact["applied"] for impact in held)
+    state.update({"plan_impact": held_text, "plan_impact_held": True, "plan_impact_applied": applied,
+                  "carried_findings": [f"plan impact: {one_line(impact['text'], 800)}" for impact in held]})
+    if state.get("stage") != "asks":
+        state["stage"] = "plan-impact"
+    save_fix_state(state)
+    if applied:
+        lines += [APPLIED_IMPACT_LINE, "Ask once, now that the review is done."]
+    else:
+        lines += ["Plan impacts that change an acceptance criterion stay unapplied until the user signs off. Ask once, "
+                  "now that the review is done."]
+    print_action("ask-user-plan-impact", *lines, *plan_impact_question_lines(held_text, packet))
 
 
 def save_packet_asks(packet, state):
@@ -360,7 +429,7 @@ def asks_done_line(asks, state):
             "stored)")
 
 
-def present_packet_asks(packet, state):
+def present_packet_asks(packet, state, gate_line):
     asks = save_packet_asks(packet, state)
     lines = [
         jumped_line(state),
@@ -368,7 +437,7 @@ def present_packet_asks(packet, state):
         "Never auto-fix an ask. If the repo's CLAUDE.md hands ask decisions to the session, decide each ask "
         "yourself and add `--by session` to asks-done; otherwise wait for the user.",
         asks_done_line(asks, state),
-        gate_mark_line(),
+        gate_line,
         *review_asks.numbered_ask_lines(asks, detail=True),
     ]
     print_action("present-asks", *lines)
@@ -479,6 +548,9 @@ def new_state(options, packet, packet_id):
             "escapes_logged",
             "asks_logged",
             "plan_impact",
+            "plan_impact_held",
+            "plan_impact_applied",
+            "carried_findings",
             "waiting_packets",
         ):
             if key in previous:
@@ -621,13 +693,16 @@ def command_packet(argv):
     notes = log_escapes(state, options.escapes, options.lane)
     replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
     notes += failures
+    unresolved = handback.held_plan_impacts(packet)
+    gate_line = unresolved_gate_line(unresolved) if unresolved else gate_mark_line()
     if packet["ask"]:
         fill_packet_ask_ids(packet, state)
-        present_packet_asks(packet, state)
+        present_packet_asks(packet, state, gate_line)
     else:
-        print_action("render-and-finish", gate_mark_line())
+        print_action("render-and-finish", gate_line)
     sections = packet_sections(packet, state, replies, unreviewed_fix, capped_defer)
     print_user_block(handback.render(packet, options.skill, sections))
+    present_plan_impacts(packet, state)
     print_logged(notes)
     if options.skill == "review" and not is_outstanding(packet):
         print(f"Nothing is outstanding: say \"{NOTHING_OUTSTANDING}\"")
@@ -880,7 +955,7 @@ def command_decide(argv):
     parser.add_argument("--by", nargs="?", const="", default=None)
     options = parser.parse_args(argv)
     state = load_fix_state()
-    if state.get("stage") != "plan-impact":
+    if state.get("stage") != "plan-impact" and not state.get("plan_impact_held"):
         raise UsageError("no plan-impact is waiting.")
     if options.decision == "discuss":
         return print_action("discuss", "Discuss the plan impact with the user, then run one of these. Do not "
@@ -911,6 +986,28 @@ def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no
     if plan_path is not None:
         plan_format.append_deviation(plan_path, entry)
 
+    if decision == "keep" and state.pop("plan_impact_held", False):
+        keep_line = (APPLIED_KEEP_LINE if state.pop("plan_impact_applied", False)
+                     else "The plan stays as written: the held fix is not applied and nothing is re-dispatched.")
+        state["stage"] = "done"
+        save_fix_state(state)
+        session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+        if session_id:
+            handback_store.record(session_id, handback_store.PLAN_RULING, decision=decision)
+            mark_line = (f"The ruling settles the plan impact, so the review can be marked clean: run `{MARK_CLEAN}` "
+                         "now as its own Bash command.")
+        else:
+            mark_line = ("CLAUDE_CODE_SESSION_ID is not set, so the ruling is not recorded and the clean mark is "
+                         "refused until it is.")
+        return print_action(
+            "done",
+            f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else no_plan_line,
+            *entry,
+            keep_line,
+            mark_line,
+        )
+    state.pop("plan_impact_held", None)
+
     spec = state.get("spec_iter")
     session_note = " The session ruled, not the user." if by == "session" else ""
     lines = [f"plan_impact: RESOLVED - {choice}.{session_note} Ruling: {one_line(ruling)}",
@@ -919,7 +1016,8 @@ def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no
         lines.append(f"spec_iter={spec}")
     carried = state.get("carried_findings") or []
     if carried:
-        lines.append("carried-findings:  # left open by the round the plan impact stopped; review them too")
+        lines.append(f"{plan_format.CARRIED_FINDINGS_KEY}  # left open by the round the plan impact stopped; "
+                     "review them too")
         lines += [f"  - {finding}" for finding in carried]
 
     state["stage"] = "redispatch"

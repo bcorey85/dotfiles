@@ -89,10 +89,46 @@ def review_section_findings(block):
 TAGGED_BULLET = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+`?(fix|ask|nit)`?\s*:\s*(.+)$", re.I)
 
 
+LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
+BOLD_OPENING = re.compile(r"^\s*(?:(?:[-*]|\d+[.)])\s+)?(\*\*|__).+?\1")
+BOLD_REPORT_FIELD = re.compile(r"^\s*(\*\*|__)[^*_]+\1\s*:")
+STRAY_DISPOSITION_TAG = re.compile(r"`(?:fix|ask|nit)`|\((?:fix|ask|nit)\)|\*\*(?:fix|ask|nit)\*\*", re.I)
+
+
+def opens_with_bold_head(line):
+    """True for a line that opens with a bold run, other than a report header field like `**Scope**: value`."""
+    return bool(BOLD_OPENING.match(line)) and not BOLD_REPORT_FIELD.match(line)
+
+
+def tagged_bullets_leave_items_out(lines):
+    """True when the text holds an item the tagged-bullet parse would drop or mangle: a tagged bullet nested under
+    another item, a bold-head item, an untagged top-level item that names a file:line, or a stray disposition tag."""
+    list_indents = [indent_of(line) for line in lines if LIST_ITEM.match(line)]
+    top_indent = min(list_indents, default=0)
+    for line in lines:
+        tagged = TAGGED_BULLET.match(line)
+        if tagged and indent_of(line) > top_indent:
+            return True
+        if tagged:
+            continue
+        if opens_with_bold_head(line) or STRAY_DISPOSITION_TAG.search(line):
+            return True
+        top_level_item = LIST_ITEM.match(line) and indent_of(line) == top_indent
+        if top_level_item and script_utils.PATH_LINE.search(line):
+            return True
+    return False
+
+
 def parse_tagged_bullets(text):
-    """Reviewers that tag each bullet with its disposition (the test reviewer) instead of using Fix/Ask/Nit sections."""
+    """Reviewers that tag each bullet with its disposition (the test reviewer) instead of using Fix/Ask/Nit sections.
+    Returns None, so the disposition call reads the text, unless the tagged bullets account for every item: a tagged
+    bullet nested under another item, a bold-head item, an untagged top-level item naming a file:line, or a stray
+    disposition tag each mean an item the bullets would drop."""
+    lines = text.splitlines()
+    if tagged_bullets_leave_items_out(lines):
+        return None
     found = {"fix": [], "ask": [], "nit": []}
-    for line in text.splitlines():
+    for line in lines:
         match = TAGGED_BULLET.match(line)
         if match:
             found[match.group(1).lower()].append(match.group(2).strip())
@@ -182,46 +218,6 @@ def merge_findings(findings):
 def near_title(title, other_title):
     """Whether two finding titles are the same or near."""
     return script_utils.text_similarity(title, other_title) >= REFILE_SIMILARITY
-
-
-def same_finding(finding, other):
-    """Whether two findings in the same file name the same issue: a near title when both have one, else the same
-    line."""
-    if finding.path != other.path:
-        return False
-    if finding.title and other.title:
-        return near_title(other.title, finding.title)
-    return finding.line == other.line
-
-
-def unreported_parts(fixed_item, open_fixes):
-    """The findings folded into a fixed entry that no open fix finding reports again. An open fix reports a part
-    again when it names the same file and, when both have a title, the same or a near title, or else the same line.
-    A part with no file is never reported again."""
-    open_parts = [part for item in open_fixes for part in item.each_part]
-    kept = []
-    for fixed_part in fixed_item.each_part:
-        reported = bool(fixed_part.path) and any(same_finding(fixed_part, open_part) for open_part in open_parts)
-        if not reported:
-            kept.append(fixed_part)
-    return kept
-
-
-def reported_again(fixed_item, open_fixes):
-    """Whether an open fix finding reports again any finding folded into a fixed entry."""
-    kept = unreported_parts(fixed_item, open_fixes)
-    return len(kept) < len(fixed_item.each_part)
-
-
-def still_fixed(fixed_items, open_fixes):
-    """The fixed entries with the findings that open fix findings report again taken out; an entry with none left
-    is dropped."""
-    kept = []
-    for item in fixed_items:
-        parts = unreported_parts(item, open_fixes)
-        if parts:
-            kept.append(combine(parts))
-    return kept
 
 
 def names_absent_file(repo, tree_paths, finding):

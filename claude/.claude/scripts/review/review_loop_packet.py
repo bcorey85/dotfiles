@@ -10,14 +10,14 @@ import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../code", "../lib")]
 import code_step_core
-import code_step_report
 import full_check
 import handback
 import handback_store
-import plan_format
 import review_loop_gate
 import script_utils
 from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED
+
+PLAN_IMPACT_KEYS = ("text", "gate", "ac_change", "cause", "adopted", "applied")
 
 
 def located(finding):
@@ -49,12 +49,13 @@ def ask_entry(ask, gate, finding_id):
 
 
 def packet_message(outcome):
-    """The outcome as the packet handback.py reads: one JSON object with one key per field."""
-    status = "plan-impact" if outcome["status"] == "plan-change" else outcome["status"]
+    """The outcome as the packet handback.py reads: one JSON object with one key per field. A key the outcome lacks
+    reads as empty."""
+    outcome = {**EMPTY_OUTCOME, **outcome}
     asks = [ask_entry(ask, outcome["ask_gates"].get(ask, handback.DEFAULT_GATE), outcome["ask_ids"].get(ask))
             for ask in outcome["asks"]]
     fields = {
-        "status": status,
+        "status": outcome["status"],
         "iter": outcome["iter"],
         "fixed": [finding_entry(finding) for finding in outcome["fixed"]],
         "skipped_fp": [{"item": entry["item"].text, "reason": entry["reason"], "file_line": located(entry["item"])}
@@ -63,6 +64,7 @@ def packet_message(outcome):
         "findings_remaining": [{"disposition": "fix", **finding_entry(finding)}
                                for finding in outcome["open_fixes"]],
         "ask": asks,
+        "plan_impacts": [{key: entry[key] for key in PLAN_IMPACT_KEYS} for entry in outcome["plan_impacts"]],
         "class_closure": script_utils.one_line(outcome["class_closure"], limit=None),
         "open_classes": outcome["open_classes"],
         "files_touched": outcome["files_touched"],
@@ -80,22 +82,16 @@ def packet_message(outcome):
     for key in ("check_changed", "check_rewrote_edited", "check_created", "tool_fault"):
         if outcome.get(key):
             fields[key] = outcome[key]
-    if outcome["plan_change"]:
-        plan_impact = "; ".join(outcome["plan_change"])
-        blocks = [code_step_report.plan_impact_block(entry) or "" for entry in outcome["plan_change"]]
-        fields["plan_impact_cause"] = plan_format.stopping_plan_impact_cause(
-            blocks, cause_required=outcome["plan_change_from_coder"])
-        fields["plan_impact"] = script_utils.one_line(plan_impact, limit=None)
     return json.dumps(fields, ensure_ascii=False)
 
 
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
-    "status": "", "iter": 0, "fixed": [], "skipped_fp": [], "blockers": [], "plan_change": [], "open_fixes": [],
+    "status": "", "iter": 0, "fixed": [], "skipped_fp": [], "blockers": [], "open_fixes": [],
     "asks": [], "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "", "open_classes": [],
     "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
     "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False,
-    "scoped_tests": "", "tool_fault": "", "plan_change_from_coder": False,
+    "scoped_tests": "", "tool_fault": "", "plan_impacts": [],
 }
 
 

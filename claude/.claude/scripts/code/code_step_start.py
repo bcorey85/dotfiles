@@ -953,7 +953,7 @@ def emit_session_phase(plan_rel, plan_lines, entry, agent, section, run_notes):
          f"steps run in this session, not in a coder. Dispatch the `{agent}` agent yourself and do the phase's steps, "
          f"leaving out its commit. Then invoke Skill code with `session-done {number}`: it runs the phase's "
          "Automated Verification, marks the phase done and prints the commit command for you to run. The phase's "
-         "plan section follows:", section, *cited_lines, *run_notes_lines(run_notes))
+         "plan section follows:", section, *cited_lines, *script_utils.run_notes_lines(run_notes))
 
 
 def emit_closing_skill(repo_dir, plan_rel, number, title, skill, section, run_notes):

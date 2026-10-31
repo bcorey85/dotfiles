@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-701 changes, 14 with a measured gain, 257 behavior changes that no intake metric reads.
+703 changes, 14 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-30, [Self-location test skips the lint cache](notes/2026-10-30-self-location-test-skips-the-lint-cache.md).
+Latest change: 2026-10-30, [Hand-back no longer waits on a nested agent that ended on an API error](notes/2026-10-30-hand-back-no-longer-waits-on-a-nested-agent-that.md).
 
 ## Top gains
 

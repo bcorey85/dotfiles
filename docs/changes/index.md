@@ -139,6 +139,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [code-step resume goes on past an unreadable state file in the cwd checkout](2026-10-31-code-step-resume-goes-on-past-an-unreadable-state.md) [script/code-step] A /code run in a sibling worktree finishes its steps when the session's own checkout holds another run's state file this code-step cannot read.
 * [Staged-claim hook passes a reply that describes what it reads](2026-10-30-staged-claim-hook-passes-a-reply-that-describes.md) [script/staged-claim-gate] The staged-claim Stop hook no longer blocks a reply that reports speech, such as "a reply that says files are staged", so a session can describe the hook without a false refusal. The subdirectory test now runs the passing path it names, and git_calls.py has its reading rules back.
 * [the full check does not pass a jest run that found no test](2026-10-30-the-full-check-does-not-pass-a-jest-run-that-found.md) [script/check-output] A jest run that exits 0 after finding no test now reads as a run of no test, so the full check reports it unverified instead of passed.
 * [A cap-reached hand-back after an unreviewed coder is denied once](2026-10-30-a-cap-reached-hand-back-after-an-unreviewed-coder.md) [script/handback] A review loop that caps right after a coder, with no reviewer after it, is sent back once to run a reviewer, including a loop that starts on a handed-in change at iter 0.

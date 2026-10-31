@@ -1,10 +1,11 @@
-"""Coder packet for one plan phase. Usage: coder_packet.py <plan> <phase number>
+"""Coder packet for one plan phase. Usage: coder_packet.py <plan> <phase number> [--gate-evidence "<text>"]
 
 Prints the block that /code puts in the coder brief, verbatim: the plan line ranges to read, the acceptance
 criteria, the existing files the phase names, the new files it names, one existing sibling per new file, the
 files outside the sibling's directory that the sibling imports, and the rest of any test helper directory among
 them. The coder reads all of it in its first response and does not explore. When the coder gate is set for the repo,
-the rules tell the coder not to run checks."""
+the rules tell the coder not to run checks. `--gate-evidence` is who released a gated phase, when, and their quoted
+words; the packet opens with it, and the script does not judge it."""
 import json
 import pathlib
 import re
@@ -14,13 +15,12 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import coder_gate
 import plan_format
 import script_utils
-from source_paths import SCRIPT_SUFFIXES
+from source_paths import SCRIPT_SUFFIXES, is_runnable_test_file
 
 MAX_IMPORTED_FILES = 15
 SCRIPT_IMPORT = re.compile(r"""(?:from|import)\s*\(?\s*['"]([^'"]+)['"]""")
 PYTHON_IMPORT = re.compile(r"^from\s+(\.+)([\w.]*)\s+import", re.MULTILINE)
 TEST_HELPER_DIRECTORY = re.compile(r"test|fixture|factor", re.IGNORECASE)
-TEST_FILE = re.compile(r"\.(test|spec)\.|^test_|_test\.py$")
 
 
 def phase_bounds(plan_lines, phase_number):
@@ -143,6 +143,19 @@ def imports_outside_directory(source_file, repo_root):
     return [path for path in resolved if path is not None and path.parent != base]
 
 
+def gate_evidence_text(argv):
+    """The packet's opening gate section for `--gate-evidence "<text>"` after the phase number, or "" with no flag."""
+    flag_words = argv[3:]
+    if not flag_words:
+        return ""
+    if len(flag_words) != 2 or flag_words[0] != "--gate-evidence" or not flag_words[1].strip():
+        sys.exit('usage: coder_packet.py <plan> <phase number> [--gate-evidence "<who>, <when>: <quoted text>"]')
+
+    return (f"Gate evidence, as the caller gave it: {flag_words[1]}\n"
+            "The caller released this phase's gate with the evidence above. Proceed with the phase; do not ask for "
+            "the release again.\n\n")
+
+
 def bullet_list(paths, repo_root):
     return "\n".join(f"- {path.relative_to(repo_root)}" for path in paths) or "- none"
 
@@ -176,10 +189,10 @@ for pattern_file in list(patterns):
 test_helper_directories = sorted({path.parent for path in imported if TEST_HELPER_DIRECTORY.search(path.parent.name)})
 for helper_directory in test_helper_directories:
     for helper_file in sorted(helper_directory.iterdir()):
-        is_test_file = TEST_FILE.search(helper_file.name)
+        runs_alone = is_runnable_test_file(helper_file.name)
         if (
             helper_file.is_file()
-            and not is_test_file
+            and not runs_alone
             and helper_file not in imported
             and len(imported) < MAX_IMPORTED_FILES
         ):
@@ -215,7 +228,7 @@ if gate_path.exists():
 else:
     check_rule = "4. Run the phase's checks once, after all edits, as your directives say."
 
-print(f"""Packet for Phase {phase_argument}. Paths are relative to {repository_root}.
+print(f"""{gate_evidence_text(sys.argv)}Packet for Phase {phase_argument}. Paths are relative to {repository_root}.
 
 Plan text to read:
 {chr(10).join(plan_ranges)}

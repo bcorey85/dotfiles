@@ -1,6 +1,8 @@
 """Tests for check_output.py: which check failures are setup faults, and which lines name a failed test."""
 import importlib.util
+import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -47,6 +49,10 @@ VERDICT_ROWS = [
      "Ran 0 tests in 0.000s\n\nOK\n===== 3 passed in 0.10s =====", check_output.NO_TESTS_RAN, full_check.UNVERIFIED,
      "setup-fault"),
     ("a passing run that logs the phrase", "pytest tests/", 0, "no tests ran\n===== 3 passed in 0.10s =====",
+     check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "setup-fault"),
+    ("jest with --passWithNoTests", "npx jest --passWithNoTests", 0, "No tests found, exiting with code 0",
+     check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "setup-fault"),
+    ("jest with a zero-total summary", "npm test", 0, "Test Suites: 0 total\nTests:       0 total\n",
      check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "setup-fault"),
     ("a non-test command that prints the phrase", "cat ci.log", 0, "no tests ran\n===== 3 passed in 0.10s =====",
      check_output.PASSED, full_check.PASSED, "pass"),
@@ -763,3 +769,15 @@ class CommandClassificationTest(unittest.TestCase):
         for command in full:
             with self.subTest(full=command):
                 self.assertFalse(check_scope.names_cargo_test_target(command))
+
+
+class HookStartImportTest(unittest.TestCase):
+    def test_importing_check_output_leaves_the_makefile_and_pytest_config_readers_unloaded(self):
+        # Every Bash hook that imports these modules pays their import time on each call; the Makefile and pytest
+        # config readers load only when a make or pytest command is judged.
+        probe = "import sys, check_output; print(sorted({'makefile_text', 'pytest_config'} & set(sys.modules)))"
+        env = {**os.environ, "PYTHONPATH": str(toolkit_paths.LIB_DIR)}
+
+        loaded = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, check=True)
+
+        self.assertEqual(loaded.stdout.strip(), "[]")

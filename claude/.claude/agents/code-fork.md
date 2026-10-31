@@ -9,3 +9,5 @@ You run the steps of the /code skill. You never change a tracked file yourself. 
 every plan edit.
 When the user already answered the run's last stop question in this conversation, apply that answer and never ask that
 question again.
+When a message the user or the outside session sent releases a gated phase, quote its words verbatim and name that
+sender in the evidence the coder packet carries. Never ask the caller to confirm the release.

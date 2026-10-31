@@ -68,7 +68,6 @@ import expected_red
 import full_check_receipt
 import reviewed_tree
 import script_utils
-import shell_command
 from check_output import (
     FAILING_TEST_LINE,
     failing_block_details,
@@ -102,10 +101,6 @@ NOT_RUN_TIMEOUT = "not run (timeout)"
 # package-manager or engine version mismatch.
 SETUP_FAULT = "setup fault"
 NOT_RUN_NO_CHECK = "not run (no check found; the coder's scoped tests stand)"
-# Results an earlier full_check.py gave a command it refused; a packet may still carry them. This script now runs only
-# the declared check and no longer gives them.
-NOT_RUN_SCOPED = "not run (scoped command: it names files or tests, so it is no full check)"
-NOT_RUN_UNRESOLVED = "not run (unresolved command: what it runs cannot be read, so it is no full check)"
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)'?")
 REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 # Under the Bash tool's 600 s ceiling, so a loop's shell call ends before the tool moves it to the background.
@@ -151,23 +146,6 @@ def configured_check_command(repo):
         return None
 
     return match.group(1)
-
-
-def is_configured_check(check_command, configured):
-    """True when the command equals the configured `Quality check:` command, or joins only && steps that each appear
-    among the configured command's && steps."""
-    if configured is None:
-        return False
-
-    if check_command == configured:
-        return True
-
-    steps = shell_command.and_steps(check_command)
-    configured_steps = shell_command.and_steps(configured)
-    if steps is None or configured_steps is None:
-        return False
-
-    return all(step in configured_steps for step in steps)
 
 
 def pinned_interpreter_env(repo, env):
@@ -583,13 +561,6 @@ def is_unverified(result):
 
 def is_not_run(result):
     return result.startswith("not run")
-
-
-def is_check_not_run(result):
-    # True when the check was owed and did not run: it timed out, or the command was scoped or unresolved. Every
-    # other `not run` result proceeds: CI runs the suite, the repo names no check, the plan expects the check red, or
-    # the check hit a check-command error or an environment gap.
-    return result in (NOT_RUN_TIMEOUT, NOT_RUN_SCOPED, NOT_RUN_UNRESOLVED)
 
 
 def summary_text(result, summaries):

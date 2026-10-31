@@ -4,13 +4,11 @@ Checks that the next phase's prompt goes out only after /clear has taken effect.
 """
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import tempfile
 import unittest
 
-import toolkit_paths
 from stubs import write_stub
 
 HERDR_PHASE_CHANGE = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "herdr-phase-change"
@@ -88,26 +86,20 @@ class HerdrPhaseChangeTest(unittest.TestCase):
     def test_a_done_pane_gets_clear_and_the_prompt_as_two_submissions_after_the_session_changes(self):
         (self.state_dir / "clear-delay").write_text("2\n")
 
-        finished = self.run_phase_change("--watched", "worker", "/code docs/plans/x/plan.md")
+        finished = self.run_phase_change("worker", "/code docs/plans/x/plan.md")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md"])
         self.assertEqual((self.state_dir / "session").read_text().strip(), "s2")
         self.assertIn("--until idle --until done", (self.state_dir / "wait-args").read_text())
 
-    def test_a_code_prompt_goes_out_headless_unless_it_already_is_or_the_pane_is_watched(self):
+    def test_a_slash_command_goes_out_exactly_as_given(self):
         cases = (
-            ("plain", ("/code docs/plans/x/plan.md",), "/code --headless docs/plans/x/plan.md"),
-            ("already headless", ("/code --headless docs/plans/x/plan.md",), "/code --headless docs/plans/x/plan.md"),
-            ("modifier", ("/code +fast plan.md",), "/code --headless +fast plan.md"),
+            ("plain code", ("/code docs/plans/x/plan.md",), "/code docs/plans/x/plan.md"),
+            ("modifier", ("/code +fast plan.md",), "/code +fast plan.md"),
             ("bare code", ("/code",), "/code"),
             ("resume verb", ("/code resume",), "/code resume"),
-            ("tick verb", ("/code tick 2",), "/code tick 2"),
-            ("session-done verb", ("/code session-done 2",), "/code session-done 2"),
-            ("headless in task text", ("/code fix the --headless flag",), "/code --headless fix the --headless flag"),
-            ("headless after task", ("/code --task drop --headless from restart",),
-             "/code --headless --task drop --headless from restart"),
-            ("watched", ("--watched", "/code docs/plans/x/plan.md"), "/code docs/plans/x/plan.md"),
+            ("task text", ("/code fix the flag",), "/code fix the flag"),
             ("other phase", ("/eng-spec docs/tickets/x.md",), "/eng-spec docs/tickets/x.md"),
             ("verify", ("/verify-branch",), "/verify-branch"),
         )
@@ -183,23 +175,6 @@ class HerdrPhaseChangeTest(unittest.TestCase):
                 self.assertEqual(finished.returncode, 1)
                 self.assertEqual(self.submitted_prompts(), [])
                 self.assertIn(f"worker is {status}", finished.stderr)
-
-    def test_the_code_verbs_the_script_keeps_are_the_ones_the_code_skill_names(self):
-        script_text = HERDR_PHASE_CHANGE.read_text()
-        verb_alternatives = [line.strip().split(")")[0] for line in script_text.splitlines()
-                             if line.strip().startswith('""|')]
-        self.assertEqual(len(verb_alternatives), 1, "expected one case line that starts with the empty prompt")
-        script_verbs = set(verb_alternatives[0].split("|")) - {'""'}
-
-        skill_text = (toolkit_paths.CLAUDE_DIR / "skills" / "code" / "SKILL.md").read_text()
-        skill_lines = [line for line in skill_text.splitlines() if line.startswith("1. If the task text")]
-        self.assertEqual(len(skill_lines), 1, "expected one step 1 line in the code skill")
-        verbs_part = skill_lines[0].split("Otherwise run")[0]
-        backticked_words = re.findall(r"`([^`]*)`", verbs_part)
-        skill_verbs = {word for word in backticked_words if re.fullmatch(r"[a-z]+(-[a-z]+)*", word)}
-
-        self.assertEqual(script_verbs, skill_verbs)
-        self.assertIn("task text is empty", skill_lines[0])
 
 
 if __name__ == "__main__":

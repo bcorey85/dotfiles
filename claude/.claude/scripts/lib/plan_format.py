@@ -28,7 +28,6 @@ import re
 
 import script_utils
 
-DONE_PREFIX = "- Done: "
 # A `path/with/a/folder.ext` in backticks, with an optional :line or :start-end suffix inside the ticks.
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
 FILE_ENTRY = re.compile(r"^\s*(?:[-*]\s+)?\*\*Files?\*\*:?")
@@ -60,9 +59,6 @@ PLAN_CHANGE_MARK = re.compile(r"(?:(?:`?[\w./-]+\.\w+:\d+`?|\[[\w-]+\])[\s—\N{
 AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", re.I)
 PLAN_IMPACT_OPENING = re.compile(r"plan[-_ ]?impact(?![*`_]*:[ \t*`_]*yes\b)", re.I)
 PLAN_IMPACT_CAUSE = re.compile(r"^[ \t>*`_-]*cause[*`_]*:[ \t*`_]*(.*?)[ \t*`_]*$", re.I | re.M)
-PLAN_IMPACT_ASSUMED_FOUND = re.compile(r"^[ \t>*`_-]*(?:assumed|found)[*`_]*:[ \t*`_]*(.*)$", re.I | re.M)
-TOOLKIT_WORD = re.compile(r"\b(?:hand-?back|later-phase|code-step|coder)[ -](?:hook|gate)s?\b", re.I)
-PLAN_STEP_WORD = re.compile(r"\b(?:phase|step)\s+\d", re.I)
 # plan: the plan and the code disagree. toolkit: a toolkit gate or script is at fault and nothing in the plan is wrong.
 PLAN_IMPACT_CAUSES = ("plan", "toolkit")
 # A packet's cause for a block that names none where one is required; never a cause a block can write.
@@ -72,22 +68,9 @@ BELOW_CRITERIA_RULING = ("No acceptance criterion changes, so the code wins: the
 PLAN_IMPACT_HEADER_WORD = re.compile(r"[*`_]*plan[-_ ]?impact[*`_]*[ \t]*:", re.I)
 # The `acceptance_criteria:` clause with the marks and separators before it, so removing it leaves no stray dash.
 AC_CHANGE_CLAUSE = re.compile(r"[\s;,—\N{EN DASH}-]*[*`_]*" + AC_CHANGE_LINE.pattern, re.I)
-DEVIATION_ENTRY = re.compile(rf"^- \d{{4}}-\d\d-\d\d(?: \(Phase ({PHASE_ID})\))?:")
 DEVIATION_RULING_PREFIX = "  The ruling: "
 STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
 RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)
-GATE_CLAUSE = re.compile(r"(?:^|\s)[—–-]\s*gate:\s*(.*)$", re.I)
-UNSTATED_GATE = "(no condition written)"
-
-
-def gate_condition(title):
-    """The text of a `gate: <condition>` clause in a Phase Status title, or None when the title has no clause. The risk
-    mark is not part of the condition. A clause with no text gives UNSTATED_GATE. The reader only reports the text: it
-    never judges whether the condition holds."""
-    clause = GATE_CLAUSE.search(title)
-    if not clause:
-        return None
-    return RISK_MARK.sub("", clause.group(1)).strip() or UNSTATED_GATE
 
 
 class PlanFormatError(Exception):
@@ -182,11 +165,10 @@ def file_entry_paths(plan_lines, section):
 def phase_status_entries(lines, closing_skill):
     """The `- [ ] Phase <id>: <title>` lines under the `Phase Status` heading, in file order, and the failures for a
     list line that does not parse or an id listed twice. `closing_skill(title)` names the skill a closing phase runs,
-    or None. Each entry is {"line", "done", "number", "title", "risk", "closing", "gate"}; "gate" is the text of a
-    `gate: <condition>` clause in the title, or None. "moved" is True for a `[-]` line and "movedTo" is the ticket key
-    its `moved to <KEY>` names, or None; a moved phase is not "done". "open" is True for a phase that is neither done
-    nor moved: the phases a run can still start. A `[-]` line with no `moved to <KEY>` is a failure and still returns
-    its entry."""
+    or None. Each entry is {"line", "done", "number", "title", "risk", "closing"}. "moved" is True for a `[-]` line
+    and "movedTo" is the ticket key its `moved to <KEY>` names, or None; a moved phase is not "done". "open" is True
+    for a phase that is neither done nor moved: the phases a run can still start. A `[-]` line with no
+    `moved to <KEY>` is a failure and still returns its entry."""
     fenced = script_utils.fenced_line_indexes(lines)
     entries = []
     failures = []
@@ -228,8 +210,7 @@ def phase_status_entries(lines, closing_skill):
         is_done = match.group(1) in ("x", "X")
         entries.append({"line": index, "done": is_done, "moved": is_moved, "open": not is_done and not is_moved,
                         "movedTo": target.group(1) if target else None, "number": number, "title": title,
-                        "risk": risk.group(1).lower() if risk else "high", "closing": closing,
-                        "gate": gate_condition(title)})
+                        "risk": risk.group(1).lower() if risk else "high", "closing": closing})
     return entries, failures
 
 
@@ -435,8 +416,6 @@ DEFERRED_VERIFICATION = re.compile(
     r"^- \[[ x]\]\s*(?:\*\*[^*]+\*\*:?\s*)?[*_`]*\s*(?P<tag>ci-verified|human-only|agent-run)\b", re.IGNORECASE)
 AGENT_RUN_TAG = "agent-run"
 DEFERRED_TAG_NAMES = {"ci-verified": "CI-verified", "human-only": "human-only", AGENT_RUN_TAG: AGENT_RUN_TAG}
-# The tags whose open box needs no evidence from the code step: another place or a person closes them.
-NO_EVIDENCE_TAGS = frozenset(DEFERRED_TAG_NAMES.values()) - {AGENT_RUN_TAG}
 
 
 def automated_verification_rows(lines, name="plan", first_line=1, strict=False):
@@ -522,57 +501,6 @@ def runs_no_command(line):
     return bool(NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line))
 
 
-OPEN_BOX = re.compile(r"^- \[ \]")
-SUCCESS_BOLD_LABEL = re.compile(r"^\*\*success criteria\b", re.I)
-BOLD_LABEL_LINE = re.compile(r"^\*\*[^*]+\*\*:?\s*$")
-SUCCESS_OR_AUTOMATED_HEADING = re.compile(r"^#{1,6}\s+(?:success criteria|automated verification)\b", re.I)
-
-
-def open_success_items(lines):
-    """The `- [ ]` items under a phase's Success Criteria that need evidence, in file order, as {"index": the 0-based
-    line of the item, "end": the index after its indented continuation lines, "text": the item's words with its
-    continuation lines folded in}. Items under Manual Verification, tagged CI-verified or human-only, and N/A items are
-    left out, and so are items in fenced blocks. An open Agent-run item stays in: it needs evidence like an untagged
-    one. `lines` is one phase's section."""
-    fenced = script_utils.fenced_line_indexes(lines)
-    items = []
-    inside = False
-
-    for index, line in enumerate(lines):
-        if index in fenced:
-            continue
-        if script_utils.MARKDOWN_HEADING.match(line):
-            inside = bool(SUCCESS_OR_AUTOMATED_HEADING.match(line))
-            continue
-        if BOLD_LABEL_LINE.match(line):
-            inside = bool(SUCCESS_BOLD_LABEL.match(line))
-            continue
-        if line.strip() == "---":
-            inside = False
-            continue
-        if not (inside and OPEN_BOX.match(line)):
-            continue
-        if NO_AUTOMATED_CHECK.match(line) or deferred_verification_tag(line) in NO_EVIDENCE_TAGS:
-            continue
-
-        end = index + 1
-        while end < len(lines) and lines[end].strip() and lines[end][0] in " \t" and end not in fenced:
-            end += 1
-        folded = " ".join(part.strip() for part in lines[index:end])
-        items.append({"index": index, "end": end, "text": automated_item_text(folded)})
-    return items
-
-
-def write_item_evidence(lines, items, evidence):
-    """`lines` with each open item's box checked and a `  - Done: <evidence>` line under it (after its continuation
-    lines). `items` come from open_success_items(lines); `evidence` has one text per item, in the same order."""
-    written = list(lines)
-    for item, text in reversed(list(zip(items, evidence, strict=True))):
-        written.insert(item["end"], f"  {DONE_PREFIX}{text}")
-        written[item["index"]] = written[item["index"]].replace("[ ]", "[x]", 1)
-    return written
-
-
 def gate_env(plan_text):
     """The `NAME=value` words that the plan's Automated Verification commands start with, one per name, in file order.
     An item that says N/A or is left to CI, a person, or an agent (Agent-run) is not a command that gets run, so it
@@ -656,31 +584,6 @@ def closing_skill(title):
     return next((skill for pattern, skill in CLOSING_PHASES if pattern.search(title)), None)
 
 
-# The plan line that marks a phase only the /code session can run: `**Session phase**: <agent>`, the agent's name
-# optionally in backticks, on a line of its own like a **File**: entry.
-SESSION_PHASE_LINE = re.compile(r"^[ \t]*(?:[-*][ \t]+)?\*\*Session phase\*\*:[ \t]*`?([A-Za-z][A-Za-z0-9-]*)`?[ \t]*$")
-
-
-def session_only_agent(section_text):
-    """The agent named by the section's `**Session phase**: <agent>` line, or None. None too when the section also
-    has a **File**: or **Files**: entry, and when the agent is a coder (it keeps the coder path and its review)."""
-    section_lines = section_text.split("\n")
-    fenced = script_utils.fenced_line_indexes(section_lines)
-    unfenced_lines = [line for index, line in enumerate(section_lines) if index not in fenced]
-    marker = next((match for match in map(SESSION_PHASE_LINE.match, unfenced_lines) if match), None)
-    if marker is None:
-        return None
-
-    if any(FILE_ENTRY.match(line) for line in unfenced_lines):
-        return None
-
-    agent = marker.group(1)
-    agent_name = agent.lower()
-    if script_utils.CODERS.match(agent_name) or agent_name.endswith("-coder"):
-        return None
-    return agent
-
-
 def cited_phases(plan_lines, phase_id, phase_text):
     """(id, start, end) of each other phase that the phase text reuses with 'same as Phase N', directly or through
     another cited phase's own citation, start 1-based."""
@@ -710,80 +613,6 @@ def phase_text(plan_lines, number):
     if section is None:
         return None
     return "\n".join(plan_lines[section["start"]:section["end"]])
-
-
-def phase_wording(text):
-    """A phase section's text without what a run writes into it: checked boxes read as open and the `Done:` evidence
-    lines are dropped. Two sections with the same wording say the same thing to a coder."""
-    done_marker = DONE_PREFIX.rstrip()
-    lines = [re.sub(r"^(\s*[-*] )\[[xX]\]", r"\1[ ]", line) for line in text.split("\n")
-             if not line.strip().startswith(done_marker)]
-    return "\n".join(line.rstrip() for line in lines).strip()
-
-
-def ordered_pending(entries):
-    """The open phases, with the closing phases after the rest."""
-    pending = [entry for entry in entries if entry["open"]]
-    return [e for e in pending if not e["closing"]] + [e for e in pending if e["closing"]]
-
-
-def gate_blockers(pending):
-    """A run never starts a phase past an open gated one. The gated open phases ahead of the first open phase without
-    a gate, and that phase (None when every open phase is gated)."""
-    next_ungated = next((entry for entry in pending if not entry["gate"]), None)
-    gated_ahead = pending[:pending.index(next_ungated)] if next_ungated else pending
-    return gated_ahead, next_ungated
-
-
-def gated_phase_text(entries):
-    return "; ".join(f"Phase {entry['number']} (gate: {entry['gate']})" for entry in entries)
-
-
-def gate_block_text(gated_ahead, next_ungated):
-    gated_text = gated_phase_text(gated_ahead)
-    text = f"open phases with a gate clause come first: {gated_text}. The script does not judge a gate."
-    if next_ungated:
-        text += f" The next open phase without a gate is Phase {next_ungated['number']}."
-    return text + " `start --phase <id>` runs one anyway."
-
-
-def moved_phase_text(entries):
-    return ", ".join(f"Phase {entry['number']} to {entry['movedTo']}" for entry in entries if entry["moved"])
-
-
-def moved_phase_stop(entry, plan_name, coder_ran=False):
-    """The stop text for a phase that is moved to another ticket. coder_ran is True when the phase became moved after
-    its coder was dispatched."""
-    if coder_ran:
-        ran_text = "The coder ran, and its work is not marked done or committed."
-    else:
-        ran_text = "No coder was dispatched."
-    return (f"Phase {entry['number']} is moved to {entry['movedTo']} in {plan_name}, so this plan does not run it. "
-            f"{ran_text} Tell the user; the phase is worked under {entry['movedTo']}.")
-
-
-def phase_entry_stop(entries, phase_id, plan_name, done_tail="", unlisted_tail=""):
-    """The stop text when the Phase Status entry named phase_id cannot run or be ticked, or None when it can. The
-    tails close the not-listed and already-done stops, which differ by verb."""
-    entry = next((e for e in entries if e["number"] == phase_id), None)
-    if entry is None:
-        listed = ", ".join(e["number"] for e in entries) or "none"
-        return f"Phase {phase_id} is not in the Phase Status of {plan_name}. Listed phases: {listed}.{unlisted_tail}"
-    if entry["moved"]:
-        return moved_phase_stop(entry, plan_name)
-    if entry["done"]:
-        return f"Phase {phase_id} is already marked done in {plan_name}.{done_tail}"
-    return None
-
-
-def mark_phase_done(plan_path, number):
-    """Check the phase's Phase Status line in the plan file when the phase is open."""
-    plan_lines = plan_path.read_text().split("\n")
-    entries = parse_plan_with_closing_phases(plan_lines)["entries"]
-    entry = next((e for e in entries if e["number"] == number and e["open"]), None)
-    if entry:
-        plan_lines[entry["line"]] = plan_lines[entry["line"]].replace("[ ]", "[x]", 1)
-    plan_path.write_text("\n".join(plan_lines))
 
 
 def append_deviation(plan_path, entry):
@@ -818,26 +647,10 @@ def plan_impact_cause(block, missing="plan"):
     return match.group(1).strip().lower()
 
 
-def names_only_toolkit(block):
-    """True when the block's `assumed:` or `found:` lines name a code-step hook or gate (`TOOLKIT_WORD`) and no plan
-    step (`phase 2`, `step 3`): the disagreement is with the toolkit, not the plan. The `cause:` line does not change
-    the answer."""
-    text = " ".join(PLAN_IMPACT_ASSUMED_FOUND.findall(block))
-    return bool(TOOLKIT_WORD.search(text)) and not PLAN_STEP_WORD.search(text)
-
-
 def block_must_name_cause(block):
     """True for a readable PLAN-IMPACT block (header line, then its lines). A report that only says `PLAN-IMPACT: yes`
     has no block to read, so it has no cause to name."""
     return block.startswith("PLAN-IMPACT:\n")
-
-
-def plan_impact_stop_cause(block, cause_required=False):
-    """The words that finish the stopping sentence when the block's cause stops the run, as cause_stop words it.
-    A block with no cause key reads as `plan` unless `cause_required` and the block must name its cause (a coder's
-    block does), which refuses it."""
-    required = cause_required and block_must_name_cause(block)
-    return cause_stop(plan_impact_cause(block, missing="" if required else "plan"))
 
 
 def stopping_plan_impact_cause(blocks, cause_required=False):
@@ -878,29 +691,6 @@ def below_criteria_ruling(impact):
     return f"{BELOW_CRITERIA_RULING} {below_criteria_summary(impact)}"
 
 
-def below_criteria_deviations(plan_text, phase=None):
-    """The disagreement of each `## Plan Deviations` entry the below-criteria rule adopted, of one phase or, with no
-    phase, of all, as `Phase <id>: <disagreement>`."""
-    ruling_start = DEVIATION_RULING_PREFIX + BELOW_CRITERIA_RULING
-    entry_phase = None
-    deviations = []
-    lines = plan_text.splitlines()
-    for index in script_utils.heading_section_indexes(lines, DEVIATIONS_HEADING):
-        line = lines[index]
-        entry = DEVIATION_ENTRY.match(line)
-        if entry:
-            entry_phase = entry.group(1)
-            continue
-        if not line.startswith(ruling_start):
-            continue
-        if phase is not None and entry_phase != str(phase):
-            continue
-
-        summary = line[len(ruling_start):].strip()
-        deviations.append(f"Phase {entry_phase}: {summary}" if entry_phase else summary)
-    return deviations
-
-
 def ruling_owner(repo_dir, by):
     """Who a plan-impact ruling is signed by: the git user name for `--by user`, the session otherwise."""
     if by != "user":
@@ -932,52 +722,8 @@ def ruling_deviation(phase, decision, owner, ruled_at, ruling_words, disagreemen
     return entry
 
 
-def resolved_block(resolved, decision, ruled_by, ruled_at, ruling_words, disagreement):
-    # The RESOLVED plan_impact block of the handoff: review-loop reads it as settled and reviews against the ruling.
-    lines = [f"RESOLVED: {resolved}. Review the code against the ruling. It is not an open question.",
-             f"Decision: {decision}",
-             f"Ruled by: {ruled_by}, at {ruled_at}",
-             "The ruling:"]
-    lines += ["  " + line for line in ruling_words.splitlines()]
-    lines.append("The disagreement it settles:")
-    lines += ["  " + line for line in disagreement.splitlines()]
-    return "\n".join(lines)
-
-
-def reopen_closing_phases(plan_path):
-    """Uncheck every done closing phase in the plan file; the numbers of the phases it unchecked."""
-    plan_lines = plan_path.read_text().split("\n")
-    reopened = [e for e in parse_plan_with_closing_phases(plan_lines)["entries"] if e["closing"] and e["done"]]
-    for entry in reopened:
-        plan_lines[entry["line"]] = re.sub(r"\[[xX]\]", "[ ]", plan_lines[entry["line"]], count=1)
-    plan_path.write_text("\n".join(plan_lines))
-    return [entry["number"] for entry in reopened]
-
-
 def plan_failure_rows(plan, plan_name):
     return [f"{plan_name}:{f['line']}: {f['kind']}: {f['detail']}" for f in plan["failures"]]
-
-
-def plan_failure_message(plan, plan_name):
-    rows = plan_failure_rows(plan, plan_name)
-    return "The plan's Phase Status does not parse. Report each line to the user and stop:\n" + "\n".join(rows)
-
-
-def plan_mid_edit_message(plan, plan_name):
-    """The message for a plan whose failures are all kinds a renumber passes through one Edit at a time."""
-    rows = plan_failure_rows(plan, plan_name)
-    return ("The plan does not parse yet. It may be mid-edit, for example renumbering phase headings one Edit at a "
-            "time. Finish the edits and re-check after the last Edit. If the error is still "
-            "there then, report these lines to the user and stop:\n" + "\n".join(rows))
-
-
-def phase_manual_items(plan_lines, number, plan_name):
-    """The Manual Verification items of one phase (all phases when number is None). The grammar reads the whole plan,
-    so a PlanFormatError names the line in the file."""
-    items = manual_verification("\n".join(plan_lines), plan_name)
-    if number is None:
-        return items
-    return [item for item in items if item["phase"] == str(number)]
 
 
 def manual_format_message(error, resume_line=""):

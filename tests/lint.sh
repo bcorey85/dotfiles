@@ -2,10 +2,10 @@
 # The one lint entry point: tests/run.sh and a coder both call it.
 #   bash tests/lint.sh                 the whole lint of the suite
 #   bash tests/lint.sh <file.py>...    only those files: ruff check on each, and the complexity gate on the ones
-#                                      among them that are code-step or review-flow files; other arguments are skipped,
+#                                      among them that are /code or review-flow files; other arguments are skipped,
 #                                      except review/verify-log and review/verify-prep, which have no .py suffix
 # The whole lint is the ruff rules in ruff.toml (a failure) and a C901 complexity report (not a failure), then the C901
-# gate on the code-step and review-flow files (a failure).
+# gate on the /code and review-flow files (a failure).
 # Exit: 0 clean, 1 a lint failure, 2 ruff is not installed (run.sh stops the run on 2).
 set -euo pipefail
 
@@ -18,13 +18,10 @@ if ! command -v ruff >/dev/null 2>&1; then
     exit 2
 fi
 
-codeStepFiles=(claude/.claude/scripts/code/code_step.py claude/.claude/scripts/code/code_step_core.py
-    claude/.claude/scripts/code/code_step_hooks.py claude/.claude/scripts/code/code_step_boundary.py
-    claude/.claude/scripts/code/code_step_verification.py claude/.claude/scripts/code/code_step_closing.py
-    claude/.claude/scripts/code/code_step_gates.py claude/.claude/scripts/code/code_step_start.py
-    claude/.claude/scripts/code/code_step_report.py claude/.claude/scripts/code/code_step_review.py
-    claude/.claude/scripts/code/code_step_review_stops.py claude/.claude/scripts/code/code_step_state.py
-    claude/.claude/scripts/code/code_step_routes.py claude/.claude/scripts/code/code_step_store.py
+codeFlowFiles=(claude/.claude/scripts/code/plan_check.py claude/.claude/scripts/code/plan_verification.py
+    claude/.claude/scripts/code/concentration.py claude/.claude/scripts/code/coder_report.py
+    claude/.claude/scripts/code/coder_gate.py claude/.claude/scripts/code/code_wait.py
+    claude/.claude/scripts/code/code_review_start.py claude/.claude/scripts/code/gate_commands.py
     claude/.claude/scripts/lib/plan_format.py)
 reviewFlowFiles=(claude/.claude/scripts/review/review_fix.py claude/.claude/scripts/review/handback.py
     claude/.claude/scripts/review/review_loop_gate.py claude/.claude/scripts/review/review_commit_gate.py
@@ -33,7 +30,7 @@ reviewFlowFiles=(claude/.claude/scripts/review/review_fix.py claude/.claude/scri
     claude/.claude/scripts/review/full_check_gate.py claude/.claude/scripts/review/full_check.py
     claude/.claude/scripts/review/handback_store.py claude/.claude/scripts/review/saved_handback.py
     claude/.claude/scripts/review/finding_record.py claude/.claude/scripts/lib/loop_transcript.py)
-gatedFiles=("${codeStepFiles[@]}" "${reviewFlowFiles[@]}")
+gatedFiles=("${codeFlowFiles[@]}" "${reviewFlowFiles[@]}")
 
 lintStatus=0
 

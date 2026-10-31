@@ -1,20 +1,17 @@
-"""code_step_verification.py: reads a phase's Automated Verification items, checks that each can run, and runs them.
-
-It imports only code_step_core of the code_step modules."""
-import os
+"""plan_verification.py: reads a plan's Automated Verification items and checks that each can run.
+`verification_command` gives the command an item runs; `verification_format_failure` is the write-time message for open
+phases whose items cannot run."""
 import pathlib
 import re
 import shutil
+import sys
 
-import full_check_receipt
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
 import plan_format
 import script_utils
 import shell_command
-from code_step_core import SCRIPTS_DIR, branch_label
-from criteria_verdict import item_verdict, without_leading_cd_and_env, without_negation
-from script_utils import run_command
+from criteria_verdict import without_leading_cd_and_env, without_negation
 
-VERIFY_TIMEOUT_SECONDS = 600
 # `env` may lead the assignments (`env CI=1 cargo test`) or stand alone (`env cargo test`).
 COMMAND_START = re.compile(r"^(?:env\s+)?(?:" + script_utils.ENV_PREFIX.pattern + r")?"
                            r"(cd |npm |npx |pnpm |yarn |git |node |python3? |pytest|ruff |bash |curl |make "
@@ -38,20 +35,6 @@ VERIFICATION_ITEM_SHAPE = (
     "(3) A tag that says CI, a person, or an agent runs it, for example '- [ ] **CI-verified**: the pipeline runs "
     "it', '- [ ] Human-only: look at the page' or '- [ ] **Agent-run**: time the import on the real data'. This "
     "script never runs the third shape.")
-
-
-def deferred_verification_items(phase_section):
-    # (tag, item text) for each Automated Verification item the plan leaves to CI, a person, or an agent (Agent-run),
-    # in file order.
-    deferred = []
-    for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
-        tag = plan_format.deferred_verification_tag(line)
-        if not tag:
-            continue
-
-        item_text = plan_format.automated_item_text(line)
-        deferred.append((tag, item_text))
-    return deferred
 
 
 def never_returns(words):
@@ -122,8 +105,7 @@ def hands_a_shell_its_code(span):
 
 def verification_command(line, repo_dir=None):
     # The command an Automated Verification item runs, or None when it names none. A command that hands a shell its
-    # code is none: the runner already runs each command in a shell, and the shell hook blocks the wrapper wherever
-    # the command is run by hand.
+    # code is none: the shell hook blocks the wrapper wherever the command is run by hand.
     span = first_command_span(line, repo_dir)
     if span is None or hands_a_shell_its_code(span):
         return None
@@ -132,7 +114,7 @@ def verification_command(line, repo_dir=None):
 
 def verification_item_problem(line, repo_dir):
     # Why an Automated Verification item cannot run, or None when it runs, says there is nothing to run or is left to
-    # CI or a person. The write-time check of a plan and the stop after a phase use this one reading.
+    # CI or a person.
     if plan_format.runs_no_command(line):
         return None
 
@@ -195,46 +177,6 @@ def verification_format_failure(plan_lines, plan_name, repo_dir, entries):
     if not problems:
         return None
 
-    return ("The plan has Automated Verification items that cannot run. Every open phase is checked at each start, "
-            "so a later phase's line stops the first phase's start. Fix each line:\n" + "\n".join(problems) + "\n"
+    return ("The plan has Automated Verification items that cannot run. Every open phase is checked when the plan "
+            "is written. Fix each line:\n" + "\n".join(problems) + "\n"
             + VERIFICATION_ITEM_SHAPE)
-
-
-def log_prohibition_scan(repo_dir, command, verdict):
-    run_command(["bash", str(SCRIPTS_DIR / "telemetry" / "log-scan"), f"repo={repo_dir.name}", "scan=prohibition",
-                 "stage=code-phase", f"exit={verdict.code}", f"candidates={verdict.hits}",
-                 f"confirmed={verdict.hits}", f"branch={branch_label(repo_dir)}", f"note={command[:120]}"], repo_dir)
-
-
-def run_verification_commands(repo_dir, phase_section, run_whole_suites=False):
-    # The repo's configured `Quality check:` command is skipped while a valid full-check receipt covers the work tree
-    # as it stands, unless that receipt is the no-check-found result (NOT_RUN_NO_CHECK); `not run (CI)` and
-    # all-expected-red receipts ran nothing but still skip, by design. With no such receipt, or when the caller says
-    # nothing else will run it, it runs here. Every other command runs, and a repo with no configured check skips
-    # nothing.
-    results = []
-    skipped = []
-    unparsed = []
-    timeout = int(os.environ.get("CODE_STEP_VERIFY_TIMEOUT", VERIFY_TIMEOUT_SECONDS))
-    # Imported here: review/ joins sys.path when code_step_core loads, which sorted top-level imports would precede.
-    import full_check
-    configured_check = full_check.configured_check_command(repo_dir)
-    for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
-        if plan_format.runs_no_command(line):
-            continue
-        command = verification_command(line, repo_dir)
-        if command is None:
-            unparsed.append(line.strip())
-            continue
-        is_configured_check_command = full_check.is_configured_check(command, configured_check)
-        receipt = full_check_receipt.valid_receipt(repo_dir) if is_configured_check_command and not run_whole_suites \
-            else None
-        if receipt and receipt["result"] != full_check.NOT_RUN_NO_CHECK:
-            skipped.append(command)
-            continue
-        code, output = run_command(command, repo_dir, timeout=timeout)
-        verdict = item_verdict(command, line, code, output)
-        if verdict.hits is not None:
-            log_prohibition_scan(repo_dir, command, verdict)
-        results.append((command, verdict.code, verdict.output))
-    return results, skipped, unparsed

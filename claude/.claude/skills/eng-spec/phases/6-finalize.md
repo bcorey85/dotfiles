@@ -43,7 +43,7 @@
       Single-layer phases only when the work genuinely is.
 
     Write before step 16b, without a save question. After each write run
-    `python3 ~/.claude/scripts/code/code_step.py plan check docs/plans/<slug>/spec.md`;
+    `python3 ~/.claude/scripts/code/plan_check.py check docs/plans/<slug>/spec.md`;
     exit 1: fix each line, rerun. All later checks use this saved spec. Persist every revision to the same file before
     continuing; never leave a repair only in conversation.
 

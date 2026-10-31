@@ -37,7 +37,7 @@ SCRIPT_FOLDERS = {"telemetry_enabled.sh": "telemetry", "telemetry_enabled.py": "
                   "log-escape": "telemetry", "log-scan": "telemetry",
                   "log-spec-run": "telemetry", "coder_gate.py": "code", "script_utils.py": "lib", "_kv.sh": "lib",
                   "_ledger.sh": "lib", "ledger-write": "telemetry",
-                  **dict.fromkeys(toolkit_paths.CODE_STEP_LIB_MODULES, "lib")}
+                  **dict.fromkeys(toolkit_paths.CODER_GATE_LIB_MODULES, "lib")}
 SCRIPTS = list(SCRIPT_FOLDERS)
 REVIEW = ["log-review-metrics", "log-perf-finding", "log-review-finding", "review-scope"]
 # hook_input.py and repo-name are not part of this change: they always come from the tree's copy.

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """open_child_gate.py — PreToolUse on SubagentHandback: a goal-blind-researcher hands back only after every
-background agent it launched has reported.
+background agent it launched has reported or ended on an API error.
 
-Denies a hand-back while the researcher's own transcript holds a background launch with no task notification (the
-count `loop_transcript.LoopTranscript.open_dispatches` keeps), and tells it to wait for the notice, Glob for the
-file the child writes, then hand back, and to hand back a failure when the child failed. The deny is once per
-agent (kept in the handback store): a later hand-back passes, so a child that never reports cannot trap it. Every
-other agent type passes, and so does a hand-back with no open child.
+Denies a hand-back while the researcher's own transcript holds a background launch with no task notification whose
+agent has not ended on an API error (the count `loop_transcript.LoopTranscript.open_dispatches` keeps), and tells it
+to wait for the notice, Glob for the file the child writes, then hand back, and to hand back a failure when the child
+failed. The deny is once per agent (kept in the handback store): a later hand-back passes, so a child that never
+reports cannot trap it. Every other agent type passes, and so does a hand-back with no open child.
 
 Hook JSON on stdin; a deny decision JSON on stdout; exit 0. Any parse failure passes (fail open) and says why on
 stderr: this gate adds a check, it must never stop an agent on its own error. A child launched in the foreground has

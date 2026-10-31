@@ -665,10 +665,293 @@ class ShellWriteGateTest(unittest.TestCase):
                 script.write_text(code)
                 self.assert_allowed(f"python3 {script}", agent="coder")
 
+    def test_untracked_script_running_a_multi_line_npm_install_with_a_tracked_file_argument_passes(self):
+        script = self.tmp / "install.py"
+        script.write_text("import subprocess, sys\nsubprocess.run([\n    'npm',\n    'install',\n"
+                          "    sys.argv[1],\n])\n")
+        self.assert_allowed(f"python3 {script} tracked.txt", agent="coder")
+
+    def test_untracked_script_running_a_multi_line_sed_in_place_with_a_tracked_file_argument_is_denied(self):
+        script = self.tmp / "install.py"
+        script.write_text("import subprocess, sys\nsubprocess.run([\n    'sed',\n    '-i',\n"
+                          "    's/a/b/',\n    sys.argv[1],\n])\n")
+        self.assert_denied(f"python3 {script} tracked.txt", agent="coder")
+
+    def test_shell_line_ending_in_a_comma_inside_a_string_keeps_its_step_separator(self):
+        script = self.tmp / "rewrite.py"
+        script.write_text('import subprocess, sys\nsubprocess.run("""echo a,\nsed -i s/a/b/ """ + sys.argv[1], '
+                          "shell=True)\n")
+        self.assert_denied(f"python3 {script} tracked.txt", agent="coder")
+
+    def test_shell_line_ending_in_a_comma_after_a_string_with_an_escaped_quote_keeps_its_step_separator(self):
+        script = self.tmp / "rewrite.py"
+        script.write_text('import subprocess, sys\nsubprocess.run(["echo", "a\\"b", """echo a,\nsed -i s/a/b/ """, '
+                          "sys.argv[1]])\n")
+        self.assert_denied(f"python3 {script} tracked.txt", agent="coder")
+
     def test_untracked_script_given_a_tracked_file_as_argument_is_denied(self):
         script = self.tmp / "rewrite.py"
         script.write_text("import sys\nwith open(sys.argv[1], 'w') as f:\n    f.write('y')\n")
         self.assert_denied(f"python3 {script} tracked.txt")
+
+    def test_untracked_script_whose_write_target_comes_from_argv_is_denied(self):
+        scripts = {
+            "rewrite.py": "import sys\nsrc, dst = sys.argv[1:3]\nopen(dst, 'w').write(open(src).read())\n",
+            "parsed.py": "import argparse\nparser = argparse.ArgumentParser()\nparser.add_argument('out')\n"
+                         "args = parser.parse_args()\nopen(args.out, 'w').write('y')\n",
+            "main.py": "import sys\ndef main(argv):\n    out = argv[1]\n    open(out, 'w').write('y')\n\n"
+                       "main(sys.argv)\n",
+            "inplace.py": "import fileinput\nfor line in fileinput.input(inplace=True):\n    print(line, end='')\n",
+            "rewrite.pl": "my ($out) = @ARGV;\nopen(my $f, '>', $out);\n",
+            "rewrite.js": "const [, , out] = process.argv;\nrequire('fs').writeFileSync(out, 'y');\n",
+            "replace.py": "import sys, pathlib\ntmp = pathlib.Path('x.tmp')\n"
+                          "tmp.write_text('y'); tmp.replace(sys.argv[1])\n",
+            "rename.py": "import sys, pathlib\ntmp = pathlib.Path('x.tmp')\ntmp.write_text('y')\n"
+                         "out = sys.argv[1]; tmp.rename(out)\n",
+            "rename.js": "const fs = require('fs');\nfs.renameSync('x.tmp', process.argv[2]);\n",
+            "rename.pl": "rename('x.tmp', $ARGV[0]);\n",
+            "child.py": "import subprocess, sys\nsubprocess.run(['sed', '-i', 's/a/b/', sys.argv[1]])\n",
+            "mode.py": "import sys\nmode = 'w'\nopen(sys.argv[1], mode)\n",
+            "click.py": "import click\n@click.command()\n@click.argument('out')\ndef main(out):\n"
+                        "    open(out, 'w')\nmain()\n",
+            "commander.js": "const { program } = require('commander');\nprogram.parse();\n"
+                            "const opts = program.opts();\nrequire('fs').writeFileSync(opts.out, 'y');\n",
+            "str.py": "import sys\nout = sys.argv[1]\nopen(str(out), 'w')\n",
+            "abspath.py": "import os, sys\nopen(os.path.abspath(sys.argv[1]), 'w')\n",
+            "path.py": "import pathlib, sys\nopen(pathlib.Path(sys.argv[1]), 'w')\n",
+            "unlink.pl": "unlink($ARGV[0]);\n",
+            "unlink bare.pl": "unlink $ARGV[0];\n",
+            "file delete.rb": "File.delete(ARGV[0])\n",
+            "fileutils rm.rb": "require 'fileutils'\nFileUtils.rm(ARGV[0])\n",
+            "fileutils mv.rb": "require 'fileutils'\nFileUtils.mv('a', ARGV[0])\n",
+            "fileutils cp.rb": "require 'fileutils'\nFileUtils.cp('a', ARGV[0])\n",
+            "fs rm.js": "require('fs').rmSync(process.argv[2]);\n",
+            "rmdir.py": "import os, sys\nos.rmdir(sys.argv[1])\n",
+            "named mode.py": "import sys\ndef put(out, mode):\n    open(out, mode)\nput(sys.argv[1], 'w')\n",
+            "system.py": "import os, sys\nos.system('sed -i s/a/b/ ' + sys.argv[1])\n",
+            "exec.js": "require('child_process').execSync(`tee ${process.argv[2]}`);\n",
+            "system.pl": "system('cp', 'a', $ARGV[0]);\n",
+            "backticks.rb": "`mv a #{ARGV[0]}`\n",
+            "star.py": "import sys\n*sources, dst = sys.argv[1:]\nopen(dst, 'w')\n",
+            "prog.py": "import sys\nprog, *files = sys.argv\nopen(files[0], 'w')\n",
+            "spread.js": "const [, , ...files] = process.argv;\nrequire('fs').writeFileSync(files[0], 'y');\n",
+            "minimist.js": "const { out } = minimist(process.argv.slice(2));\nrequire('fs').writeFileSync(out, 'y');\n",
+            "values.js": "const { values: { out } } = parseArgs({ args: [] });\n"
+                         "require('fs').writeFileSync(out, 'y');\n",
+            "each.pl": "foreach my $file (@ARGV) {\n    open(my $f, '>', $file);\n}\n",
+            "sub.pl": "sub put { my ($out) = @_; open(my $f, '>', $out); }\nput($ARGV[0]);\n",
+            "each.rb": "ARGV.each do |f|\n  File.write(f, 'y')\nend\n",
+            "each.js": "const files = process.argv.slice(2);\nfiles.forEach((f) => {\n"
+                       "  require('fs').writeFileSync(f, 'y');\n});\n",
+            "open lines.py": "import sys\nout = sys.argv[1]\nwith open(\n    out,\n    'w',\n) as f:\n"
+                             "    f.write('y')\n",
+            "os replace lines.py": "import os, sys\nos.replace(\n    't',\n    sys.argv[1],\n)\n",
+            "shutil copy lines.py": "import shutil, sys\nshutil.copy(\n    'src.txt',\n    sys.argv[1],\n)\n",
+            "write file lines.js": "const fs = require('fs');\nfs.writeFileSync(\n  process.argv[2],\n  'y',\n);\n",
+            "path replace lines.py": "import sys, pathlib\npathlib.Path('t').replace(\n    sys.argv[1]\n)\n",
+            "os remove.py": "import os, sys\nopen('o.log', 'w').write('y')\nos.remove(sys.argv[1])\n",
+            "os remove only.py": "import os, sys\nos.remove(sys.argv[1])\n",
+            "os truncate.py": "import os, sys\nopen('o.log', 'w').write('y')\nos.truncate(sys.argv[1], 0)\n",
+            "path unlink.py": "import pathlib, sys\nopen('o.log', 'w').write('y')\n"
+                              "pathlib.Path(sys.argv[1]).unlink()\n",
+            "path touch.py": "import pathlib, sys\nopen('o.log', 'w').write('y')\n"
+                             "p = pathlib.Path(sys.argv[1]); p.touch()\n",
+            "path truncate.py": "import pathlib, sys\nopen('o.log', 'w').write('y')\n"
+                                "pathlib.Path(sys.argv[1]).truncate(0)\n",
+            "rmtree.py": "import shutil, sys\nopen('o.log', 'w').write('y')\nshutil.rmtree(sys.argv[1])\n",
+            "unlink sync.js": "const fs = require('fs');\nfs.writeFileSync('o.log', 'y');\n"
+                              "fs.unlinkSync(process.argv[2]);\n",
+            "rm sync.js": "const fs = require('fs');\nfs.writeFileSync('o.log', 'y');\nfs.rmSync(process.argv[2]);\n",
+            "truncate sync.js": "const fs = require('fs');\nfs.writeFileSync('o.log', 'y');\n"
+                                "fs.truncateSync(process.argv[2]);\n",
+            "os replace source.py": "import os, sys\nos.replace(sys.argv[1], 'x')\n",
+            "os rename source.py": "import os, sys\nos.rename(sys.argv[1], 'x')\n",
+            "shutil move source.py": "import shutil, sys\nshutil.move(sys.argv[1], 'x')\n",
+            "path through name.py": "import pathlib, sys\nout = sys.argv[1]\np = pathlib.Path(out)\n"
+                                    "p.write_text('y')\n",
+            "join through name.py": "import os, sys\nname = sys.argv[1]\nout = os.path.join('d', name)\n"
+                                    "open(out, 'w')\n",
+            "interpolated name.pl": "my $out=$ARGV[0]; open(my $f,'>',\"$out\");\n",
+            "f string.py": "import sys\nopen(f'{sys.argv[1]}.bak', 'w')\n",
+            "with path open.py": "import pathlib, sys\nwith pathlib.Path(sys.argv[1]).open('w') as f:\n"
+                                 "    f.write('y')\n",
+            "path open.py": "import pathlib, sys\np = pathlib.Path(sys.argv[1])\np.open('w')\n",
+            "deno args.js": "Deno.writeTextFileSync(Deno.args[0], 'y');\n",
+            "star args.rb": "File.write($*[0], 'y')\n",
+            "known args.py": "import argparse\nparser = argparse.ArgumentParser()\n"
+                             "args, rest = parser.parse_known_args()\nopen(args.out, 'w')\n",
+            "unlink or die.pl": "unlink $ARGV[0] or die('no');\n",
+            "delete if exists.rb": "other = 'x'\nFile.delete ARGV[0] if File.exist?(other)\n",
+            "system f string.py": "import os, sys\nos.system(f\"sed -i s/a/b/ {sys.argv[1]}\")\n",
+            "subprocess f string shell.py": "import subprocess, sys\n"
+                                            "subprocess.run(f\"cp a {sys.argv[1]}\", shell=True)\n",
+            "subprocess args keyword.py": "import subprocess, sys\n"
+                                          "subprocess.run(args=[\"cp\",\"a\",sys.argv[1]])\n",
+            "system list.pl": "system \"cp\",\"a\",$ARGV[0];\n",
+            "system string.pl": "system \"sed -i s/a/b/ $ARGV[0]\";\n",
+            "system list.rb": "system \"cp\",\"a\",ARGV[0]\n",
+            "path absolute.py": "import sys\np = Path(sys.argv[1]); q = p.absolute(); q.write_text(\"y\")\n",
+            "strip name.py": "import sys\nname = sys.argv[1]\nout = name.strip(); open(out,\"w\")\n",
+            "file open block.rb": "File.open(ARGV[0], 'w') { |f| f.write('y') }\n",
+            "file open do block.rb": "out = ARGV[0]\nFile.open(out, 'w') do |f|\n  f.puts 'y'\nend\n",
+            "io open.py": "import io, sys\nio.open(sys.argv[1], 'w')\n",
+            "codecs open.py": "import codecs, sys\ncodecs.open(sys.argv[1], 'w', 'utf-8')\n",
+            "module constant.py": "import sys\nOUT = sys.argv[1]\nopen(OUT, 'w')\n",
+            "system cd and rm.py": "import os, sys\nos.system('cd d && rm ' + sys.argv[1])\n",
+            "system pipe tee.py": "import os, sys\nos.system('cat a | tee ' + sys.argv[1])\n",
+            "shutil copy keyword.py": "import shutil, sys\nshutil.copy('a', dst=sys.argv[1])\n",
+            "variable named new.py": "import sys\nold, new = sys.argv[1:3]\nopen(new, 'w')\n",
+            "variable named old.py": "import sys\nold, new = sys.argv[1:3]\nopen(old, 'w')\n",
+            "variable named process.py": "import sys\nprocess = sys.argv[1]\nopen(process, 'w')\n",
+            "variable named path.py": "import sys\npath = sys.argv[1]\nopen(path, 'w')\n",
+            "variable named ENV.py": "import sys\nENV = sys.argv[1]\nopen(ENV, 'w')\n",
+            "keyword before args.py": "import subprocess, sys\n"
+                                      "subprocess.run(check=True, args=['rm', sys.argv[1]])\n",
+            "rstrip name.py": "import sys\nraw = sys.argv[1]\np = raw.rstrip(); open(p, 'w')\n",
+            "lstrip name.py": "import sys\nraw = sys.argv[1]\np = raw.lstrip(); open(p, 'w')\n",
+            "comment in bracket.py": "import sys\nopen(\n    # note (\n    sys.argv[1], 'w')\n",
+            "copy file destination.js": "const fs = require('fs');\nfs.copyFileSync('a', process.argv[2]);\n",
+            "fileutils cp destination.rb": "require 'fileutils'\nFileUtils.cp 'a', ARGV[0]\n",
+            "copy file callback.js": "const fs = require('fs');\nfs.copyFile('a', process.argv[2], () => {});\n",
+            "copy file mode.js": "const fs = require('fs');\n"
+                                 "fs.copyFileSync('a', process.argv[2], fs.constants.COPYFILE_EXCL);\n",
+            "shutil copy keyword trailing comma.py": "import shutil, sys\nshutil.copy(src='a', dst=sys.argv[1],\n)\n",
+            "resolve name.py": "import pathlib, sys\nraw = sys.argv[1]\np = pathlib.Path(raw)\nq = p.resolve()\n"
+                               "open(q,'w')\n",
+            "joinpath name.py": "import pathlib, sys\nraw = sys.argv[1]\nq = pathlib.Path('d').joinpath(raw)\n"
+                                "open(q,'w')\n",
+            "as posix name.py": "import pathlib, sys\nraw = sys.argv[1]\np = pathlib.Path(raw)\nq = p.as_posix()\n"
+                                "open(q,'w')\n",
+            "fspath name.py": "import os, sys\nraw = sys.argv[1]\nq = os.fspath(raw)\nopen(q,'w')\n",
+            "format name.py": "import sys\nraw = sys.argv[1]\nt = '{}.bak'\nq = t.format(raw)\nopen(q,'w')\n",
+            "expanduser name.py": "import os, sys\nraw = sys.argv[1]\nq = os.path.expanduser(raw)\nopen(q,'w')\n",
+            "realpath name.py": "import os, sys\nraw = sys.argv[1]\nq = os.path.realpath(raw)\nopen(q,'w')\n",
+            "install child.py": "import subprocess, sys\nsubprocess.run(['install', 'a', sys.argv[1]])\n",
+            "perl in place child.py": "import subprocess, sys\n"
+                                      "subprocess.run(['perl', '-pi', '-e', 's/a/b/', sys.argv[1]])\n",
+            "awk in place child.py": "import subprocess, sys\n"
+                                     "subprocess.run(['awk', '-i', 'inplace', '1', sys.argv[1]])\n",
+            "backticks cp.pl": "my $x = `cp a $ARGV[0]`;\n",
+            "docopt.py": "import docopt\nargs = docopt.docopt('x')\nopen(args['<out>'], 'w')\n",
+        }
+        for name, code in scripts.items():
+            with self.subTest(script=name):
+                script = self.tmp / name.replace(" ", "_")
+                script.write_text(code)
+                interpreter = {".py": "python3", ".pl": "perl", ".js": "node", ".rb": "ruby"}[script.suffix]
+                reason = self.assert_denied(f"{interpreter} {script} untracked.txt tracked.txt")
+                self.assertIn("a script that writes", reason)
+                self.assertIn("/tracked.txt", reason)
+
+    def test_untracked_script_that_only_reads_a_tracked_argument_passes(self):
+        scripts = {
+            "with two opens.py": "import sys\nwith open(sys.argv[1]) as f, open('o.log', 'w') as g:\n"
+                                 "    g.write(f.read())\n",
+            "chained read.py": "import sys\nopen('o.log', 'w').write(open(sys.argv[1]).read())\n",
+            "read in write.js": "const fs = require('fs');\n"
+                                "fs.writeFileSync('o.log', fs.readFileSync(process.argv[2]));\n",
+            "str replace.py": "import sys\nplan = sys.argv[1]\nprint('x'.replace(plan, 'y'))\nopen('o.log', 'w')\n",
+            "last def.py": "import sys\ndef log_path(): return 'o.log'\nlp = log_path(); open(lp, 'w')\n"
+                           "open(sys.argv[1])\n",
+            "name in string.py": "import sys\nplan = sys.argv[1]\nopen('plan.log', 'w')\n",
+            "multi-line read.py": "import sys\nwith open(\n    sys.argv[1],\n) as f, open(\n    'o.log',\n    'w',\n)"
+                                  " as g:\n    g.write(f.read())\n",
+            "shutil copy.py": "import shutil, sys\nshutil.copy(sys.argv[1], 'o.log')\n",
+            "copy file source.js": "const fs = require('fs');\nfs.copyFileSync(process.argv[2], 'o.log');\n",
+            "fileutils cp source.rb": "require 'fileutils'\nFileUtils.cp(ARGV[0], 'o.log')\n",
+            "file open.rb": "File.open('o.log', 'w')\nputs File.read(ARGV[0])\n",
+            "file write join.rb": "File.write(File.join('d', 'o.log'), File.read(ARGV[0]))\n",
+            "open own file.pl": "open(my $in, '<', $ARGV[0]); open(my $out, '>', 'o.log');\n",
+            "open or die.pl": "open(my $in, '<', $ARGV[0]);\nopen my $f, \">\", \"o.log\" or die \"no\";\n",
+            "unlink or die.pl": "my $in = $ARGV[0];\nunlink \"o.log\" or die \"no\";\n",
+            "unlink unless.pl": "my $in = $ARGV[0];\nunlink \"o.log\" unless -e \"x\";\n",
+            "delete unless.rb": "File.read(ARGV[0])\nFile.delete \"o.log\" unless File.exist?(\"x\")\n",
+            "write in dir.rb": "File.read(ARGV[0])\nFile.write(File.join(__dir__, \"o.log\"), \"y\")\n",
+            "open env.pl": "my $in = $ARGV[0];\nopen(my $f, \">\", $ENV{LOG});\n",
+            "write filename.js": "const fs = require('fs');\nfs.readFileSync(process.argv[2]);\n"
+                                 "fs.writeFileSync(__filename + \".log\", \"y\");\n",
+            "copy file source callback.js": "const fs = require('fs');\n"
+                                            "fs.copyFile(process.argv[2], 'o.log', () => {});\n",
+            "join dirname.py": "import os, sys\nopen(sys.argv[1])\n"
+                               "open(os.path.join(os.path.dirname(__file__), 'o.log'), 'w')\n",
+            "join dirname.js": "const fs = require('fs');\nconst path = require('path');\n"
+                               "fs.readFileSync(process.argv[2]);\n"
+                               "fs.writeFileSync(path.join(__dirname, 'o.log'), 'y');\n",
+            "env target.js": "const fs = require('fs');\nfs.readFileSync(process.argv[2]);\n"
+                             "fs.writeFileSync(process.env.OUT, 'y');\n",
+            "with path open read.py": "import pathlib, sys\nwith pathlib.Path(sys.argv[1]).open() as f:\n"
+                                      "    data = f.read()\nopen('o.log', 'w').write(data)\n",
+            "path open named mode.py": "import pathlib, sys\np = pathlib.Path(sys.argv[1])\nmode = 'r'\n"
+                                       "p.open(mode)\nopen('o.log', 'w')\n",
+        }
+        for name, code in scripts.items():
+            with self.subTest(script=name):
+                script = self.tmp / name.replace(" ", "_")
+                script.write_text(code)
+                interpreter = {".py": "python3", ".js": "node", ".rb": "ruby", ".pl": "perl"}[script.suffix]
+                self.assert_allowed(f"{interpreter} {script} tracked.txt", agent="coder")
+
+    def test_untracked_script_that_reads_a_tracked_argument_and_writes_its_own_file_passes(self):
+        script = self.tmp / "start_review.py"
+        script.write_text((pathlib.Path(__file__).parent / "fixtures/start_review_script.txt").read_text())
+        self.assert_allowed(f"python3 {script} code tracked.txt 0 .review-handoff.txt", agent="coder")
+
+    def test_inline_and_heredoc_scripts_are_judged_by_whether_a_write_reaches_the_tracked_argument(self):
+        self.assert_denied("python3 -c \"import sys; open(sys.argv[1], 'w')\" tracked.txt")
+        self.assert_denied("cat > x.py <<'PY'\nimport sys\nopen(sys.argv[1], 'w')\nPY\npython3 x.py tracked.txt")
+        self.assert_allowed("python3 -c \"import sys; open('o.log', 'w'); print(open(sys.argv[1]).read())\" "
+                            "tracked.txt", agent="coder")
+        self.assert_allowed("cat > x.py <<'PY'\nimport sys\nopen('o.log', 'w')\nopen(sys.argv[1])\nPY\n"
+                            "python3 x.py tracked.txt", agent="coder")
+        self.assert_allowed("python3 -c \"import os; open(os.path.join('d', 'o.log'), 'w')\" tracked.txt",
+                            agent="coder")
+
+    def test_untracked_script_whose_writes_all_name_their_own_files_passes(self):
+        scripts = {
+            "launcher.py": "import subprocess, sys\nsubprocess.Popen(['claude', '-p', sys.argv[1]], "
+                           "stdout=open('l', 'w'))\n",
+            "named mode.py": "import sys\nmode = 'w'\nwith open('o.log', mode) as g, open(sys.argv[1]) as f:\n"
+                             "    g.write(f.read())\n",
+            "read mode.py": "import sys\nopen(sys.argv[1], 'rb')\nopen('o.log', 'w')\n",
+            "string names.py": "import sys\nopen('shift-report.md', 'w')\nout = 'argv.log'\nopen(out, 'w')\n"
+                               "open(sys.argv[1])\n",
+            "after bracket.js": "const fs = require('fs');\n[1].forEach((n) => { fs.writeFileSync('o.log', 'y'); "
+                                "fs.readFileSync(process.argv[2]); });\n",
+            "quote in comment.py": "import sys\nopen('o.log', 'w')  # it's mine\nopen(sys.argv[1])\n",
+            "wc child.py": "import subprocess, sys\nsubprocess.run(['wc', '-l', sys.argv[1]])\nopen('o.log', 'w')\n",
+            "f string.py": "import sys\nd = 'logs'\nopen(f'{d}/o.log', 'w')\nopen(sys.argv[1])\n",
+            "raw string.py": "import sys\nopen(r'o.log', 'w')\nopen(sys.argv[1])\n",
+            "unlink missing ok.py": "import pathlib, sys\nopen(sys.argv[1])\n"
+                                    "pathlib.Path('o.log').unlink(missing_ok=True)\n",
+            "touch exist ok.py": "import pathlib, sys\nopen(sys.argv[1])\npathlib.Path('o.log').touch(exist_ok=True)\n",
+            "rmtree keyword.py": "import shutil, sys\nd = 'logs'\nopen(sys.argv[1])\n"
+                                 "shutil.rmtree(d, ignore_errors=True)\n",
+            "copytree keyword.py": "import shutil, sys\na = 'x'\nb = 'y'\nopen(sys.argv[1])\n"
+                                   "shutil.copytree(a, b, dirs_exist_ok=True)\n",
+            "rm option key.js": "const fs = require('fs');\nconst p = 'logs';\nfs.readFileSync(process.argv[2]);\n"
+                                "fs.rmSync(p, {recursive: true});\n",
+            "replace keyword.py": "import sys\nfrom datetime import datetime\nopen('o.log', 'w')\nopen(sys.argv[1])\n"
+                                  "stamp = datetime.now().replace(microsecond=0)\n",
+            "conditional path.py": "import sys\nc = True\nopen('a' if c else 'b', 'w')\nopen(sys.argv[1])\n",
+            "await unlink.js": "const fs = require('fs');\nfs.readFileSync(process.argv[2]);\nasync function main() {\n"
+                               "  await fs.promises.unlink('o.log');\n}\n",
+            "unlink in a string.py": "import sys\nopen('o.log', 'w')\nprint('unlink the old output')\n"
+                                     "open(sys.argv[1])\n",
+            "backtick in a docstring.py": "import sys\nopen('o.log', 'w')\nprint(\"run `rm` by hand\")\n"
+                                          "open(sys.argv[1])\n",
+            "module imports.js": "import fs from 'node:fs';\nimport * as path from 'path';\n"
+                                 "fs.unlinkSync(path.join('d', 'o.log'));\nfs.readFileSync(process.argv[2]);\n",
+            "install word.py": "import subprocess, sys\nsubprocess.run(['pip', 'install', '-r', sys.argv[1]])\n"
+                               "subprocess.run(['grep', 'tee', sys.argv[1]])\nopen('o.log', 'w')\n",
+            "args word in a string.py": "import subprocess, sys\nsubprocess.run(['echo', 'args=cp', sys.argv[1]])\n"
+                                        "open('o.log', 'w')\n",
+        }
+        for name, code in scripts.items():
+            with self.subTest(script=name):
+                script = self.tmp / name.replace(" ", "_")
+                script.write_text(code)
+                interpreter = {".py": "python3", ".js": "node"}[script.suffix]
+                self.assert_allowed(f"{interpreter} {script} tracked.txt", agent="coder")
 
     def test_inline_code_with_operator_characters_that_writes_a_tracked_file_is_denied(self):
         commands = (

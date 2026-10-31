@@ -126,6 +126,8 @@ class LoopTranscript:
     """One read of a loop transcript: what the stop check and the run rows need from it."""
 
     def __init__(self, path):
+        self.path = str(path)
+        self.died = {}  # agent id -> whether its own transcript ends on an API error
         self.prompt, self.last_text = None, ""
         self.kinds = {}  # dispatch tool_use_id -> subagent_type, in dispatch order
         self.dispatched_at = {}  # dispatch tool_use_id -> transcript line
@@ -299,37 +301,62 @@ class LoopTranscript:
 
     def open_launches(self):
         """The tool_use_ids of background launches that have not reported back, by task notification (keyed by the
-        launch's tool_use_id or by the launched agent's id) or agent message. Only a result that starts with the
-        launch text is a launch: a foreground report may quote it."""
+        launch's tool_use_id or by the launched agent's id) or agent message, and whose agent has not ended on an API
+        error. Only a result that starts with the launch text is a launch: a foreground report may quote it."""
         return [tool_use_id for tool_use_id, text in self.results.items()
                 if text.lstrip().startswith(ASYNC_LAUNCH) and tool_use_id not in self.notifications
                 and self.launched_agent(tool_use_id) not in self.agent_messages
-                and self.launched_agent(tool_use_id) not in self.task_notified_at]
+                and self.launched_agent(tool_use_id) not in self.task_notified_at
+                and not self.agent_died(self.launched_agent(tool_use_id))]
+
+    def agent_died(self, agent_id):
+        """True when the transcript of agent `agent_id`, kept beside this loop's own, ends on an API
+        error: it may never report, so no notification need close its launch."""
+        if not agent_id:
+            return False
+        if agent_id not in self.died:
+            sibling = script_utils.sibling_transcript_path(self.path, agent_id)
+            self.died[agent_id] = script_utils.ends_on_api_error(sibling)
+        return self.died[agent_id]
+
+    def dead_reviewers(self):
+        """The sorted agent ids of the loop's latest dispatch of each reviewer kind whose agent ended on an API
+        error, so the loop holds no finished review from that run. A re-dispatch of the same kind, or its -deep
+        variant, supersedes the earlier one. Empty when none died or the loop dispatched no reviewer."""
+        latest_by_kind = {kind.removesuffix("-deep"): tool_use_id for tool_use_id, kind in self.kinds.items()
+                          if script_utils.REVIEWERS.match(kind)}
+        agent_ids = {self.launched_agent(tool_use_id) for tool_use_id in latest_by_kind.values()}
+
+        return sorted(agent_id for agent_id in agent_ids if self.agent_died(agent_id))
 
     def resume_is_open(self, line, agent_id, send_id, open_launches):
         """True when a SendMessage that resumed `agent_id` has had no agent message from it and no task notification
         on a later transcript line, keyed by the SendMessage's id (the harness's key for a resumed agent), by its
-        launch's, or by the agent's task id. A launch that is itself still open already counts."""
+        launch's, or by the agent's task id, and whose agent has not ended on an API error. A launch that is itself
+        still open already counts."""
         launch_ids = [tool_use_id for tool_use_id in self.results if self.launched_agent(tool_use_id) == agent_id]
         if any(tool_use_id in open_launches for tool_use_id in launch_ids):
             return False
         later_reports = [*self.messaged_at.get(agent_id, []), *self.task_notified_at.get(agent_id, []),
                          *self.notified_at.get(send_id, []),
                          *(at for tool_use_id in launch_ids for at in self.notified_at.get(tool_use_id, []))]
-        return not any(at > line for at in later_reports)
+        if any(at > line for at in later_reports):
+            return False
+        return not self.agent_died(agent_id)
 
     def open_kinds(self, kinds):
         """The tool_use_ids of the dispatches whose subagent_type matches `kinds` that have not reported back: a
-        background launch with no report yet, or a dispatch with no tool_result at all."""
+        background launch with no report yet whose agent has not ended on an API error, or a dispatch with no
+        tool_result at all."""
         open_launches = self.open_launches()
         return [tool_use_id for tool_use_id, kind in self.kinds.items()
                 if kinds.search(kind) and (tool_use_id in open_launches or tool_use_id not in self.results)]
 
     def open_dispatches(self):
-        """The count of background dispatches that have not reported back, including each background resume of an
-        agent whose earlier notification already closed its launch, and each background shell call with no task
-        notification yet, unless its result comes before the loop's last delivered SubagentHandback (the caller
-        already holds the packet)."""
+        """The count of background dispatches that have not reported back and whose agent has not ended on an API
+        error, including each background resume of an agent whose earlier notification already closed its launch, and
+        each background shell call with no task notification yet, unless its result comes before the loop's last
+        delivered SubagentHandback (the caller already holds the packet)."""
         open_launches = self.open_launches()
         open_resumes = [resume for resume in self.resumes if self.resume_is_open(*resume, open_launches)]
         last_handback = max(self.handback_lines, default=-1)
@@ -355,8 +382,8 @@ def missing_receipt_reason(transcript, cwd=None):
 
 def scan(transcript, final=None, cwd=None):
     """(the GATE_REASON text when no valid full-check receipt exists for the tree the loop reviewed, else None; the
-    count of background dispatches that have not reported). A loop that ends `plan-impact`, `setup-fault` or
-    `critical-blocker` owes no check.
+    count of background dispatches that have not reported and whose agent has not ended on an API error).
+    A loop that ends `plan-impact`, `setup-fault` or `critical-blocker` owes no check.
     final is the loop's last message; the transcript's last text stands in when it is None."""
     open_dispatches = transcript.open_dispatches()
     if UNVERIFIED_TREE_STATUS.search(transcript.last_text if final is None else final):

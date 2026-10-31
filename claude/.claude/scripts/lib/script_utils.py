@@ -12,6 +12,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import time
 import uuid
 
@@ -651,7 +652,49 @@ def pre_tool_use_deny(reason):
 def subagent_transcript_path(session_transcript, agent_id):
     """Where Claude Code keeps the transcript of a subagent of the session: `<session transcript without
     .jsonl>/subagents/agent-<id>.jsonl`."""
-    return os.path.join(os.path.splitext(session_transcript)[0], "subagents", f"agent-{agent_id}.jsonl")
+    return os.path.join(os.path.splitext(session_transcript)[0], "subagents", subagent_transcript_name(agent_id))
+
+
+def subagent_transcript_name(agent_id):
+    """The file name Claude Code gives the transcript of the subagent `agent_id`."""
+    return f"agent-{agent_id}.jsonl"
+
+
+def sibling_transcript_path(agent_transcript, agent_id):
+    """Where the transcript of the subagent `agent_id` sits beside `agent_transcript`, in the same folder."""
+    return os.path.join(os.path.dirname(agent_transcript), subagent_transcript_name(agent_id))
+
+
+TRANSCRIPT_TAIL_BYTES = 65536
+
+
+def ends_on_api_error(transcript_path):
+    """True when the last record of a transcript is an API error message: the agent may never report.
+    False for a transcript that is missing, unreadable, empty, or whose last record is anything else, so a later
+    record shows the agent went on."""
+    last_line = ""
+    try:
+        with open(transcript_path, "rb") as transcript:
+            transcript.seek(0, os.SEEK_END)
+            size = transcript.tell()
+            transcript.seek(max(0, size - TRANSCRIPT_TAIL_BYTES))
+            tail_lines = transcript.read().decode("utf-8", errors="replace").split("\n")
+        if size > TRANSCRIPT_TAIL_BYTES:
+            tail_lines = tail_lines[1:]  # the first line is cut
+        for line in tail_lines:
+            if line.strip():
+                last_line = line
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        # A failed read counts as alive: the open-work gates keep waiting, and the dead-reviewer gate passes.
+        print(f"ends_on_api_error: could not read {transcript_path}, {type(error).__name__}: {error}", file=sys.stderr)
+        return False
+    try:
+        record = json.loads(last_line)
+    except ValueError:
+        return False
+    return isinstance(record, dict) and record.get("isApiErrorMessage") is True
 
 
 def tool_use_calls(line):

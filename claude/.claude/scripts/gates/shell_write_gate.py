@@ -8,8 +8,10 @@
      relative target after any `cd`, `pushd` or `popd`.
   4. An interpreter (python, pypy, node, tsx, ts-node, bun, deno, ruby, perl; also behind npx or pnpm exec) run whose
      inline code (`-c`, `-e`, `-p`, `--print`, `--eval`, `deno eval`) or untracked, not git-ignored script file opens
-     a file for writing and names a git-tracked file: as a string literal, through a name bound to one, or as an
-     argument.
+     a file for writing and names a git-tracked file: as a string literal, through a name bound to one, or passed as
+     an argument unless the trace finds that no write target comes from argv (a script that only reads its argument,
+     or writes files of its own, passes). A write is an open for writing, a delete, move or truncate, or a child
+     process whose text runs a program that writes the file (e.g. `sed -i`, `tee`, `cp`, `mv`).
   5. Any agent: a relative target after a `cd`, `pushd` or `popd` whose folder is not a literal (`cd "$D"`, `popd`,
      `cd -`), because the gate cannot tell where the write lands.
 Only a `>` outside quotes is a redirect (a `>` inside a double-quoted `$(...)` is code and is read as one), and the
@@ -37,7 +39,19 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import hook_input
 import script_utils
 import shell_command
-from code_text import SP, receiver_text, split_arguments, tuple_fields, without_comments
+from code_text import (
+    SP,
+    STRING_LITERAL,
+    STRING_PREFIX_BEFORE_QUOTE,
+    code_outside_strings,
+    imported_names,
+    receiver_text,
+    split_arguments,
+    statement_around,
+    sub_outside_strings,
+    tuple_fields,
+    without_comments,
+)
 from hook_input import JqError, expand_env_names, is_under_temp_dir, jq_get, jq_str
 from hook_input import bash_basename as shell_basename
 from hook_input import bash_dirname as shell_dirname
@@ -67,19 +81,66 @@ PROGRAM_FAMILIES = (
 DENO_VALUE_FLAGS = ("-c", "--config")
 # Package runner flags that take the next word as their value.
 PACKAGE_RUNNER_VALUE_FLAGS = ("-p", "--package")
-FILE_WRITE = re.compile(r"""open\s*\([^)]*['"][rbt]*[wax+][rbt+]*['"]|\.write_(text|bytes)\s*\("""
-                        r"""|\b(writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream)\s*\("""
-                        r"""|\bDeno\.write(Text)?File(Sync)?\s*\(|\bBun\.write\s*\("""
-                        r"""|\b(File|IO)\.write\b|\bshutil\.(copy\w*|move)\s*\(|\bos\.(replace|rename)\s*\("""
-                        r"""|\bfileinput\.input\s*\([^)]*inplace\s*=\s*True"""
-                        r"""|\bopen\s*\(?\s*(my\s+)?[$\w]+\s*,\s*['"]\+?>""")
-STRING_LITERAL = re.compile(r"""(['"])([^'"\n]{1,512})\1""")
-# A write whose target is its call's last argument: a copy, move or rename, or perl's `open(my $f, '>', $path)`.
-LAST_ARGUMENT_WRITE = re.compile(r"""\bshutil\.|\bos\.|\bopen\s*\(?\s*(my\s+)?[$\w]+\s*,\s*['"]\+?>""")
+# A call that writes, deletes, moves or truncates a file, or runs a child process (the `whole` group, whose text is its
+# own target). An `open(` is a write only when write_target_text finds a write mode.
+FILE_WRITE = re.compile(r"""\bopen\s*\(?\s*(?:my\s+)?[$\w]+\s*,\s*['"]\+?>|\bopen\s*\("""
+                        r"""|\.write_(?:text|bytes)\s*\("""
+                        r"""|\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream)\s*\("""
+                        r"""|\bDeno\.write(?:Text)?File(?:Sync)?\s*\(|\bBun\.write\s*\(|\b(?:File|IO)\.write\b"""
+                        r"""|\bshutil\.(?:copy\w*|move|rmtree)\s*\("""
+                        r"""|\bos\.(?:replace|rename|remove|unlink|rmdir|truncate)\s*\("""
+                        r"""|\bFile\.(?:delete|unlink|rename)\b|\bFileUtils\.\w+|\b(?:unlink|rename)\b(?=\s*[($@'"])"""
+                        r"""|\.(?:unlink|touch|truncate|rename|rmdir|rm|copyFile)(?:Sync)?\s*\(|\.replace\s*\("""
+                        r"""|(?P<whole>\bfileinput\.input\s*\([^)]*inplace\s*=\s*True|\bsubprocess\.\w+"""
+                        r"""|\bos\.(?:system|popen)\b|\b(?:execSync|spawnSync|exec|spawn|execFile\w*)\s*\(|\bsystem\b(?=\s*[('"])"""
+                        r"""|`)""")
+# A write whose target is its call's last argument: a `shutil` copy, a ruby `FileUtils.cp`, or perl's
+# `open(my $f, '>', $path)`. A move or rename changes its source too, so all its arguments are targets.
+LAST_ARGUMENT_WRITE = re.compile(r"""\bshutil\.copy|\bFileUtils\.cp\b"""
+                                 r"""|\bopen\s*\(?\s*(?:my\s+)?[$\w]+\s*,\s*['"]\+?>""")
+# A node copy, whose target is its second argument: a callback or a mode may follow it.
+SECOND_ARGUMENT_WRITE = re.compile(r"\.copyFile")
+# The head of a call written with parentheses: its name, then the open parenthesis.
+CALL_HEAD = re.compile(r"[\w.]*\s*\(")
+# A keyword argument (`ignore_errors=True`).
+KEYWORD_ARGUMENT = re.compile(r"\s*\w+\s*=(?!=)")
+# A write whose first argument is the path and whose later arguments are content or options.
+FIRST_ARGUMENT_WRITE = re.compile(r"(?:writeFile|appendFile|createWriteStream|(?:Bun|Deno|File|IO)\.write)")
+# The mode argument of an `open` that writes: a literal, or (for `open(path, mode)`) a name that may hold one.
+WRITE_MODE = re.compile(r"""['"][rbt]*[wax+][rbt+]*['"]""")
+NAMED_MODE = re.compile(r"\s*(?:mode\s*=\s*)?[A-Za-z_][\w.:]*\s*$")
+# The interpreter families in which a backtick span runs a command.
+BACKTICK_FAMILIES = ("perl", "ruby")
+# Programs a child process runs that write the file they name; sed, perl and awk write only in place.
+WRITER_PROGRAMS = ("tee", "cp", "mv", "rm", "install")
 FUNCTION_DEFINITION = re.compile(r"\b(?:def|function)\s+(\w+)\s*\(([^)]*)\)")
 # A name the code uses, not an attribute after a `.`.
 CODE_NAME = re.compile(r"(?<![\w.$])\$?[A-Za-z_]\w*")
 MAX_NAME_HOPS = 4
+# Text through which a write target reads the command line: argv itself, perl's `shift`, an argument parser's
+# result, or fileinput's in-place mode, which rewrites the files argv names.
+ARGV_SOURCE = re.compile(r"\b(\w*argv|ARGV|ARGF|shift|opts|docopt|parse_args|parse_known_args|parseArgs)\b"
+                         r"|\bDeno\.args\b|\bfileinput\b|\$\*")
+# A perl file test (`-e "x"`), whose letter is no variable.
+PERL_FILE_TEST = re.compile(r"(?<!\S)-[a-zA-Z](?=\s|$)")
+# A newline after a comma or an opening bracket: it continues an argument list.
+ARGUMENT_LIST_NEWLINE = re.compile(r"([,\[(])[ \t]*\n")
+# The `args=` keyword of a child process call.
+KEYWORD_ARGS = re.compile(r"(?<![\w.])args\s*=(?!=)")
+# Names a language supplies; one the code binds is traced like any other name.
+LANGUAGE_NAMES = frozenset(("true", "false", "null", "undefined", "nil", "process",
+                            "__file__", "__dirname", "if", "else", "not", "and", "or", "in", "is", "lambda",
+                            "await", "new", "my", "die", "unless", "__dir__", "__FILE__", "__filename", "$ENV"))
+# A name and what follows it: a call, an attribute, a scope, or a keyword argument or option key (`ok=`, `ok:`).
+NAME_USE = re.compile(r"(?<![\w.$])(\$?[A-Za-z_]\w*)(\s*\(|\s*\.|\s*::|\s*->|\s*=(?!=)|\s*:(?!:))?")
+# What may stand before a keyword argument or option key.
+KEY_PRECEDERS = ("(", "{", ",")
+# The call heads that return their argument's path, changed in form: the trace follows their arguments. Any other call
+# returns a new value.
+PATH_FUNCTIONS = frozenset(("str", "String", "Path", "PurePath", "Pathname", "abspath", "realpath", "normpath",
+                            "expanduser", "expandvars", "expand_path", "join", "resolve", "fspath", "format",
+                            "absolute", "strip", "rstrip", "lstrip", "joinpath", "as_posix"))
+CALL_RESULT = re.compile(r"\s*(?:new\s+|await\s+)?([A-Za-z_][\w.]*)\s*\(.*\)\s*$", re.S)
 # The other names a for loop's target list may hold beside the traced one (`for path, old, new in EDITS`).
 LOOP_TARGETS = r"[\w\s,()\[\]]*?"
 MAX_SCRIPT_BYTES = 1_000_000
@@ -351,16 +412,17 @@ def peel_package_runner(words):
 
 
 def program_family(program):
+    """The family name ("python", "node", "ruby" or "perl") of an interpreter program."""
     for pattern, family in PROGRAM_FAMILIES:
         if pattern.fullmatch(program):
-            return shell_command.INTERPRETER_FAMILIES[family]
+            return family
     return None
 
 
 def interpreter_code(segment, cwd, written_paths, command):
-    """(code, arguments) an interpreter step runs: the `-c`/`-e` code, or the text of an untracked script file. A
-    script the same command writes first (`cat > x.py <<EOF ... && python3 x.py`) does not exist yet, so its code is
-    the whole command, heredoc bodies included. None for any other step, a module run, or a git-tracked or
+    """(code, arguments, family name) an interpreter step runs: the `-c`/`-e` code, or the text of an untracked script
+    file. A script the same command writes first (`cat > x.py <<EOF ... && python3 x.py`) does not exist yet, so its
+    code is the whole command, heredoc bodies included. None for any other step, a module run, or a git-tracked or
     git-ignored script: tracked code is reviewed, and an ignored file is a build output or dependency rather than an
     ad hoc edit."""
     words = shell_command.command_after_wrappers(shell_command.segment_words(segment), peel_containers=False)
@@ -369,13 +431,14 @@ def interpreter_code(segment, cwd, written_paths, command):
         return None
 
     program = os.path.basename(words[0])
-    family = program_family(program)
+    family_name = program_family(program)
+    family = shell_command.INTERPRETER_FAMILIES[family_name]
     arguments = words[1:]
     if program == "deno" and arguments[:1] == ["eval"]:
         code_arguments = arguments[1:]
         while code_arguments and code_arguments[0].startswith("-"):
             code_arguments = code_arguments[1:]
-        return (code_arguments[0], code_arguments[1:]) if code_arguments else None
+        return (code_arguments[0], code_arguments[1:], family_name) if code_arguments else None
     if program in ("deno", "bun") and arguments[:1] == ["run"]:
         arguments = arguments[1:]
 
@@ -388,7 +451,7 @@ def interpreter_code(segment, cwd, written_paths, command):
         word = arguments[index]
         index += 1
         if inline_code.fullmatch(word) or word in family["inline_code_flags"]:
-            return (arguments[index], arguments[index + 1:]) if index < len(arguments) else None
+            return (arguments[index], arguments[index + 1:], family_name) if index < len(arguments) else None
         if word in family["no_stdin_code_flags"]:
             return None
         if word in value_options:
@@ -398,7 +461,7 @@ def interpreter_code(segment, cwd, written_paths, command):
             continue
         script = resolve_target(word, cwd)
         if script in written_paths:
-            return command, arguments[index:]
+            return command, arguments[index:], family_name
         if (
             script is None
             or not os.path.isfile(script)
@@ -410,48 +473,99 @@ def interpreter_code(segment, cwd, written_paths, command):
             if os.path.getsize(script) > MAX_SCRIPT_BYTES:
                 return None
             with open(script, encoding="utf-8", errors="replace") as script_file:
-                return script_file.read(), arguments[index:]
+                return script_file.read(), arguments[index:], family_name
         except OSError:
             return None
     return None
 
 
-def write_statements(code):
-    """(statement, target) for each file write. The statement is the `;`-separated part of the write's line, so a
-    tracked file the code only reads elsewhere does not count. The target is the part of it that names the written
-    file."""
+def write_statements(code, family):
+    """(statement, target) for each file write in code of the interpreter family ("python", "node", "ruby" or "perl").
+    The statement is the `;`-separated part of the write's line, extended through the close of any bracket the write
+    opens, so a tracked file the code only reads elsewhere does not count. The target is the part of it that names the
+    written file. A backtick runs a command only in perl and ruby."""
     writes = []
     for match in FILE_WRITE.finditer(code):
-        line_start = code.rfind("\n", 0, match.start()) + 1
-        line_end = code.find("\n", match.end())
-        line_end = len(code) if line_end == -1 else line_end
-        statement_start = code.rfind(";", line_start, match.start()) + 1 or line_start
-        statement_end = code.find(";", match.end(), line_end)
-        statement_end = line_end if statement_end == -1 else statement_end
-        statement = code[statement_start:statement_end]
-        writes.append((statement, write_target_text(statement, match.start() - statement_start)))
+        if match.group(0) == "`" and family not in BACKTICK_FAMILIES:
+            continue
+
+        statement, statement_start = statement_around(code, match)
+        whole_call = bool(match.group("whole"))
+        target = write_target_text(statement, match.start() - statement_start, whole_call)
+        if target is not None:
+            writes.append((statement, target))
     return writes
 
 
-def write_target_text(statement, write_start):
-    """The receiver of `.write_text(` or `.write_bytes(`; the receiver and first argument of a method `.open(`; the
-    last argument of a copy, move, rename or perl open; else the first argument of the write call."""
+def runs_editor(call):
+    """Whether a child process call's text names a program that writes a file: `tee`, `cp`, `mv`, `rm`, `install`,
+    or `sed -i`, `perl -pi` and `awk -i inplace`. Quotes, commas and brackets are read as spaces, so an argument list
+    (`['sed', '-i', ...]`) reads like a command line. A program counts only in program position: the word after the
+    call's name (the first word of a backtick span), or the word after a shell separator (`;`, `&&`, `||`, `|`, a lone
+    `&`, or a newline) or an `args=` keyword. A newline after a comma or an opening bracket continues an argument
+    list and is no separator, except inside a string, where a newline always separates shell lines."""
+    call = sub_outside_strings(ARGUMENT_LIST_NEWLINE, r"\1 ", call)
+    call = sub_outside_strings(KEYWORD_ARGS, " ; ", STRING_PREFIX_BEFORE_QUOTE.sub("", call))
+    command_line = re.sub(r"""[\[\](){}'",`]""", " ", call)
+    steps = [step for _operator, step in shell_command.split_command_steps(command_line)]
+    for step_index, step in enumerate(steps):
+        words = words_of(step)
+        program_index = 0 if step_index > 0 or call.startswith("`") else 1
+        if program_index >= len(words):
+            continue
+
+        program = words[program_index].rsplit("/", 1)[-1]
+        arguments_text = " ".join(words[program_index + 1:])
+        if program in WRITER_PROGRAMS or is_inplace(program, arguments_text):
+            return True
+    return False
+
+
+def write_target_text(statement, write_start, whole_call):
+    """The text that names what a write call writes, or None for a call that writes nothing: an `open` with no write
+    mode, a `str.replace`, or a child process that runs no editor. The target is the call itself for a child process
+    and fileinput's in-place mode; the receiver of `.write_text(`; the receiver and first argument of a method `.open(`;
+    the receiver and arguments of a method that moves or deletes; the last argument of a `shutil` copy or perl open;
+    the first argument of a call that writes content; else all the arguments (a delete, move or rename)."""
+    call = statement[write_start:]
+    if whole_call:
+        return call if call.startswith("fileinput") or runs_editor(call) else None
+
     if statement.startswith(".write_", write_start):
         return receiver_text(statement[:write_start])
 
-    open_paren = statement.find("(", write_start)
-    if open_paren == -1:
-        write_word = statement[write_start:].split(None, 1)[0]
+    # A call with no parenthesis after its name (`unlink $x or die(...)`) has its arguments up to the end of the line,
+    # whatever parenthesis follows.
+    call_head = CALL_HEAD.match(call)
+    if call_head is None:
+        write_word = call.split(None, 1)[0]
         arguments_start = write_start + len(write_word)
     else:
-        arguments_start = open_paren + 1
-    arguments = split_arguments(statement, arguments_start)
+        arguments_start = write_start + call_head.end()
+    arguments = split_arguments(statement, arguments_start, multiline=call_head is not None)
     if LAST_ARGUMENT_WRITE.match(statement, write_start):
-        return arguments[-1]
-    if statement.startswith("open", write_start) and statement[write_start - 1:write_start] == ".":
+        # A trailing comma leaves an empty last part. A keyword argument is an option, but its value still counts.
+        filled_arguments = [argument for argument in arguments if trim(argument)]
+        keyword_arguments = [argument for argument in filled_arguments if KEYWORD_ARGUMENT.match(argument)]
+        positional_arguments = [argument for argument in filled_arguments if argument not in keyword_arguments]
+        return ",".join(positional_arguments[-1:] + keyword_arguments)
+    if SECOND_ARGUMENT_WRITE.match(statement, write_start):
+        return arguments[1] if len(arguments) > 1 else ",".join(arguments)
+    if statement.startswith(".", write_start):
+        if call.startswith(".replace") and len(arguments) != 1:
+            return None
+        return receiver_text(statement[:write_start]) + "," + ",".join(arguments)
+    if statement.startswith("open", write_start):
+        is_method = statement[write_start - 1:write_start] == "."
+        modes = arguments if is_method else arguments[1:]
+        if not any(WRITE_MODE.search(mode) or (not is_method and NAMED_MODE.match(mode)) for mode in modes):
+            return None
+
         # `p.open('w')` writes its receiver; `io.open(path, 'w')` and `codecs.open(...)` write their first argument.
-        return receiver_text(statement[:write_start - 1]) + "," + arguments[0]
-    return arguments[0]
+        return receiver_text(statement[:write_start - 1]) + "," + arguments[0] if is_method else arguments[0]
+    if FIRST_ARGUMENT_WRITE.match(statement, write_start):
+        return arguments[0]
+    return ",".join(arguments)
 
 
 def binding_texts(code, name):
@@ -486,15 +600,17 @@ def binding_texts(code, name):
         for call in calls:
             if call.start() == function.start(1):
                 continue
-            arguments = split_arguments(code, call.end())
-            texts.append(arguments[positions[0]] if positions[0] < len(arguments) else ",".join(arguments))
+            arguments = split_arguments(code, call.end(), multiline=True)
+            if positions[0] < len(arguments) and trim(arguments[positions[0]]):
+                texts.append(arguments[positions[0]])
     return texts
 
 
 def assigned_texts(code, word):
-    """The right side of each assignment, augmented assignment included, to the (regex-escaped) name `word`."""
-    assignment = re.compile(rf"(?:^|[;{{:])[ \t]*(?:(?:const|let|var|my|our)\s+)?\$?{word}\s*(?::[^=\n]*)?"
-                            r"[-+*/%|&^]*=(?![=>])", re.M)
+    """The right side of each assignment, augmented assignment and unpacking (`src, dst = ...`, `my ($out) = ...`,
+    `const [, out] = ...`) included, to the (regex-escaped) name `word`."""
+    assignment = re.compile(rf"(?:^|[;{{:])[ \t]*(?:(?:const|let|var|my|our)\s+)?[\[(]?\s*(?:[\w$*.]*\s*,\s*)*"
+                            rf"\*?\$?{word}\s*(?::[^=\n]*)?(?:\s*,\s*[\w$*.]*)*\s*[\])]?\s*[-+*/%|&^]*=(?![=>])", re.M)
     return [",".join(split_arguments(code, match.end())) for match in assignment.finditer(code)]
 
 
@@ -509,6 +625,62 @@ def named_texts(code, text):
         frontier = [bound for name in sorted(names) for bound in binding_texts(code, name)]
         texts += frontier
     return texts
+
+
+def writes_reach_argv(code, family):
+    """Whether any write's target can come from the command line, so a tracked file passed as an argument may be the
+    file written. A name that no assignment, loop or call argument binds counts as reaching argv (an unpacking of a
+    parsed result, a callback parameter, a name the code does not set), except a name the code imports or the
+    language supplies, and a capitalized name (`open(OUT, 'w')`), read as a class or module. Each name is traced
+    once across all the writes."""
+    supplied_names = imported_names(code) | LANGUAGE_NAMES
+    traced = {}
+    targets = [target for _statement, target in write_statements(code, family)]
+    return any(text_reaches_argv(code, target, traced, supplied_names) for target in targets)
+
+
+def text_reaches_argv(code, text, traced, supplied_names):
+    """Whether `text` names argv or a name that reaches it. A string literal counts only for what it interpolates; the
+    name before a call is a function, a name before `=` or `:` after a `(`, `{` or `,` is a keyword argument or option
+    key, and a capitalized name that nothing binds is a class or module (`File.join`, `File.open`), not a variable."""
+    text = PERL_FILE_TEST.sub(" ", code_outside_strings(text))
+    if ARGV_SOURCE.search(text):
+        return True
+
+    for found in NAME_USE.finditer(text):
+        name = found.group(1)
+        follower = (found.group(2) or "").strip()
+        before = text[:found.start(1)].rstrip()[-1:]
+        if follower == "(" or (follower in ("=", ":") and before in KEY_PRECEDERS):
+            continue
+        if name[0].isupper() and name not in traced and not binding_texts(code, name):
+            traced[name] = False
+        if name_reaches_argv(code, name, traced, supplied_names):
+            return True
+    return False
+
+
+def name_reaches_argv(code, name, traced, supplied_names):
+    """Whether `name`, traced through the text that binds it, reaches argv; traced holds each name's answer. A name
+    bound through itself adds nothing. The result of a call to a function that is not a PATH_FUNCTIONS member is a new
+    value: only argv written in the call itself reaches it."""
+    if name in traced:
+        return traced[name]
+
+    traced[name] = False
+    bindings = binding_texts(code, name)
+    unbound = not bindings and name not in supplied_names
+    traced[name] = unbound or any(binding_reaches_argv(code, text, traced, supplied_names) for text in bindings)
+    return traced[name]
+
+
+def binding_reaches_argv(code, text, traced, supplied_names):
+    call = CALL_RESULT.fullmatch(text)
+    if call and call.group(1).rsplit(".", 1)[-1] not in PATH_FUNCTIONS:
+        argument_code = code_outside_strings(text)
+        return bool(ARGV_SOURCE.search(argument_code))
+
+    return text_reaches_argv(code, text, traced, supplied_names)
 
 
 def path_candidates(text):
@@ -545,12 +717,12 @@ def absolute_root(code, target):
     return None
 
 
-def written_candidates(code):
+def written_candidates(code, family):
     """The path texts code's file writes name: each literal in a write statement, and each literal its target is
     bound to. When a write's target joins onto an absolute_root, the target's own literals and the names it reads are
     joined onto that root; other literals of the statement stay relative."""
     candidates = []
-    for statement, target in write_statements(code):
+    for statement, target in write_statements(code, family):
         literals = [match.group(2) for match in STRING_LITERAL.finditer(statement)]
         named = [candidate for text in named_texts(code, target) for candidate in path_candidates(text)]
         root = absolute_root(code, target)
@@ -568,24 +740,30 @@ def interpreter_written_target(segment, folders, written_paths, command):
     """(raw path, path) of the git-tracked file an interpreter step opens for writing, else None: code with a file
     write whose statement names a tracked file as a string literal, whose target is a name bound (through
     assignments, for loops and function calls) to a tracked file's literal or to literals that join into one, or a
-    tracked file passed as an argument. folders holds the session cwd, then each literal cd folder before the step,
-    and a relative path counts when it names a tracked file under any of them. A path the code builds any other way
-    is not seen."""
+    tracked file passed as an argument unless the trace finds that no write target comes from argv. folders holds the
+    session cwd, then each literal cd folder before the step, and a relative path counts when it names a tracked
+    file under any of them. A path the code builds any other way is not seen."""
     cwd = folders[0]
     found = interpreter_code(segment, cwd, written_paths, command)
     if found is None:
         return None
 
-    raw_code, arguments = found
-    if not write_statements(raw_code):
-        return None
+    raw_code, arguments, family = found
 
     # A bracket or quote inside a comment cuts a literal, and a `#` that starts no comment (a JS regex, perl's
     # `s/a #b/`) cuts real code, so trace the code both with and without comments.
+    codes = dict.fromkeys((raw_code, without_comments(raw_code)))
+    if not any(write_statements(code, family) for code in codes):
+        return None
+
     candidates = []
-    for code in dict.fromkeys((raw_code, without_comments(raw_code))):
-        candidates += written_candidates(code)
-    for candidate in candidates + arguments:
+    for code in codes:
+        candidates += written_candidates(code, family)
+
+    # A tracked file passed to code whose writes all name files of their own is read, not written.
+    if arguments and any(writes_reach_argv(code, family) for code in codes):
+        candidates += arguments
+    for candidate in candidates:
         candidate_folders = [cwd] if shell_command.path_word_is_absolute(candidate) else folders
         for folder in candidate_folders:
             path = resolve_target(candidate, folder)

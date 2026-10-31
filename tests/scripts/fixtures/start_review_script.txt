@@ -1,0 +1,43 @@
+import os
+import pathlib
+import subprocess
+import sys
+
+import plan_format
+from review_loop_script import loop_script_command, write_script_prompt
+
+
+def review_prompt(repo, lane, plan, phase, handoff):
+    header = ["mode: review-first", f"lane: {lane}", f"plan: {plan}", f"phase: {phase}"]
+    plan_lines = (repo / plan).read_text().splitlines()
+    prompt = "\n".join(header) + "\n\n" + handoff.strip()
+    gate_env_text = plan_format.gate_env_text(plan_format.repo_gate_env(repo, plan))
+    return f"{prompt}\n\n{gate_env_text}\n" if gate_env_text else prompt + "\n"
+
+
+def main(argv):
+    lane, plan, phase, handoff_file = argv[1:5]
+    repo = pathlib.Path.cwd().resolve()
+    prompt = review_prompt(repo, lane, plan, phase, pathlib.Path(handoff_file).read_text())
+    if "--dry-run" in argv:
+        print(prompt)
+        return 0
+
+    state_dir = repo / ".git/code-step"
+    pid_file = repo / ".git/code-phase/pid"
+    pid_file.parent.mkdir(exist_ok=True)
+    pid_file.write_text(str(os.getpid()))
+
+    prompt_file, log_path = write_script_prompt(state_dir, "loop-script", prompt)
+    command = loop_script_command(repo, state_dir, prompt_file)
+    with log_path.open("w") as log:
+        finished = subprocess.run(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+
+    print(f"The review loop script exited {finished.returncode}.")
+    packet_file = prompt_file.parent / "packet.txt"
+    print(packet_file.read_text() if packet_file.exists() else f"No packet. Log: {log_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

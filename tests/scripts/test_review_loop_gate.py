@@ -430,6 +430,23 @@ class StopRowTest(unittest.TestCase):
 
         self.assertEqual(self.open_counts(store), [0, 0])
 
+    def test_a_dead_background_code_reviewer_records_no_open_dispatch_and_the_stop_is_not_blocked(self):
+        store = self.new_store()
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        error_record = json.loads((FIXTURES / "subagent_api_error_last_record.json").read_text(encoding="utf-8"))
+        pathlib.Path(folder.name, "agent-a7bf12f9c51bc4875.jsonl").write_text(json.dumps(error_record) + "\n",
+                                                                              encoding="utf-8")
+        loop_path = os.path.join(folder.name, "loop.jsonl")
+        records = coder_and_background_reviewer()
+        pathlib.Path(loop_path).write_text("".join(json.dumps(record) + "\n" for record in records),
+                                           encoding="utf-8")
+
+        stopped = self.stop_in_session(records, store, transcript_path=loop_path)
+
+        self.assertEqual(stopped.stdout, "")
+        self.assertEqual(self.open_counts(store), [0])
+
     def test_a_shell_moved_to_the_background_is_open_until_its_task_notification(self):
         for fixture_name in ("loop_shell_moved_to_background_by_timeout.jsonl", "loop_shell_run_in_background.jsonl"):
             with self.subTest(fixture_name):

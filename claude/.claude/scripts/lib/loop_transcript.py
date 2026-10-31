@@ -319,19 +319,15 @@ class LoopTranscript:
             self.died[agent_id] = script_utils.ends_on_api_error(sibling)
         return self.died[agent_id]
 
-    def last_reviewer_died(self):
-        """True when the loop's latest dispatch of any reviewer kind launched an agent that
-        ended on an API error, so the loop holds no finished review from its latest run.
-        A re-dispatch of the same kind, or its -deep variant, supersedes the earlier one.
-        False when the loop dispatched no reviewer."""
+    def dead_reviewers(self):
+        """The sorted agent ids of the loop's latest dispatch of each reviewer kind whose agent ended on an API
+        error, so the loop holds no finished review from that run. A re-dispatch of the same kind, or its -deep
+        variant, supersedes the earlier one. Empty when none died or the loop dispatched no reviewer."""
         latest_by_kind = {kind.removesuffix("-deep"): tool_use_id for tool_use_id, kind in self.kinds.items()
                           if script_utils.REVIEWERS.match(kind)}
+        agent_ids = {self.launched_agent(tool_use_id) for tool_use_id in latest_by_kind.values()}
 
-        for tool_use_id in latest_by_kind.values():
-            agent_id = self.launched_agent(tool_use_id)
-            if self.agent_died(agent_id):
-                return True
-        return False
+        return sorted(agent_id for agent_id in agent_ids if self.agent_died(agent_id))
 
     def resume_is_open(self, line, agent_id, send_id, open_launches):
         """True when a SendMessage that resumed `agent_id` has had no agent message from it and no task notification

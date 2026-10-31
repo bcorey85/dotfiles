@@ -1486,12 +1486,58 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         for name, steps in cases.items():
             with self.subTest(name):
+                shutil.rmtree(self.store, ignore_errors=True)
+                self.dispatch_loop_agents()
                 out = self.hand_back(steps)
 
                 decision = json.loads(out)["hookSpecificOutput"]
                 self.assertEqual(decision["permissionDecision"], "deny")
                 self.assertEqual(decision["permissionDecisionReason"], handback_hook.DEAD_REVIEWER_REASON)
                 self.assertEqual(self.handback_rows(), [])
+
+    def test_a_clean_hand_back_repeated_on_the_same_dead_reviewer_passes_flagged_as_not_reviewed(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        steps = background_reviewer_launch("t2", "arev")
+
+        denied = self.hand_back(steps)
+        repeated = self.hand_back(steps)
+
+        reason = json.loads(denied)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual(reason, handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(repeated, "")
+        rows = self.handback_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["no_reviewer"])
+        self.assertTrue(handback.false_clean_reason(SESSION))
+        self.assertEqual(handback_store.unreviewed_streak(SESSION), 1)
+
+    def test_a_second_dead_dispatch_after_the_first_was_denied_is_denied_once_more_then_passes_flagged(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        records = [{"type": "assistant", "message": {"role": "assistant", "content": []}}, API_ERROR_LAST_RECORD]
+        (self.tmp / "agent-arev2.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+        first = background_reviewer_launch("t2", "arev")
+        second = [*first, *background_reviewer_launch("t3", "arev2")]
+
+        self.hand_back(first)
+        denied_again = self.hand_back(second)
+        passed = self.hand_back(second)
+
+        reason = json.loads(denied_again)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual(reason, handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(passed, "")
+        self.assertTrue(self.handback_rows()[0]["no_reviewer"])
+
+    def test_a_dead_reviewer_denied_once_then_re_dispatched_and_reported_passes_as_reviewed(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        died = background_reviewer_launch("t2", "arev")
+        self.hand_back(died)
+
+        redispatched = [*died, *background_reviewer_launch("t3", "arev2"), task_notification("t3")]
+        out = self.hand_back(redispatched)
+
+        self.assertEqual(out, "")
+        self.assertFalse(self.handback_rows()[0]["no_reviewer"])
+        self.assertIsNone(handback.false_clean_reason(SESSION))
 
     def test_a_clean_hand_back_is_denied_when_one_reviewer_kind_died_though_another_kind_reported(self):
         self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
@@ -1736,9 +1782,10 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         with unittest.mock.patch.object(handback_hook.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
-            reason = handback_hook.transcript_gate_reason(event, SESSION, "a1", CONVERGED, packet, "converged")
+            reason, reviewer_dead = handback_hook.transcript_gates(event, SESSION, "a1", CONVERGED, packet, "converged")
 
         self.assertEqual(reason, handback_hook.loop_transcript.PLAN_EDIT_REASON.format(plan="docs/plans/orders.md"))
+        self.assertFalse(reviewer_dead)
         self.assertIn("full-check gate skipped", stderr.getvalue())
 
     def test_a_second_hand_back_from_an_agent_with_a_stored_report_is_denied_and_adds_no_row(self):

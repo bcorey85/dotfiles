@@ -77,6 +77,28 @@ class CoderPacketTest(unittest.TestCase):
         self.assertIn("- src/lib/format.mts", result.stdout)
         self.assertNotIn("- src/lib/format.js", result.stdout)
 
+    def test_a_helper_folder_keeps_a_support_file_and_leaves_out_a_file_that_runs_alone(self):
+        (self.repo / "src" / "orders").mkdir(parents=True)
+        (self.repo / "tests" / "fixtures").mkdir(parents=True)
+        service_source = 'import { order } from "../../tests/fixtures/order";\n'
+        (self.repo / "src" / "orders" / "list.service.ts").write_text(service_source)
+        (self.repo / "tests" / "fixtures" / "order.ts").write_text("export const order = 1;\n")
+        (self.repo / "tests" / "fixtures" / "tests.py").write_text("pass\n")
+        (self.repo / "tests" / "fixtures" / "test_helpers.ts").write_text("export const helper = 1;\n")
+        (self.repo / "tests" / "fixtures" / "test_data.json").write_text("{}\n")
+        (self.repo / "tests" / "fixtures" / "Orders.Test.ts").write_text("export {};\n")
+        plan_naming_a_new_service = PLAN_WITH_A_DOTTED_PHASE_FIRST.replace(
+            "whole body", "Create `src/orders/new.service.ts`."
+        )
+
+        result = self.packet(plan_naming_a_new_service, WHOLE_ID)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("- tests/fixtures/test_helpers.ts", result.stdout)
+        self.assertIn("- tests/fixtures/test_data.json", result.stdout)
+        self.assertNotIn("tests/fixtures/tests.py", result.stdout)
+        self.assertNotIn("tests/fixtures/Orders.Test.ts", result.stdout)
+
     def test_a_phase_that_says_same_as_an_earlier_phase_gets_that_phases_lines(self):
         plan_with_a_reused_phase = PLAN_WITH_A_DOTTED_PHASE_FIRST.replace(
             "whole body", f"Mutants: same as Phase {DOTTED_ID}."

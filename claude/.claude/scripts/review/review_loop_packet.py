@@ -19,6 +19,9 @@ import review_loop_gate
 import script_utils
 from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED
 
+# A pointer ask rides in the packet's ask list with no question, so handback drops it with this reason as its warning.
+POINTER_ASK_REASON = "ask only points back to another ask"
+
 
 def located(finding):
     """The packet's file_line for a finding: the `path:line` the driver parses, or UNLOCATED."""
@@ -53,6 +56,10 @@ def packet_message(outcome):
     status = "plan-impact" if outcome["status"] == "plan-change" else outcome["status"]
     asks = [ask_entry(ask, outcome["ask_gates"].get(ask, handback.DEFAULT_GATE), outcome["ask_ids"].get(ask))
             for ask in outcome["asks"]]
+    pointer_entries = [{"text": ask.text, "file_line": located(ask), "drop_reason": POINTER_ASK_REASON}
+                       for ask in outcome["pointer_asks"]]
+    asks += pointer_entries
+
     fields = {
         "status": status,
         "iter": outcome["iter"],
@@ -92,8 +99,8 @@ def packet_message(outcome):
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
     "status": "", "iter": 0, "fixed": [], "skipped_fp": [], "blockers": [], "plan_change": [], "open_fixes": [],
-    "asks": [], "ask_gates": {}, "ask_ids": {}, "ask_rows": [], "class_closure": "", "open_classes": [],
-    "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
+    "asks": [], "ask_gates": {}, "pointer_asks": [], "ask_ids": {}, "ask_rows": [], "class_closure": "",
+    "open_classes": [], "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
     "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False,
     "scoped_tests": "", "tool_fault": "", "plan_change_from_coder": False,
 }
@@ -131,8 +138,8 @@ def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
         report_write_failure("hand-back row", error)
     review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)
 
-    # The /code run that launched this loop can end before the loop hands back, and then nothing marks the gate. So
-    # the loop records the tree it ended clean on itself, under the same rule as `review-gate-mark clean`.
+    # The /code run that launched this loop can end before the loop hands back, and then nothing records the tree.
+    # So the loop records the tree it ended clean on itself, under the commit gate's hand-back rule.
     try:
         reason, reviewed_repo = handback.record_clean_review(args.session)
         if not reason and not reviewed_repo:

@@ -4,7 +4,6 @@ recheck steps. LoopRun inherits FullCheckSteps; the loop script's SIGTERM handle
 import functools
 import os
 import pathlib
-import re
 import shutil
 import sys
 
@@ -14,6 +13,7 @@ import code_step_core
 import format_files
 import full_check
 import script_utils
+import source_paths
 from finding_record import parse_finding
 from worktree_snapshot import CHANGE_KINDS
 
@@ -57,9 +57,9 @@ def remove_live_base_trees():
 
 
 class FullCheckSteps:
-    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix and
-    expected_red, and provides stop(status, remaining), repair(call_name, findings) and mark_repaired(findings,
-    changed)."""
+    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix,
+    expected_red, and provides stop(status, remaining), repair(call_name, findings) and
+    mark_repaired(findings, changed)."""
 
     def init_full_check_state(self):
         self.full_check = ""
@@ -82,7 +82,7 @@ class FullCheckSteps:
             return
 
         gate_findings = [f"full check failed (`{check_command}`), failing lines:\n{tail}"]
-        if re.search(r"\.spec\.", tail):
+        if source_paths.names_spec_file(tail):
             self.stop("critical-blocker", gate_findings)
             return
 

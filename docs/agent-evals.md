@@ -162,17 +162,20 @@ the clock. Genuinely two-sided work might move it.
 
 ## Change ledger
 
-Every toolkit change is one file in `changes/`, an OKF bundle. `changes/index.md`
-lists them by date, newest first, each with a one-sentence description. Each file
+Every toolkit change is one note in `changes/notes/`, an OKF bundle. Each note
 holds the change, its evidence, the result, the watch and the back-out. `judgment`
 means shipped on reasoning, not measurement, flagged so it can't masquerade as
-evidence.
+evidence. Five built pages sit beside the notes: `changes/index.md` (the top
+gains, counts and links), `changes/what-worked.md` (every measured gain),
+`changes/ruled-out.md` (rejected and on-hold ideas and what would reopen them),
+`changes/changelog.md` (every change by week, with the unmeasured ones) and
+`changes/in-progress.md` (the benches that are open).
 
 To add a change, in the same session as the toolkit edit:
 
 1. Run `python3 ~/agent-evals/bin/build_changes.py new "<title>" --by <actor>`.
 2. Fill the file it prints.
-3. Run `python3 ~/agent-evals/bin/build_changes.py` to rebuild `changes/index.md`.
+3. Run `python3 ~/agent-evals/bin/build_changes.py` to rebuild the five pages.
 
 `build_changes.py --check` verifies the bundle.
 

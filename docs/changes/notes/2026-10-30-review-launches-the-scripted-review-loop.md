@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "changed"
 title: "/review launches the scripted review loop"
-description: "A working-tree /review now runs the scripted review loop that cut median review tokens 42% on the bench (1,295,705 → 751,367); the packet, gate-mark and asks handling are unchanged, and the agent stays for handoff blocks, base=, file scope, +fast/+deep, iter= and /fix."
+description: "The scripted review loop cut median review-loop cost 29% on the bench ($2.96 → $2.11); /review's own start is not benched and its cache-read watch reads it. A working-tree /review now runs that loop; the agent stays for handoff blocks, base=, file scope, +fast/+deep, iter=, a plan-impact re-dispatch and /fix."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-30T08:29:54-05:00"}
 seq: 339
 kind: "structured"
@@ -12,7 +12,7 @@ watches: ["review-scripted-loop-cache-read", "scripted-review-loop-escapes"]
 test: "tests/scripts/test_review_fix_script.py"
 asked: ""
 proof: ["2026-10-26-scripted-review-loop-with-bounded-re-review-vs", "2026-10-26-scripted-review-loop-vs-review-loop-agent-16-runs"]
-impact: {"metric": "tokens", "before": 1295705, "after": 751367, "unit": "tokens", "finding": "2026-10-26-scripted-review-loop-with-bounded-re-review-vs"}
+impact: {"metric": "cost", "before": 2.96, "after": 2.11, "unit": "$", "finding": "2026-10-26-scripted-review-loop-with-bounded-re-review-vs"}
 unmeasured: ""
 overlap: "The /code switch to the scripted loop also watches escapes per code-reviewer run, so that reading covers both callers, and its `scripted-review-loop-escapes` window starts 2026-10-27 (the /code switch), so the reading cannot isolate /review; the cache-read watch filters on the review caller and reads /review alone."
 ---

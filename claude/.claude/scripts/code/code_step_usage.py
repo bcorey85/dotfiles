@@ -24,6 +24,9 @@ VERB_USAGES = {
                        'stage it applies them as asks-done.'),
     "skill-done": ('usage: code_step.py skill-done <pass|fail> [--evidence "<text>"]... [--finding "<text>"]...\n'
                    'A closing phase\'s skill returned.'),
+    "session-done": ("usage: code_step.py session-done <phase id>\n"
+                     "A session phase's steps are done: runs its Automated Verification, marks the phase done and "
+                     "prints its commit command."),
     "verify": ("usage: code_step.py verify\nRuns the phase gates and closes the phase, after a failed Automated "
                "Verification was fixed or once the phase's review converged."),
     "review-again": ("usage: code_step.py review-again\n"

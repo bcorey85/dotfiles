@@ -39,7 +39,7 @@ class CoderPacketTest(unittest.TestCase):
     def packet(self, plan_text, phase_number):
         (self.repo / "plan.md").write_text(plan_text)
         return subprocess.run([sys.executable, str(PACKET), str(self.repo / "plan.md"), phase_number], cwd=self.repo,
-                              env=self.env, capture_output=True, text=True)
+                              env=self.env, capture_output=True, text=True, timeout=60)
 
     def test_a_phase_reads_its_own_section_when_a_dotted_phase_of_the_same_prefix_comes_first(self):
         result = self.packet(PLAN_WITH_A_DOTTED_PHASE_FIRST, WHOLE_ID)
@@ -98,6 +98,49 @@ class CoderPacketTest(unittest.TestCase):
         self.assertIn("- tests/fixtures/test_data.json", result.stdout)
         self.assertNotIn("tests/fixtures/tests.py", result.stdout)
         self.assertNotIn("tests/fixtures/Orders.Test.ts", result.stdout)
+
+    def test_a_phase_that_says_same_as_an_earlier_phase_gets_that_phases_lines(self):
+        plan_with_a_reused_phase = PLAN_WITH_A_DOTTED_PHASE_FIRST.replace(
+            "whole body", f"Mutants: same as Phase {DOTTED_ID}."
+        )
+
+        result = self.packet(plan_with_a_reused_phase, WHOLE_ID)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(f"plan.md lines 8-11 (Phase {DOTTED_ID}, cited by Phase {WHOLE_ID})", result.stdout)
+
+    def test_a_phase_gets_the_lines_of_a_phase_that_its_cited_phase_cites(self):
+        plan_with_a_chain = "\n".join([
+            "# Plan", "", "## Phase 2: Base", "", "base body", "",
+            "## Phase 3: Middle", "", "same as Phase 2.", "",
+            "## Phase 4: Last", "", "same as Phase 3.", ""])
+
+        result = self.packet(plan_with_a_chain, "4")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("(Phase 3, cited by Phase 4)", result.stdout)
+        self.assertIn("(Phase 2, cited by Phase 4)", result.stdout)
+
+    def test_two_phases_that_cite_each_other_are_each_included_once(self):
+        plan_with_a_cycle = "\n".join([
+            "# Plan", "", "## Phase 3: First", "", "same as Phase 4.", "",
+            "## Phase 4: Second", "", "same as Phase 3.", ""])
+
+        result = self.packet(plan_with_a_cycle, "3")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, result.stdout.count("(Phase 4, cited by Phase 3)"))
+        self.assertNotIn("(Phase 3, cited by Phase 3)", result.stdout)
+
+    def test_a_citation_of_a_missing_phase_or_of_itself_is_skipped(self):
+        plan_with_odd_citations = "\n".join([
+            "# Plan", "", "## Phase 2: Base", "", "base body", "",
+            "## Phase 3: Last", "", "same as Phase 9. Also same as Phase 3.", ""])
+
+        result = self.packet(plan_with_odd_citations, "3")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("cited by Phase 3", result.stdout)
 
     def test_a_plan_outside_any_git_repository_stops_with_a_message(self):
         outside = tempfile.TemporaryDirectory()

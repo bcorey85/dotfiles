@@ -22,6 +22,8 @@ import code_step_start_args
 HOOK_SENSITIVE_TASK = "decide: wrap `sudo -u deploy` and a '-c' flag; each case's new rule stays \"quoted\""
 COMPOUND_LINE = "- [ ] **Check**: totals - `TMP=$(mktemp -d) && npx vitest run \"$TMP\"`"
 SHELL_WRAPPER = "-c '"
+SESSION_PHASE_TEXT = ("## Phase 2: Mutation check\n\n**Session phase**: `mutation-tester`\n\n"
+                      "1. Dispatch `mutation-tester`.\n2. Commit.\n")
 RUN_NOTES_HEADING = "Run notes from the user. They bind this run; the plan stays the spec:"
 
 
@@ -325,6 +327,217 @@ class StartInputTest(base.CodeStepTest):
 
         self.assertIn("ACTION: invoke-skill", out)
         self.assertIn("Run notes from the user. They bind this run; the plan stays the spec:\nbuild with two jobs", out)
+
+    # ---------- session-only phase ----------
+
+    def test_a_phase_with_a_session_phase_line_stops_for_the_session_and_closes_with_session_done(self):
+        session_phase = ("## Phase 2: Mutation check\n\n**Session phase**: mutation-tester\n\n"
+                         "1. Dispatch the `mutation-tester` agent on "
+                         "`backend/src/orders.ts`.\n2. Record its lines in the plan.\n3. Commit.\n")
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        self.assertIn(old_phase, self.plan_text())
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, session_phase))
+        self.finish_phase_one()
+        (self.repo / "dirty-before-start.txt").write_text("left over\n")
+
+        out = self.step("start", self.plan, "--phase", "2")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertNotIn("AGENT: coder", out)
+        self.assertIn("Dispatch the `mutation-tester` agent yourself", out)
+        self.assertIn("invoke Skill code with `session-done 2`", out)
+        self.assertNotIn("`tick`", out)
+        self.assertEqual("session", self.state()["stage"])
+        self.assertIn("- [ ] Phase 2:", self.plan_text())
+
+        (self.repo / "mutation-report.txt").write_text("done\n")
+        closed = self.step("session-done", "2")
+
+        self.assertIn("- [x] Phase 2:", self.plan_text())
+        self.assertIn("Phase 2 marked done", closed)
+        commit_line = next(line for line in self.said().splitlines() if "git add -- " in line)
+        self.assertIn("mutation-report.txt", commit_line)
+        self.assertNotIn("dirty-before-start.txt", commit_line)
+        self.assertIn("docs/plans/orders/spec.md", self.said())
+        self.assertNotIn("marked done with `tick`", self.plan_text())
+
+    def test_verify_after_a_session_phase_failed_its_checks_closes_it_with_no_review_gate(self):
+        session_phase = (SESSION_PHASE_TEXT + "\n"
+                         "#### Automated Verification:\n\n"
+                         "- [ ] **Tests**: report exists - `test -f mutation-report.txt`\n")
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, session_phase))
+        self.finish_phase_one()
+        self.step("start", self.plan, "--phase", "2")
+
+        failed = self.step("session-done", "2")
+
+        self.assertIn("Automated Verification failed", failed)
+        self.assertEqual("verification", self.state()["stop"]["kind"])
+        self.assertIn("- [ ] Phase 2:", self.plan_text())
+
+        (self.repo / "mutation-report.txt").write_text("done\n")
+        closed = self.step("verify")
+
+        self.assertIn("- [x] Phase 2:", self.plan_text())
+        self.assertIn("Phase 2 marked done", closed)
+        self.assertIn("git add -- ", self.said())
+
+    def test_resume_on_a_session_phase_says_its_steps_again(self):
+        session_phase = SESSION_PHASE_TEXT
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, session_phase))
+        self.finish_phase_one()
+        self.step("start", self.plan, "--phase", "2")
+
+        out = self.step("resume")
+
+        self.assertIn("Dispatch the `mutation-tester` agent yourself", out)
+        self.assertIn("`session-done 2`", out)
+
+    def test_resume_asks_about_the_saved_state_when_the_phase_is_no_longer_session_only(self):
+        session_phase = SESSION_PHASE_TEXT
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, session_phase))
+        self.finish_phase_one()
+        self.step("start", self.plan, "--phase", "2")
+        (self.repo / self.plan).write_text(self.plan_text().replace(session_phase, old_phase))
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("The run is at stage session", self.said())
+
+    def test_resume_asks_about_the_saved_state_when_the_plan_of_a_session_phase_is_gone(self):
+        session_phase = SESSION_PHASE_TEXT
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, session_phase))
+        self.finish_phase_one()
+        self.step("start", self.plan, "--phase", "2")
+        (self.repo / self.plan).unlink()
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        self.assertIn("The run is at stage session", self.said())
+
+    def test_restarting_an_open_session_phase_keeps_its_earlier_edits_in_the_commit_line(self):
+        session_phase = SESSION_PHASE_TEXT
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, session_phase))
+        self.finish_phase_one()
+        self.step("start", self.plan, "--phase", "2")
+        original_base_head = self.state()["baseHead"]
+        (self.repo / "earlier-edit.txt").write_text("done\n")
+
+        self.step("start", "--restart", self.plan, "--phase", "2")
+        self.assertEqual(original_base_head, self.state()["baseHead"])
+        self.step("session-done", "2")
+
+        commit_line = next(line for line in self.said().splitlines() if "git add -- " in line)
+        self.assertIn("earlier-edit.txt", commit_line)
+
+    def test_restarting_onto_a_different_session_phase_does_not_reuse_the_earlier_phases_baseline(self):
+        session_phase = SESSION_PHASE_TEXT
+        second_session_phase = SESSION_PHASE_TEXT.replace("Phase 2: Mutation check", "Phase 3: Second check")
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        old_third_phase = "## Phase 3: Audit trail\n\n**File**: `backend/src/audit.ts`\n"
+        plan_text = self.plan_text().replace(old_phase, session_phase)
+        self.assertIn(old_third_phase, plan_text)
+        (self.repo / self.plan).write_text(plan_text.replace(old_third_phase, second_session_phase))
+        self.finish_phase_one()
+        self.step("start", self.plan, "--phase", "2")
+        (self.repo / "phase-two-edit.txt").write_text("done\n")
+
+        self.step("start", "--restart", self.plan, "--phase", "3")
+        self.step("session-done", "3")
+
+        commit_line = next(line for line in self.said().splitlines() if "git add -- " in line)
+        self.assertNotIn("phase-two-edit.txt", commit_line)
+
+    def test_the_session_stop_prints_the_plan_lines_of_a_phase_the_session_phase_reuses(self):
+        session_phase = SESSION_PHASE_TEXT + "\nMutants: same as Phase 1.\n"
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, session_phase))
+        self.finish_phase_one()
+
+        out = self.step("start", self.plan, "--phase", "2")
+
+        self.assertIn("ACTION: stop", out)
+        self.assertRegex(out, rf"Phase 1, which Phase 2 reuses: {self.plan} lines \d+-\d+\.")
+
+    def test_restarting_a_session_phase_after_a_reset_takes_a_fresh_start_commit_and_keeps_the_baseline(self):
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, SESSION_PHASE_TEXT))
+        self.finish_phase_one()
+        self.commit_all()
+        self.git("commit", "-q", "--allow-empty", "-m", "empty")
+        self.step("start", self.plan, "--phase", "2")
+        (self.repo / "earlier-edit.txt").write_text("done\n")
+        started = self.state()
+        self.git("reset", "-q", "HEAD~1")
+
+        self.step("start", "--restart", self.plan, "--phase", "2")
+
+        restarted = self.state()
+        self.assertEqual("session", restarted["stage"])
+        self.assertNotEqual(started["baseHead"], restarted["baseHead"])
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), restarted["baseHead"])
+        self.assertEqual(started["baseline"], restarted["baseline"])
+
+    def test_a_session_phase_line_naming_a_coder_with_no_file_entry_still_goes_to_the_coder(self):
+        coder_phase = "## Phase 2: Totals\n\n**Session phase**: `coder`\n\n1. Dispatch `coder`.\n2. Commit.\n"
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, coder_phase))
+        self.finish_phase_one()
+
+        out = self.step("start", self.plan, "--phase", "2")
+
+        self.assertIn("AGENT: coder", out)
+        self.assertNotIn("yourself", out)
+        self.assertNotIn("session-done", out)
+
+    def test_session_done_runs_only_on_a_session_phase(self):
+        self.start_phase_one()
+
+        refused = self.step("session-done", "1")
+
+        self.assertIn("session-done ran with no session phase pending.", refused)
+        self.assertIn("- [ ] Phase 1:", self.plan_text())
+
+    def test_session_done_with_no_open_run_is_refused_names_itself_and_writes_no_state(self):
+        refused = self.step("session-done", "2")
+
+        self.assertTrue(refused.startswith("Refused: "), refused)
+        self.assertIn("ACTION: rerun", refused)
+        self.assertIn("session-done ran with no session phase pending.", refused)
+        self.assertIn(f"COMMAND: {self.own_command('resume')}", refused)
+        self.assertFalse((self.repo / ".git/code-step/state.json").exists())
+
+    def test_run_notes_on_a_session_phase_reach_the_session_brief(self):
+        session_phase = SESSION_PHASE_TEXT
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, session_phase))
+        self.finish_phase_one()
+
+        out = self.step("start", self.plan, "--phase", "2", "only", "touch", "totals")
+
+        self.assertIn("Run notes from the user.", out)
+        self.assertIn("only touch totals", out)
+
+    def test_session_done_for_another_phase_is_refused_and_leaves_the_open_session_phase_unchecked(self):
+        session_phase = SESSION_PHASE_TEXT
+        old_phase = "## Phase 2: Totals\n\n**File**: `backend/src/totals.ts`\n"
+        (self.repo / self.plan).write_text(self.plan_text().replace(old_phase, session_phase))
+        self.finish_phase_one()
+        self.step("start", self.plan, "--phase", "2")
+
+        refused = self.step("session-done", "3")
+
+        self.assertIn("session-done takes the open phase's id", refused)
+        self.assertIn("session-done 2", refused)
+        self.assertIn("- [ ] Phase 2:", self.plan_text())
+        self.assertEqual(self.state()["stage"], "session")
 
     # ---------- restart ----------
 

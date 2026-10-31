@@ -94,6 +94,7 @@ class StagedClaimGateTest(unittest.TestCase):
     def stage_in_linked_tree(self, file_name):
         linked = self.tmp / "linked"
         git(self.repo, "worktree", "add", "-q", "-b", "side", str(linked))
+        (linked / file_name).parent.mkdir(exist_ok=True)
         (linked / file_name).write_text("z\n")
         git(linked, "add", file_name)
         return linked
@@ -151,11 +152,34 @@ class StagedClaimGateTest(unittest.TestCase):
         self.assert_blocked("c.txt is staged.", transcript_path=transcript)
 
     def test_a_file_named_relative_to_a_subdirectory_cwd_is_vouched_for_by_the_linked_tree(self):
+        linked = self.stage_in_linked_tree("sub/c.txt")
+        (self.repo / "sub").mkdir()
+        (self.repo / "sub" / "c.txt").write_text("x\n")
+        transcript = self.write_transcript(f"git -C {linked} add sub/c.txt")
+        self.assert_passes("c.txt is staged.", cwd=self.repo / "sub", transcript_path=transcript)
+
+    def test_a_file_staged_outside_the_subdirectory_cwd_is_not_vouched_for_by_the_linked_tree(self):
         linked = self.stage_in_linked_tree("c.txt")
         (self.repo / "sub").mkdir()
         (self.repo / "sub" / "c.txt").write_text("x\n")
         transcript = self.write_transcript(f"git -C {linked} add c.txt")
         self.assert_blocked("c.txt is staged.", cwd=self.repo / "sub", transcript_path=transcript)
+
+    def test_a_reply_describing_what_the_hook_reads_passes_with_an_empty_index(self):
+        for message in ("The hook blocks a reply that says files are staged.",
+                        "The bug: a message saying all files are staged gets blocked.",
+                        "The gate fired on a sentence claiming the edits are staged.",
+                        "The linter says the config I changed is staged.",
+                        "The worker said the files I touched are staged."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_claim_beside_a_reporting_word_still_blocks(self):
+        for message in ("The staged-claim gate files are staged.",
+                        "The tests passed as the plan said, and all files are staged.", "I said I staged the fix.",
+                        "I said all files are staged.", "I have said the files are staged."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
 
     def test_a_torn_transcript_line_does_not_hide_a_false_claim_or_a_true_one(self):
         torn_line = '{"type": "assistant", "message": {"content": [{"type": "tool_use", "na\n'

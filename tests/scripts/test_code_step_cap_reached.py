@@ -5,16 +5,19 @@ The fixtures are those of test_code_step.py; its own tests run there, not here.
 
 run: python3 -m unittest test_code_step_cap_reached
 """
+import json
 import unittest
 
 import test_code_step as base
 
-CAP = ('status: cap-reached\niter: 2\nfixed: []\nfindings_remaining:\n'
-       '- {finding: "the rounding stays open", file_line: "backend/src/orders.ts:1"}\n')
-CAP_WITH_ASK = CAP + base.CodeStepTest.ASK.split("\n", 3)[3] + "\n"
-BLOCKER_WITH_ASK = ('status: critical-blocker\niter: 1\nblockers:\n'
-                    '- {finding: "the rounding is broken", file_line: "backend/src/orders.ts:1"}\n'
-                    + base.CodeStepTest.ASK.split("\n", 3)[3] + "\n")
+CAP_FIELDS = {"status": "cap-reached", "iter": 2, "fixed": [],
+              "findings_remaining": [{"finding": "the rounding stays open", "file_line": "backend/src/orders.ts:1"}]}
+CAP = json.dumps(CAP_FIELDS)
+CAP_WITH_ASK = json.dumps({**CAP_FIELDS, "ask": [base.CodeStepTest.ASK_ENTRY]})
+BLOCKER_WITH_ASK = json.dumps({"status": "critical-blocker", "iter": 1,
+                               "blockers": [{"finding": "the rounding is broken",
+                                             "file_line": "backend/src/orders.ts:1"}],
+                               "ask": [base.CodeStepTest.ASK_ENTRY]})
 
 
 class CapReachedTest(base.CodeStepTest):

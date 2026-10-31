@@ -14,7 +14,9 @@ from code_step_core import TICKET_ID, script_command
 # Every flag `start` reads besides --help. --task makes the rest of the words task text; a value
 # flag takes the next word as its value.
 TASK_FLAG = "--task"
-VALUE_FLAGS = ("--task-file", "--phase", "--repo")
+GATE_EVIDENCE_FLAG = "--gate-evidence"
+GATE_EVIDENCE_SHAPE = "<who>, <when>: <quoted text>"
+VALUE_FLAGS = ("--task-file", "--phase", "--repo", GATE_EVIDENCE_FLAG)
 SWITCH_FLAGS = ("--restart", "--headless", "--coder-stopped")
 START_MODIFIERS = ("+fast", "+deep")
 START_FLAGS = (TASK_FLAG, *VALUE_FLAGS, *SWITCH_FLAGS, *START_MODIFIERS)
@@ -292,14 +294,6 @@ def carry_run_notes(parsed, saved_plan=None):
         return parsed
 
     return carry_plan_with_notes(parsed, plan_words[0], phase_id, " ".join(text_words))
-
-
-def run_notes_lines(run_notes):
-    # The coder brief's lines for the user's run notes.
-    if not run_notes:
-        return []
-
-    return ["", "Run notes from the user. They bind this run; the plan stays the spec:", run_notes]
 
 
 def outside_repo_plan_refusal(repo_dir, parsed, repo_flags):

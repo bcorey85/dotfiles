@@ -3,13 +3,10 @@
 
   PostToolUse(Agent): a coder dispatch is recorded with the id of the agent it ran.
   PreToolUse(Bash):   `git commit` in a dirty session is denied, with the reason telling the session to run /review
-                      and commit after it converges; `review-gate-mark clean` records the reviewed tree
-                      and `dirty` replaces the state with one dirty event.
-                      `clean` is denied unless this session's latest stored review-loop hand-back (handback.py) is
-                      converged or deferred.
+                      and commit after it converges. A review's hand-back (handback.py) is what earns the credit.
 
 A coder dispatch makes dirty each repo its transcript shows it edited through the EDIT_TOOL_PATH_KEYS tools, and every
-repo when no edited file lies in a repo, its transcript cannot be read or it has no agent id. A `dirty` mark makes
+repo when no edited file lies in a repo, its transcript cannot be read or it has no agent id. A dirty event makes
 every repo dirty. A commit is judged when a repo it commits in is dirty.
 
 A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
@@ -55,9 +52,11 @@ A dirty session still commits in four more cases, each checked against something
   - the commit concludes a merge (the repo it commits in has a MERGE_HEAD)
   - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), so work
     that converged in /code's review-loop, or in /review, commits after a later coder dispatch that edited nothing
-  - the session's latest review-loop hand-back is current, converged or deferred, came after the coder work that
-    made the session dirty, and answers a review-loop dispatch of that repo (its `repo:` line, else the session
-    cwd), however the run that launched the loop closed.
+  - the session's latest review-loop hand-back for that repo is current, converged or deferred, and came after the
+    coder work that made the session dirty, however the run that launched the loop closed. A hand-back answers the
+    dispatch before it, and a review of another repo neither answers nor voids it. A dispatch's repo is the ROOT=
+    that review-scope printed in the loop, else its `repo:` line, else the first absolute path the prompt names,
+    else the session cwd; a ROOT= or `repo:` line in no work tree names no repo.
 The last three credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
 dir or work-tree option or variable, quotes and escapes resolved; a `.` counts after `if`, `then`, `elif`, `else`,
@@ -106,7 +105,6 @@ from shell_command import (
     quoted_positions,
     redirection_writes_file,
     resolved_command_words,
-    script_call_arguments,
     split_command_steps,
     split_simple_commands,
     substitution_spans,
@@ -134,8 +132,6 @@ QUOTES_AND_BACKSLASHES = re.compile(r"[\"'\\]")
 OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 # For a command shlex cannot read: git, then only option-like words with an optional value each, then commit.
 UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_VALUE + r")?)*[ \t]+commit\b(?!-)")
-MARK_SCRIPT = "review-gate-mark"
-MARK_STATES = ("clean", "dirty")
 GIT_TIMEOUT_SECONDS = 3
 NO_REVIEW_MARKER = "[no-review]"
 DOCS_FOLDER = "docs/"
@@ -520,7 +516,7 @@ def open_state_dir():
 
 def gate_events(state_file):
     """The state events, oldest first. A plain `dirty` line, and a line the gate cannot read, become a dirty event at
-    the file's last change. A leftover plain `clean` line is no event: the mark it records came before events."""
+    the file's last change. A leftover plain `clean` line is no event."""
     try:
         with open(state_file, "rb") as handle:
             lines = handle.read().decode("utf-8", "replace").splitlines()
@@ -603,8 +599,8 @@ def edited_repos_by_agent(events, transcript_path):
 
 
 def dirty_since(events, transcript_path, repo_top, edited_by_agent):
-    """When the work in repo_top became dirty: the latest dirty mark, or coder dispatch that edited repo_top, or None
-    when none did. A dirty mark stands for every repo. A coder counts for the repos its transcript shows it edited,
+    """When the work in repo_top became dirty: the latest dirty event, or coder dispatch that edited repo_top, or None
+    when none did. A dirty event stands for every repo. A coder counts for the repos its transcript shows it edited,
     and for every repo when edited_repos names none. It counts from its dispatch or its transcript's last change,
     whichever is later, since a background coder edits after its dispatch is recorded. A coder with no agent id on
     record counts as dirty now, in every repo, since its edits cannot be read."""
@@ -815,8 +811,8 @@ def concludes_merge(repo_dir):
 
 
 def review_handed_back_since(session, dirty_at, repo_top):
-    """True when the session's latest review-loop hand-back is current, converged or deferred, was stored after
-    `dirty_at`, and answers a dispatch that reviewed repo_top."""
+    """True when the session's latest review-loop hand-back for repo_top is current, converged or deferred, and was
+    stored after `dirty_at`. Reviews of other repos do not count."""
     if repo_top is None:
         return False
     try:
@@ -824,10 +820,9 @@ def review_handed_back_since(session, dirty_at, repo_top):
         import handback_store
     except ImportError:
         return False
-    if handback.false_clean_reason(session) is not None:
-        return False
-    seen = handback_store.latest(session)
-    if seen["dispatch"].get("repo") != repo_top:
+
+    seen = handback_store.latest_for_repo(session, repo_top)
+    if handback.standing_false_clean_reason(seen) is not None:
         return False
     handed_back_at = seen["handback"].get("ts")
     return isinstance(handed_back_at, (int, float)) and handed_back_at > dirty_at
@@ -846,7 +841,7 @@ def earns_credit(repo_dir, repo_top, dirty_at, session):
 
 
 def is_clear(repo_dir, events, transcript_path, session, edited_by_agent):
-    """True when a commit in repo_dir owes no review: no dirty mark or coder work of the session touched its repo,
+    """True when a commit in repo_dir owes no review: no dirty event or coder work of the session touched its repo,
     or the commit earns credit there. A repo_dir of None is never clear."""
     if repo_dir is None:
         return False
@@ -859,7 +854,7 @@ def is_clear(repo_dir, events, transcript_path, session, edited_by_agent):
 
 def repo_top_and_dirty_at(repo_dir, events, transcript_path, edited_by_agent):
     """repo_dir's top level as a string (None outside a work tree) and the latest time the session's work made it
-    dirty (None when no dirty mark or coder work touched it)."""
+    dirty (None when no dirty event or coder work touched it)."""
     repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
     repo_top_name = str(repo_top) if repo_top else None
     return repo_top_name, dirty_since(events, transcript_path, repo_top_name, edited_by_agent)
@@ -930,46 +925,10 @@ def check_commit(command, root, state_file, session):
     raise DenyError(commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_agent))
 
 
-def mark_in(command):
-    """The state (clean or dirty) a `review-gate-mark` call in the command sets, or None. Only a simple command
-    whose command word is the script counts, so a search or an echo that names it marks nothing."""
-    for arguments in script_call_arguments(command, MARK_SCRIPT):
-        if arguments and arguments[0] in MARK_STATES:
-            return arguments[0]
-    return None
-
-
-def apply_mark(mark, session, state_file):
-    """Record `review-gate-mark clean|dirty`. `clean` is denied without a converged or deferred hand-back, and
-    credits the tree of the repo the stored review dispatch ran on."""
-    if mark == "clean":
-        # Imported here, not at load: a missing module is an internal error on a `clean` mark only, and the
-        # commit check and the dirty mark keep working.
-        import handback
-        reason, reviewed_repo = handback.record_clean_review(session)
-        if reason:
-            raise DenyError(
-                f"[review-commit-gate] Gate not marked clean: {reason}. Only a converged or deferred review "
-                "hand-back from this session allows clean."
-            )
-        if not reviewed_repo:
-            print("[review-commit-gate] The stored review dispatch names no repo, so no tree was recorded as "
-                  "reviewed.", file=sys.stderr)
-        return
-    # A dirty mark stands for every repo, so it replaces the events before it.
-    with open(state_file, "w") as handle:
-        handle.write(json.dumps({"kind": "dirty", "ts": time.time()}) + "\n")
-
-
 def on_pre_tool_use(root, session, state_file):
-    """A commit command is checked and never also marks; any other command may mark."""
     command = jq_field(root, "tool_input", "command")
     if is_commit_command(command):
         check_commit(command, root, state_file, session)
-        return
-    marked = mark_in(command)
-    if marked:
-        apply_mark(marked, session, state_file)
 
 
 def run(raw, state):

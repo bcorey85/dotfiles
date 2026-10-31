@@ -35,6 +35,8 @@ Reading, 2026-10-27 intake: the coder output cost guard is closed as not tracked
 
 Reading, 2026-10-28 intake: NO CHANGE (0.35 per run against a 0.38 median), still held. The after window includes rows from the scripted loop's broken logger. The logger fix is on master; read the watch on rows written after the work machine installs it.
 
+Reading, 2026-10-29 intake: NO CHANGE (0.38 → 0.28 per run), still held. The after window still holds rows from the scripted loop's logger before its fix.
+
 ## Back-out
 
 Restore the four files from git.

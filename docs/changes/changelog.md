@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-703 changes
+705 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -27,6 +27,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [A plan impact no longer stops the review loop; all show once at the end](notes/2026-10-31-a-plan-impact-no-longer-stops-the-review-loop-all.md) [script/review-loop-script, script/review-fix, script/handback, script/plan-format, agent/review-loop, skill/review, skill/fix] A review keeps fixing past a plan question instead of stopping and repeating its first round, and the user hears about plan impacts once, after the result.
 * [The code-step state store moves out of code_step_core.py](notes/2026-10-30-the-code-step-state-store-moves-out-of-code-step.md) [script/code-step] code_step_core.py drops from 1525 to 1300 lines: the state file, the verb transaction and the session's repo list move to code_step_store.py with no behavior change, so the next code-step change has less to split first.
 * [Goal-blind research searches skip the ticket](notes/2026-10-30-goal-blind-research-searches-skip-the-ticket.md) [agent/goal-blind-researcher, agent/spec-research, agent/spec-questions, skill/eng-spec] goal-blind-researcher hands spec-research one exclude glob naming the task directory and the folder that holds the in-repo source ticket, spec-research drops Grep and Glob and puts the glob on every rg search, and both research children edit files only with Edit or Write, never sed -i.
 * [/review launches the scripted review loop](notes/2026-10-30-review-launches-the-scripted-review-loop.md) [skill/review, script/review-fix, script/review-loop-script, script/code-step, script/handback] The scripted review loop cut median review-loop cost 29% on the bench ($2.96 → $2.11); /review's own start is not benched and its cache-read watch reads it. A working-tree /review now runs that loop; the agent stays for handoff blocks, base=, file scope, +fast/+deep, iter=, a plan-impact re-dispatch and /fix. **cuts cost by 29% ($2.96 → $2.11)**
@@ -116,6 +117,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A test review whose fix items are not all tagged goes to the disposition call](notes/2026-10-31-a-test-review-whose-fix-items-are-not-all-tagged.md) [script/review-loop-script] A reviewer's fix item always reaches the coder: a reply the tagged-bullet parse cannot fully account for now goes to the disposition call instead of losing the items it skipped.
 * [Hand-back no longer waits on a nested agent that ended on an API error](notes/2026-10-30-hand-back-no-longer-waits-on-a-nested-agent-that.md) [script/handback, script/script-utils, script/review-loop-gate, script/open-child-gate] A review loop no longer waits on a nested reviewer that died on a usage limit, so it is not stuck behind a report that will never come; a clean packet whose latest dispatch of one reviewer kind died is denied.
 * [Self-location test skips the lint cache](notes/2026-10-30-self-location-test-skips-the-lint-cache.md) The self-location test skips `.ruff_cache`, so a lint run in the scripts folder no longer fails the full check on files no diff holds.
 * [shell-write-gate lets a script read a tracked file passed as an argument](notes/2026-10-30-shell-write-gate-lets-a-script-read-a-tracked-file.md) [script/shell-write-gate] An untracked script that writes only files it names itself can now take a tracked file as an argument; a script with a write target that may come from argv is still denied.

@@ -36,6 +36,66 @@ def parse(text):
     return plan_format.manual_verification(text, "plan.md")
 
 
+class PlanChangeMarkTest(unittest.TestCase):
+    def test_a_plan_impact_ask_is_marked_whatever_form_its_line_number_takes(self):
+        locations = {
+            "a line": "`app.py:13` ",
+            "a bare line": "app.py:13 ",
+            "a range": "`app.py:13-14` ",
+            "an en dash range": "`app.py:13\N{EN DASH}14` ",
+            "a list of ranges": "`backend/src/schema.ts:58-101,139-147` ",
+            "a list of lines": "`app.py:3,9` ",
+            "a tag after a range": "`app.py:3-5` [plan-drift] \N{EM DASH} ",
+            "a tag before a range": "[plan-drift] `app.py:3-5` ",
+        }
+        for name, location in locations.items():
+            with self.subTest(name):
+                marked = plan_format.PLAN_CHANGE_MARK.match(f"{location}plan impact: needs a column")
+                self.assertIsNotNone(marked)
+
+    def test_text_that_only_mentions_a_plan_impact_later_is_not_marked(self):
+        texts = ("`app.py:13-14` the limit is wrong; see the plan impact", "the plan holds", "app.py:13-x plan impact")
+        for text in texts:
+            with self.subTest(text):
+                self.assertIsNone(plan_format.PLAN_CHANGE_MARK.match(text))
+
+
+class ReportBlockTest(unittest.TestCase):
+    def test_a_block_is_the_header_and_its_indented_or_keyed_lines(self):
+        report = ("Cannot fix 1.\n**PLAN-IMPACT:**\n  assumed: a column\nfound: none\n  cause: toolkit\n\n"
+                  "BEHAVIOR: none\nPLAN-IMPACT: yes")
+
+        block = plan_format.plan_impact_block(report)
+
+        self.assertEqual("PLAN-IMPACT:\n  assumed: a column\n  found: none\n  cause: toolkit", block)
+
+    def test_a_plan_impact_block_is_found_in_each_shape_a_report_writes_it(self):
+        block = ("assumed: the table has a key\nfound: it has none\nchanges: add a migration\n"
+                 "acceptance_criteria: none")
+        shapes = {
+            "indented": "BEHAVIOR: none\nPLAN-IMPACT:\n  " + block.replace("\n", "\n  ") + "\nPLAN-IMPACT: yes",
+            "keys at column 0": "BEHAVIOR: none\nPLAN-IMPACT:\n" + block + "\ncause: toolkit\nPLAN-IMPACT: yes",
+            "bold header and a blank line": "PLAN-IMPACT:**\n\n  " + block.replace("\n", "\n  "),
+            "bold keys": ("**PLAN-IMPACT:**\n- **assumed:** a\n- **found:** b\n- **changes:** c\n"
+                          "- **acceptance_criteria:** none\n- **cause:** toolkit"),
+        }
+        causes = {"keys at column 0": "toolkit", "bold keys": "toolkit"}
+        for name, report in shapes.items():
+            with self.subTest(name):
+                found = plan_format.plan_impact_block(report)
+                self.assertIsNotNone(found)
+                self.assertEqual(causes.get(name, "plan"), plan_format.plan_impact_cause(found))
+                self.assertNotIn("block not found", found)
+                self.assertIn("assumed", found)
+                self.assertIn("changes", found)
+                self.assertIn("acceptance_criteria", found)
+                self.assertFalse(plan_format.changes_acceptance_criteria(found))
+
+    def test_a_bare_yes_line_gives_the_fallback_and_a_report_with_neither_gives_none(self):
+        self.assertTrue(plan_format.plan_impact_block("x\nPLAN-IMPACT: yes").startswith("PLAN-IMPACT: yes"))
+        self.assertIsNone(plan_format.plan_impact_block("nothing to report"))
+
+
 class BlockCauseTest(unittest.TestCase):
     def test_a_missing_cause_reads_as_plan_unless_it_is_required_and_a_toolkit_or_unknown_cause_stops(self):
         cases = {
@@ -1012,6 +1072,18 @@ class PlanFileEditTest(unittest.TestCase):
         self.assertEqual(["- 2026-10-25 (Phase 2): Adopt plan change. Ruled by Pat Signer at 2026-10-25 09:30.", "",
                           "  The ruling: use the new table", "", "  The disagreement:", "  assumed: one table",
                           "  found: two"], entry)
+
+    def test_the_resolved_texts_read_the_same_from_the_one_line_and_the_block_handoff(self):
+        carried = f"  {plan_format.CARRIED_FINDINGS_KEY}  # open\n    - finding one\n    - finding two\n"
+        one_line = "  plan_impact: RESOLVED - Adopt.\n" + carried
+        block = plan_format.resolved_block("the user ruled", "Adopt", "the user", "now", "do it", "found: a\nfound: b")
+        block_form = "  plan_impact: |\n" + "".join(f"    {line}\n" for line in block.splitlines()) + carried
+
+        self.assertEqual(["plan_impact: RESOLVED - Adopt.", "finding one", "finding two"],
+                         plan_format.resolved_plan_texts(one_line))
+        self.assertEqual(["finding one", "finding two"], plan_format.resolved_plan_texts(block_form)[-2:])
+        self.assertIn("found: a found: b", plan_format.resolved_plan_texts(block_form))
+        self.assertEqual([], plan_format.resolved_plan_texts("  plan_impact: none\n" + carried))
 
     def test_a_ruling_entry_with_no_phase_leaves_the_phase_out(self):
         entry = plan_format.ruling_deviation(None, "Keep plan as written", "the session, not the user",

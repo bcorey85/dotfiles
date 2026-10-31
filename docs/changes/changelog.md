@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-726 changes
+728 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Press Enter in herdr panes stuck at the usage-limit reset prompt](notes/2026-10-31-press-enter-in-herdr-panes-stuck-at-the-usage.md) [script/herdr-wake-limited] A two-minute timer presses Enter in a Claude pane that shows the usage-limit reset prompt, so a worker the laptop slept past the reset continues within minutes instead of sitting idle.
 * [Toolkit edits show the component's settled results first](notes/2026-10-31-toolkit-edits-show-the-component-s-settled-results.md) [script/settled-lessons-hook] A PreToolUse hook on Write, Edit and MultiEdit shows a component's settled results before the session's first edit of it, so a settled result is not retested or reversed by accident.
 * [The changes index lists what we tried and rejected](notes/2026-10-30-the-changes-index-lists-what-we-tried-and-rejected.md) docs/changes/index.md ends with a generated Tried and rejected section, one line per current HOLD or REMOVE finding, so a null result stays visible and is not rerun.
 * [Workers act on orchestrator go-aheads for branch-local steps](notes/2026-10-30-workers-act-on-orchestrator-go-aheads-for-branch.md) [rule/global-claude-md] The global CLAUDE.md says a worker acts on the named orchestrator's go-ahead for steps inside its own branch and never waits for the user on them; master, settings.json, CLAUDE.md files and hook-denied steps stay out.
@@ -122,6 +123,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [code-step resume goes on past an unreadable state file in the cwd checkout](notes/2026-10-31-code-step-resume-goes-on-past-an-unreadable-state.md) [script/code-step] A /code run in a sibling worktree finishes its steps when the session's own checkout holds another run's state file this code-step cannot read.
 * [Hand-back no longer waits on a nested agent that ended on an API error](notes/2026-10-30-hand-back-no-longer-waits-on-a-nested-agent-that.md) [script/handback, script/script-utils, script/review-loop-gate, script/open-child-gate] A review loop no longer waits on a nested reviewer that died on a usage limit, so it is not stuck behind a report that will never come; a clean packet whose latest dispatch of one reviewer kind died is denied.
 * [Staged-claim hook passes a reply that describes what it reads](notes/2026-10-30-staged-claim-hook-passes-a-reply-that-describes.md) [script/staged-claim-gate] The staged-claim Stop hook no longer blocks a reply that reports speech, such as "a reply that says files are staged", so a session can describe the hook without a false refusal. The subdirectory test now runs the passing path it names, and git_calls.py has its reading rules back.
 * [the full check does not pass a jest run that found no test](notes/2026-10-30-the-full-check-does-not-pass-a-jest-run-that-found.md) [script/check-output] A jest run that exits 0 after finding no test now reads as a run of no test, so the full check reports it unverified instead of passed.

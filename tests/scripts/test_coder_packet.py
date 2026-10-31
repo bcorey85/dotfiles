@@ -36,10 +36,32 @@ class CoderPacketTest(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True, capture_output=True)
         self.env = dict(os.environ, HOME=str(self.repo))
 
-    def packet(self, plan_text, phase_number):
+    def packet(self, plan_text, phase_number, *flag_words):
         (self.repo / "plan.md").write_text(plan_text)
-        return subprocess.run([sys.executable, str(PACKET), str(self.repo / "plan.md"), phase_number], cwd=self.repo,
-                              env=self.env, capture_output=True, text=True, timeout=60)
+        return subprocess.run([sys.executable, str(PACKET), str(self.repo / "plan.md"), phase_number, *flag_words],
+                              cwd=self.repo, env=self.env, capture_output=True, text=True, timeout=60)
+
+    def test_gate_evidence_opens_the_packet_with_the_release_as_the_caller_gave_it(self):
+        evidence = "the user, 2026-10-31: go ahead with phase 6"
+
+        result = self.packet(PLAN_WITH_A_DOTTED_PHASE_FIRST, WHOLE_ID, "--gate-evidence", evidence)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(result.stdout.startswith(f"Gate evidence, as the caller gave it: {evidence}\n"))
+        self.assertIn("do not ask for the release again", result.stdout)
+        self.assertIn(f"Packet for Phase {WHOLE_ID}.", result.stdout)
+
+    def test_a_packet_with_no_gate_evidence_names_no_gate(self):
+        result = self.packet(PLAN_WITH_A_DOTTED_PHASE_FIRST, WHOLE_ID)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("Gate evidence", result.stdout)
+
+    def test_a_blank_gate_evidence_is_refused(self):
+        result = self.packet(PLAN_WITH_A_DOTTED_PHASE_FIRST, WHOLE_ID, "--gate-evidence", " ")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("usage: coder_packet.py", result.stderr)
 
     def test_a_phase_reads_its_own_section_when_a_dotted_phase_of_the_same_prefix_comes_first(self):
         result = self.packet(PLAN_WITH_A_DOTTED_PHASE_FIRST, WHOLE_ID)
@@ -76,6 +98,28 @@ class CoderPacketTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("- src/lib/format.mts", result.stdout)
         self.assertNotIn("- src/lib/format.js", result.stdout)
+
+    def test_a_helper_folder_keeps_a_support_file_and_leaves_out_a_file_that_runs_alone(self):
+        (self.repo / "src" / "orders").mkdir(parents=True)
+        (self.repo / "tests" / "fixtures").mkdir(parents=True)
+        service_source = 'import { order } from "../../tests/fixtures/order";\n'
+        (self.repo / "src" / "orders" / "list.service.ts").write_text(service_source)
+        (self.repo / "tests" / "fixtures" / "order.ts").write_text("export const order = 1;\n")
+        (self.repo / "tests" / "fixtures" / "tests.py").write_text("pass\n")
+        (self.repo / "tests" / "fixtures" / "test_helpers.ts").write_text("export const helper = 1;\n")
+        (self.repo / "tests" / "fixtures" / "test_data.json").write_text("{}\n")
+        (self.repo / "tests" / "fixtures" / "Orders.Test.ts").write_text("export {};\n")
+        plan_naming_a_new_service = PLAN_WITH_A_DOTTED_PHASE_FIRST.replace(
+            "whole body", "Create `src/orders/new.service.ts`."
+        )
+
+        result = self.packet(plan_naming_a_new_service, WHOLE_ID)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("- tests/fixtures/test_helpers.ts", result.stdout)
+        self.assertIn("- tests/fixtures/test_data.json", result.stdout)
+        self.assertNotIn("tests/fixtures/tests.py", result.stdout)
+        self.assertNotIn("tests/fixtures/Orders.Test.ts", result.stdout)
 
     def test_a_phase_that_says_same_as_an_earlier_phase_gets_that_phases_lines(self):
         plan_with_a_reused_phase = PLAN_WITH_A_DOTTED_PHASE_FIRST.replace(

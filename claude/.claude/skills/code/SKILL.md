@@ -27,6 +27,8 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 **Waiting.** An `Agent` call returns at once and names an `agentId`. Then run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>` with the Bash timeout set to 600000; it prints the agent's report. When it prints `Still working`, run it again. Never end the run while an agent you dispatched works.
 
+**Run notes.** Text after the plan file or ticket id in the task text (other than `resume` and its answer) is the run notes. Put it, word for word, under the line `Run notes from the user. They bind this run; the plan stays the spec:` in the prompt of every coder you dispatch for the phase. The review loop's own fix coders do not get it.
+
 **Resume.** When the task text starts with `resume`, the rest is the user's answer to the last stop. Rebuild where the run stopped from `<run folder>/stop.md`, the plan's `## Phase Status`, `git status --short`, `<run folder>/handoff.txt` and `<run folder>/review.out` (the last review packet). Apply the answer to that stop, then go on from the step that stopped.
 
 **Plan impacts never stop the run.** A coder's `PLAN-IMPACT:` block and a review packet's plan impacts go on one list for the phase end. At the phase end, before the phase-boundary decision: an impact that changes no acceptance criterion is adopted with no question: a coder adds it as one line under the plan's `## Plan Deviations` (create it if absent) and makes the plan change. An impact that changes an acceptance criterion (a line in `acceptance-criteria.md` or a phase's Success Criteria) stays unapplied: show it in the phase-complete block under `Plan changes awaiting sign-off` (assumed → found → what changes), and the phase ends on a STOP. On resume, a coder records the user's answer, who signed off and the date, under `## Plan Deviations` and makes the change only when the user signed off.
@@ -66,7 +68,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      2. Phase 1, any risk tier → STOP, block B.
      3. A gate needed an exception, a `/fix` loop hit its cap, the coder flagged an ambiguity, or a plan change awaits sign-off → STOP, block B.
      4. `(risk: high)`, or no risk tag → STOP, block B.
-     5. The next phase's Phase Status line carries `— gate:` → STOP, block B, naming the condition.
+     5. The next phase's Phase Status line carries `— gate:` → STOP, block B, naming the condition. A resume or a start for that phase whose task text already holds the release (who sent it, when, and the words verbatim from the user's or outside session's own message) is no stop: dispatch the phase in one step with `--gate-evidence` (step 3).
      6. `(risk: low)` with all machine gates green → AUTO-ADVANCE, block A, then re-enter step 2 for the next phase in-session.
    - One phase or no phase headers → a single dispatch, still after the acceptance-criteria check.
 
@@ -74,7 +76,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    Before the dispatch, run `git rev-parse HEAD` and keep the sha as the phase base. Then, from the repo root, run `python3 ~/.claude/scripts/code/gate_commands.py <plan> <N>` (`-` as `<plan>` and `1` as `<N>` with no plan file) and set the hand-back gate with its lines: `python3 ~/.claude/scripts/code/coder_gate.py set <command>...`, each output line one quoted shell command. With no output lines, skip `set`. `set` refuses a whole-suite command; drop that command and set the rest.
 
-   Then run `python3 ~/.claude/scripts/code/coder_packet.py <plan> <N>` and put its whole output in the coder's prompt, below the phase line. With no plan file (a plain task or a pasted plan), skip `coder_packet.py` and put the task text in the coder's prompt in place of the phase line. Wait for the coder.
+   Then run `python3 ~/.claude/scripts/code/coder_packet.py <plan> <N>` and put its whole output in the coder's prompt, below the phase line. For a gated phase whose release the task text holds, add `--gate-evidence "<who>, <when>: <quoted text>"` to that command: the packet then opens with the evidence, and the coder does not ask for the release again. With no plan file (a plain task or a pasted plan), skip `coder_packet.py` and put the task text in the coder's prompt in place of the phase line. Wait for the coder.
 
    When the coder hands back, run `python3 ~/.claude/scripts/code/coder_gate.py clear` before anything else.
 
@@ -88,7 +90,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    - `critical-blocker` → STOP. Present `blockers`; do not mark the phase done.
    - `cap-reached` → STOP. Report `findings_remaining`; do not mark the phase done.
    - `deferred` → render as `converged`, plus `findings_remaining` under `### Deferred to branch exit`; proceed.
-   - `converged` → run `bash ~/.claude/scripts/review/review-gate-mark clean` first. Put any plan impacts the packet lists on the phase-end list. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). `nvim-jump` `ask[]` per `~/.claude/skills/_shared/nvim-jump.md` (each at its `file_line`, `--note` = its question), then present it as a STOP; when `ask[]` is empty, proceed to the phase gates at once. On resume, dispatch a `coder` for the accepted asks and wait for it, then log one row per ask:
+   - `converged` → put any plan impacts the packet lists on the phase-end list. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). `nvim-jump` `ask[]` per `~/.claude/skills/_shared/nvim-jump.md` (each at its `file_line`, `--note` = its question), then present it as a STOP; when `ask[]` is empty, proceed to the phase gates at once. On resume, dispatch a `coder` for the accepted asks and wait for it, then log one row per ask:
 
      ```bash
      bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \

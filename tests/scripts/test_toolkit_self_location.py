@@ -61,8 +61,6 @@ ALLOWED_HITS = [
     ("scripts/code/code_wait.py", "code_wait.py agent <agent id>", PRINTED),
     ("scripts/code/code_wait.py", "python3 ~/.claude/scripts/code/code_wait.py review", PRINTED),
     ("scripts/review/review_fix.py", "DECIDE_SCRIPT = ", PRINTED),
-    ("scripts/review/review_fix.py", "MARK_CLEAN = ", PRINTED),
-    ("scripts/review/review_fix.py", "MARK_DIRTY = ", PRINTED),
     ("scripts/review/review_fix.py", "After the user answers, run once", PRINTED),
     ("scripts/review/review_loop_gate.py", "handoff-block.md and dispatch again", PRINTED),
     ("scripts/telemetry/log-escape", "Run the ratchet (", PRINTED),

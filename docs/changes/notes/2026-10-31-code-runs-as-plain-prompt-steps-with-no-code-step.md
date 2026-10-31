@@ -4,7 +4,7 @@ change_type: "removed"
 title: "/code runs as plain prompt steps with no code-step script"
 description: "Running /code as plain prompt steps in its Sonnet fork cuts cost 15% ($7.86 → $6.66 a run, mean) with 13 of 13 checks passing in all 16 bench runs. The code-step script and its state, hooks and tests are removed; small standalone scripts keep the plan check, the concentration gate, the coder-report parse, the review start and the waits."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-31T15:13:42-05:00"}
-seq: 1
+seq: 3
 kind: "structured"
 components: ["skill/code", "script/code-step", "agent/code-fork", "skill/eng-spec", "agent/spec-criteria", "script/review-loop-script", "script/handback"]
 evidence: ["removal bench", "tests"]
@@ -34,6 +34,8 @@ Kept as small scripts under `scripts/code/`:
 Plan impacts never stop a phase mid-run. They collect on a phase-end list. One with no criterion change becomes a `## Plan Deviations` line, written by a coder, with no question. One that changes a criterion stays unapplied and shows under "Plan changes awaiting sign-off", and the phase ends on a stop.
 
 Closing phases invoke their named skill, and a coder writes the evidence lines.
+
+Carried over from the integrate branch: a gated phase whose release the task text holds starts in one step, with `coder_packet.py <plan> <N> --gate-evidence "<who>, <when>: <quoted text>"` opening the packet with the evidence. The run notes after the plan go into every coder prompt the fork writes for the phase. The test-file rules stay owned by `source_paths`, which `gate_commands.py` and `coder_packet.py` read.
 
 ## Evidence
 

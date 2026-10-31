@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-704 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+726 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
 Latest change: 2026-10-31, [/code runs as plain prompt steps with no code-step script](notes/2026-10-31-code-runs-as-plain-prompt-steps-with-no-code-step.md).
 

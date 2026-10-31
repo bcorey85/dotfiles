@@ -13,7 +13,7 @@ The implementation-plan artifact contract. Producer `/eng-spec`; consumers `/cod
 
 - `## Phase Status` is mandatory — never delete it. Consumers find it by HEADING, not position (hoisted to top in `spec.md`).
 - Every Phase Status line carries a `(risk: low|high)` tag.
-- A phase that cannot start until an outside event (another branch merged, a flag turned on) appends `— gate: <condition>` to its Phase Status line. `/code` stops before a gated phase and names the condition.
+- A phase that cannot start until an outside event (another branch merged, a flag turned on) appends `— gate: <condition>` to its Phase Status line. `/code` stops before a gated phase and names the condition, unless the task text already holds the release (who sent it, when, and their words verbatim): then the phase starts in one step and the coder packet carries that evidence.
 - A phase moved to another ticket is marked `- [-] Phase N: <title> — moved to <KEY>`. A `## Plan Deviations` line names `Phase N` and `<KEY>` with the user's sign-off (who and when). `/code` never runs it, and `/verify-branch` does not check it.
 - A plan lists a rule's case table as tests at one layer only. Each other entry point that applies the rule gets one wiring test, never the case table again.
 - Phases are VERTICAL slices (each independently verifiable end-to-end),

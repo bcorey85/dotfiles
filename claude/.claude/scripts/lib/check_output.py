@@ -42,6 +42,8 @@ TESTS_FAILED = re.compile(r"\b\d+ failed\b")
 PYTEST_NO_TESTS_CODE = 5
 NO_TESTS_RAN_OUTPUT = re.compile(r"No test(?: file)?s found, exiting with code [1-9]|(?i:\bno tests ran\b)"
                                  r"|(?m:^Ran 0 tests\b)")
+# A run that found no test and still exited 0: jest's `--passWithNoTests` line and its zero-total summary.
+NO_TESTS_EXIT_ZERO = re.compile(r"No test(?: file)?s found, exiting with code 0|(?m:^Tests:\s+0 total\b)")
 # The line a runner prints for one failed test: pytest `FAILED `/`ERROR ` summary lines, unittest and Django
 # `FAIL: `/`ERROR: ` lines, vitest, jest and nextest `FAIL ` lines, lines that start with the multiplication sign,
 # cargo's `test <name> ... FAILED` lines and a Rust test thread's panic line. unittest's final `FAILED (failures=1)`
@@ -277,7 +279,10 @@ def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     if PACKAGE_MANAGER_MISMATCH.search(output):
         return True
 
-    ran_no_test = code == PYTEST_NO_TESTS_CODE or NO_TESTS_RAN_OUTPUT.search(output)
+    # The no-test lines a run prints at exit 0 count only at exit 0: beside another step's non-zero exit, that step is
+    # the reason.
+    ran_no_test = (code == PYTEST_NO_TESTS_CODE or NO_TESTS_RAN_OUTPUT.search(output)
+                   or (code == 0 and NO_TESTS_EXIT_ZERO.search(output)))
     if ran_no_test and not failing_test_lines(output):
         return True
 
@@ -305,7 +310,7 @@ def check_verdict(command, code, output):
     while a runner summary reports failures, whatever the command: a wrapper swallowed the runner's exit code, or the
     command printed a log), NO_TESTS_RAN (exit 0 from a test command whose output says no test ran: a filter that
     matched nothing, judged only for a command with a step that can print its own summary
-    (`prints_own_runner_summary`), or `Ran 0 tests`) or NOT_RUN (`code` None: the command
+    (`prints_own_runner_summary`), `Ran 0 tests`, or jest finding none) or NOT_RUN (`code` None: the command
     timed out). It judges the exit code and the output only; whether a failure is a setup fault or a defect is for the
     caller."""
     if code is None:
@@ -318,6 +323,6 @@ def check_verdict(command, code, output):
         return FAILED_EXIT_ZERO
     if prints_own_runner_summary(command) and matches_no_test(command, code, output):
         return NO_TESTS_RAN
-    if runs_tests(command) and NO_TESTS_RAN_OUTPUT.search(output):
+    if runs_tests(command) and (NO_TESTS_RAN_OUTPUT.search(output) or NO_TESTS_EXIT_ZERO.search(output)):
         return NO_TESTS_RAN
     return PASSED

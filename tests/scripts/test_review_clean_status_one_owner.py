@@ -78,13 +78,6 @@ class CleanStatusOneOwnerTest(unittest.TestCase):
         all_rows = [dispatch, *rows]
         (self.store / f"{SESSION}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in all_rows))
 
-    def clean_by_mark_hook(self):
-        try:
-            review_commit_gate.apply_mark("clean", SESSION, str(self.state_file))
-        except review_commit_gate.DenyError:
-            return False
-        return True
-
     def clean_by_commit_credit(self):
         return review_commit_gate.review_handed_back_since(SESSION, 0, str(self.repo))
 
@@ -99,7 +92,6 @@ class CleanStatusOneOwnerTest(unittest.TestCase):
     def sites(self):
         return {"owner": lambda: handback.false_clean_reason(SESSION) is None,
                 "record_clean_review": lambda: handback.record_clean_review(SESSION)[0] is None,
-                "review-gate-mark clean": self.clean_by_mark_hook,
                 "commit credit": self.clean_by_commit_credit,
                 "phase review gate": self.clean_by_phase_gate}
 

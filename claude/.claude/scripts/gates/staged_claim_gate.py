@@ -8,12 +8,14 @@ clause (clauses split at `,`, `;`, `:`, `and`, `but`, `so`), and no `row`, `reco
 (or plural) as the word just before the claim, in a clause that names no `file`, unless the sentence also names
 `index` or `git`: that is review data, not the index.
 
-Two forms are not claims, judged on the clause up to the claim. A `stay` or `remain` claim whose clause already says
-`staged` describes behavior ("files you staged stay staged"). A claim whose clause names another session, agent,
-worker or peer, or opens with a possessive peer, worker or coordinator ("the coordinator's files"), or with one as
-the whole subject of `left staged`, reports that actor's work. Neither exception covers `I staged`, `I've staged` or
-`I have staged`, which are judged by the review-data rule like any other claim. Spans in double quotes (straight or
-curly) or backticks on one line are dropped only when they hold a whole claim.
+Three forms are not claims, judged on the clause up to the claim. A `stay` or `remain` claim whose clause already says
+`staged` describes behavior ("files you staged stay staged"). A claim whose clause holds `say`, `said`, `claim` or
+their inflections as a word of its own reports speech ("a reply that says files are staged"); the speech form does not
+cover a speech verb that `I` or `we` come before. A claim whose clause names another session, agent, worker or peer,
+or opens with a possessive peer, worker or coordinator ("the coordinator's files"), or with one as the whole
+subject of `left staged`, reports that actor's work. None of these covers `I staged`,
+`I've staged` or `I have staged`, which are judged by the review-data rule like any other claim.
+Spans in double quotes (straight or curly) or backticks on one line are dropped only when they hold a whole claim.
 
 The claim is checked against `git diff --cached --name-only` in the repo of each existing absolute path the
 sentence names, else in the repo of the session cwd. It blocks when that index is empty, or when a file the sentence
@@ -57,17 +59,13 @@ OTHER_ACTOR = re.compile(r"\b(?:another|other)\s+(?:sessions?|agents?|workers?|p
 # The same actor as the whole clause: it reports work only for `left staged` ("the worker left staged a list"),
 # since "the worker is staged" says the actor itself is staged.
 BARE_ACTOR = re.compile(r"^\s*(?:(?:the|a)\s+)?(?:peers?|coordinator|workers?)\s*$", re.I)
+# A word on its own, so the name `staged-claim` is no report of speech.
+REPORTED_SPEECH = re.compile(r"(?<![\w/-])(?:says?|said|saying|claims?|claimed|claiming)(?![\w/-])", re.I)
+FIRST_PERSON = re.compile(r"\b(?:I|[Ww]e)\b")
 QUOTED_SPAN = re.compile(r'"[^"\n]*"|“[^”\n]*”|`[^`\n]*`')
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
 # A word that looks like a file path: `a.txt`, `docs/x.md`, `/abs/path`.
 PATH_WORD = re.compile(r"(?<![\w/.-])(?:/|\.{1,2}/)?[\w-]+(?:[./][\w-]+)+")
-
-
-def work_tree_top(path):
-    """The real path of the work tree that holds path, a file or a directory, or None outside one."""
-    directory = path if os.path.isdir(path) else os.path.dirname(path)
-    top = script_utils.repo_root(directory)
-    return os.path.realpath(top) if top else None
 
 
 @functools.cache
@@ -83,7 +81,7 @@ def session_staging_trees(transcript_path, cwd):
 
     trees = set()
     for directory in directories:
-        top = work_tree_top(directory) if os.path.isdir(directory) else None
+        top = script_utils.work_tree_top(directory) if os.path.isdir(directory) else None
         if top:
             trees.add(top)
     return trees
@@ -121,6 +119,9 @@ def is_index_claim(sentence, claim):
             return False
         if claim.group("lasting") and STAGED_WORD.search(clause):
             return False
+        speech = REPORTED_SPEECH.search(clause)
+        if speech and not FIRST_PERSON.search(clause[:speech.start()]):
+            return False
 
     names_review_data = REVIEW_DATA_SUBJECT.search(clause) and not FILE_WORD.search(clause)
     return not names_review_data or bool(GIT_INDEX.search(sentence))
@@ -156,7 +157,8 @@ def sentence_problems(sentence, cwd, transcript_path):
     files = named_files(sentence, cwd)
     absolute = [os.path.realpath(word) for word in PATH_WORD.findall(sentence)
                 if word.startswith("/") and os.path.exists(word)]
-    tops = {top for top in map(work_tree_top, absolute) if top} or {work_tree_top(cwd)} - {None}
+    named_tops = {top for top in map(script_utils.work_tree_top, absolute) if top}
+    tops = named_tops or {script_utils.work_tree_top(cwd)} - {None}
 
     problems = []
     for top in sorted(tops):

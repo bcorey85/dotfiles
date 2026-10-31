@@ -68,6 +68,24 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual({"A": "1", "B": "two words", "C": "x y", "D": ""}, self.stored_gate()["env"])
         self.assertEqual(["python3 -m pytest tests/test_one.py"], self.stored_gate()["commands"])
 
+    def test_help_after_any_verb_prints_usage_and_sets_no_gate(self):
+        for arguments in (("set", "--help"), ("set", "-h"), ("set", "python3 -m pytest tests/test_one.py", "--help"),
+                          ("--help",), ("summary", "-h")):
+            with self.subTest(arguments=arguments):
+                done = subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), *arguments], cwd=self.repo,
+                                      env=self.env, capture_output=True, text=True)
+
+                self.assertEqual(0, done.returncode, done.stderr)
+                self.assertIn("usage: coder_gate.py", done.stdout)
+                self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
+    def test_a_stored_command_that_ends_in_a_help_flag_is_not_read_as_help(self):
+        done = self.gate_set("python3 -m pytest tests/test_one.py -h")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual(["python3 -m pytest tests/test_one.py -h"],self.stored_gate()["commands"])
+        self.assertNotIn("usage:", done.stdout)
+
     def test_set_refuses_a_word_that_is_not_a_variable_assignment(self):
         for word in ("not-an-assignment", "A=1 B=2", "=1", "A='unclosed"):
             with self.subTest(word=word):

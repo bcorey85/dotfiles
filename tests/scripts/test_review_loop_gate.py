@@ -413,6 +413,40 @@ class StopRowTest(unittest.TestCase):
         self.stop_in_session([*resumed, message], store)
         self.assertEqual(self.open_counts(store), [1, 0, 0])
 
+    def test_a_background_resume_whose_agent_ended_on_an_api_error_is_closed_and_a_later_report_still_closes_it(self):
+        store = self.new_store()
+        resumed = resume_background_coder()
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        error_record = json.loads((FIXTURES / "subagent_api_error_last_record.json").read_text(encoding="utf-8"))
+        pathlib.Path(folder.name, "agent-a5bc2ebfa0d6aeaf8.jsonl").write_text(json.dumps(error_record) + "\n",
+                                                                              encoding="utf-8")
+        loop_path = os.path.join(folder.name, "loop.jsonl")
+
+        for records in (resumed, [*resumed, notification("toolu_resume")]):
+            with open(loop_path, "w", encoding="utf-8") as loop_file:
+                loop_file.write("".join(json.dumps(record) + "\n" for record in records))
+            self.stop_in_session(records, store, transcript_path=loop_path)
+
+        self.assertEqual(self.open_counts(store), [0, 0])
+
+    def test_a_dead_background_code_reviewer_records_no_open_dispatch_and_the_stop_is_not_blocked(self):
+        store = self.new_store()
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        error_record = json.loads((FIXTURES / "subagent_api_error_last_record.json").read_text(encoding="utf-8"))
+        pathlib.Path(folder.name, "agent-a7bf12f9c51bc4875.jsonl").write_text(json.dumps(error_record) + "\n",
+                                                                              encoding="utf-8")
+        loop_path = os.path.join(folder.name, "loop.jsonl")
+        records = coder_and_background_reviewer()
+        pathlib.Path(loop_path).write_text("".join(json.dumps(record) + "\n" for record in records),
+                                           encoding="utf-8")
+
+        stopped = self.stop_in_session(records, store, transcript_path=loop_path)
+
+        self.assertEqual(stopped.stdout, "")
+        self.assertEqual(self.open_counts(store), [0])
+
     def test_a_shell_moved_to_the_background_is_open_until_its_task_notification(self):
         for fixture_name in ("loop_shell_moved_to_background_by_timeout.jsonl", "loop_shell_run_in_background.jsonl"):
             with self.subTest(fixture_name):
@@ -970,11 +1004,14 @@ LOG_METRICS = "~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0
 
 
 class MetricsTimingTest(unittest.TestCase):
-    def metrics_hook(self, records, command=LOG_METRICS, agent_type="review-loop"):
-        """The gate's stdout for a Bash call from a loop whose transcript holds these records."""
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        path = os.path.join(tmp.name, "loop.jsonl")
+    def metrics_hook(self, records, command=LOG_METRICS, agent_type="review-loop", folder=None):
+        """The gate's stdout for a Bash call from a loop whose transcript holds these records, kept in `folder`
+        (a new temp folder when None)."""
+        if folder is None:
+            tmp = tempfile.TemporaryDirectory()
+            self.addCleanup(tmp.cleanup)
+            folder = tmp.name
+        path = os.path.join(folder, "loop.jsonl")
         with open(path, "w", encoding="utf-8") as fh:
             for rec in records:
                 fh.write(json.dumps(rec) + "\n")
@@ -998,6 +1035,17 @@ class MetricsTimingTest(unittest.TestCase):
         records = [user("mode: review-first"), dispatch("toolu_rev", "code-reviewer"),
                    result("toolu_rev", ASYNC_RESULT)]
         self.assert_denied(self.metrics_hook(records))
+
+    def test_metrics_call_passes_after_a_background_reviewer_died_on_an_api_error_unreported(self):
+        error_record = json.loads((FIXTURES / "subagent_api_error_last_record.json").read_text(encoding="utf-8"))
+        records = [user("mode: review-first"), dispatch("toolu_rev", "code-reviewer"),
+                   result("toolu_rev", ASYNC_RESULT)]
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        pathlib.Path(folder.name, "agent-a7bf12f9c51bc4875.jsonl").write_text(json.dumps(error_record) + "\n",
+                                                                              encoding="utf-8")
+
+        self.assertEqual("", self.metrics_hook(records, folder=folder.name))
 
     def test_metrics_call_after_the_reviewer_reported_passes(self):
         records = [user("mode: review-first"), dispatch("toolu_rev", "code-reviewer"),

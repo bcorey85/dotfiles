@@ -20,6 +20,10 @@ import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("HANDBACK_SCRIPT") or toolkit_paths.REVIEW_DIR / "handback.py")
 SESSION = "sess-1"
+# A synthesized copy of the last record of a subagent transcript that stopped on a usage limit error.
+API_ERROR_LAST_RECORD = json.loads(
+    (pathlib.Path(__file__).resolve().parent / "fixtures" / "subagent_api_error_last_record.json").read_text(
+        encoding="utf-8"))
 
 spec = importlib.util.spec_from_file_location("handback_under_test", str(SCRIPT))
 handback = importlib.util.module_from_spec(spec)
@@ -78,6 +82,18 @@ class HandbackTestBase(unittest.TestCase):
         if calling_agent_id:
             event.update({"agent_type": "review-loop", "agent_id": calling_agent_id})
         self.assertEqual(self.run_cli(["hook", "dispatch"], json.dumps(event))[:2], (0, ""))
+
+    def capped_packet_on_a_fresh_repo(self):
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@t"}
+        for argv in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "base"]):
+            subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
+        tree = reviewed_tree.fingerprint(str(repo))[1]
+        capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
+                             full_check="passed", full_check_tree=tree)
+        return repo, capped
 
 
 class ParseTest(HandbackTestBase):
@@ -1137,18 +1153,6 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
         self.assertIsNone(handback.false_clean_reason(SESSION))
 
-    def capped_packet_on_a_fresh_repo(self):
-        repo = self.tmp / "repo"
-        repo.mkdir()
-        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
-               "GIT_COMMITTER_EMAIL": "t@t"}
-        for argv in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "base"]):
-            subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
-        tree = reviewed_tree.fingerprint(str(repo))[1]
-        capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
-                             full_check="passed", full_check_tree=tree)
-        return repo, capped
-
     def test_a_capped_packet_that_reads_deferred_is_flagged_by_its_effective_status(self):
         repo, capped = self.capped_packet_on_a_fresh_repo()
         self.dispatch("review-loop", prompt=f"repo: {repo}\n")
@@ -1324,10 +1328,10 @@ def refused_logger_result(tool_use_id):
                             "content": [{"type": "text", "text": "log-review-metrics: failed"}]}, "user")
 
 
-def background_reviewer_launch(tool_use_id, agent_id):
-    """A code-reviewer dispatch and the result that says it runs in the background."""
+def background_reviewer_launch(tool_use_id, agent_id, subagent_type="code-reviewer"):
+    """A reviewer dispatch and the result that says it runs in the background."""
     launch = transcript_line({"type": "tool_use", "id": tool_use_id, "name": "Agent",
-                              "input": {"subagent_type": "code-reviewer", "prompt": "review"}})
+                              "input": {"subagent_type": subagent_type, "prompt": "review"}})
     launched = transcript_line({"type": "tool_result", "tool_use_id": tool_use_id,
                                 "content": [{"type": "text", "text": f"Async agent launched\nagentId: {agent_id}"}]},
                                "user")
@@ -1457,6 +1461,172 @@ class OneCheckedHandBackTest(HandbackTestBase):
                 self.assertEqual(decision["permissionDecision"], "deny")
                 self.assertIn("background", decision["permissionDecisionReason"])
                 self.assertEqual(self.handback_rows(), [])
+
+    def plant_reviewer_transcript(self, last_record):
+        """The reviewer's own transcript, kept beside the loop's, ending on `last_record`."""
+        records = [{"type": "assistant", "message": {"role": "assistant", "content": []}}, last_record]
+        (self.tmp / "agent-arev.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+
+    def test_a_plan_impact_hand_back_passes_when_the_background_reviewer_ended_on_an_api_error_and_never_reported(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+
+        self.assertEqual(self.hand_back_plan_impact(background_reviewer_launch("t2", "arev")), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def hand_back_plan_impact(self, steps):
+        """A hand-back that owes no review, so only the open-work gate can deny it."""
+        message = "status: plan-impact\niter: 1\nspec_iter: 0\nplan_impact: assumed a, found b\n"
+        metrics = ledger_call("tl1", METRICS_ROW.replace("fixed=1", "fixed=0"))
+        return self.hand_back([*steps, metrics], message=message, unchecked=True, ledger=False)
+
+    def test_a_clean_hand_back_is_denied_when_the_latest_reviewer_died_and_tells_the_loop_to_dispatch_it_again(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        cases = {"died unreported": background_reviewer_launch("t2", "arev"),
+                 "died after a notification": [*background_reviewer_launch("t2", "arev"), task_notification("t2")]}
+
+        for name, steps in cases.items():
+            with self.subTest(name):
+                shutil.rmtree(self.store, ignore_errors=True)
+                self.dispatch_loop_agents()
+                out = self.hand_back(steps)
+
+                decision = json.loads(out)["hookSpecificOutput"]
+                self.assertEqual(decision["permissionDecision"], "deny")
+                self.assertEqual(decision["permissionDecisionReason"], handback_hook.DEAD_REVIEWER_REASON)
+                self.assertEqual(self.handback_rows(), [])
+
+    def test_a_clean_hand_back_repeated_on_the_same_dead_reviewer_passes_flagged_as_not_reviewed(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        steps = background_reviewer_launch("t2", "arev")
+
+        denied = self.hand_back(steps)
+        repeated = self.hand_back(steps)
+
+        reason = json.loads(denied)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual(reason, handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(repeated, "")
+        rows = self.handback_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["no_reviewer"])
+        self.assertTrue(handback.false_clean_reason(SESSION))
+        self.assertEqual(handback_store.unreviewed_streak(SESSION), 1)
+
+    def test_a_second_dead_dispatch_after_the_first_was_denied_is_denied_once_more_then_passes_flagged(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        records = [{"type": "assistant", "message": {"role": "assistant", "content": []}}, API_ERROR_LAST_RECORD]
+        (self.tmp / "agent-arev2.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+        first = background_reviewer_launch("t2", "arev")
+        second = [*first, *background_reviewer_launch("t3", "arev2")]
+
+        self.hand_back(first)
+        denied_again = self.hand_back(second)
+        passed = self.hand_back(second)
+
+        reason = json.loads(denied_again)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual(reason, handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(passed, "")
+        self.assertTrue(self.handback_rows()[0]["no_reviewer"])
+
+    def test_a_dead_reviewer_denied_once_then_re_dispatched_and_reported_passes_as_reviewed(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        died = background_reviewer_launch("t2", "arev")
+        self.hand_back(died)
+
+        redispatched = [*died, *background_reviewer_launch("t3", "arev2"), task_notification("t3")]
+        out = self.hand_back(redispatched)
+
+        self.assertEqual(out, "")
+        self.assertFalse(self.handback_rows()[0]["no_reviewer"])
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+
+    def test_a_clean_hand_back_is_denied_when_one_reviewer_kind_died_though_another_kind_reported(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        steps = [*background_reviewer_launch("t2", "arev"), task_notification("t2"),
+                 *background_reviewer_launch("t3", "atest", "test-reviewer"), task_notification("t3")]
+
+        out = self.hand_back(steps)
+
+        decision = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertEqual(decision["permissionDecisionReason"], handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(self.handback_rows(), [])
+
+    def test_a_capped_packet_that_reads_deferred_is_denied_when_the_latest_reviewer_died(self):
+        repo, capped = self.capped_packet_on_a_fresh_repo()
+        self.dispatch("review-loop", prompt=f"repo: {repo}\n")
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        steps = [*background_reviewer_launch("t2", "arev"), task_notification("t2")]
+
+        out = self.hand_back(steps, message=capped, cwd=str(repo))
+
+        decision = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecisionReason"], handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(self.handback_rows(), [])
+
+    def test_a_clean_hand_back_passes_when_a_later_reviewer_reported_after_an_earlier_one_died(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        steps = [*background_reviewer_launch("t2", "arev"), task_notification("t2"),
+                 *background_reviewer_launch("t3", "arev2"), task_notification("t3")]
+
+        self.assertEqual(self.hand_back(steps), "")
+
+    def test_a_clean_hand_back_passes_when_a_background_coder_died(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        steps = [*background_reviewer_launch("t2", "arev", "coder"), *background_reviewer_launch("t3", "arev2"),
+                 task_notification("t3")]
+
+        self.assertEqual(self.hand_back(steps), "")
+
+    def test_a_clean_hand_back_passes_when_a_deep_reviewer_reported_after_the_base_reviewer_died(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        steps = [*background_reviewer_launch("t2", "arev"), task_notification("t2"),
+                 *background_reviewer_launch("t3", "adeep", "code-reviewer-deep"), task_notification("t3")]
+
+        self.assertEqual(self.hand_back(steps), "")
+
+    def test_a_clean_hand_back_passes_when_a_foreground_reviewer_reported_after_a_background_one_died(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+        foreground = transcript_line({"type": "tool_use", "id": "t3", "name": "Agent",
+                                      "input": {"subagent_type": "code-reviewer", "prompt": "review"}})
+        reported = transcript_line({"type": "tool_result", "tool_use_id": "t3",
+                                    "content": [{"type": "text", "text": "No findings."}]}, "user")
+        steps = [*background_reviewer_launch("t2", "arev"), task_notification("t2"), foreground, reported]
+
+        self.assertEqual(self.hand_back(steps), "")
+
+    def resumed_reviewer_steps(self):
+        """A reviewer launched and notified, then resumed in the background with a SendMessage."""
+        send = transcript_line({"type": "tool_use", "id": "ts1", "name": "SendMessage",
+                                "input": {"to": "arev", "message": "again"}})
+        resumed = transcript_line({"type": "tool_result", "tool_use_id": "ts1", "content": [
+            {"type": "text", "text": json.dumps({"success": True, "resumedAgentId": "arev"})}]}, "user")
+        return [*background_reviewer_launch("t2", "arev"), task_notification("t2"), send, resumed]
+
+    def test_a_hand_back_passes_when_the_resumed_reviewer_ended_on_an_api_error(self):
+        self.plant_reviewer_transcript(API_ERROR_LAST_RECORD)
+
+        self.assertEqual(self.hand_back_plan_impact(self.resumed_reviewer_steps()), "")
+        self.assertEqual(len(self.handback_rows()), 1)
+
+    def test_a_hand_back_is_denied_while_the_resumed_reviewer_wrote_a_later_record(self):
+        self.plant_reviewer_transcript({"type": "assistant", "message": {"role": "assistant", "content": []}})
+
+        out = self.hand_back(self.resumed_reviewer_steps())
+
+        decision = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("background", decision["permissionDecisionReason"])
+        self.assertEqual(self.handback_rows(), [])
+
+    def test_a_hand_back_is_denied_while_the_background_reviewer_is_still_running(self):
+        self.plant_reviewer_transcript({"type": "assistant", "message": {"role": "assistant", "content": []}})
+
+        out = self.hand_back(background_reviewer_launch("t2", "arev"))
+
+        decision = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("background", decision["permissionDecisionReason"])
+        self.assertEqual(self.handback_rows(), [])
 
     def test_a_hand_back_after_the_background_reviewer_reported_passes(self):
         steps = [*background_reviewer_launch("t1", "arev"), task_notification("t1")]
@@ -1612,9 +1782,10 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         with unittest.mock.patch.object(handback_hook.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
-            reason = handback_hook.transcript_gate_reason(event, SESSION, "a1", CONVERGED, packet)
+            reason, reviewer_dead = handback_hook.transcript_gates(event, SESSION, "a1", CONVERGED, packet, "converged")
 
         self.assertEqual(reason, handback_hook.loop_transcript.PLAN_EDIT_REASON.format(plan="docs/plans/orders.md"))
+        self.assertFalse(reviewer_dead)
         self.assertIn("full-check gate skipped", stderr.getvalue())
 
     def test_a_second_hand_back_from_an_agent_with_a_stored_report_is_denied_and_adds_no_row(self):

@@ -71,6 +71,16 @@ class OpenChildGateTest(unittest.TestCase):
         self.assertEqual(proc.stdout, "")
         self.assertEqual(proc.stderr, "")
 
+    def test_hand_back_passes_when_the_child_ended_on_an_api_error(self):
+        child_log = os.path.join(os.path.dirname(self.transcript), "agent-a7bf12f9c51bc4875.jsonl")
+        with open(child_log, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "assistant", "isApiErrorMessage": True}) + "\n")
+
+        proc = self.hand_back([launch("toolu_r"), launch_result("toolu_r")])
+
+        self.assertEqual(proc.stdout, "")
+        self.assertEqual(proc.stderr, "")
+
     def test_hand_back_with_no_child_passes(self):
         proc = self.hand_back([])
         self.assertEqual(proc.stdout, "")

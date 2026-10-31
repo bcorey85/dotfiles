@@ -4,7 +4,7 @@ change_type: "added"
 title: "Press Enter in herdr panes stuck at the usage-limit reset prompt"
 description: "A two-minute timer presses Enter in a Claude pane that shows the usage-limit reset prompt, so a worker the laptop slept past the reset continues within minutes instead of sitting idle."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-31T15:24:52-05:00"}
-seq: 1
+seq: 404
 kind: "fix"
 components: ["script/herdr-wake-limited"]
 evidence: ["judgment"]

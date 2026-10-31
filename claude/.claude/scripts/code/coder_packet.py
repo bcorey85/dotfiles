@@ -189,6 +189,10 @@ plan_ranges = [f"- {plan_path} lines {phase_start + 1}-{phase_end} (Phase {phase
 plan_ranges += [
     f"- {plan_path} lines {start}-{end} ({title}, cited by the phase)" for title, start, end in cited_shared_sections
 ]
+plan_ranges += [
+    f"- {plan_path} lines {start}-{end} (Phase {cited_id}, cited by Phase {phase_argument})"
+    for cited_id, start, end in plan_format.cited_phases(plan_file_lines, phase_argument, phase_section_text)
+]
 testing_start = next(
     (index for index in plan_headings if plan_file_lines[index].startswith("## Testing Strategy")), None
 )

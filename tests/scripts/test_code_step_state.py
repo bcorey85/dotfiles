@@ -101,7 +101,7 @@ class StateFileTest(unittest.TestCase):
         (self.state_dir / "state.json").write_text(json.dumps(saved_state))
         return code_step_store.read_state_file(self.state_dir)
 
-    def test_the_state_file_of_a_run_in_progress_loads_and_writes_back_unchanged(self):
+    def test_the_state_file_of_a_run_in_progress_writes_back_with_the_no_review_key(self):
         state = self.load(CURRENT_STATE)
 
         self.assertEqual(code_step_state.Stage.STOPPED, state.stage)
@@ -109,7 +109,12 @@ class StateFileTest(unittest.TestCase):
         self.assertEqual(("a1", "asks-coder"), (state.stop.agent_id, state.stop.coder_stage))
         self.assertEqual((2, 1, 4242), (state.iter, state.spec_iter, state.review_script_pid))
         written_text = json.dumps(state.to_json())
-        self.assertEqual(CURRENT_STATE, json.loads(written_text))
+        self.assertEqual({**CURRENT_STATE, "noReview": False}, json.loads(written_text))
+
+    def test_a_state_file_without_the_no_review_key_loads_with_review_on(self):
+        state = self.load(CURRENT_STATE)
+
+        self.assertIs(False, state.no_review)
 
     def test_a_state_file_this_code_step_cannot_read_stops_the_load(self):
         unreadable_states = [

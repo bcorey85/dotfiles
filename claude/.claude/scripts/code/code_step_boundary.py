@@ -5,7 +5,7 @@ Imports run one way: code_step_state, code_step_routes, code_step_store, code_st
 code_step_boundary, code_step_closing, code_step_hooks, code_step_gates, code_step_start, code_step_report,
 code_step_review, code_step.
 The phase-end block text is in code_step_phase_end; the Automated Verification reader is in code_step_verification,
-and skill-done in code_step_closing."""
+and skill-done and session-done in code_step_closing."""
 import contextlib
 import datetime
 import os
@@ -615,8 +615,9 @@ def close_phase(repo_dir, state, plan_path, plan, section, manual_items, verific
 
 def finish_phase(repo_dir, state, skip_verification=False, verification=None):
     # `verification` is the (results, skipped commands) of a passing Automated Verification run the caller already
-    # made over the phase section, so the checks do not run twice.
-    if not skip_verification and not mark_review_gate_clean(repo_dir, state):
+    # made over the phase section, so the checks do not run twice. A `no_review` run is a phase no review loop
+    # covers (a session phase): there is no review to credit.
+    if not state.no_review and not skip_verification and not mark_review_gate_clean(repo_dir, state):
         return
 
     if not state.plan:

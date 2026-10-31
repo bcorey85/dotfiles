@@ -1042,6 +1042,73 @@ class ManualFormatHelpersTest(unittest.TestCase):
         self.assertTrue(message.endswith("\nThen run resume."))
         self.assertFalse(plan_format.manual_format_message("boom").endswith("\n"))
 
+    def test_session_only_agent_returns_the_agent_of_the_session_phase_line(self):
+        cases = {
+            "bare name": "**Session phase**: mutation-tester",
+            "backticks": "**Session phase**: `mutation-tester`",
+            "bullet": "- **Session phase**: `mutation-tester`",
+        }
+        for label, marker in cases.items():
+            with self.subTest(label):
+                section = f"## Phase 2: Mutants\n\n{marker}\n\n1. Dispatch it.\n2. Commit."
+                self.assertEqual("mutation-tester", plan_format.session_only_agent(section))
+
+    def test_session_only_agent_reads_the_marker_of_a_template_shaped_phase(self):
+        section = (
+            "## Phase 2: Mutants\n\n### Overview\n\nRun the mutation tester over the new code.\n\n"
+            "**Session phase**: `mutation-tester`\n\n1. Dispatch it on the changed files.\n"
+            "2. Record the lines in the plan.\n3. Commit.\n\n### Success Criteria\n\n#### Automated Verification:\n\n"
+            "- [ ] **Report**: exists - `test -f report.txt`\n"
+        )
+
+        self.assertEqual("mutation-tester", plan_format.session_only_agent(section))
+
+    def test_session_only_agent_is_none_without_the_marker_whatever_the_steps_say(self):
+        section = "## Phase 2: X\n\n1. Dispatch `mutation-tester`.\n2. Record the lines in the plan.\n3. Commit."
+
+        self.assertIsNone(plan_format.session_only_agent(section))
+
+    def test_session_only_agent_is_none_when_the_phase_also_names_files_or_the_agent_is_a_coder(self):
+        cases = {
+            "a file entry": "**Session phase**: `mutation-tester`\n**File**: `a/b.ts`",
+            "a plural files entry": "**Files**: `a/b.ts`\n**Session phase**: `mutation-tester`",
+            "coder": "**Session phase**: `coder`",
+            "coder-deep": "**Session phase**: coder-deep",
+            "backend-coder": "**Session phase**: `backend-coder`",
+            "a named coder": "**Session phase**: `plan-coder`",
+            "a capitalised coder": "**Session phase**: `Coder`",
+        }
+        for label, lines in cases.items():
+            with self.subTest(label):
+                self.assertIsNone(plan_format.session_only_agent("## Phase 2: X\n\n" + lines + "\n1. Commit."))
+
+    def test_session_only_agent_is_none_when_the_agent_name_sits_on_a_later_line(self):
+        section = "## Phase 2: X\n\n**Session phase**:\nCommit\n1. Commit."
+
+        self.assertIsNone(plan_format.session_only_agent(section))
+
+    def test_session_only_agent_ignores_a_session_phase_line_in_a_code_fence(self):
+        section = "## Phase 2: X\n\n```\n**Session phase**: mutation-tester\n```\n\n1. Commit."
+
+        self.assertIsNone(plan_format.session_only_agent(section))
+
+    def test_session_only_agent_keeps_its_marker_when_a_file_entry_sits_in_a_code_fence(self):
+        section = ("## Phase 2: X\n\n**Session phase**: `mutation-tester`\n\n```\n**File**: `a/b.ts`\n```\n\n"
+                   "1. Commit.")
+
+        self.assertEqual("mutation-tester", plan_format.session_only_agent(section))
+
+    def test_cited_phases_lists_the_phases_a_phase_reuses_directly_and_through_another(self):
+        plan_lines = [
+            "## Phase 1: First", "", "Mutants: a, b.", "",
+            "## Phase 2: Second", "", "same as Phase 1.", "",
+            "## Phase 3: Third", "", "same as Phase 2.", "",
+        ]
+
+        cited = plan_format.cited_phases(plan_lines, "3", "\n".join(plan_lines[8:]))
+
+        self.assertEqual([("2", 5, 8), ("1", 1, 4)], cited)
+
 
 if __name__ == "__main__":
     unittest.main()

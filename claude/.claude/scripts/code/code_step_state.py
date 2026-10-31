@@ -22,6 +22,7 @@ class Stage(enum.StrEnum):
     IMPACT_REVIEW = "impact-review"
     ASKS = "asks"
     SKILL = "skill"
+    SESSION = "session"
     DONE = "done"
     STOPPED = "stopped"
 
@@ -110,6 +111,7 @@ class RunState:
     headless: bool = False
     only_phase: str | None = None
     run_notes: str | None = None
+    no_review: bool = False
     session_id: str | None = None
     run_id: str | None = None
     started_at: float | None = None

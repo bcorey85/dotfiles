@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "Staged-claim hook passes a reply that describes what it reads"
 description: "The staged-claim Stop hook no longer blocks a reply that reports speech, such as \"a reply that says files are staged\", so a session can describe the hook without a false refusal. The subdirectory test now runs the passing path it names, and git_calls.py has its reading rules back."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-30T13:28:03-05:00"}
-seq: 385
+seq: 403
 kind: "fix"
 components: ["script/staged-claim-gate"]
 evidence: ["judgment"]

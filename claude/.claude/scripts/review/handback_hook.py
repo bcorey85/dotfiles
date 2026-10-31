@@ -171,7 +171,7 @@ def transcript_gates(event, session_id, agent_id, message, packet, clean_status)
             return dead_reason, True
     try:
         ungated, _open_dispatches = loop_transcript.scan(transcript, message, event.get("cwd"))
-        last_step = loop_transcript.last_code_step(transcript)
+        last_step = loop_transcript.last_coder_step(transcript)
     except Exception as error:
         print(f"handback hook: full-check gate skipped, {type(error).__name__}: {error}", file=sys.stderr)
         return packet_gate_reason(transcript, packet, session_id, agent_id), reviewer_dead

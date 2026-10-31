@@ -9,8 +9,7 @@ import sys
 import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../code", "../lib")]
-import code_step_core
-import code_step_report
+import coder_report
 import full_check
 import handback
 import handback_store
@@ -82,7 +81,7 @@ def packet_message(outcome):
             fields[key] = outcome[key]
     if outcome["plan_change"]:
         plan_impact = "; ".join(outcome["plan_change"])
-        blocks = [code_step_report.plan_impact_block(entry) or "" for entry in outcome["plan_change"]]
+        blocks = [coder_report.plan_impact_block(entry) or "" for entry in outcome["plan_change"]]
         fields["plan_impact_cause"] = plan_format.stopping_plan_impact_cause(
             blocks, cause_required=outcome["plan_change_from_coder"])
         fields["plan_impact"] = script_utils.one_line(plan_impact, limit=None)
@@ -100,7 +99,7 @@ EMPTY_OUTCOME = {
 
 
 def crash_outcome(progress, reason):
-    # A crash is a tool fault, not a finding: tool_fault tells code_step to offer review-again.
+    # A crash is a tool fault, not a finding: tool_fault names the failure for the caller.
     fixed = [item for item in progress["fixed"] if item.text.strip()]
     return {**copy.deepcopy(EMPTY_OUTCOME), "status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
             "blockers": [reason], "class_closure": "none - the run ended in an error",
@@ -111,18 +110,9 @@ def report_write_failure(what, error):
     print(f"review-loop-script: {what} not written, {type(error).__name__}: {error}", file=sys.stderr)
 
 
-def write_handback_rows(repo, args, message, status, ask_rows, unreviewed_fix):
+def write_handback_rows(args, message, status, ask_rows, unreviewed_fix):
     # The driver's skipped re-reviews are its benched routes, so a clean row never sets no_reviewer;
     # a coder pass after the last reviewer round sets unreviewed_fix.
-    # Only a /code run folder takes the run event: a /review launch keeps its state elsewhere, and a run folder it
-    # wrote under /code's state would read as a later start after /code abort.
-    try:
-        code_state = code_step_core.state_dir(repo)
-        if code_state is not None and pathlib.Path(args.state_dir).resolve() == pathlib.Path(code_state).resolve():
-            code_step_core.log_event(repo, args.run_id, "handback", args.session, agent_id=args.agent_id,
-                                     agent_type=handback.REVIEW_LOOP, message=message)
-    except Exception as error:
-        report_write_failure("run event", error)
     try:
         handback_store.record(args.session, "handback", agent_id=args.agent_id, status=status, problems=[],
                               message=message, no_reviewer=False,

@@ -1,11 +1,8 @@
 """Every site that judges whether a review ended clean gives the same answer for the same stored hand-back rows,
-because each one asks handback.py: the `review-gate-mark clean` hook, the commit credit of a hand-back, and the
-/code phase's review gate.
+because each one asks handback.py: the `review-gate-mark clean` hook and the commit credit of a hand-back.
 
 run: python3 tests/scripts/test_review_clean_status_one_owner.py
 """
-import contextlib
-import io
 import json
 import os
 import pathlib
@@ -20,10 +17,7 @@ import toolkit_paths
 
 for folder in (toolkit_paths.LIB_DIR, toolkit_paths.REVIEW_DIR, toolkit_paths.CODE_DIR):
     sys.path.insert(0, str(folder))
-import code_step_boundary  # noqa: E402
-import code_step_state  # noqa: E402
 import handback  # noqa: E402
-import handback_store  # noqa: E402
 import review_commit_gate  # noqa: E402
 import reviewed_tree  # noqa: E402
 
@@ -67,8 +61,7 @@ class CleanStatusOneOwnerTest(unittest.TestCase):
         self.store = root / "store"
         self.store.mkdir()
         for patcher in (mock.patch.object(pathlib.Path, "home", return_value=self.home),
-                        mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store)}),
-                        mock.patch.object(code_step_boundary, "session_pin", lambda: SESSION)):
+                        mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store)})):
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -88,20 +81,11 @@ class CleanStatusOneOwnerTest(unittest.TestCase):
     def clean_by_commit_credit(self):
         return review_commit_gate.review_handed_back_since(SESSION, 0, str(self.repo))
 
-    def clean_by_phase_gate(self):
-        # The /code run stores the effective status of the packet it read as review_status.
-        seen = handback_store.latest(SESSION)
-        review_status = handback.stored_effective_status(seen) if seen["handback"] else None
-        state = code_step_state.RunState(stage="review", session_id=SESSION, review_status=review_status)
-        with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(code_step_boundary, "save_state"):
-            return code_step_boundary.mark_review_gate_clean(self.repo, state)
-
     def sites(self):
         return {"owner": lambda: handback.false_clean_reason(SESSION) is None,
                 "record_clean_review": lambda: handback.record_clean_review(SESSION)[0] is None,
                 "review-gate-mark clean": self.clean_by_mark_hook,
-                "commit credit": self.clean_by_commit_credit,
-                "phase review gate": self.clean_by_phase_gate}
+                "commit credit": self.clean_by_commit_credit}
 
     def cap_row(self, tree="current", **packet_fields):
         """A stored cap-reached hand-back whose passed full check covered `tree` ("current": the repo's tree now)."""

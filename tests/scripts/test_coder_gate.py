@@ -272,73 +272,22 @@ class CoderGateEnvironmentTests(unittest.TestCase):
                  "tool_input": {"message": "BEHAVIOR: done"}}
         gate_file = self.repo / ".git/coder-gate.json"
 
-        for changed_key, new_value in (("setAt", time.time() + 5), ("dispatchId", "other"), ("runId", "other")):
-            with self.subTest(changed_key=changed_key):
-                self.gate_set("echo first")
+        self.gate_set("echo first")
 
-                def set_again_while_waiting(lock_file, operation, key=changed_key, value=new_value):
-                    rewritten = json.loads(gate_file.read_text())
-                    rewritten[key] = value
-                    gate_file.write_text(json.dumps(rewritten))
+        def set_again_while_waiting(lock_file, operation):
+            rewritten = json.loads(gate_file.read_text())
+            rewritten["setAt"] = time.time() + 5
+            gate_file.write_text(json.dumps(rewritten))
 
-                printed = io.StringIO()
-                with mock.patch.dict(os.environ, self.env), \
-                        mock.patch.object(gate.fcntl, "flock", side_effect=set_again_while_waiting), \
-                        mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event))), \
-                        contextlib.redirect_stdout(printed):
-                    gate.run_hook()
+        printed = io.StringIO()
+        with mock.patch.dict(os.environ, self.env), \
+                mock.patch.object(gate.fcntl, "flock", side_effect=set_again_while_waiting), \
+                mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event))), \
+                contextlib.redirect_stdout(printed):
+            gate.run_hook()
 
-                self.assertEqual("", printed.getvalue())
-                self.assertEqual({}, self.stored_gate()["coders"])
-
-    def test_set_refuses_a_key_flag_with_no_value_or_after_the_command(self):
-        cases = ((("true", "--run", "R"), "--run goes before the command"),
-                 (("--run",), "--run needs a value"),
-                 (("--run", "R", "true", "--dispatch"), "--dispatch goes before the command"))
-
-        for arguments, message in cases:
-            with self.subTest(arguments=arguments):
-                done = self.gate_set(*arguments)
-
-                self.assertNotEqual(0, done.returncode)
-                self.assertIn(message, done.stderr)
-
-    def write_launch(self, run_id, agent_id, dispatch_id):
-        events_file = self.repo / ".git/code-step/runs" / run_id / "events.jsonl"
-        events_file.parent.mkdir(parents=True, exist_ok=True)
-        row = {"v": 1, "ts": time.time(), "event": "launch", "session_id": "s", "agent_id": agent_id,
-               "dispatch": dispatch_id}
-        with events_file.open("a") as log_file:
-            log_file.write(json.dumps(row) + "\n")
-
-    def test_a_keyed_gate_gates_only_the_coder_launched_for_its_run_and_dispatch(self):
-        self.write_launch("run-1", "a1", "d1")
-        self.write_launch("run-1", "a2", "d2")
-        self.write_launch("run-2", "a3", "d1")
-        cases = (("a1", True, "launched for the gate's dispatch"),
-                 ("a1", True, "the same coder resumed, handing back a second time"),
-                 ("a2", False, "launched for another dispatch of the run"),
-                 ("a3", False, "launched for another run"),
-                 ("a4", False, "no launch on record"))
-        done = self.gate_set("--run", "run-1", "--dispatch", "d1", "true")
-        self.assertEqual(0, done.returncode, done.stderr)
-
-        for agent_id, is_gated, reason in cases:
-            with self.subTest(reason):
-                event = {"agent_type": "coder", "agent_id": agent_id, "cwd": str(self.repo),
-                         "tool_input": {"message": "BEHAVIOR: done"}}
-                hook = subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "hook"], cwd=self.repo, env=self.env,
-                                      input=json.dumps(event), capture_output=True, text=True)
-
-                self.assertEqual(0, hook.returncode, hook.stderr)
-                self.assertEqual(is_gated, agent_id in self.stored_gate()["coders"], reason)
-                self.assertEqual(is_gated, bool(hook.stdout.strip()), reason)
-
-    def test_set_refuses_a_run_without_a_dispatch(self):
-        done = self.gate_set("--run", "run-1", "true")
-
-        self.assertNotEqual(0, done.returncode)
-        self.assertIn("--run and --dispatch go together", done.stderr)
+        self.assertEqual("", printed.getvalue())
+        self.assertEqual({}, self.stored_gate()["coders"])
 
     def test_a_missing_program_is_a_setup_fault_that_allows_the_hand_back_and_names_the_command(self):
         command = "no-such-runner-for-the-gate pytest tests/test_one.py"

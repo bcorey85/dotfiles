@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The scripted review loop: the walking between steps is code, the judgment inside each step is a model call.
 
-    review_loop_script.py <repo> --state-dir <dir> --session <id> --run-id <id> --agent-id <id> --prompt-file <path>
+    review_loop_script.py <repo> --state-dir <dir> --session <id> --agent-id <id> --prompt-file <path>
 
 The prompt file is the review prompt of a review-first dispatch: header lines (mode, caller, lane, plan, phase, an
 optional `structure-pass: skip`), a blank line, then the handoff block. The script walks review-loop.md's fixed graph:
@@ -65,7 +65,6 @@ SCOPED_TESTS_LOG = "scoped-tests.log"
 STALE_PROSE_LOG = "stale-prose.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import change_removal
-import code_step_store
 import coder_gate
 import full_check
 import full_check_gate
@@ -936,10 +935,13 @@ def write_script_prompt(state_dir, agent_id, prompt):
     return prompt_file, script_dir / "script.log"
 
 
-def loop_script_command(loop_script, repo_dir, state_dir, session_id, run_id, agent_id, prompt_file):
-    """The argv that runs review_loop_script.py."""
-    return [sys.executable, str(loop_script), str(repo_dir), "--state-dir", str(state_dir), "--session", session_id,
-            "--run-id", run_id, "--agent-id", agent_id, "--prompt-file", str(prompt_file)]
+def loop_script_command(loop_script, repo_dir, state_dir, session_id, agent_id, prompt_file, gate_commands=()):
+    """The argv that runs review_loop_script.py, with one --gate-command per gate command."""
+    command = [sys.executable, str(loop_script), str(repo_dir), "--state-dir", str(state_dir), "--session", session_id,
+               "--agent-id", agent_id, "--prompt-file", str(prompt_file)]
+    for gate_command in gate_commands:
+        command += ["--gate-command", gate_command]
+    return command
 
 
 def parse_review_loop_arguments(argv):
@@ -947,9 +949,9 @@ def parse_review_loop_arguments(argv):
     parser.add_argument("repo")
     parser.add_argument("--state-dir", required=True)
     parser.add_argument("--session", required=True)
-    parser.add_argument("--run-id", required=True)
     parser.add_argument("--agent-id", required=True)
     parser.add_argument("--prompt-file", required=True)
+    parser.add_argument("--gate-command", action="append", default=[])
     return parser.parse_args(argv)
 
 
@@ -967,9 +969,7 @@ def main(argv=None):
     outcome = None
     try:
         header, handoff = read_prompt(args.prompt_file)
-        run_state = code_step_store.read_state_file(pathlib.Path(args.state_dir))
-        gate_commands = run_state.gate_commands if run_state else []
-        outcome = run_loop(repo, out, args.session, header, handoff, progress, gate_commands)
+        outcome = run_loop(repo, out, args.session, header, handoff, progress, args.gate_command)
         message = packet_message(outcome)
         handback.load(message)
     except handback.PacketError as error:
@@ -989,7 +989,7 @@ def main(argv=None):
 
     status = handback.load(message)["status"]
     (out / "packet.txt").write_text(message + "\n")
-    write_handback_rows(repo, args, message, status, outcome["ask_rows"], outcome["unreviewed_fix"])
+    write_handback_rows(args, message, status, outcome["ask_rows"], outcome["unreviewed_fix"])
     write_usage_row(repo, started, CALLS)
     print(message)
     return exit_code

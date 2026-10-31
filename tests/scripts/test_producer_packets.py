@@ -18,7 +18,7 @@ import toolkit_paths
 
 for folder in (toolkit_paths.REVIEW_DIR, toolkit_paths.LIB_DIR, toolkit_paths.CODE_DIR):
     sys.path.insert(0, str(folder))
-import code_step_report  # noqa: E402
+import coder_report  # noqa: E402
 import full_check  # noqa: E402
 import handback  # noqa: E402
 
@@ -105,8 +105,6 @@ class FullCheckResultTest(unittest.TestCase):
     def test_the_result_predicates_agree_with_the_captured_results(self):
         self.assertFalse(full_check.is_failure(self.packet("full-check-passed")["full_check"]))
         self.assertFalse(full_check.is_unverified(self.packet("full-check-passed")["full_check"]))
-        self.assertFalse(full_check.is_check_not_run(self.packet("full-check-unverified")["full_check"]))
-        self.assertFalse(full_check.is_check_not_run(self.packet("full-check-not-run")["full_check"]))
 
     def test_a_passed_capture_carries_the_runner_summary_the_producer_wrote(self):
         packet = self.packet("full-check-passed")
@@ -170,37 +168,37 @@ class ReviewFixPacketTest(unittest.TestCase):
 
 class CoderReportTest(unittest.TestCase):
     def test_the_plan_impact_capture_yields_its_block(self):
-        block = code_step_report.plan_impact_block(captured("coder-plan-impact"))
+        block = coder_report.plan_impact_block(captured("coder-plan-impact"))
         self.assertTrue(block.startswith("PLAN-IMPACT:\n"), block)
         for key in ("assumed:", "found:", "changes:"):
             self.assertIn(key, block)
 
     def test_a_report_without_the_block_yields_none(self):
-        self.assertIsNone(code_step_report.plan_impact_block(captured("coder-behavior")))
-        self.assertIsNone(code_step_report.plan_impact_block(captured("coder-why")))
+        self.assertIsNone(coder_report.plan_impact_block(captured("coder-behavior")))
+        self.assertIsNone(coder_report.plan_impact_block(captured("coder-why")))
 
     def test_the_behavior_line_is_read_and_none_is_dropped(self):
-        behavior = code_step_report.behavior_lines(captured("coder-behavior"))
+        behavior = coder_report.behavior_lines(captured("coder-behavior"))
         self.assertEqual(behavior, ["Finalizing an invoice returns its detail without a second database read of the "
                                     "lines inside the transaction."])
-        self.assertEqual(code_step_report.behavior_lines(captured("coder-plan-impact")), [])
+        self.assertEqual(coder_report.behavior_lines(captured("coder-plan-impact")), [])
 
     def test_the_why_line_is_grouped_by_file_with_its_line_range(self):
-        grouped = code_step_report.why_by_file(captured("coder-why"))
+        grouped = coder_report.why_by_file(captured("coder-why"))
         self.assertEqual(len(grouped), 1)
         (path, notes), = grouped.items()
         self.assertTrue(path.endswith("spec.md"), path)
         self.assertEqual(notes[0]["lines"], "2497-2519")
         self.assertTrue(notes[0]["note"])
-        self.assertEqual(code_step_report.why_by_file(captured("coder-behavior")), {})
+        self.assertEqual(coder_report.why_by_file(captured("coder-behavior")), {})
 
     def test_a_report_with_no_marker_line_neither_escalates_nor_asks(self):
         # No stored coder report carries an OPEN QUESTIONS line or the escalation marker, so the capture proves only
         # that the readers leave a real report alone: prose that mentions /eng-spec is not the marker.
         for name in captured_names("coder-"):
             with self.subTest(name):
-                self.assertEqual(code_step_report.open_questions(captured(name)), [])
-                self.assertFalse(code_step_report.recommends_eng_spec(captured(name)))
+                self.assertEqual(coder_report.open_questions(captured(name)), [])
+                self.assertFalse(coder_report.recommends_eng_spec(captured(name)))
 
 
 if __name__ == "__main__":

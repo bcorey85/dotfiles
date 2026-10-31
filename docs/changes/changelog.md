@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-703 changes
+704 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -107,6 +107,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [/code runs as plain prompt steps with no code-step script](notes/2026-10-31-code-runs-as-plain-prompt-steps-with-no-code-step.md) [skill/code, script/code-step, agent/code-fork, skill/eng-spec, agent/spec-criteria, script/review-loop-script, script/handback] Running /code as plain prompt steps in its Sonnet fork cuts cost 15% ($7.86 → $6.66 a run, mean) with 13 of 13 checks passing in all 16 bench runs. The code-step script and its state, hooks and tests are removed; small standalone scripts keep the plan check, the concentration gate, the coder-report parse, the review start and the waits. **cuts cost by 15% ($7.86 → $6.66)**
 * [Remove code_step alias verbs and the resume argparse](notes/2026-10-29-remove-code-step-alias-verbs-and-the-resume.md) [script/code-step] code_step.py no longer accepts the verbs after-coder, after-review and after-plan-edit: each is refused as an unknown verb, and every route runs the stale-phase check except a real hand-back of the run's own agent. A resume answer that starts with a dash is still refused, by a plain check in place of an argument parser.
 * [Cull the flow, plan, logging and ledger tests, and delete two dead telemetry scripts](notes/2026-10-29-cull-the-flow-plan-logging-and-ledger-tests-and.md) [script/log-skill-use, script/test-edit-telemetry, script/log-agent-usage, script/calibration-guard, script/emit-orchestration, script/warn-skip-hooks, script/telemetry-enabled, script/agent-cost, script/log-review-metrics, script/refactor-flow, script/adr-flow, script/plan-format, script/log-escape, script/log-scan, script/parallel-tests, script/verify-prep, script/verify-log, skill/audit] Removed the skill-use and test-edit telemetry scripts, which no hook runs (the ledger hook writes those rows), and cut the tests that pinned them or that repeated a case another test already pins: 3693 tests become 3584, wall-clock 285s to 220s.
 * [Cull the shell, gate, util and prose tests](notes/2026-10-29-cull-the-shell-gate-util-and-prose-tests.md) Deleted tests whose bug another test already catches, merged near-duplicates into tables, and sped up sleeps; no script behavior changed.

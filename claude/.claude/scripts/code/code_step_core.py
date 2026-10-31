@@ -27,8 +27,16 @@ import script_utils
 import worktree_snapshot
 from code_guidance import coder_guidance_lines
 from code_step_routes import ROUTES, STAGE_FACTS, StageFact, state_key
-from code_step_state import Stage, Stop, StopKind
-from code_step_store import RUNS_DIR_NAME, load_state, save_state, session_repo_dirs, state_dir, state_transaction
+from code_step_state import Stage, StateFileError, Stop, StopKind
+from code_step_store import (
+    RUNS_DIR_NAME,
+    load_state,
+    save_state,
+    session_repo_dirs,
+    state_dir,
+    state_file_text,
+    state_transaction,
+)
 from script_utils import git_output, run_command
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("CODE_STEP_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -175,15 +183,62 @@ def holds_open_run(repo, session_id):
     return is_run_open(state) and state.session_id == session_id
 
 
-def session_open_run_repos(session_id):
-    return [repo for repo in session_repo_dirs(session_id) if holds_open_run(repo, session_id)]
+def state_text_names_another_session_or_done_run(repo, session_id):
+    # Reads the raw JSON, so it answers for a state file that does not load. Anything unreadable, or not a dict,
+    # answers False: that file is not known to be another run's.
+    text = state_file_text(repo)
+    if text is None:
+        return False
+
+    try:
+        raw = json.loads(text)
+    except ValueError:
+        return False
+
+    if not isinstance(raw, dict):
+        return False
+
+    session_key = raw.get("sessionId")
+    return (session_key is not None and session_key != session_id) or raw.get("stage") == Stage.DONE
+
+
+def session_open_run_repos(session_id, except_repo=None):
+    # except_repo is compared by checkout, so a subdirectory of it leaves that checkout out too.
+    repos = session_repo_dirs(session_id)
+    if except_repo is not None:
+        except_state_dir = state_dir(except_repo)
+        repos = [repo for repo in repos if state_dir(repo) != except_state_dir]
+
+    return [repo for repo in repos if holds_open_run(repo, session_id)]
 
 
 def resume_run_repos(cwd_repo, session_id):
     # The repos a resume may act on: the cwd's checkout when it holds the session's open run (or no
-    # session is given), else every checkout that holds one.
-    if not session_id or (cwd_repo is not None and holds_open_run(cwd_repo, session_id)):
+    # session is given), else every checkout that holds one. A cwd state file that does not load does not block a run
+    # the session holds in another checkout when its raw JSON names another session or a finished run: those
+    # checkouts are returned. The session's own unfinished run, a file that is not a JSON object, or no other open
+    # run leaves the error standing, so the unreadable-state stop still fires.
+    if not session_id:
         return [cwd_repo]
+
+    if cwd_repo is None:
+        return session_open_run_repos(session_id)
+
+    try:
+        cwd_holds_run = holds_open_run(cwd_repo, session_id)
+    except StateFileError:
+        if not state_text_names_another_session_or_done_run(cwd_repo, session_id):
+            raise
+
+        other_run_repos = session_open_run_repos(session_id, except_repo=cwd_repo)
+        if not other_run_repos:
+            raise
+
+        return other_run_repos
+
+    if cwd_holds_run:
+        return [cwd_repo]
+
     return session_open_run_repos(session_id)
 
 

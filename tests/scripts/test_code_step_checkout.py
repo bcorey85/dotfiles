@@ -6,8 +6,10 @@ The fixtures are those of test_code_step.py; its own tests run there, not here.
 run: python3 -m unittest test_code_step_checkout
 """
 import json
+import pathlib
 import shutil
 import unittest
+import unittest.mock
 
 import test_code_step as base
 from test_code_step_cap_reached import CAP_WITH_ASK
@@ -97,6 +99,115 @@ class CheckoutTest(base.CodeStepTest):
 
         self.assertNotIn("ACTION: stop", out)
         self.assertIn(self.checkout_sentence(second_run), self.printed_prompt(out))
+
+    def leave_unreadable_state(self, checkout, state_text=None):
+        # By default a state file with a key this code-step does not know, as a finished run of another session leaves.
+        if state_text is None:
+            state_text = json.dumps({"stage": "done", "sessionId": "sess-2", "packet": "x"})
+        state_path = checkout / ".git/code-step/state.json"
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(state_text)
+
+    def resume_run_repos_from(self, cwd):
+        with unittest.mock.patch.dict("os.environ", {"HOME": str(self.home)}):
+            return base.code_step_core.resume_run_repos(str(cwd), self.SESSION)
+
+    def test_an_unreadable_state_in_the_cwd_checkout_does_not_block_the_open_run_in_another_checkout(self):
+        self.step("start", "--task", "fix the typo")
+        self.age_dispatches(120)
+        self.wait_env(5, "0.2")
+        cwd = self.other_checkout()
+        self.leave_unreadable_state(cwd)
+
+        out = base.run(cwd, self.env, "resume").stdout
+
+        self.assertNotIn("ACTION: stop", out)
+        self.assertIn(self.checkout_sentence(self.repo), self.printed_prompt(out))
+
+    def test_an_unreadable_state_overwriting_the_sessions_run_in_cwd_checkout_does_not_block_the_run_elsewhere(self):
+        self.step("start", "--task", "fix the typo")
+        cwd = self.other_checkout()
+        base.run(cwd, self.env, "start", "--task", "add retries")
+        self.age_dispatches(120)
+        self.wait_env(5, "0.2")
+        self.leave_unreadable_state(cwd)
+
+        out = base.run(cwd, self.env, "resume").stdout
+
+        self.assertNotIn("ACTION: stop", out)
+        self.assertIn(self.checkout_sentence(self.repo), self.printed_prompt(out))
+
+    def test_an_unreadable_state_in_a_subdirectory_cwd_checkout_does_not_hide_the_open_run_in_another_checkout(self):
+        self.step("start", "--task", "fix the typo")
+        cwd = self.other_checkout()
+        base.run(cwd, self.env, "start", "--task", "add retries")
+        self.leave_unreadable_state(cwd)
+        subdirectory = cwd / "nested"
+        subdirectory.mkdir()
+
+        with unittest.mock.patch.dict("os.environ", {"HOME": str(self.home)}):
+            run_repos = base.code_step_core.resume_run_repos(str(subdirectory), self.SESSION)
+
+        self.assertEqual([str(self.repo.resolve())], [str(pathlib.Path(repo).resolve()) for repo in run_repos])
+
+    def test_an_unreadable_state_in_the_cwd_checkout_with_no_other_open_run_still_stops(self):
+        cwd = self.other_checkout()
+        self.leave_unreadable_state(cwd)
+
+        out = base.run(cwd, self.env, "status").stdout
+
+        self.assertIn("has keys this code-step does not know: packet", out)
+        with self.assertRaises(base.code_step_state.StateFileError):
+            self.resume_run_repos_from(cwd)
+
+    def test_an_unreadable_state_of_the_sessions_own_open_run_with_another_open_run_elsewhere_still_stops(self):
+        self.step("start", "--task", "fix the typo")
+        cwd = self.other_checkout()
+        self.leave_unreadable_state(cwd, json.dumps({"stage": "coder", "sessionId": self.SESSION, "packet": "x"}))
+
+        out = base.run(cwd, self.env, "status").stdout
+
+        self.assertIn("has keys this code-step does not know: packet", out)
+        with self.assertRaises(base.code_step_state.StateFileError):
+            self.resume_run_repos_from(cwd)
+
+    def test_an_unreadable_state_naming_no_session_with_another_open_run_elsewhere_still_stops(self):
+        self.step("start", "--task", "fix the typo")
+        cwd = self.other_checkout()
+        self.leave_unreadable_state(cwd, json.dumps({"stage": "coder", "packet": "x"}))
+
+        with self.assertRaises(base.code_step_state.StateFileError) as raised:
+            self.resume_run_repos_from(cwd)
+
+        self.assertIn("has keys this code-step does not know: packet", str(raised.exception))
+
+    def test_an_unreadable_state_naming_another_session_or_a_done_stage_goes_on_to_the_open_run_elsewhere(self):
+        self.step("start", "--task", "fix the typo")
+        cwd = self.other_checkout()
+        cases = {
+            "another session": {"stage": "coder", "sessionId": "sess-2", "packet": "x"},
+            "a done stage": {"stage": "done", "sessionId": self.SESSION, "packet": "x"},
+        }
+        for case, state in cases.items():
+            with self.subTest(case):
+                self.leave_unreadable_state(cwd, json.dumps(state))
+
+                run_repos = self.resume_run_repos_from(cwd)
+
+                self.assertEqual([str(self.repo.resolve())], [str(pathlib.Path(repo).resolve()) for repo in run_repos])
+
+    def test_a_state_that_is_not_a_json_object_or_not_json_with_an_open_run_elsewhere_still_stops(self):
+        self.step("start", "--task", "fix the typo")
+        cwd = self.other_checkout()
+        cases = {"[]": "does not hold a JSON object", "not json": "is not readable JSON"}
+        for state_text, message in cases.items():
+            with self.subTest(state_text):
+                self.leave_unreadable_state(cwd, state_text)
+
+                with self.assertRaises(base.code_step_state.StateFileError) as raised:
+                    self.resume_run_repos_from(cwd)
+
+                self.assertIn(message, str(raised.exception))
 
     def wait_at_asks(self, checkout):
         # The run of `checkout` waits for the user's rulings on one review ask.

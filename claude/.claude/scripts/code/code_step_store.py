@@ -80,14 +80,24 @@ def load_state(cwd):
     return read_state_file(directory)
 
 
-def read_state_file(directory):
+def state_text_at(path):
     # Inside a verb, the state as the verb has left it so far; elsewhere, the state on disk.
-    path = directory / STATE_FILE_NAME
     verb_file = verb_state_file(path)
     if verb_file is None:
-        disk_text = state_text_on_disk(path)
-        return parse_state_text(disk_text, path)
-    return parse_state_text(verb_file.kept, path)
+        return state_text_on_disk(path)
+    return verb_file.kept
+
+
+def state_file_text(cwd):
+    directory = state_dir(cwd)
+    if directory is None:
+        return None
+    return state_text_at(directory / STATE_FILE_NAME)
+
+
+def read_state_file(directory):
+    path = directory / STATE_FILE_NAME
+    return parse_state_text(state_text_at(path), path)
 
 
 def parse_state_text(text, path):

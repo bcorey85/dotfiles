@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 HOOK = os.environ.get("PRE_COMMIT_HOOK", str(pathlib.Path(__file__).resolve().parents[2] / ".githooks" / "pre-commit"))
-CHANGE_FILE = "docs/changes/2026-10-25-a-change.md"
+CHANGE_FILE = "docs/changes/notes/2026-10-25-a-change.md"
 TOOLKIT_FILES = (
     "claude/.claude/agents/coder.md",
     "claude/.claude/skills/code/SKILL.md",

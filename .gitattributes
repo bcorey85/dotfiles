@@ -1,2 +1,6 @@
-# Generated page: rebuilt after a rebase pick. Register the driver with python3 ~/agent-evals/bin/install_merge_driver.py ~/dotfiles
+# Generated pages: rebuilt after a rebase pick. Register the driver with python3 ~/agent-evals/bin/install_merge_driver.py ~/dotfiles
 docs/changes/index.md merge=built-page
+docs/changes/what-worked.md merge=built-page
+docs/changes/ruled-out.md merge=built-page
+docs/changes/changelog.md merge=built-page
+docs/changes/in-progress.md merge=built-page

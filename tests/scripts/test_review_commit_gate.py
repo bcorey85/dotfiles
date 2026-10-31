@@ -430,7 +430,7 @@ class NotesOnlyCommitTest(GateCase):
         self.stage("docs/other.md")
         self.assert_silent(self.commit_in(command))
 
-    def test_code_step_commit_form_with_a_bare_double_dash_passes_for_notes_and_is_denied_for_code(self):
+    def test_commit_form_with_a_bare_double_dash_passes_for_notes_and_is_denied_for_code(self):
         self.assert_silent(self.commit_in(f'git add -- {self.NOTES} && git commit -m "notes" -- {self.NOTES}'))
         self.assert_commit_denied(self.commit_in('git add -- src/a.py && git commit -m "notes" -- src/a.py'))
         self.assert_commit_denied(self.commit_in(f'git add -- {self.NOTES} && git commit -m "notes" -- src/a.py'))

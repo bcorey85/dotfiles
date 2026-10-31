@@ -1424,124 +1424,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("CLAUDE_CODE_SESSION_ID is not set", output)
 
-    # ---------- /code state ----------
-
-    def write_code_step(self, **fields):
-        code_step = self.repo / ".git" / "code-step"
-        code_step.mkdir(exist_ok=True)
-        (code_step / "state.json").write_text(json.dumps(fields))
-        return code_step / "state.json"
-
-    def test_code_step_state_of_the_same_session_blocks_a_saved_read_and_is_named(self):
-        self.seed()
-        path = self.write_launched_run("a1")
-        code, output = self.packet("")
-        self.assertEqual(code, 2, output)
-        self.assertIn(str(path), output)
-        self.assertIn("code_step.py resume", output)
-
-    def test_code_step_state_pinned_to_another_session_does_not_block(self):
-        self.seed()
-        self.write_code_step(stage="review", sessionId=OTHER_SESSION)
-        self.assertEqual(self.packet("")[0], 0)
-
-    def test_code_step_state_pinned_to_no_session_does_not_block(self):
-        self.seed()
-        self.write_code_step(stage="review")
-        self.assertEqual(self.packet("")[0], 0)
-
-    def test_code_step_state_past_the_hook_stages_does_not_block(self):
-        self.seed()
-        self.write_code_step(stage="done", sessionId=SESSION)
-        self.assertEqual(self.packet("")[0], 0)
-
-    def test_every_stage_that_owns_review_hand_backs_blocks(self):
-        for stage in ("coder", "asks-coder"):
-            with self.subTest(stage=stage):
-                self.seed()
-                self.write_launched_run("a1", stage=stage)
-                self.assertEqual(self.packet("")[0], 2)
-
-    def test_plan_coder_stage_does_not_block(self):
-        self.seed()
-        self.write_code_step(stage="plan-coder", sessionId=SESSION)
-        self.assertEqual(self.packet("")[0], 0)
-
-    def write_launched_run(self, agent_id, stage="review", later_launch_id=None):
-        path = self.write_code_step(stage=stage, sessionId=SESSION, runId="run1")
-        events = self.repo / ".git" / "code-step" / "runs" / "run1" / "events.jsonl"
-        events.parent.mkdir(parents=True, exist_ok=True)
-        rows = [{"event": "dispatch", "id": "d1", "ts": 1, "agent_type": "review-loop", "stage": "review"},
-                {"event": "launch", "dispatch": "d1", "ts": 2, "agent_id": agent_id}]
-        if later_launch_id:
-            rows += [{"event": "dispatch", "id": "d2", "ts": 3, "agent_type": "coder", "stage": "coder"},
-                     {"event": "launch", "dispatch": "d2", "ts": 4, "agent_id": later_launch_id}]
-        events.write_text("".join(json.dumps(row) + "\n" for row in rows))
-        return path
-
-    def test_standalone_review_hand_back_is_read_while_a_code_run_waits_on_another_agent(self):
-        self.write_launched_run("run-agent")
-        self.seed()
-        code, output = self.packet("")
-        self.assertEqual(code, 0, output)
-        self.assertIn("ACTION: render-and-finish", output)
-
-    def test_hand_back_of_the_agent_the_code_run_launched_is_still_refused(self):
-        self.write_launched_run("a1")
-        self.seed()
-        code, output = self.packet("")
-        self.assertEqual(code, 2, output)
-        self.assertIn("code_step.py resume", output)
-
-    def test_pending_standalone_dispatch_after_the_code_run_s_hand_back_reports_no_hand_back_not_the_owner(self):
-        self.write_launched_run("a1")
-        self.seed()
-        self.dispatch()
-        code, output = self.packet("")
-        self.assertEqual(code, 2, output)
-        self.assertIn("ACTION: stop-no-handback", output)
-        self.assertNotIn("code_step.py resume", output)
-
-    def test_pending_review_loop_dispatch_the_code_run_logged_after_its_hand_back_is_still_the_run_s(self):
-        events = self.write_launched_run("a1").parent / "runs" / "run1" / "events.jsonl"
-        self.seed()
-        with events.open("a") as events_file:
-            events_file.write(json.dumps({"event": "dispatch", "id": "d2", "ts": time.time() + 1,
-                                          "agent_type": "review-loop", "stage": "review"}) + "\n")
-        self.dispatch()
-        code, output = self.packet("")
-        self.assertEqual(code, 2, output)
-        self.assertIn("code_step.py resume", output)
-
-    def test_standalone_review_hand_back_is_read_while_a_code_run_at_review_has_no_launch_row_yet(self):
-        self.write_code_step(stage="review", sessionId=SESSION, runId="run1")
-        self.seed()
-        code, output = self.packet("")
-        self.assertEqual(code, 0, output)
-        self.assertIn("ACTION: render-and-finish", output)
-
-    def test_earlier_review_loop_hand_back_after_a_later_coder_launch_is_still_refused(self):
-        self.write_launched_run("a1", later_launch_id="coder-agent")
-        self.seed()
-        code, output = self.packet("")
-        self.assertEqual(code, 2, output)
-        self.assertIn("code_step.py resume", output)
-
-    def test_code_run_hand_back_after_a_standalone_review_is_still_refused(self):
-        self.write_launched_run("run-agent")
-        self.seed()
-        self.assertEqual(self.packet("")[0], 0)
-        self.dispatch()
-        self.hand_back(CLEAN_EMPTY, agent_id="run-agent")
-        self.assertEqual(self.packet("")[0], 2)
-
-    def test_an_unreadable_code_step_state_does_not_block(self):
-        self.seed()
-        self.write_code_step().write_text("{")
-        code, output = self.packet("")
-        self.assertEqual(code, 0, output)
-        self.assertNotIn("Traceback", output)
-
     # ---------- shapes that broke on real hand-backs ----------
 
     def test_ask_with_an_unknown_class_and_a_gate_phrase_is_logged_as_other_and_the_raw_class_is_not_sent(self):
@@ -1760,6 +1642,23 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("already logged", output)
         self.assertEqual(len(self.ledger_writes()), 2)
 
+    def test_packet_from_another_repo_stops_when_the_asks_were_logged_in_the_first(self):
+        self.packet(WITH_ASK)
+        self.run_script(["asks-done", "accepted", "accepted"])
+        second = self.temp_root / "second"
+        second.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=second, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+        writes_before = len(self.ledger_writes())
+
+        code, output = self.packet(WITH_ASK, cwd=second)
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertIn(os.path.realpath(self.repo), output)
+        self.assertNotIn("present-asks", output)
+        self.assertEqual(len(self.ledger_writes()), writes_before)
+
     def test_asks_done_after_a_failed_row_retries_only_the_unlogged_ones(self):
         self.packet(WITH_ASK)
         self.run_script(["asks-done", "accepted", "accepted"], REVIEW_FIX_CLAUDE_DIR=str(self.temp_root / "nowhere"))
@@ -1861,7 +1760,7 @@ class ReviewFixScriptTest(unittest.TestCase):
             "options = dict(zip(argv[1::2], argv[2::2]))\n"
             "args = review_loop_script.parse_review_loop_arguments(argv)\n"
             "print(json.dumps({'argv': argv, 'repo': argv[0], **options}))\n"
-            f"review_loop_packet.write_handback_rows(argv[0], args, {CONVERGED!r}, 'converged', [], False)\n")
+            f"review_loop_packet.write_handback_rows(args, {CONVERGED!r}, 'converged', [], False)\n")
         return stub
 
     def launch(self, *flags, **extra):
@@ -1913,11 +1812,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
-
-    def test_launch_writes_no_code_run_folder_so_a_code_abort_stays_resumable(self):
-        code, output = self.launch()
-        self.assertEqual(code, 0, output)
-        self.assertFalse((script_utils.git_path(self.repo, "code-step") / "runs").exists())
 
     def test_launch_with_a_repo_flag_reviews_that_repo_and_keeps_state_in_it(self):
         second = self.temp_root / "second"

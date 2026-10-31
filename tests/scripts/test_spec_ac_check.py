@@ -6,7 +6,7 @@ import unittest
 
 import toolkit_paths
 
-CODE_STEP = toolkit_paths.CODE_DIR / "code_step.py"
+PLAN_CHECK = toolkit_paths.CODE_DIR / "plan_check.py"
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures" / "spec_ac_check"
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import plan_format  # noqa: E402
@@ -75,7 +75,7 @@ class PlanCheckAcTest(unittest.TestCase):
             spec_path = task_path / file_name
             spec_path.write_text(fixture(spec_name))
             (task_path / "acceptance-criteria.md").write_text(fixture("criteria.md"))
-            return subprocess.run([sys.executable, str(CODE_STEP), "plan", "check", str(spec_path)],
+            return subprocess.run([sys.executable, str(PLAN_CHECK), "check", str(spec_path)],
                                   cwd=task_dir, capture_output=True, text=True, check=False)
 
     def test_mismatched_reference_fails_the_check_and_names_the_line(self):
@@ -104,7 +104,7 @@ class FinalPlanCheckTest(unittest.TestCase):
                 (task_path / "acceptance-criteria.md").write_text(criteria_text)
 
             flags = ["--final"] if final else []
-            return subprocess.run([sys.executable, str(CODE_STEP), "plan", "check", *flags, str(spec_path)],
+            return subprocess.run([sys.executable, str(PLAN_CHECK), "check", *flags, str(spec_path)],
                                   cwd=task_dir, capture_output=True, text=True, check=False)
 
     def test_final_check_fails_a_spec_whose_criteria_file_is_missing_and_names_the_step(self):
@@ -126,7 +126,7 @@ class FinalPlanCheckTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as task_dir:
             spec_path = pathlib.Path(task_dir) / "spec.md"
             spec_path.write_text("# Spec\n\n## Approach\n\nx\n")
-            done = subprocess.run([sys.executable, str(CODE_STEP), "plan", "check", "--final", str(spec_path)],
+            done = subprocess.run([sys.executable, str(PLAN_CHECK), "check", "--final", str(spec_path)],
                                   cwd=task_dir, capture_output=True, text=True, check=False)
         self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
 
@@ -137,14 +137,14 @@ class FinalPlanCheckTest(unittest.TestCase):
 
 
 class PlanHelpTest(unittest.TestCase):
-    def test_a_help_flag_after_plan_or_a_plan_subcommand_prints_usage_and_exits_zero(self):
-        for words in (["--help"], ["-h"], ["check", "--help"], ["check", "--final", "--help"], ["parse", "--help"]):
+    def test_a_help_flag_prints_the_usage_and_exits_zero(self):
+        for words in (["--help"], ["-h"], ["check", "--help"], ["check", "--final", "--help"]):
             with self.subTest(words=words), tempfile.TemporaryDirectory() as empty_dir:
-                done = subprocess.run([sys.executable, str(CODE_STEP), "plan", *words], cwd=empty_dir,
+                done = subprocess.run([sys.executable, str(PLAN_CHECK), *words], cwd=empty_dir,
                                       capture_output=True, text=True, check=False)
 
                 self.assertEqual(done.returncode, 0, done.stderr)
-                self.assertIn("usage: code_step.py plan", done.stdout)
+                self.assertIn("usage: plan_check.py check", done.stdout)
                 self.assertNotIn("Traceback", done.stderr)
 
 

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-725 changes
+726 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -110,6 +110,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [/code runs as plain prompt steps with no code-step script](notes/2026-10-31-code-runs-as-plain-prompt-steps-with-no-code-step.md) [skill/code, script/code-step, agent/code-fork, skill/eng-spec, agent/spec-criteria, script/review-loop-script, script/handback] Running /code as plain prompt steps in its Sonnet fork cuts cost 15% ($7.86 → $6.66 a run, mean) with 13 of 13 checks passing in all 16 bench runs. The code-step script and its state, hooks and tests are removed; small standalone scripts keep the plan check, the concentration gate, the coder-report parse, the review start and the waits. **cuts cost by 15% ($7.86 → $6.66)**
 * [hand-back packets are JSON only: the free-text fallback parser is gone](notes/2026-10-30-hand-back-packets-are-json-only-the-free-text.md) [script/handback, script/loop-transcript, script/script-utils] handback.parse reads only one JSON object; the old free-text key: value grammar, its stderr note and its grammar-only tests are deleted.
 * [commit credit comes from the hand-back store, not a gate mark](notes/2026-10-30-commit-credit-comes-from-the-hand-back-store-not-a-gate-mark.md) [script/review-commit-gate, script/review-fix, agent/review-loop] The review-gate-mark command is gone: a converged or deferred review-loop hand-back of the commit's repo credits the commit by itself.
 * [Remove code_step alias verbs and the resume argparse](notes/2026-10-29-remove-code-step-alias-verbs-and-the-resume.md) [script/code-step] code_step.py no longer accepts the verbs after-coder, after-review and after-plan-edit: each is refused as an unknown verb, and every route runs the stale-phase check except a real hand-back of the run's own agent. A resume answer that starts with a dash is still refused, by a plain check in place of an argument parser.

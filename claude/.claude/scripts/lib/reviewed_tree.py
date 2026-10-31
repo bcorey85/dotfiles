@@ -1,7 +1,7 @@
 """The working tree a session's converged review covered, kept per repo so a later commit of that same tree passes.
 
-A review-loop records its tree when it ends clean: /code's phase finish (code_step_boundary.mark_review_gate_clean), or
-the scripted loop at its hand-back (review_loop_packet.write_handback_rows). Then
+A review-loop records its tree when it ends clean: the scripted loop at its hand-back
+(review_loop_packet.write_handback_rows). Then
 review_commit_gate.py reads it back at commit time. A tree is its fingerprint, `tree_fingerprint`: "sha256:" and the
 hash of `git diff --binary <base> -- .` (git's raw output bytes, never decoded) followed by, for each untracked,
 non-ignored file in name order, `\0untracked\0<name>\0<git hash-object>`. Any edit after the review changes the

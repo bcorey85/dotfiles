@@ -234,12 +234,6 @@ def hand_back_id(stored_row, session_id):
     return f"handback:{stored_row.get('agent_id')}:{stored_row.get('ts')}"
 
 
-def agent_hand_back_id(session_id, agent_id):
-    """The run id of the agent's latest stored hand-back, or None when it stored none."""
-    hand_backs = session_rows(session_id, "handback", agent_id)
-    return hand_back_id(hand_backs[-1], session_id) if hand_backs else None
-
-
 def record_asks_logged(session_id, packet_id, repo):
     """Notes that this packet's ask outcomes are logged in `repo`. Ask state is kept per repo, so a
     `review_fix.py packet` run from another repo reads this row instead."""

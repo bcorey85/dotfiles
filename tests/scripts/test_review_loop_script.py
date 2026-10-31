@@ -30,7 +30,6 @@ import review_loop_packet
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_LOOP_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_loop_script.py")
 SESSION = "session-1"
-RUN_ID = "run-1"
 AGENT_ID = "agent-1"
 FINDING_ID = re.compile(r"[0-9a-f]{16}")
 PLAN_CHANGE_STATUS = handback.STATUSES[2]
@@ -212,7 +211,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.env.pop("CLAUDE_SKIP_HOOKS", None)
         self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
         self.env["PATH"] = f"{claude.parent}{os.pathsep}{self.env['PATH']}"
-        # /code starts the loop with its own state folder, the one that also holds the run events.
+        # /code starts the loop with its own state folder.
         self.state_dir = pathlib.Path(git(self.repo, "rev-parse", "--path-format=absolute", "--git-path", "code-step"))
 
     def commit_files(self, files):
@@ -226,8 +225,9 @@ class ReviewLoopScriptTest(unittest.TestCase):
                 f"{header_extra}\nhandoff:\n  files:\n    - path: app.py\n{footer}")
 
     def script_command(self, prompt, session=SESSION):
+        gate_flags = [flag for command in getattr(self, "gate_commands", []) for flag in ("--gate-command", command)]
         return [sys.executable, str(SCRIPT), str(self.repo), "--state-dir", str(self.state_dir), "--session", session,
-                "--run-id", RUN_ID, "--agent-id", AGENT_ID, "--prompt-file", str(prompt)]
+                "--agent-id", AGENT_ID, "--prompt-file", str(prompt), *gate_flags]
 
     def run_script(self, scenario, header_extra="", quality_check=None, claude_md=None, footer="", session=SESSION):
         if quality_check:
@@ -255,11 +255,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         path = self.scratch / "handback" / f"{SESSION}.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()]
 
-    def run_events(self):
-        code_step = git(self.repo, "rev-parse", "--path-format=absolute", "--git-path", "code-step")
-        path = pathlib.Path(code_step) / "runs" / RUN_ID / "events.jsonl"
-        return [json.loads(line) for line in path.read_text().splitlines()]
-
     def usage_rows(self):
         path = self.scratch / "agent-usage.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()]
@@ -284,11 +279,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("one exit, all re-read", packet["class_closure"])
         self.assertEqual((row["agent_id"], row["status"], row["no_reviewer"]), (AGENT_ID, "converged", False))
         self.assertFalse(row["unreviewed_fix"])
-
-        handback_events = [event for event in self.run_events() if event["event"] == "handback"]
-        self.assertEqual(len(handback_events), 1)
-        self.assertEqual((handback_events[0]["agent_id"], handback_events[0]["agent_type"]), (AGENT_ID, "review-loop"))
-        self.assertEqual(handback_events[0]["message"], row["message"])
 
         kinds = [stored["kind"] for stored in self.store_rows()]
         self.assertEqual(kinds, ["handback", "stop"])
@@ -503,10 +493,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("feature.py (12)", packet["blockers"][0])
 
     def save_gate_commands(self, gate_commands):
-        # The state file of a /code run whose phase names these gate commands.
-        self.state_dir.mkdir()
-        saved_state = {"stage": "review", "gateCommands": gate_commands}
-        (self.state_dir / "state.json").write_text(json.dumps(saved_state))
+        # The gate commands the caller passes with --gate-command.
+        self.gate_commands = gate_commands
 
     def run_with_scoped_tests(self, gate_commands, scenario):
         self.save_gate_commands(gate_commands)

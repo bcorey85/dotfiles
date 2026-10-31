@@ -12,7 +12,7 @@ from toolkit_paths import TREE_CLAUDE_DIR
 REPO_ROOT = TREE_CLAUDE_DIR.parents[1]
 LINT_SH = REPO_ROOT / "tests" / "lint.sh"
 RUFF_TOML = REPO_ROOT / "ruff.toml"
-GATED_PATH = "claude/.claude/scripts/code/code_step.py"
+GATED_PATH = "claude/.claude/scripts/code/plan_check.py"
 SUFFIXLESS_PATHS = ("claude/.claude/scripts/review/verify-log", "claude/.claude/scripts/review/verify-prep")
 UNGATED_PATH = "claude/.claude/scripts/tools/some_tool.py"
 # Eleven branches: complexity 12, past the limit of 10 in ruff.toml, and clean under every other rule.
@@ -64,7 +64,7 @@ class LintScriptTest(unittest.TestCase):
     def test_a_relative_argument_resolves_against_the_callers_folder(self):
         self.write_complex_function(GATED_PATH)
 
-        finished = self.lint("code_step.py", cwd=(self.tree / GATED_PATH).parent)
+        finished = self.lint("plan_check.py", cwd=(self.tree / GATED_PATH).parent)
 
         self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
         self.assertIn("C901", finished.stdout)

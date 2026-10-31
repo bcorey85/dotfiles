@@ -21,46 +21,6 @@ script_utils = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(script_utils)
 
 
-class TextBeforeMarkerTest(unittest.TestCase):
-    def test_the_text_is_cut_at_the_first_marker_and_kept_whole_without_one(self):
-        self.assertEqual("report", script_utils.text_before_marker("report--stamp one--stamp two", "--stamp"))
-        self.assertEqual("report", script_utils.text_before_marker("report", "--stamp"))
-        self.assertEqual("", script_utils.text_before_marker("--stamp only", "--stamp"))
-
-
-class HeadCommitHelpersTest(unittest.TestCase):
-    def setUp(self):
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        self.repo = pathlib.Path(folder.name)
-        self.env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
-                    "GIT_COMMITTER_EMAIL": "t@t"}
-        self.git("init", "-q")
-        (self.repo / "a.txt").write_text("a\n")
-        self.git("add", "-A")
-        self.git("commit", "-qm", "first")
-        self.first = self.git("rev-parse", "HEAD").strip()
-        (self.repo / "b.txt").write_text("b\n")
-        self.git("add", "-A")
-        self.git("commit", "-qm", "second")
-
-    def git(self, *arguments):
-        return subprocess.run(["git", *arguments], cwd=self.repo, check=True, env=self.env, capture_output=True,
-                              text=True).stdout
-
-    def test_head_descends_from_an_ancestor_and_not_from_a_commit_it_was_reset_past_or_an_unknown_one(self):
-        second = self.git("rev-parse", "HEAD").strip()
-        self.assertTrue(script_utils.head_descends_from(self.repo, self.first))
-        self.git("reset", "-q", "--hard", "HEAD~1")
-        self.assertFalse(script_utils.head_descends_from(self.repo, second))
-        self.assertFalse(script_utils.head_descends_from(self.repo, "0" * 40))
-
-    def test_head_blob_hashes_names_each_file_at_head_and_leaves_out_one_head_lacks(self):
-        hashes = script_utils.head_blob_hashes(self.repo, ["a.txt", "missing.txt"])
-        self.assertEqual({"a.txt": self.git("rev-parse", "HEAD:a.txt").strip()}, hashes)
-        self.assertEqual({}, script_utils.head_blob_hashes(self.repo, []))
-
-
 class PathIsUnderTest(unittest.TestCase):
     def test_a_path_is_under_its_prefix_or_equal_to_it_but_not_under_a_sibling_that_shares_the_start(self):
         self.assertTrue(script_utils.path_is_under("task", "task"))
@@ -191,37 +151,6 @@ class VisibleTextTest(unittest.TestCase):
         self.assertEqual(("`a` ", True), script_utils.visible_text("`a` <!-- x", False))
 
 
-class LinesAddedTest(unittest.TestCase):
-    def test_a_new_line_is_added(self):
-        self.assertEqual(["Also b."], script_utils.lines_added(["a", "c"], ["a", "Also b.", "c"]))
-
-    def test_a_checkbox_tick_is_not_an_added_line(self):
-        self.assertEqual([], script_utils.lines_added(["- [ ] check"], ["- [x] check"]))
-        self.assertEqual([], script_utils.lines_added(["- [x] check"], ["- [X] check"]))
-
-    def test_added_blank_lines_are_not_added_lines(self):
-        self.assertEqual([], script_utils.lines_added(["a", "b"], ["a", "", "", "b"]))
-
-    def test_whitespace_only_changes_are_not_added_lines(self):
-        self.assertEqual([], script_utils.lines_added(["Do a."], ["Do a. "]))
-        self.assertEqual([], script_utils.lines_added(["- x"], ["  - x"]))
-        self.assertEqual([], script_utils.lines_added(["a  b"], ["a b"]))
-
-    def test_a_reworded_line_is_added_in_its_new_form(self):
-        self.assertEqual(["Do c."], script_utils.lines_added(["Do a."], ["Do c."]))
-
-    def test_deleted_lines_add_nothing(self):
-        self.assertEqual([], script_utils.lines_added(["a", "b"], ["a"]))
-
-
-class UsageRequestedTest(unittest.TestCase):
-    def test_only_an_exact_help_word_asks_for_usage(self):
-        cases = [(["--help"], True), (["decide", "-h"], True), (["--helpful"], False), (["help"], False), ([], False)]
-        for words, expected in cases:
-            with self.subTest(words=words):
-                self.assertEqual(expected, script_utils.usage_requested(words))
-
-
 class WaitForTest(unittest.TestCase):
     def test_returns_the_value_the_check_finds_at_once(self):
         self.assertEqual("row", script_utils.wait_for(lambda: "row", 5, 0.01))
@@ -307,21 +236,6 @@ class AttemptsWithinTest(unittest.TestCase):
         for wait, backoff, expected in cases:
             with self.subTest(wait=wait, backoff=backoff):
                 self.assertEqual(expected, script_utils.attempts_within(wait, backoff))
-
-
-class FileTailTest(unittest.TestCase):
-    def test_the_tail_is_the_last_lines_cut_to_the_last_characters_with_a_note_for_an_unreadable_or_empty_file(self):
-        temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(temp_dir.cleanup)
-        path = pathlib.Path(temp_dir.name) / "file.log"
-        empty = pathlib.Path(temp_dir.name) / "empty.log"
-        empty.write_text("")
-        path.write_text("one\ntwo\nthree\nfour\n")
-
-        self.assertEqual("three\nfour", script_utils.file_tail(path, 2, 100))
-        self.assertEqual("ree\nfour", script_utils.file_tail(path, 2, 8))
-        self.assertEqual("(log is empty)", script_utils.file_tail(empty, 2, 100))
-        self.assertIn("log not readable", script_utils.file_tail(pathlib.Path(temp_dir.name) / "none.log", 2, 100))
 
 
 class LedgerFailureReasonTest(unittest.TestCase):
@@ -553,41 +467,6 @@ class HangingIndentLinesTest(unittest.TestCase):
 
     def test_a_value_that_is_not_text_prints_as_text(self):
         self.assertEqual(["- 5"], script_utils.hanging_indent_lines("- ", 5))
-
-
-class ContainsIgnoringWhitespaceTest(unittest.TestCase):
-    def test_a_part_that_differs_only_in_line_breaks_and_indentation_is_contained(self):
-        self.assertTrue(script_utils.contains_ignoring_whitespace("intro\n\n  a   b\nc\n", "a b\n   c"))
-
-    def test_a_part_with_a_different_word_is_not_contained(self):
-        self.assertFalse(script_utils.contains_ignoring_whitespace("intro a b", "a b c"))
-
-    def test_an_empty_or_blank_part_is_not_contained(self):
-        self.assertFalse(script_utils.contains_ignoring_whitespace("anything", " \n"))
-
-
-class HasWhitespaceTest(unittest.TestCase):
-    def test_a_space_tab_or_newline_anywhere_counts(self):
-        for text in ("two words", "tab\there", "line\nbreak", " leading", "trailing "):
-            self.assertTrue(script_utils.has_whitespace(text), repr(text))
-
-    def test_text_with_none_does_not(self):
-        for text in ("docs/plans/orders/spec.md", "ABC-400", ""):
-            self.assertFalse(script_utils.has_whitespace(text), repr(text))
-
-
-class WordsOfArgumentsTest(unittest.TestCase):
-    def test_one_argument_with_spaces_is_split_at_them(self):
-        self.assertEqual(["fix", "the", "typo"], script_utils.words_of_arguments(["fix  the typo"]))
-
-    def test_several_arguments_are_kept_as_given_even_when_one_holds_spaces(self):
-        self.assertEqual(["fix", "the typo"], script_utils.words_of_arguments(["fix", "the typo"]))
-
-    def test_no_arguments_give_no_words(self):
-        self.assertEqual([], script_utils.words_of_arguments([]))
-
-    def test_a_tuple_of_arguments_gives_a_list(self):
-        self.assertEqual(["a", "b"], script_utils.words_of_arguments(("a", "b")))
 
 
 class PreToolUseDenyTest(unittest.TestCase):
@@ -1051,16 +930,6 @@ class PopOptionTest(unittest.TestCase):
         script_utils.pop_option(arguments, "--by")
 
         self.assertEqual(["a", "--by", "x"], arguments)
-
-    def test_pop_repeated_option_takes_every_value_in_order(self):
-        cases = [
-            ("two values", ["pass", "--e", "a b", "--e", "c"], (["pass"], ["a b", "c"])),
-            ("flag absent", ["pass"], (["pass"], [])),
-            ("flag with no value", ["pass", "--e"], (["pass"], [""])),
-        ]
-        for message, arguments, expected in cases:
-            with self.subTest(message):
-                self.assertEqual(expected, script_utils.pop_repeated_option(arguments, "--e"))
 
 
 class PreloadedSkillsPromptTest(unittest.TestCase):

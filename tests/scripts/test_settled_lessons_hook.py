@@ -90,10 +90,10 @@ class SettledLessonsHookTest(unittest.TestCase):
 
     def test_a_script_is_found_through_the_resource_of_a_page(self):
         self.add_page("script/aaa-other", "scripts/code/other.py")
-        self.add_page("script/aaa-near", "scripts/code/code_step.py.bak")
-        self.add_page("script/aaa-suffix", "scripts/xscripts/code/code_step.py")
-        self.add_page("script/code-step", "scripts/code/code_step.py")
-        self.assert_shows(self.toolkit / "scripts" / "code" / "code_step.py", "script/code-step")
+        self.add_page("script/aaa-near", "scripts/code/code_wait.py.bak")
+        self.add_page("script/aaa-suffix", "scripts/xscripts/code/code_wait.py")
+        self.add_page("script/code-wait", "scripts/code/code_wait.py")
+        self.assert_shows(self.toolkit / "scripts" / "code" / "code_wait.py", "script/code-wait")
 
     def test_a_path_through_the_home_claude_symlink_maps_to_the_dotfiles_path(self):
         self.add_page("agent/coder")

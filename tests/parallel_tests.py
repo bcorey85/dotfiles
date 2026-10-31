@@ -30,11 +30,10 @@ FILE_TIMEOUT_SECONDS = float(os.environ.get("TEST_FILE_TIMEOUT_SECONDS") or 1200
 # How much nicer than the runner each test process runs.
 WORKER_NICENESS = 10
 # Files known to take minutes; each runs as this many processes.
-SHARDS = {"test_code_step.py": 4}
+SHARDS = {}
 # Slowest files by measured time, started before the rest (the rest start by file size, largest first).
-# test_code_step_termination.py is one test, so it cannot be split and sets the lower bound on wall-clock.
-HEAVY_FIRST = ["test_code_step_termination.py", "test_code_step.py", "test_verify_branch_script.py",
-               "test_refactor_flow.py", "test_review_fix_script.py", "test_adr_flow.py"]
+HEAVY_FIRST = ["test_verify_branch_script.py", "test_refactor_flow.py", "test_review_fix_script.py",
+               "test_adr_flow.py"]
 
 
 def flatten(suite):

@@ -35,7 +35,7 @@ Plan impacts never stop a phase mid-run. They collect on a phase-end list. One w
 
 Closing phases invoke their named skill, and a coder writes the evidence lines.
 
-Carried over from the integrate branch: a gated phase whose release the task text holds starts in one step, with `coder_packet.py <plan> <N> --gate-evidence "<who>, <when>: <quoted text>"` opening the packet with the evidence. The run notes after the plan go into every coder prompt the fork writes for the phase. The test-file rules stay owned by `source_paths`, which `gate_commands.py` and `coder_packet.py` read.
+Carried over from the integrate branch: a gated phase whose release the task text holds starts in one step, with `coder_packet.py <plan> <N> --gate-evidence "<who>, <when>: <quoted text>"` opening the packet with the evidence; it refuses evidence for a phase with no `— gate:` clause or a closing phase. A fresh start on a gated phase with no release stops and names the condition. A number after the plan path picks that phase. The run notes after the plan go into every coder prompt the fork writes for the phase. The test-file rules stay owned by `source_paths`, which `gate_commands.py` and `coder_packet.py` read.
 
 ## Evidence
 

@@ -5,7 +5,8 @@ criteria, the existing files the phase names, the new files it names, one existi
 files outside the sibling's directory that the sibling imports, and the rest of any test helper directory among
 them. The coder reads all of it in its first response and does not explore. When the coder gate is set for the repo,
 the rules tell the coder not to run checks. `--gate-evidence` is who released a gated phase, when, and their quoted
-words; the packet opens with it, and the script does not judge it."""
+words; the packet opens with it. The script refuses the placeholder text, a phase whose Phase Status line has no
+`— gate:` clause, and a closing phase."""
 import json
 import pathlib
 import re
@@ -143,13 +144,32 @@ def imports_outside_directory(source_file, repo_root):
     return [path for path in resolved if path is not None and path.parent != base]
 
 
-def gate_evidence_text(argv):
+def gate_evidence_refusal(plan_lines, phase_number):
+    """Why `--gate-evidence` does not fit this phase, or None: the phase's Phase Status title needs a `— gate:`
+    clause, and a closing phase takes no coder packet."""
+    entries, _ = plan_format.phase_status_entries(plan_lines, plan_format.closing_skill)
+    entry = next((candidate for candidate in entries if candidate["number"] == phase_number), None)
+    if entry is None or not entry["gate"]:
+        return (f"Phase {phase_number} has no `— gate:` clause in its Phase Status line, "
+                "so --gate-evidence does not apply")
+    if entry["closing"]:
+        return f"Phase {phase_number} is a closing phase and takes no coder packet"
+    return None
+
+
+def gate_evidence_text(argv, plan_lines):
     """The packet's opening gate section for `--gate-evidence "<text>"` after the phase number, or "" with no flag."""
     flag_words = argv[3:]
     if not flag_words:
         return ""
-    if len(flag_words) != 2 or flag_words[0] != "--gate-evidence" or not flag_words[1].strip():
-        sys.exit('usage: coder_packet.py <plan> <phase number> [--gate-evidence "<who>, <when>: <quoted text>"]')
+    placeholder = "<who>, <when>: <quoted text>"
+    if (len(flag_words) != 2 or flag_words[0] != "--gate-evidence" or not flag_words[1].strip()
+            or flag_words[1].strip() == placeholder):
+        sys.exit(f'usage: coder_packet.py <plan> <phase number> [--gate-evidence "{placeholder}"]')
+
+    refusal = gate_evidence_refusal(plan_lines, argv[2])
+    if refusal:
+        sys.exit(f"usage: coder_packet.py: {refusal}")
 
     return (f"Gate evidence, as the caller gave it: {flag_words[1]}\n"
             "The caller released this phase's gate with the evidence above. Proceed with the phase; do not ask for "
@@ -228,7 +248,9 @@ if gate_path.exists():
 else:
     check_rule = "4. Run the phase's checks once, after all edits, as your directives say."
 
-print(f"""{gate_evidence_text(sys.argv)}Packet for Phase {phase_argument}. Paths are relative to {repository_root}.
+gate_evidence_opening = gate_evidence_text(sys.argv, plan_file_lines)
+
+print(f"""{gate_evidence_opening}Packet for Phase {phase_argument}. Paths are relative to {repository_root}.
 
 Plan text to read:
 {chr(10).join(plan_ranges)}

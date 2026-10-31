@@ -1642,6 +1642,23 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("already logged", output)
         self.assertEqual(len(self.ledger_writes()), 2)
 
+    def test_packet_from_another_repo_stops_when_the_asks_were_logged_in_the_first(self):
+        self.packet(WITH_ASK)
+        self.run_script(["asks-done", "accepted", "accepted"])
+        second = self.temp_root / "second"
+        second.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=second, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+        writes_before = len(self.ledger_writes())
+
+        code, output = self.packet(WITH_ASK, cwd=second)
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertIn(os.path.realpath(self.repo), output)
+        self.assertNotIn("present-asks", output)
+        self.assertEqual(len(self.ledger_writes()), writes_before)
+
     def test_asks_done_after_a_failed_row_retries_only_the_unlogged_ones(self):
         self.packet(WITH_ASK)
         self.run_script(["asks-done", "accepted", "accepted"], REVIEW_FIX_CLAUDE_DIR=str(self.temp_root / "nowhere"))
@@ -1795,11 +1812,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
-
-    def test_launch_writes_no_code_run_folder_so_a_code_abort_stays_resumable(self):
-        code, output = self.launch()
-        self.assertEqual(code, 0, output)
-        self.assertFalse((script_utils.git_path(self.repo, "code-step") / "runs").exists())
 
     def test_launch_with_a_repo_flag_reviews_that_repo_and_keeps_state_in_it(self):
         second = self.temp_root / "second"

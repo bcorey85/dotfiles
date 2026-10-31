@@ -108,7 +108,7 @@ def main(argv):
         return detach(repo, argv)
 
     session_id = os.environ["CLAUDE_CODE_SESSION_ID"]
-    run_id = f"{os.getpid()}"
+    run_id = script_utils.sortable_unique_id()
     agent_id = f"{AGENT_PREFIX}{run_id}"
     state_dir = script_utils.git_path(repo, "code-step")
     if state_dir is None:

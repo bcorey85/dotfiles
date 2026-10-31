@@ -27,7 +27,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 **Waiting.** An `Agent` call returns at once and names an `agentId`. Then run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>` with the Bash timeout set to 600000; it prints the agent's report. When it prints `Still working`, run it again. Never end the run while an agent you dispatched works.
 
-**Run notes.** Text after the plan file or ticket id in the task text (other than `resume` and its answer) is the run notes. Put it, word for word, under the line `Run notes from the user. They bind this run; the plan stays the spec:` in the prompt of every coder you dispatch for the phase. The review loop's own fix coders do not get it.
+**Run notes.** Text after the plan file or ticket id in the task text (other than `resume` and its answer) is the run notes. A number right after the plan path picks that phase in place of the first unchecked one. It isn't a run note. Run notes are the text after it. Put the run notes, word for word, under the line `Run notes from the user. They bind this run; the plan stays the spec:` in the prompt of every coder you dispatch for the phase. The review loop's own fix coders do not get it.
 
 **Resume.** When the task text starts with `resume`, the rest is the user's answer to the last stop. Rebuild where the run stopped from `<run folder>/stop.md`, the plan's `## Phase Status`, `git status --short`, `<run folder>/handoff.txt` and `<run folder>/review.out` (the last review packet). Apply the answer to that stop, then go on from the step that stopped.
 
@@ -43,7 +43,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    Multi-phase plan:
 
-   - The next phase is the first unchecked `- [ ]` entry under `## Phase Status`. Without that section, fall back to `git status` plus per-phase success criteria and tell the user to backfill it.
+   - The next phase is the one a number after the plan path names, else the first unchecked `- [ ]` entry under `## Phase Status`. Without that section, fall back to `git status` plus per-phase success criteria and tell the user to backfill it.
    - A closing phase (`~/.claude/skills/_shared/closing-phases.md`) runs its named skill in place of steps 3 to 5: invoke that skill with the Skill tool. For the Refactor pass, first run `python3 ~/.claude/scripts/code/concentration.py <base-sha>` and pass on the module it names, or both counts when the gate does not trigger. When the skill reports an open finding, STOP with it. Otherwise dispatch a `coder` to write one line of evidence under each open Success Criteria item of the phase, and go on to the Phase Status tick.
    - Before every phase's coder, confirm `docs/plans/<slug>/acceptance-criteria.md` exists beside the plan and is non-empty. Missing on a task with behavioral criteria → STOP, do not dispatch, report a plan defect to the user; never write the criteria and never dispatch an agent to. Missing on pure config or mechanical work → proceed. Never pass criterion ids into a dispatch prompt. Log a failed check first:
 
@@ -52,6 +52,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
        stage=code-phase exit=0 candidates=1 confirmed=1 note="<what was missing>"
      ```
 
+   - If the phase's Phase Status line carries `— gate:` and the task text holds no release (who sent it, when, and the words verbatim from the user's or outside session's own message), STOP: name the gate condition and ask for the release (who, when, the words verbatim). If the task text holds the release, dispatch with `--gate-evidence` (step 3).
    - Dispatch the coder for that one phase only, with the phase's Automated Verification gate in its instructions. Re-read the phase's Phase Status line first: `(risk: …)` drives the boundary decision.
    - After the coder returns and you summarize, dispatch the review loop (5).
    - Before marking the phase done, check that the phase's `#### Automated Verification` commands passed: the review loop's execution gate is the full suite; run any other listed command once, after the loop returns; its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect; say so before advancing. A prohibition criterion (`git grep <pattern>` returns zero hits) is yours to run with Bash and log:
@@ -68,7 +69,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      2. Phase 1, any risk tier → STOP, block B.
      3. A gate needed an exception, a `/fix` loop hit its cap, the coder flagged an ambiguity, or a plan change awaits sign-off → STOP, block B.
      4. `(risk: high)`, or no risk tag → STOP, block B.
-     5. The next phase's Phase Status line carries `— gate:` → STOP, block B, naming the condition. A resume or a start for that phase whose task text already holds the release (who sent it, when, and the words verbatim from the user's or outside session's own message) is no stop: dispatch the phase in one step with `--gate-evidence` (step 3).
+     5. The next phase's Phase Status line carries `— gate:` → STOP, block B, naming the condition. A resume re-enters step 2 and reaches its gate bullet.
      6. `(risk: low)` with all machine gates green → AUTO-ADVANCE, block A, then re-enter step 2 for the next phase in-session.
    - One phase or no phase headers → a single dispatch, still after the acceptance-criteria check.
 
@@ -108,14 +109,14 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 Deliver every block through the `brief` skill's shape (`~/.claude/skills/brief/SKILL.md`).
 
-**A — Auto-advance** (decision rule 5):
+**A — Auto-advance** (decision rule 6):
 
 ```
 Phase <N> complete — machine gates green (review ✓, execution ✓, automated-verification ✓). Risk: low. Manual verification: <n> agent-verified, <m> human-only deferred to the /verify packet.
 → Auto-advancing to Phase <N+1> in-session (no /clear; interrupt anytime).
 ```
 
-**B — Stop for sign-off** (decision rules 2–4):
+**B — Stop for sign-off** (decision rules 2–5):
 
 ```
 Phase <N> complete. Risk: <high | low — Phase 1 calibration | low — exception>. Phase-level sign-off requested.

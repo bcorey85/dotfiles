@@ -83,15 +83,12 @@ class PlanCheckVerdictTest(unittest.TestCase):
                 self.assertEqual((0, ""), (done.returncode, done.stdout), done.stderr)
 
     def test_an_expected_red_line_that_does_not_hold_fails(self):
-        cases = {
-            "expected-red-not-later": "Expected red: `npx vitest run` until Phase 1",
-        }
-        for kind, line in cases.items():
-            with self.subTest(kind):
-                done = self.check(phase_plan(" ", " ", first_items=line))
+        line = "Expected red: `npx vitest run` until Phase 1"
 
-                self.assertEqual(1, done.returncode, done.stdout)
-                self.assertIn(f": {kind}: ", done.stdout)
+        done = self.check(phase_plan(" ", " ", first_items=line))
+
+        self.assertEqual(1, done.returncode, done.stdout)
+        self.assertIn(": expected-red-not-later: ", done.stdout)
 
     def test_only_open_phases_have_their_verification_items_checked(self):
         bad_item = "- [ ] it works"

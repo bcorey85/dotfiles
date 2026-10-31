@@ -145,6 +145,8 @@ class LoopTranscript:
         self.background_shells = []  # (transcript line, tool_use_id) of the shell calls that run on in the background
         self.handback_ids = set()  # tool_use_ids of the SubagentHandback calls
         self.handback_lines = []  # the transcript lines of the SubagentHandback calls a hook did not deny
+        self.handback_messages = {}  # SubagentHandback tool_use_id -> the message of the call
+        self.handback_message = None  # the message of the last SubagentHandback call a hook did not deny
         self.finding_rows_logged = 0  # per-finding ledger rows the loop's own Bash calls wrote
         # log-review-finding and log-review-metrics calls the loop made, refused ones too
         self.ledger_calls_attempted = 0
@@ -200,6 +202,7 @@ class LoopTranscript:
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.handback_ids:
             if not block.get("is_error"):
                 self.handback_lines.append(n)
+                self.handback_message = self.handback_messages[block["tool_use_id"]]
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.kinds:
             self.results[block["tool_use_id"]] = text_of(block.get("content"))
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.send_lines:
@@ -262,6 +265,7 @@ class LoopTranscript:
             self.send_lines[block.get("id")] = (n, tool_input.get("to"))
         elif block.get("name") == "SubagentHandback":
             self.handback_ids.add(block.get("id"))
+            self.handback_messages[block.get("id")] = tool_input.get("message")
         elif block.get("name") == "Bash":
             self.read_command(n, block.get("id"), str(tool_input.get("command") or ""))
 
@@ -363,7 +367,13 @@ class LoopTranscript:
         return len(open_launches) + len(open_resumes) + len(open_shells)
 
 
-def last_code_step(transcript):
+def has_delivered_handback(transcript_path):
+    """Whether the transcript holds a SubagentHandback whose result is not an error: a denied hand-back returns an
+    error result and the agent goes on working."""
+    return bool(LoopTranscript(transcript_path).handback_lines)
+
+
+def last_coder_step(transcript):
     """The transcript line of the loop's last coder dispatch or message to a coder, 0 when there is none."""
     return max(transcript.steps(script_utils.CODERS), default=0)
 

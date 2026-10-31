@@ -1,18 +1,24 @@
 """Gate commands derived from a phase section: what to run for the files the phase names."""
 import json
+import os
 import pathlib
 import re
 import shlex
+import sys
 
+SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
+sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
 import check_scope
 import plan_format
 import pytest_config
 import script_utils
-from code_step_verification import verification_command
 from linked_installs import VENV_FOLDERS
+from plan_verification import verification_command
 from shell_command import resolved_command_words
 from source_paths import SCRIPT_SUFFIXES, is_runnable_test_file
 
+# The plan argument that stands for a task with no plan file.
+NO_PLAN = "-"
 CARGO_CLIPPY = "cargo clippy --all-targets -- -D warnings"
 # The scopes of a test, example or bench target, which the clippy step lints with no added `--tests`.
 TEST_TARGET_FLAGS = ("--test", "--example", "--bench")
@@ -81,7 +87,7 @@ def script_package_commands(repo_dir, package_dir, paths, derives_tests):
 
 
 def listed_commands(repo_dir, phase_section):
-    # The commands the phase's Automated Verification lists, read the way the phase boundary reads them, each once.
+    # The commands the phase's Automated Verification lists, each once.
     listed = []
     for _, line in plan_format.automated_verification_rows(phase_section.splitlines()):
         if plan_format.runs_no_command(line):
@@ -444,3 +450,33 @@ def derive_gate_commands(repo_dir, phase_section):
                                 derives_tests=derives_python_tests)
     commands += [command for command in listed_tests if command not in commands]
     return commands
+
+
+def plan_gate_commands(repo_dir, plan, phase):
+    # Returns (commands, has_section): the gate commands of one plan phase, or of the whole plan when it has no entry
+    # for the phase, and whether the plan has that entry. With no plan (`-`) there are no files to read, so there are
+    # no commands.
+    if plan == NO_PLAN:
+        return [], False
+
+    plan_lines = (repo_dir / plan).read_text().splitlines()
+    section = plan_format.phase_text(plan_lines, phase)
+    has_section = section is not None
+    return derive_gate_commands(repo_dir, section if has_section else "\n".join(plan_lines)), has_section
+
+
+def main(argv):
+    # Prints one gate command per line for `coder_gate.py set`.
+    if len(argv) != 3:
+        sys.exit("usage: gate_commands.py <plan> <phase number> (`-` for no plan)")
+
+    repo_dir = script_utils.repo_root(os.getcwd())
+    if repo_dir is None:
+        sys.exit("gate_commands: run it from inside the repo")
+
+    commands, _ = plan_gate_commands(repo_dir, argv[1], argv[2])
+    print("\n".join(commands))
+
+
+if __name__ == "__main__":
+    main(sys.argv)

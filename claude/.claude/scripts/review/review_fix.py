@@ -67,7 +67,6 @@ import plan_format
 import review_asks
 import script_utils
 from capped_review import CAP_REACHED
-from code_step_core import REVIEW_LOOP_SCRIPT
 from handback import FIX_REMOVED_CHANGE, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
 from review_loop_script import loop_script_command, write_script_prompt
@@ -85,9 +84,9 @@ LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
 PLAN_IMPACT = "plan-impact"
 NEW_FINDING_ID = "new-finding-id"
-LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_LOOP_SCRIPT", REVIEW_LOOP_SCRIPT))
+LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_LOOP_SCRIPT",
+                                          pathlib.Path(__file__).resolve().parent / "review_loop_script.py"))
 LAUNCH_STATE_NAME = "review-script"
-# Not code_step_core.REVIEW_SCRIPT_AGENT_PREFIX: a /code run reads that prefix as its own review script.
 LAUNCH_AGENT_PREFIX = "review-script-"
 DEFAULT_HANDOFF = "Review the working tree against HEAD."
 # Exit code of `wait-for-loop`: non-zero so no caller reads it as a finished run, and not 2, the code of a real stop.
@@ -716,7 +715,7 @@ def command_launch(argv):
     sys.stdout.flush()
 
     handback_hook.record_script_dispatch(session_id, repo)
-    command = loop_script_command(LOOP_SCRIPT, repo, state_dir, session_id, run_id, agent_id, prompt_file)
+    command = loop_script_command(LOOP_SCRIPT, repo, state_dir, session_id, agent_id, prompt_file)
     with log_path.open("w") as log:
         finished = subprocess.run(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
 

@@ -36,44 +36,6 @@ def parse(text):
     return plan_format.manual_verification(text, "plan.md")
 
 
-class BlockCauseTest(unittest.TestCase):
-    def test_a_missing_cause_reads_as_plan_unless_it_is_required_and_a_toolkit_or_unknown_cause_stops(self):
-        cases = {
-            "toolkit": ("PLAN-IMPACT:\n  found: B\n  cause: toolkit", False, "toolkit gate or script fault"),
-            "unknown": ("PLAN-IMPACT:\n  found: B\n  cause: gate", False, "`cause: gate` that does not parse"),
-            "plan": ("PLAN-IMPACT:\n  found: B\n  cause: plan", True, None),
-            "missing, reviewer": ("PLAN-IMPACT:\n  found: B", False, None),
-            "missing, required": ("PLAN-IMPACT:\n  found: B", True, "no `cause:` line"),
-        }
-        for name, (block, cause_required, expected) in cases.items():
-            with self.subTest(name):
-                found = plan_format.plan_impact_stop_cause(block, cause_required=cause_required)
-                if expected is None:
-                    self.assertIsNone(found)
-                else:
-                    self.assertIn(expected, found)
-
-
-class NamesOnlyToolkitTest(unittest.TestCase):
-    def test_a_hook_or_gate_with_no_plan_step_in_assumed_or_found_is_toolkit(self):
-        cases = {
-            "hook in assumed": ("PLAN-IMPACT:\n  assumed: the hand-back hook passes\n  found: B\n  cause: plan", True),
-            "gates in found, any case": ("PLAN-IMPACT:\n  assumed: A\n  found: The coder GATES loop\n  cause: plan",
-                                         True),
-            "react hook in a path and a name": ("PLAN-IMPACT:\n  found: src/hooks/useSession.ts:12\n"
-                                                "  assumed: the useOrders hook returns a list\n  cause: plan", False),
-            "a bare hook or gate": ("PLAN-IMPACT:\n  assumed: the hook passes\n  found: the gate denies\n", False),
-            "a step named": ("PLAN-IMPACT:\n  assumed: step 3 adds the hand-back hook\n  found: B", False),
-            "a phase named in found": ("PLAN-IMPACT:\n  assumed: the coder gate\n  found: Phase 2 has it", False),
-            "word inside another word": ("PLAN-IMPACT:\n  assumed: the encoder gate\n  found: B", False),
-            "only the cause line": ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  cause: hand-back hook", False),
-            "only the changes line": ("PLAN-IMPACT:\n  assumed: A\n  found: B\n  changes: the hand-back hook", False),
-        }
-        for name, (block, expected) in cases.items():
-            with self.subTest(name):
-                self.assertIs(expected, plan_format.names_only_toolkit(block))
-
-
 class SectionShapeTest(unittest.TestCase):
     def test_template_items_carry_phase_text_checked_state_and_line(self):
         items = parse(TEMPLATE)
@@ -257,21 +219,14 @@ class PhaseSectionsTest(unittest.TestCase):
         self.assertEqual(["low", "high", "low", "low", "high", "high"], [e["risk"] for e in entries])
         self.assertEqual([False, True, False, False, False, False], [e["done"] for e in entries])
 
-    def test_logged_phase_id_shapes_parse_look_up_and_mark_done(self):
+    def test_logged_phase_id_shapes_parse_and_look_up(self):
         ids = ["10.5", "8.6b", "4.6", "7.5", "8.6", "P4", "P9", "1-2", "6A-6D", "P9-slice-1"]
         status_lines = [f"- [ ] Phase {i}: Title {i} (risk: low)" for i in ids]
         sections = [f"## Phase {i}: Title {i}\nbody {i}" for i in ids]
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        plan_path = pathlib.Path(tmp.name) / "ids.md"
-        plan_path.write_text("\n".join(["## Phase Status", "", *status_lines, "", *sections, ""]))
-        plan_lines = plan_path.read_text().splitlines()
+        plan_lines = "\n".join(["## Phase Status", "", *status_lines, "", *sections, ""]).splitlines()
         self.assertEqual(ids, [e["number"] for e in plan_format.parse_plan_with_closing_phases(plan_lines)["entries"]])
         for i in ids:
             self.assertEqual(f"## Phase {i}: Title {i}\nbody {i}", plan_format.phase_text(plan_lines, i))
-            plan_format.mark_phase_done(plan_path, i)
-        self.assertEqual([True] * len(ids), [e["done"] for e in plan_format.parse_plan_with_closing_phases(
-            plan_path.read_text().splitlines())["entries"]])
 
     def test_parse_plan_fails_a_status_entry_with_no_section_unless_it_is_a_closing_phase(self):
         lines = ["## Phase Status", f"- [ ] Phase {self.ONE}: build", f"- [ ] Phase {self.TWO}: Recap", ""]
@@ -287,35 +242,6 @@ class PhaseSectionsTest(unittest.TestCase):
         plan = plan_format.parse_plan(lines)
         self.assertEqual(["section-without-status"], [f["kind"] for f in plan["failures"]])
         self.assertEqual(4, plan["failures"][0]["line"])
-
-
-class PhaseGateClauseTest(unittest.TestCase):
-    def gates(self, *status_lines):
-        entries, failures = plan_format.phase_status_entries(["## Phase Status", *status_lines], lambda title: None)
-        self.assertEqual([], failures)
-        return [entry["gate"] for entry in entries]
-
-    def test_a_gate_clause_carries_its_condition_text_and_plain_title_words_are_no_clause(self):
-        cases = [
-            ("clause carries the condition", ["- [ ] Phase 8: Review family — gate: LED-5 merged"],
-             ["LED-5 merged"]),
-            ("no clause has no gate", ["- [ ] Phase 8: Review family (risk: low)"], [None]),
-            ("risk mark after the clause is not the condition",
-             ["- [ ] Phase 8: Family - gate: LED-5 merged (risk: low)"], ["LED-5 merged"]),
-            ("clause with no text is still a gate", ["- [ ] Phase 8: Family — gate:"],
-             [plan_format.UNSTATED_GATE]),
-            ("the word gate without a colon is no clause",
-             ["- [ ] Phase 8: Tighten the gate checks", "- [ ] Phase 9: Slicegate: x"], [None, None]),
-            ("gate with a colon in plain title text is no clause",
-             ["- [ ] Phase 8: Add the review gate: deny drafts", "- [ ] Phase 9: Fix the gate:keeper flow"],
-             [None, None]),
-            ("dash-joined clause after title text is a clause",
-             ["- [ ] Phase 8: Add the review gate - gate: LED-5 merged",
-              "- [ ] Phase 9: Fix the flow – gate: LED-6 merged"], ["LED-5 merged", "LED-6 merged"]),
-        ]
-        for name, status_lines, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(expected, self.gates(*status_lines))
 
 
 REAL_MOVED_LINE = ("- [-] Phase 11: Work Mac runs (risk: high) — moved to LED-16 "
@@ -464,23 +390,6 @@ class MovedPhaseTest(unittest.TestCase):
 
 
 class BelowCriteriaDeviationTest(unittest.TestCase):
-    BLOCK = "PLAN-IMPACT:\n  assumed: a header row\n  found: none - src/a.ts:3\n  changes: drop the skip\n"
-
-    def test_below_criteria_deviations_reads_only_the_entries_the_rule_adopted(self):
-        ruling = plan_format.below_criteria_ruling(self.BLOCK + "  acceptance_criteria: none")
-        adopted = plan_format.ruling_deviation("2", "Adopt plan change", plan_format.SESSION_RULING_OWNER,
-                                               "2026-10-28 10:00", ruling, self.BLOCK)
-        user_ruled = plan_format.ruling_deviation("1", "Keep plan as written", "Pat", "2026-10-28 09:00",
-                                                  "keep it", self.BLOCK)
-        plan_text = "\n".join(["# Plan", "", "## Plan Deviations", "", *user_ruled, "", *adopted, "",
-                               "## References", f"  The ruling: {ruling}"])
-
-        summary = "assumed: a header row found: none - src/a.ts:3 changes: drop the skip"
-        self.assertEqual(f"{plan_format.BELOW_CRITERIA_RULING} {summary}", ruling)
-        self.assertEqual([f"Phase 2: {summary}"], plan_format.below_criteria_deviations(plan_text))
-        self.assertEqual([f"Phase 2: {summary}"], plan_format.below_criteria_deviations(plan_text, "2"))
-        self.assertEqual([], plan_format.below_criteria_deviations(plan_text, "1"))
-
     def test_the_summary_drops_bold_marks_before_the_header_word_and_leaves_no_stray_dash(self):
         bold = "**plan_impact**: assumed: a header row —\n  acceptance_criteria: none\n  found: none"
         self.assertEqual("assumed: a header row found: none", plan_format.below_criteria_summary(bold))
@@ -725,7 +634,7 @@ class GateEnvTest(unittest.TestCase):
 
         self.assertEqual([], plan_format.gate_env(plan))
 
-    def test_an_item_the_code_step_never_runs_gives_no_variables(self):
+    def test_an_item_the_coder_never_runs_gives_no_variables(self):
         items = ["- [ ] **CI-verified**: the pipeline runs `FULL_E2E=1 npm test`",
                  "- [ ] Human-only: open the page, then `SHOW_ALL=1 npm start`",
                  "- [ ] N/A - docs only, no `DOCS_ONLY=1 make docs`"]
@@ -762,15 +671,6 @@ class GateEnvTest(unittest.TestCase):
         plan = "#### Automated Verification:\n\n- [ ] **Agent-run**: time `SLOW=1 make import`\n"
 
         self.assertEqual([], plan_format.gate_env(plan))
-
-    def test_an_open_agent_run_box_still_needs_evidence_but_ci_and_human_only_boxes_do_not(self):
-        lines = ["#### Automated Verification:", "", "- [ ] **Agent-run**: time the import",
-                 "- [ ] **CI-verified**: the pipeline", "- [ ] Human-only: look", "- [ ] N/A - docs",
-                 "- [ ] `make test`"]
-
-        items = plan_format.open_success_items(lines)
-
-        self.assertEqual([2, 6], [item["index"] for item in items])
 
     def test_an_item_with_a_command_runs_it_even_when_it_mentions_ci_or_n_a_later(self):
         for item in ("- [ ] **Unit**: `npm test`, not CI-verified", "- [ ] **Check**: `make check` (N/A on mac)",
@@ -906,58 +806,9 @@ class ClosingPhaseHelpersTest(unittest.TestCase):
         self.assertEqual("## Phase 1: Build\n\nbuild text\n", plan_format.phase_text(lines, "1"))
         self.assertIsNone(plan_format.phase_text(lines, "4"))
 
-    def test_phase_wording_ignores_checked_boxes_and_done_evidence_but_not_new_words(self):
-        written = "## Phase 1: Build\n- [ ] builds\n"
-        ticked = "## Phase 1: Build\n- [x] builds\n  - Done: ran it\n"
-        changed = "## Phase 1: Build\n- [ ] builds twice\n"
-        self.assertEqual(plan_format.phase_wording(written), plan_format.phase_wording(ticked))
-        self.assertNotEqual(plan_format.phase_wording(written), plan_format.phase_wording(changed))
-
-    def test_open_phases_come_in_plan_order_with_the_closing_phases_last(self):
-        text = CLOSING_PLAN.replace("- [x] Phase 3", "- [ ] Phase 3")
-        pending = plan_format.ordered_pending(self.entries(text))
-        self.assertEqual(["1", "2", "5", "3", "4"], [entry["number"] for entry in pending])
-
-    def test_gate_blockers_are_the_gated_phases_ahead_of_the_first_phase_without_a_gate(self):
-        pending = plan_format.ordered_pending(self.entries())
-        gated_ahead, next_ungated = plan_format.gate_blockers(pending)
-        self.assertEqual([], gated_ahead)
-        self.assertEqual("1", next_ungated["number"])
-
-        gated_ahead, next_ungated = plan_format.gate_blockers(pending[1:])
-        self.assertEqual(["2"], [entry["number"] for entry in gated_ahead])
-        self.assertEqual("5", next_ungated["number"])
-
-        gated_ahead, next_ungated = plan_format.gate_blockers(pending[1:2])
-        self.assertEqual(["2"], [entry["number"] for entry in gated_ahead])
-        self.assertIsNone(next_ungated)
-
-    def test_the_gate_block_text_names_each_gate_and_the_next_phase_without_one(self):
-        pending = plan_format.ordered_pending(self.entries())[1:]
-        gated_ahead, next_ungated = plan_format.gate_blockers(pending)
-        text = plan_format.gate_block_text(gated_ahead, next_ungated)
-        self.assertIn("Phase 2 (gate: LED-5 merged)", text)
-        self.assertIn("The next open phase without a gate is Phase 5.", text)
-        self.assertTrue(text.endswith("`start --phase <id>` runs one anyway."))
-        self.assertNotIn("without a gate", plan_format.gate_block_text(gated_ahead, None))
-        self.assertNotIn("--gate-evidence", text)
-
-    def test_the_moved_phase_text_and_stop_name_the_target_ticket(self):
-        entry = {"number": "11", "moved": True, "movedTo": "LED-16"}
-        other = {"number": "12", "moved": False, "movedTo": None}
-        self.assertEqual("Phase 11 to LED-16", plan_format.moved_phase_text([entry, other]))
-        before_coder = plan_format.moved_phase_stop(entry, "spec.md")
-        self.assertIn("Phase 11 is moved to LED-16 in spec.md", before_coder)
-        self.assertIn("No coder was dispatched.", before_coder)
-        after_coder = plan_format.moved_phase_stop(entry, "spec.md", coder_ran=True)
-        self.assertIn("The coder ran, and its work is not marked done or committed.", after_coder)
-
     def test_the_failure_rows_name_the_plan_line_kind_and_detail(self):
         plan = {"failures": [{"line": 4, "kind": "duplicate-id", "detail": "Phase 1 twice"}]}
         self.assertEqual(["spec.md:4: duplicate-id: Phase 1 twice"], plan_format.plan_failure_rows(plan, "spec.md"))
-        message = plan_format.plan_failure_message(plan, "spec.md")
-        self.assertTrue(message.startswith("The plan's Phase Status does not parse."))
-        self.assertTrue(message.endswith("spec.md:4: duplicate-id: Phase 1 twice"))
 
 
 class PlanFileEditTest(unittest.TestCase):
@@ -966,24 +817,6 @@ class PlanFileEditTest(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         self.plan_path = pathlib.Path(folder.name) / "spec.md"
         self.plan_path.write_text(CLOSING_PLAN)
-
-    def test_marking_a_phase_done_checks_only_its_open_status_line(self):
-        plan_format.mark_phase_done(self.plan_path, "1")
-        text = self.plan_path.read_text()
-        self.assertIn("- [x] Phase 1: Build", text)
-        self.assertIn("- [ ] Phase 2: Gated work", text)
-        self.assertEqual(CLOSING_PLAN.replace("- [ ] Phase 1", "- [x] Phase 1"), text)
-
-    def test_marking_a_done_or_unknown_phase_changes_nothing(self):
-        plan_format.mark_phase_done(self.plan_path, "3")
-        plan_format.mark_phase_done(self.plan_path, "99")
-        self.assertEqual(CLOSING_PLAN, self.plan_path.read_text())
-
-    def test_reopening_unchecks_the_done_closing_phases_and_names_them(self):
-        reopened = plan_format.reopen_closing_phases(self.plan_path)
-        self.assertEqual(["3"], reopened)
-        self.assertIn("- [ ] Phase 3: Refactor pass", self.plan_path.read_text())
-        self.assertEqual([], plan_format.reopen_closing_phases(self.plan_path))
 
     def test_a_deviation_makes_its_section_before_the_references(self):
         plan_format.append_deviation(self.plan_path, ["- 2026-10-24: Phase 2 waits."])
@@ -1026,12 +859,6 @@ class ManualFormatHelpersTest(unittest.TestCase):
             "#### Manual Verification:\n\n- [ ] read it\n")
     BAD = "## Phase 1: a\n\n#### Manual Verification:\n\n- [ ] open it\n| a | b |\n"
 
-    def test_the_items_of_one_phase_or_all_phases(self):
-        lines = self.GOOD.split("\n")
-        self.assertEqual(["open it"], [i["text"] for i in plan_format.phase_manual_items(lines, 1, "spec.md")])
-        self.assertEqual(["open it", "read it"],
-                         [i["text"] for i in plan_format.phase_manual_items(lines, None, "spec.md")])
-
     def test_a_section_that_parses_has_no_failure_message(self):
         self.assertIsNone(plan_format.manual_format_failure(self.GOOD.split("\n"), "spec.md"))
 
@@ -1041,62 +868,6 @@ class ManualFormatHelpersTest(unittest.TestCase):
         self.assertIn("spec.md", message)
         self.assertTrue(message.endswith("\nThen run resume."))
         self.assertFalse(plan_format.manual_format_message("boom").endswith("\n"))
-
-    def test_session_only_agent_returns_the_agent_of_the_session_phase_line(self):
-        cases = {
-            "bare name": "**Session phase**: mutation-tester",
-            "backticks": "**Session phase**: `mutation-tester`",
-            "bullet": "- **Session phase**: `mutation-tester`",
-        }
-        for label, marker in cases.items():
-            with self.subTest(label):
-                section = f"## Phase 2: Mutants\n\n{marker}\n\n1. Dispatch it.\n2. Commit."
-                self.assertEqual("mutation-tester", plan_format.session_only_agent(section))
-
-    def test_session_only_agent_reads_the_marker_of_a_template_shaped_phase(self):
-        section = (
-            "## Phase 2: Mutants\n\n### Overview\n\nRun the mutation tester over the new code.\n\n"
-            "**Session phase**: `mutation-tester`\n\n1. Dispatch it on the changed files.\n"
-            "2. Record the lines in the plan.\n3. Commit.\n\n### Success Criteria\n\n#### Automated Verification:\n\n"
-            "- [ ] **Report**: exists - `test -f report.txt`\n"
-        )
-
-        self.assertEqual("mutation-tester", plan_format.session_only_agent(section))
-
-    def test_session_only_agent_is_none_without_the_marker_whatever_the_steps_say(self):
-        section = "## Phase 2: X\n\n1. Dispatch `mutation-tester`.\n2. Record the lines in the plan.\n3. Commit."
-
-        self.assertIsNone(plan_format.session_only_agent(section))
-
-    def test_session_only_agent_is_none_when_the_phase_also_names_files_or_the_agent_is_a_coder(self):
-        cases = {
-            "a file entry": "**Session phase**: `mutation-tester`\n**File**: `a/b.ts`",
-            "a plural files entry": "**Files**: `a/b.ts`\n**Session phase**: `mutation-tester`",
-            "coder": "**Session phase**: `coder`",
-            "coder-deep": "**Session phase**: coder-deep",
-            "backend-coder": "**Session phase**: `backend-coder`",
-            "a named coder": "**Session phase**: `plan-coder`",
-            "a capitalised coder": "**Session phase**: `Coder`",
-        }
-        for label, lines in cases.items():
-            with self.subTest(label):
-                self.assertIsNone(plan_format.session_only_agent("## Phase 2: X\n\n" + lines + "\n1. Commit."))
-
-    def test_session_only_agent_is_none_when_the_agent_name_sits_on_a_later_line(self):
-        section = "## Phase 2: X\n\n**Session phase**:\nCommit\n1. Commit."
-
-        self.assertIsNone(plan_format.session_only_agent(section))
-
-    def test_session_only_agent_ignores_a_session_phase_line_in_a_code_fence(self):
-        section = "## Phase 2: X\n\n```\n**Session phase**: mutation-tester\n```\n\n1. Commit."
-
-        self.assertIsNone(plan_format.session_only_agent(section))
-
-    def test_session_only_agent_keeps_its_marker_when_a_file_entry_sits_in_a_code_fence(self):
-        section = ("## Phase 2: X\n\n**Session phase**: `mutation-tester`\n\n```\n**File**: `a/b.ts`\n```\n\n"
-                   "1. Commit.")
-
-        self.assertEqual("mutation-tester", plan_format.session_only_agent(section))
 
     def test_cited_phases_lists_the_phases_a_phase_reuses_directly_and_through_another(self):
         plan_lines = [

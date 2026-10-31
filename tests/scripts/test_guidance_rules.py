@@ -28,9 +28,8 @@ class GuidanceRulesTest(unittest.TestCase):
 
     def test_the_code_fork_acts_on_a_stop_question_the_user_already_answered(self):
         text = guidance_text("agents/code-fork.md")
-        self.assertIn("When the user already answered the run's last stop question in this conversation, run the "
-                      "verb that answer names in place of `resume`, or `resume \"<answer>\"` for a stopped coder, and "
-                      "never ask that question again.", text)
+        self.assertIn("When the user already answered the run's last stop question in this conversation, apply that "
+                      "answer and never ask that question again.", text)
 
     def test_the_main_session_is_told_to_send_simple_commands_after_enter_worktree(self):
         text = guidance_text("orchestration.md")
@@ -68,13 +67,13 @@ class GuidanceRulesTest(unittest.TestCase):
         tools_line = next(line for line in raw_text.splitlines() if line.startswith("tools:"))
         self.assertIn("Bash", [tool.strip() for tool in tools_line.removeprefix("tools:").split(",")])
         self.assertIn("never a lettered sub-id such as `AC1a`", text)
-        self.assertIn("code_step.py plan check", text)
+        self.assertIn("plan_check.py check", text)
         self.assertIn("return those rows unedited", text)
         self.assertIn("Never edit `spec.md`", text)
 
     def test_eng_spec_runs_the_final_plan_check_before_it_reports_the_plan_saved(self):
         text = guidance_text("skills/eng-spec/phases/7-handoff.md")
-        self.assertIn("code_step.py plan check --final ", text)
+        self.assertIn("plan_check.py check --final ", text)
         self.assertIn("Exit 1 is an unresolved planning gate", text)
 
     def test_branch_recap_lists_companion_branches_that_have_no_pr(self):

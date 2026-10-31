@@ -18,7 +18,6 @@ import uuid
 
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
-CHECKBOX = re.compile(r"\[[xX]\]")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
 PATH_TEXT = r"[\w@./-]+\.\w+"
 PATH_LINE = re.compile(rf"`?({PATH_TEXT}:\d+(?:[-,]\d+)*)`?")
@@ -167,23 +166,6 @@ def top_level_sections(lines):
     return [index for index, line in enumerate(lines) if line.startswith("## ") and index not in fenced]
 
 
-def _comparable_line(line):
-    return CHECKBOX.sub("[ ]", " ".join(line.split()))
-
-
-def lines_added(before_lines, after_lines):
-    """The lines of after_lines that before_lines lacks, as they read in after_lines. Blank lines, whitespace-only
-    changes and a markdown checkbox ticked or unticked do not make a line added."""
-    before_keys = [_comparable_line(line) for line in before_lines]
-    after_keys = [_comparable_line(line) for line in after_lines]
-    matcher = difflib.SequenceMatcher(None, before_keys, after_keys, autojunk=False)
-    added = []
-    for tag, _, _, after_start, after_end in matcher.get_opcodes():
-        if tag in ("insert", "replace"):
-            added += [after_lines[i] for i in range(after_start, after_end) if after_keys[i]]
-    return added
-
-
 def text_similarity(first, second):
     """How alike two strings are, from 0 to 1. Long strings are compared in full, with no junk heuristic."""
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
@@ -201,14 +183,6 @@ def wait_for(check, timeout_seconds, interval_seconds):
         if remaining <= 0:
             return None
         time.sleep(min(interval_seconds, remaining))
-
-
-USAGE_WORDS = ("--help", "-h")
-
-
-def usage_requested(args):
-    """True when one of the command-line words is exactly `--help` or `-h`."""
-    return any(word in USAGE_WORDS for word in args)
 
 
 def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None):
@@ -252,19 +226,6 @@ def git_path(cwd, name):
     if found is None:
         return None
     return pathlib.Path(found)
-
-
-def text_before_marker(text, marker):
-    # The text up to the first marker, or all of it when the marker is absent.
-    return text.split(marker, 1)[0]
-
-
-def run_notes_lines(run_notes):
-    """The prompt lines for the user's run notes, or [] when there are none."""
-    if not run_notes:
-        return []
-
-    return ["", "Run notes from the user. They bind this run; the plan stays the spec:", run_notes]
 
 
 def path_is_under(path, prefix):
@@ -324,24 +285,6 @@ def repo_root(cwd, timeout=None):
     return pathlib.Path(top)
 
 
-def head_descends_from(cwd, commit):
-    """False when HEAD is not on the line that grows from `commit`, whether a rebase or reset moved it or git failed
-    (an unknown commit, no repo)."""
-    return git_output(cwd, "merge-base", "--is-ancestor", commit, "HEAD") is not None
-
-
-def head_blob_hashes(cwd, names):
-    """The blob hash of each of `names` at HEAD. A name HEAD does not have is left out."""
-    if not names:
-        return {}
-    listing = git_output(cwd, "ls-tree", "-z", "HEAD", "--", *names) or ""
-    hashes = {}
-    for entry in listing.split("\0"):
-        if not entry:
-            continue
-        meta, _tab, name = entry.partition("\t")
-        hashes[name] = meta.split()[2]
-    return hashes
 def work_tree_top(path, timeout=None):
     """The real path of the work tree that holds path, an existing file or a directory, as a string; None for no path
     or outside a work tree."""
@@ -550,18 +493,6 @@ def one_line(text, limit=200):
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]
 
 
-def file_tail(path, max_lines, max_chars):
-    """The last `max_lines` lines of the file, cut to its last `max_chars` characters; a note in brackets when the
-    file cannot be read or is empty."""
-    try:
-        file_lines = pathlib.Path(path).read_text(errors="replace").splitlines()
-    except OSError as error:
-        return f"(log not readable: {error})"
-
-    tail = "\n".join(file_lines[-max_lines:])
-    return tail[-max_chars:] or "(log is empty)"
-
-
 def write_command_outputs(output_file, command_outputs):
     """Write each (command, outcome, output) to the file as `$ <command>`, the outcome line and the whole output, one
     section per command, making the file's folder."""
@@ -570,32 +501,9 @@ def write_command_outputs(output_file, command_outputs):
     output_file.write_text("\n\n".join(sections))
 
 
-def contains_ignoring_whitespace(text, part):
-    """True when `part` occurs in `text` once every run of whitespace in both reads as one space. An empty part
-    is never contained."""
-    squashed_part = " ".join(str(part).split())
-    return bool(squashed_part) and squashed_part in " ".join(str(text).split())
-
-
 def names_path(path, text):
     """True when `text` holds `path` as a whole path: not the start or the middle of a longer name (`/x/app-v2`)."""
     return re.search(rf"(?<![\w.@+-]){re.escape(path)}(?![\w.@+-])", text) is not None
-
-
-def has_whitespace(text):
-    """True when `text` holds any whitespace character: a space, tab or newline."""
-    return re.search(r"\s", str(text)) is not None
-
-
-def is_existing_md_file(word):
-    """True when `word` names a Markdown file that exists."""
-    return word.endswith(".md") and os.path.isfile(word)
-
-
-def words_of_arguments(arguments):
-    """The words of command-line text. One argument that holds spaces is split at them (the text came quoted as a
-    whole); several arguments are kept as they were given."""
-    return arguments[0].split() if len(arguments) == 1 else list(arguments)
 
 
 def pop_option(arguments, flag):
@@ -607,22 +515,6 @@ def pop_option(arguments, flag):
     position = arguments.index(flag)
     value = arguments[position + 1] if position + 1 < len(arguments) else ""
     return arguments[:position] + arguments[position + 2:], value
-
-
-def pop_repeated_option(arguments, flag):
-    """(the arguments without every `flag` and its value, the values in order). A `flag` that is the last word has the
-    value ""."""
-    rest = []
-    values = []
-    position = 0
-    while position < len(arguments):
-        if arguments[position] != flag:
-            rest.append(arguments[position])
-            position += 1
-            continue
-        values.append(arguments[position + 1] if position + 1 < len(arguments) else "")
-        position += 2
-    return rest, values
 
 
 def leading_env_assignments(command_lines):

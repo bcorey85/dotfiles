@@ -49,9 +49,6 @@ LIVE_AGENTS = "reads the user's own agent definitions for the live session; its 
 DATA_FILE = "data file under the home folder"
 LEDGER_DIR = "makes the folder that holds the ledger files"
 ALLOWED_HITS = [
-    ("scripts/code/code_step_core.py", "INSTALLED_COMMAND = ", PRINTED),
-    ("scripts/code/code_step_review_stops.py", "SUMMARY_LINES in ~/.claude/scripts/lib/test_run_output.py", PRINTED),
-    ("scripts/code/code_step_review_stops.py", '"~/.claude/scripts/lib/test_run_output.py")', PRINTED),
     ("scripts/gates/calibration_refs_guard.py", "calibration_path = ", LIVE_AGENTS),
     ("scripts/gates/calibration_refs_guard.py", "agents_dir = ", LIVE_AGENTS),
     ("scripts/gates/emit_orchestration.py", "SessionStart hook: inject", "docstring text"),
@@ -59,6 +56,10 @@ ALLOWED_HITS = [
     ("scripts/gates/emit_orchestration.py", "os.path.join(os.environ.get", "injects the user's own rules file"),
     ("scripts/lib/script_utils.py", "Installed as ~/.claude/scripts/lib/script_utils.py", "docstring text"),
     ("scripts/lib/script_utils.py", "under ~/.claude, where the ledger's readers", PRINTED),
+    ("scripts/code/code_review_start.py", "code_review_start.py <lane>", PRINTED),
+    ("scripts/code/code_review_start.py", "WAIT_COMMAND = ", PRINTED),
+    ("scripts/code/code_wait.py", "code_wait.py agent <agent id>", PRINTED),
+    ("scripts/code/code_wait.py", "python3 ~/.claude/scripts/code/code_wait.py review", PRINTED),
     ("scripts/review/review_fix.py", "DECIDE_SCRIPT = ", PRINTED),
     ("scripts/review/review_fix.py", "After the user answers, run once", PRINTED),
     ("scripts/review/review_loop_gate.py", "handoff-block.md and dispatch again", PRINTED),

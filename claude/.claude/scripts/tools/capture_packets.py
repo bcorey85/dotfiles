@@ -13,7 +13,7 @@ import pathlib
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parents[1] / folder) for folder in ("review", "lib", "code")]
-import code_step_report
+import coder_report
 import full_check
 import handback
 import handback_store
@@ -93,11 +93,11 @@ def coder_categories(message):
     """The categories a coder report falls in, each decided by the reader that owns the line; a report with none of
     them is no coder report."""
     found = {
-        "coder-why": bool(code_step_report.why_by_file(message)),
-        "coder-plan-impact": code_step_report.has_plan_impact_block(message),
-        "coder-open-questions": bool(code_step_report.open_questions(message)),
-        "coder-eng-spec": code_step_report.recommends_eng_spec(message),
-        "coder-behavior": bool(code_step_report.behavior_lines(message)),
+        "coder-why": bool(coder_report.why_by_file(message)),
+        "coder-plan-impact": coder_report.has_plan_impact_block(message),
+        "coder-open-questions": bool(coder_report.open_questions(message)),
+        "coder-eng-spec": coder_report.recommends_eng_spec(message),
+        "coder-behavior": bool(coder_report.behavior_lines(message)),
     }
     return [name for name, present in found.items() if present]
 

@@ -333,24 +333,6 @@
         ]
       },
       {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py plan-hook"
-          }
-        ]
-      },
-      {
-        "matcher": "Agent|SubagentHandback|SendMessage|TaskStop",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py log-hook"
-          }
-        ]
-      },
-      {
         "hooks": [
           {
             "type": "command",
@@ -474,19 +456,6 @@
           {
             "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/handback.py hook dispatch"
-          },
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py dispatch-hook"
-          }
-        ]
-      },
-      {
-        "matcher": "Skill",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py launch-hook"
           }
         ]
       },
@@ -506,10 +475,6 @@
             "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/coder_gate.py hook",
             "timeout": 3600
-          },
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py hook"
           },
           {
             "type": "command",
@@ -654,10 +619,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py stop-hook"
-          },
-          {
-            "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/staged_claim_gate.py"
           }
         ]
@@ -687,10 +648,6 @@
           {
             "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/format_changed.py"
-          },
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/code_step.py say-hook"
           },
           {
             "type": "command",

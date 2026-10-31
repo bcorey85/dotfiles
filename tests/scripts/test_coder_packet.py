@@ -26,6 +26,8 @@ dotted body
 
 whole body
 """
+GATED_PLAN = PLAN_WITH_A_DOTTED_PHASE_FIRST.replace(f"- [ ] Phase {WHOLE_ID}: Whole\n",
+                                                    f"- [ ] Phase {WHOLE_ID}: Whole — gate: LED-5 merged\n", 1)
 
 
 class CoderPacketTest(unittest.TestCase):
@@ -36,10 +38,55 @@ class CoderPacketTest(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True, capture_output=True)
         self.env = dict(os.environ, HOME=str(self.repo))
 
-    def packet(self, plan_text, phase_number):
+    def packet(self, plan_text, phase_number, *flag_words):
         (self.repo / "plan.md").write_text(plan_text)
-        return subprocess.run([sys.executable, str(PACKET), str(self.repo / "plan.md"), phase_number], cwd=self.repo,
-                              env=self.env, capture_output=True, text=True, timeout=60)
+        return subprocess.run([sys.executable, str(PACKET), str(self.repo / "plan.md"), phase_number, *flag_words],
+                              cwd=self.repo, env=self.env, capture_output=True, text=True, timeout=60)
+
+    def test_gate_evidence_opens_the_packet_with_the_release_as_the_caller_gave_it(self):
+        evidence = "the user, 2026-10-31: go ahead with phase 6"
+
+        result = self.packet(GATED_PLAN, WHOLE_ID, "--gate-evidence", evidence)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(result.stdout.startswith(f"Gate evidence, as the caller gave it: {evidence}\n"))
+        self.assertIn("do not ask for the release again", result.stdout)
+        self.assertIn(f"Packet for Phase {WHOLE_ID}.", result.stdout)
+
+    def test_a_packet_with_no_gate_evidence_names_no_gate(self):
+        result = self.packet(PLAN_WITH_A_DOTTED_PHASE_FIRST, WHOLE_ID)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("Gate evidence", result.stdout)
+
+    def test_a_blank_gate_evidence_is_refused(self):
+        result = self.packet(GATED_PLAN, WHOLE_ID, "--gate-evidence", " ")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("usage: coder_packet.py", result.stderr)
+
+    def test_the_placeholder_text_is_refused_as_gate_evidence(self):
+        result = self.packet(GATED_PLAN, WHOLE_ID, "--gate-evidence", "<who>, <when>: <quoted text>")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("usage: coder_packet.py", result.stderr)
+
+    def test_gate_evidence_is_refused_for_a_phase_with_no_gate_clause(self):
+        result = self.packet(GATED_PLAN, DOTTED_ID, "--gate-evidence", "the user, today: go")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("usage: coder_packet.py", result.stderr)
+        self.assertIn("no `— gate:` clause", result.stderr)
+        self.assertEqual("", result.stdout)
+
+    def test_gate_evidence_is_refused_for_a_closing_phase(self):
+        plan_with_a_gated_closing_phase = GATED_PLAN.replace("Whole — gate: LED-5 merged",
+                                                             "Refactor pass — gate: LED-5 merged")
+
+        result = self.packet(plan_with_a_gated_closing_phase, WHOLE_ID, "--gate-evidence", "the user, today: go")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("closing phase", result.stderr)
 
     def test_a_phase_reads_its_own_section_when_a_dotted_phase_of_the_same_prefix_comes_first(self):
         result = self.packet(PLAN_WITH_A_DOTTED_PHASE_FIRST, WHOLE_ID)

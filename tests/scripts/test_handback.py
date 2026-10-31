@@ -1739,13 +1739,6 @@ class NoStoreReExportTest(unittest.TestCase):
                 )
                 if imports_handback:
                     scopes.append((function, {"handback"}))
-                # The code-step verbs pass the load_handback() module on as a parameter named `module`.
-                takes_handback_module = path.name.startswith("code_step") and any(
-                    argument.arg == "module" for argument in function.args.args)
-                if takes_handback_module:
-                    scopes.append((function, {"module"}))
-            if "= load_handback()" in source:
-                scopes.append((tree, {"module"}))
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.module == "handback":
                     missing.extend(f"{path.name}:{node.lineno} from handback import {alias.name}"

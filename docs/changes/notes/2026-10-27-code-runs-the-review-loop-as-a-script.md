@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "changed"
 title: "/code now runs its review loop as a script instead of an agent"
-description: "The /code step script launches review_loop_script.py, where it used to launch the Sonnet review-loop agent: each reviewer, coder and class-closure judgment is its own claude -p call, and scope, parsing, routing, the round cap and the full check are code."
+description: "The /code step script launches review_loop_script.py, where it used to launch the Sonnet review-loop agent: each reviewer, coder and class-closure judgment is its own claude -p call, and scope, parsing, routing, the round cap and the full-check run are code; with no `Quality check:` line in CLAUDE.md, a model step finds the check command."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-27T07:20:00-05:00"}
 seq: 73
 kind: "structured"
@@ -12,7 +12,7 @@ watches: ["code-scripted-loop-cache-read", "scripted-review-loop-escapes"]
 test: "tests/scripts/test_code_step_review_script.py"
 asked: "Port the benched loop driver into /code; keep its routes, no extra reviewer; work repos get no new CLAUDE.md line."
 proof: ["2026-10-26-scripted-review-loop-with-bounded-re-review-vs"]
-impact: {"metric": "tokens", "before": 1295705, "after": 751367, "unit": "tokens", "finding": "2026-10-26-scripted-review-loop-with-bounded-re-review-vs"}
+impact: {"metric": "cost", "before": 2.96, "after": 2.11, "unit": "$", "finding": "2026-10-26-scripted-review-loop-with-bounded-re-review-vs"}
 unmeasured: ""
 overlap: "The open escape watches read every review run; this one guards against a rise, and the replacement bench already fixed 10 defects to the agent's 9, so it ships before their readings."
 ---

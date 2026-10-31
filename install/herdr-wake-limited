@@ -1,0 +1,97 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# herdr-wake-limited — runs scripts/.local/bin/herdr-wake-limited every 2
+# minutes. It presses Enter in Claude panes stuck at "Your usage limit has
+# reset / Press enter to continue", which Claude shows when the computer slept
+# past the limit reset and which nothing else clears.
+#   macOS: LaunchAgent (~/Library/LaunchAgents/com.dotfiles.herdr-wake-limited.plist)
+#          with StartInterval 120.
+#   Linux: systemd user timer, OnBootSec + OnUnitActiveSec=2min; fires every
+#          2 minutes while the machine is awake.
+# Skips (not fails) if herdr or herdr-api is absent — re-run after installing them.
+
+if { ! command -v herdr &>/dev/null && [[ ! -x "$HOME/.local/bin/herdr" ]]; } ||
+  { ! command -v herdr-api &>/dev/null && [[ ! -x "$HOME/.local/bin/herdr-api" ]]; }; then
+  print_info "herdr or herdr-api not installed — skipping (install them, then re-run install/herdr-wake-limited)"
+  exit 0
+fi
+
+# Absolute path to the stowed link: a service's PATH lacks ~/.local/bin, and the
+# link follows whichever checkout install/stow linked, never a worktree.
+SCRIPT="$HOME/.local/bin/herdr-wake-limited"
+
+if [[ "$(uname)" == "Darwin" ]]; then
+  PLIST="$HOME/Library/LaunchAgents/com.dotfiles.herdr-wake-limited.plist"
+  mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+  SCRIPT_XML="${SCRIPT//&/&amp;}"
+  SCRIPT_XML="${SCRIPT_XML//</"&lt;"}"
+  SCRIPT_XML="${SCRIPT_XML//>/"&gt;"}"
+
+  cat >"$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.dotfiles.herdr-wake-limited</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-l</string>
+    <string>-c</string>
+    <string>$SCRIPT_XML</string>
+  </array>
+  <key>StartInterval</key><integer>120</integer>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/herdr-wake-limited.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/herdr-wake-limited.log</string>
+</dict>
+</plist>
+EOF
+
+  launchctl unload "$PLIST" 2>/dev/null || true
+  launchctl load "$PLIST"
+  print_success "LaunchAgent loaded — every 2 minutes, logs at ~/Library/Logs/herdr-wake-limited.log"
+  print_info "test now with: launchctl start com.dotfiles.herdr-wake-limited"
+elif command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null; then
+  UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$UNIT_DIR"
+
+  cat >"$UNIT_DIR/herdr-wake-limited.service" <<EOF
+[Unit]
+Description=Press Enter in Claude panes stuck at the usage-limit reset prompt
+
+[Service]
+Type=oneshot
+ExecStart="$SCRIPT"
+EOF
+
+  cat >"$UNIT_DIR/herdr-wake-limited.timer" <<EOF
+[Unit]
+Description=Run herdr-wake-limited every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now herdr-wake-limited.timer
+  print_success "systemd user timer enabled — every 2 minutes"
+  print_info "test now with: systemctl --user start herdr-wake-limited.service"
+else
+  print_info "no launchd or systemd user session (WSL?) — run scripts/.local/bin/herdr-wake-limited from cron"
+  exit 0
+fi

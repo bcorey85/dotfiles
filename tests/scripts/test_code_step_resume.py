@@ -10,6 +10,7 @@ import fcntl
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -17,13 +18,19 @@ import time
 
 import test_code_step as base
 
-SETUP_FAULT_PACKET = "status: setup-fault\niter: 1\nblockers:\n  - finding: no package.json\n    file_line: none"
-FIX_REMOVED_PACKET = "status: fix-removed-change\niter: 1\nblockers:\n  - finding: removed 9 of 10\n    file_line: none"
-BLOCKER_PACKET = "status: critical-blocker\niter: 1\nblockers:\n  - finding: b\n    file_line: backend/src/orders.ts:1"
-UNVERIFIED_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
-                     "full_check: unverified (exit 0, no runner summary)\nfull_check_command: npm run lint")
-CHECK_NOT_RUN_PACKET = ("status: converged\niter: 1\nfixed: []\nask: []\nnit: []\n"
-                        "full_check: not run (timeout)\nfull_check_command: npm test")
+# The word stale as the script's prose says it, not inside a path such as the checkout folder or stale_prose.py.
+CALLED_STALE = re.compile(r"(?<![\w./-])stale(?![\w-]|\.\w)")
+SETUP_FAULT_PACKET = json.dumps({"status": "setup-fault", "iter": 1,
+                                 "blockers": [{"finding": "no package.json", "file_line": "none"}]})
+FIX_REMOVED_PACKET = json.dumps({"status": "fix-removed-change", "iter": 1,
+                                 "blockers": [{"finding": "removed 9 of 10", "file_line": "none"}]})
+BLOCKER_PACKET = json.dumps({"status": "critical-blocker", "iter": 1,
+                             "blockers": [{"finding": "b", "file_line": "backend/src/orders.ts:1"}]})
+UNVERIFIED_PACKET = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": [],
+                                "full_check": "unverified (exit 0, no runner summary)",
+                                "full_check_command": "npm run lint"})
+CHECK_NOT_RUN_PACKET = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [], "nit": [],
+                                   "full_check": "not run (timeout)", "full_check_command": "npm test"})
 
 
 class ResumeTest(base.CodeStepTest):
@@ -807,6 +814,167 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertIn("AGENT: coder", restarted)
 
+    def test_a_task_start_over_a_run_whose_coder_was_stopped_reruns_a_restart_with_coder_stopped(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        before = self.state_bytes()
+
+        refused = self.step("start", "--task", "fix the totals")
+
+        self.assert_refused_with_rerun(refused, "start --restart --coder-stopped --task 'fix the totals'")
+        self.assertIn("agent c1, or the fork that launched it, was stopped with TaskStop", refused)
+        self.assertEqual(before, self.state_bytes())
+        self.assertEqual("", self.stop_hook())
+
+        restarted = self.step("start", "--restart", "--coder-stopped", "--task", "fix the totals")
+
+        self.assertIn("AGENT: coder", restarted)
+
+    def test_a_start_over_a_run_whose_fork_was_stopped_by_name_reruns_a_restart_with_coder_stopped(self):
+        self.start_phase_one()
+        dispatch_id = self.events_named("dispatch")[-1]["id"]
+        self.log_fixture("agent_launch", {"prompt": f"code-step-dispatch: {self.state()['runId']}/{dispatch_id}"},
+                         {"agentId": "c1"}, agent_id="f1", agent_type=base.code_step_core.FORK_AGENT_TYPE)
+        self.task_stop("code", "f1")
+
+        refused = self.step("start")
+
+        self.assert_refused_with_rerun(refused, "start --restart --coder-stopped")
+        self.assertEqual("", self.stop_hook())
+
+    def test_a_stop_whose_result_names_no_agent_id_is_logged_by_name_and_offers_no_coder_stopped_rerun(self):
+        self.start_phase_one()
+        dispatch_id = self.events_named("dispatch")[-1]["id"]
+        self.log_fixture("agent_launch", {"prompt": f"code-step-dispatch: {self.state()['runId']}/{dispatch_id}"},
+                         {"agentId": "c1"}, agent_id="f1", agent_type=base.code_step_core.FORK_AGENT_TYPE)
+        self.task_stop("code", None)
+
+        refused = self.step("start")
+
+        self.assertEqual("code", self.events_named("task-stop")[-1]["task_id"])
+        self.assert_refused_with_rerun(refused, "resume")
+        self.assertNotIn("--coder-stopped", refused)
+
+    def test_a_coder_that_handed_back_before_its_stop_is_not_offered_the_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.hook("coder", self.CODER_REPORT, agent_id="c1")
+        self.task_stop("c1", "c1")
+
+        refused = self.step("start", "--task", "fix the totals")
+
+        self.assertIn("a /code run is open here", refused)
+        self.assertIn("`resume` goes on with the open run", refused)
+        self.assertIn("`abort` closes the open run", refused)
+        self.assertNotIn("--coder-stopped", refused)
+        self.assertNotIn("no hand-back will come", refused)
+
+    def test_a_coder_resumed_after_its_hand_back_and_then_stopped_reruns_a_restart_with_coder_stopped(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.hook("coder", self.CODER_REPORT, agent_id="c1")
+        self.send_message("c1")
+        self.task_stop("c1", "c1")
+
+        self.assert_refused_with_rerun(self.step("start"), "start --restart --coder-stopped")
+
+    def test_a_stopped_coder_of_another_sessions_run_is_not_offered_the_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.set_state(sessionId="other-session")
+        before = self.state_bytes()
+
+        refused = self.step("start", "--task", "fix the totals")
+
+        self.assert_refused_with_choices(refused, "status")
+        self.assertIn("started by another session", refused)
+        self.assertNotIn("--coder-stopped", refused)
+        self.assertNotIn(self.own_command("start --restart --task 'fix the totals'"), refused)
+        self.assertEqual(before, self.state_bytes())
+
+    def test_a_coder_resumed_after_its_stop_is_waited_on_again(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.send_message("c1")
+
+        refused = self.step("start", "--task", "fix the totals")
+
+        self.assert_refused_with_choices(refused, "resume", "start --restart --task 'fix the totals'", "abort")
+        self.assertEqual("block", json.loads(self.stop_hook())["decision"])
+
+    def test_resume_over_a_stopped_coder_reruns_a_restart_with_coder_stopped_at_once(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.wait_env(5, "0.2")
+        before = self.state_bytes()
+
+        started_at = time.time()
+        refused = self.step("resume")
+
+        self.assertLess(time.time() - started_at, 5)
+        self.assert_refused_with_rerun(refused, "start --restart --coder-stopped")
+        self.assertIn("agent c1 of the open run, or the fork that launched it, was stopped with TaskStop", refused)
+        self.assertEqual(before, self.state_bytes())
+
+    def test_resume_over_a_finished_run_with_a_stopped_launch_is_not_redirected_to_a_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.set_state(stage="done")
+
+        out = self.step("resume")
+
+        self.assertFalse(out.startswith("Refused: "), out)
+        self.assertNotIn("--coder-stopped", out)
+
+    def test_resume_over_a_verify_ready_run_with_a_stopped_launch_is_not_redirected_to_a_coder_stopped_rerun(self):
+        self.start_phase_one()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.set_state(stage="review", reviewStatus="converged")
+
+        out = self.step("resume")
+
+        self.assertNotIn("--coder-stopped", out)
+
+    def test_resume_over_a_stopped_coder_of_a_planless_run_asks_for_the_task_text(self):
+        self.step("start", "--task", "fix the totals")
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+
+        out = self.step("resume")
+
+        self.assertIn("ACTION: ask-user", out)
+        question = (self.repo / ".git/code-step/question.md").read_text()
+        self.assertIn("ask the user for the task text", question)
+        self.assertIn("start --restart --coder-stopped --task", question)
+
+    def test_resume_over_a_stopped_review_loop_reruns_a_restart_with_coder_stopped(self):
+        self.coder_round()
+        self.launch_the_pending_review("r1")
+        self.task_stop("r1", "r1")
+
+        refused = self.step("resume")
+
+        self.assert_refused_with_rerun(refused, "start --restart --coder-stopped")
+        self.assertIn("agent r1", refused)
+
+    def test_resume_over_a_coder_resumed_after_its_stop_goes_on_with_its_hand_back(self):
+        self.begin_coder()
+        self.launch_the_pending_dispatch("c1", "coder")
+        self.task_stop("c1", "c1")
+        self.send_message("c1")
+        self.hook("coder", "BEHAVIOR: orders exist\nWHY: backend/src/orders.ts 3-5 — order matters", agent_id="c1")
+
+        out = self.step("resume")
+
+        self.assertNotIn("--coder-stopped", out)
+        self.assertIn("AGENT: review-loop", out)
+
     def test_a_restart_over_the_coder_cap_goes_on_once_that_coder_handed_back(self):
         self.stop_the_coder_at_the_wait_cap(launched_as="c1")
         self.hook("coder", self.CODER_REPORT, agent_id="c1")
@@ -1115,7 +1283,7 @@ class ResumeTest(base.CodeStepTest):
         out = self.step("resume")
 
         self.assertIn("AGENT: review-loop", out)
-        self.assertNotIn("stale", out)
+        self.assertNotRegex(out, CALLED_STALE)
 
     def test_a_resume_during_the_plan_coder_does_not_call_an_edited_phase_stale(self):
         self.adopt_plan_change_with_the_plan_coder_out()
@@ -1125,7 +1293,7 @@ class ResumeTest(base.CodeStepTest):
         out = self.step("resume")
 
         self.assertNotIn("ACTION: ask-user", out)
-        self.assertNotIn("stale", out)
+        self.assertNotRegex(out, CALLED_STALE)
         self.assertIn("AGENT: review-loop", out)
         self.assertEqual("review", self.state()["stage"])
 
@@ -1136,10 +1304,10 @@ class ResumeTest(base.CodeStepTest):
 
         out = self.step("resume")
 
-        self.assertNotIn("stale", out)
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(out, CALLED_STALE)
+        self.assertNotRegex(self.said(), CALLED_STALE)
         question_path = self.repo / ".git/code-step/question.md"
-        self.assertTrue(not question_path.exists() or "stale" not in question_path.read_text())
+        self.assertTrue(not question_path.exists() or not CALLED_STALE.search(question_path.read_text()))
         self.assertEqual("impact-coder", self.state()["stage"])
 
     def test_a_resume_at_a_plan_format_stop_does_not_call_an_edited_phase_stale(self):
@@ -1153,7 +1321,7 @@ class ResumeTest(base.CodeStepTest):
         self.step("resume")
 
         self.assertIn("verify", self.said())
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(self.said(), CALLED_STALE)
 
     def test_a_resume_answer_over_a_stale_phase_says_the_phase_is_stale_not_that_no_coder_waits(self):
         self.stop_the_coder_at_the_wait_cap(launched_as="a1")
@@ -1175,8 +1343,8 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertEqual(0, finished.returncode)
         self.assertIn("no hand-back can be matched", finished.stdout)
-        self.assertNotIn("stale", finished.stdout)
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(finished.stdout, CALLED_STALE)
+        self.assertNotRegex(self.said(), CALLED_STALE)
         self.assertEqual(os.getpid(), self.state()["reviewScriptPid"])
 
     def test_a_resume_at_the_review_cap_while_the_review_script_runs_does_not_call_the_phase_stale(self):
@@ -1189,7 +1357,7 @@ class ResumeTest(base.CodeStepTest):
 
         self.assertEqual(0, finished.returncode)
         self.assertIn("The resumed review-loop has not handed back yet", finished.stdout)
-        self.assertNotIn("stale", finished.stdout)
+        self.assertNotRegex(finished.stdout, CALLED_STALE)
         self.assertNotIn("ACTION: ask-user", finished.stdout)
         self.assertEqual(os.getpid(), self.state()["reviewScriptPid"])
 
@@ -1285,7 +1453,7 @@ class ResumeTest(base.CodeStepTest):
 
         out = self.step("resume")
 
-        self.assertNotIn("stale", out)
+        self.assertNotRegex(out, CALLED_STALE)
         self.assertIn("AGENT: review-loop", out)
 
     def test_a_resume_after_a_phase_was_inserted_above_the_runs_phase_while_the_coder_was_out_is_stale(self):
@@ -1310,7 +1478,7 @@ class ResumeTest(base.CodeStepTest):
 
         out = self.step("resume")
 
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(self.said(), CALLED_STALE)
         self.assertEqual("asks", self.state()["stage"])
         self.assertIn("ACTION: ask-user", out)
         self.assertIn("Proposed change: export o as a const", (self.repo / ".git/code-step/question.md").read_text())
@@ -1338,7 +1506,7 @@ class ResumeTest(base.CodeStepTest):
 
         self.step("resume")
 
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(self.said(), CALLED_STALE)
         self.assertEqual("asks", self.state()["stage"])
 
     def test_start_over_an_open_stale_run_names_the_stale_phase_in_the_refusal(self):
@@ -1439,7 +1607,7 @@ class ResumeTest(base.CodeStepTest):
         self.step("resume")
 
         self.assertIn("verify", self.said())
-        self.assertNotIn("stale", self.said())
+        self.assertNotRegex(self.said(), CALLED_STALE)
 
     def test_verify_takes_the_users_fixed_verification_lines_as_the_phase_text(self):
         self.coder_round(source="console.log(1)\n")

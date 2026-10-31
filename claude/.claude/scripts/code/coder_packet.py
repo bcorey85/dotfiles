@@ -18,6 +18,7 @@ import plan_format
 import script_utils
 from source_paths import SCRIPT_SUFFIXES, is_runnable_test_file
 
+USAGE = 'usage: coder_packet.py <plan> <phase number> [--gate-evidence "<text>"]'
 MAX_IMPORTED_FILES = 15
 SCRIPT_IMPORT = re.compile(r"""(?:from|import)\s*\(?\s*['"]([^'"]+)['"]""")
 PYTHON_IMPORT = re.compile(r"^from\s+(\.+)([\w.]*)\s+import", re.MULTILINE)
@@ -165,7 +166,7 @@ def gate_evidence_text(argv, plan_lines):
     placeholder = "<who>, <when>: <quoted text>"
     if (len(flag_words) != 2 or flag_words[0] != "--gate-evidence" or not flag_words[1].strip()
             or flag_words[1].strip() == placeholder):
-        sys.exit(f'usage: coder_packet.py <plan> <phase number> [--gate-evidence "{placeholder}"]')
+        sys.exit(USAGE.replace("<text>", placeholder))
 
     refusal = gate_evidence_refusal(plan_lines, argv[2])
     if refusal:
@@ -179,6 +180,10 @@ def gate_evidence_text(argv, plan_lines):
 def bullet_list(paths, repo_root):
     return "\n".join(f"- {path.relative_to(repo_root)}" for path in paths) or "- none"
 
+
+if script_utils.help_requested(sys.argv[1:]):
+    print(USAGE)
+    sys.exit(0)
 
 plan = pathlib.Path(sys.argv[1]).resolve()
 phase_argument = sys.argv[2]

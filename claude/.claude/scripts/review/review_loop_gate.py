@@ -17,7 +17,8 @@
       resumed an agent (`Resuming agent <id>`) with no later agent message or task notification from it, or a
       shell call whose result record names a `backgroundTaskId` (run in the background, or moved there by its
       timeout) with no task notification for it. A shell whose result comes before the loop's last delivered
-      SubagentHandback is no open work: the caller already holds the packet.
+      SubagentHandback is no open work: the caller already holds the packet. A launch or resume whose agent's
+      transcript, kept beside the loop's, ends on an API error is no open work either: it may never report.
     Every review-loop SubagentStop appends a `kind=stop` row to the session's hand-back store (agent_id and
       the count of open background dispatches), through handback_store.record. A count of one or more means the loop
       is waiting: `review_fix.py packet` prints `ACTION: wait-for-loop`, not stop-no-handback. A row with 0 ends
@@ -31,7 +32,8 @@
   PreToolUse (Bash), a review-loop agent: a shell call of log-review-metrics is refused while the loop's transcript
       holds no reviewer dispatch (`*-reviewer`, `*-reviewer-deep`), unless its prompt is a no-review mode or the
       call's `result=` field is NOT DISPATCHED (a loop that ends before any reviewer runs), and while a
-      reviewer dispatch has not reported back (`result=` never skips that wait).
+      reviewer dispatch has not reported back (`result=` never skips that wait), unless that reviewer ended on an
+      API error.
       The loop logs the line once, with the final counts, at Step 7, after the last reviewer reports.
       Register with matcher `Bash` and `if: Bash(*log-review-metrics*)`; the agent_type check guards every other caller.
 

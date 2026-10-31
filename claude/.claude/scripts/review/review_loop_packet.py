@@ -1,5 +1,5 @@
 """The review loop's hand-back: the packet (one JSON object) handback.py reads, the crash packet, and the rows a
-hand-back writes (run event, hand-back store row, stop row, reviewed tree, agent-usage row)."""
+hand-back writes (hand-back store row, stop row, reviewed tree, agent-usage row)."""
 
 import copy
 import json

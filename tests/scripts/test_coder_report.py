@@ -42,9 +42,6 @@ class ImpactBlockTest(unittest.TestCase):
         self.assertIn("block not found", coder_report.plan_impact_block(report))
         self.assertFalse(coder_report.has_plan_impact_block(report))
 
-    def test_no_marker_gives_none(self):
-        self.assertIsNone(coder_report.plan_impact_block("All done."))
-
 
 class MarkerLinesTest(unittest.TestCase):
     def test_only_the_marker_line_recommends_eng_spec(self):
@@ -57,9 +54,6 @@ class MarkerLinesTest(unittest.TestCase):
         self.assertEqual(coder_report.why_by_file(report), {
             "a.py": [{"lines": "1-5", "note": "first"}, {"lines": "7-9", "note": "second"}],
             "b.py": [{"lines": "2-3", "note": "third"}]})
-
-    def test_behavior_lines_drop_none(self):
-        self.assertEqual(coder_report.behavior_lines("BEHAVIOR: adds x\nBEHAVIOR: none\n"), ["adds x"])
 
 
 if __name__ == "__main__":

@@ -71,6 +71,7 @@ AC_CHANGE_CLAUSE = re.compile(r"[\s;,—\N{EN DASH}-]*[*`_]*" + AC_CHANGE_LINE.p
 DEVIATION_RULING_PREFIX = "  The ruling: "
 STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
 RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)
+GATE_CLAUSE = re.compile(r"—\s*gate:", re.IGNORECASE)
 
 
 class PlanFormatError(Exception):
@@ -165,7 +166,8 @@ def file_entry_paths(plan_lines, section):
 def phase_status_entries(lines, closing_skill):
     """The `- [ ] Phase <id>: <title>` lines under the `Phase Status` heading, in file order, and the failures for a
     list line that does not parse or an id listed twice. `closing_skill(title)` names the skill a closing phase runs,
-    or None. Each entry is {"line", "done", "number", "title", "risk", "closing"}. "moved" is True for a `[-]` line
+    or None. Each entry is {"line", "done", "number", "title", "risk", "closing", "gate"}; "gate" is True when the
+    title has a `— gate:` clause. "moved" is True for a `[-]` line
     and "movedTo" is the ticket key its `moved to <KEY>` names, or None; a moved phase is not "done". "open" is True
     for a phase that is neither done nor moved: the phases a run can still start. A `[-]` line with no
     `moved to <KEY>` is a failure and still returns its entry."""
@@ -210,7 +212,8 @@ def phase_status_entries(lines, closing_skill):
         is_done = match.group(1) in ("x", "X")
         entries.append({"line": index, "done": is_done, "moved": is_moved, "open": not is_done and not is_moved,
                         "movedTo": target.group(1) if target else None, "number": number, "title": title,
-                        "risk": risk.group(1).lower() if risk else "high", "closing": closing})
+                        "risk": risk.group(1).lower() if risk else "high", "closing": closing,
+                        "gate": bool(GATE_CLAUSE.search(title))})
     return entries, failures
 
 

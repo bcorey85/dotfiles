@@ -33,10 +33,10 @@ only when a reviewer's output has no Fix/Ask/Nit sections the parser can read. E
 <state dir>/loop-script/<agent id>/calls.jsonl with its session id, role, wall time and token counts.
 
 On finish, or on any uncaught error, the script validates its packet with handback.load, then appends the rows the
-review-loop agent leaves: the run event of a hand-back, the hand-back store row, the stop row, and, when the telemetry
+review-loop agent leaves: the hand-back store row, the stop row, and, when the telemetry
 switch is on, one agent-usage row. Exit 0 on a normal finish; exit 1 when the run crashed or the packet failed
-validation (a critical-blocker packet and the rows are still written). A SIGTERM (abort, review-again, start
---restart) kills every running claude call and exits 143 with no packet and no rows.
+validation (a critical-blocker packet and the rows are still written). A SIGTERM (a caller stopping the loop)
+kills every running claude call and exits 143 with no packet and no rows.
 
 review_loop_findings.py reads the reviewers' text; review_loop_closure.py runs the class-closure check;
 review_loop_packet.py writes the packet and the hand-back rows.
@@ -924,7 +924,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
 # ---------- main ----------
 
 def stop_on_sigterm(_signal_number, _frame):
-    """The stop signal of an abort, a review-again or a start --restart: kill the process group of every claude call
+    """The stop signal of a caller stopping the loop: kill the process group of every claude call
     that is running and remove the base run's worktree, then exit without a packet."""
     for pid in list(LIVE_CHILDREN):
         with contextlib.suppress(ProcessLookupError, PermissionError):

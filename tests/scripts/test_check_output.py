@@ -17,6 +17,7 @@ import check_output
 import check_scope
 import criteria_verdict
 import full_check
+import gate_commands
 import script_utils
 import test_run_output
 
@@ -647,6 +648,10 @@ class CommandClassificationTest(unittest.TestCase):
 
                 runs_whole = scope == "whole"
                 self.assertEqual(runs_whole, check_scope.runs_whole_check(command, self.repo))
+                self.assertEqual(runs_tests and not runs_whole,
+                                 gate_commands.takes_listed_test_command(command, self.repo))
+                self.assertEqual(families or {gate_commands.UNKNOWN_FAMILY},
+                                 gate_commands.test_command_families(command))
                 self.assertEqual(command != "cat run.log" and command != "! pytest x",
                                  check_output.prints_own_runner_summary(command))
 

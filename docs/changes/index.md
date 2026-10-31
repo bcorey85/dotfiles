@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-723 changes, 14 with a measured gain, 257 behavior changes that no intake metric reads.
+724 changes, 14 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-30, [Hand-back no longer waits on a nested agent that ended on an API error](notes/2026-10-30-hand-back-no-longer-waits-on-a-nested-agent-that.md).
+Latest change: 2026-10-31, [Bash hooks start 5-10 ms faster: check_scope loads its Makefile and pytest config readers only when it judges make or pytest](notes/2026-10-31-bash-hooks-start-5-10-ms-faster-check-scope-loads.md).
 
 ## Top gains
 

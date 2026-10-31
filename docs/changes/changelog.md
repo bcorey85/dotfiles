@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-703 changes
+704 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Toolkit edits show the component's settled results first](notes/2026-10-31-toolkit-edits-show-the-component-s-settled-results.md) [script/settled-lessons-hook] A PreToolUse hook on Write, Edit and MultiEdit shows a component's settled results before the session's first edit of it, so a settled result is not retested or reversed by accident.
 * [Workers act on orchestrator go-aheads for branch-local steps](notes/2026-10-30-workers-act-on-orchestrator-go-aheads-for-branch.md) [rule/global-claude-md] The global CLAUDE.md says a worker acts on the named orchestrator's go-ahead for steps inside its own branch and never waits for the user on them; master, settings.json, CLAUDE.md files and hook-denied steps stay out.
 * [plan check accepts an Agent-run tag for checks an agent runs locally](notes/2026-10-30-plan-check-accepts-an-agent-run-tag-for-checks-an.md) [script/plan-format, script/code-step, script/verify-branch, agent/plan-verifier] A plan can tag a local check that an agent runs but the plan check must not, so it is no longer mislabeled Human-only and routed to the user.
 * [The review loop stops when its fix passes remove the change under review](notes/2026-10-30-the-review-loop-stops-when-its-fix-passes-remove.md) [script/review-loop-script, script/handback, script/review-fix, script/code-step, agent/review-loop] The scripted review loop stops with the new status fix-removed-change when its coder passes have removed half or more of the source lines the change under review adds, so a fix that deletes the mechanism a lane exists to add never converges as clean.

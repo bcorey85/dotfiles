@@ -67,6 +67,7 @@ from check_output import (
 from check_scope import names_django_test_run, scanned_command
 from source_paths import is_runnable_test_file
 
+USAGE = "usage: coder_gate.py set [--env NAME=value]... <command>... | summary | clear | hook | bash-hook"
 MAX_DENIES = 3
 # The /code skill clears the gate after its coder hands back, and again at its start, which drops a gate a crashed
 # run left behind. The age is the backstop: it stops such a gate from outliving a working day.
@@ -599,6 +600,10 @@ def run_bash_hook():
 
 
 def main():
+    if script_utils.help_requested(sys.argv[1:]):
+        print(USAGE)
+        return
+
     verb = sys.argv[1] if len(sys.argv) > 1 else ""
     if verb == "set":
         set_arguments = sys.argv[2:]
@@ -619,8 +624,7 @@ def main():
     elif verb == "bash-hook":
         run_bash_hook()
     else:
-        sys.exit("usage: coder_gate.py set [--env NAME=value]... <command>... | summary | clear | hook | "
-                 "bash-hook")
+        sys.exit(USAGE)
 
 
 if __name__ == "__main__":

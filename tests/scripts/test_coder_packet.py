@@ -53,6 +53,15 @@ class CoderPacketTest(unittest.TestCase):
         self.assertIn("do not ask for the release again", result.stdout)
         self.assertIn(f"Packet for Phase {WHOLE_ID}.", result.stdout)
 
+    def test_help_prints_usage_and_exits_0(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                result = subprocess.run([sys.executable, str(PACKET), flag], cwd=self.repo, env=self.env,
+                                        capture_output=True, text=True, timeout=60)
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("usage: coder_packet.py", result.stdout)
+
     def test_a_packet_with_no_gate_evidence_names_no_gate(self):
         result = self.packet(PLAN_WITH_A_DOTTED_PHASE_FIRST, WHOLE_ID)
 

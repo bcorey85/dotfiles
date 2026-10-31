@@ -57,7 +57,7 @@ def check_plan(plan_lines, plan, plan_path, final):
 
 
 def main(args):
-    if "--help" in args or "-h" in args:
+    if script_utils.help_requested(args):
         return print(USAGE)
 
     final = args[1:2] == ["--final"] and args[0:1] == ["check"]

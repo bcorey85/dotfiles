@@ -69,14 +69,3 @@ def dispatched_repo():
         return None
 
     return handback_store.repo_of_latest_dispatch(session_id)
-
-
-def dispatched_with_ruling():
-    """Whether this session's last review-loop dispatch carried a resolved plan_impact line, as a re-dispatch after
-    a ruling does. A packet on stdin with no dispatch on record never does."""
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    if not session_id:
-        return False
-
-    last_dispatch = handback_store.latest(session_id)["dispatch"] or {}
-    return bool(last_dispatch.get("resolved_plan_impact"))

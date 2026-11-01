@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-736 changes
+737 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -113,6 +113,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [Review fix drops the plan-impact status route the loop no longer emits](notes/2026-10-31-review-fix-drops-the-plan-impact-status-route-the.md) [script/review-fix] review_fix.py loses about 40 lines that served a packet status the review loop stopped emitting. Plan impacts now reach the user only through the plan_impacts list on a converged or capped packet.
 * [/code runs as plain prompt steps with no code-step script](notes/2026-10-31-code-runs-as-plain-prompt-steps-with-no-code-step.md) [skill/code, script/code-step, agent/code-fork, skill/eng-spec, agent/spec-criteria, script/review-loop-script, script/handback] Running /code as plain prompt steps in its Sonnet fork cuts cost 15% ($7.86 → $6.66 a run, mean) with 13 of 13 checks passing in all 16 bench runs. The code-step script and its state, hooks and tests are removed; small standalone scripts keep the plan check, the concentration gate, the coder-report parse, the review start and the waits. **cuts cost by 15% ($7.86 → $6.66)**
 * [hand-back packets are JSON only: the free-text fallback parser is gone](notes/2026-10-30-hand-back-packets-are-json-only-the-free-text.md) [script/handback, script/loop-transcript, script/script-utils] handback.parse reads only one JSON object; the old free-text key: value grammar, its stderr note and its grammar-only tests are deleted.
 * [commit credit comes from the hand-back store, not a gate mark](notes/2026-10-30-commit-credit-comes-from-the-hand-back-store-not-a-gate-mark.md) [script/review-commit-gate, script/review-fix, agent/review-loop] The review-gate-mark command is gone: a converged or deferred review-loop hand-back of the commit's repo credits the commit by itself.

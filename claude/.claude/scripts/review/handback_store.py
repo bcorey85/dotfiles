@@ -118,7 +118,7 @@ def latest(session_id):
     or None, "stop": the last review-loop stop row after the last dispatch or None, "unanswered": the number of
     dispatches that ran after the last hand-back (all of them when there is none), "pending": unanswered > 0}. A
     hand-back clears every dispatch before it. A dispatch that another hook denied never ran, so it blocks nothing. A
-    row holds kind, ts, session_id; a dispatch row also no_review, resolved_plan_impact, repo (the top level of the
+    row holds kind, ts, session_id; a dispatch row also no_review, repo (the top level of the
     repo it reviews, or None; a later DISPATCH_REPO_KIND row replaces it) and tool_use_id; a hand-back row also
     agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row also agent_id, open_dispatches (the
     background agents and shells the loop still waited on when it stopped) and ask_rows. A stop the gate blocked is

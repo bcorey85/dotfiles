@@ -91,6 +91,62 @@ fg = "#3c3836"
 bg = "#f9f5d7"
 grey = "#928374"
 
+# solarized-osaka dark (craftzdog/solarized-osaka.nvim).
+[palettes.solarized-osaka-dark]
+red = "#db302d"
+orange = "#ca4c16"
+yellow = "#b28500"
+green = "#849900"
+blue = "#268bd3"
+branch = "#6d72c5"
+teal = "#29a298"
+purple = "#d23681"
+fg = "#839395"
+bg = "#001419"
+grey = "#586e74"
+
+# solarized-osaka light, accents a tier darker for the cream ground.
+[palettes.solarized-osaka-light]
+red = "#b7221f"
+orange = "#a23c11"
+yellow = "#8f6b00"
+green = "#6f8000"
+blue = "#1b6498"
+branch = "#494eb6"
+teal = "#238682"
+purple = "#b02769"
+fg = "#576d74"
+bg = "#fdf5e2"
+grey = "#647a82"
+
+# alabaster dark (p00f/alabaster.nvim).
+[palettes.alabaster-dark]
+red = "#d2322d"
+orange = "#ec8013"
+yellow = "#cd974b"
+green = "#95cb82"
+blue = "#71aed7"
+branch = "#71ade7"
+teal = "#47bea9"
+purple = "#cc8bc9"
+fg = "#cecece"
+bg = "#0e1415"
+grey = "#7d7d7d"
+
+# alabaster light.
+[palettes.alabaster-light]
+red = "#aa3731"
+orange = "#9a5c00"
+yellow = "#876004"
+green = "#448c27"
+blue = "#325cc0"
+branch = "#007acc"
+teal = "#0083b2"
+purple = "#7a3e9d"
+fg = "#000000"
+bg = "#f7f7f7"
+grey = "#696969"
+
 # tokyonight storm, verbatim.
 [palettes.tokyonight-dark]
 red = "#f7768e"
@@ -267,10 +323,10 @@ orange = "#f6a981"
 yellow = "#d7bb70"
 green = "#8dd09b"
 blue = "#85beef"
-branch = "#9e9dd9"
-teal = "#71b3a8"
+branch = "#9291cb"
+teal = "#61978f"
 purple = "#c799c9"
-fg = "#c1c8d2"
+fg = "#a2a9b1"
 bg = "#1c1e20"
 grey = "#9b9fa6"
 

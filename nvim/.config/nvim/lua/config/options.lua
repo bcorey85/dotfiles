@@ -31,6 +31,7 @@ vim.opt.completeopt = "menu,menuone,noselect"
 vim.opt.conceallevel = 2
 vim.opt.confirm = true
 vim.opt.cursorline = true
+vim.opt.guicursor = "n-v-c-sm:block,i-ci-ve:ver25,r-cr-o:hor20,t:block-TermCursor"
 vim.opt.expandtab = true
 vim.opt.foldlevel = 99
 -- Treesitter-aware folds. foldexpr returns "0" for buffers with no parser, so

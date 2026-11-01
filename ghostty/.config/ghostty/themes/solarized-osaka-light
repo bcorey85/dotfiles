@@ -1,0 +1,22 @@
+# solarized-osaka light (craftzdog/solarized-osaka.nvim extras/ghostty), verbatim.
+palette = 0=#ffffff
+palette = 1=#db302d
+palette = 2=#849900
+palette = 3=#b28500
+palette = 4=#268bd3
+palette = 5=#d23681
+palette = 6=#29a298
+palette = 7=#002c38
+palette = 8=#ede7d3
+palette = 9=#b7211f
+palette = 10=#586600
+palette = 11=#664c00
+palette = 12=#1a6397
+palette = 13=#af2668
+palette = 14=#1a6265
+palette = 15=#001419
+background = #fdf5e2
+foreground = #576d74
+cursor-color = #576d74
+selection-background = #46acf5
+selection-foreground = #576d74

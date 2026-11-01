@@ -119,8 +119,26 @@ local FAMILIES = {
     own_comment_contrast = true,
     accents = {
       -- Headings are periwinkle at every level: a heading defines a section.
-      dark = { heading = "#9e9dd9", bullet = "#9b9fa6" },
+      dark = { heading = "#9291cb", bullet = "#9b9fa6" },
       light = { heading = "#574fa0", bullet = "#666a71" },
+    },
+  },
+  ["solarized-osaka"] = {
+    -- craftzdog/solarized-osaka.nvim: both colorschemes set colors_name "solarized-osaka".
+    schemes = { dark = "solarized-osaka", light = "solarized-osaka-light" },
+    colors_name = "solarized-osaka",
+    accents = {
+      dark = { heading1 = "#db302d", heading = "#b28500" },
+      light = { heading1 = "#b7221f", heading = "#8f6b00" },
+    },
+  },
+  ["alabaster"] = {
+    -- p00f/alabaster.nvim: one colorscheme that follows vim.o.background.
+    schemes = { dark = "alabaster", light = "alabaster" },
+    colors_name = "alabaster",
+    accents = {
+      dark = { heading1 = "#cc8bc9", heading = "#71ade7" },
+      light = { heading1 = "#7a3e9d", heading = "#325cc0" },
     },
   },
 }

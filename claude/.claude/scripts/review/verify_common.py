@@ -57,9 +57,6 @@ def raising_verify_error(plan_reader):
     return read
 
 
-ticket_criteria = raising_verify_error(plan_format.ticket_criteria)
-
-
 def parse_criteria_file(text, name="acceptance-criteria.md"):
     """(entries, manual_entries) from acceptance-criteria.md, one {id, text} per id.
 
@@ -83,6 +80,20 @@ def parse_criteria_file(text, name="acceptance-criteria.md"):
         for ac_id in AC_ID.findall(match.group(1)):
             target.append({"id": ac_id, "text": match.group(2).strip()})
     return entries, manual_entries
+
+
+@raising_verify_error
+def branch_ticket_criteria(ticket_text, ticket_name="ticket", criteria_entries=None):
+    """The ticket's criteria, labelled `Ticket #n`. A ticket with no Acceptance or Requirements heading (criteria under
+    topical headings) takes `criteria_entries` instead (the non-manual entries parsed from acceptance-criteria.md),
+    each labelled by its id; with no entries it raises the missing-heading error."""
+    try:
+        return plan_format.ticket_criteria(ticket_text, ticket_name)
+    except plan_format.NoCriteriaHeadingError:
+        if not criteria_entries:
+            raise
+        return [{"number": number, "label": entry["id"], "text": entry["text"]}
+                for number, entry in enumerate(criteria_entries, 1)]
 
 
 @raising_verify_error

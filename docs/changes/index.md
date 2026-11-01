@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-761 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+762 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [The asks-done call the review packet prints runs once its outcomes are filled in](notes/2026-11-01-the-asks-done-call-the-review-packet-prints-runs.md).
+Latest change: 2026-11-01, [Verify-branch reads a ticket's criteria from the criteria file when the ticket has no Acceptance heading](notes/2026-11-01-verify-branch-reads-a-ticket-s-criteria-from-the.md).
 
 ## Top gains
 

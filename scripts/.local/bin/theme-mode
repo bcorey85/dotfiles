@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge solarized-osaka alabaster; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge solarized-osaka solarized selenized alabaster; }
 
 claude_theme_file() { # <family> <mode> -> the authored Claude Code theme JSON, empty if none
   # A family that ships claude/.claude/themes/<slug>.json gets it copied into
@@ -150,6 +150,13 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # file from the plugin's terminal colours.
     alabaster:light)        echo "Alabaster" ;;
     alabaster:*)            echo "alabaster-dark" ;;
+    # solarized: ghostty BUILTINS, Schoonover's sixteen with the base tones on
+    # the bright slots.
+    solarized:light)        echo "iTerm2 Solarized Light" ;;
+    solarized:*)            echo "iTerm2 Solarized Dark" ;;
+    # selenized: ghostty BUILTINS, Warchoł's dark and light variants.
+    selenized:light)        echo "Selenized Light" ;;
+    selenized:*)            echo "Selenized Dark" ;;
   esac
 }
 
@@ -205,6 +212,14 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # VS Code default pair has the nearest passing text (#d4d4d4 / #000000).
     alabaster:light)        echo "light-plus" ;;
     alabaster:*)            echo "dark-plus" ;;
+    # solarized: hunk BUILTINS for syntax, under a diff-only block that sets
+    # the code text to base0 / base01.
+    solarized:light)        echo "solarized-light" ;;
+    solarized:*)            echo "solarized-dark" ;;
+    # selenized: no hunk builtin. Solarized's builtins are the nearest syntax
+    # base, under a diff-only block that sets selenized's text and diff.
+    selenized:light)        echo "solarized-light" ;;
+    selenized:*)            echo "solarized-dark" ;;
   esac
 }
 
@@ -262,6 +277,25 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     alabaster:*)
       diff_colors="#244032 #462c32 #2e5334 #5b2d31 #6abf40 #d2322d #5c5c5c #2b3d40 #cecece"
       chrome_colors="#162022 #182325 #71aed7 #354c50 #7d7d7d #ec8013"
+      ;;
+    # solarized.nvim paints diffs fg-only, so rows are the green/red signs 15%
+    # into the ground and words 30%.
+    solarized:light)
+      diff_colors="#ebe8c1 #f8d9c8 #d9da9f #f3bbad #859900 #dc322f #93a1a1 #d9d2bc #586e75"
+      chrome_colors="#eee8d5 #fbf3db #268bd2 #d9d2bc #839496 #b58900"
+      ;;
+    solarized:*)
+      diff_colors="#143c2e #212c35 #284c26 #422d34 #859900 #dc322f #586e75 #073642 #839496"
+      chrome_colors="#073642 #002731 #268bd2 #0d4552 #657b83 #b58900"
+      ;;
+    # selenized: same recipe, from the palette's green and red.
+    selenized:light)
+      diff_colors="#e0e4ba #f5d3c1 #c5d699 #efb4a7 #489100 #d2212d #909995 #cfcebe #3a4d53"
+      chrome_colors="#ece3cc #f5ecd4 #0072d4 #d5cdb6 #909995 #ad8900"
+      ;;
+    selenized:*)
+      diff_colors="#1f4f46 #334049 #2e6243 #56444a #75b938 #fa5750 #72898f #2d5b69 #adbcbc"
+      chrome_colors="#184956 #0d3540 #4695f7 #2d5b69 #72898f #dbb32d"
       ;;
   esac
   if [ -n "$diff_colors" ]; then
@@ -1475,6 +1509,46 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#9fabad" subtext0="#647a82"
       green="#849900" yellow="#b28500" red="#db302d"
       blue="#268bd3" teal="#29a298" peach="#ca4c16"
+      ;;
+    solarized:light)
+      # solarized light (base3 #fdf6e3 ground, base2 panel), canonical accents.
+      base_name="one-light"
+      accent="#268bd2" panel_bg="#eee8d5" surface_dim="#e4ddc8"
+      surface0="#d9d2bc" surface1="#cbc3ab"
+      overlay0="#93a1a1" overlay1="#839496"
+      text="#586e75" subtext0="#657b83"
+      green="#859900" yellow="#b58900" red="#dc322f"
+      blue="#268bd2" teal="#2aa198" peach="#cb4b16"
+      ;;
+    solarized:*)
+      # solarized dark (base03 #002b36 ground, panel a step darker).
+      base_name="one-dark"
+      accent="#268bd2" panel_bg="#002731" surface_dim="#073642"
+      surface0="#0d4552" surface1="#164f5c"
+      overlay0="#586e75" overlay1="#657b83"
+      text="#839496" subtext0="#657b83"
+      green="#859900" yellow="#b58900" red="#dc322f"
+      blue="#268bd2" teal="#2aa198" peach="#cb4b16"
+      ;;
+    selenized:light)
+      # selenized light (bg_0 #fbf3db ground, bg_1 panel).
+      base_name="one-light"
+      accent="#0072d4" panel_bg="#ece3cc" surface_dim="#e2dac3"
+      surface0="#d5cdb6" surface1="#cfcebe"
+      overlay0="#909995" overlay1="#7d8784"
+      text="#3a4d53" subtext0="#53676d"
+      green="#489100" yellow="#ad8900" red="#d2212d"
+      blue="#0072d4" teal="#009c8f" peach="#c25d1e"
+      ;;
+    selenized:*)
+      # selenized dark (bg_0 #103c48 ground, panel a step darker).
+      base_name="one-dark"
+      accent="#4695f7" panel_bg="#0d3540" surface_dim="#184956"
+      surface0="#2d5b69" surface1="#3a6878"
+      overlay0="#72898f" overlay1="#8a9ea3"
+      text="#adbcbc" subtext0="#8a9ea3"
+      green="#75b938" yellow="#dbb32d" red="#fa5750"
+      blue="#4695f7" teal="#41c7b9" peach="#ed8649"
       ;;
     alabaster:light)
       # alabaster light (#f7f7f7 ground, pmenu grey panel).

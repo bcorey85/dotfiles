@@ -132,6 +132,24 @@ local FAMILIES = {
       light = { heading1 = "#b7221f", heading = "#8f6b00" },
     },
   },
+  ["solarized"] = {
+    -- maxmx03/solarized.nvim: one colorscheme that follows vim.o.background.
+    schemes = { dark = "solarized", light = "solarized" },
+    colors_name = "solarized",
+    accents = {
+      dark = { heading1 = "#dc322f", heading = "#b58900" },
+      light = { heading1 = "#dc322f", heading = "#b58900" },
+    },
+  },
+  ["selenized"] = {
+    -- calind/selenized.nvim: one colorscheme that follows vim.o.background.
+    schemes = { dark = "selenized", light = "selenized" },
+    colors_name = "selenized",
+    accents = {
+      dark = { heading1 = "#fa5750", heading = "#dbb32d" },
+      light = { heading1 = "#d2212d", heading = "#ad8900" },
+    },
+  },
   ["alabaster"] = {
     -- p00f/alabaster.nvim: one colorscheme that follows vim.o.background.
     schemes = { dark = "alabaster", light = "alabaster" },

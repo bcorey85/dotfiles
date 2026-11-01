@@ -96,7 +96,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
        repo="$(basename "$(git rev-parse --show-toplevel)")" branch="$(git branch --show-current)" \
        lane=<lane> scope=phase phase=<N> iter=<returned iter> \
-       gate=<entry gate> disposition=ask class=<entry class> file=<path> line=<n> \
+       gate=<entry gate> disposition=ask class=<entry class> 'file=<path>' line=<n> \
        actioned=ask ask_outcome=<accepted|rejected|modified> desc="ask resolved: <one line>"
      ```
 

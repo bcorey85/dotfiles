@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-740 changes
+741 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -126,6 +126,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Inline-interpreter hint lets a script run whose quoted argument names a dash-C flag](notes/2026-10-31-inline-interpreter-hint-lets-a-script-run-whose.md) [script/inline-interpreter-hint] A script run such as `python3 bin/build_changes.py new "Commit with git -C alone"` now runs without rewording. The hint blanks quoted text before it matches the inline-code rule, as the safety gate does, and still denies `python3 -c`, `node -e` and a quoted flag before the script file.
 * [A typed user approval lets an amend pass the git-discipline gate](notes/2026-10-31-a-typed-user-approval-lets-an-amend-pass-the-git.md) [script/git-discipline-gate, script/review-commit-gate] An amend the user approves in a prompt they type now runs: git-discipline-gate reads the user's newest typed prompt and lets `git commit --amend` pass when a sentence opens with an order to amend, holds no negation and is not a question. A peer message, a task notification, a tool result, pasted text or the agent's own text never approves one, and a force push in the same command stays denied.
 * [staged-claim gate checks a claim against the repo the message names](notes/2026-10-31-staged-claim-gate-checks-a-claim-against-the-repo.md) [script/staged-claim-gate] A session that reports a file staged in a sibling worktree, named by folder, by `git -C <folder>` or by a `~/` path, ends its turn when that worktree's index holds the file: the staged-claim gate checks that index instead of the cwd's. A false claim there still blocks, by file name.
 * [review-commit-gate passes a search that quotes the commit words through a text tool, cd or loop](notes/2026-10-31-review-commit-gate-passes-a-search-that-quotes-the.md) [script/review-commit-gate] A log search that quotes the commit words runs in a dirty session when it pipes through sort, uniq, cut or jq, follows a cd or ls, or sits in a for or if: review-commit-gate reads those steps as probes, so the search needs no rewording. A real commit in any of those shapes is still denied.

@@ -79,8 +79,21 @@ DENIED_COMMANDS = {
     "manage_shell_with_an_option_and_a_heredoc": "python manage.py shell --settings=x <<EOF\nprint(1)\nEOF",
     "manage_shell_with_a_value_option_and_a_heredoc": "python3 manage.py shell -i ipython <<EOF\nprint(1)\nEOF",
     "manage_shell_in_docker_compose": "docker compose exec web python manage.py shell -i x <<EOF\nx\nEOF",
+    "python_flag_before_a_script_file": "python3 -c 'print(1)' script.py",
+    "python_quoted_dash_c_flag": "python3 \"-c\" 'print(1)'",
+    "node_quoted_eval_flag": "node '--eval' 'process.exit(1)'",
+    "python_quoted_dash_c_after_a_value_option": "python3 -W ignore \"-c\" 'print(1)'",
+    "uv_run_python_quoted_dash_c_flag": "uv run python3 \"-c\" 'print(1)'",
+    "inline_python_inside_bash_dash_c": "bash -c \"python3 -c 'print(1)'\"",
+    "inline_python_inside_ssh_command": "ssh host 'python3 -c \"print(1)\"'",
+    "inline_python_inside_eval": "eval \"python3 -c 'x'\"",
+    "inline_python_in_a_double_quoted_substitution": "git commit -m \"$(python3 -c 'print(1)')\"",
+    "inline_python_in_a_double_quoted_backtick_span": "echo \"`python3 -c 'print(1)'`\"",
+    "python_dash_c_after_a_script_with_a_quoted_title": "python3 tool.py new \"git -C\"; python3 -c 'print(1)'",
 }
 ALLOWED_COMMANDS = {
+    "bash_dash_c_running_a_script_with_a_quoted_dash_c_title": "bash -c \"python3 tool.py new 'git -C'\"",
+    "commit_message_naming_python_dash_c": "git commit -m \"Run python3 -c to check\"",
     "script_file": "python3 script.py",
     "script_file_with_heredoc_data": "python3 script.py <<'EOF'\nsome data\nEOF",
     "script_file_after_a_pipe": "cat x | python3 script.py",
@@ -118,6 +131,17 @@ ALLOWED_COMMANDS = {
         "git commit -m \"$(cat <<'EOF'\nSupports 5\" screens\ngrep x f | python3\nEOF\n)\"",
     "manage_other_command_with_a_heredoc": "python manage.py migrate <<'EOF'\nx\nEOF",
     "nodejs_version_flag_after_a_pipe": "echo | nodejs --version",
+    "script_file_with_a_quoted_title_naming_a_dash_c_flag":
+        "python3 bin/build_changes.py new \"Commit with git -C alone\" --by claude-code/x",
+    "script_file_with_a_single_quoted_dash_e_argument": "node build.js 'run with -e set'",
+    "quoted_script_name_with_a_quoted_dash_c_title": "python3 \"tool.py\" new \"git -C\"",
+    "sed_single_quoted_line_range_then_script_run": "sed -n '1,5p' f | python3 tool.py new \"git -C\"",
+    "sed_single_quoted_dollar_range_then_script_run": "sed -n '1,$p' f | python3 tool.py new \"git -C\"",
+    "uniq_with_an_end_of_options_marker_then_script_run": "uniq -- -x | python3 tool.py new \"git -C\"",
+    "uv_run_python_script_with_a_quoted_dash_c_title": "uv run python3 tool.py new \"git -C\"",
+    "script_with_a_quoted_dash_c_title_piped_to_grep": "python3 tool.py new \"git -C\" | grep x",
+    "script_with_a_quoted_dash_c_title_and_stderr_to_dev_null": "python3 tool.py new \"git -C\" 2>/dev/null",
+    "script_with_a_quoted_dev_null_redirect": "python3 tool.py new \"git -C\" > \"/dev/null\"",
 }
 
 

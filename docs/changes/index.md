@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-735 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+736 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [Frontend rules load on tsx and jsx files](notes/2026-10-31-frontend-rules-load-on-tsx-and-jsx-files.md).
+Latest change: 2026-10-31, [shell-write-gate reads a name joined onto a base off the cwd as no write to the cwd file](notes/2026-10-31-shell-write-gate-reads-a-name-joined-onto-a-base.md).
 
 ## Top gains
 

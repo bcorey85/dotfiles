@@ -10,8 +10,10 @@
      inline code (`-c`, `-e`, `-p`, `--print`, `--eval`, `deno eval`) or untracked, not git-ignored script file opens
      a file for writing and names a git-tracked file: as a string literal, through a name bound to one, or passed as
      an argument unless the trace finds that no write target comes from argv (a script that only reads its argument,
-     or writes files of its own, passes). A write is an open for writing, a delete, move or truncate, or a child
-     process whose text runs a program that writes the file (e.g. `sed -i`, `tee`, `cp`, `mv`).
+     or writes files of its own, passes). A literal joined onto a base that cannot be the cwd (a home folder or new
+     temp folder call, or a name bound only to one) names no file of the cwd and does not deny. A write is an open
+     for writing, a delete, move or truncate, or a child process whose text runs a program that writes the file
+     (e.g. `sed -i`, `tee`, `cp`, `mv`).
   5. Any agent: a relative target after a `cd`, `pushd` or `popd` whose folder is not a literal (`cd "$D"`, `popd`,
      `cd -`), because the gate cannot tell where the write lands.
 Only a `>` outside quotes is a redirect (a `>` inside a double-quoted `$(...)` is code and is read as one), and the
@@ -49,6 +51,7 @@ from code_text import (
     split_arguments,
     statement_around,
     sub_outside_strings,
+    top_level_positions,
     tuple_fields,
     without_comments,
 )
@@ -135,12 +138,28 @@ LANGUAGE_NAMES = frozenset(("true", "false", "null", "undefined", "nil", "proces
 NAME_USE = re.compile(r"(?<![\w.$])(\$?[A-Za-z_]\w*)(\s*\(|\s*\.|\s*::|\s*->|\s*=(?!=)|\s*:(?!:))?")
 # What may stand before a keyword argument or option key.
 KEY_PRECEDERS = ("(", "{", ",")
-# The call heads that return their argument's path, changed in form: the trace follows their arguments. Any other call
-# returns a new value.
+# The call heads that return their argument's path, changed in form: the trace follows their arguments.
 PATH_FUNCTIONS = frozenset(("str", "String", "Path", "PurePath", "Pathname", "abspath", "realpath", "normpath",
                             "expanduser", "expandvars", "expand_path", "join", "resolve", "fspath", "format",
                             "absolute", "strip", "rstrip", "lstrip", "joinpath", "as_posix"))
 CALL_RESULT = re.compile(r"\s*(?:new\s+|await\s+)?([A-Za-z_][\w.]*)\s*\(.*\)\s*$", re.S)
+# The call heads that make a root off the cwd: the home folder or a new temp folder.
+NEW_ROOT_FUNCTIONS = frozenset(("home", "gettempdir", "mkdtemp", "TemporaryDirectory"))
+# The call heads that return the cwd.
+CWD_FUNCTIONS = frozenset(("cwd", "getcwd", "getcwdb", "pwd"))
+# The call heads that join their later arguments onto their first (`os.path.join(B, 'a')`, `Path(B, 'a')`).
+JOIN_FUNCTIONS = frozenset(("join", "Path", "PurePath"))
+# The value a text opens with: a name, dotted or not, and the `(` of a call when one follows. A name glued to a quote
+# is a string prefix (`f"..."`), not a value.
+LEADING_VALUE = re.compile(r"""[\s(]*(?:new\s+|await\s+)?(\$?[A-Za-z_][\w.$]*)(?![\w.$'"])\s*(\()?""")
+# What may follow a call before a join operator: attributes and empty calls (`Path(x).parent`, `.resolve()`).
+CALL_TAIL = re.compile(r"(?:\s*\.\s*\w+(?:\s*\(\s*\))?)*")
+JOIN_OPERATOR = re.compile(r"\s*\)?\s*[/+]")
+RETURN_VALUE = re.compile(r"\breturn\b[ \t]*([^\n;]*)")
+# An assignment that unpacks into two or more names: (targets, right side).
+UNPACKING = re.compile(r"^[ \t]*(?:(?:const|let|var|my)\s+)?([\[(]?[\w$*]+(?:[ \t]*,[ \t]*[\w$*]+)+[\])]?)[ \t]*"
+                       r"=(?![=>])[ \t]*([^\n]+)", re.M)
+MAX_BASE_HOPS = 8
 # The other names a for loop's target list may hold beside the traced one (`for path, old, new in EDITS`).
 LOOP_TARGETS = r"[\w\s,()\[\]]*?"
 MAX_SCRIPT_BYTES = 1_000_000
@@ -717,19 +736,118 @@ def absolute_root(code, target):
     return None
 
 
+def joined_off_cwd(code, text):
+    """Whether text is one value that joins its literals onto a base that cannot be the cwd: the base `B` of
+    `B / 'a'`, `B + 'a'`, `join(B, 'a')` or `Path(B, 'a')` opens text, and base_may_be_cwd finds it cannot be. The
+    literals then name files under that base, not under the cwd."""
+    if split_arguments(text, 0, multiline=True) != [text]:
+        return False
+    leading = LEADING_VALUE.match(text)
+    if leading is None:
+        return False
+
+    base_end = leading.end()
+    if leading.group(2):
+        arguments = split_arguments(text, leading.end(), multiline=True)
+        if leading.group(1).rsplit(".", 1)[-1] in JOIN_FUNCTIONS and len(arguments) > 1:
+            return not base_may_be_cwd(code, arguments[0], frozenset())
+        call_close = next((index for index, char in top_level_positions(text, leading.end()) if char in ")]}"),
+                          len(text))
+        base_end = CALL_TAIL.match(text, call_close + 1).end() if call_close < len(text) else len(text)
+    if not JOIN_OPERATOR.match(text, base_end):
+        return False
+    return not base_may_be_cwd(code, text, frozenset())
+
+
+def base_may_be_cwd(code, text, seen, position=None):
+    """Whether the value text opens with may be the cwd or a folder under it. A string literal, a cwd call, argv, a
+    name with no binding and a trace past MAX_BASE_HOPS steps may be. A call in PATH_FUNCTIONS is its first argument; a
+    call in NEW_ROOT_FUNCTIONS makes a root off the cwd; a call to a function the code defines is what it returns;
+    any other call, and a function with no return found, may be. A name may be when any binding may be; a binding
+    through itself adds nothing. position is the part of a returned tuple a name is unpacked from."""
+    leading = LEADING_VALUE.match(text)
+    if leading is None:
+        return True
+    name = leading.group(1)
+    head = name.rsplit(".", 1)[-1]
+    if head in CWD_FUNCTIONS or ARGV_SOURCE.search(name):
+        return True
+
+    key = name + "()" if leading.group(2) else name
+    if key in seen:
+        return False
+    if len(seen) >= MAX_BASE_HOPS:
+        return True
+    seen = seen | {key}
+
+    if leading.group(2):
+        if head in PATH_FUNCTIONS:
+            arguments = [argument for argument in split_arguments(text, leading.end(), multiline=True)
+                         if trim(argument)]
+            return not arguments or base_may_be_cwd(code, arguments[0], seen)
+        returned = returned_texts(code, head, position)
+        if not returned and head in NEW_ROOT_FUNCTIONS and not defines_function(code, head):
+            return False
+        return not returned or any(base_may_be_cwd(code, value, seen) for value in returned)
+
+    bindings = binding_texts(code, name)
+    return not bindings or any(base_may_be_cwd(code, binding, seen, unpacked_position(code, name, binding))
+                               for binding in bindings)
+
+
+def unpacked_position(code, name, binding):
+    """The position of name among the targets of an unpacking (`tree, sha = build()`) whose right side is binding,
+    else None."""
+    for unpacking in UNPACKING.finditer(code):
+        targets = [target.strip(SP + "()[]$*") for target in unpacking.group(1).split(",")]
+        if name.lstrip("$") in targets and trim(unpacking.group(2)).startswith(trim(binding)):
+            return targets.index(name.lstrip("$"))
+    return None
+
+
+def defines_function(code, function_name):
+    """Whether the code binds this name: a function definition, an assignment (a lambda or an alias), or an import
+    alias."""
+    if any(definition.group(1) == function_name for definition in FUNCTION_DEFINITION.finditer(code)):
+        return True
+    if re.search(rf"\bimport\b[^\n]*\bas\s+{re.escape(function_name)}\b", code):
+        return True
+    return bool(binding_texts(code, function_name))
+
+
+def returned_texts(code, function_name, position=None):
+    """Each value a function the code defines returns, a returned tuple split into its parts, or only the part at
+    position when the tuple has one there. A function's body runs to the next function definition. Empty for a
+    function the code does not define."""
+    definitions = list(FUNCTION_DEFINITION.finditer(code))
+    values = []
+    for index, definition in enumerate(definitions):
+        if definition.group(1) != function_name:
+            continue
+        body_end = definitions[index + 1].start() if index + 1 < len(definitions) else len(code)
+        for returned in RETURN_VALUE.finditer(code, definition.end(), body_end):
+            parts = [part for part in split_arguments(returned.group(1), 0) if trim(part)]
+            values += parts[position:position + 1] if position is not None and position < len(parts) else parts
+    return values
+
+
 def written_candidates(code, family):
     """The path texts code's file writes name: each literal in a write statement, and each literal its target is
     bound to. When a write's target joins onto an absolute_root, the target's own literals and the names it reads are
-    joined onto that root; other literals of the statement stay relative."""
+    joined onto that root; other literals of the statement stay relative. A text joined_off_cwd names no candidate."""
     candidates = []
     for statement, target in write_statements(code, family):
         literals = [match.group(2) for match in STRING_LITERAL.finditer(statement)]
-        named = [candidate for text in named_texts(code, target) for candidate in path_candidates(text)]
+        own = [match.group(2) for match in STRING_LITERAL.finditer(target)]
         root = absolute_root(code, target)
         if root is None:
+            if joined_off_cwd(code, target):
+                literals = list((Counter(literals) - Counter(own)).elements())
+            named = [candidate for text in named_texts(code, target) if not joined_off_cwd(code, text)
+                     for candidate in path_candidates(text)]
             candidates += literals + named
             continue
-        own = [match.group(2) for match in STRING_LITERAL.finditer(target)]
+        named = [candidate for text in named_texts(code, target) for candidate in path_candidates(text)]
         other = list((Counter(literals) - Counter(own)).elements())
         candidates += other + [literal if literal.startswith("/") else root.rstrip("/") + "/" + literal
                                for literal in own + named]

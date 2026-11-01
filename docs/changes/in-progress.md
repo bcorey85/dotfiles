@@ -7,11 +7,12 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-4 open benches, by rank. Each line is the question the bench asks.
+5 open benches, by rank. Each line is the question the bench asks.
 
-1 further benches are left out of this page.
+0 further benches are left out of this page.
 
 * Bench: do structure and test defects that per-phase review misses get copied by later phases and later tickets (running): The placement bench scores catches on fixed code. This one lets the coder keep building: does a duplicated helper, a wrong-layer query or a weak assertion left in an early phase get copied by later phases and the next ticket, and how much rework does that add?
 * Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (running): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.
 * Bench own-branch peer review against a full-pass exit review on fix-PR fixtures (running): Shows whether running /peer-review after the branch-exit review catches known bugs the exit review misses, so the exit review can take over what it finds.
-* Bench the main session on Sonnet against Opus (queued): Moving orchestration off Opus could cut weekly Opus use by up to two thirds.
+* Bench the main session on Sonnet against Opus (running): Moving orchestration off Opus could cut weekly Opus use by up to two thirds.
+* Bench a hook that moves main-session lookups to Haiku (running): Main-session Opus cache read could fall a third if search output stops landing in its context.

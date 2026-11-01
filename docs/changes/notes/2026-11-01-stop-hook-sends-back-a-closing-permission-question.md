@@ -43,7 +43,8 @@ over a bare start.
 
 ## Result
 
-`test_staged_claim_gate.py` passes 43 of 43, with five new tests that failed before the change. Ruff is clean on the
+`test_staged_claim_gate.py` passes 44 of 44, with six new tests that failed before the change. A trigger phrase
+does not join a question in the next sentence. Ruff is clean on the
 touched files.
 
 ## Watch

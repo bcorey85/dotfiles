@@ -422,6 +422,9 @@ class PermissionQuestionTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_trigger_phrase_does_not_join_a_choice_question_in_the_next_sentence(self):
+        self.assert_passes("The tests are ready to run. Which name do you prefer, totals or sums?")
+
     def test_a_second_stop_and_a_subagent_hand_back_pass(self):
         message = "The report has the same bug. Want me to fix it too?"
         self.assert_passes(message, stop_hook_active=True)

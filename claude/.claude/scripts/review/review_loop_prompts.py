@@ -59,7 +59,7 @@ def review_scope_lines(repo, owned, prior_issues, open_asks):
     return lines
 
 
-def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief=""):
+def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief="", test_strategy=""):
     # The fix diff goes in a file the reviewer reads: inlined, a large diff runs the call past its prompt limit.
     lines = review_scope_lines(repo, owned, prior_issues, open_asks)
     lines.append("Your scope is the owned files listed under Review scope (this round).")
@@ -69,6 +69,9 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
                      "the owned files under Review scope (this round)): " + fix_diff_path)
     if agent == "test-reviewer":
         lines.append("Source under test: the diff's non-test files.")
+        if test_strategy:
+            lines.append("The plan's test strategy binds every phase. File a fix for each changed source the diff "
+                         "leaves without the tests it asks for:\n" + test_strategy)
     if agent == "smell-reviewer":
         lines.append("Bound: the round-one fix diff." if fix_diff_path else "Bound: the diff under first review.")
     if brief:

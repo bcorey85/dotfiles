@@ -909,6 +909,10 @@ AC_HEADING_LOOSE = re.compile(r"^(#{2,3})\s+(?:acceptance|requirements)\b", re.I
 LISTITEM = re.compile(r"^(\s*)(?:[-*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.*)$")
 
 
+# The plan-wide test rules. The review loop hands this section to the test reviewer beside the phase.
+TEST_STRATEGY_HEADING = re.compile(r"^#{2,3}\s+test(?:ing)?\s+strategy\b", re.I)
+
+
 def heading_level(line):
     match = re.match(r"^(#+)\s", line)
     return len(match.group(1)) if match else 0
@@ -926,6 +930,35 @@ def section_body(lines, start_index):
             break
         body.append(line)
     return body
+
+
+def test_strategy_range(plan_lines):
+    """(start, end) of the test strategy section as 0-based start and exclusive end indexes, heading included,
+    or None when the plan has none. A heading inside a fenced block, or before the first phase, does not count."""
+    fenced = script_utils.fenced_line_indexes(plan_lines)
+    spans, _ = phase_spans(plan_lines)
+    first_phase = min((span["start"] for _, span in spans), default=0)
+    start = next(
+        (
+            index for index, line in enumerate(plan_lines)
+            if index >= first_phase and index not in fenced and TEST_STRATEGY_HEADING.match(line)
+        ),
+        None,
+    )
+    if start is None:
+        return None
+
+    return start, start + 1 + len(section_body(plan_lines, start))
+
+
+def test_strategy_section(plan_lines):
+    """The plan's test strategy section, heading included, or "" when the plan has none."""
+    section_range = test_strategy_range(plan_lines)
+    if section_range is None:
+        return ""
+
+    start, end = section_range
+    return "\n".join(plan_lines[start:end]).strip()
 
 
 def top_level_items(body, name="section", first_line=1):

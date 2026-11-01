@@ -97,6 +97,7 @@ sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 import hook_input
 import reviewed_tree
 import script_utils
+import shell_statements
 import user_prompts
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
@@ -336,8 +337,10 @@ def commit_follows_git(words, git_index):
 
 def is_commit_command(command):
     """True when the command commits, as the module docstring defines it. Line continuations are removed and each
-    substitution span is read both as written and shrunk."""
-    joined = LINE_CONTINUATION.sub("", command)
+    substitution span is read both as written and shrunk. The body of a quoted heredoc that only stores text is not
+    read."""
+    unstored = shell_statements.strip_stored_heredocs(command)
+    joined = LINE_CONTINUATION.sub("", unstored)
     shrunk = SUBSTITUTION_SPAN.sub("$S", joined)
     return any(reads_as_commit(reading) for reading in {joined, shrunk})
 

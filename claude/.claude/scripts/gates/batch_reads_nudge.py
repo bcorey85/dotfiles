@@ -52,15 +52,8 @@ def is_read(name, tool_input):
 
 
 def tail_records(path):
-    with open(path, "rb") as f:
-        f.seek(0, os.SEEK_END)
-        size = f.tell()
-        f.seek(max(0, size - TAIL))
-        data = f.read()
-    lines = data.split(b"\n")
-    if size > TAIL:
-        lines = lines[1:]                   # the first line is cut
-    return [json.loads(x) for x in lines if x.strip()]
+    lines = script_utils.transcript_tail_lines(path, TAIL)
+    return [json.loads(line) for line in lines if line.strip()]
 
 
 def responses(records, subagent=False):

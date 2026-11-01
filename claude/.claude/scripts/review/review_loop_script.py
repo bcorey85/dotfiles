@@ -813,9 +813,12 @@ class LoopRun(full_check_gate.FullCheckSteps):
             self.run_test_commands(test_commands)
 
     def run_test_commands(self, test_commands):
-        """Run the scoped test commands and keep their result. False, with the loop stopped, when one is red."""
+        """Run the scoped test commands and keep their result. A red run the autofix formatters can fix is fixed and
+        run once more. False, with the loop stopped, when one stays red."""
         log_path = self.out / SCOPED_TESTS_LOG
         self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, test_commands, self.gate_env, log_path)
+        if tails and self.autofix_touched_files():
+            self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, test_commands, self.gate_env, log_path)
         if tails:
             self.stop("critical-blocker", ["scoped tests failing after the last fix:\n" + "\n\n".join(tails)])
             return False

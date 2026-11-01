@@ -26,9 +26,6 @@ max-complexity = 10
 "claude/.claude/scripts/*/*.py" = ["E402"]
 "claude/.claude/scripts/review/verify-log" = ["E402"]
 "claude/.claude/scripts/review/verify-prep" = ["E402"]
-"tests/scripts/test_code_step_asks.py" = ["E402"]
-"tests/scripts/test_code_step_open_phase.py" = ["E402"]
-"tests/scripts/test_code_step_termination.py" = ["E402"]
 # HOOK_SCRIPTS_DIR can point the test at another copy of makefile_text, so sys.path is set after the assignments that
 # read it and the import that follows cannot sit at the top.
 "tests/scripts/test_makefile_text.py" = ["E402"]
@@ -38,11 +35,10 @@ max-complexity = 10
 # covers the writes.
 "claude/.claude/scripts/telemetry/log_agent_usage.py" = ["SIM115"]
 # The en dash (U+2013) is the character the plan and heading parsers must accept, so the strings keep it.
-"claude/.claude/scripts/code/code_step_report.py" = ["RUF001"]
+"claude/.claude/scripts/code/coder_report.py" = ["RUF001"]
 "claude/.claude/scripts/lib/plan_format.py" = ["RUF001"]
 "claude/.claude/scripts/review/verify_common.py" = ["RUF001"]
 "tests/scripts/test_adr_flow.py" = ["RUF001"]
-"tests/scripts/test_code_step.py" = ["RUF001"]
 # test_plan_format.py has two ignores, each with its own reason:
 #   E402: the script folder comes from PLAN_FORMAT_SCRIPT, so plan_format can only be imported after sys.path is set.
 #   RUF001: the en dash (U+2013) is the character the plan and heading parsers must accept, so the strings keep it.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The scripted review loop: the walking between steps is code, the judgment inside each step is a model call.
 
-    review_loop_script.py <repo> --state-dir <dir> --session <id> --run-id <id> --agent-id <id> --prompt-file <path>
+    review_loop_script.py <repo> --state-dir <dir> --session <id> --agent-id <id> --prompt-file <path>
 
 The prompt file is the review prompt of a review-first dispatch: header lines (mode, caller, lane, plan, phase, an
 optional `structure-pass: skip`), a blank line, then the handoff block. The script walks review-loop.md's fixed graph:
@@ -33,10 +33,10 @@ only when a reviewer's output has no Fix/Ask/Nit sections the parser can read. E
 <state dir>/loop-script/<agent id>/calls.jsonl with its session id, role, wall time and token counts.
 
 On finish, or on any uncaught error, the script validates its packet with handback.load, then appends the rows the
-review-loop agent leaves: the run event of a hand-back, the hand-back store row, the stop row, and, when the telemetry
+review-loop agent leaves: the hand-back store row, the stop row, and, when the telemetry
 switch is on, one agent-usage row. Exit 0 on a normal finish; exit 1 when the run crashed or the packet failed
-validation (a critical-blocker packet and the rows are still written). A SIGTERM (abort, review-again, start
---restart) kills every running claude call and exits 143 with no packet and no rows.
+validation (a critical-blocker packet and the rows are still written). A SIGTERM (a caller stopping the loop)
+kills every running claude call and exits 143 with no packet and no rows.
 
 review_loop_findings.py reads the reviewers' text; review_loop_closure.py runs the class-closure check;
 review_loop_packet.py writes the packet and the hand-back rows.
@@ -65,8 +65,8 @@ SCOPED_TESTS_LOG = "scoped-tests.log"
 STALE_PROSE_LOG = "stale-prose.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import change_removal
-import code_step_store
 import coder_gate
+import coder_report
 import full_check
 import full_check_gate
 import handback
@@ -86,6 +86,7 @@ from review_loop_findings import (
     near_title,
     parse_review,
     plan_change_items,
+    pointer_ask_split,
     reply_with_one_retry,
     ruled_plan_split,
 )
@@ -498,6 +499,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.open_fixes = []
         self.resolved_texts = []  # the ruling line and the carried findings: the only plan-marked items it settles
         self.ask_gates = {}
+        self.pointer_asks = []  # the asks that only pointed back to another ask, dropped before the packet
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
                         "result": "PASS"}
         self.prior_issues = []
@@ -595,8 +597,12 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def split_review(self, tree_paths, review):
         """(the review without its absent-file findings, its fixes, its [design-decision] fixes, its absent-file
-        findings). The fixes a plan ruling covers move to the review's asks."""
+        findings). The fixes a plan ruling covers move to the review's asks. An ask that only points back to another
+        ask leaves the review for the packet's dropped asks."""
         parsed, absent = absent_file_split(self.repo, tree_paths, review)
+        parsed["ask"], pointer_asks = pointer_ask_split(parsed["ask"], self.asks)
+        self.pointer_asks += [ask for ask in pointer_asks if ask not in self.pointer_asks]
+
         design = [item for item in parsed["fix"] if "[design-decision]" in item.text.lower()]
         fixes = [item for item in parsed["fix"] if item not in design]
         fixes, ruled = ruled_plan_split(self.repo, self.plan, fixes)
@@ -631,7 +637,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         """A coder's PLAN-IMPACT report joins the plan impacts. Its edits stay and the loop goes on. A toolkit cause,
         or a cause that does not parse, is never adopted. `changed` holds the files the coder's edits changed. Returns
         True when the impact is held for a ruling."""
-        text = plan_format.plan_impact_block(report) or report.strip()
+        text = coder_report.plan_impact_block(report) or report.strip()
         cause = plan_format.stopping_plan_impact_cause([text], cause_required=True)
         ac_change = plan_format.changes_acceptance_criteria(text)
         adopted = not ac_change and cause == plan_format.PLAN_CAUSE
@@ -845,6 +851,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "open_fixes": merge_findings(self.open_fixes),
             "asks": self.asks,
             "ask_gates": self.ask_gates,
+            "pointer_asks": self.pointer_asks,
             "ask_ids": ask_ids,
             "ask_rows": ask_rows,
             "class_closure": self.class_closure,
@@ -920,7 +927,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
 # ---------- main ----------
 
 def stop_on_sigterm(_signal_number, _frame):
-    """The stop signal of an abort, a review-again or a start --restart: kill the process group of every claude call
+    """The stop signal of a caller stopping the loop: kill the process group of every claude call
     that is running and remove the base run's worktree, then exit without a packet."""
     for pid in list(LIVE_CHILDREN):
         with contextlib.suppress(ProcessLookupError, PermissionError):
@@ -938,10 +945,13 @@ def write_script_prompt(state_dir, agent_id, prompt):
     return prompt_file, script_dir / "script.log"
 
 
-def loop_script_command(loop_script, repo_dir, state_dir, session_id, run_id, agent_id, prompt_file):
-    """The argv that runs review_loop_script.py."""
-    return [sys.executable, str(loop_script), str(repo_dir), "--state-dir", str(state_dir), "--session", session_id,
-            "--run-id", run_id, "--agent-id", agent_id, "--prompt-file", str(prompt_file)]
+def loop_script_command(loop_script, repo_dir, state_dir, session_id, agent_id, prompt_file, gate_commands=()):
+    """The argv that runs review_loop_script.py, with one --gate-command per gate command."""
+    command = [sys.executable, str(loop_script), str(repo_dir), "--state-dir", str(state_dir), "--session", session_id,
+               "--agent-id", agent_id, "--prompt-file", str(prompt_file)]
+    for gate_command in gate_commands:
+        command += ["--gate-command", gate_command]
+    return command
 
 
 def parse_review_loop_arguments(argv):
@@ -949,9 +959,9 @@ def parse_review_loop_arguments(argv):
     parser.add_argument("repo")
     parser.add_argument("--state-dir", required=True)
     parser.add_argument("--session", required=True)
-    parser.add_argument("--run-id", required=True)
     parser.add_argument("--agent-id", required=True)
     parser.add_argument("--prompt-file", required=True)
+    parser.add_argument("--gate-command", action="append", default=[])
     return parser.parse_args(argv)
 
 
@@ -969,9 +979,7 @@ def main(argv=None):
     outcome = None
     try:
         header, handoff = read_prompt(args.prompt_file)
-        run_state = code_step_store.read_state_file(pathlib.Path(args.state_dir))
-        gate_commands = run_state.gate_commands if run_state else []
-        outcome = run_loop(repo, out, args.session, header, handoff, progress, gate_commands)
+        outcome = run_loop(repo, out, args.session, header, handoff, progress, args.gate_command)
         message = packet_message(outcome)
         handback.load(message)
     except handback.PacketError as error:
@@ -991,7 +999,7 @@ def main(argv=None):
 
     status = handback.load(message)["status"]
     (out / "packet.txt").write_text(message + "\n")
-    write_handback_rows(repo, args, message, status, outcome["ask_rows"], outcome["unreviewed_fix"])
+    write_handback_rows(args, message, status, outcome["ask_rows"], outcome["unreviewed_fix"])
     write_usage_row(repo, started, CALLS)
     print(message)
     return exit_code

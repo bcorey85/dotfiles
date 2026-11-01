@@ -1,10 +1,8 @@
 """Hand-back gate for coder subagents. Run set and clear from inside the repo.
 
-  coder_gate.py set [--env NAME=value]... [--run RUN_ID --dispatch DISPATCH_ID] <command>...
+  coder_gate.py set [--env NAME=value]... <command>...
                                   store the check commands the gate runs, each one shell command from the repo root,
-                                  and the variables each one runs with. --run and --dispatch name the /code run and
-                                  the coder dispatch the gate is for: the hook gates only a coder launched for that
-                                  dispatch. A gate set with neither gates any coder.
+                                  and the variables each one runs with. The gate covers any coder.
   coder_gate.py summary           print each coder's last gate result
   coder_gate.py clear             print each coder's last gate result, then delete the gate
   coder_gate.py hook              PreToolUse hook on SubagentHandback
@@ -39,9 +37,8 @@ from outside the repo with no failed test, or, under pytest, a Django settings e
 coder changed a settings module or an app config) is a setup fault: it never denies the call or counts toward the
 cap, a run with only setup faults has the result "setup-fault", and the stamp names each one with its output tail.
 Two exit-0 runs still deny: one whose runner summary counts failures, and a filtered run that matched no test. A
-denial lists the failing tests above the output tail. With no gate, a gate older than 6 hours, another agent type, or
-a keyed gate that the coder was not launched for (another run, another dispatch, or no launch on record), the
-hand-back goes through untouched. Parallel coders take turns.
+denial lists the failing tests above the output tail. With no gate, a gate older than 6 hours, or another agent type,
+the hand-back goes through untouched. Parallel coders take turns.
 A failure whose output names a path that does not exist where the command ran (pytest's `file or directory not
 found`, python's `can't open file`, a shell or `cd` error) is a command error: the command is wrong, not the code. It
 never denies the call or counts toward the cap, a run whose only failures are command errors has the result
@@ -70,17 +67,17 @@ from check_output import (
 from check_scope import names_django_test_run, scanned_command
 from source_paths import is_runnable_test_file
 
+USAGE = "usage: coder_gate.py set [--env NAME=value]... <command>... | summary | clear | hook | bash-hook"
 MAX_DENIES = 3
-# A backstop only: a keyed gate is cleared at its coder's hand-back (unless the run stops to resume that coder), at
-# abort, and at the next start, and a gate that a crashed run left behind is never gated to a live coder because its
-# key matches no launch. The age stops an unkeyed gate (set by hand) from outliving a working day.
+# The /code skill clears the gate after its coder hands back, and again at its start, which drops a gate a crashed
+# run left behind. The age is the backstop: it stops such a gate from outliving a working day.
 MAX_GATE_AGE_SECONDS = 6 * 3600
 COMMAND_TIMEOUT_SECONDS = 1200
 # The timeout of the SubagentHandback hook that runs the gate (settings.json). Claude Code kills the hook at it and the
 # hand-back then passes with no verdict.
 HOOK_TIMEOUT_SECONDS = 3600
 # The whole gate run's budget, counted from the hook's entry: the hook timeout less 10 minutes for the git calls, the
-# output sort and the state write, so the hook finishes on its own. The age and key check run before the lock and the
+# output sort and the state write, so the hook finishes on its own. The age check runs before the lock and the
 # lock wait comes off the budget.
 GATE_BUDGET_SECONDS = HOOK_TIMEOUT_SECONDS - 600
 # A command is not started with less budget left than this: it could not give a result.
@@ -174,10 +171,7 @@ def whole_package_reason(command, cwd):
                       "Run the targeted command from the recipe directly on the changed files."])
 
 
-def set_gate(commands, gate_assignments=(), run_id=None, dispatch_id=None):
-    if (run_id is None) != (dispatch_id is None):
-        sys.exit("coder-gate: --run and --dispatch go together")
-
+def set_gate(commands, gate_assignments=()):
     gate_file = gate_path(".")
     if gate_file is None:
         sys.exit("coder-gate: not inside a git repo")
@@ -205,8 +199,7 @@ def set_gate(commands, gate_assignments=(), run_id=None, dispatch_id=None):
         environment = script_utils.environment_from_assignments(gate_assignments)
     except ValueError as error:
         sys.exit(f"coder-gate: --env {error}")
-    gate = {"repoRoot": repo_root, "commands": commands, "env": environment, "setAt": time.time(), "coders": {},
-            "runId": run_id, "dispatchId": dispatch_id}
+    gate = {"repoRoot": repo_root, "commands": commands, "env": environment, "setAt": time.time(), "coders": {}}
     script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
     print(f"coder gate set: {len(commands)} command(s)")
 
@@ -519,24 +512,6 @@ def log_gate_run(gate, coder, seconds, failed_count, timed_out_count, setup_faul
     append_gate_log(row)
 
 
-def is_gated_coder(gate, event):
-    # Fail-open: a keyed gate whose key does not match this coder (another run, another dispatch, or no launch on record
-    # for its agent id) never gates it. The commands were derived for the dispatch the gate names; run against another
-    # coder they deny it for failures it cannot fix, and its edits would be judged by a plan phase it does not work on.
-    # A lost check is caught by the review loop's own scoped and full checks. A gate with no key was set by hand and
-    # gates any coder.
-    run_id = gate.get("runId")
-    if run_id is None:
-        return True
-
-    import code_step_core  # Loaded here: only a keyed gate reads the event log, and the Bash hook must start fast.
-
-    event_cwd = pathlib.Path(event.get("cwd") or ".")
-    agent_id = event.get("agent_id")
-    dispatch = code_step_core.launched_dispatch(event_cwd, run_id, agent_id)
-    return dispatch is not None and dispatch == gate.get("dispatchId")
-
-
 def run_hook():
     hook_started = time.monotonic()
     event = json.load(sys.stdin)
@@ -547,7 +522,7 @@ def run_hook():
     if gate_file is None:
         return
 
-    # The age and key check run before the lock, so a coder that the gate does not cover never waits on the lock. The
+    # The age check runs before the lock, so a coder that the gate does not cover never waits on the lock. The
     # gate is read again under the lock: a coder that held it may have written its result.
     # Fail-open: a gate that does not exist, or that a clear removed since the path was built (clear takes no lock),
     # leaves nothing to run, so the hand-back goes through.
@@ -556,21 +531,20 @@ def run_hook():
     except FileNotFoundError:
         return
 
-    if time.time() - checked_gate["setAt"] > MAX_GATE_AGE_SECONDS or not is_gated_coder(checked_gate, event):
+    if time.time() - checked_gate["setAt"] > MAX_GATE_AGE_SECONDS:
         return
 
     lock_path = gate_file.with_suffix(".lock")
     with lock_path.open("w") as lock_file:
         fcntl.flock(lock_file, fcntl.LOCK_EX)
 
-        # Fail-open: a gate cleared, or set again (new setAt, run or dispatch) during the lock wait, is not the gate
+        # Fail-open: a gate cleared, or set again (new setAt) during the lock wait, is not the gate
         # that was checked above, so the hand-back goes through.
         try:
             gate = json.loads(gate_file.read_text())
         except FileNotFoundError:
             return
-        if (gate["setAt"] != checked_gate["setAt"] or gate.get("runId") != checked_gate.get("runId")
-                or gate.get("dispatchId") != checked_gate.get("dispatchId")):
+        if gate["setAt"] != checked_gate["setAt"]:
             return
 
         budget_seconds = GATE_BUDGET_SECONDS - (time.monotonic() - hook_started)
@@ -626,26 +600,21 @@ def run_bash_hook():
 
 
 def main():
+    if script_utils.help_requested(sys.argv[1:]):
+        print(USAGE)
+        return
+
     verb = sys.argv[1] if len(sys.argv) > 1 else ""
     if verb == "set":
         set_arguments = sys.argv[2:]
         env_assignments = []
-        key_flags = {}
-        while len(set_arguments) >= 2 and set_arguments[0] in ("--env", "--run", "--dispatch"):
-            if set_arguments[0] == "--env":
-                env_assignments.append(set_arguments[1])
-            else:
-                key_flags[set_arguments[0]] = set_arguments[1]
+        while len(set_arguments) >= 2 and set_arguments[0] == "--env":
+            env_assignments.append(set_arguments[1])
             set_arguments = set_arguments[2:]
         if "--env" in set_arguments:
             sys.exit("coder-gate: --env needs NAME=value, got nothing after it")
-        for key_flag in ("--run", "--dispatch"):
-            if key_flag in set_arguments:
-                if set_arguments[0] != key_flag:
-                    sys.exit(f"coder-gate: {key_flag} goes before the command, got it after one")
-                sys.exit(f"coder-gate: {key_flag} needs a value, got nothing after it")
 
-        set_gate(set_arguments, env_assignments, key_flags.get("--run"), key_flags.get("--dispatch"))
+        set_gate(set_arguments, env_assignments)
     elif verb == "summary":
         print_gate_summary()
     elif verb == "clear":
@@ -655,8 +624,7 @@ def main():
     elif verb == "bash-hook":
         run_bash_hook()
     else:
-        sys.exit("usage: coder_gate.py set [--env NAME=value]... [--run RUN_ID --dispatch DISPATCH_ID] <command>... "
-                 "| summary | clear | hook | bash-hook")
+        sys.exit(USAGE)
 
 
 if __name__ == "__main__":

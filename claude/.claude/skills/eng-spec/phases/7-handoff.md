@@ -4,7 +4,7 @@
     artifacts on disk. Never ask whether to save or implement, never dispatch a
     coder, and never invoke `/code` in this conversation.
 
-    First run `python3 ~/.claude/scripts/code/code_step.py plan check --final docs/plans/<slug>/spec.md`.
+    First run `python3 ~/.claude/scripts/code/plan_check.py check --final docs/plans/<slug>/spec.md`.
     Exit 1 is an unresolved planning gate: fix each row it prints, and run it again.
 
     Any unresolved planning gate → report what remains and stop without an

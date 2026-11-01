@@ -4,20 +4,22 @@ recheck steps. LoopRun inherits FullCheckSteps; the loop script's SIGTERM handle
 import functools
 import os
 import pathlib
-import re
 import shutil
 import sys
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib")]
-import code_step_core
 import format_files
 import full_check
 import script_utils
+import source_paths
 from finding_record import parse_finding
 from worktree_snapshot import CHANGE_KINDS
 
 CHECK_TIMEOUT_SECONDS = 900
+# The files in the loop's state folder that hold the whole output of the full check and of its base run.
+FULL_CHECK_LOG = "full-check.log"
+FULL_CHECK_BASE_LOG = "full-check-base.log"
 # Process-group leaders of the claude calls and checks now running: each starts its own session, so the group kill
 # that stops the loop script does not reach them.
 LIVE_CHILDREN = set()
@@ -26,8 +28,7 @@ LIVE_CHILDREN = set()
 LIVE_BASE_TREES = set()
 
 
-def run_full_check(repo, out, check_command, gate_env=(), runner=None, log_name=code_step_core.FULL_CHECK_LOG,
-                   left_out=()):
+def run_full_check(repo, out, check_command, gate_env=(), runner=None, log_name=FULL_CHECK_LOG, left_out=()):
     """(the full_check result, the log's last lines with the failing tests above them, the run's details: runner
     summaries and the files the check changed or created). A SIGTERM kills the check's process group with the claude
     calls. `runner` (full_check.run by default) is any function with run's check arguments, such as
@@ -57,9 +58,9 @@ def remove_live_base_trees():
 
 
 class FullCheckSteps:
-    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix and
-    expected_red, and provides stop(status, remaining), repair(call_name, findings) and mark_repaired(findings,
-    changed)."""
+    """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix,
+    expected_red, and provides stop(status, remaining), repair(call_name, findings) and
+    mark_repaired(findings, changed)."""
 
     def init_full_check_state(self):
         self.full_check = ""
@@ -82,7 +83,7 @@ class FullCheckSteps:
             return
 
         gate_findings = [f"full check failed (`{check_command}`), failing lines:\n{tail}"]
-        if re.search(r"\.spec\.", tail):
+        if source_paths.names_spec_file(tail):
             self.stop("critical-blocker", gate_findings)
             return
 
@@ -135,8 +136,8 @@ class FullCheckSteps:
             base_runner = functools.partial(full_check.base_run, live_trees=LIVE_BASE_TREES,
                                             gate_env=gate_assignments)
             self.base_run = run_full_check(self.repo, self.out, check_command, self.gate_env,
-                                           runner=base_runner, log_name=code_step_core.FULL_CHECK_BASE_LOG)
-        return full_check.is_pre_existing(self.out / code_step_core.FULL_CHECK_LOG, self.full_check, self.base_run)
+                                           runner=base_runner, log_name=FULL_CHECK_BASE_LOG)
+        return full_check.is_pre_existing(self.out / FULL_CHECK_LOG, self.full_check, self.base_run)
 
     def autofix_touched_files(self):
         """Run the autofix formatters on the files the loop touched, a web tool only where the repo configures it.
@@ -160,4 +161,4 @@ class FullCheckSteps:
     def stop_on_setup_fault(self, check_command, tail):
         """The full check could not run here, which no coder repair changes: stop for the user."""
         self.stop("setup-fault", [f"the full check could not run in this environment (`{check_command}`), full "
-                                  f"log {self.out / code_step_core.FULL_CHECK_LOG}, last lines:\n{tail}"])
+                                  f"log {self.out / FULL_CHECK_LOG}, last lines:\n{tail}"])

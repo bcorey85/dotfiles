@@ -1,5 +1,5 @@
 """review_asks.py: the ask ids, ask outcome rows, numbered ask listing and nvim-jump anchors of a review packet,
-for /review (review_fix.py) and /code (code_step_review.py).
+for /review (review_fix.py).
 A plan-impact ask is not a finding: it gets no id and logs no outcome row."""
 import pathlib
 import re
@@ -8,6 +8,7 @@ import sys
 from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import handback
 from script_utils import ask_text, hanging_indent_lines, one_line, run_command
 
 ASK_OUTCOMES = ("accepted", "rejected", "modified")
@@ -73,9 +74,6 @@ class OutcomeRow(NamedTuple):
 
 def supply_finding_ask_ids(asks, session_id, logger, context, cwd=None):
     """Give each ask that is a finding the id of its ask row, as handback.supply_ask_finding_ids does."""
-    # handback is imported where it is used, so code_step can read ASK_OUTCOMES and report a missing handback.py.
-    import handback
-
     finding_asks = [item for item in asks if not handback.is_plan_impact_ask(item)]
     handback.supply_ask_finding_ids(finding_asks, session_id, logger, context, cwd)
 
@@ -83,8 +81,6 @@ def supply_finding_ask_ids(asks, session_id, logger, context, cwd=None):
 def log_ask_outcome(logger, context, item, outcome, decided_by, cwd=None):
     """The OutcomeRow of one ask's outcome, logged with the log helper at `logger`, or None for a plan-impact ask.
     context holds the run fields the ask row and its outcome row share."""
-    import handback
-
     if handback.is_plan_impact_ask(item):
         return None
 

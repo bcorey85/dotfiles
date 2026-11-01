@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-705 changes, 14 with a measured gain, 257 behavior changes that no intake metric reads.
+731 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [A plan impact no longer stops the review loop; all show once at the end](notes/2026-10-31-a-plan-impact-no-longer-stops-the-review-loop-all.md).
+Latest change: 2026-10-31, [code-step resume goes on past an unreadable state file in the cwd checkout](notes/2026-10-31-code-step-resume-goes-on-past-an-unreadable-state.md).
 
 ## Top gains
 
@@ -20,7 +20,7 @@ Latest change: 2026-10-31, [A plan impact no longer stops the review loop; all s
 ## Total saved
 
 * tokens: 670k saved
-* cost: $51.81 saved
+* cost: $53.01 saved
 * wall-clock: 1140 seconds saved
 
 Each saving is the measured before and after of one change's finding, so a total does not say what a week saves.
@@ -28,7 +28,7 @@ Each saving is the measured before and after of one change's finding, so a total
 ## Gains by metric
 
 * tokens: 2
-* cost: 3
+* cost: 4
 * wall-clock: 1
 * quality: 8
 

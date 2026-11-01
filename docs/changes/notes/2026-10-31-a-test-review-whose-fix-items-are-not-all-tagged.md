@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "A test review whose fix items are not all tagged goes to the disposition call"
 description: "A reviewer's fix item always reaches the coder: a reply the tagged-bullet parse cannot fully account for now goes to the disposition call instead of losing the items it skipped."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-31T15:15:30-05:00"}
-seq: 1
+seq: 5
 kind: "fix"
 components: ["script/review-loop-script"]
 evidence: ["judgment"]

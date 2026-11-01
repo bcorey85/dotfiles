@@ -4,7 +4,7 @@
 
 These rules apply to every script under `claude/.claude/scripts/` and `claude/.claude/skills/*/scripts/`, and to every draft of one.
 
-`claude/.claude/scripts/` holds one folder per concern: `code/` (code-step and coder gate), `review/` (review loop, hand-back, verify), `telemetry/` (log writers and the telemetry switch), `lib/` (shared modules: `script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`, `check_output.py`, `check_scope.py`, `criteria_verdict.py`, `test_run_output.py`, `reviewed_tree.py`, `shell_statements.py`, `source_text.py`, `format_files.py`, `linked_installs.py`, `worktree_snapshot.py`, `loop_transcript.py`, `redact_text.py`, `change_removal.py`, `_kv.sh`, `_ledger.sh`), `tools/` (small commands), `gates/` (hook gates). The three security hooks stay at the top. A script finds its siblings through `sys.path` lines computed from `pathlib.Path(__file__).resolve()`; imports stay bare module names.
+`claude/.claude/scripts/` holds one folder per concern: `code/` (plan check, coder gate and review helpers), `review/` (review loop, hand-back, verify), `telemetry/` (log writers and the telemetry switch), `lib/` (shared modules: `script_utils.py`, `hook_input.py`, `plan_format.py`, `shell_command.py`, `makefile_text.py`, `check_output.py`, `check_scope.py`, `criteria_verdict.py`, `test_run_output.py`, `reviewed_tree.py`, `shell_statements.py`, `source_text.py`, `format_files.py`, `linked_installs.py`, `worktree_snapshot.py`, `loop_transcript.py`, `redact_text.py`, `change_removal.py`, `_kv.sh`, `_ledger.sh`), `tools/` (small commands), `gates/` (hook gates). The three security hooks stay at the top. A script finds its siblings through `sys.path` lines computed from `pathlib.Path(__file__).resolve()`; imports stay bare module names.
 
 ## Names
 
@@ -14,7 +14,7 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 
 ## Read the real inputs first
 
-- Before you write code that reads text a model or a person wrote (a plan, a packet, a report, a transcript), collect the real files it will read. On this machine: plans under `~/dev/*/docs/plans/`, code-step state under each repo's `git rev-parse --git-path code-step`, and subagent transcripts under `~/.claude/projects/`.
+- Before you write code that reads text a model or a person wrote (a plan, a packet, a report, a transcript), collect the real files it will read. On this machine: plans under `~/dev/*/docs/plans/`, and subagent transcripts under `~/.claude/projects/`.
 - List every shape in those files before you write the grammar: id forms, heading levels, indents, optional sections, empty values. Write the grammar from that list, not from one example.
 - Work files never come to this machine. If the work machine also writes the format, count its shapes with an intake script that prints labels and counts only, and read the counts before you trust the grammar.
 - When you fix a script bug, search the real files for every other shape of the same kind, and fix all of them in one change. A second report of the same kind of bug means that the first fix covered a case, not the class.
@@ -50,7 +50,7 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 ## Tests
 
 - Put the tests in `~/dotfiles/tests/scripts/test_<script>.py`. Each test file reads the script path from one environment variable that defaults to the script in the tree the tests sit in. Run the tests from the worktree that holds the draft, before hand-over.
-- Run a changed test file through `python3 tests/parallel_tests.py <test file name>`, never through `python3 -m unittest` alone: the runner splits `test_code_step.py` into four processes, and one process does not finish inside a 600 s tool call.
+- Run a changed test file through `python3 tests/parallel_tests.py <test file name>`, never through `python3 -m unittest` alone: the runner caps the workers and keeps each run inside a 600 s tool call.
 - Add a test that fails without the change. Copy each real input shape that broke into a fixture.
 - Before hand-over, run the draft over every real input that you collected and report "parsed N of M". Name each failure as a bad input or a script gap. For the plan format, `REAL_PLANS=1 bash tests/run.sh` runs that sweep over `~/dev`; the default run never reads `~/dev`.
 - Run `bash ~/dotfiles/tests/run.sh` before you say that the change is done.

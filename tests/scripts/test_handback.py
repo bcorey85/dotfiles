@@ -1208,6 +1208,43 @@ class ReviewerRequiredTest(HandbackTestBase):
 
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
 
+    def test_a_foreground_hand_back_stores_the_tree_of_its_own_unproven_dispatch_and_not_an_earlier_one(self):
+        repo, _capped = self.capped_packet_on_a_fresh_repo()
+        other_repo = self.tmp / "other-repo"
+        other_repo.mkdir()
+        handback_store.record(SESSION, "dispatch", repo=str(other_repo), tool_use_id="toolu_earlier")
+        handback_store.record(SESSION, "dispatch-ran", tool_use_id="toolu_earlier")
+        handback_store.record(SESSION, "dispatch", repo=str(repo.resolve()), tool_use_id="toolu_foreground")
+
+        row = handback_store.record_handback(SESSION, status="converged", message="")
+
+        self.assertEqual(row["tree"][0], str(repo.resolve()))
+
+    def test_a_clean_review_credits_the_repo_of_a_foreground_dispatch_whose_call_has_not_run(self):
+        repo, _capped = self.capped_packet_on_a_fresh_repo()
+        other_repo = self.tmp / "other-repo"
+        other_repo.mkdir()
+        handback_store.record(SESSION, "dispatch", repo=str(other_repo), tool_use_id="toolu_earlier")
+        handback_store.record(SESSION, "dispatch-ran", tool_use_id="toolu_earlier")
+        handback_store.record(SESSION, "dispatch", repo=str(repo.resolve()), tool_use_id="toolu_foreground")
+        handback_store.record_handback(SESSION, status="converged", message="", no_reviewer=False)
+
+        refusal, reviewed_repo = handback.record_clean_review(SESSION)
+
+        self.assertEqual((refusal, reviewed_repo), (None, str(repo.resolve())))
+
+    def test_a_hand_back_stores_the_tree_of_the_dispatch_repo_row_and_not_the_dispatch_rows_repo(self):
+        repo, _capped = self.capped_packet_on_a_fresh_repo()
+        cwd_repo = self.tmp / "cwd-repo"
+        cwd_repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(cwd_repo)], check=True)
+        handback_store.record(SESSION, "dispatch", repo=str(cwd_repo.resolve()))
+        handback_store.record(SESSION, handback_store.DISPATCH_REPO_KIND, repo=str(repo.resolve()))
+
+        row = handback_store.record_handback(SESSION, status="converged", message="")
+
+        self.assertEqual(row["tree"][0], str(repo.resolve()))
+
     def test_reviewer_dispatched_by_another_agent_id_does_not_count(self):
         self.dispatch("review-loop")
         self.dispatch("coder", "a1")

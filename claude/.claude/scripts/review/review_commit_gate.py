@@ -95,6 +95,7 @@ import time
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 import hook_input
+import plan_format
 import reviewed_tree
 import script_utils
 import user_prompts
@@ -815,7 +816,9 @@ def review_handed_back_since(session, dirty_at, repo_top):
     try:
         import handback
         import handback_store
-    except ImportError:
+    except ImportError as error:
+        # A missing store or handback module reads as no current hand-back (fail open to the plain review deny).
+        hook_input.emit_stderr(f"review-commit-gate: cannot import handback: {error}\n")
         return False
 
     seen = handback_store.latest_for_repo(session, repo_top)
@@ -881,8 +884,40 @@ def credited_repos(events, transcript_path, session, edited_by_agent):
     return credited
 
 
+def unruled_plan_impact_denial(repo_dirs, session):
+    """The deny text for a commit in a repo whose latest review handed back plan impacts that still await a ruling,
+    or None. A ruling settles them."""
+    try:
+        import handback
+        import handback_store
+    except ImportError as error:
+        # A missing store or handback module skips this check (fail open): the plain review deny still applies.
+        hook_input.emit_stderr(f"review-commit-gate: cannot import handback: {error}\n")
+        return None
+
+    for repo_dir in repo_dirs:
+        repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS) if repo_dir else None
+        if repo_top is None:
+            continue
+        unruled = handback.unruled_plan_impacts(handback_store.latest_for_repo(session, str(repo_top)))
+        if not unruled:
+            continue
+        review_fix = pathlib.Path(__file__).resolve().parent / "review_fix.py"
+        return (
+            f"[review-commit-gate] The latest /review of {repo_top} handed back {len(unruled)} plan impact(s) that "
+            f"await a ruling. Do not run /review again: rule on them first, with `python3 {review_fix} defer "
+            f"<handoff file>` to defer them to phase end or `python3 {review_fix} {plan_format.DECIDE_USAGE_STEM}`. "
+            "Only `decide keep` settles them; `decide adopt` re-dispatches the loop. Then commit the tree the review "
+            "covered."
+        )
+    return None
+
+
 def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_agent):
     """The deny text: the lost credit when the command is all that stands between it and a reviewed repo."""
+    plan_impact_denial = unruled_plan_impact_denial(repo_dirs, session)
+    if plan_impact_denial:
+        return plan_impact_denial
     if None not in repo_dirs:
         return NO_REVIEW_DENIED
 

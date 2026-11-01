@@ -16,7 +16,15 @@ from handback import (
     PacketError,
     load,
 )
-from handback_store import DISPATCH_RAN, DISPATCH_REPO_KIND, hand_back_dispatch_rows, record, session_rows, was_recorded
+from handback_store import (
+    DISPATCH_RAN,
+    DISPATCH_REPO_KIND,
+    hand_back_dispatch_rows,
+    record,
+    record_handback,
+    session_rows,
+    was_recorded,
+)
 
 
 def loop_steps(session_id, agent_id):
@@ -276,8 +284,8 @@ def handle_hook(event, kind):
 
     unreviewed_fix = (clean_status in CLEAN_STATUSES and "reviewer" in steps
                       and steps[-1:] == ["coder"])
-    record(session_id, "handback", agent_id=agent_id, status=status, problems=problems, message=message,
-           no_reviewer=unreviewed or reviewer_dead, unreviewed_fix=unreviewed_fix)
+    record_handback(session_id, agent_id=agent_id, status=status, problems=problems, message=message,
+                    no_reviewer=unreviewed or reviewer_dead, unreviewed_fix=unreviewed_fix)
     return None
 
 

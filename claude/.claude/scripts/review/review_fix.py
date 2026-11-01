@@ -1004,8 +1004,8 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
         save_fix_state(state)
         session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
         if session_id:
-            handback_store.record(session_id, handback_store.PLAN_RULING, decision=decision)
-            mark_line = "The ruling settles the plan impact, so the commit gate counts the review as clean."
+            mark_line = record_ruling(session_id, decision, "The ruling settles the plan impact, so the commit gate "
+                                      "counts the review as clean.")
         else:
             mark_line = ("CLAUDE_CODE_SESSION_ID is not set, so the ruling is not recorded and the commit gate still "
                          "counts the review as dirty.")
@@ -1060,8 +1060,19 @@ def command_defer(argv):
     if not session_id:
         raise UsageError("defer: CLAUDE_CODE_SESSION_ID is not set, so the deferral cannot be recorded")
 
-    handback_store.record(session_id, handback_store.PLAN_RULING, decision="defer")
-    print_action("done", "The plan impacts wait for phase end, so the commit gate counts the review as clean.")
+    print_action("done", record_ruling(
+        session_id, "defer", "The plan impacts wait for phase end, so the commit gate counts the review as clean."))
+
+
+def record_ruling(session_id, decision, settled_line):
+    """Record a plan-impact ruling and credit the tree the ruled hand-back covered, so a commit of that tree passes
+    the commit gate however many coders ran since. Returns settled_line, or why the gate still counts the review as
+    dirty."""
+    handback_store.record(session_id, handback_store.PLAN_RULING, decision=decision)
+    refusal, _repo = handback.record_clean_review(session_id)
+    if refusal:
+        return f"The ruling is recorded, but the commit gate still counts the review as dirty: {refusal}."
+    return settled_line
 
 
 def main():

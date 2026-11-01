@@ -9,6 +9,7 @@ import sys
 import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import reviewed_tree
 import script_utils
 
 STALE_STORE_SECONDS = 7 * 86400
@@ -106,6 +107,17 @@ def record(session_id, kind, **fields):
     return row
 
 
+def record_handback(session_id, **fields):
+    """Append a review-loop hand-back row with the tree it covered: [top level, fingerprint] of the repo its dispatch
+    reviewed, as the tree stands now, or None when the dispatch names no repo or git cannot fingerprint it. A plan
+    ruling made later credits this tree, not the tree at the time of the ruling. A DISPATCH_REPO_KIND row after the
+    last dispatch row replaces the dispatch row's repo."""
+    dispatch = hand_back_standing(session_id)["dispatch"] or {}
+    repo = dispatch.get("repo")
+    tree = reviewed_tree.fingerprint(repo) if repo else None
+    return record(session_id, "handback", tree=tree, **fields)
+
+
 def repo_of_latest_dispatch(session_id):
     """The repo the session's last review-loop dispatch reviewed, or None when the session or the dispatch names
     none."""
@@ -120,11 +132,31 @@ def latest(session_id):
     hand-back clears every dispatch before it. A dispatch that another hook denied never ran, so it blocks nothing. A
     row holds kind, ts, session_id; a dispatch row also no_review, repo (the top level of the
     repo it reviews, or None; a later DISPATCH_REPO_KIND row replaces it) and tool_use_id; a hand-back row also
-    agent_id, status, problems, message, no_reviewer, unreviewed_fix; a stop row also agent_id, open_dispatches (the
-    background agents and shells the loop still waited on when it stopped) and ask_rows. A stop the gate blocked is
-    not a stop: the loop went on, so such a row is skipped. Rows are ordered by append, not by clock."""
+    agent_id, status, problems, message, no_reviewer, unreviewed_fix, tree (the [top, fingerprint] pair, or None);
+    a stop row also agent_id, open_dispatches (the background agents and shells the loop still waited on when it
+    stopped) and ask_rows. A stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows
+    are ordered by append, not by clock."""
     stored_rows = stored_session_rows(session_id)
     return standing_of(stored_rows, ran_calls_of(stored_rows))
+
+
+def hand_back_standing(session_id):
+    """`latest`, read at hand-back time: its dispatch is the session's last dispatch row (see hand_back_dispatch_rows)
+    in place of the last one that ran, with the repo of a DISPATCH_REPO_KIND row after it."""
+    seen = latest(session_id)
+    dispatch_rows = hand_back_dispatch_rows(session_id)
+    if not dispatch_rows:
+        return seen
+    dispatch = dispatch_rows[-1]
+    repo_override = None
+    for row in session_rows(session_id):
+        if row.get("kind") == "dispatch":
+            repo_override = None
+        elif row.get("kind") == DISPATCH_REPO_KIND:
+            repo_override = row
+    if repo_override is not None:
+        dispatch = {**dispatch, "repo": repo_override.get("repo")}
+    return {**seen, "dispatch": dispatch}
 
 
 def latest_for_repo(session_id, repo_top):

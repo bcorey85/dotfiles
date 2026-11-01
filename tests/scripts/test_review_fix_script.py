@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from typing import ClassVar
 
 import fake_ledger
@@ -13,6 +14,8 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import handback
+import handback_store
 import review_loop_script
 import reviewed_tree
 import script_utils
@@ -83,6 +86,15 @@ UNASKABLE_ASK = {"file_line": "a.ts:1", "gate": "code-reviewer", "class": "bug"}
 POINTER_ASK = {"text": "see the ask above", "file_line": "a.ts:1", "drop_reason": "ask only points back to another ask"}
 DROPPED_ASK_WARNING = ("DROPPED ASKS (tell the user; the review went on without them):\n"
                        "- ask only points back to another ask, so it was dropped: 'see the ask above'")
+
+HELD_IMPACT = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+               "ac_change": True, "cause": "plan", "adopted": False}
+CAP_ASK = {"question": "cap the retry at three?", "file_line": "src/retry.ts:10", "change": "cap the retry",
+           "gate": "code-reviewer", "class": "smell"}
+ADOPTED_IMPACT = {"text": "the cap moves into the config; acceptance_criteria: none", "gate": "smell-reviewer",
+                  "ac_change": False, "cause": "plan", "adopted": True}
+TOOLKIT_IMPACT = {"text": "the gate base is old", "gate": "coder", "ac_change": False, "cause": "toolkit",
+                  "adopted": False}
 
 PLAN_IMPACT_TEXT = ("PLAN-IMPACT:\n"
                     "  assumed: the queue is at-least-once\n"
@@ -177,6 +189,11 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def packet(self, text, *flags, skill="review", **extra):
         return self.run_script(["packet", "--skill", skill, *flags], text, **extra)
+
+    def false_clean_reason(self):
+        """Why the gate refuses a clean mark for the session, read from this test's hand-back store."""
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            return handback.false_clean_reason(SESSION)
 
     def rows(self, path):
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
@@ -412,6 +429,154 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("  The ruling: yes, add the table", plan_text)
         self.assertIn("  The disagreement:", plan_text)
 
+    def impacts_packet(self, impacts, **fields):
+        message = {"status": "converged", "iter": 2, "fixed": [], "ask": [], "class_closure": "n/a - fixed[] empty",
+                   "plan_impacts": impacts, **fields}
+        return self.packet(json.dumps(message))
+
+    def test_a_converged_packet_with_only_adopted_plan_impacts_prints_the_deviation_lines_and_holds_no_gate(self):
+        code, output = self.impacts_packet([ADOPTED_IMPACT])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
+        self.assertIn("ACTION: show-plan-impacts", output)
+        self.assertLess(output.index("END USER TEXT"), output.index("ACTION: show-plan-impacts"))
+        self.assertIn("## Plan Deviations", output)
+        self.assertIn("the cap moves into the config", output)
+        self.assertNotIn("ask-user-plan-impact", output)
+        self.assertNotIn("Gate: do not commit yet", output)
+
+    def test_a_held_plan_impact_is_asked_once_after_the_review_result_and_keeps_the_gate_dirty(self):
+        code, output = self.impacts_packet([ADOPTED_IMPACT, HELD_IMPACT])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(output.count("ACTION: ask-user-plan-impact"), 1)
+        self.assertLess(output.index("END USER TEXT"), output.index("ACTION: ask-user-plan-impact"))
+        self.assertIn("the queue is at-most-once", output)
+        self.assertIn("the cap moves into the config", output)
+        self.assertIn("Adopt plan change / Keep plan as written / Discuss", output)
+        self.assertIn("Gate: do not commit yet", output)
+        self.assertIn("1 plan impact(s) wait for a ruling", output)
+        self.assertNotIn("Nothing is outstanding", output)
+        self.assertNotIn("ACTION: redispatch", output)
+
+    def test_a_held_plan_impact_whose_edits_are_in_the_tree_says_to_revert_them_when_the_plan_is_kept(self):
+        code, output = self.impacts_packet([{**HELD_IMPACT, "applied": True}])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("edits are already in the tree", output)
+        self.assertNotIn("stay unapplied", output)
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "no, keep the retry"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("revert them", output)
+        self.assertNotIn("the held fix is not applied", output)
+
+    def test_a_toolkit_cause_plan_impact_prints_as_a_fault_with_no_question(self):
+        code, output = self.impacts_packet([TOOLKIT_IMPACT])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: show-plan-impacts", output)
+        self.assertIn("Toolkit fault, not a plan change", output)
+        self.assertIn("the gate base is old", output)
+        self.assertNotIn("ask-user-plan-impact", output)
+
+    def test_adopting_a_held_plan_impact_redispatches_once_with_the_plan_impact_resolved(self):
+        self.impacts_packet([HELD_IMPACT])
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, drop the retry"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(output.count("ACTION: redispatch"), 1)
+        self.assertIn("plan_impact: RESOLVED - Adopt plan change.", output)
+        self.assertIn("iter=2", output)
+        self.assertIn("the queue is at-most-once", output)
+
+    def test_keeping_the_plan_as_written_ends_with_no_redispatch_and_lets_the_review_count_as_clean(self):
+        message = json.dumps({"status": "converged", "iter": 2, "fixed": [], "ask": [],
+                              "class_closure": "n/a - fixed[] empty", "plan_impacts": [HELD_IMPACT]})
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record(SESSION, "dispatch")
+            handback_store.record(SESSION, "handback", status="converged", message=message)
+        self.packet(message)
+        held_reason = self.false_clean_reason()
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "no, keep the retry"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertNotIn("ACTION: redispatch", output)
+        self.assertNotIn("plan_impact: RESOLVED", output)
+        self.assertIn("the commit gate counts the review as clean", output)
+        self.assertIn("1 plan impact(s) that await a ruling", held_reason)
+        self.assertIsNone(self.false_clean_reason())
+
+    def test_a_plan_impact_deferred_to_phase_end_lets_the_commit_through(self):
+        message = json.dumps({"status": "converged", "iter": 2, "fixed": [], "ask": [],
+                              "class_closure": "n/a - fixed[] empty", "plan_impacts": [HELD_IMPACT]})
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record(SESSION, "dispatch")
+            handback_store.record(SESSION, "handback", status="converged", message=message)
+        held_reason = self.false_clean_reason()
+        bare_handoff = self.temp_root / "bare-handoff.txt"
+        bare_handoff.write_text("plan_impact: none\n", encoding="utf-8")
+        adopted_handoff = self.temp_root / "adopted-handoff.txt"
+        adopted_handoff.write_text("plan_impact: RESOLVED - Adopt.\n", encoding="utf-8")
+        deferred_handoff = self.temp_root / "handoff.txt"
+        deferred_handoff.write_text("plan_impact: RESOLVED: deferred to phase end by the session, 2026-10-31: "
+                                    "drop the retry\n", encoding="utf-8")
+
+        bare_code, bare_output = self.run_script(["defer", str(bare_handoff)])
+        bare_reason = self.false_clean_reason()
+        adopted_code, adopted_output = self.run_script(["defer", str(adopted_handoff)])
+        adopted_reason = self.false_clean_reason()
+        code, output = self.run_script(["defer", str(deferred_handoff)])
+
+        self.assertIn("1 plan impact(s) that await a ruling", held_reason)
+        self.assertNotEqual(bare_code, 0, bare_output)
+        self.assertIn("holds no `plan_impact: RESOLVED", bare_output)
+        self.assertIsNotNone(bare_reason)
+        self.assertNotEqual(adopted_code, 0, adopted_output)
+        self.assertIsNotNone(adopted_reason)
+        self.assertEqual(code, 0, output)
+        self.assertIn("the commit gate counts the review as clean", output)
+        self.assertIsNone(self.false_clean_reason())
+
+    def test_a_ruling_that_keeps_the_plan_leaves_the_asks_of_the_same_packet_to_asks_done(self):
+        self.impacts_packet([HELD_IMPACT], ask=[CAP_ASK])
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "no, keep the retry"])
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["asks-done", "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("no asks are waiting", output)
+        outcomes = [row["ask_outcome"] for row in self.ledger_writes() if "ask_outcome" in row]
+        self.assertEqual(outcomes, ["accepted"])
+
+    def test_a_ruling_that_adopts_the_plan_change_keeps_the_asks_of_the_same_packet_open(self):
+        self.impacts_packet([HELD_IMPACT], ask=[CAP_ASK])
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, drop the retry"])
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: redispatch", output)
+
+        code, output = self.run_script(["asks-done", "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("no asks are waiting", output)
+        outcomes = [row["ask_outcome"] for row in self.ledger_writes() if "ask_outcome" in row]
+        self.assertEqual(outcomes, ["accepted"])
+
+    def test_a_plan_impact_never_prints_a_redispatch_or_a_question_before_the_review_result(self):
+        for impacts in ([HELD_IMPACT], [ADOPTED_IMPACT], [TOOLKIT_IMPACT]):
+            with self.subTest(impacts[0]["text"]):
+                code, output = self.impacts_packet(impacts)
+
+                self.assertEqual(code, 0, output)
+                self.assertNotIn("ACTION: redispatch", output)
+                self.assertLess(output.index("END USER TEXT"), output.rindex("ACTION:"))
+
     def test_plan_impact_that_changes_no_acceptance_criterion_is_adopted_without_asking(self):
         code, output = self.packet(plan_impact_packet("none"))
         self.assertEqual(code, 0, output)
@@ -465,6 +630,29 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("  - finding: parity script compares the wrong column - bin/parity.py:40", carried)
         self.assertIn("  - ask: no index", carried)
         self.assertNotIn("the queue is at-most-once", carried)
+
+    def test_adopting_a_held_impact_carries_the_remaining_findings_and_the_impact_text(self):
+        open_finding = {"finding": "parity script compares the wrong column", "file_line": "bin/parity.py:40",
+                        "disposition": "fix"}
+        self.impacts_packet([HELD_IMPACT], findings_remaining=[open_finding])
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, drop the retry"])
+
+        self.assertEqual(code, 0, output)
+        carried = output.split("carried-findings:", 1)[1]
+        self.assertIn("  - finding: parity script compares the wrong column - bin/parity.py:40", carried)
+        self.assertIn("  - plan impact: the queue is at-most-once", carried)
+
+    def test_a_cap_reached_packet_prints_its_adopted_deviation_lines_and_its_held_impact(self):
+        code, output = self.impacts_packet([ADOPTED_IMPACT, HELD_IMPACT], status="cap-reached", iter="2 of 2",
+                                           findings_remaining=CAP_FIELDS["findings_remaining"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("the cap moves into the config", output)
+        self.assertIn("ACTION: ask-user-plan-impact", output)
+        self.assertIn("the queue is at-most-once", output)
+        self.assertIn("Gate: do not commit yet", output)
 
     def test_a_located_plan_impact_ask_is_not_carried_after_the_ruling(self):
         located_ask = {"finding": "`src/queue.ts:1` [correctness] plan impact: the queue is at-most-once",

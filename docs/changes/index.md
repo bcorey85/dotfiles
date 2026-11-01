@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-730 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+732 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
 Latest change: 2026-10-31, [review launch on a clean tree stops instead of passing an empty review](notes/2026-10-31-review-launch-on-a-clean-tree-stops-instead-of.md).
 

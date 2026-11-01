@@ -15,6 +15,9 @@ SCRIPT = pathlib.Path(
 sys.path.insert(0, str(SCRIPT.parent))
 import plan_format
 
+sys.path.insert(0, str(toolkit_paths.CODE_DIR))
+import coder_report
+
 TEMPLATE = """# Plan
 
 ## Phase 1: Build it
@@ -34,6 +37,54 @@ TEMPLATE = """# Plan
 
 def parse(text):
     return plan_format.manual_verification(text, "plan.md")
+
+
+class PlanChangeMarkTest(unittest.TestCase):
+    def test_a_plan_impact_ask_is_marked_whatever_form_its_line_number_takes(self):
+        locations = {
+            "a line": "`app.py:13` ",
+            "a bare line": "app.py:13 ",
+            "a range": "`app.py:13-14` ",
+            "an en dash range": "`app.py:13\N{EN DASH}14` ",
+            "a list of ranges": "`backend/src/schema.ts:58-101,139-147` ",
+            "a list of lines": "`app.py:3,9` ",
+            "a tag after a range": "`app.py:3-5` [plan-drift] \N{EM DASH} ",
+            "a tag before a range": "[plan-drift] `app.py:3-5` ",
+        }
+        for name, location in locations.items():
+            with self.subTest(name):
+                marked = plan_format.PLAN_CHANGE_MARK.match(f"{location}plan impact: needs a column")
+                self.assertIsNotNone(marked)
+
+    def test_text_that_only_mentions_a_plan_impact_later_is_not_marked(self):
+        texts = ("`app.py:13-14` the limit is wrong; see the plan impact", "the plan holds", "app.py:13-x plan impact")
+        for text in texts:
+            with self.subTest(text):
+                self.assertIsNone(plan_format.PLAN_CHANGE_MARK.match(text))
+
+
+class ReportBlockTest(unittest.TestCase):
+    def test_a_plan_impact_block_is_found_in_each_shape_a_report_writes_it(self):
+        block = ("assumed: the table has a key\nfound: it has none\nchanges: add a migration\n"
+                 "acceptance_criteria: none")
+        shapes = {
+            "indented": "BEHAVIOR: none\nPLAN-IMPACT:\n  " + block.replace("\n", "\n  ") + "\nPLAN-IMPACT: yes",
+            "keys at column 0": "BEHAVIOR: none\nPLAN-IMPACT:\n" + block + "\ncause: toolkit\nPLAN-IMPACT: yes",
+            "bold header and a blank line": "PLAN-IMPACT:**\n\n  " + block.replace("\n", "\n  "),
+            "bold keys": ("**PLAN-IMPACT:**\n- **assumed:** a\n- **found:** b\n- **changes:** c\n"
+                          "- **acceptance_criteria:** none\n- **cause:** toolkit"),
+        }
+        causes = {"keys at column 0": "toolkit", "bold keys": "toolkit"}
+        for name, report in shapes.items():
+            with self.subTest(name):
+                found = coder_report.plan_impact_block(report)
+                self.assertIsNotNone(found)
+                self.assertEqual(causes.get(name, "plan"), plan_format.plan_impact_cause(found))
+                self.assertNotIn("block not found", found)
+                self.assertIn("assumed", found)
+                self.assertIn("changes", found)
+                self.assertIn("acceptance_criteria", found)
+                self.assertFalse(plan_format.changes_acceptance_criteria(found))
 
 
 class SectionShapeTest(unittest.TestCase):
@@ -846,6 +897,48 @@ class PlanFileEditTest(unittest.TestCase):
         self.assertEqual(["- 2026-10-25 (Phase 2): Adopt plan change. Ruled by Pat Signer at 2026-10-25 09:30.", "",
                           "  The ruling: use the new table", "", "  The disagreement:", "  assumed: one table",
                           "  found: two"], entry)
+
+    def test_the_resolved_texts_read_the_same_from_the_one_line_and_the_block_handoff(self):
+        carried = f"  {plan_format.CARRIED_FINDINGS_KEY}  # open\n    - finding one\n    - finding two\n"
+        one_line = "  plan_impact: RESOLVED - Adopt.\n" + carried
+        block = ("RESOLVED: the user ruled. Review the code against the ruling.\nDecision: Adopt\nThe ruling:\n"
+                 "  do it\nPLAN-IMPACT:\n  found: a\n  found: b")
+        block_form = "  plan_impact: |\n" + "".join(f"    {line}\n" for line in block.splitlines()) + carried
+
+        self.assertEqual(["plan_impact: RESOLVED - Adopt.", "finding one", "finding two"],
+                         plan_format.resolved_plan_texts(one_line))
+        self.assertEqual(["finding one", "finding two"], plan_format.resolved_plan_texts(block_form)[-2:])
+        self.assertIn("found: a found: b", plan_format.resolved_plan_texts(block_form))
+        self.assertEqual([], plan_format.resolved_plan_texts("  plan_impact: none\n" + carried))
+
+    def test_the_resolved_texts_keep_the_text_on_the_plan_impact_header_line(self):
+        block = "RESOLVED: the user ruled.\nPLAN-IMPACT: found: the queue is at-most-once\n  changes: the retry phase"
+        handoff = "  plan_impact: |\n" + "".join(f"    {line}\n" for line in block.splitlines())
+
+        self.assertIn("found: the queue is at-most-once changes: the retry phase",
+                      plan_format.resolved_plan_texts(handoff))
+
+    def test_the_resolved_texts_read_a_plan_impact_header_that_follows_a_location(self):
+        block = ("RESOLVED: the user ruled.\napp.py:14 [docs] — PLAN-IMPACT: found: the queue is at-most-once\n"
+                 "  changes: the retry phase")
+        handoff = "  plan_impact: |\n" + "".join(f"    {line}\n" for line in block.splitlines())
+
+        self.assertIn("found: the queue is at-most-once changes: the retry phase",
+                      plan_format.resolved_plan_texts(handoff))
+
+    def test_the_ruled_impact_text_ends_at_a_carried_findings_line_at_the_same_indent(self):
+        lines = ["RESOLVED: the user ruled.", "PLAN-IMPACT:", "  found: a", plan_format.CARRIED_FINDINGS_KEY,
+                 "  - finding one"]
+
+        self.assertEqual("found: a", plan_format.ruled_impact_text(lines, 0, 0))
+
+    def test_the_resolved_texts_read_a_bold_or_backticked_plan_impact_header(self):
+        for header in ("**PLAN-IMPACT:**", "`PLAN-IMPACT:`", "- **PLAN-IMPACT**:"):
+            with self.subTest(header):
+                block = f"RESOLVED: the user ruled.\n{header}\n  found: a\n  changes: b"
+                handoff = "  plan_impact: |\n" + "".join(f"    {line}\n" for line in block.splitlines())
+
+                self.assertIn("found: a changes: b", plan_format.resolved_plan_texts(handoff))
 
     def test_a_ruling_entry_with_no_phase_leaves_the_phase_out(self):
         entry = plan_format.ruling_deviation(None, "Keep plan as written", "the session, not the user",

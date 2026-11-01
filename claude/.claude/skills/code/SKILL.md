@@ -87,11 +87,10 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    Route on the packet's `status`, first match wins:
 
-   - `plan-impact` → put its impacts on the phase-end list. In `<run folder>/handoff.txt`, set `plan_impact` to the one line `RESOLVED: deferred to phase end by the session, <date>: <one-line impact summary>` and write no block after it. Set both counters (`iter`, `spec_iter`) and run `code_review_start.py` again the same way. When a second `plan-impact` packet names the same impact, STOP and leave that impact on the phase-end list.
    - `critical-blocker` → STOP. Present `blockers`; do not mark the phase done.
    - `cap-reached` → STOP. Report `findings_remaining`; do not mark the phase done.
    - `deferred` → render as `converged`, plus `findings_remaining` under `### Deferred to branch exit`; proceed.
-   - `converged` → put any plan impacts the packet lists on the phase-end list. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). `nvim-jump` `ask[]` per `~/.claude/skills/_shared/nvim-jump.md` (each at its `file_line`, `--note` = its question), then present it as a STOP; when `ask[]` is empty, proceed to the phase gates at once. On resume, dispatch a `coder` for the accepted asks and wait for it, then log one row per ask:
+   - `converged` → put any plan impacts the packet lists on the phase-end list. When one of them is held (not `adopted`, `cause` not `toolkit`), set `plan_impact` in `<run folder>/handoff.txt` to the one line `RESOLVED: deferred to phase end by the session, <date>: <one-line impact summary>` and run `python3 ~/.claude/scripts/review/review_fix.py defer <run folder>/handoff.txt`, so the commit gate clears. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). `nvim-jump` `ask[]` per `~/.claude/skills/_shared/nvim-jump.md` (each at its `file_line`, `--note` = its question), then present it as a STOP; when `ask[]` is empty, proceed to the phase gates at once. On resume, dispatch a `coder` for the accepted asks and wait for it, then log one row per ask:
 
      ```bash
      bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \

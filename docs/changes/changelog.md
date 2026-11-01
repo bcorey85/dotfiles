@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-730 changes
+732 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -30,6 +30,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [A plan impact no longer stops the review loop; all show once at the end](notes/2026-10-31-a-plan-impact-no-longer-stops-the-review-loop-all.md) [script/review-loop-script, script/review-fix, script/handback, script/plan-format, agent/review-loop, skill/review, skill/fix, skill/code] A review keeps fixing past a plan question instead of stopping and repeating its first round, and the user hears about plan impacts once, after the result.
 * [Bash hooks start 5-10 ms faster: check_scope loads its Makefile and pytest config readers only when it judges make or pytest](notes/2026-10-31-bash-hooks-start-5-10-ms-faster-check-scope-loads.md) [script/check-scope, script/quality-check-cap, script/coder-gate] check_scope imports makefile_text and pytest_config inside the two functions that use them, so quality_check_cap and coder_gate stop paying about 8 ms of imports on every Bash, Edit and Write call.
 * [The code-step state store moves out of code_step_core.py](notes/2026-10-30-the-code-step-state-store-moves-out-of-code-step.md) [script/code-step] code_step_core.py drops from 1525 to 1300 lines: the state file, the verb transaction and the session's repo list move to code_step_store.py with no behavior change, so the next code-step change has less to split first.
 * [Goal-blind research searches skip the ticket](notes/2026-10-30-goal-blind-research-searches-skip-the-ticket.md) [agent/goal-blind-researcher, agent/spec-research, agent/spec-questions, skill/eng-spec] goal-blind-researcher hands spec-research one exclude glob naming the task directory and the folder that holds the in-repo source ticket, spec-research drops Grep and Glob and puts the glob on every rg search, and both research children edit files only with Edit or Write, never sed -i.
@@ -125,6 +126,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 * [review launch on a clean tree stops instead of passing an empty review](notes/2026-10-31-review-launch-on-a-clean-tree-stops-instead-of.md) [script/review-fix, skill/review] /review's scripted launch stops on a working tree with no changes and names the base= route, so a commit or merge is never passed as reviewed when no reviewer read any code.
 * [code-step resume goes on past an unreadable state file in the cwd checkout](notes/2026-10-31-code-step-resume-goes-on-past-an-unreadable-state.md) [script/code-step] A /code run in a sibling worktree finishes its steps when the session's own checkout holds another run's state file this code-step cannot read.
+* [A test review whose fix items are not all tagged goes to the disposition call](notes/2026-10-31-a-test-review-whose-fix-items-are-not-all-tagged.md) [script/review-loop-script] A reviewer's fix item always reaches the coder: a reply the tagged-bullet parse cannot fully account for now goes to the disposition call instead of losing the items it skipped.
 * [coder_gate.py and coder_packet.py print usage on --help and change nothing](notes/2026-10-31-coder-gate-py-and-coder-packet-py-print-usage-on.md) [script/code] A session that asks coder_gate.py or coder_packet.py for help now gets the usage line and exit 0. Before, `coder_gate.py set --help` stored a gate and `coder_packet.py --help` crashed.
 * [Hand-back no longer waits on a nested agent that ended on an API error](notes/2026-10-30-hand-back-no-longer-waits-on-a-nested-agent-that.md) [script/handback, script/script-utils, script/review-loop-gate, script/open-child-gate] A review loop no longer waits on a nested reviewer that died on a usage limit, so it is not stuck behind a report that will never come; a clean packet whose latest dispatch of one reviewer kind died is denied.
 * [Staged-claim hook passes a reply that describes what it reads](notes/2026-10-30-staged-claim-hook-passes-a-reply-that-describes.md) [script/staged-claim-gate] The staged-claim Stop hook no longer blocks a reply that reports speech, such as "a reply that says files are staged", so a session can describe the hook without a false refusal. The subdirectory test now runs the passing path it names, and git_calls.py has its reading rules back.

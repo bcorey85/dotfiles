@@ -56,7 +56,7 @@ PROMPT_REPO_ROOT = prompt_field("repo root", r"(\S[^\n]*?)[`*]*[ \t]*$")
 PARENTHETICAL_TAIL = re.compile(r"\s*\([^()]*\)$")
 GIT_TIMEOUT_SECONDS = 10
 PLAN_EDIT_REASON = ("The packet's files_touched names the plan file {plan}. A review fix never edits the plan. Revert "
-                    "that edit, and return the finding that needs a plan change with `status` set to `plan-impact`.")
+                    "that edit, and record the finding that needs a plan change in `plan_impacts[]`.")
 RUN_GATES = re.compile(r"-reviewer(-deep)?$")
 PACKET_ROW_KEYS = ("fixed", "skipped_fp", "findings_remaining", "ask", "nit")
 RETURN_TAIL = "then return the packet."

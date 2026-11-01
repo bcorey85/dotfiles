@@ -46,11 +46,12 @@ from handback_store import (
     REDISPATCHED,
     hand_back_gap,
     latest,
+    plan_ruled_since,
     session_rows,
     settled_stop,
 )
 from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
-from plan_format import PLAN_CHANGE_MARK, plan_impact_cause
+from plan_format import PLAN_CAUSE, PLAN_CHANGE_MARK, TOOLKIT_CAUSE, plan_impact_cause
 from script_utils import first_number, is_blocker, one_line
 
 # The status for a loop that stopped because the fix passes removed the change under review.
@@ -62,15 +63,16 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "full_check_tree",
                "files_touched", "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean",
                "tool_fault", "blocked_agents", "scoped_tests", "open_classes",
-               "unrun_reviewer"]
+               "unrun_reviewer", "plan_impacts"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
 SCRIPT_PACKET_KEYS = ["plan_impact_cause"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
-             "check_rewrote_edited", "check_created", "blocked_agents", "open_classes"]
+             "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "plan_impacts"]
 # The list fields whose every JSON entry is a string.
 STRING_LIST_KEYS = ("open_classes",)
 # The list fields whose every entry is a mapping, and the text field each entry requires.
-ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question"}
+ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question",
+                   "plan_impacts": "text"}
 # The file_line of a finding that names no file. Its row takes no line.
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
@@ -340,6 +342,36 @@ def fill_fixed_finding(item):
         item["finding"] = item["smell"]
 
 
+def normalize_plan_impact(item):
+    """Fills the defaults of a plan impact entry: it changes a criterion, is not adopted, is not applied to the tree
+    and has a plan cause unless it says otherwise. The flags read as booleans, so `"false"` is false."""
+    for flag, default in (("ac_change", True), ("adopted", False), ("applied", False)):
+        value = item.get(flag, default)
+        item[flag] = value.strip().lower() == "true" if isinstance(value, str) else bool(value)
+    item["cause"] = str(item.get("cause") or PLAN_CAUSE).strip().lower()
+    item.setdefault("gate", DEFAULT_GATE)
+
+
+def held_plan_impacts(packet):
+    """The packet's plan impacts that wait for a ruling: not adopted, and any cause but `toolkit`. They keep the review
+    dirty. A cause that does not parse is held too, so a criterion change never passes unseen."""
+    return [item for item in packet["plan_impacts"] if not item["adopted"] and item["cause"] != TOOLKIT_CAUSE]
+
+
+def toolkit_plan_impacts(packet):
+    """The packet's plan impacts that no one adopted and whose cause is `toolkit`: only reported, as a toolkit fault.
+    The complement of `held_plan_impacts` among the unadopted."""
+    return [item for item in packet["plan_impacts"] if not item["adopted"] and item["cause"] == TOOLKIT_CAUSE]
+
+
+def held_plan_impact_text(held):
+    """The texts of the held plan impacts, a blank line between two blocks."""
+    return "\n\n".join(impact["text"] for impact in held)
+
+
+ENTRY_NORMALIZERS = {"fixed": fill_fixed_finding, "ask": normalize_ask, "plan_impacts": normalize_plan_impact}
+
+
 def read_json_entries(key, entries):
     """(the entries of the JSON list field `key`, their problems). A mapping list holds only mappings, each with its
     required text field; the entry is never read as free text. An ask that names no file_line is unlocated. A
@@ -361,10 +393,9 @@ def read_json_entries(key, entries):
             continue
 
         item = dict(entry)
-        if key == "fixed":
-            fill_fixed_finding(item)
-        if key == "ask":
-            normalize_ask(item)
+        normalizer = ENTRY_NORMALIZERS.get(key)
+        if normalizer:
+            normalizer(item)
         is_dropped_ask = key == "ask" and item.get("drop_reason")
         if not is_dropped_ask and not str(item.get(required) or "").strip():
             problems.append(f"{key}[{position}] has no {required}: {one_line(json.dumps(entry), 80)!r}")
@@ -585,6 +616,17 @@ def stored_effective_status(seen):
     return effective_status(packet, seen["dispatch"].get("repo"))
 
 
+def stored_held_plan_impacts(message):
+    """(the held plan impacts of a stored hand-back, the parse error or None). A message that is not a JSON packet has
+    none. A packet that does not parse returns its error: the commit gate fails closed on it."""
+    if json_packet_text(message) is None:
+        return [], None
+    try:
+        return held_plan_impacts(load(message)), None
+    except PacketError as error:
+        return [], str(error)
+
+
 def false_clean_reason(session_id):
     """Why the session's review earns no commit credit, or None when its latest review-loop hand-back is current and
     converged or deferred. Takes the hook event's session_id, the value of CLAUDE_CODE_SESSION_ID in a Bash call. An
@@ -608,6 +650,12 @@ def standing_false_clean_reason(seen):
         return f"the latest review-loop hand-back is {status}"
     if seen["handback"].get("no_reviewer"):
         return "the review-loop handed back clean with no reviewer run"
+    held, parse_error = stored_held_plan_impacts(seen["handback"].get("message", ""))
+    # Fail closed: a hand-back whose plan impacts cannot be read never earns commit credit.
+    if parse_error:
+        return f"the latest review-loop hand-back does not parse, so its plan impacts cannot be read: {parse_error}"
+    if held and not plan_ruled_since(seen["handback"]["session_id"], seen["handback"]):
+        return f"the review-loop handed back {len(held)} plan impact(s) that await a ruling"
     return None
 
 

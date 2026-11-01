@@ -44,65 +44,47 @@ The user will specify a scope via arguments. Interpret it as follows:
 
 ## Output Format
 
-Structure your report exactly as follows. Every finding MUST include the specific file path and line numbers so a coder agent can act on it without searching.
+Every finding MUST include the specific file path and line numbers so a coder agent can act on it without searching. Write each finding as one top-level bullet that opens with its disposition tag and a colon: `- fix: <file:line> — <finding>`, `- ask: ...`, `- nit: ...`. Put the whole finding on that bullet: no nested bullet, no bold heading per item. Write a disposition tag nowhere else in the report.
 
 ```
 ## Test Review Report
 
 **Scope**: [what was reviewed]
-**Test files analyzed**: [count]
-**Source files analyzed**: [count]
-**Overall health**: [STRONG / ADEQUATE / NEEDS WORK / SEVERE GAPS]
-
-Each item carries its disposition (`fix` / `ask` / `nit`). Sections are topics, not tiers.
 
 ---
 
 ### Coverage Gaps in Business Logic
 
-[Untested or under-tested business logic that could hide bugs in production.
-Each item: source file path, function/method name, what's not tested, why it matters.]
+- fix: [source file:line — function/method name, what is not tested, why it matters]
 
 ### Assertions the Spec Does Not Support
 
-[Tests that pin behavior the acceptance criteria, ticket or plan contradict (`fix`) or leave open (`ask`).
-Each item: test file path and line, test name, the asserted value, the criterion or ticket line it contradicts or the open question, for a `fix` the corrected assertion, and for an `ask` the one edit an `accepted` answer makes.]
+- fix: [test file:line — test name, the asserted value, the criterion or ticket line it contradicts, the corrected assertion]
+- ask: [test file:line — test name, the asserted value, the open question — change: the one edit an `accepted` answer makes]
 
 ### Weak or Meaningless Tests
 
-[Tests that exist but don't actually verify correct behavior.
-Each item: test file path, test name, what's wrong, what it should assert instead.]
+- fix: [test file:line — test name, what is wrong, what it should assert instead]
 
 ### Stale Tests
 
-[Tests that no longer match the code they claim to test.
-Each item: test file path, test name, what changed in source, what needs updating.]
+- fix: [test file:line — test name, what changed in source, what needs updating]
 
 ### CULL: Dead / Low-Value Tests (branch scope only)
 
-[Tests added on this branch that no concrete implementation bug would fail.
-Each item: test file path and line, test name, which cull shape it matches, deletion recommendation.
-Omit this section entirely outside branch scope.]
+- fix: [test file:line — test name, which cull shape it matches, deletion recommendation]
 
 ### Missing Edge Cases and Error Paths
 
-[Tested functions that lack important branch coverage.
-Each item: source file path, function name, missing cases, example test scenarios.]
+- fix: [source file:line — function name, missing cases, example test scenarios]
 
 ### Brittle Tests
 
-[Tests that will break on harmless refactors.
-Each item: test file path, test name, what makes it brittle, how to make it resilient.]
+- fix: [test file:line — test name, what makes it brittle, how to make it resilient]
 
-### Test Hygiene Issues (`nit`)
+### Test Hygiene Issues
 
-[Structural and organizational improvements.
-Each item: location, issue, suggested fix.]
-
----
-
-### Summary of Recommended Actions
-
-[Ordered list of the highest-impact improvements, each as a concise action item
-that a coder agent can execute. Group by backend/frontend if both were reviewed.]
+- nit: [location — issue, suggested fix]
 ```
+
+Omit empty sections, and the CULL section outside branch scope.

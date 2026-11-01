@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "Final check reads a Full suite section that documents CI"
 description: "A repo whose CLAUDE.md documents CI as its full suite in a Full suite section no longer stops the final check when its check-only command prints no test summary."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T01:16:34-06:00"}
-seq: 420
+seq: 426
 kind: "fix"
 components: ["agent/review-loop"]
 evidence: ["judgment"]

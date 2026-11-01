@@ -4,7 +4,7 @@ change_type: "changed"
 title: "Code runs end phases on a statement, decide review asks and relay the stop word for word"
 description: "The /code fork asks no leave for a reversible step, ends every phase stop on a statement, and rules on review asks itself. The main session relays the fork's stop through `code_relay.py` and makes no other tool call before the user replies."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T01:04:45-06:00"}
-seq: 421
+seq: 427
 kind: "user-rule"
 components: ["skill/code", "agent/code-fork", "script/code-relay"]
 evidence: ["judgment"]

@@ -38,11 +38,15 @@ holds `git commit`, or `git`, then only global options (a known one that takes a
 `commit`. The text is read as written, with every quoted-string join (a quote, optional whitespace, `+`, optional
 whitespace, a quote; the quotes may be backslash-escaped) removed, and with the quotes and backslashes removed too,
 so `"gi" + "t com" + "mit"` and `git 'commit'` count. A `$( )` or backtick span is judged whether or not every
-simple command is a safe probe. A safe probe's first word, as written, is echo, printf, grep, cat, head, tail, wc, rg
-with no `--pre`, `--pre=`, `--hostname-bin` or `--hostname-bin=` word (rg runs that program), or git with status,
-diff, log, show or rev-parse and no `-c` or `--config-env`. So a probe that prints or searches the words passes, and
-a backslashed `sh -c`, `env -S` or `awk` holding the words is denied. A command shlex cannot read also counts when
-`git`, then only option-like words with an optional value each, then `commit` appears in it.
+simple command is a safe probe. A safe probe's first word, as written, is echo, printf, grep, cat, head, tail, wc,
+cut, uniq, tr, nl, column, jq, ls, cd, pwd or true, sort with no `--compress-program` word or any shortened form
+(sort runs that program), rg with no `--pre`, `--pre=`, `--hostname-bin` or `--hostname-bin=` word (rg runs that
+program), or git with status, diff, log, show or rev-parse and no `-c` or `--config-env`. A leading shell keyword
+(do, then, else, elif, if, while, until, `!`, `{`) is skipped and the rest judged; a `for` header and a bare done,
+fi or `}` run nothing. So a probe that prints or searches the words passes, also piped through a text tool, after a
+`cd` or inside a loop, and a backslashed `sh -c`, `env -S` or `awk` holding the words is denied. A command shlex
+cannot read also counts when `git`, then only option-like words with an optional value each, then `commit` appears
+in it.
 The session stays dirty; a later commit that ships code is denied again.
 
 A dirty session still commits in four more cases, each checked against something a subagent cannot write:
@@ -96,6 +100,7 @@ import script_utils
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
     GIT_VALUE_OPTIONS,
+    GROUP_WORDS,
     LINE_CONTINUATION,
     git_options,
     git_subcommand,
@@ -143,12 +148,19 @@ EDIT_TOOL_PATH_KEYS = {"Edit": "file_path", "MultiEdit": "file_path", "Write": "
 # Characters a shell or git would expand in a pathspec, and a newline.
 EXPANDING_CHARS = set("*?[]{}$`~\\\n")
 READ_ONLY_GIT = ("status", "diff", "log", "show", "rev-parse")
-# Programs the notes-only commit exemption allows beside git; not a subset of PROBE_PROGRAMS below.
+# Programs the notes-only commit exemption allows beside git; a subset of PROBE_PROGRAMS below, but the two lists
+# answer different questions.
 READ_ONLY_PROGRAMS = ("echo", "printf", "true", "pwd", "ls")
-# Programs that only print or search text. `rg --pre <program>` and `rg --hostname-bin <program>` run a program, so
-# rg with a `--pre`, `--pre=...`, `--hostname-bin` or `--hostname-bin=...` word is not one.
-PROBE_PROGRAMS = ("echo", "printf", "grep", "rg", "cat", "head", "tail", "wc")
-RG_PROGRAM_OPTIONS = ("--pre", "--hostname-bin")
+# Programs that only print, search or reshape text, or change nothing but the folder. `rg --pre <program>`,
+# `rg --hostname-bin <program>` and `sort --compress-program <program>` run a program, so a word naming one of
+# those options, alone or with `=...`, makes the command no probe. sort also takes a shortened option name, so any
+# `--` word of at least 4 characters that is a prefix of `--compress-program` counts.
+PROBE_PROGRAMS = ("echo", "printf", "grep", "rg", "cat", "head", "tail", "wc", "cut", "uniq", "tr", "nl", "column",
+                  "jq", "sort", "ls", "cd", "pwd", "true")
+PROGRAM_RUNNING_OPTIONS = {"rg": ("--pre", "--hostname-bin"), "sort": ("--compress-program",)}
+SHORTENABLE_OPTION_MIN_LENGTH = 4
+# Words that end a compound command and run nothing.
+CLOSING_KEYWORDS = ("done", "fi", "}")
 # git options that set config, which can name a program a read-only subcommand runs (core.pager, core.fsmonitor).
 GIT_CONFIG_OPTIONS = ("-c", "--config-env")
 # A message word `$(cat <<'X'` + body + `X` + `)` runs nothing: the body is quoted and ends at the first line X.
@@ -275,13 +287,33 @@ def runs_git_commit(words):
     return any(commit_follows_git(words, git_index) for git_index in git_indexes)
 
 
+def runs_a_program(program, word, running_options):
+    """True when the word is, or for sort shortens, an option of the program that runs another program."""
+    option = word.partition("=")[0]
+    if option in running_options:
+        return True
+
+    is_long_enough = len(option) >= SHORTENABLE_OPTION_MIN_LENGTH
+    is_shortened = any(name.startswith(option) for name in running_options)
+    return program == "sort" and is_long_enough and is_shortened
+
+
 def is_safe_probe(words):
-    """True when the simple command's first word is a program in PROBE_PROGRAMS (rg with no `--pre` or
-    `--hostname-bin` word), or git with a read-only subcommand and no config option. The first word is taken as
-    written, so a wrapper, an assignment or a path before the program makes the command unsafe."""
+    """True when the simple command's first word is a program in PROBE_PROGRAMS (with no option that runs a
+    program), or git with a read-only subcommand and no config option. Leading shell keywords are skipped first; a
+    `for` header or a bare closing keyword is safe. The first word is otherwise taken as written, so a wrapper, an
+    assignment or a path before the program makes the command unsafe."""
+    while words and words[0] in GROUP_WORDS:
+        words = words[1:]
+
+    is_closing_keyword = len(words) == 1 and words[0] in CLOSING_KEYWORDS
+    if not words or words[0] == "for" or is_closing_keyword:
+        return True
+
     program = words[0]
     if program in PROBE_PROGRAMS:
-        runs_program = program == "rg" and any(word.partition("=")[0] in RG_PROGRAM_OPTIONS for word in words)
+        running_options = PROGRAM_RUNNING_OPTIONS.get(program, ())
+        runs_program = any(runs_a_program(program, word, running_options) for word in words)
         return not runs_program
 
     if program != "git":

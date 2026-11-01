@@ -211,13 +211,13 @@ varied the block.
 | 68747bf7 | orchestration.md | ### Delegation | removal round, census | 259 words by `wc -w`. [change](changes/notes/2026-09-27-the-delegation-block-in-the-main-session.md) |
 | ff7c509e | orchestration.md | ### Git | removal round, judgment | Moved from the git rules file at 79 words. [change](changes/notes/2026-10-16-worktrees-inside-herdr-open-through-herdr-worktree.md) [change](changes/notes/2026-10-24-the-worktree-rule-names-tuios-beside-herdr.md) |
 | cb8fd8eb | orchestration.md | ### Stacked PRs (`gh stack`, github/gh-stack) | removal round | 137 words, moved from the git rules file. [change](changes/notes/2026-09-27-the-bullet-in-the-orchestration-file-s-tools.md) |
-| 8920e329 | rules/testing.md | (preamble) | unproven | Frontmatter path globs for test and spec files, 11 words. |
+| 4aa39ed1 | rules/testing.md | (preamble) | unproven | Frontmatter path globs for test and spec files, 19 words. [change](changes/notes/2026-10-31-frontend-rules-load-on-tsx-and-jsx-files.md) |
 | cf45f3c0 | rules/testing.md | # Testing | unproven | 25 words. [change](changes/notes/2026-09-27-the-laconic-output-style-was-deleted-and-the.md) |
-| 0e8d4c10 | rules/typescript.md | (preamble) | unproven | Frontmatter path glob for `.ts`, 5 words. |
+| 81b63bf0 | rules/typescript.md | (preamble) | unproven | Frontmatter path globs for `.ts` and `.tsx`, 7 words. [change](changes/notes/2026-10-31-frontend-rules-load-on-tsx-and-jsx-files.md) |
 | 84399069 | rules/typescript.md | # TypeScript | unproven | 24 words. [change](changes/notes/2026-09-27-the-git-rules-file-and-the-obsidian-and-rule.md) |
 | 70b9dba3 | rules/vue.md | (preamble) | unproven | Frontmatter path glob for `.vue`, 5 words. |
 | 9ad63206 | rules/vue.md | # Vue | unproven | 29 words. [change](changes/notes/2026-09-14-every-heading-block-of-the-diff-reviewer-s-prompt.md) |
-| 11899189 | rules/frontend-style.md | (preamble) | unproven | Frontmatter path globs for `.vue`, `.ts` and `.js`, 9 words. |
+| 4aefc095 | rules/frontend-style.md | (preamble) | unproven | Frontmatter path globs for `.vue`, `.ts`, `.js`, `.tsx` and `.jsx`, 13 words. [change](changes/notes/2026-10-31-frontend-rules-load-on-tsx-and-jsx-files.md) |
 | f9cf68bd | rules/frontend-style.md | # Frontend Style | unproven | 126 words. [change](changes/notes/2026-09-27-the-laconic-output-style-was-deleted-and-the.md) [change](changes/notes/2026-10-31-frontend-style-says-braceless-blocks-fail-lint.md) |
 | cd46142d | skills/_shared/handoff-block.md | # Handoff Block (single source of truth) | census, judgment | Declares this file the one definition of the block, which is why the loop agent cites it by path instead of restating the schema. [change](changes/notes/2026-09-20-the-implement-skill-now-builds-the-handoff-block.md) |
 | a1be13be | skills/_shared/handoff-block.md | ## The `why` channel | judgment | The free-text channel that carries intent from caller to loop. [change](changes/notes/2026-09-20-the-implement-skill-now-builds-the-handoff-block.md) |

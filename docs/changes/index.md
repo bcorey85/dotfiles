@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-734 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+735 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [frontend-style says braceless blocks fail lint only where eslint enables curly](notes/2026-10-31-frontend-style-says-braceless-blocks-fail-lint.md).
+Latest change: 2026-10-31, [Frontend rules load on tsx and jsx files](notes/2026-10-31-frontend-rules-load-on-tsx-and-jsx-files.md).
 
 ## Top gains
 

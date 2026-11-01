@@ -3,6 +3,8 @@ paths:
   - "**/*.vue"
   - "**/*.ts"
   - "**/*.js"
+  - "**/*.tsx"
+  - "**/*.jsx"
 ---
 
 # Frontend Style

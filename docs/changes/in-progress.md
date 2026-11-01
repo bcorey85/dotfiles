@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-5 open benches, by rank. Each line is the question the bench asks.
+6 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -16,3 +16,4 @@ description: "The benches that are open now and the question each asks."
 * One Opus reviewer per phase in place of code, test and structure reviewers (running): Dropping the separate test and structure reviewers could cut about a third of review Opus output and cache read if one Opus reviewer per phase catches the same planted defects.
 * Coder ranged-read hook for whole-file reads over 4k tokens (queued): A hook that turns the coder's whole-file read of a big file into a ranged read could cut coder cache read per dispatch by 30% or more.
 * Bench a peer-review pass with coder fixes in place of the full branch-exit review (running): Swapping the full branch-exit review loop for one peer-review pass whose findings a coder fixes cuts Opus tokens a third or more at the same catch rate.
+* Sealed-branch review bench: first sealed branches and their graded keys (queued): Give the reviewer a bench of real coder defects so reviewer changes can be ranked on catch rate, not on plants Opus always catches.

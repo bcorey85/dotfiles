@@ -421,10 +421,11 @@ def asks_done_line(asks, state):
     """The asks-done command for the packet in `state`. It names --packet when another packet still waits, so the
     command runs as printed."""
     packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
+    outcome_slots = " ".join(f"<outcome-{number}>" for number in range(1, len(asks) + 1))
     return (f"After the user answers, run once: python3 ~/.claude/scripts/review/review_fix.py asks-done "
-            f"{packet_flag}<outcome> x{len(asks)}  (accepted: make the proposed change | rejected: leave the code as "
-            "it stands | modified: make the user's change instead; optional ':<one line note>', accepted and not "
-            "stored)")
+            f"{packet_flag}{outcome_slots}  (one outcome per ask, in order; accepted: make the proposed change | "
+            "rejected: leave the code as it stands | modified: make the user's change instead; optional "
+            "':<one line note>', accepted and not stored)")
 
 
 def present_packet_asks(packet, state):

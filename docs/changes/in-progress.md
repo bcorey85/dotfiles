@@ -7,9 +7,12 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-2 open benches, by rank. Each line is the question the bench asks.
+5 open benches, by rank. Each line is the question the bench asks.
 
 2 further benches are left out of this page.
 
+* Blind vs sighted research: does goal-blind research change plan quality (running): Compare eng-spec research that never sees the ticket with research that does, on several trap tasks. Keep, cut or fund the guard by the result.
 * Bench: do structure and test defects that per-phase review misses get copied by later phases and later tickets (running): The placement bench scores catches on fixed code. This one lets the coder keep building: does a duplicated helper, a wrong-layer query or a weak assertion left in an early phase get copied by later phases and the next ticket, and how much rework does that add?
 * Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (blocked): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.
+* Plan review round 2 reads only the changed spec sections (running): Plan review round 2 can drop most of its Opus re-read if it reads only what round 1 changed.
+* Review findings carry the patch; a script applies it instead of a fix coder (queued): Reviewer findings carry the exact patch and a script applies it, so most review loops skip the fix-coder dispatch and its file re-reads.

@@ -8,6 +8,8 @@ Script location: LOG_REVIEW_FINDING_SCRIPT, defaulting to the script in this tre
 
 import os
 import pathlib
+import re
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -18,6 +20,9 @@ import toolkit_paths
 LOG_REVIEW_FINDING = pathlib.Path(
     os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or toolkit_paths.CLAUDE_DIR / "skills" / "review" / "log-review-finding"
 )
+FINDING_LOG_RULE = toolkit_paths.CLAUDE_DIR / "skills" / "_shared" / "finding-log.md"
+REVIEW_LOOP_AGENT = toolkit_paths.CLAUDE_DIR / "agents" / "review-loop.md"
+CODE_SKILL = toolkit_paths.CLAUDE_DIR / "skills" / "code" / "SKILL.md"
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t",
     "GIT_AUTHOR_EMAIL": "t@example.com",
@@ -48,9 +53,9 @@ class LoggerRepoCase(unittest.TestCase):
         done = subprocess.run(["git", *args], cwd=self.repo, env=git_env, check=True, capture_output=True, text=True)
         return done.stdout.strip()
 
-    def log(self, args, extra_env=None, expected_exit=0, cwd=None):
+    def logger_env(self, extra_env=None):
         caller_env = {key: value for key, value in os.environ.items() if not key.startswith(("CLAUDE_", "REVIEW_"))}
-        env = {
+        return {
             **caller_env,
             **GIT_ENV,
             "HOME": str(self.temp_root),
@@ -58,6 +63,9 @@ class LoggerRepoCase(unittest.TestCase):
             "FAKE_LEDGER_ROWS": self.ledger_env["FAKE_LEDGER_ROWS"],
             **(extra_env or {}),
         }
+
+    def log(self, args, extra_env=None, expected_exit=0, cwd=None):
+        env = self.logger_env(extra_env)
         command = ["bash", str(LOG_REVIEW_FINDING), *args]
         done = subprocess.run(command, cwd=cwd or self.repo, env=env, capture_output=True, text=True)
         self.assertEqual(done.returncode, expected_exit, done.stderr)
@@ -302,6 +310,30 @@ class TestAuditRowTest(LoggerRepoCase):
                 self.assertEqual(done.stderr, "")
                 self.assertIn("usage: log-review-finding kind=run|finding", done.stdout)
                 self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
+    def test_a_finding_logged_under_zsh_as_the_log_rule_writes_it_takes_a_bracketed_path(self):
+        log_rule_text = FINDING_LOG_RULE.read_text()
+        (file_argument,) = set(re.findall(r"'?file=<path>'?", log_rule_text))
+        bracketed_path = "app/[id]/route.ts"
+        bracketed_argument = file_argument.replace("<path>", bracketed_path)
+        logger_command = " ".join(["bash", shlex.quote(str(LOG_REVIEW_FINDING)), *FINDING_ARGS, bracketed_argument,
+                                   "line=3"])
+
+        done = subprocess.run(["zsh", "-f", "-c", logger_command], cwd=self.repo, env=self.logger_env(),
+                              capture_output=True, text=True)
+
+        self.assertEqual((done.returncode, done.stderr), (0, ""))
+        (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
+        self.assertEqual(finding_row["path_key"], bracketed_path)
+
+
+class PathQuotingTest(unittest.TestCase):
+    def test_every_path_the_review_loop_templates_pass_to_a_command_is_single_quoted(self):
+        unquoted_path = re.compile(r"(?<!')(?:file=<path>|root=<[^>]+>)|\bcd <|full_check\.py <|--(?:log|plan) [/<]")
+        for template in (FINDING_LOG_RULE, REVIEW_LOOP_AGENT, CODE_SKILL):
+            with self.subTest(template=template.name):
+                unquoted = [line for line in template.read_text().splitlines() if unquoted_path.search(line)]
+                self.assertEqual(unquoted, [])
 
 
 if __name__ == "__main__":

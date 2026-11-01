@@ -119,6 +119,62 @@ fg = "#576d74"
 bg = "#fdf5e2"
 grey = "#647a82"
 
+# solarized dark (Schoonover's canonical palette, base03 ground).
+[palettes.solarized-dark]
+red = "#dc322f"
+orange = "#cb4b16"
+yellow = "#b58900"
+green = "#859900"
+blue = "#268bd2"
+branch = "#268bd2"
+teal = "#2aa198"
+purple = "#6c71c4"
+fg = "#839496"
+bg = "#002b36"
+grey = "#586e75"
+
+# solarized light (base3 ground), same accents.
+[palettes.solarized-light]
+red = "#dc322f"
+orange = "#cb4b16"
+yellow = "#b58900"
+green = "#859900"
+blue = "#268bd2"
+branch = "#268bd2"
+teal = "#2aa198"
+purple = "#6c71c4"
+fg = "#657b83"
+bg = "#fdf6e3"
+grey = "#93a1a1"
+
+# selenized dark (Warchoł's palette, bg_0 #103c48).
+[palettes.selenized-dark]
+red = "#fa5750"
+orange = "#ed8649"
+yellow = "#dbb32d"
+green = "#75b938"
+blue = "#4695f7"
+branch = "#4695f7"
+teal = "#41c7b9"
+purple = "#af88eb"
+fg = "#adbcbc"
+bg = "#103c48"
+grey = "#72898f"
+
+# selenized light (bg_0 #fbf3db).
+[palettes.selenized-light]
+red = "#d2212d"
+orange = "#c25d1e"
+yellow = "#ad8900"
+green = "#489100"
+blue = "#0072d4"
+branch = "#0072d4"
+teal = "#009c8f"
+purple = "#8762c6"
+fg = "#53676d"
+bg = "#fbf3db"
+grey = "#909995"
+
 # alabaster dark (p00f/alabaster.nvim).
 [palettes.alabaster-dark]
 red = "#d2322d"

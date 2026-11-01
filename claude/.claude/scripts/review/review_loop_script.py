@@ -219,23 +219,33 @@ def first_round_plan(files, structure_pass_skipped=False):
     if large and not structure_pass_skipped:
         dispatches.append(("smell-reviewer", list(files)))
     changed_lines = sum(entry[0] for entry in files.values())
-    if len(files) > SPLIT_FILES and changed_lines >= SPLIT_LINES and len(source) > 1:
-        half = len(source) // 2
-        dispatches[0] = ("code-reviewer", source[:half])
-        dispatches.insert(1, ("code-reviewer", source[half:]))
+    code_owned = dispatches[0][1]
+    if len(files) > SPLIT_FILES and changed_lines >= SPLIT_LINES and len(code_owned) > 1:
+        half = len(code_owned) // 2
+        dispatches[0] = ("code-reviewer", code_owned[:half])
+        dispatches.insert(1, ("code-reviewer", code_owned[half:]))
     return dispatches
 
 
+def owns_in_round_two(agent, path, round_one_owned, test_reviewed):
+    """A reviewer re-reads the files of its kind, and a test file it owned in round one that no test reviewer read."""
+    if source_paths.is_test_path(path) == (agent == "test-reviewer"):
+        return True
+    return path in round_one_owned and path not in test_reviewed
+
+
 def second_round_plan(round_fix, changed, skipped_findings, coder_diffs):
-    """Which reviewers go out in round two, and who owns which files."""
+    """Which reviewers go out in round two, and who owns which files. round_fix holds (agent, owned, fixes) per
+    round-one dispatch."""
     smell_runs = added_source_lines(coder_diffs) >= LARGE_ADDED_LINES
+    test_reviewed = {path for agent, owned, _fixes in round_fix if agent == "test-reviewer" for path in owned}
     dispatches = []
-    for agent, fixes in round_fix:
+    for agent, round_one_owned, fixes in round_fix:
         if not fixes:
             continue
         skipped_paths = [fix.path for fix in fixes if any(fix.text in item.text for item in skipped_findings)]
         owned = [path for path in dict.fromkeys(changed + skipped_paths)
-                 if path and source_paths.is_test_path(path) == (agent == "test-reviewer")]
+                 if path and owns_in_round_two(agent, path, round_one_owned, test_reviewed)]
         if agent == "smell-reviewer" and not smell_runs:
             continue
         if not owned:
@@ -681,7 +691,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
                 if item not in held:
                     self.add_ask(agent, item)
             round_nits += parsed["nit"]
-            round_fix.append((agent, fixes))
+            round_fix.append((agent, owned, fixes))
         return round_fix, round_nits
 
     def repair(self, call_name, findings, nits=()):
@@ -714,7 +724,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
     def fix_round(self, round_fix, round_nits):
         """The coder pass on the round's merged fixes, and the plan for the next round. Returns False when the loop
         ends here."""
-        round_findings = merge_findings([item for _agent, fixes in round_fix for item in fixes])
+        round_findings = merge_findings([item for _agent, _owned, fixes in round_fix for item in fixes])
         if not round_findings:
             self.nits += round_nits
             return False

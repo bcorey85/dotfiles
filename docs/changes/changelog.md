@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-753 changes
+757 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -132,6 +132,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [an ask with an empty change marker asks its question](notes/2026-11-01-an-ask-with-an-empty-change-marker-asks-its.md) [script/review-loop-script] An ask that ends on an empty change: marker uses its question as its change, as an ask with no marker does, in place of failing the packet as a critical blocker.
+* [review loop re-reviews a test-file fix the code reviewer owned](notes/2026-11-01-review-loop-re-reviews-a-test-file-fix-the-code.md) [script/review-loop-script] Round two of the review loop sends a fixed test file back to the code reviewer that owned it in round one when no test reviewer read it, so a test-file fix is re-reviewed.
+* [review loop split gives every test file a reviewer](notes/2026-11-01-review-loop-split-gives-every-test-file-a-reviewer.md) [script/review-loop-script] When a wide change splits its code review in two, the split halves the files the first code reviewer owned, so test files keep a reviewer when no test reviewer runs.
+* [review loop keeps finding lines that open with a none word](notes/2026-11-01-review-loop-keeps-finding-lines-that-open-with-a.md) [script/review-loop-script] The review loop's section parser drops only a bare none marker inside a section, so a finding or a continuation line that opens with None, Empty, N/A or Omitted stays finding text.
 * [Final check reads a Full suite section that documents CI](notes/2026-11-01-final-check-reads-a-full-suite-section-that.md) [agent/review-loop] A repo whose CLAUDE.md documents CI as its full suite in a Full suite section no longer stops the final check when its check-only command prints no test summary.
 * [Code skill names verify-branch and drops the no-op deep modifier](notes/2026-11-01-code-skill-names-verify-branch-and-drops-the-no-op.md) [skill/code] /code now points at the skill that exists: its three `/verify` mentions read `/verify-branch`, and the `+deep` modifier, which changed nothing, is no longer offered.
 * [Test-reviewer reports in the tagged-bullet form the review script parses](notes/2026-11-01-test-reviewer-reports-in-the-tagged-bullet-form.md) [agent/test-reviewer, agent/review-loop] The scripted review loop reads test-reviewer findings without a model call: the report template now writes top-level `- fix:`, `- ask:` and `- nit:` bullets, so the Sonnet disposition call that classified each test-reviewer report is no longer needed.

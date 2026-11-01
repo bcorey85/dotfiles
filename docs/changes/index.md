@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-746 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+747 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [Final check reads a Full suite section that documents CI](notes/2026-11-01-final-check-reads-a-full-suite-section-that.md).
+Latest change: 2026-11-01, [Code runs end phases on a statement, decide review asks and relay the stop word for word](notes/2026-11-01-code-runs-end-phases-on-a-statement-decide-review.md).
 
 ## Top gains
 

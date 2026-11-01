@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-764 changes, 15 with a measured gain, 258 behavior changes that no intake metric reads.
+773 changes, 15 with a measured gain, 258 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-01, [Drop orchestration rules that a gate already states](notes/2026-11-01-drop-orchestration-rules-that-a-gate-already.md).
 

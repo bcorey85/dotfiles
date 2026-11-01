@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "The asks-done call the review packet prints runs once its outcomes are filled in"
 description: "The review packet now prints one numbered outcome slot per ask (`<outcome-1> <outcome-2>`), so a session that fills in the slots runs the asks-done call right the first time, instead of copying a count marker (`x2`) that asks-done refused as an extra outcome."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T05:13:35-06:00"}
-seq: 435
+seq: 444
 kind: "fix"
 components: ["script/review-fix"]
 evidence: ["judgment"]

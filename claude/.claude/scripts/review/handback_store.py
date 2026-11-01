@@ -86,12 +86,16 @@ def was_recorded(session_id, agent_id, kind):
     return bool(session_rows(session_id, kind, agent_id))
 
 
-def prune_stale():
+def prune_stale(keep):
+    """Deletes session files older than STALE_STORE_SECONDS, except `keep`, the file the caller is about to append
+    to."""
     cutoff = time.time() - STALE_STORE_SECONDS
     directory = store_dir()
     if not directory.is_dir():
         return
     for path in directory.glob("*.jsonl"):
+        if path == keep:
+            continue
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
@@ -102,8 +106,9 @@ def prune_stale():
 def record(session_id, kind, **fields):
     """Append one row to the session's own file. Other sessions' files are never touched."""
     row = {"kind": kind, "ts": time.time(), "session_id": session_id, **fields}
-    prune_stale()
-    script_utils.append_jsonl(session_file(session_id), row)
+    own_file = session_file(session_id)
+    prune_stale(keep=own_file)
+    script_utils.append_jsonl(own_file, row)
     return row
 
 

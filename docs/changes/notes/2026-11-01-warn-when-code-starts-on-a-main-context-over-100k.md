@@ -4,7 +4,7 @@ change_type: "added"
 title: "Warn when /code starts on a main context over 100k"
 description: "A typed /code run start whose main session already holds more than 100k tokens of context gets a one-line warning to clear first. The check rides in the existing UserPromptSubmit hook, format_changed.py, so no new process starts."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T01:35:22-06:00"}
-seq: 428
+seq: 437
 kind: "user-rule"
 components: ["script/format-changed", "script/code-context"]
 evidence: ["census", "judgment"]

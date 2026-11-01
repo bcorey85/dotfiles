@@ -141,6 +141,8 @@ def later_phase_paths(plan_lines, phase_id):
 
 
 def section_paths(plan_lines, section):
+    # Every backticked path of the section, a bare `name.ext` included, so a root file a later phase also names stays
+    # this phase's own.
     if section is None:
         return set()
     fenced = script_utils.fenced_line_indexes(plan_lines)

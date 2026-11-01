@@ -4,7 +4,7 @@ change_type: "changed"
 title: "The test-reviewer runs on Sonnet instead of Opus"
 description: "The test-reviewer agent now runs on Sonnet. On the bench this cut its list cost 79% per review ($1.74 → $0.37 median) and its wall time 63% (198 s → 73 s), while it caught a median 9 of 11 seeded test-suite gaps against Opus's 10 of 11, inside the one-gap bar set before the runs."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T04:32:19-06:00"}
-seq: 433
+seq: 442
 kind: "structured"
 components: ["agent/test-reviewer"]
 evidence: ["bench"]

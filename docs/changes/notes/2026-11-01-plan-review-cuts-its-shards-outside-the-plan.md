@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "Plan review cuts its shards outside the plan folder"
 description: "An eng-spec plan over 400 lines now gets its two review extracts from a script that writes them to a temp folder and deletes it after the hand-backs, so no stale review-shard copy is left in the plan folder for a later coder lane to treat as its own."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T04:34:27-06:00"}
-seq: 432
+seq: 441
 kind: "fix"
 components: ["skill/eng-spec", "script/plan-review-shards"]
 evidence: ["census"]

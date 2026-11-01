@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "A reviewer's list of claims that check out stays out of the asks"
 description: "A review whose finding is followed by a lead-in such as \"The other claims check out:\" and a list of confirmations now gives one ask, not one ask per confirmation, so the user answers only real decisions (one real ask had become four)."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T04:56:48-06:00"}
-seq: 434
+seq: 443
 kind: "fix"
 components: ["script/review-fix", "script/review-loop"]
 evidence: ["census"]

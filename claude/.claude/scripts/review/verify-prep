@@ -128,18 +128,22 @@ def resolve_inputs(target, ticket_file, top):
 def read_criteria(mode, ticket_path, plan_path):
     """(counts, criteriaPath|None). Every source is parsed here so a bad file fails at prep; verify-log reads them
     again when it prints the checklist, so it keeps the counts, the ids, and the ticket labels and lines."""
-    ticket_entries = vc.ticket_criteria(ticket_path.read_text(), str(ticket_path))
+    criteria_path = None
+    candidate = ticket_path.parent / "acceptance-criteria.md"
+    if mode == "dir" and candidate.is_file():
+        criteria_path = str(candidate)
+
+    entries, manual_entries = [], []
+    if criteria_path is not None:
+        entries, manual_entries = vc.parse_criteria_file(candidate.read_text(), criteria_path)
+    ticket_entries = vc.branch_ticket_criteria(ticket_path.read_text(), str(ticket_path), entries)
     counts = {"ticket": len(ticket_entries), "ticketLabels": [entry["label"] for entry in ticket_entries],
               "ticketLines": [f"{entry['label']}: {entry['text']}" for entry in ticket_entries],
               "criteriaFileIds": 0, "manualOnly": 0, "manualVerification": 0, "ids": []}
 
-    criteria_path = None
-    candidate = ticket_path.parent / "acceptance-criteria.md"
-    if mode == "dir" and candidate.is_file():
-        entries, manual_entries = vc.parse_criteria_file(candidate.read_text(), str(candidate))
+    if criteria_path is not None:
         if not entries and not manual_entries:
             raise vc.VerifyError(f"{candidate} exists but holds no `- **ACn** — text` lines")
-        criteria_path = str(candidate)
         counts["criteriaFileIds"] = len(entries) + len(manual_entries)
         counts["manualOnly"] = len(manual_entries)
         counts["ids"] = sorted({entry["id"] for entry in [*entries, *manual_entries]},

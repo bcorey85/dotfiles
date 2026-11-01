@@ -150,7 +150,9 @@
       "Bash(gh pr create:*)",
       "Bash(gh pr merge:*)",
       "SendFeedback",
-      "AskUserQuestion"
+      "AskUserQuestion",
+      "Workflow",
+      "ScheduleWakeup"
     ],
     "defaultMode": "auto"
   },

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-737 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+738 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [review-commit-gate passes a search that quotes the commit words through a text tool, cd or loop](notes/2026-10-31-review-commit-gate-passes-a-search-that-quotes-the.md).
+Latest change: 2026-10-31, [Review fix drops the plan-impact status route the loop no longer emits](notes/2026-10-31-review-fix-drops-the-plan-impact-status-route-the.md).
 
 ## Top gains
 

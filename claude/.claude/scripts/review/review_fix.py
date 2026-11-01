@@ -72,10 +72,10 @@ import review_asks
 import script_utils
 import worktree_snapshot
 from capped_review import CAP_REACHED
-from handback import FIX_REMOVED_CHANGE, PacketError, is_plan_impact_ask, item_text
+from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
 from review_loop_script import loop_script_command, write_script_prompt
-from saved_handback import LoopWaitingError, NoHandbackError, dispatched_repo, dispatched_with_ruling, read_message
+from saved_handback import LoopWaitingError, NoHandbackError, dispatched_repo, read_message
 from script_utils import one_line, run_command, split_location
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -87,7 +87,6 @@ DECIDE_USAGE = f"{plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}"
 NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
 LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
-PLAN_IMPACT = "plan-impact"
 DEFER_LINE_PREFIX = "plan_impact: RESOLVED: deferred to phase end"
 DEFER_LINE = f"{DEFER_LINE_PREFIX} by the session, <date>: <summary>"
 NEW_FINDING_ID = "new-finding-id"
@@ -325,16 +324,6 @@ def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
     return 2
 
 
-def present_plan_impact(packet, state):
-    state.update({"stage": "plan-impact", "plan_impact": packet["plan_impact"],
-                  "carried_findings": handback.carried_findings(packet)})
-    if not plan_format.changes_acceptance_criteria(packet["plan_impact"]):
-        return adopt_code_side_for_review(state)
-
-    save_fix_state(state)
-    print_action("ask-user-plan-impact", *plan_impact_question_lines(packet["plan_impact"], packet))
-
-
 def plan_impact_question_lines(plan_impact, packet):
     """The lines that tell the session to put one plan-impact question to the user and what to run on the answer."""
     return [
@@ -399,7 +388,7 @@ def present_plan_impacts(packet, state):
     held_text = handback.held_plan_impact_text(held)
     applied = any(impact["applied"] for impact in held)
     state.update({"plan_impact": held_text, "plan_impact_held": True, "plan_impact_applied": applied,
-                  "carried_findings": [*handback.carried_findings(packet, include_asks=False),
+                  "carried_findings": [*handback.carried_findings(packet),
                                        *[f"plan impact: {one_line(impact['text'], 800)}" for impact in held]]})
     if state.get("stage") != "asks":
         state["stage"] = "plan-impact"
@@ -565,11 +554,6 @@ def new_state(options, packet, packet_id):
                 state[key] = previous[key]
     if waiting_packets:
         state["waiting_packets"] = waiting_packets
-
-    # Only the run that the adoption's re-dispatch started shows the deviations: any other dispatch drops them.
-    carries_ruling = same_run or (previous.get("stage") == "redispatch" and dispatched_with_ruling())
-    if carries_ruling and previous.get("adopted_deviations"):
-        state["adopted_deviations"] = previous["adopted_deviations"]
     return state
 
 
@@ -603,6 +587,10 @@ def remaining_lines(packet):
     return ["- " + item_text(item, "disposition", "finding", "file_line") for item in packet["findings_remaining"]]
 
 
+def plan_impact_lines(packet):
+    return ["- " + one_line(packet["plan_impact"], 400)]
+
+
 # The statuses that stop the caller: (the instruction, the packet's entry lines under it).
 STOP_STATUSES = {
     "critical-blocker": ("Present these blockers and wait for direction. Do not re-dispatch. Do not run /fix.",
@@ -613,6 +601,9 @@ STOP_STATUSES = {
     FIX_REMOVED_CHANGE: ("The fix passes removed half or more of the change under review. Present these lines "
                          "and wait for direction. Do not re-dispatch. Do not run /fix.",
                          blocker_lines),
+    PLAN_IMPACT_STATUS: ("The review loop no longer emits plan-impact; present the plan_impact text and wait for "
+                         "direction. Do not re-dispatch.",
+                         plan_impact_lines),
     CAP_REACHED: ("The review cap was reached. Report these findings; the user decides. Do not re-dispatch. Do not "
                     "run /fix. The session stays dirty, so git commit stays blocked.",
                     remaining_lines),
@@ -697,8 +688,6 @@ def command_packet(argv):
         return print_action("done", f"This packet's ask outcomes were already logged in "
                             f"{logged_in_repo}. Nothing was logged or posted again. Run any later step there.")
 
-    if packet["status"] == "plan-impact":
-        return present_plan_impact(packet, state)
     if packet["status"] in STOP_STATUSES:
         return stop_for_status(packet, options, state)
 
@@ -740,9 +729,6 @@ def packet_sections(packet, state, replies, unreviewed_fix, capped_defer):
     sections = [("Aikido replies", replies)] if replies else []
     if capped_defer:
         sections.append(deferred_from_cap_section(packet))
-    if state.get("adopted_deviations"):
-        deviation_lines = [f"- {deviation_summary}" for deviation_summary in state["adopted_deviations"]]
-        sections.append(("Plan deviations adopted (the code won; no acceptance criterion changed)", deviation_lines))
     if unreviewed_fix:
         sections.append(handback.unreviewed_fix_section(packet))
     ledger_warning = script_utils.missing_ledger_warning()
@@ -853,7 +839,7 @@ def log_fix_ask_outcomes(state, asks, outcomes, decided_by="user"):
     """(ask counts of this call: plan-impact asks skipped, outcomes logged under a new finding_id; failure lines). An
     ask that is logged or skipped joins asks_logged and is never tried again."""
     logged = state.setdefault("asks_logged", [])
-    ask_counts = {PLAN_IMPACT: 0, NEW_FINDING_ID: 0}
+    ask_counts = {PLAN_IMPACT_STATUS: 0, NEW_FINDING_ID: 0}
     failures = []
     for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True)):
         if index in logged:
@@ -861,7 +847,7 @@ def log_fix_ask_outcomes(state, asks, outcomes, decided_by="user"):
 
         outcome_row = review_asks.log_ask_outcome(ASK_LOGGER, state, item, outcome, decided_by)
         if outcome_row is None:
-            ask_counts[PLAN_IMPACT] += 1
+            ask_counts[PLAN_IMPACT_STATUS] += 1
             logged.append(index)
             continue
         if outcome_row.code == 0:
@@ -949,8 +935,8 @@ def command_asks_done(argv):
     summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."
     if decided_by == "session":
         summary += " The session ruled, not the user."
-    if ask_counts[PLAN_IMPACT]:
-        summary += f" {ask_counts[PLAN_IMPACT]} plan-impact ask(s) are not logged as findings."
+    if ask_counts[PLAN_IMPACT_STATUS]:
+        summary += f" {ask_counts[PLAN_IMPACT_STATUS]} plan-impact ask(s) are not logged as findings."
     if ask_counts[NEW_FINDING_ID]:
         summary += (f" {ask_counts[NEW_FINDING_ID]} ask(s) without a valid finding_id are logged under a new "
                     "finding_id.")
@@ -996,12 +982,11 @@ def command_decide(argv):
 
 
 NO_PLAN_LINE = "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
-ADOPT_NO_PLAN_LINE = "Add these lines under ## Plan Deviations in the plan yourself, then continue:"
 
 
-def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no_plan_line=NO_PLAN_LINE):
+def record_plan_ruling(state, decision, by, ruling, plan_path):
     """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds) and print the
-    re-dispatch. `user_lines` go first, for the main session to show the user."""
+    re-dispatch."""
     choice = plan_format.DECISION_WORDS[decision]
     owner = plan_format.ruling_owner(".", by)
     ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1023,7 +1008,7 @@ def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no
                          "counts the review as dirty.")
         return print_action(
             "done",
-            f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else no_plan_line,
+            f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else NO_PLAN_LINE,
             *entry,
             keep_line,
             mark_line,
@@ -1046,8 +1031,7 @@ def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no
     save_fix_state(state)
     print_action(
         "redispatch",
-        *user_lines,
-        f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else no_plan_line,
+        f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else NO_PLAN_LINE,
         *entry,
         'Re-dispatch review-loop (same Agent call, model: "sonnet") with the same arguments as the first dispatch '
         "and these lines added, both counters kept:",
@@ -1075,16 +1059,6 @@ def command_defer(argv):
 
     handback_store.record(session_id, handback_store.PLAN_RULING, decision="defer")
     print_action("done", "The plan impacts wait for phase end, so the commit gate counts the review as clean.")
-
-
-def adopt_code_side_for_review(state):
-    """A plan change that changes no acceptance criterion: the code wins with no question, and the user sees the
-    deviation now and again in the closing block."""
-    ruling = plan_format.below_criteria_ruling(state["plan_impact"])
-    summary = plan_format.below_criteria_summary(state["plan_impact"])
-    state["adopted_deviations"] = [*state.get("adopted_deviations", []), summary]
-    user_line = f"Show the user this line, and ask nothing: Plan deviation adopted: {ruling}"
-    return record_plan_ruling(state, "adopt", "session", ruling, None, (user_line,), ADOPT_NO_PLAN_LINE)
 
 
 def main():

@@ -163,7 +163,10 @@ class ReviewFixPacketTest(unittest.TestCase):
     def test_a_plan_impact_capture_is_presented_as_a_plan_impact(self):
         code, output = self.run_packet("review-loop-plan-impact")
         self.assertEqual(code, 0, output)
-        self.assertIn("ACTION: redispatch", output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("no longer emits plan-impact", output)
+        self.assertIn(handback.load(captured("review-loop-plan-impact"))["plan_impact"][:200], output)
+        self.assertNotIn("redispatch", output)
 
 
 class CoderReportTest(unittest.TestCase):

@@ -54,8 +54,9 @@ A dirty session still commits in four more cases, each checked against something
     without review; a task notification, a peer session's message, a compaction summary, a `!` shell echo and a tool
     result are not the user's prompt and are skipped)
   - the commit concludes a merge (the repo it commits in has a MERGE_HEAD)
-  - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), so work
-    that converged in /code's review-loop, or in /review, commits after a later coder dispatch that edited nothing
+  - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), notes
+    paths (notes_paths.py) left out, so work that converged in /code's review-loop, or in /review, commits after a
+    later coder dispatch that edited nothing but notes, such as a plan's status line
   - the session's latest review-loop hand-back for that repo is current, converged or deferred, and came after the
     coder work that made the session dirty, however the run that launched the loop closed. A hand-back answers the
     dispatch before it, and a review of another repo neither answers nor voids it. A dispatch's repo is the ROOT=
@@ -95,6 +96,7 @@ import time
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 import hook_input
+import notes_paths
 import plan_format
 import reviewed_tree
 import script_utils
@@ -141,14 +143,9 @@ OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_VALUE + r")?)*[ \t]+commit\b(?!-)")
 GIT_TIMEOUT_SECONDS = 3
 NO_REVIEW_MARKER = "[no-review]"
-DOCS_FOLDER = "docs/"
-NOTES_SUFFIX = ".md"
-NOTES_PATHS_FILE = ".claude/notes-paths"
 # The input key that names the edited file, for each tool a coder edits with.
 EDIT_TOOL_PATH_KEYS = {"Edit": "file_path", "MultiEdit": "file_path", "Write": "file_path",
                        "NotebookEdit": "notebook_path"}
-# Characters a shell or git would expand in a pathspec, and a newline.
-EXPANDING_CHARS = set("*?[]{}$`~\\\n")
 READ_ONLY_GIT = ("status", "diff", "log", "show", "rev-parse")
 # Programs the notes-only commit exemption allows beside git; a subset of PROBE_PROGRAMS below, but the two lists
 # answer different questions.
@@ -424,42 +421,10 @@ def declared_notes_paths(cwd):
     HEAD, so an edit that is only staged or in the working tree grants nothing. No file, no HEAD or a git failure
     gives []; that fails closed, because listed paths stay denied. An entry that is not a normalized literal denies
     the commit and names its line."""
-    listed = script_utils.git_output(cwd, "show", "HEAD:" + NOTES_PATHS_FILE, timeout=GIT_TIMEOUT_SECONDS)
-    if listed is None:
-        return []
-
-    errors = notes_list_errors(listed, "HEAD:" + NOTES_PATHS_FILE)
+    entries, errors = notes_paths.committed_notes_list(cwd, timeout=GIT_TIMEOUT_SECONDS)
     if errors:
         raise DenyError("[review-commit-gate] " + "; ".join(errors))
-    return [entry for _, entry in notes_entries(listed)]
-
-
-NOTES_ENTRY_FORM = ("a normalized repo-root-relative literal: no leading `/` or `./`, no glob, no `..`; "
-                    "a folder ends in `/`")
-
-
-def notes_entries(text):
-    """(line number, entry) of each entry of a notes-paths list: blank lines and `#` lines are skipped."""
-    lines = [(number, line.strip()) for number, line in enumerate(text.splitlines(), 1)]
-    return [(number, line) for number, line in lines if line and not line.startswith("#")]
-
-
-def notes_entry_error(entry):
-    """Why a `.claude/notes-paths` entry is not a normalized repo-relative literal, or None when it is."""
-    segments = entry.removesuffix("/").split("/")
-    if EXPANDING_CHARS & set(entry) or any(segment in ("", ".", "..") for segment in segments):
-        return f"entry {entry!r} is not {NOTES_ENTRY_FORM}"
-    return None
-
-
-def notes_list_errors(text, name):
-    """One `name:line: message` per entry of the list text that is not a normalized repo-relative literal."""
-    errors = []
-    for number, entry in notes_entries(text):
-        error = notes_entry_error(entry)
-        if error:
-            errors.append(f"{name}:{number}: {error}")
-    return errors
+    return entries
 
 
 def check_notes_list(list_file):
@@ -470,30 +435,15 @@ def check_notes_list(list_file):
         print(f"{list_file}: cannot read: {error}", file=sys.stderr)
         return 1
 
-    errors = notes_list_errors(text, list_file)
+    errors = notes_paths.notes_list_errors(text, list_file)
     for error in errors:
         print(error, file=sys.stderr)
     return 1 if errors else 0
 
 
-def matches_notes_entry(path, entry):
-    """True when the path is under the folder the entry names (it ends in `/`) or is the file it names."""
-    if entry.endswith("/"):
-        return path.startswith(entry)
-    return path == entry
-
-
-def is_notes_path(path, declared_paths):
-    if not path.endswith(NOTES_SUFFIX):
-        return False
-    if path.startswith(DOCS_FOLDER):
-        return True
-    return any(matches_notes_entry(path, entry) for entry in declared_paths)
-
-
 def repo_path(pathspec, prefix):
     """The repo-root-relative path a literal pathspec names from the directory `prefix` below the root, or None."""
-    if pathspec.startswith((":", "/")) or pathspec.endswith("/") or EXPANDING_CHARS & set(pathspec):
+    if pathspec.startswith((":", "/")) or pathspec.endswith("/") or notes_paths.EXPANDING_CHARS & set(pathspec):
         return None
     return posixpath.normpath(prefix + pathspec)
 
@@ -520,10 +470,10 @@ def ships_only_notes(command, cwd):
 
     # The list is read only when every path is Markdown and one is outside docs/, so a commit with any
     # non-Markdown path keeps the review deny even when the list is bad.
-    all_markdown = all(path.endswith(NOTES_SUFFIX) for path in shipped_paths)
-    needs_list = all_markdown and any(not path.startswith(DOCS_FOLDER) for path in shipped_paths)
+    all_markdown = all(path.endswith(notes_paths.NOTES_SUFFIX) for path in shipped_paths)
+    needs_list = all_markdown and any(not path.startswith(notes_paths.DOCS_FOLDER) for path in shipped_paths)
     declared_paths = declared_notes_paths(cwd) if needs_list else []
-    return bool(shipped_paths) and all(is_notes_path(path, declared_paths) for path in shipped_paths)
+    return bool(shipped_paths) and all(notes_paths.is_notes_path(path, declared_paths) for path in shipped_paths)
 
 
 def read_event(raw):

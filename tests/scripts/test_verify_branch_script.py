@@ -318,7 +318,8 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("Label each finding blocker/ask/fix/nit", review_step)
         self.assertIn("subagent_type=coder ONCE with every finding, nits included", review_step)
         self.assertIn("nothing is deferred", review_step)
-        self.assertNotIn("/review", review_step)
+        self.assertNotIn("route the findings with /review", review_step)
+        self.assertIn("actioned `ask`", review_step)
         self.assertNotIn("`deferred`", review_step)
 
     def test_the_verifier_prompt_has_no_gate_env_line_when_no_plan_command_sets_a_variable(self):
@@ -1518,7 +1519,7 @@ class ReviewLogTest(VerifyBranchBase):
 
     def test_a_finding_left_unfixed_is_refused(self):
         for disposition, actioned in (("fix", "none"), ("fix", "deferred"), ("nit", "deferred"), ("nit", "none"),
-                                      ("fix", "ask")):
+                                      ("fix", "ask"), ("ask", "none"), ("ask", "deferred")):
             with self.subTest(disposition=disposition, actioned=actioned):
                 findings = json.dumps([{"desc": "[smell] dup helper", "file": "src/a.py", "line": 1,
                                         "disposition": disposition, "actioned": actioned}])
@@ -1527,7 +1528,7 @@ class ReviewLogTest(VerifyBranchBase):
                 self.assertIn(f"actioned `{actioned}` is not allowed", done.stderr)
                 self.assertEqual(self.jsonl(self.findings), [])
 
-    def test_a_blocker_finding_cannot_be_deferred(self):
+    def test_a_finding_whose_desc_is_tagged_blocker_is_refused_like_any_unfixed_one(self):
         findings = json.dumps([{"desc": "**[blocker]** data loss", "file": "src/a.py", "line": 1,
                                 "actioned": "deferred"}])
         done = self.log_review(findings, "NEEDS CHANGES")
@@ -1542,7 +1543,8 @@ class ReviewLogTest(VerifyBranchBase):
         ])
         done = self.log_review(findings, "NEEDS CHANGES")
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual([row["actioned"] for row in self.jsonl(self.findings)[1:]], ["fixed", "skipped_fp"])
+        finding_rows = [row for row in self.jsonl(self.findings) if row["_type"] != "review_run"]
+        self.assertEqual([row["actioned"] for row in finding_rows], ["fixed", "skipped_fp"])
         self.assertIn("REVIEW: ran", self.prep().stdout)
 
     def test_findings_count_must_match_the_rows(self):

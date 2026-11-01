@@ -1,6 +1,6 @@
 ---
 name: verify-branch
-description: Reconcile the shipped changes against the eng-spec ticket + plan to confirm everything was actually built, BEFORE the PR opens. A completeness gate, not a code review — checks "did we build what the plan called for", not code quality. Runs after /code (+/review); the user opens the PR.
+description: Reconcile the shipped changes against the eng-spec ticket + plan to confirm everything was actually built, BEFORE the PR opens. A branch-wide review, then a completeness gate that checks "did we build what the plan called for". Runs after /code (+/review); the user opens the PR.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
@@ -30,9 +30,9 @@ For a sprint-branch cut pass `--base <ref>`. The ticket's ACs are always in scop
 ## Step 1: branch-wide review (only when prep says it has not run)
 
 1. Dispatch `code-reviewer` with the exact prompt prep prints. It reports and does not edit.
-2. Read the diff yourself for what the reviewer missed (a surprise: a behavior change, a dropped case, a cross-file break) and add each as a finding. Keep the reviewer's `[blocker]` tag at the start of that finding's `desc`.
-3. Dispatch `coder` once with every finding, nits included, each with its file, line and proposed change. An `ask` takes its proposed change, unless that change cuts or changes a ticket AC: that ask goes to the user and is logged with `disposition` `ask` and `actioned` `ask`. The coder runs the tests for the files it changed. With no finding, skip the coder.
-4. Log the review after the fixes, with every finding, one entry each (`[]` when none): `~/.claude/scripts/review/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->`. Each entry is `{"desc": "<one line>", "file": "<path>", "line": 0, "class": "<bug|smell|...>", "actioned": "<fixed|skipped_fp|ask>"}`. `actioned` is `fixed`, or `skipped_fp` for a finding the coder showed wrong; nothing is deferred. `class` and `disposition` are optional.
+2. Read the diff yourself for what the reviewer missed (a surprise: a behavior change, a dropped case, a cross-file break) and add each as a finding.
+3. Dispatch `coder` once with every finding, nits included, each with its file, line and proposed change. An `ask` takes its proposed change, unless that change cuts or changes a ticket AC: that ask goes to the user and is logged with `disposition` `ask` and `actioned` `ask`. A correct finding the coder could not fix goes to the user the same way. The coder runs the tests for the files it changed. With no finding, skip the coder.
+4. Log the review after the fixes, with every finding, one entry each (`[]` when none): `~/.claude/scripts/review/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->`. Each entry is `{"desc": "<one line>", "file": "<path>", "line": 0, "class": "<bug|smell|...>", "actioned": "<fixed|skipped_fp|ask>"}`. `actioned` is `fixed`, or `skipped_fp` for a finding the coder showed wrong; nothing is deferred. `class` is optional; `disposition` is optional except on an open ask, which needs `"disposition": "ask"`.
 5. Rerun `verify-prep`. It must now report the review as ran. Do not continue until it does.
 
 The log row records the content of the tree, apart from the task dir. Any later change to the diff or to an untracked file (an edit, a deletion, a rename, a new file) makes the review stale: prep says so and asks for the review again. `verify-log` exits 2 with "rerun verify-prep" when the tree changed since prep or no logged review covers it, and logs nothing. Only a review logged by `verify-log review` counts.

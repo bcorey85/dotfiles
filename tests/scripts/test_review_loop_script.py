@@ -1556,6 +1556,28 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual(len(asks), 2)
 
+    def test_an_ask_followed_by_a_list_of_claims_that_check_out_parses_as_one_ask(self):
+        module = self.load_script_module()
+        review = ("## Fix\nNone\n\n## Ask\n- notes/change.md:15 [docs] — Should the early push stay? Change: if yes, "
+                  "add the push after `git worktree add`.\n\nThe other claims check out:\n"
+                  "- The deny messages in both gates match the removed text (`gate.py:194`, `write_gate.py:394`).\n"
+                  "- The token counts match the finding.\n\n## Nit\nNone\n")
+
+        asks = module.parse_review(review)["ask"]
+
+        self.assertEqual(len(asks), 1)
+        self.assertEqual(review_loop_packet.located(asks[0]), "notes/change.md:15")
+
+    def test_a_located_bullet_after_a_lead_in_list_still_starts_its_own_ask(self):
+        module = self.load_script_module()
+        review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` first question?\n\nThese hold:\n- The counts agree.\n"
+                  "- `app.py:9` second question?\n\n## Nit\nNone\n")
+
+        asks = module.parse_review(review)["ask"]
+
+        self.assertEqual(len(asks), 2)
+        self.assertTrue(asks[1].text.startswith("`app.py:9` second"))
+
     def test_the_notes_after_a_sections_none_line_are_no_findings(self):
         module = self.load_script_module()
         review = ("### Fix\nNone. The four owned files match spec.md:76-145:\n- Every column matches the plan.\n"
@@ -1594,6 +1616,15 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual([(fix.path, fix.line) for fix in fixes],
                          [("src/matters/repository.ts", 12), ("src/entries/repository.ts", 40)])
+
+    def test_bullets_under_a_colon_line_that_opens_a_section_stay_separate_findings(self):
+        module = self.load_script_module()
+        review = "## Fix\nTwo problems:\n- The cache never expires.\n- The lock leaks.\n"
+
+        fixes = module.parse_review(review)["fix"]
+
+        self.assertEqual([fix.text for fix in fixes],
+                         ["Two problems:", "The cache never expires.", "The lock leaks."])
 
     def test_a_reply_of_bold_head_items_with_a_tagged_sub_bullet_falls_back_to_the_disposition_call(self):
         module = self.load_script_module()

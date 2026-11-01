@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""verify-log --rows <file|-> [--result NA] [--escapes-only]
+"""verify-log --rows <file|-> [--result NA] [--escapes-only] [--asks-ruled "<who, what, when>"]
 verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|-> [--findings <n>]
 
 Logging half of /verify-branch. Reads the context verify-prep saved, and refuses to write unless a branch-wide review
@@ -14,6 +14,8 @@ overridden row with no `signoff` are gaps. `line` is an integer or a range like 
 A `done` row whose `item` starts with the Agent-run tag and has empty `evidence` exits 2.
 Empty rows are an error unless --result NA, which logs a run row with no result and exits 3.
 --escapes-only logs the escape rows of a run that was already logged in full; an escape logged once is not logged again.
+A run with no gaps prints ASKS OPEN in place of CLEAN while the branch review of this tree logged an `ask` finding;
+--asks-ruled prints the user's ruling on those asks and lets the run print CLEAN.
 
 review: logs the branch-wide code-reviewer run row (stamped with a fingerprint of the tree as it stands, so prep can
 tell a later change) and one finding row per reviewer finding. --rows is a JSON list of
@@ -27,7 +29,8 @@ before the first write each row goes through its logger once with `--check` as t
 stops the run with nothing written.
 
 Writes: one plan-verifier run row, one plan-drift finding row per gap, and (with a `guard`) one drift-gate escape
-row per gap. Prints the checklist skeleton. Exit 0 logged, 2 loud failure, 3 verdict was N/A (not a pass).
+row per gap. Prints the checklist skeleton. Exit 0 logged (ASKS OPEN exits 0 and writes nothing), 2 loud failure,
+3 verdict was N/A (not a pass).
 """
 import json
 import os
@@ -245,6 +248,8 @@ def log_review(args, context, top):
     write_all(writes, top)
 
     context["reviewLoggedTree"] = fingerprint
+    open_asks = [log_text(finding["desc"], None) for finding in findings if finding["actioned"] == "ask"]
+    context["reviewAsks"] = open_asks
     vc.save_context(vc.context_path(context["repo"], context["branch"]), context)
     print(f"logged code-reviewer branch-exit run row and {len(findings)} finding row(s)")
     return 0
@@ -350,10 +355,20 @@ def plan_row_writes(rows, context, not_applicable, escapes_only):
     return writes, gaps, need_guard, already_recorded
 
 
+def open_review_asks(context):
+    """The asks the branch review left open on the tree verify-prep measured; a review of an older tree has none."""
+    if context.get("reviewLoggedTree") != context["fingerprint"]:
+        return []
+    return context.get("reviewAsks") or []
+
+
 def log_rows(args, context, top):
-    options, flags = parse_options(args, ("--rows", "--result"), ("--escapes-only",))
+    options, flags = parse_options(args, ("--rows", "--result", "--asks-ruled"), ("--escapes-only",))
     if "--rows" not in options:
         raise vc.VerifyError("--rows is required (use `--rows -` for stdin)")
+    asks_ruled = options.get("--asks-ruled")
+    if asks_ruled is not None and not asks_ruled.strip():
+        raise vc.VerifyError("--asks-ruled needs who ruled on the open asks, what they ruled, and when")
     if options.get("--result", "NA") != "NA":
         raise vc.VerifyError(f"--result {options['--result']!r}: only NA is accepted (the verdict comes from the rows)")
     not_applicable = "--result" in options
@@ -382,6 +397,16 @@ def log_rows(args, context, top):
 
     writes, gaps, need_guard, already_recorded = plan_row_writes(rows, context, not_applicable, escapes_only)
     packet = checklist(context, rows) if not gaps and not not_applicable and not escapes_only else None
+    open_asks = open_review_asks(context) if packet is not None else []
+    if open_asks and asks_ruled is None:
+        print(f"ASKS OPEN: {len(open_asks)} review ask(s) on this tree need the user's ruling. Not clean: the "
+              "review left a question only the user can answer. Nothing was logged.")
+        for ask in open_asks:
+            print(f"  ASK: {ask}")
+        print("  Put each ask to the user, record the ruling in the plan's decision log (03-decisions.md or "
+              "## Plan Deviations), then rerun verify-prep and verify-log with\n"
+              "  --asks-ruled \"<who, what, when>\" (or fix the code and review again).")
+        return 0
     check_all(writes, top)
 
     state_path = vc.context_path(context["repo"], context["branch"])
@@ -420,6 +445,8 @@ def log_rows(args, context, top):
         if need_guard:
             print("  Rerun with the guards added to those rows and --escapes-only to log the escapes.")
         return 0
+    if asks_ruled is not None and open_asks:
+        print(f"asks ruled: {log_text(asks_ruled, None)}")
     print("CLEAN. The packet needs the bare /refactor check, then:")
     print(packet)
     return 0

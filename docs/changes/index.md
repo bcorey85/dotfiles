@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-733 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+734 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [The review loop hands the test reviewer the plan's test strategy section](notes/2026-10-31-the-review-loop-hands-the-test-reviewer-the-plan-s.md).
+Latest change: 2026-10-31, [shell-write-gate reads a name joined onto a base off the cwd as no write to the cwd file](notes/2026-10-31-shell-write-gate-reads-a-name-joined-onto-a-base.md).
 
 ## Top gains
 

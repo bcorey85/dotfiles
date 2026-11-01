@@ -587,6 +587,74 @@ class ShellWriteGateTest(unittest.TestCase):
                 script.write_text(code)
                 self.assertIn(f"{self.repo}/tracked.txt", self.assert_denied(f"python3 {script}", agent="coder"))
 
+    def test_name_joined_onto_a_base_off_the_cwd_is_not_a_write_to_the_cwd_file(self):
+        (self.repo / "CLAUDE.md").write_text("x\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "CLAUDE.md"], check=True)
+        scripts = {
+            "tree under home": "import pathlib\nROUND = pathlib.Path.home() / 'dev/evals/r'\nTREES = ROUND / 'trees'\n"
+                               "def write_md(tree):\n    claude_md = tree / 'CLAUDE.md'\n"
+                               "    claude_md.write_text(claude_md.read_text() + 'x')\n\n"
+                               "def build(cell):\n    tree = TREES / cell\n    write_md(tree)\n",
+            "temp dir": "import os, tempfile\nbase = tempfile.mkdtemp()\n"
+                        "open(os.path.join(base, 'CLAUDE.md'), 'w').write('y')\n",
+            "append in a helper": "import pathlib\nTREES = pathlib.Path.home() / 'trees'\n"
+                                  "def exclude(tree):\n    with open(tree / 'CLAUDE.md', 'a') as f:\n"
+                                  "        f.write('x')\n\nexclude(TREES / 'one')\n",
+            "unpacked from a helper's tuple": "import pathlib, subprocess\nTREES = pathlib.Path.home() / 'trees'\n"
+                                              "def sha(tree):\n    return subprocess.run(['git'], cwd=tree).stdout\n\n"
+                                              "def build(cell):\n    tree = TREES / cell\n"
+                                              "    return tree, sha(tree)\n\n"
+                                              "tree, base_sha = build('one')\n"
+                                              "(tree / 'CLAUDE.md').write_text('y')\n",
+        }
+        for shape, code in scripts.items():
+            with self.subTest(shape=shape):
+                script = self.tmp / "probe.py"
+                script.write_text(code)
+                self.assert_allowed(f"python3 {script}")
+
+    def test_name_joined_onto_a_base_that_may_be_the_cwd_is_denied(self):
+        (self.repo / "CLAUDE.md").write_text("x\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "CLAUDE.md"], check=True)
+        scripts = {
+            "bare literal": "open('CLAUDE.md', 'w').write('y')\n",
+            "cwd call": "import pathlib\n(pathlib.Path.cwd() / 'CLAUDE.md').write_text('y')\n",
+            "os.getcwd": "import os\nopen(os.path.join(os.getcwd(), 'CLAUDE.md'), 'w')\n",
+            "empty Path": "from pathlib import Path\nroot = Path()\n(root / 'CLAUDE.md').write_text('y')\n",
+            "dot literal": "from pathlib import Path\nroot = Path('.')\nmd = root / 'CLAUDE.md'\nmd.write_text('y')\n",
+            "parameter given a dot": "from pathlib import Path\ndef w(tree):\n"
+                                     "    (tree / 'CLAUDE.md').write_text('y')\n\nw(Path('.'))\n",
+            "helper defined here": "from pathlib import Path\ndef root():\n    return Path('.')\n\n"
+                                   "(root() / 'CLAUDE.md').write_text('y')\n",
+            "home defined here": "import os\ndef home():\n    return '.'\n\n"
+                                 "open(os.path.join(home(), 'CLAUDE.md'), 'w')\n",
+            "home bound to a lambda": "import os\nfrom pathlib import Path\nhome = lambda: Path('.')\n"
+                                      "open(os.path.join(home(), 'CLAUDE.md'), 'w')\n",
+            "home aliased from getcwd": "import os\nfrom os import getcwd as home\n"
+                                        "open(os.path.join(home(), 'CLAUDE.md'), 'w')\n",
+            "home bound to Path.cwd": "import os\nfrom pathlib import Path\nhome = Path.cwd\n"
+                                      "open(os.path.join(home(), 'CLAUDE.md'), 'w')\n",
+            "argv": "import sys\nfrom pathlib import Path\nbase = Path(sys.argv[1])\n"
+                    "(base / 'CLAUDE.md').write_text('y')\n",
+            "unbound name": "from pathlib import Path\n(somewhere / 'CLAUDE.md').write_text('y')\n",
+            "dirname of the script": "import os\nD = os.path.dirname(os.path.abspath(__file__))\n"
+                                     "open(os.path.join(D, 'CLAUDE.md'), 'w')\n",
+            "child process output": "import os, subprocess\n"
+                                    "R = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True)\n"
+                                    "open(os.path.join(R, 'CLAUDE.md'), 'w')\n",
+            "environment lookup": "import os\nR = os.environ.get('PWD', '.')\n"
+                                  "open(os.path.join(R, 'CLAUDE.md'), 'w')\n",
+            "lambda": "from pathlib import Path\nroot = lambda: Path('.')\n(root() / 'CLAUDE.md').write_text('y')\n",
+            "helper with no return found": "from pathlib import Path\ndef root():\n    def inner():\n"
+                                           "        return Path('.')\n    return inner()\n\n"
+                                           "(root() / 'CLAUDE.md').write_text('y')\n",
+        }
+        for shape, code in scripts.items():
+            with self.subTest(shape=shape):
+                script = self.tmp / "probe.py"
+                script.write_text(code)
+                self.assertIn(f"{self.repo}/CLAUDE.md", self.assert_denied(f"python3 {script}"))
+
     def test_relative_write_beside_a_write_under_an_absolute_root_is_denied(self):
         code = (f"from pathlib import Path\nR = Path('{self.tmp}')\n"
                 "with open(R / 'out.txt', 'w') as f, open('tracked.txt', 'w') as g:\n    pass\n")

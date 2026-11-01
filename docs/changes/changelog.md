@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-733 changes
+734 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -124,6 +124,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [shell-write-gate reads a name joined onto a base off the cwd as no write to the cwd file](notes/2026-10-31-shell-write-gate-reads-a-name-joined-onto-a-base.md) [script/shell-write-gate] A script that writes `tree / 'CLAUDE.md'` with `tree` built under the home folder or a temp dir runs: shell-write-gate no longer reads the joined name as a write to the session repo's own CLAUDE.md. Bench drivers run with no hand-off to the user.
 * [The review loop hands the test reviewer the plan's test strategy section](notes/2026-10-31-the-review-loop-hands-the-test-reviewer-the-plan-s.md) [script/review-loop-script, script/plan-format, script/code] The test reviewer now reads the plan's plan-wide test rules on every phase, by script, instead of only when its own grep happens to hit them.
 * [review launch on a clean tree stops instead of passing an empty review](notes/2026-10-31-review-launch-on-a-clean-tree-stops-instead-of.md) [script/review-fix, skill/review] /review's scripted launch stops on a working tree with no changes and names the base= route, so a commit or merge is never passed as reviewed when no reviewer read any code.
 * [code-step resume goes on past an unreadable state file in the cwd checkout](notes/2026-10-31-code-step-resume-goes-on-past-an-unreadable-state.md) [script/code-step] A /code run in a sibling worktree finishes its steps when the session's own checkout holds another run's state file this code-step cannot read.

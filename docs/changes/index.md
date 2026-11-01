@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-737 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+738 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [review-commit-gate passes a search that quotes the commit words through a text tool, cd or loop](notes/2026-10-31-review-commit-gate-passes-a-search-that-quotes-the.md).
+Latest change: 2026-10-31, [staged-claim gate checks a claim against the repo the message names](notes/2026-10-31-staged-claim-gate-checks-a-claim-against-the-repo.md).
 
 ## Top gains
 

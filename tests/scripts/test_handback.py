@@ -1886,8 +1886,9 @@ class NoReviewExemptionOwnerTest(HandbackTestBase):
         not_dispatched = ('~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 '
                           'result="NOT DISPATCHED"')
         self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
-        self.assertEqual(self.loop_hand_back("l1", "scope: branch\nno-review\n", blocker,
-                                             [ledger_call("tl1", not_dispatched)], ledger=False), "")
+        l1_result = self.loop_hand_back("l1", "scope: branch\nno-review\n", blocker,
+                                        [ledger_call("tl1", not_dispatched)], ledger=False)
+        self.assertEqual(l1_result, "")
         self.dispatch("review-loop", prompt="scope: branch\n")
         self.dispatch("coder", "l2")
 

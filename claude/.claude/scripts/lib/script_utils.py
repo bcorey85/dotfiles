@@ -191,11 +191,11 @@ def wait_for(check, timeout_seconds, interval_seconds):
 
 
 def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None):
-    """Run a command (a list, or a string for the shell) in cwd and return (exit code, stdout, stderr), both as text;
-    a byte that is not UTF-8 decodes as U+FFFD. `env`, when given, is the command's whole environment. When the command does not finish in `timeout` seconds, kill
-    its whole process group, so a shell command that started a server cannot keep the pipes open, and return (None,
-    stdout, stderr) with what it printed. `on_start`, when given, is called with the process pid once it runs, so a
-    caller can track the process group it leads."""
+    """Run a command (a list, or a string for the shell) in cwd and return (exit code, stdout, stderr), both as text.
+    A byte that is not UTF-8 decodes as U+FFFD. `env`, when given, is the command's whole environment. When the
+    command does not finish in `timeout` seconds, kill its whole process group, so a shell command that started a
+    server cannot keep the pipes open, and return (None, stdout, stderr) with what it printed. `on_start`, when
+    given, is called with the process pid once it runs, so a caller can track the process group it leads."""
     process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE if stdin is not None else None,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                errors="replace", shell=isinstance(command, str), start_new_session=True)

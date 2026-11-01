@@ -51,13 +51,12 @@ def cited_sections(plan_lines, headings, first_phase, phase_text):
     return cited
 
 
-def named_paths(phase_text, repo_root):
+def split_named_paths(phase_text, repo_root):
     existing, new = [], []
-    for match in plan_format.PATH_IN_BACKTICKS.finditer(phase_text):
-        path = repo_root / match.group(1)
+    for relative_path in plan_format.named_paths(phase_text, repo_root):
+        path = repo_root / relative_path
         bucket = existing if path.exists() else new
-        if path not in existing and path not in new:
-            bucket.append(path)
+        bucket.append(path)
     return existing, new
 
 
@@ -197,7 +196,7 @@ plan_headings, phase_start, phase_end, first_phase_line = phase_bounds(plan_file
 phase_section_text = "\n".join(plan_file_lines[phase_start:phase_end])
 cited_shared_sections = cited_sections(plan_file_lines, plan_headings, first_phase_line, phase_section_text)
 
-existing_paths, new_paths = named_paths(phase_section_text, repository_root)
+existing_paths, new_paths = split_named_paths(phase_section_text, repository_root)
 patterns = []
 for new_path in new_paths:
     sibling = sibling_of(new_path)

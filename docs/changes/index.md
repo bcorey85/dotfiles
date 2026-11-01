@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-757 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+762 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [an ask with an empty change marker asks its question](notes/2026-11-01-an-ask-with-an-empty-change-marker-asks-its.md).
+Latest change: 2026-11-01, [A stray parse failure leaves a finished packet finished](notes/2026-11-01-a-stray-parse-failure-leaves-a-finished-packet.md).
 
 ## Top gains
 

@@ -5,8 +5,6 @@ description: Mechanically stage the invariant-verifiable slice of a working-tree
 
 # Stage
 
-The index is the trust boundary: **staged = mechanically provable, skip it; unstaged = your reading queue.** Everything else comes back in blast-radius order.
-
 ## Arguments
 
 None required. `no-stage` — classify and report only; stage nothing.
@@ -21,15 +19,9 @@ Run once from the repo being staged:
 node <skill-base-dir>/scripts/stage.mjs --run
 ```
 
-Add `--no-stage` when the argument `no-stage` was given. One call classifies, stages the SAFE tier, counts N staged and M left to read, logs the flywheel row (a logging failure only prints a warning), and prints the finished `## Stage` report plus a `jump-queue` block.
-
-When the working tree is clean because /code committed every phase, the run reads the branch diff from its merge base with the ref `branch-base` resolves (the default branch, or the upstream of a stacked branch), stages nothing, and the report says so.
+Add `--no-stage` when the argument `no-stage` was given. The call prints the finished `## Stage` report plus a `jump-queue` block.
 
 The classifier is the single source of truth for tier + risk — never reclassify, promote to SAFE, or soften ESCALATE (disagreements go in the report). A non-zero exit means nothing was staged by this run: report the message and stop.
-
-- **ESCALATE** = high-risk (hot paths, enforcement-config edits, tripwires). **Read first — never staged.**
-- **READ / SKIM** = semantic but lower blast radius. Read, in that order.
-- **SAFE** = mechanical, invariant-verified. Staged without reading — the only tier that is.
 
 ### Phase 2: Jump list
 
@@ -44,7 +36,3 @@ Print the `## Stage` report from the script as is, leading the reply. Add one li
 ### Phase 4: Calibration hook
 
 Bug later found in a mechanically-staged file → `/escape` (`gate_missed=stage`): ground truth on the SAFE invariant. On escape, the class leaves `stage.mjs` until fixed — tiers tighten on evidence, never loosen without it.
-
-## Extending
-
-Per-repo tuning in `.stage.json` (`hotPaths` = the high-risk gate: add contract/data-deletion/freeze paths; `skim` regexes). New SAFE classes live in `scripts/stage.mjs` — each needs a checkable invariant, not a filename pattern. `--json` and `--stage` still work alone for ad-hoc use.

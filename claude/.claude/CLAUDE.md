@@ -12,13 +12,11 @@ When the user must run git or shell commands, give one `!` line that chains them
 
 Only the main session hands the user a command. A subagent never writes a command for the user to run: it names the step it could not do, and why, in its report to its caller, and the caller runs it or hands it on.
 
-Never wrap text for the user to paste (a comment, message or reply) in a Markdown blockquote (`>`): the terminal renders it with a `▎` bar on every line, which the copy picks up. Give it as plain text.
-
 In zsh, `path` is tied to `PATH`: never name a shell variable `path`. Assigning it (`path=…` or `for path in …`) replaces the command search path, and later commands fail with "command not found". Name the variable for what it holds, such as `log_file`.
 
 ## Quality Checks
 
-Coders run only the tests for the files they changed. The full suite runs once, at the end of review.
+The full suite runs once, at the end of review.
 
 - The user never waits on tests or lint. Before you hand the user an install command, run the full suite and lint yourself on the files it installs, and do not say done until they pass. The install command only writes files: it never runs tests or lint.
 - Any failing approach: max 3 attempts, then stop and ask.
@@ -45,8 +43,7 @@ When you compact, keep decisions with their reasons, every measured number, open
 
 ## Engineering Judgment
 
-- **Name for the domain, not the data shape.** Take names from the ticket and the code's own domain terms. Never name a value for its container or role alone (`rows`, `data`, `input`, `result`, `items`); say what it holds (`timekeepers`, `newTimekeeper`). Keep every qualifier the domain needs: `compareDateRangeErrors`, not `compareErrors`. Single letters only for loop indexes.
-- **Lay out code for the person who debugs it.** Split a function into steps and put one blank line between steps (Code Complete's code paragraphs). Keep a lookup next to the guard that checks it. Return early in place of a nested `if`. Never pass a call's result straight into a call that is itself an argument. Put the inner result in a named variable first. Follow this even when the surrounding code is denser.
+- **Lay out code for the person who debugs it.** Keep a lookup next to the guard that checks it. Return early in place of a nested `if`. Never pass a call's result straight into a call that is itself an argument. Put the inner result in a named variable first. Follow this even when the surrounding code is denser.
 - **Build the design the code needs now.** Never defer a helper, a type, a module split or a folder layout to a later caller or a bigger codebase. Small size today is no reason to wait: a structure change costs more each week it waits. Place logic by what it knows, not by its caller count. Cut only features that nobody asked for.
 
 @~/.claude/CLAUDE.local.md

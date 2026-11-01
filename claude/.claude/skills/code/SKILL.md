@@ -13,7 +13,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 ## Modifiers
 
-`+fast` / `+deep` per `~/.claude/skills/_shared/modifiers.md` (read it when either is present).
+`+fast` per `~/.claude/skills/_shared/modifiers.md` (read it when present).
 
 ## Instructions
 
@@ -21,11 +21,11 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 **The run folder.** `git rev-parse --path-format=absolute --git-path code-phase` from the repo root prints it; `<run folder>` below means that path. Create it with `mkdir -p` before the first write.
 
-**You never change a tracked file.** A coder makes every code and plan edit. You write only `<run folder>/handoff.txt` and `<run folder>/stop.md`, with a Bash heredoc.
+A coder makes every code and plan edit. You write only `<run folder>/handoff.txt` and `<run folder>/stop.md`, with a Bash heredoc.
 
 **Ending the run hands back.** Every STOP, question and "wait" below ends the run: write its text to `<run folder>/stop.md`, then make it your final reply, ending with the line `To go on: /code resume <your answer>`. Never call AskUserQuestion.
 
-**Waiting.** An `Agent` call returns at once and names an `agentId`. Then run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>` with the Bash timeout set to 600000; it prints the agent's report. When it prints `Still working`, run it again. Never end the run while an agent you dispatched works.
+**Waiting.** An `Agent` call returns at once and names an `agentId`. Then run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>` with the Bash timeout set to 600000; it prints the agent's report. Never end the run while an agent you dispatched works.
 
 **Run notes.** Text after the plan file or ticket id in the task text (other than `resume` and its answer) is the run notes. A number right after the plan path picks that phase in place of the first unchecked one. It isn't a run note. Run notes are the text after it. Put the run notes, word for word, under the line `Run notes from the user. They bind this run; the plan stays the spec:` in the prompt of every coder you dispatch for the phase. The review loop's own fix coders do not get it.
 
@@ -35,7 +35,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 0. **No arguments** (after stripping modifiers): run `bash ~/.claude/scripts/tools/resolve-task-dir.sh`. Exit 0 → the task directory's `spec.md` is the task input; exit 5 → the printed plan file. Say what resolved. Exit 3 → ask which (a STOP). Exit 4 → ask the user what to implement (a STOP).
 
-1. **Modifiers**: `+deep` → dispatch `coder` as is and omit `model`. `+fast` → pass `model: "haiku"`. Strip modifiers from the prompt passed to coders.
+1. **Modifiers**: `+fast` → pass `model: "haiku"`.
 
 2. **Plan file or pasted plan**: `rg -n '^## ' <plan>` lists every section; the plan is multi-phase when more than one `## Phase N:` section exists. Read it phase-scoped per `~/.claude/skills/_shared/plan-reading.md`. `lane=eng-spec` when step 0 resolved the task input, `lane=code` otherwise; pass it to `code_review_start.py`.
 
@@ -44,7 +44,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
    Multi-phase plan:
 
    - The next phase is the one a number after the plan path names, else the first unchecked `- [ ]` entry under `## Phase Status`. Without that section, fall back to `git status` plus per-phase success criteria and tell the user to backfill it.
-   - A closing phase (`~/.claude/skills/_shared/closing-phases.md`) runs its named skill in place of steps 3 to 5: invoke that skill with the Skill tool. For the Refactor pass, first run `python3 ~/.claude/scripts/code/concentration.py <base-sha>` and pass on the module it names, or both counts when the gate does not trigger. When the skill reports an open finding, STOP with it. Otherwise dispatch a `coder` to write one line of evidence under each open Success Criteria item of the phase, and go on to the Phase Status tick.
+   - A closing phase (`~/.claude/skills/_shared/closing-phases.md`) runs its named skill in place of steps 3 to 5: invoke that skill with the Skill tool. For the Refactor pass, run the concentration gate first, as `closing-phases.md` says. When the skill reports an open finding, STOP with it. Otherwise dispatch a `coder` to write the evidence lines `closing-phases.md` names, and go on to the Phase Status tick.
    - Before every phase's coder, confirm `docs/plans/<slug>/acceptance-criteria.md` exists beside the plan and is non-empty. Missing on a task with behavioral criteria → STOP, do not dispatch, report a plan defect to the user; never write the criteria and never dispatch an agent to. Missing on pure config or mechanical work → proceed. Never pass criterion ids into a dispatch prompt. Log a failed check first:
 
      ```bash
@@ -54,8 +54,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
    - If the phase's Phase Status line carries `— gate:` and the task text holds no release (who sent it, when, and the words verbatim from the user's or outside session's own message), STOP: name the gate condition and ask for the release (who, when, the words verbatim). If the task text holds the release, dispatch with `--gate-evidence` (step 3).
    - Dispatch the coder for that one phase only, with the phase's Automated Verification gate in its instructions. Re-read the phase's Phase Status line first: `(risk: …)` drives the boundary decision.
-   - After the coder returns and you summarize, dispatch the review loop (5).
-   - Before marking the phase done, check that the phase's `#### Automated Verification` commands passed: the review loop's execution gate is the full suite; run any other listed command once, after the loop returns; its `#### Manual Verification` items go on the deferred list for `/verify`. A phase with no Success Criteria is a plan defect; say so before advancing. A prohibition criterion (`git grep <pattern>` returns zero hits) is yours to run with Bash and log:
+   - Before marking the phase done, check that the phase's `#### Automated Verification` commands passed: the review loop's execution gate is the full suite; run any other listed command once, after the loop returns; its `#### Manual Verification` items go on the deferred list for `/verify-branch`. A phase with no Success Criteria is a plan defect; say so before advancing. A prohibition criterion (`git grep <pattern>` returns zero hits) is yours to run with Bash and log:
 
      ```bash
      bash ~/.claude/scripts/telemetry/log-scan repo=<basename> scan=prohibition \
@@ -71,12 +70,10 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
      4. `(risk: high)`, or no risk tag → STOP, block B.
      5. The next phase's Phase Status line carries `— gate:` → STOP, block B, naming the condition. A resume re-enters step 2 and reaches its gate bullet.
      6. `(risk: low)` with all machine gates green → AUTO-ADVANCE, block A, then re-enter step 2 for the next phase in-session.
-   - One phase or no phase headers → a single dispatch, still after the acceptance-criteria check.
 
 3. **Dispatch the coder**: one `coder` subagent for the whole phase, whatever layers it touches. Two coders in parallel only for two deliverables that share no contract, type, or file, split by deliverable. Name the phase ("implement Phase N of `<plan-path>`") and tell the coder to read it phase-scoped. The coder writes the phase's tests. If the task turns out architectural, have the coder report back and recommend `/eng-spec`.
 
-   Before the dispatch, run `git rev-parse HEAD` and keep the sha as the phase base. Then, from the repo root, run `python3 ~/.claude/scripts/code/gate_commands.py <plan> <N>` (`-` as `<plan>` and `1` as `<N>` with no plan file) and set the hand-back gate with its lines: `python3 ~/.claude/scripts/code/coder_gate.py set <command>...`, each output line one quoted shell command. With no output lines, skip `set`. `set` refuses a whole-suite command; drop that command and set the rest.
-
+   Before the dispatch, run `git rev-parse HEAD` and keep the sha as the phase base. Then, from the repo root, run `python3 ~/.claude/scripts/code/gate_commands.py <plan> <N>` (`-` as `<plan>` and `1` as `<N>` with no plan file) and set the hand-back gate with its lines: `python3 ~/.claude/scripts/code/coder_gate.py set <command>...`, each output line one quoted shell command. With no output lines, skip `set`.
    Then run `python3 ~/.claude/scripts/code/coder_packet.py <plan> <N>` and put its whole output in the coder's prompt, below the phase line. For a gated phase whose release the task text holds, add `--gate-evidence "<who>, <when>: <quoted text>"` to that command: the packet then opens with the evidence, and the coder does not ask for the release again. With no plan file (a plain task or a pasted plan), skip `coder_packet.py` and put the task text in the coder's prompt in place of the phase line. Wait for the coder.
 
    When the coder hands back, run `python3 ~/.claude/scripts/code/coder_gate.py clear` before anything else.
@@ -102,7 +99,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
      Then proceed to the phase gates.
 
-6. **Multi-phase plans**: after `converged` or `deferred`, settle the phase-end plan impacts, then run the phase-boundary decision (step 2). Any other status is a STOP. On a STOP, print the block with every placeholder resolved and end the run; when the user confirms on resume, re-enter step 2 for the next phase using `## Phase Status`. On an AUTO-ADVANCE, print block A and re-enter step 2 at once for the next phase in the same run.
+6. **Multi-phase plans**: after `converged` or `deferred`, settle the phase-end plan impacts, then run the phase-boundary decision (step 2). Print every block with its placeholders resolved.
 
 ## Phase-Complete Block
 
@@ -111,7 +108,7 @@ Deliver every block through the `brief` skill's shape (`~/.claude/skills/brief/S
 **A — Auto-advance** (decision rule 6):
 
 ```
-Phase <N> complete — machine gates green (review ✓, execution ✓, automated-verification ✓). Risk: low. Manual verification: <n> agent-verified, <m> human-only deferred to the /verify packet.
+Phase <N> complete — machine gates green (review ✓, execution ✓, automated-verification ✓). Risk: low. Manual verification: <n> agent-verified, <m> human-only deferred to the /verify-branch packet.
 → Auto-advancing to Phase <N+1> in-session (no /clear; interrupt anytime).
 ```
 
@@ -154,7 +151,7 @@ Omit either plan-change list when it is empty.
 **C — Last phase** (decision rule 1): block B's walkthrough and verification lists, with the "Next" block replaced by:
 
 ```
-All phases complete. Next: /verify (completeness + review packet; includes the remaining human-only checks), then you open the PR.
+All phases complete. Next: /verify-branch (completeness + review packet; includes the remaining human-only checks), then you open the PR.
 ```
 
 Verification items come from the just-finished phase's `#### Manual Verification:` section, split by the `agent-verified` / `human-only` tags. When that section is empty, omit both lists and replace step 1 with "Read the /stage queue."

@@ -1768,6 +1768,18 @@ class ReviewFixScriptTest(unittest.TestCase):
             self.assertIn("escape logged", output)
         self.assertEqual(self.escape_ids(), ["src/orders.ts", "lib/q.ts"])
 
+    def test_escape_naming_a_bare_file_is_logged_when_files_touched_holds_its_full_path(self):
+        bare_fix = {"finding": "tenant filter missing", "file_line": "orders.ts:42", "blocker": False}
+        fields = dict(CLEAN_EMPTY_FIELDS, fixed=[bare_fix], files_touched=["src/lib/orders.ts"])
+        self.packet(packet_text(fields), "--source", "conversation", skill="fix")
+
+        _code, output = self.run_script(["escape", "--escape", self.escape_spec(file="orders.ts")])
+        _code, again_output = self.run_script(["escape", "--escape", self.escape_spec(file="src/lib/orders.ts")])
+
+        self.assertIn("escape logged", output)
+        self.assertIn("already logged", again_output)
+        self.assertEqual(self.escape_ids(), ["src/lib/orders.ts"])
+
     def test_critical_blocker_and_cap_reached_still_post_the_aikido_replies(self):
         for text, target in ((BLOCKER, "src/auth.ts:12=31"), (CAP, "src/q.ts:7=32")):
             self.gh_log.write_text("") if self.gh_log.exists() else None

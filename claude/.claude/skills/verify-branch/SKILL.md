@@ -29,10 +29,11 @@ For a sprint-branch cut pass `--base <ref>`. The ticket's ACs are always in scop
 
 ## Step 1: branch-wide review (only when prep says it has not run)
 
-1. Dispatch `code-reviewer` with the exact prompt prep prints.
-2. A blocker is a finding whose `desc` starts with `[blocker]`. Keep the reviewer's `[blocker]` tag at the start of that finding's `desc`. With no blocker, skip the fixes and go to item 3: log each fix finding with `actioned` `deferred`, and list each `ask` finding to the user and log it with `disposition` `ask` and `actioned` `ask`. With a blocker, route the findings with `/review` and fix them; a blocker is logged only `fixed` or `skipped_fp`.
-3. Log the review (after the fixes, when there was a blocker) with every finding the reviewer reported, one entry each (`[]` when none): `~/.claude/scripts/review/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->`. Each entry is `{"desc": "<one line>", "file": "<path>", "line": 0, "class": "<bug|smell|...>", "actioned": "<fixed|skipped_fp|deferred|ask|none>"}`. `actioned` is required, and a `fix` finding (the default disposition) cannot have `actioned` `none`. `class` and `disposition` are optional.
-4. Rerun `verify-prep`. It must now report the review as ran. Do not continue until it does.
+1. Dispatch `code-reviewer` with the exact prompt prep prints. It reports and does not edit.
+2. Read the diff yourself for what the reviewer missed (a surprise: a behavior change, a dropped case, a cross-file break) and add each as a finding. Keep the reviewer's `[blocker]` tag at the start of that finding's `desc`.
+3. Dispatch `coder` once with every finding, nits included, each with its file, line and proposed change. An `ask` takes its proposed change, unless that change cuts or changes a ticket AC: that ask goes to the user and is logged with `disposition` `ask` and `actioned` `ask`. The coder runs the tests for the files it changed. With no finding, skip the coder.
+4. Log the review after the fixes, with every finding, one entry each (`[]` when none): `~/.claude/scripts/review/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->`. Each entry is `{"desc": "<one line>", "file": "<path>", "line": 0, "class": "<bug|smell|...>", "actioned": "<fixed|skipped_fp|ask>"}`. `actioned` is `fixed`, or `skipped_fp` for a finding the coder showed wrong; nothing is deferred. `class` and `disposition` are optional.
+5. Rerun `verify-prep`. It must now report the review as ran. Do not continue until it does.
 
 The log row records the content of the tree, apart from the task dir. Any later change to the diff or to an untracked file (an edit, a deletion, a rename, a new file) makes the review stale: prep says so and asks for the review again. `verify-log` exits 2 with "rerun verify-prep" when the tree changed since prep or no logged review covers it, and logs nothing. Only a review logged by `verify-log review` counts.
 
@@ -66,9 +67,9 @@ One row per verdicted item, verbatim, plus one `failed-check` row for each ✗ a
 
 ## What NOT to do
 
-- Don't review quality yourself; the code-reviewer dispatch in Step 1 does.
+- Don't review quality yourself beyond Step 1's surprise read; the code-reviewer dispatch does.
 - Don't drive a browser or run the app. Smoke testing is the user's via the checklist.
-- Don't edit code or tests in this skill. Fixes go through `/review`, `/fix` or `/code`.
+- Don't edit code or tests yourself. Step 1's fixes go through its one coder dispatch; gap fixes go through `/fix` or `/code`.
 - Don't trust `Phase Status` checkboxes.
 - Don't flag plan items in `What We're NOT Doing`. A ticket AC there is the exception: only the user's explicit sign-off cuts one.
 - Don't skip Step 1 because the phases were reviewed. Only prep's "ran" report skips it.

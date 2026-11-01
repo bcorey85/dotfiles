@@ -30,9 +30,10 @@ import script_utils
 import source_text
 
 # A `path/to/file.ext` or a repo-root `file.ext` in backticks, with an optional :line or :start-end suffix inside the
-# ticks. Prose holds many bare names that name no file (`os.path`, `row.ts`), so a reader takes a bare name only from a
-# `**File**:` entry or when the repo holds it (named_paths).
-PATH_IN_BACKTICKS =re.compile(r"`([\w.@+-]+(?:/[\w.@\[\]()+-]+)*\.\w+)(?::\d+(?:-\d+)?)?`")
+# ticks. Prose holds many bare names that name no file (`os.path`, `row.ts`), so most readers take a bare name only from
+# a `**File**:` entry or when the repo holds it (named_paths). The one reader that takes every backticked name is
+# expected_red.section_paths (own-path exclusion).
+PATH_IN_BACKTICKS = re.compile(r"`([\w.@+-]+(?:/[\w.@\[\]()+-]+)*\.\w+)(?::\d+(?:-\d+)?)?`")
 FILE_ENTRY = re.compile(r"^\s*(?:[-*]\s+)?\*\*Files?\*\*:?")
 TOP_LEVEL_BULLET = re.compile(r"^[-*]\s+")
 PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"

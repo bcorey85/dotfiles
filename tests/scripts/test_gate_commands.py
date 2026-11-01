@@ -287,6 +287,35 @@ class ScriptPackageCommandsTest(GateCommandsTestCase):
         self.assertEqual(["cd pkg && npx tsc --noEmit", "cd pkg && npx eslint {files:.ts}"], commands[:2])
 
 
+ROOT_AND_NESTED_FILES = {"pyproject.toml": RUFF_CONFIG, "app.py": "", "test_app.py": "", "pkg/b.py": "",
+                         "tests/test_b.py": ""}
+
+
+class RootFilesTest(GateCommandsTestCase):
+    def test_a_phase_that_names_repo_root_files_gets_the_gate_a_nested_phase_gets(self):
+        repo = self.new_repo(ROOT_AND_NESTED_FILES)
+
+        root = gate_commands.derive_gate_commands(repo, "- `app.py`\n- `test_app.py`\n")
+        nested = gate_commands.derive_gate_commands(repo, "- `pkg/b.py`\n- `tests/test_b.py`\n")
+
+        self.assertEqual(["ruff check {files:.py}", "python3 -m pytest test_app.py"], root)
+        self.assertEqual(["ruff check {files:.py}", "python3 -m pytest tests/test_b.py"], nested)
+
+    def test_a_bare_dotted_name_that_is_no_repo_root_file_adds_no_command(self):
+        repo = self.new_repo(ROOT_AND_NESTED_FILES)
+
+        commands = gate_commands.derive_gate_commands(repo, "Use `os.path` on `row.ts` and `test_gone.py`.\n")
+
+        self.assertEqual([], commands)
+
+    def test_a_sveltekit_route_path_with_a_plus_is_a_path(self):
+        repo = self.new_repo({})
+
+        paths = gate_commands.plan_format.named_paths("**File**: `src/routes/+page.svelte`\n", repo)
+
+        self.assertEqual(["src/routes/+page.svelte"], paths)
+
+
 class GateCommandsCliTest(GateCommandsTestCase):
     def run_cli(self, repo, *args):
         subprocess.run(["git", "init", "-q", str(repo)], check=True)

@@ -1764,6 +1764,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         return stub
 
     def launch(self, *flags, **extra):
+        (self.repo / "README.md").write_text("hi, edited\n")
         return self.run_script(["launch", *flags], REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub()), **extra)
 
     def crashing_stub(self):
@@ -1818,6 +1819,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         second.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=second, env={**os.environ, **GIT_ENV}, check=True,
                        capture_output=True)
+        (second / "notes.md").write_text("new\n")
         code, output = self.launch("--repo", str(second), cwd=self.repo)
         self.assertEqual(code, 0, output)
         loop_root = script_utils.git_path(second, "review-script") / "loop-script"
@@ -1842,7 +1844,37 @@ class ReviewFixScriptTest(unittest.TestCase):
         prompts = sorted(loop_root.glob("*/prompt.txt"))
         self.assertEqual(len(prompts), 2)
 
+    def test_launch_on_a_clean_tree_stops_naming_the_empty_scope_and_the_base_route(self):
+        code, output = self.run_script(["launch"], REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub()))
+        self.assertEqual(code, 2, output)
+        self.assertIn("ACTION: stop-usage", output)
+        self.assertIn("review scope is empty", output)
+        self.assertIn("base=<ref>", output)
+        self.assertEqual(self.dispatch_rows(), [])
+        self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
+
+    def test_launch_with_a_clean_repo_flag_stops_even_when_the_cwd_is_dirty(self):
+        second = self.temp_root / "second"
+        second.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=second, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+        (self.repo / "README.md").write_text("hi, edited\n")
+        code, output = self.run_script(["launch", "--repo", str(second)], cwd=self.repo,
+                                       REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub()))
+        self.assertEqual(code, 2, output)
+        self.assertIn("ACTION: stop-usage", output)
+        self.assertIn(str(second.resolve()), output)
+        self.assertEqual(self.dispatch_rows(), [])
+
+    def test_launch_help_prints_usage_and_launches_nothing(self):
+        code, output = self.run_script(["launch", "--help"], REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub()))
+        self.assertEqual(code, 0, output)
+        self.assertIn("usage: review_fix.py launch", output)
+        self.assertIn("--repo", output)
+        self.assertEqual(self.dispatch_rows(), [])
+
     def test_launch_with_a_loop_that_crashes_exits_0_and_packet_reports_no_hand_back(self):
+        (self.repo / "README.md").write_text("hi, edited\n")
         code, output = self.run_script(["launch"], REVIEW_FIX_LOOP_SCRIPT=str(self.crashing_stub()))
         self.assertEqual(code, 0, output)
         self.assertIn("exited 1", output)

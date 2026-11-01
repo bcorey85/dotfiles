@@ -31,7 +31,8 @@ posts the Aikido replies, and prints what the model still judges.
                                          tree against HEAD), and keeps its state under
                                          <git dir>/review-script. It exits when the loop script exits, after it has
                                          handed back or crashed; run `packet --skill review` next either way. Exits 2
-                                         when CLAUDE_CODE_SESSION_ID is not set.
+                                         when CLAUDE_CODE_SESSION_ID is not set, and when the working tree has no
+                                         changes against HEAD (review committed work with base=<ref>).
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review_fix.py asks-done [--by <user|session>] [--packet <packet_id>] <outcome>...
                                          one outcome per ask, in order: accepted | rejected | modified, optional
@@ -66,6 +67,7 @@ import handback_store
 import plan_format
 import review_asks
 import script_utils
+import worktree_snapshot
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
@@ -688,7 +690,11 @@ def model_duties(packet, options):
 
 def launch_arguments(argv):
     parser = argument_parser("launch")
-    parser.add_argument("--repo")
+    parser.description = ("Run the scripted review loop on the working tree against HEAD, as a review-first run for "
+                          "/review. A clean working tree has nothing to review: launch stops, and committed work is "
+                          "reviewed by dispatching review-loop with base=<ref>.")
+    parser.add_argument("-h", "--help", action="help", help="show this help and exit")
+    parser.add_argument("--repo", help="absolute path of the repo to review, when it is not the cwd's repo")
     return parser.parse_args(argv)
 
 
@@ -706,6 +712,12 @@ def command_launch(argv):
         raise UsageError(f"{options.repo or os.getcwd()} is not inside a git work tree")
 
     repo = repo.resolve()
+    dirty_paths = worktree_snapshot.status_codes(repo)
+    if not dirty_paths:
+        raise UsageError(f"the working tree of {repo} has no changes against HEAD, so the review scope is empty and "
+                         "no reviewer would read anything. Nothing was launched. To review committed work, dispatch "
+                         "review-loop with base=<ref> (the agent route of /review step 1).")
+
     state_dir = script_utils.git_path(repo, LAUNCH_STATE_NAME)
     run_id = script_utils.sortable_unique_id()
     agent_id = f"{LAUNCH_AGENT_PREFIX}{run_id}"

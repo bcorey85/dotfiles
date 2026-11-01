@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-743 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+744 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [comment-bloat gate lets agent-evals and shell code name plan impacts and acceptance criteria](notes/2026-10-31-comment-bloat-gate-lets-agent-evals-and-shell-code.md).
+Latest change: 2026-10-31, [Replay corpus pins every local Bash gate decision](notes/2026-10-31-replay-corpus-pins-every-local-bash-gate-decision.md).
 
 ## Top gains
 

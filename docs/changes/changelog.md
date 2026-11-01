@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-729 changes
+730 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -123,6 +123,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [comment-bloat gate lets agent-evals and shell code name plan impacts and acceptance criteria](notes/2026-10-31-comment-bloat-gate-lets-agent-evals-and-shell-code.md) [script/comment-bloat-gate] The plan-impact and acceptance-criteria markers no longer fire in an agent-evals checkout or on a shell line that is not a comment. A comment in any other repo still blocks.
 * [code-step resume goes on past an unreadable state file in the cwd checkout](notes/2026-10-31-code-step-resume-goes-on-past-an-unreadable-state.md) [script/code-step] A /code run in a sibling worktree finishes its steps when the session's own checkout holds another run's state file this code-step cannot read.
 * [coder_gate.py and coder_packet.py print usage on --help and change nothing](notes/2026-10-31-coder-gate-py-and-coder-packet-py-print-usage-on.md) [script/code] A session that asks coder_gate.py or coder_packet.py for help now gets the usage line and exit 0. Before, `coder_gate.py set --help` stored a gate and `coder_packet.py --help` crashed.
 * [Hand-back no longer waits on a nested agent that ended on an API error](notes/2026-10-30-hand-back-no-longer-waits-on-a-nested-agent-that.md) [script/handback, script/script-utils, script/review-loop-gate, script/open-child-gate] A review loop no longer waits on a nested reviewer that died on a usage limit, so it is not stuck behind a report that will never come; a clean packet whose latest dispatch of one reviewer kind died is denied.

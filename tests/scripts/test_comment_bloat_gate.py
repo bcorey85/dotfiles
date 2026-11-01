@@ -165,6 +165,30 @@ class CommentBloatGateTest(unittest.TestCase):
                     "comment-bloat-gate: private-workflow marker in an added line (a.py). Zero exceptions"), stderr)
                 self.assertIn("  2:" + sample + "\n", stderr)
 
+    def test_domain_words_in_an_agent_evals_file_pass_but_other_markers_block(self):
+        domain_samples = [
+            '"""Count the plan impacts each work plan names."""',
+            "class PlanImpactsTest(unittest.TestCase):",
+            "# acceptance criteria per ticket",
+        ]
+        for checkout in ("agent-evals", "agent-evals-intake"):
+            for sample in domain_samples:
+                with self.subTest(checkout=checkout, sample=sample):
+                    path = self.source(f"{checkout}/bin/work_plan_impacts.py", "x = 1\n" + sample + "\n")
+                    self.assert_allowed(self.edit(path, sample))
+
+        path = self.source("agent-evals/bin/work_plan_impacts.py", "x = 1\n# phase 3 cleanup\n")
+        self.assert_blocked(self.edit(path, "# phase 3 cleanup"))
+
+    def test_domain_words_on_a_shell_code_line_pass_but_a_shell_comment_blocks(self):
+        step = 'run plan-impacts "$repo"'
+        path = self.source("bin/work-intake.sh", "set -e\n" + step + "\n")
+        self.assert_allowed(self.edit(path, step))
+
+        comment = "# plan impact: none"
+        path = self.source("bin/work-intake.sh", "set -e\n" + comment + "\n")
+        self.assert_blocked(self.edit(path, comment))
+
     def test_rows_are_listed_in_line_order_with_two_space_indent(self):
         content = "# phase 2\nx = 1\n# docs/plans/y\n"
         path = self.source("a.py", content)

@@ -40,11 +40,18 @@ RAW_LINE_MARKERS = [re.compile(pattern, re.I) for pattern in (
 CASE_INSENSITIVE_MARKERS = [re.compile(pattern, re.I) for pattern in (
     r"\bphases?" + SPACE + r"*[0-9]",
     r"\b(PR|issue)" + SPACE + r"*#[0-9]+",
-    r"decision ledger|acceptance criteri|acceptance contract",
-    r"plan[ -]?impact",
+    r"decision ledger|acceptance contract",
     r"user ruling",
     r"end-of-branch",
 )]
+# Words that are the domain of the agent-evals repo and step names in shell code: they count only in comments, and
+# never in an agent-evals checkout.
+EVAL_DOMAIN_MARKERS = [re.compile(pattern, re.I) for pattern in (
+    r"acceptance criteri",
+    r"plan[ -]?impact",
+)]
+AGENT_EVALS_CHECKOUT = re.compile(r"(^|/)agent-evals(-[^/]+)?/")
+SHELL_FILE = re.compile(r"\.(sh|bash|zsh)$")
 CASE_SENSITIVE_MARKERS = [re.compile(pattern) for pattern in (
     r"\(D[0-9]+[):]",
     r"\bD[0-9]+:",
@@ -118,11 +125,13 @@ def has_marker(row, markers):
     return any(p.search(row) for p in markers) and not NOT_A_MARKER.search(row)
 
 
-def marker_hit(raw_row, searched_row):
+def marker_hit(raw_row, searched_row, eval_domain_counts):
     """Whether a row carries a marker: the raw-line markers search raw_row, the others searched_row, the row with
-    string text removed."""
-    return (has_marker(raw_row, RAW_LINE_MARKERS)
-            or has_marker(searched_row, CASE_INSENSITIVE_MARKERS + CASE_SENSITIVE_MARKERS))
+    string text removed. The eval-domain markers count only when eval_domain_counts is true."""
+    searched_markers = CASE_INSENSITIVE_MARKERS + CASE_SENSITIVE_MARKERS
+    if eval_domain_counts:
+        searched_markers = searched_markers + EVAL_DOMAIN_MARKERS
+    return has_marker(raw_row, RAW_LINE_MARKERS) or has_marker(searched_row, searched_markers)
 
 
 def marker_rows(file_lines, comments_only=False, file_path=""):
@@ -134,6 +143,8 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
     that closes one and opens another, only the text between them. In a test file the raw-line markers also skip
     string text: a plan path there is fixture data."""
     in_test_file = source_paths.is_test_path(file_path)
+    in_agent_evals = AGENT_EVALS_CHECKOUT.search(file_path) is not None
+    in_shell_file = SHELL_FILE.search(file_path) is not None
     style = source_text.comment_style_of(file_path)
     comment_numbers = comment_numbers_of(file_lines, style)
     string_data_numbers, closing_tails, openings = source_text.string_data_regions(file_lines, style)
@@ -155,7 +166,8 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
             searched = line if is_comment else searchable_text(line, style)
 
         raw_row = f"{number}:{searched}" if in_test_file else f"{number}:{raw}"
-        if marker_hit(raw_row, f"{number}:{searched}"):
+        eval_domain_counts = not in_agent_evals and (is_comment or not in_shell_file)
+        if marker_hit(raw_row, f"{number}:{searched}", eval_domain_counts):
             rows.append((number, line))
     return rows
 

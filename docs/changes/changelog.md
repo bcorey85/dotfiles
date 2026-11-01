@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-753 changes
+755 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -117,6 +117,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [Deny the Workflow and ScheduleWakeup tools to cut the main prefix](notes/2026-11-01-deny-the-workflow-and-schedulewakeup-tools-to-cut.md) [rule/settings-json] settings.json denies the Workflow and ScheduleWakeup tools, so their inline schemas (about 3.7k tokens) leave every main session's first request.
+* [Drop orchestration rules that a gate already states](notes/2026-11-01-drop-orchestration-rules-that-a-gate-already.md) [rule/orchestration] The SessionStart orchestration text loses two rules that a gate enforces and states in its own deny message, cutting it from 2,318 to 2,120 tokens.
 * [Prompt trims cut text that gates and scripts already enforce](notes/2026-11-01-prompt-trims-cut-text-that-gates-and-scripts.md) [agent/review-loop, agent/coder, agent/code-reviewer, agent/test-reviewer, skill/coder-core, skill/review, skill/fix, skill/code, skill/cc, skill/stage, skill/commit] The ten most-used skills and agents load about 2,100 fewer words per call: text a hook, gate or script already enforces or prints, text repeated in the same or an always-loaded file, and pointers to readers that do not exist are cut, with every judgment rule and parsed contract kept.
 * [Global CLAUDE.md drops four rules the model follows unprompted or a gate enforces](notes/2026-11-01-global-claude-md-drops-four-rules-the-model.md) [rule/global-claude-md] Every session loads about 150 fewer words: the domain-naming, code-paragraph and no-blockquote rules go because the model kept them with the text removed, and the coder test-scope sentence goes because the coder Bash hook enforces it.
 * [Review fix drops the plan-impact status route the loop no longer emits](notes/2026-10-31-review-fix-drops-the-plan-impact-status-route-the.md) [script/review-fix] review_fix.py loses about 40 lines that served a packet status the review loop stopped emitting. Plan impacts now reach the user only through the plan_impacts list on a converged or capped packet.
@@ -896,6 +898,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [Drop orchestration rules that a gate already states](notes/2026-11-01-drop-orchestration-rules-that-a-gate-already.md) - A measured prefix drop with no behavior change: both removed rules stay enforced by a gate whose deny message states the same instruction, so no intake number moves; the token cut is read directly by the headless prefix run.
 * [Toolkit edits need a bench proof sized by task class](notes/2026-10-24-toolkit-edits-need-a-bench-proof-sized-by-task.md) - it gates the ledger and dotfiles commits on this machine, which no work intake reads; the ledger itself shows whether change files carry proof
 * [The metrics switch reads only the environment variable](notes/2026-10-24-the-metrics-switch-reads-only-the-environment.md) - The change decides only whether metrics rows are written, not what any agent does. The intake's toolkit-telemetry line reads the switch on each pull.
 * [Escape loggers file false or stale prose as docs](notes/2026-10-24-escape-loggers-file-false-or-stale-prose-as-docs.md) - The before period has almost no docs escapes because the skills never offered the class, so a before-and-after watch on the class reads a false rise. Read it as a share: once about 40 new review escapes have landed, count the docs share of review escapes and compare it with the census share of false or stale prose.

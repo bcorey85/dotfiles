@@ -25,6 +25,13 @@ return {
           },
         },
       },
+      -- No preselect in the cmdline: with the menu already open, <Tab> is
+      -- select_next, so a preselected first item made <Tab> land on the second.
+      cmdline = {
+        completion = {
+          list = { selection = { preselect = false, auto_insert = true } },
+        },
+      },
       sources = {
         default = { "lazydev", "lsp", "path", "snippets", "buffer" },
         providers = {

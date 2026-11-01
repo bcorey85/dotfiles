@@ -580,19 +580,25 @@ def sibling_transcript_path(agent_transcript, agent_id):
 TRANSCRIPT_TAIL_BYTES = 65536
 
 
+def transcript_tail_lines(transcript_path, tail_bytes):
+    """The lines in the last `tail_bytes` bytes of a transcript. A first line cut by the seek is dropped. Raises
+    OSError when the file cannot be read."""
+    with open(transcript_path, "rb") as transcript:
+        size = transcript.seek(0, os.SEEK_END)
+        transcript.seek(max(0, size - tail_bytes))
+        tail_lines = transcript.read().decode("utf-8", errors="replace").split("\n")
+    if size > tail_bytes:
+        tail_lines = tail_lines[1:]  # the first line is cut
+    return tail_lines
+
+
 def ends_on_api_error(transcript_path):
     """True when the last record of a transcript is an API error message: the agent may never report.
     False for a transcript that is missing, unreadable, empty, or whose last record is anything else, so a later
     record shows the agent went on."""
     last_line = ""
     try:
-        with open(transcript_path, "rb") as transcript:
-            transcript.seek(0, os.SEEK_END)
-            size = transcript.tell()
-            transcript.seek(max(0, size - TRANSCRIPT_TAIL_BYTES))
-            tail_lines = transcript.read().decode("utf-8", errors="replace").split("\n")
-        if size > TRANSCRIPT_TAIL_BYTES:
-            tail_lines = tail_lines[1:]  # the first line is cut
+        tail_lines = transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
         for line in tail_lines:
             if line.strip():
                 last_line = line

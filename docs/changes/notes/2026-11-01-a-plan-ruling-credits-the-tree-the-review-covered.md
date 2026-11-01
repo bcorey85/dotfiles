@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "A plan ruling credits the tree the review covered, and the commit gate names the ruling step"
 description: "A /code commit after a review that held a plan impact now passes the commit gate once the impact is ruled on, instead of being denied until a whole new /review (about 6 minutes) runs; a denial caused by an unruled plan impact now names the ruling command, not /review."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T03:35:36-06:00"}
-seq: 439
+seq: 450
 kind: "fix"
 components: ["script/review-commit-gate", "script/review-fix"]
 evidence: ["census"]

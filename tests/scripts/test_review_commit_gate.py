@@ -20,7 +20,7 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("review", "capped_review.py"),
                 ("lib", "script_utils.py"), ("lib", "reviewed_tree.py"), ("lib", "hook_input.py"),
                 ("lib", "user_prompts.py"), ("lib", "shell_command.py"), ("lib", "plan_format.py"),
-                ("lib", "loop_transcript.py"),
+                ("lib", "shell_statements.py"), ("lib", "loop_transcript.py"),
                 ("lib", "expected_red.py"), ("review", "full_check.py"), ("lib", "check_scope.py"),
                 ("lib", "check_output.py"), ("lib", "linked_installs.py"), ("lib", "test_run_output.py"),
                 ("lib", "worktree_snapshot.py"), ("lib", "numstat.py"), ("lib", "makefile_text.py"),
@@ -219,6 +219,32 @@ class ReviewCommitGateTest(GateCase):
         for body in ("echo git commit -m x", "note git commit -m x"):
             with self.subTest(body=body):
                 self.assert_commit_denied(self.bash(f"cat <<'EOF'\n{body}\nEOF"))
+
+    def test_a_quoted_heredoc_stored_in_a_file_or_fed_to_a_script_is_not_a_commit(self):
+        self.dispatch()
+        body = "Nothing was committed; run git commit later.\n"
+        for opener in ("cat >> notes.md <<'EOF'", "cat > probe.py <<'EOF'", "tee notes.md <<'EOF' >/dev/null",
+                       "python3 ~/agent-evals/bin/build_queue.py new --by x --body - <<'EOF'"):
+            with self.subTest(opener=opener):
+                self.assert_silent(self.bash(f"{opener}\n{body}EOF"))
+
+    def test_a_heredoc_that_a_shell_runs_or_pipes_on_is_still_read_as_a_commit(self):
+        self.dispatch()
+        body = "git commit -m x\n"
+        for opener in ("bash <<'EOF'", "zsh <<'EOF'", "sh <<'EOF'", "cat <<'EOF' | sh", "xargs -0 sh -c <<'EOF'",
+                       "eval \"$(cat <<'EOF'", "python3 - <<'EOF'", "cat > notes.md <<EOF\n$(git commit -m y)",
+                       "cat > notes.md <<'EOF'; git commit -m y", "python3 -i x.py <<'EOF'",
+                       "python3 -m pdb x.py <<'EOF'", "perl -d x.pl <<'EOF'", "node -i x.js <<'EOF'",
+                       "perl -C - x <<'EOF'", "perl -C /dev/stdin x <<'EOF'", "node -r /dev/stdin x.js <<'EOF'"):
+            with self.subTest(opener=opener):
+                self.assert_commit_denied(self.bash(f"{opener}\n{body}EOF"))
+
+    def test_a_value_option_before_a_script_file_keeps_the_heredoc_as_data(self):
+        self.dispatch()
+        body = "git commit -m x\n"
+        for opener in ("python3 -W ignore x.py <<'EOF'", "perl -I lib x.pl <<'EOF'"):
+            with self.subTest(opener=opener):
+                self.assert_silent(self.bash(f"{opener}\n{body}EOF"))
 
     def test_a_commit_inside_a_substitution_or_a_shell_runner_is_denied(self):
         self.dispatch()

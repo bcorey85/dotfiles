@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-733 changes
+734 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -124,6 +124,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [frontend-style says braceless blocks fail lint only where eslint enables curly](notes/2026-10-31-frontend-style-says-braceless-blocks-fail-lint.md) [rule/frontend-style] Architects stop citing braceless blocks as a hard CI break in repos where lint allows them: the rule keeps braces as the style and sends the reader to the repo's eslint config before calling one a lint error.
 * [The review loop hands the test reviewer the plan's test strategy section](notes/2026-10-31-the-review-loop-hands-the-test-reviewer-the-plan-s.md) [script/review-loop-script, script/plan-format, script/code] The test reviewer now reads the plan's plan-wide test rules on every phase, by script, instead of only when its own grep happens to hit them.
 * [review launch on a clean tree stops instead of passing an empty review](notes/2026-10-31-review-launch-on-a-clean-tree-stops-instead-of.md) [script/review-fix, skill/review] /review's scripted launch stops on a working tree with no changes and names the base= route, so a commit or merge is never passed as reviewed when no reviewer read any code.
 * [code-step resume goes on past an unreadable state file in the cwd checkout](notes/2026-10-31-code-step-resume-goes-on-past-an-unreadable-state.md) [script/code-step] A /code run in a sibling worktree finishes its steps when the session's own checkout holds another run's state file this code-step cannot read.

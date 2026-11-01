@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-755 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+756 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [verify-log holds CLEAN while a review ask is open](notes/2026-11-01-verify-log-holds-clean-while-a-review-ask-is-open.md).
+Latest change: 2026-11-01, [A plan ruling credits the tree the review covered, and the commit gate names the ruling step](notes/2026-11-01-a-plan-ruling-credits-the-tree-the-review-covered.md).
 
 ## Top gains
 

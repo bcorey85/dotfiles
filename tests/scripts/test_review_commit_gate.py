@@ -11,6 +11,9 @@ import unittest
 
 import toolkit_paths
 
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import plan_format
+
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
 INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
 STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), ("review", "handback_store.py"),
@@ -49,16 +52,18 @@ class GateCase(unittest.TestCase):
             shutil.copy(str(source), str(self.scripts / folder / name))
         self.script = self.scripts / "review" / "review_commit_gate.py"
 
-    def seed_handback(self, status=None, session="s1", dispatches=1, handed_back=True, repo="not-a-repo"):
+    def seed_handback(self, status=None, session="s1", dispatches=1, handed_back=True, repo="not-a-repo",
+                      message=None):
         """Rows as handback.py's hook stores them: dispatches first, then one hand-back. `repo` is the top level
-        of the repo the review ran on, stored on each dispatch row."""
+        of the repo the review ran on, stored on each dispatch row. `message` is the hand-back's packet text."""
         self.store_dir.mkdir(parents=True, exist_ok=True)
         rows = [{"kind": "dispatch", "session_id": session, "repo": repo} for _ in range(dispatches)]
-        if handed_back:
+        if handed_back and message is None:
             capped = {"status": "cap-reached", "iter": 2, "fixed": [], "findings_remaining": [
                 {"disposition": "fix", "finding": "edge case", "file_line": "a.py:1"}]}
             message = json.dumps(capped) if status == "cap-reached" else ""
-            rows.append({"kind": "handback", "session_id": session, "status": status, "message": message})
+        if handed_back:
+            rows.append({"kind": "handback", "session_id": session, "ts": 1, "status": status, "message": message})
         with open(str(self.store_dir / (session + ".jsonl")), "a") as handle:
             handle.write("".join(json.dumps(row) + "\n" for row in rows))
 
@@ -811,6 +816,37 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_silent(self.commit("git commit -a -m x", cwd=repo_b))
         self.assert_commit_denied(self.commit("git commit -a -m x", cwd=self.repo))
 
+    def test_a_commit_after_a_hand_back_holding_a_plan_impact_names_the_ruling_and_not_another_review(self):
+        (self.repo / "base.py").write_text("changed\n")
+        held_impact = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                       "ac_change": True, "cause": "plan", "adopted": False}
+        held = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [],
+                           "class_closure": "n/a - fixed[] empty", "plan_impacts": [held_impact]})
+        self.seed_handback("converged", repo=str(self.repo.resolve()), message=held)
+
+        finished = self.commit("git commit -a -m x")
+
+        self.assert_denies(finished, "1 plan impact(s) that await a ruling")
+        reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("review_fix.py defer", reason)
+        self.assertIn("review_fix.py decide", reason)
+        self.assertIn("Only `decide keep` settles them", reason)
+        self.assertIn(plan_format.DECIDE_USAGE_STEM, reason)
+        self.assertNotIn("invoke the /review skill", reason)
+
+    def test_a_commit_of_the_reviewed_tree_passes_once_a_ruling_settles_the_held_plan_impact(self):
+        (self.repo / "base.py").write_text("changed\n")
+        held_impact = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                       "ac_change": True, "cause": "plan", "adopted": False}
+        held = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": [],
+                           "class_closure": "n/a - fixed[] empty", "plan_impacts": [held_impact]})
+        self.seed_handback("converged", repo=str(self.repo.resolve()), message=held)
+        with open(str(self.store_dir / "s1.jsonl"), "a") as handle:
+            handle.write(json.dumps({"kind": "plan-ruling", "session_id": "s1", "ts": 2, "decision": "defer"}) + "\n")
+        self.record_reviewed_tree()
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
     def test_a_commit_of_a_tree_that_converged_review_covered_passes_after_a_later_coder_dispatch(self):
         (self.repo / "base.py").write_text("changed\n")
         self.review_converged()
@@ -1308,7 +1344,10 @@ class ReviewedWorkCommitTest(GateCase):
         (self.repo / "base.py").write_text("changed\n")
         self.append_repo_rows(self.repo)
         (self.scripts / "review" / "handback.py").unlink()
-        self.assert_commit_denied(self.commit("git commit -a -m x"))
+        finished = self.commit("git commit -a -m x")
+        self.assertIn("review-commit-gate: cannot import handback", finished.stderr)
+        self.assertEqual(json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"],
+                         COMMIT_DENIED)
 
     def test_a_converged_hand_back_keeps_its_repo_credit_after_a_review_of_another_repo(self):
         other = self.make_repo("other")

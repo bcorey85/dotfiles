@@ -132,9 +132,10 @@ def read_reviewed(session):
     return reviewed if isinstance(reviewed, dict) else {}
 
 
-def record_reviewed(session, repo_dir):
-    """Store repo_dir's tree as reviewed for the session. Returns False when the tree cannot be fingerprinted."""
-    found = fingerprint(repo_dir)
+def record_reviewed(session, repo_dir, tree=None):
+    """Store repo_dir's tree as reviewed for the session: `tree`, a stored (top, fingerprint) pair, when given, else
+    the tree as it stands. Returns False when the tree cannot be fingerprinted."""
+    found = tree or fingerprint(repo_dir)
     if found is None:
         return False
     top, tree_hash = found

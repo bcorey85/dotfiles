@@ -281,6 +281,24 @@ class FullCheckTest(unittest.TestCase):
                          completed.stdout.splitlines())
         self.assertTrue(marker.exists())
 
+    def test_a_full_suite_section_that_documents_ci_counts_as_the_marker_line(self):
+        declared = "true"
+        claude_md = ("# Repo\n\n## Full test suite\n\nThe full suite runs in CI on every push.\n\n"
+                     f"## Checks\n\nQuality check: `{declared}`\n")
+
+        completed = self.check(declared, claude_md=claude_md)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed (check only; CI runs the full suite)")
+
+    def test_a_full_suite_section_that_does_not_name_ci_is_not_the_marker(self):
+        claude_md = ("## Full suite\n\nRun it locally before you push.\n\n## Deploy\n\nCI deploys on merge.\n\n"
+                     "Quality check: `true`\n")
+
+        completed = self.check("true", claude_md=claude_md)
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: unverified (exit 0, no test result shown)")
+
     def test_a_failing_declared_check_of_a_repo_whose_full_suite_runs_in_ci_fails(self):
         completed = self.check("exit 3", claude_md="- Full suite: CI\n- Quality check: `exit 3`\n")
 

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-738 changes
+739 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -126,6 +126,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [staged-claim gate checks a claim against the repo the message names](notes/2026-10-31-staged-claim-gate-checks-a-claim-against-the-repo.md) [script/staged-claim-gate] A session that reports a file staged in a sibling worktree, named by folder, by `git -C <folder>` or by a `~/` path, ends its turn when that worktree's index holds the file: the staged-claim gate checks that index instead of the cwd's. A false claim there still blocks, by file name.
 * [review-commit-gate passes a search that quotes the commit words through a text tool, cd or loop](notes/2026-10-31-review-commit-gate-passes-a-search-that-quotes-the.md) [script/review-commit-gate] A log search that quotes the commit words runs in a dirty session when it pipes through sort, uniq, cut or jq, follows a cd or ls, or sits in a for or if: review-commit-gate reads those steps as probes, so the search needs no rewording. A real commit in any of those shapes is still denied.
 * [shell-write-gate reads a name joined onto a base off the cwd as no write to the cwd file](notes/2026-10-31-shell-write-gate-reads-a-name-joined-onto-a-base.md) [script/shell-write-gate] A script that writes `tree / 'CLAUDE.md'` with `tree` built under the home folder or a temp dir runs: shell-write-gate no longer reads the joined name as a write to the session repo's own CLAUDE.md. Bench drivers run with no hand-off to the user.
 * [frontend-style says braceless blocks fail lint only where eslint enables curly](notes/2026-10-31-frontend-style-says-braceless-blocks-fail-lint.md) [rule/frontend-style] Architects stop citing braceless blocks as a hard CI break in repos where lint allows them: the rule keeps braces as the style and sends the reader to the repo's eslint config before calling one a lint error.

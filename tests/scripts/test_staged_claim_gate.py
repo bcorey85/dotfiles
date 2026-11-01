@@ -1,6 +1,7 @@
 """Checks for staged_claim_gate.py, the Stop and SubagentStop hook that blocks a final message saying files are
 staged when the index does not hold them."""
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -39,11 +40,12 @@ class StagedClaimGateTest(unittest.TestCase):
             (repo / file_name).write_text("y\n")
         return repo
 
-    def run_gate(self, message, cwd=None, event="Stop", stop_hook_active=False, transcript_path=None):
+    def run_gate(self, message, cwd=None, event="Stop", stop_hook_active=False, transcript_path=None, home=None):
         payload = {"hook_event_name": event, "cwd": str(cwd or self.repo), "last_assistant_message": message,
                    "stop_hook_active": stop_hook_active, "transcript_path": str(transcript_path or "")}
+        environment = dict(os.environ, HOME=str(home)) if home else None
         finished = subprocess.run([sys.executable, str(SCRIPT)], input=json.dumps(payload), capture_output=True,
-                                  text=True, cwd=str(self.tmp))
+                                  text=True, cwd=str(self.tmp), env=environment)
         self.assertEqual((finished.returncode, finished.stderr), (0, ""))
         return finished.stdout
 
@@ -83,6 +85,51 @@ class StagedClaimGateTest(unittest.TestCase):
         self.assert_blocked(f"{other}/a.txt is staged.", cwd=self.outside)
         git(other, "add", "a.txt")
         self.assert_passes(f"{other}/a.txt is staged.", cwd=self.outside)
+
+    def test_a_claim_naming_another_tree_by_folder_git_dash_c_or_home_checks_that_tree_index(self):
+        other = self.make_repo("other")
+        messages = (f"a.txt is staged in {other}.", f"`git -C {other} diff --cached` shows a.txt is staged.",
+                    "`git -C ../other diff --cached` shows a.txt is staged.", "a.txt is staged in ~/other.",
+                    "`git -C ~/other diff --cached` shows a.txt is staged.")
+        for message in messages:
+            with self.subTest(message=message):
+                self.assert_blocked(message, home=self.tmp)
+
+                git(other, "add", "b.txt")
+                reason = self.assert_blocked(message, home=self.tmp)
+                self.assertIn(f"the index of {other.resolve()} does not hold a.txt", reason)
+
+                git(other, "add", "a.txt")
+                self.assert_passes(message, home=self.tmp)
+                git(other, "reset", "-q")
+
+    def test_a_claim_naming_no_repo_checks_the_cwd_index_beside_another_staged_tree(self):
+        other = self.make_repo("other")
+        git(other, "add", "a.txt")
+        messages = ("a.txt is staged in ~/missing.", "`git -C ~/outside diff --cached` shows a.txt is staged.")
+        for message in messages:
+            with self.subTest(message=message):
+                reason = self.assert_blocked(message, home=self.tmp)
+                self.assertIn(f"the index of {self.repo.resolve()}", reason)
+
+                git(self.repo, "add", "a.txt")
+                self.assert_passes(message, home=self.tmp)
+                git(self.repo, "reset", "-q")
+
+    def test_a_claim_naming_a_tree_is_not_vouched_for_by_a_third_tree_from_the_transcript(self):
+        other = self.make_repo("other")
+        linked = self.stage_in_linked_tree("a.txt")
+        transcript = self.write_transcript(f"git -C {linked} add a.txt")
+        messages = ("`git -C ../other diff --cached` shows a.txt is staged.", "a.txt is staged in ~/other.")
+        for message in messages:
+            with self.subTest(message=message):
+                reason = self.assert_blocked(message, home=self.tmp, transcript_path=transcript)
+                self.assertIn(f"the index of {other.resolve()} holds nothing", reason)
+
+    def test_a_git_dash_c_folder_the_hook_cannot_read_names_no_tree_so_the_transcript_still_vouches(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        transcript = self.write_transcript(f"git -C {linked} add a.txt")
+        self.assert_passes("`git -C $WT diff --cached` shows a.txt is staged.", transcript_path=transcript)
 
     def write_transcript(self, *commands, name="transcript.jsonl"):
         transcript = self.tmp / name

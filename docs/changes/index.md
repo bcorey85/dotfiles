@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-738 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+739 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [Review fix drops the plan-impact status route the loop no longer emits](notes/2026-10-31-review-fix-drops-the-plan-impact-status-route-the.md).
+Latest change: 2026-10-31, [staged-claim gate checks a claim against the repo the message names](notes/2026-10-31-staged-claim-gate-checks-a-claim-against-the-repo.md).
 
 ## Top gains
 

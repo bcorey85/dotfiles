@@ -320,7 +320,8 @@ def main(argv):
                "baseRef": base_ref, "mergeBase": merge_base, "diff": diff, "criteria": criteria,
                "excludeRel": exclude_rel, "fingerprint": fingerprint, "review": review,
                "fullCheck": vc.full_check_state(top),
-               "reviewLoggedTree": review_logged_tree, "logged": False, "escapes": earlier_escapes}
+               "reviewLoggedTree": review_logged_tree, "reviewAsks": earlier_context.get("reviewAsks"),
+               "logged": False, "escapes": earlier_escapes}
     vc.save_context(state_path, context)
     print(print_plan(context))
     return 0

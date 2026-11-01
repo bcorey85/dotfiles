@@ -62,6 +62,7 @@ One row per verdicted item, verbatim, plus one `failed-check` row for each ✗ a
   1. (a) the completeness table; (b) the smoke-test checklist: fill the `steps:` of every line with concrete steps; (c) the diff hotspots it listed ("read these first, skim the rest"); (d) a pointer to agent-verified evidence. Do NOT situate here (`/orient`, on demand).
   2. Before presenting, `nvim-jump` the evidence per `~/.claude/skills/_shared/nvim-jump.md`: each completeness-table `file:line` in table order with `--note "<criterion>: <what the line proves>"`, then each covering test's `file:line` with `--note "<AC id>: <what it asserts>"`.
   3. Point forward: run the smoke-test checklist, then open the PR yourself. Agents never open PRs. After the PR exists, `/adr`.
+- **Asks open**: the review logged an ask on this tree, so the run is not clean. Put each listed ask to the user and record the ruling in the plan's decision log (`03-decisions.md` or `## Plan Deviations`). Then rerun verify-prep and the same command with `--asks-ruled "<who, what, when>"`, or fix the code and review again.
 
 ## What NOT to do
 

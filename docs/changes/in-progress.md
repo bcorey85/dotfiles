@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-7 open benches, by rank. Each line is the question the bench asks.
+5 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -15,6 +15,4 @@ description: "The benches that are open now and the question each asks."
 * Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (running): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.
 * Bench own-branch peer review against a full-pass exit review on fix-PR fixtures (running): Shows whether running /peer-review after the branch-exit review catches known bugs the exit review misses, so the exit review can take over what it finds.
 * Bench the main session on Sonnet against Opus (running): Moving orchestration off Opus could cut weekly Opus use by up to two thirds.
-* Bench a hook that moves main-session lookups to Haiku (running): Main-session Opus cache read could fall a third if search output stops landing in its context.
-* Bench a tool-call budget on the code reviewer (running): A hard tool-call budget on the code reviewer could cut its Opus cache read by a third or more if it loses no seeded catch.
-* Run verify-branch as a forked Sonnet skill instead of in the main session (running): Forking /verify-branch off the main session could cut main-session Opus on every branch end by half or more with the same criterion verdicts.
+* One Opus reviewer per phase in place of code, test and structure reviewers (queued): Dropping the separate test and structure reviewers could cut about a third of review Opus output and cache read if one Opus reviewer per phase catches the same planted defects.

@@ -37,7 +37,7 @@ When present:
 
 - Use `files` as exact review scope. Do not run `git diff`.
 - `prior-issues` present ⇒ verify fixes fix-by-fix before scanning for new issues.
-- `plan_impact` starting `RESOLVED` ⇒ settled by a ruling, and the block names who ruled: review against the ruling, never return it as `plan-impact`.
+- `plan_impact` starting `RESOLVED` ⇒ settled by a ruling, and the block names who ruled: review against the ruling, never record it in `plan_impacts[]`.
 - `iter`/`spec_iter` are separate budgets. Never fold them.
 
 When absent (manual `/review` invocation), fall back to git discovery.

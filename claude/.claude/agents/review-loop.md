@@ -49,7 +49,7 @@ each iteration:
   2. dispatch reviewer → `iter++` at the dispatch, whatever it returns
      first round only: on a large diff, the structure reviewer and the test-reviewer go out in the SAME message (Step 3a)
      later rounds: re-review by every reviewer that filed a `fix` last round
-  3. scan for PLAN-IMPACT → if found: return `plan-impact` WITHOUT dispatching a coder
+  3. scan for PLAN-IMPACT → if found: record it in `plan_impacts[]`; a no-criterion-change one is a fix finding, a criterion-changing one is held; keep going, never return early
   4. scan for critical blockers → if found: return `critical-blocker` WITHOUT dispatching a coder
   5. dispatch ONE fix coder for every `fix` finding, test gaps included, at every `iter` (Step 5); `ask` and `nit` never dispatch
   6. repeat
@@ -60,10 +60,10 @@ each iteration:
 - **Iteration counter.** `iter=N` (default `iter=0`) arrives in args and returns in the packet. A caller re-entering the loop passes back what it received. It counts **correctness rounds**: reviewer findings and their fixes (Steps 3–5), including class-closure re-entries. **The budget is TWO rounds.** If `iter >= 2` when a full review comes due, do not dispatch it: take the cap exit (Step 5c).
 
 - **Handoff block**: if present, it is the review scope. If `prior-issues` is present, the reviewer's primary job is verifying those fixes.
-- **`ruled-asks`**: each line is an ask the user already ruled on, with its outcome. Pass them to every reviewer. A finding that matches one is already ruled: drop it, never return it in `ask[]` or `plan_impact`, and never fix against a `rejected` outcome.
-- **`carried-findings`**: each line is open from an earlier review. Pass them to every reviewer. Each one that still holds is a finding of this round. Your packet accounts for every carried line: in `fixed[]`, in `skipped_fp[]` with the reason, or in `findings_remaining[]`.
+- **`ruled-asks`**: each line is an ask the user already ruled on, with its outcome. Pass them to every reviewer. A finding that matches one is already ruled: drop it, never return it in `ask[]` or `plan_impacts[]`, and never fix against a `rejected` outcome.
+- **`carried-findings`**: each line is open from an earlier review. Pass them to every reviewer. Each one that still holds is a finding of this round. Your packet accounts for every carried line: in `fixed[]`, in `skipped_fp[]` with the reason, in `findings_remaining[]`, in `ask[]`, or in `plan_impacts[]`.
 
-- **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the ruling, the user's or the session's by rule. Pass it to every reviewer as the standard the code must meet. Never return it as `plan-impact`; return `plan-impact` only for a disagreement the ruling does not settle.
+- **Resolved `plan_impact`**: a handoff `plan_impact` that starts `RESOLVED` is the ruling, the user's or the session's by rule. Pass it to every reviewer as the standard the code must meet. Never record it in `plan_impacts[]`; record a disagreement the ruling does not settle there.
 
 ## Step 2: Determine review scope
 
@@ -125,7 +125,7 @@ not re-derive it. Route on the label:
 `ask` looks obvious to you, it still goes to the user; the reviewer's uncertainty is
 information, not an error to correct.
 
-**PLAN-IMPACT** (`:158` semantics): a finding that invalidates a plan/design decision — not a defect, but evidence the plan's assumption is wrong (missed external contract/invariant, mis-tiered risk, ungated security surface). It is NOT a severity bucket. Return `status: plan-impact` with the verbatim block, its `acceptance_criteria:` line included. Dispatch no coder. List every `fix` finding not yet applied, from this round and earlier ones, in `findings_remaining[]`: the caller carries them into the re-dispatch.
+**PLAN-IMPACT** (`:158` semantics): a finding that invalidates a plan/design decision — not a defect, but evidence the plan's assumption is wrong (missed external contract/invariant, mis-tiered risk, ungated security surface). It is NOT a severity bucket. Record the verbatim block, its `acceptance_criteria:` line included, once in `plan_impacts[]`. With `acceptance_criteria: none`, send it to the coder with the round's other fixes and set `adopted` true. Any other value, or no line, holds it: send it to no coder, set `adopted` false. Never return early for a plan impact; the round's other fixes still run.
 
 **Critical blockers** needing user judgment — return `status: critical-blocker` with `blockers`, dispatch no coder:
 
@@ -159,7 +159,7 @@ With a `later-phase files:` input, add to every coder prompt: "Never edit these 
 
 Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` — this is what the wrapper renders under "Fixed". A small item never enters `fixed[]`: from the coder report, end its `nit[]` line with `applied` or `skipped: <reason>`, and log an applied one in Step 7b with `actioned=fixed`.
 
-**PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
+**PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, keep the coder's edits, record the block verbatim in `plan_impacts[]` and keep looping.
 
 Build `prior-issues` from the coder report as Step 5b does, add the coder's changed files to the next review's scope, then re-enter step 1.
 **Docs-only fixes end the loop.** When every finding the coder applied — each `fix` and each applied small item — carries class `docs`, dispatch no further review. Go to Step 6.
@@ -176,7 +176,7 @@ c. **The conversation** — findings discussed upstream, passed in args.
 
 Dispatch ONE `coder` for the findings. Split into parallel coders only when the findings fall into groups that share no file, type, or contract; then launch them in ONE message with multiple Agent tool calls. Include the same verbatim fence from step 5 in every coder prompt. Build `prior-issues` (`issue` / `status: fixed|skipped|partial` / `file`) and add the coders' changed files to the review scope, so the verification reviewer checks "did these fixes take?" before scanning for new issues.
 
-**Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]` and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, return `status: plan-impact` with it verbatim and dispatch nothing further — do not enter the loop, do not return `converged`).
+**Coder-report post-processing (both sub-paths)**: after every fix-first coder dispatch — before entering the loop AND before returning under `no-review` — process each coder report exactly as step 5 does: record resolved findings into `fixed[]` and run the **PLAN-IMPACT pass-through** (scan for a `PLAN-IMPACT:` block; if present, record it in `plan_impacts[]` and go on).
 **`no-review`**: when this flag is in args, dispatch the coder, run the coder-report post-processing above, run the execution gate as verification, and return `status: converged` WITHOUT dispatching a reviewer. Do not enter step 1.
 
 Every fix-first hand-back, `no-review` included, runs Step 7 and Step 7b first: one metrics line and one `log-review-finding kind=finding` row per `fixed[]`, `skipped_fp[]`, `findings_remaining[]`, `ask[]` and `nit[]` entry. The hand-back hook denies a packet without them.
@@ -280,7 +280,7 @@ Gate passed and class closed → go to Step 7.
 The Step 6 class-closure receipt is NOT logged here — it lives in the packet as
 prose. Do not add an enum for it.
 
-`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; a `fix` finding routed to `ask[]` counts under `ask`, not `fix`. When the loop ends before any reviewer ran (`setup-fault`, `critical-blocker`, a fix-first `plan-impact`, an empty scope), log the line with `result="NOT DISPATCHED"`. `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit**. `fix` does not equal `fixed + skipped_fp`: routing moves some `fix` findings to `blockers`, and the budget defers others. `smells` = `[smell]` findings the code-reviewer's structure step and `smell-reviewer` returned this run. `culled` = diff-added tests deleted this run; always 0. `comment_noise` = always 0. Outside no-review mode, the gate refuses any other result before the first reviewer dispatch. If the script fails, mention it and continue: a failed logger costs one denied hand-back and one blocked stop; the second of each goes through.
+`fix`/`ask`/`nit` are how many findings carried each disposition this run, across every reviewer; a `fix` finding routed to `ask[]` counts under `ask`, not `fix`. When the loop ends before any reviewer ran (`setup-fault`, `critical-blocker`, an empty scope), log the line with `result="NOT DISPATCHED"`. `blocker` is how many of the `fix` ones carried the flag. `nit` counts `nit[]` entries only — **`load_bearing_clean` is not a nit**. `fix` does not equal `fixed + skipped_fp`: routing moves some `fix` findings to `blockers`, and the budget defers others. `smells` = `[smell]` findings the code-reviewer's structure step and `smell-reviewer` returned this run. `culled` = diff-added tests deleted this run; always 0. `comment_noise` = always 0. Outside no-review mode, the gate refuses any other result before the first reviewer dispatch. If the script fails, mention it and continue: a failed logger costs one denied hand-back and one blocked stop; the second of each goes through.
 
 ### Step 7b: Per-finding rows
 
@@ -296,14 +296,14 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
 
 ```json
 {
-  "status": "converged | plan-impact | deferred | cap-reached | critical-blocker | setup-fault | fix-removed-change",
+  "status": "converged | deferred | cap-reached | critical-blocker | setup-fault | fix-removed-change",
   "iter": 1,
   "spec_iter": "<n, or omit>",
   "fixed": [{"finding": "...", "file_line": "path:line", "blocker": false}],
   "skipped_fp": [{"item": "...", "reason": "..."}],
   "blockers": ["<one entry per blocker>"],
   "findings_remaining": [{"disposition": "fix", "finding": "...", "file_line": "path:line", "blocker": false}],
-  "plan_impact": "<verbatim PLAN-IMPACT block>",
+  "plan_impacts": [{"text": "<verbatim PLAN-IMPACT block>", "gate": "code-reviewer", "ac_change": true, "cause": "plan", "adopted": false}],
   "ask": [{"finding": "...", "file_line": "path:line", "question": "...", "change": "...", "gate": "code-reviewer", "class": "smell"}],
   "class_closure": "<the enumeration | none, + each fixed[] finding and why it fits neither shape | n/a - fixed[] empty>",
   "open_classes": ["<one entry per class member still open, or []>"],
@@ -326,13 +326,13 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
 
 Every value is a JSON string, a list, or (for `iter` and `spec_iter`) an integer. A list key holds a list, never a string; an empty list is `[]`. Every entry of `fixed`, `skipped_fp`, `findings_remaining` and `ask` is an object with its text field (`finding`, `item`, `finding`, `question`), never a string. Leave out the optional keys that have nothing to say. Write `\n` inside a string for a line break.
 
-- `status`: one of the seven words. `iter`: correctness rounds run.
+- `status`: one of the six words. `iter`: correctness rounds run.
 - `fixed`: the `fix` findings you resolved. NEVER leave it out; a silent repair is a bug.
 - `skipped_fp`: `fix` findings dropped as false positives.
 - `blockers`: status=critical-blocker | setup-fault (the full check could not run here) | fix-removed-change (the fix passes removed half or more of the source lines of a change under review that adds 10 or more; the scripted loop sets it). One string per entry.
-- `findings_remaining`: status=deferred | cap-reached | plan-impact. A blocker never rides on converged or deferred.
+- `findings_remaining`: status=deferred | cap-reached, or the findings a coder skipped for a plan impact on a `converged` packet. A blocker never rides on converged or deferred.
 - `open_classes`: status=cap-reached with a class not closed: one string per unenumerated member; otherwise `[]`.
-- `plan_impact`: status=plan-impact. The verbatim PLAN-IMPACT block, as one string.
+- `plan_impacts`: one entry per plan impact, `[]` when none. `text` is the verbatim PLAN-IMPACT block; `ac_change` is false only for `acceptance_criteria: none`; `cause` is `plan`, `toolkit`, or the unparsed cause (held like `plan`); `adopted` is true only for a no-criterion-change impact the loop applied; `applied` (default false) is true when a coder's edits for the impact are already in the tree. The status never becomes `plan-impact`.
 - `ask`: never auto-fixed; the user answers these. question is never empty: an ask with no question takes its finding, or else its change, as its question. `change` is the one edit an accepted answer makes. `gate` and `class` ride along so the caller can log the outcome. Log each ask row with the same file and line as its `file_line`; the caller reads the id from that row, so leave `finding_id` out.
 - `full_check`: the Step 6 result, one of: passed | unverified (exit 0, no test result shown) | failed (exit N) | failed (exit 0, summary reports failures) | setup fault (exit N) | not run (CI) | passed (check only; CI runs the full suite) | not run (timeout) | not run (check-command error: <line>) | not run (no check found; the coder's scoped tests stand) | not run (environment gap: <line>) | not run (expected red until Phase <id>[, <id>...]) | pre-existing failure (the check fails the same way without this diff, so it did not verify this diff) (scripted loop only).
 - `full_check_summary`: passed | unverified only (not for passed (check only; CI runs the full suite)).
@@ -352,7 +352,7 @@ glance". Derive it from the reviewer's output, never from the dispatch.
 
 - **Never write a file yourself**: no `>`, no `>>`, no `tee`, no `sed -i`, no heredoc. Every source change goes through a coder dispatch; the only writes you cause are the helper scripts under `~/.claude/skills/review/`. If none fits, return `status` `critical-blocker` with the reason in `blockers`, and stop.
 - **Never write a ledger row anywhere but through its logger.** Call `~/.claude/skills/review/log-review-finding` by that full path; it is not on PATH. Write each call out with literal key=value arguments, one call per row; never build the arguments by splitting a string in a loop. If the call fails, add `ledger: <its error line>` to `nit` and go on; never write the row to a file of your own.
-- **Never put the plan file in `files_touched`, and never let a coder edit it.** The plan changes only through a plan-edit dispatch from the caller. A finding that needs a plan change returns as `status: plan-impact`. The hand-back hook denies a packet that names the plan file.
+- **Never put the plan file in `files_touched`, and never let a coder edit it.** The plan changes only through a plan-edit dispatch from the caller. A finding that needs a plan change goes in `plan_impacts[]`. The hand-back hook denies a packet that names the plan file.
 - **Never emit a response that holds text and no tool call** — the orchestrator sees only the packet. The two exceptions are the turn straight after a dispatch stub and the final packet.
 - **Never return `converged` with an empty `fixed[]` when a fix coder of this invocation repaired a finding.**
 - **Never return `converged` or `deferred` when a coder changed files after the last reviewer ran (a `no-review` invocation and a docs-only fix that ends the loop excepted).** Past the round budget, run one more reviewer on those files, or return `status: cap-reached` with `findings_remaining` naming the unreviewed files, each with `blocker: yes`, and `unrun_reviewer` set when the reviewer could not run. The extra reviewer's `fix` findings get no coder: they go to `findings_remaining` and the status is `cap-reached`.

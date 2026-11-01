@@ -876,7 +876,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertNotIn("check-finder", [call["key"] for call in self.fake_calls()])
         self.assertIn("code-reviewer", [call["key"] for call in self.fake_calls()])
 
-    def test_a_plan_change_ask_maps_to_plan_impact_bare_tagged_or_opening_with_its_file_line(self):
+    def test_a_plan_change_ask_is_a_plan_impact_bare_tagged_or_opening_with_its_file_line(self):
         asks = {
             "bare": f"- {PLAN_CHANGE_STATUS}: the fix needs a new column the plan rules out",
             "tagged": f"- `src/a.py:12` [plan-drift] — {PLAN_CHANGE_STATUS}: the fix needs a new column the plan "
@@ -894,8 +894,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 _, packet = self.stored_packet()
-                self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-                self.assertIn("needs a new column", packet["plan_impact"])
+                self.assertEqual(packet["status"], "converged")
+                self.assertIn("needs a new column", packet["plan_impacts"][0]["text"])
                 self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
 
     def test_full_check_failing_after_one_repair_maps_to_critical_blocker(self):
@@ -1595,6 +1595,58 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([(fix.path, fix.line) for fix in fixes],
                          [("src/matters/repository.ts", 12), ("src/entries/repository.ts", 40)])
 
+    def test_a_reply_of_bold_head_items_with_a_tagged_sub_bullet_falls_back_to_the_disposition_call(self):
+        module = self.load_script_module()
+        for sub_bullet_indent in ("", "  "):
+            with self.subTest(sub_bullet_indent=sub_bullet_indent):
+                review = ("### Coverage Gaps in Business Logic\n\n"
+                          "**19 of 21 check constraints have no test.**\n"
+                          "`backend/src/modules/invoices/schema.ts:58-101`. Add one rejection test per check.\n\n"
+                          "**The draft test sets one field.**\n"
+                          "`backend/src/modules/invoices/schema.test.ts:63` only sets one finalize field.\n"
+                          f"{sub_bullet_indent}- Fix: set all 12 finalize fields in the draft test.\n")
+
+                self.assertIsNone(module.parse_review(review))
+
+    def test_a_tagged_bullet_indented_deeper_than_the_other_list_items_falls_back(self):
+        module = self.load_script_module()
+        review = "- fix: `app.py:3` the limit is 5\n  - fix: raise it to 20\n"
+
+        self.assertIsNone(module.parse_review(review))
+
+    def test_an_untagged_bold_head_line_beside_tagged_bullets_falls_back(self):
+        module = self.load_script_module()
+        for head in ("**Big finding.**", "1. __Big finding.__", "- **Big finding.** no test"):
+            with self.subTest(head=head):
+                review = f"{head}\n- fix: `app.py:3` the limit is 5\n"
+
+                self.assertIsNone(module.parse_review(review))
+
+    def test_an_untagged_top_level_item_naming_a_file_line_beside_tagged_bullets_falls_back(self):
+        module = self.load_script_module()
+        review = "- fix: `app.py:3` the limit is 5\n- `util.py:9` the retry has no test\n"
+
+        self.assertIsNone(module.parse_review(review))
+
+    def test_a_disposition_tag_on_a_line_the_tagged_parser_did_not_take_falls_back(self):
+        module = self.load_script_module()
+        for stray in ("- rename the helper (nit)", "- rename the helper `nit`", "Pin the limit **ask**"):
+            with self.subTest(stray=stray):
+                review = f"- fix: `app.py:3` the limit is 5\n{stray}\n"
+
+                self.assertIsNone(module.parse_review(review))
+
+    def test_a_fully_tagged_reply_with_a_bold_report_header_field_still_parses(self):
+        module = self.load_script_module()
+        review = ("**Scope**: the invoice tests\n\n"
+                  "- fix: `app.py:3` the limit is 5\n"
+                  "- ask: `app.py:4` should the limit be configurable?\n"
+                  "- nit: `app.py:5` name the test for the limit\n")
+
+        parsed = module.parse_review(review)
+
+        self.assertEqual([len(parsed[key]) for key in ("fix", "ask", "nit")], [1, 1, 1])
+
     def test_change_if_accepted_marker_splits_question_from_change(self):
         ask = "`app.py:3` should it be configurable? Change if accepted: read from settings"
 
@@ -2047,136 +2099,275 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertEqual([call["key"] for call in self.fake_calls()].count("disposition"), 2)
 
-    def test_a_coder_report_of_plan_impact_stops_with_the_report_and_no_second_review(self):
-        report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
-
+    def coder_impact_packet(self, report):
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}],
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": report, "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return self.stored_packet()[1]
+
+    def test_a_coder_report_of_plan_impact_is_recorded_and_the_loop_still_reviews_again(self):
+        report = "Fixed 1 but it needs a new column the plan rules out.\nplan-impact: yes"
+
+        packet = self.coder_impact_packet(report)
+
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("code-reviewer"), 2)
+        self.assertEqual(len(packet["plan_impacts"]), 1)
+        self.assertIn("needs a new column", packet["plan_impacts"][0]["text"])
+        self.assertEqual(packet["plan_impacts"][0]["gate"], "coder")
+        self.assertTrue(packet["plan_impacts"][0]["ac_change"])
+        self.assertFalse(packet["plan_impacts"][0]["adopted"])
+
+    def test_a_coder_plan_impact_report_with_no_edits_keeps_the_finding_open_and_applies_nothing(self):
+        report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": report}],
+            "closure": [{"result": CLOSED}],
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertIn("needs a new column", packet["plan_impact"])
-        self.assertEqual([call["key"] for call in self.fake_calls()].count("code-reviewer"), 1)
-        self.assertEqual([row["actioned"] for row in self.finding_rows()], ["none"])
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
+                         ["`app.py:2` the limit is wrong for `limit`"])
+        self.assertIs(packet["plan_impacts"][0]["applied"], False)
+        self.assertEqual([row["actioned"] for row in self.finding_rows() if row["iter"] == "1"], ["none"])
+
+    def test_a_held_finding_the_next_round_re_reports_and_the_coder_fixes_leaves_the_open_list(self):
+        report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
+        rewordings = {
+            "same wording": "`app.py:2` the limit is wrong for `limit`",
+            "slightly different wording": "`app.py:2` the limit is wrong for `limit` here",
+        }
+        for number, (name, finding) in enumerate(rewordings.items()):
+            with self.subTest(name):
+                self.reset_fake_run()
+                fixed_source = APP_FIXED + f"# edit {number}\n"
+                second_review = f"## Fix\n- {finding}\n\n## Ask\nNone\n\n## Nit\nNone\n"
+                completed = self.run_script({
+                    "code-reviewer": [{"result": FIX_REVIEW}, {"result": second_review}, {"result": CLEAN_REVIEW}],
+                    "coder": [{"result": report}, {"result": "Fixed 1.", "edits": {"app.py": fixed_source}}],
+                    "closure": [{"result": CLOSED}],
+                })
+
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                _, packet = self.stored_packet()
+                self.assertEqual(packet["findings_remaining"], [])
+                self.assertEqual(len(packet["fixed"]), 1)
+
+    def test_fixing_a_different_finding_in_the_same_file_keeps_the_held_finding_open(self):
+        report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
+        second_review = "## Fix\n- `app.py:5` the timeout is never read\n\n## Ask\nNone\n\n## Nit\nNone\n"
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": second_review}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": report}, {"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
         self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
                          ["`app.py:2` the limit is wrong for `limit`"])
 
-    def test_a_one_lined_plan_impact_packet_carries_the_cause_of_the_block_it_was_read_from(self):
-        report = ("Cannot fix 1: the gate is wrong.\nPLAN-IMPACT:\n  assumed: the gate checks it\n"
-                  "  found: its base is old\n  cause: toolkit\nplan-impact: yes")
+    def test_a_finding_skipped_beside_an_impact_that_is_not_held_is_a_plain_skip_not_an_open_fix(self):
+        reports = {
+            "adopted": "Skipped 1: the limit is right.\nPLAN-IMPACT:\n  assumed: a column\n  found: none\n"
+                       "  cause: plan\n  acceptance_criteria: none\nplan-impact: yes",
+            "toolkit": "Skipped 1: the limit is right.\nPLAN-IMPACT:\n  assumed: the gate checks it\n"
+                       "  found: its base is old\n  cause: toolkit\nplan-impact: yes",
+        }
+        for name, report in reports.items():
+            with self.subTest(name):
+                self.reset_fake_run()
+                completed = self.run_script({
+                    "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+                    "coder": [{"result": report}],
+                    "closure": [{"result": CLOSED}],
+                })
 
-        completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}],
-            "coder": [{"result": report}],
-        })
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                _, packet = self.stored_packet()
+                self.assertEqual(packet["findings_remaining"], [])
+                self.assertEqual(len(packet["skipped_fp"]), 1)
+                self.assertEqual(handback.held_plan_impacts(packet), [])
 
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertNotIn("\n", packet["plan_impact"])
-        self.assertEqual(packet["plan_impact_cause"], "toolkit")
+    def test_a_coder_plan_impact_block_with_no_criterion_change_and_a_plan_cause_is_adopted_by_rule(self):
+        report = ("Fixed 1.\nPLAN-IMPACT:\n  assumed: a column\n  found: none\n  cause: plan\n"
+                  "  acceptance_criteria: none\nplan-impact: yes")
 
-    def test_a_stray_cause_line_outside_the_plan_impact_block_is_not_the_packet_cause(self):
-        report = ("Skipped 2: cause: toolkit is not what broke here.\nCannot fix 1: the column is missing.\n"
+        packet = self.coder_impact_packet(report)
+
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual([(entry["ac_change"], entry["adopted"], entry["cause"]) for entry in packet["plan_impacts"]],
+                         [(False, True, "plan")])
+        self.assertTrue(packet["plan_impacts"][0]["text"].startswith("PLAN-IMPACT:"))
+
+    def test_a_coder_plan_impact_of_a_toolkit_cause_is_recorded_with_its_cause_and_never_adopted(self):
+        report = ("Fixed 1.\nPLAN-IMPACT:\n  assumed: the gate checks it\n  found: its base is old\n"
+                  "  cause: toolkit\n  acceptance_criteria: none\nplan-impact: yes")
+
+        packet = self.coder_impact_packet(report)
+
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual([(entry["cause"], entry["adopted"]) for entry in packet["plan_impacts"]],
+                         [("toolkit", False)])
+
+    def test_a_stray_cause_line_outside_the_plan_impact_block_is_not_the_impact_cause(self):
+        report = ("Skipped 2: cause: toolkit is not what broke here.\nFixed 1.\n"
                   "PLAN-IMPACT:\n  assumed: a column\n  found: none\n  cause: plan\nplan-impact: yes")
 
+        packet = self.coder_impact_packet(report)
+
+        self.assertEqual([entry["cause"] for entry in packet["plan_impacts"]], ["plan"])
+
+
+    def test_a_coder_plan_impact_with_no_cause_line_is_held_and_a_reviewer_ask_reads_as_plan(self):
+        report = ("Fixed 1.\nPLAN-IMPACT:\n  assumed: a column\n  found: none\nplan-impact: yes")
+
+        packet = self.coder_impact_packet(report)
+
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual([(entry["cause"], entry["adopted"]) for entry in packet["plan_impacts"]],
+                         [(plan_format.NO_CAUSE_LINE, False)])
+        self.assertEqual(packet["plan_impacts"], handback.held_plan_impacts(packet))
+
+        ask_review = f"## Fix\nNone\n\n## Ask\n- {PLAN_CHANGE_STATUS}: the fix needs a new column\n\n## Nit\nNone\n"
+        self.reset_fake_run()
+        self.run_script({"code-reviewer": [{"result": ask_review}]})
+        self.assertEqual([entry["cause"] for entry in self.stored_packet()[1]["plan_impacts"]], ["plan"])
+
+    RESOLVED_FOOTER = ("    plan_impact: RESOLVED - Adopt plan change.\n    carried-findings:\n"
+                       f"      - plan impact: `app.py:3` [plan-drift] {PLAN_CHANGE_STATUS}: the fix needs a new column "
+                       "the plan rules out\n")
+
+    def held_ask_review(self, location="`app.py:3`"):
+        return ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\n"
+                f"- {location} [plan-drift] {PLAN_CHANGE_STATUS}: the fix needs a new column the plan rules out\n\n"
+                "## Nit\nNone\n")
+
+    def test_a_plan_impact_ask_never_stops_the_loop_and_the_round_s_fixes_still_run(self):
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}],
-            "coder": [{"result": report}],
+            "code-reviewer": [{"result": self.held_ask_review()}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertEqual(packet["plan_impact_cause"], "plan")
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["iter"], 2)
+        self.assertEqual([entry["finding"] for entry in packet["fixed"]], ["`app.py:2` the limit is wrong for `limit`"])
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("code-reviewer"), 2)
+        coder_prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "coder")
+        self.assertNotIn("needs a new column", coder_prompt)
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual([(entry["ac_change"], entry["adopted"], entry["cause"]) for entry in packet["plan_impacts"]],
+                         [(True, False, "plan")])
+        self.assertIn("needs a new column", packet["plan_impacts"][0]["text"])
 
-        reports = {
-            "a report that says PLAN-IMPACT: yes with no block": "Cannot fix 1: needs a column.\nPLAN-IMPACT: yes",
-            "a lowercase plan-impact: yes with no block and a stray cause line":
-                "Notes:\ncause: toolkit is not it\nCannot fix 1: needs a column.\nplan-impact: yes",
-        }
-        for name, no_block_report in reports.items():
-            with self.subTest(name):
-                outcome = {**review_loop_packet.EMPTY_OUTCOME, "status": "plan-change",
-                           "plan_change": [no_block_report], "plan_change_from_coder": True}
+    def test_a_plan_impact_ask_reads_the_same_with_a_line_range_or_a_list_of_ranges(self):
+        for location in ("`app.py:3`", "`app.py:3-5`", "`app.py:3\N{EN DASH}5`", "`app.py:3-5,8-9`"):
+            with self.subTest(location):
+                self.reset_fake_run()
 
-                packet = json.loads(review_loop_packet.packet_message(outcome))
+                completed = self.run_script({
+                    "code-reviewer": [{"result": self.held_ask_review(location)}, {"result": CLEAN_REVIEW}],
+                    "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+                    "closure": [{"result": CLOSED}],
+                })
 
-                self.assertEqual(packet["plan_impact_cause"], "plan")
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                _, packet = self.stored_packet()
+                self.assertEqual(packet["status"], "converged")
+                self.assertEqual([entry["ac_change"] for entry in packet["plan_impacts"]], [True])
+                self.assertEqual(packet["ask"], [])
+                self.assertEqual([call["key"] for call in self.fake_calls()].count("code-reviewer"), 2)
 
-    def test_several_plan_impact_blocks_each_read_their_own_cause_and_the_stopping_one_wins(self):
-        no_cause = "PLAN-IMPACT:\n  assumed: a column\n  found: none\n  cause:\n"
-        toolkit = "PLAN-IMPACT:\n  assumed: a gate\n  found: old base\n  cause: toolkit\n"
-        plan = "PLAN-IMPACT:\n  assumed: a column\n  found: none\n  cause: plan\n"
-        cases = {
-            "an empty cause stops as no cause line, not as the next block's cause": ([no_cause, toolkit],
-                                                                                     plan_format.NO_CAUSE_LINE),
-            "an empty cause after a plan block": ([plan, no_cause], plan_format.NO_CAUSE_LINE),
-            "a plan block next to a toolkit block": ([plan, toolkit], "toolkit"),
-            "a toolkit block first": ([toolkit, plan], "toolkit"),
-            "plan blocks only": ([plan, plan], "plan"),
-        }
-
-        for name, (blocks, cause) in cases.items():
-            with self.subTest(name):
-                outcome = {**review_loop_packet.EMPTY_OUTCOME, "status": "plan-change", "plan_change": blocks}
-
-                packet = json.loads(review_loop_packet.packet_message(outcome))
-
-                self.assertEqual(packet["plan_impact_cause"], cause)
-
-    def test_a_coder_plan_impact_with_no_cause_line_stops_as_unparsed_and_a_reviewer_ask_reads_as_plan(self):
-        report = ("Cannot fix 1: the column is missing.\nPLAN-IMPACT:\n  assumed: a column\n  found: none\n"
-                  "plan-impact: yes")
+    def test_a_plan_impact_ask_that_changes_no_criterion_is_adopted_and_fixed_in_the_same_round(self):
+        adopted_ask = ("## Fix\nNone\n\n## Ask\n- `app.py:2` [plan-drift] "
+                       f"{PLAN_CHANGE_STATUS}: the limit is wrong for `limit`; acceptance_criteria: none\n\n"
+                       "## Nit\nNone\n")
 
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}],
-            "coder": [{"result": report}],
+            "code-reviewer": [{"result": adopted_ask}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertIn("no `cause:` line", plan_format.cause_stop(packet["plan_impact_cause"]))
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual([(entry["ac_change"], entry["adopted"]) for entry in packet["plan_impacts"]],
+                         [(False, True)])
+        coder_prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "coder")
+        self.assertIn("the limit is wrong", coder_prompt)
+        self.assertEqual(packet["ask"], [])
+        self.assertIn("the limit is wrong", " ".join(entry["finding"] for entry in packet["fixed"]))
 
-        ask = {**review_loop_packet.EMPTY_OUTCOME, "status": "plan-change",
-               "plan_change": [f"the fix needs a new column. {PLAN_CHANGE_STATUS}"]}
-        ask_packet = json.loads(review_loop_packet.packet_message(ask))
-        self.assertEqual(ask_packet["plan_impact_cause"], "plan")
-
-    def test_a_plan_change_ask_keeps_the_round_s_fix_findings_open(self):
-        fix_and_plan_change = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\n- "
-                               f"{PLAN_CHANGE_STATUS}: the fix needs a new column the plan rules out\n\n## Nit\nNone\n")
-
-        completed = self.run_script({"code-reviewer": [{"result": fix_and_plan_change}]})
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        remaining = packet["findings_remaining"]
-        self.assertEqual([entry["finding"] for entry in remaining], ["`app.py:2` the limit is wrong for `limit`"])
-        self.assertEqual(remaining[0]["disposition"], "fix")
-
-    def test_a_plan_change_ask_leaves_only_the_later_reviews_real_fixes_open(self):
-        plan_change = f"## Fix\nNone\n\n## Ask\n- {PLAN_CHANGE_STATUS}: the fix needs a new column\n\n## Nit\nNone\n"
-        later = ("## Fix\n- `app.py:4` [design-decision] pick one owner for the limits\n"
-                 "- `ghost.py:2` the limit is wrong\n- `app.py:2` the limit is wrong for `limit`\n\n"
-                 "## Ask\nNone\n\n## Nit\nNone\n")
-        (self.repo / "fresh.py").write_text("created = True\n")
-
-        completed = self.run_script({"code-reviewer": [{"result": plan_change}],
-                                     "smell-reviewer": [{"result": later}]})
+    def test_a_resolved_handoff_makes_a_plan_marked_item_a_plain_fix(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.held_ask_review()}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 2.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        }, footer=self.RESOLVED_FOOTER)
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
-                         ["`app.py:2` the limit is wrong for `limit`"])
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["plan_impacts"], [])
+        self.assertEqual(packet["ask"], [])
+        coder_prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "coder")
+        self.assertIn("needs a new column", coder_prompt)
 
-    def test_a_plan_change_ask_carries_the_round_s_asks_and_design_items(self):
+    def test_a_resolved_block_handoff_makes_a_plan_marked_item_a_plain_fix(self):
+        disagreement = (f"`app.py:3` [plan-drift] {PLAN_CHANGE_STATUS}: the fix needs a new column the plan rules out")
+        block = ("RESOLVED: the user ruled on this disagreement. Review the code against the ruling.\n"
+                 "Decision: Adopt plan change\nThe ruling:\n  add the column\nPLAN-IMPACT:\n"
+                 f"  {disagreement}")
+        footer = "    plan_impact: |\n" + "".join(f"      {line}\n" for line in block.splitlines())
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.held_ask_review()}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 2.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        }, footer=footer)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["plan_impacts"], [])
+        coder_prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "coder")
+        self.assertIn("needs a new column", coder_prompt)
+
+    def test_a_plan_impact_first_raised_after_the_ruling_is_held_and_never_sent_to_the_coder(self):
+        new_impact = ("## Fix\nNone\n\n## Ask\n- `app.py:7` [plan-drift] "
+                      f"{PLAN_CHANGE_STATUS}: the tenant table needs a shard key\n\n## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": new_impact}]}, footer=self.RESOLVED_FOOTER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([(entry["ac_change"], entry["adopted"]) for entry in packet["plan_impacts"]],
+                         [(True, False)])
+        self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
+
+    def test_a_plan_impact_ask_with_no_fix_in_the_round_converges_and_holds_the_impact(self):
+        ask_only = f"## Fix\nNone\n\n## Ask\n- {PLAN_CHANGE_STATUS}: the fix needs a new column\n\n## Nit\nNone\n"
+
+        completed = self.run_script({"code-reviewer": [{"result": ask_only}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual([call["key"] for call in self.fake_calls()], ["code-reviewer"])
+        self.assertEqual(len(packet["plan_impacts"]), 1)
+        self.assertEqual(packet["ask"], [])
+
+    def test_a_plan_impact_ask_carries_beside_the_round_s_asks_and_design_items(self):
         plan_change = ("## Fix\n- `app.py:3` [design-decision] pick one owner for the limits\n\n## Ask\n"
                        f"- {PLAN_CHANGE_STATUS}: the fix needs a new column\n"
                        "- `app.py:1` should the limit be configurable? — change: read it from the config\n\n"
@@ -2190,15 +2381,15 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertIn("needs a new column", packet["plan_impact"])
+        self.assertEqual(packet["status"], "converged")
+        self.assertIn("needs a new column", packet["plan_impacts"][0]["text"])
         questions = " | ".join(entry["question"] for entry in packet["ask"])
         for carried in ("pick one owner for the limits", "should the limit be configurable?",
                         "split the limits module", "should the cap be per tenant?"):
             self.assertIn(carried, questions)
         self.assertNotIn("needs a new column", questions)
 
-    def test_a_design_decision_with_a_plan_impact_mark_stops_the_loop(self):
+    def test_a_design_decision_with_a_plan_impact_mark_is_held_and_does_not_stop_the_loop(self):
         design_plan_change = ("## Fix\n- `app.py:3` [design-decision] plan-impact: the owner moves to a new table\n\n"
                               "## Ask\nNone\n\n## Nit\nNone\n")
 
@@ -2206,115 +2397,36 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertIn("the owner moves to a new table", packet["plan_impact"])
+        self.assertEqual(packet["status"], "converged")
+        self.assertIn("the owner moves to a new table", packet["plan_impacts"][0]["text"])
         self.assertEqual(packet["ask"], [])
 
-    def test_a_fix_re_reported_in_the_plan_change_round_is_open_not_fixed(self):
-        re_report = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\n"
+    def test_a_fix_fixed_in_a_round_that_also_held_a_plan_impact_is_counted_fixed(self):
+        re_report = ("## Fix\nNone\n\n## Ask\n"
                      f"- {PLAN_CHANGE_STATUS}: the fix needs a new column\n\n## Nit\nNone\n")
 
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": re_report}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
-        })
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertEqual(packet["fixed"], [])
-        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
-                         ["`app.py:2` the limit is wrong for `limit`"])
-
-    def test_a_fix_re_reported_by_another_reviewer_in_the_plan_change_round_is_not_counted_fixed(self):
-        smell_fix = "## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\nNone\n\n## Nit\nNone\n"
-        code_fix = "## Fix\n- `app.py:4` the fourth value has no test\n\n## Ask\nNone\n\n## Nit\nNone\n"
-        re_report = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\n"
-                     f"- {PLAN_CHANGE_STATUS}: the fix needs a new column\n\n## Nit\nNone\n")
-        (self.repo / "fresh.py").write_text("created = True\n")
-
-        completed = self.run_script({
-            "code-reviewer": [{"result": code_fix}, {"result": re_report}],
-            "smell-reviewer": [{"result": smell_fix}],
-            "coder": [{"result": "Fixed 2.", "edits": {"app.py": APP_FIXED}}],
             "closure": [{"result": CLOSED}],
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertEqual([entry["finding"] for entry in packet["fixed"]], ["`app.py:4` the fourth value has no test"])
-        metrics = fake_ledger.recorded_rows(self.env, "review_metrics")
-        self.assertEqual(metrics[0]["fixed"], "1")
-
-    def test_a_fix_re_reported_by_two_reviewers_in_the_plan_change_round_is_not_counted_fixed(self):
-        clean = "## Fix\nNone\n\n## Ask\nNone\n\n## Nit\nNone\n"
-        stopping_re_report = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\n"
-                              f"- {PLAN_CHANGE_STATUS}: the fix needs a new column\n\n## Nit\nNone\n")
-        later_re_report = "## Fix\n- `app.py:2` the limit is wrong for `limit` value\n\n## Ask\nNone\n\n## Nit\nNone\n"
-        (self.repo / "fresh.py").write_text("created = True\n")
-
-        completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": stopping_re_report}],
-            "smell-reviewer": [{"result": clean}, {"result": later_re_report}],
-            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
-            "closure": [{"result": CLOSED}],
-        })
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
-        self.assertEqual(packet["fixed"], [])
-        round_one_rows = [row for row in self.finding_rows() if row["iter"] == "1"]
-        self.assertEqual([row["actioned"] for row in round_one_rows], ["none"])
-
-    def test_a_merged_fix_keeps_its_part_nobody_re_reported_in_fixed(self):
-        code_fix = "## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\nNone\n\n## Nit\nNone\n"
-        smell_fix = "## Fix\n- `app.py:3` `limit` has no upper bound check\n\n## Ask\nNone\n\n## Nit\nNone\n"
-        re_report = ("## Fix\n- `app.py:3` `limit` has no upper bound check\n\n## Ask\n"
-                     f"- {PLAN_CHANGE_STATUS}: the fix needs a new column\n\n## Nit\nNone\n")
-        (self.repo / "fresh.py").write_text("created = True\n")
-
-        completed = self.run_script({
-            "code-reviewer": [{"result": code_fix}, {"result": re_report}],
-            "smell-reviewer": [{"result": smell_fix}],
-            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
-            "closure": [{"result": CLOSED}],
-        })
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        self.assertEqual(packet["status"], "converged")
         self.assertEqual([entry["finding"] for entry in packet["fixed"]], ["`app.py:2` the limit is wrong for `limit`"])
-        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
-                         ["`app.py:3` `limit` has no upper bound check"])
+        self.assertEqual(packet["findings_remaining"], [])
+        self.assertEqual(len(packet["plan_impacts"]), 1)
 
-    def test_a_fixed_part_stays_unreported_unless_a_fix_at_its_file_and_line_has_the_same_or_no_title(self):
-        titled_fix = "`app.py:2` the limit is wrong for `limit`"
-        untitled_fix = "`app.py:2` [smell]"
-        cases = {
-            "an untitled fix is not reported again by another untitled fix at another line": (
-                untitled_fix, ["`app.py:9` [smell]"], [untitled_fix]),
-            "an identical untitled fix at the same line is reported again": (
-                untitled_fix, [untitled_fix], []),
-            "an untitled fix at the same line reopens a titled fixed part": (
-                titled_fix, [untitled_fix], []),
-            "an untitled fix at another line keeps a titled fixed part": (
-                titled_fix, ["`app.py:9` [smell]"], [titled_fix]),
-            "a titled fix is not reopened by a fix in another file": (
-                titled_fix, ["`other.py:2` [smell]"], [titled_fix]),
-            "a titled fix at the same line is not reopened by a differently titled fix": (
-                titled_fix, ["`app.py:2` cache eviction is unbounded"], [titled_fix]),
-            "a titled fix is not reopened by the same title in another file": (
-                titled_fix, ["`other.py:2` the limit is wrong for `limit`"], [titled_fix]),
-        }
+    def test_the_same_plan_impact_from_two_reviewers_is_one_impact(self):
+        impact = f"## Fix\nNone\n\n## Ask\n- {PLAN_CHANGE_STATUS}: the fix needs a new column\n\n## Nit\nNone\n"
+        (self.repo / "fresh.py").write_text("created = True\n")
 
-        for name, (fixed_part, reported_fixes, expected) in cases.items():
-            with self.subTest(name):
-                reported = [finding_record.parse_finding(text) for text in reported_fixes]
-                kept = review_loop_findings.unreported_parts(finding_record.parse_finding(fixed_part), reported)
+        completed = self.run_script({"code-reviewer": [{"result": impact}], "smell-reviewer": [{"result": impact}]})
 
-                self.assertEqual([part.text for part in kept], expected)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(len(packet["plan_impacts"]), 1)
 
     def test_a_merged_finding_keeps_each_part_with_its_own_line(self):
         first = finding_record.parse_finding("`app.py:2` the limit is wrong for `limit`")
@@ -2364,30 +2476,35 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        self.assertEqual(packet["status"], "converged")
         self.assertEqual([entry["question"] for entry in packet["ask"]],
                          ["`app.py:1` should the limit be configurable?"])
         shared_ask_rows = [row for row in self.finding_rows()
                            if row["disposition"] == "ask" and row.get("line") == "1"]
         self.assertEqual(len(shared_ask_rows), 1)
 
-    def test_a_coder_report_of_plan_impact_keeps_the_fixes_it_applied(self):
+    def test_a_coder_report_of_plan_impact_keeps_the_fixes_it_applied_and_the_loop_goes_on(self):
         two_fixes = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
                      "- `app.py:4` the fourth value has no test\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
                      "Overall Assessment: NEEDS CHANGES\n")
         report = "SKIPPED 2: it needs a new column the plan rules out.\nplan-impact: yes"
 
         completed = self.run_script({
-            "code-reviewer": [{"result": two_fixes}],
+            "code-reviewer": [{"result": two_fixes}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": report, "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], PLAN_CHANGE_STATUS)
+        self.assertEqual(packet["status"], "converged")
         self.assertEqual([entry["finding"] for entry in packet["fixed"]], ["`app.py:2` the limit is wrong for `limit`"])
-        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
+        self.assertEqual([row["actioned"] for row in self.finding_rows() if row["line"] == "4"], ["none"])
+        self.assertEqual(len(packet["plan_impacts"]), 1)
+        self.assertTrue(packet["plan_impacts"][0]["applied"])
+        self.assertEqual([e["finding"] for e in packet["findings_remaining"]],
                          ["`app.py:4` the fourth value has no test"])
+        self.assertEqual(packet["skipped_fp"], [])
         self.assertIn("app.py", packet["files_touched"])
 
     def test_a_crash_after_a_fix_round_keeps_the_fixed_finding_in_the_crash_packet(self):
@@ -2825,6 +2942,28 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([entry["gate"] for entry in packet["ask"]], ["test-reviewer"])
         self.assertEqual(packet["ask"][0]["file_line"], "util.test.py:1")
         self.assertEqual([entry["file_line"] for entry in packet["nit"]], ["util.test.py:1"])
+
+    def test_a_test_reviewer_reply_of_bold_head_items_goes_to_the_disposition_call(self):
+        (self.repo / "util.py").write_text("limit = 20\n")
+        (self.repo / "util.test.py").write_text("assert limit == 20\n")
+        bold_heads = ("**The limit has no test.**\n"
+                      "`util.py:1`. Add a test for it.\n\n"
+                      "**The existing test sets one field.**\n"
+                      "`util.test.py:1` only checks one value.\n"
+                      "- Fix: check the second value too.\n")
+        disposition = json.dumps({"fix": [], "ask": ["`util.py:1` add a test for the limit"], "nit": []})
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "test-reviewer": [{"result": bold_heads}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+            "disposition": [{"result": disposition}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertIn("disposition", self.call_keys())
+        self.assertEqual([entry["file_line"] for entry in packet["ask"]], ["util.py:1"])
 
     def test_a_full_check_failing_in_a_spec_file_stops_with_no_repair_coder(self):
         failing_spec = f"{FAILS_ONLY_WITH_THE_DIFF}echo 'FAIL src/orders.spec.ts'; exit 1"

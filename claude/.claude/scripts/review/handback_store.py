@@ -13,6 +13,7 @@ import script_utils
 
 STALE_STORE_SECONDS = 7 * 86400
 DISPATCH_RAN = "dispatch-ran"
+PLAN_RULING = "plan-ruling"
 ASKS_LOGGED_ROW = "asks-logged"
 # A row that replaces the repo of the latest dispatch with the one its loop's ROOT= line named.
 DISPATCH_REPO_KIND = "dispatch-repo"
@@ -45,6 +46,13 @@ def session_rows(session_id, kind=None, agent_id=ANY_AGENT):
     return [row for row in script_utils.read_jsonl(session_file(session_id))
             if (kind is None or row.get("kind") == kind)
             and (agent_id is ANY_AGENT or row.get("agent_id") == agent_id)]
+
+
+def plan_ruled_since(session_id, handback_row):
+    """True when the user ruled the held plan impacts after this hand-back and kept the plan as written: the impacts
+    are settled, not waiting."""
+    rulings = session_rows(session_id, PLAN_RULING)
+    return any(row["ts"] >= handback_row["ts"] for row in rulings)
 
 
 def dispatch_ran(row, ran_calls):

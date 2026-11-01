@@ -3,11 +3,11 @@ reads of the per-session store that only it uses. handback.py owns the packet; t
 hand-backs and denies a hand-back whose gates fail."""
 import json
 import pathlib
-import re
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import loop_transcript
+import plan_format
 import script_utils
 from capped_review import CAP_REACHED, effective_status
 from handback import (
@@ -17,8 +17,6 @@ from handback import (
     load,
 )
 from handback_store import DISPATCH_RAN, DISPATCH_REPO_KIND, hand_back_dispatch_rows, record, session_rows, was_recorded
-
-RESOLVED_PLAN_IMPACT = re.compile(r"(?im)^[ \t>*`-]*plan_impact:[ \t]*RESOLVED\b")
 
 
 def loop_steps(session_id, agent_id):
@@ -201,7 +199,7 @@ def handle_dispatch(event, session_id, tool_input):
     elif subagent_type == REVIEW_LOOP:
         prompt = str(tool_input.get("prompt") or "")
         record(session_id, "dispatch", no_review=loop_transcript.NO_REVIEW_MODE.search(prompt) is not None,
-               resolved_plan_impact=RESOLVED_PLAN_IMPACT.search(prompt) is not None,
+               resolved_plan_impact=bool(plan_format.resolved_plan_texts(prompt)),
                repo=loop_transcript.reviewed_repo(prompt, event.get("cwd")), tool_use_id=event.get("tool_use_id"))
 
 

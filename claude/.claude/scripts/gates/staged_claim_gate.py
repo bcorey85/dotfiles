@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Stop and SubagentStop hook: block a final message that says files are staged when the index does not hold them.
+On Stop only, also block a main-session message that ends on a permission question for a reversible step
+(permission_question.py), and send both reasons when both hold.
 
 A sentence claims staging when it says `<is|are|were|was|now|all|been|left|remain|remains|stay|stays> staged`,
 `I staged`, `I've staged` or `I have staged`, and holds no `not`, `no`, `nothing`, `none`, `never` or
@@ -35,6 +37,7 @@ import re
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import permission_question
 import script_utils
 from git_calls import git_calls, joined_directory
 
@@ -207,24 +210,35 @@ def sentence_problems(sentence, cwd, transcript_path):
     return problems
 
 
+def staged_claim_reason(hook, message):
+    """The block reason for a staged claim the index does not back, or None."""
+    claims = claim_sentences(message)
+    if not claims:
+        return None
+
+    cwd = hook.get("cwd") or os.getcwd()
+    transcript_path = hook.get("transcript_path")
+    problems = [problem for sentence in claims for problem in sentence_problems(sentence, cwd, transcript_path)]
+    if not problems:
+        return None
+    return (f"Your message says files are staged, but {'; '.join(dict.fromkeys(problems))}. Run "
+            "`git diff --cached --name-only` in that repo and say what the index holds.")
+
+
 def main():
     hook = json.load(sys.stdin)
     if hook.get("stop_hook_active"):
         return
     message = hook.get("last_assistant_message") or ""
-    cwd = hook.get("cwd") or os.getcwd()
-    claims = claim_sentences(message)
-    if not claims:
-        return
 
-    transcript_path = hook.get("transcript_path")
-    problems = [problem for sentence in claims for problem in sentence_problems(sentence, cwd, transcript_path)]
-    if not problems:
-        return
+    reasons = [staged_claim_reason(hook, message)]
+    is_main_session = hook.get("hook_event_name") == "Stop"
+    if is_main_session and permission_question.closing_question(message):
+        reasons.append(permission_question.REASON)
 
-    reason = (f"Your message says files are staged, but {'; '.join(dict.fromkeys(problems))}. Run "
-              "`git diff --cached --name-only` in that repo and say what the index holds.")
-    print(json.dumps({"decision": "block", "reason": reason}))
+    found_reasons = [reason for reason in reasons if reason]
+    if found_reasons:
+        print(json.dumps({"decision": "block", "reason": " ".join(found_reasons)}))
 
 
 if __name__ == "__main__":

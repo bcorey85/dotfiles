@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-754 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+755 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [A gate command that prints a non-UTF-8 byte denies the hand-back](notes/2026-11-01-a-gate-command-that-prints-a-non-utf-8-byte-denies.md).
+Latest change: 2026-11-01, [A phase that names repo-root files gets its gate](notes/2026-11-01-a-phase-that-names-repo-root-files-gets-its-gate.md).
 
 ## Top gains
 

@@ -29,8 +29,10 @@ import re
 import script_utils
 import source_text
 
-# A `path/with/a/folder.ext` in backticks, with an optional :line or :start-end suffix inside the ticks.
-PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
+# A `path/to/file.ext` or a repo-root `file.ext` in backticks, with an optional :line or :start-end suffix inside the
+# ticks. Prose holds many bare names that name no file (`os.path`, `row.ts`), so a reader takes a bare name only from a
+# `**File**:` entry or when the repo holds it (named_paths).
+PATH_IN_BACKTICKS =re.compile(r"`([\w.@+-]+(?:/[\w.@\[\]()+-]+)*\.\w+)(?::\d+(?:-\d+)?)?`")
 FILE_ENTRY = re.compile(r"^\s*(?:[-*]\s+)?\*\*Files?\*\*:?")
 TOP_LEVEL_BULLET = re.compile(r"^[-*]\s+")
 PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"
@@ -143,9 +145,24 @@ def phase_section(lines, phase_id):
     return next((section for section_id, section in spans if section_id == phase_id), None)
 
 
+def named_paths(text, repo_dir):
+    """The file paths the text names in backticks, in order, once each: every path with a folder, and every bare
+    `name.ext` that is a file at the root of repo_dir (a pathlib.Path)."""
+    paths = []
+    for match in PATH_IN_BACKTICKS.finditer(text):
+        path = match.group(1)
+        if path in paths:
+            continue
+        if "/" not in path and not (repo_dir / path).is_file():
+            continue
+        paths.append(path)
+    return paths
+
+
 def file_entry_paths(plan_lines, section):
     """The paths a section's Changes Required entries name: every backticked path on a `**File**:` or `**Files**:`
-    line, and the first one of each top-level bullet in the list under a `**Files**:` line that names none."""
+    line, and the first one of each top-level bullet in the list under a `**Files**:` line that names none. A
+    repo-root `name.ext` counts: the entry names it as a file."""
     if section is None:
         return set()
 

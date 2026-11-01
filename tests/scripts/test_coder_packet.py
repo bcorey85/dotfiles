@@ -198,6 +198,26 @@ class CoderPacketTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertNotIn("cited by Phase 3", result.stdout)
 
+    def test_the_packet_names_a_level_3_test_strategy_with_its_sub_heading(self):
+        plan_with_a_level_3_strategy = "\n".join([
+            "# Plan", "", "## Phase 1: x", "", "body", "",
+            "### Test Strategy", "", "Cover it.", "#### Sub", "more", "### Next", "out", ""])
+
+        result = self.packet(plan_with_a_level_3_strategy, "1")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("plan.md lines 7-11 (Testing Strategy)", result.stdout)
+
+    def test_the_packet_ends_a_test_strategy_at_a_rule(self):
+        plan_with_a_ruled_strategy = "\n".join([
+            "# Plan", "", "## Phase 1: x", "", "body", "",
+            "## Test Strategy", "", "### Sub", "sub body", "---", "after", ""])
+
+        result = self.packet(plan_with_a_ruled_strategy, "1")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("plan.md lines 7-10 (Testing Strategy)", result.stdout)
+
     def test_a_plan_outside_any_git_repository_stops_with_a_message(self):
         outside = tempfile.TemporaryDirectory()
         self.addCleanup(outside.cleanup)

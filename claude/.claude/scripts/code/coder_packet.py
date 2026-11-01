@@ -232,11 +232,9 @@ plan_ranges += [
     f"- {plan_path} lines {start}-{end} (Phase {cited_id}, cited by Phase {phase_argument})"
     for cited_id, start, end in plan_format.cited_phases(plan_file_lines, phase_argument, phase_section_text)
 ]
-testing_start = next(
-    (index for index in plan_headings if plan_file_lines[index].startswith("## Testing Strategy")), None
-)
-if testing_start is not None and testing_start >= first_phase_line:
-    testing_end = next((index for index in plan_headings if index > testing_start), len(plan_file_lines))
+testing_range = plan_format.test_strategy_range(plan_file_lines)
+if testing_range is not None:
+    testing_start, testing_end = testing_range
     plan_ranges.append(f"- {plan_path} lines {testing_start + 1}-{testing_end} (Testing Strategy)")
 criteria = plan.parent / "acceptance-criteria.md"
 if criteria.is_file():

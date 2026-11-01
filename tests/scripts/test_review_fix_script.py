@@ -512,6 +512,37 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("1 plan impact(s) that await a ruling", held_reason)
         self.assertIsNone(self.false_clean_reason())
 
+    def test_a_plan_impact_deferred_to_phase_end_lets_the_commit_through(self):
+        message = json.dumps({"status": "converged", "iter": 2, "fixed": [], "ask": [],
+                              "class_closure": "n/a - fixed[] empty", "plan_impacts": [HELD_IMPACT]})
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record(SESSION, "dispatch")
+            handback_store.record(SESSION, "handback", status="converged", message=message)
+        held_reason = self.false_clean_reason()
+        bare_handoff = self.temp_root / "bare-handoff.txt"
+        bare_handoff.write_text("plan_impact: none\n", encoding="utf-8")
+        adopted_handoff = self.temp_root / "adopted-handoff.txt"
+        adopted_handoff.write_text("plan_impact: RESOLVED - Adopt.\n", encoding="utf-8")
+        deferred_handoff = self.temp_root / "handoff.txt"
+        deferred_handoff.write_text("plan_impact: RESOLVED: deferred to phase end by the session, 2026-10-31: "
+                                    "drop the retry\n", encoding="utf-8")
+
+        bare_code, bare_output = self.run_script(["defer", str(bare_handoff)])
+        bare_reason = self.false_clean_reason()
+        adopted_code, adopted_output = self.run_script(["defer", str(adopted_handoff)])
+        adopted_reason = self.false_clean_reason()
+        code, output = self.run_script(["defer", str(deferred_handoff)])
+
+        self.assertIn("1 plan impact(s) that await a ruling", held_reason)
+        self.assertNotEqual(bare_code, 0, bare_output)
+        self.assertIn("holds no `plan_impact: RESOLVED", bare_output)
+        self.assertIsNotNone(bare_reason)
+        self.assertNotEqual(adopted_code, 0, adopted_output)
+        self.assertIsNotNone(adopted_reason)
+        self.assertEqual(code, 0, output)
+        self.assertIn("the commit gate counts the review as clean", output)
+        self.assertIsNone(self.false_clean_reason())
+
     def test_a_ruling_that_keeps_the_plan_leaves_the_asks_of_the_same_packet_to_asks_done(self):
         self.impacts_packet([HELD_IMPACT], ask=[CAP_ASK])
         code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "no, keep the retry"])
@@ -599,6 +630,29 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("  - finding: parity script compares the wrong column - bin/parity.py:40", carried)
         self.assertIn("  - ask: no index", carried)
         self.assertNotIn("the queue is at-most-once", carried)
+
+    def test_adopting_a_held_impact_carries_the_remaining_findings_and_the_impact_text(self):
+        open_finding = {"finding": "parity script compares the wrong column", "file_line": "bin/parity.py:40",
+                        "disposition": "fix"}
+        self.impacts_packet([HELD_IMPACT], findings_remaining=[open_finding])
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, drop the retry"])
+
+        self.assertEqual(code, 0, output)
+        carried = output.split("carried-findings:", 1)[1]
+        self.assertIn("  - finding: parity script compares the wrong column - bin/parity.py:40", carried)
+        self.assertIn("  - plan impact: the queue is at-most-once", carried)
+
+    def test_a_cap_reached_packet_prints_its_adopted_deviation_lines_and_its_held_impact(self):
+        code, output = self.impacts_packet([ADOPTED_IMPACT, HELD_IMPACT], status="cap-reached", iter="2 of 2",
+                                           findings_remaining=CAP_FIELDS["findings_remaining"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("the cap moves into the config", output)
+        self.assertIn("ACTION: ask-user-plan-impact", output)
+        self.assertIn("the queue is at-most-once", output)
+        self.assertIn("Gate: do not commit yet", output)
 
     def test_a_located_plan_impact_ask_is_not_carried_after_the_ruling(self):
         located_ask = {"finding": "`src/queue.ts:1` [correctness] plan impact: the queue is at-most-once",

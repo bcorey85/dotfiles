@@ -89,6 +89,7 @@ from review_loop_findings import (
     pointer_ask_split,
     reply_with_one_retry,
     ruled_plan_split,
+    same_finding,
 )
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
 from review_loop_prompts import coder_prompt, reviewer_prompt
@@ -497,7 +498,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
         # every finding the coder skipped or left unchanged in a round whose plan impact is held: still open, not false
         # positives, until a later round fixes it
         self.open_fixes = []
-        self.resolved_texts = []  # the ruling line and the carried findings: the only plan-marked items it settles
+        # the ruling line, the ruled PLAN-IMPACT block and the carried findings: the only plan-marked items it settles
+        self.resolved_texts = []
         self.ask_gates = {}
         self.pointer_asks = []  # the asks that only pointed back to another ask, dropped before the packet
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
@@ -748,7 +750,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
             finding["actioned"] = "skipped_fp" if skipped else "fixed"
         applied = [item for item in round_findings if item not in skipped_findings]
         self.fixed += applied
-        self.open_fixes = [item for item in self.open_fixes if item not in applied]
+        self.open_fixes = [item for item in self.open_fixes
+                           if not any(same_finding(item, fixed) for fixed in applied)]
         self.prior_issues = prior_issue_entries(round_findings, skips)
 
         self.files = scope(self.repo)

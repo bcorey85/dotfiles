@@ -43,6 +43,9 @@ posts the Aikido replies, and prints what the model still judges.
   review_fix.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]
                                          Only --by user is the user's own word.
   review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
+  review_fix.py defer <handoff file>    /code's phase-end deferral of held plan impacts. The handoff file must hold
+                                         `plan_impact: RESOLVED: deferred to phase end by the session, <date>:
+                                         <summary>`; records the ruling so the commit gate counts the review as clean.
 
 State lives in <git dir>/review-fix/state.json. A packet that does not parse stops with exit 2. Env
 REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH override the nvim-jump
@@ -83,6 +86,8 @@ NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit
 LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
 PLAN_IMPACT = "plan-impact"
+DEFER_LINE_PREFIX = "plan_impact: RESOLVED: deferred to phase end"
+DEFER_LINE = f"{DEFER_LINE_PREFIX} by the session, <date>: <summary>"
 NEW_FINDING_ID = "new-finding-id"
 LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_LOOP_SCRIPT",
                                           pathlib.Path(__file__).resolve().parent / "review_loop_script.py"))
@@ -392,7 +397,8 @@ def present_plan_impacts(packet, state):
     held_text = handback.held_plan_impact_text(held)
     applied = any(impact["applied"] for impact in held)
     state.update({"plan_impact": held_text, "plan_impact_held": True, "plan_impact_applied": applied,
-                  "carried_findings": [f"plan impact: {one_line(impact['text'], 800)}" for impact in held]})
+                  "carried_findings": [*handback.carried_findings(packet, include_asks=False),
+                                       *[f"plan impact: {one_line(impact['text'], 800)}" for impact in held]]})
     if state.get("stage") != "asks":
         state["stage"] = "plan-impact"
     save_fix_state(state)
@@ -657,6 +663,7 @@ def stop_for_status(packet, options, state):
         ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
                      *review_asks.numbered_ask_lines(packet["ask"], detail=True)]
     print_action("stop", instruction, *entries, *ask_lines)
+    present_plan_impacts(packet, state)
     if replies:
         print("AIKIDO REPLIES POSTED:")
         print("\n".join(replies))
@@ -1036,6 +1043,28 @@ def record_plan_ruling(state, decision, by, ruling, plan_path, user_lines=(), no
     )
 
 
+def command_defer(argv):
+    """/code defers the held plan impacts to phase end: the handoff's one-line RESOLVED row is the ruling, so the
+    commit gate stops waiting on them."""
+    parser = argument_parser("defer")
+    parser.add_argument("handoff")
+    options = parser.parse_args(argv)
+    handoff_path = pathlib.Path(options.handoff)
+    if not handoff_path.is_file():
+        raise UsageError(f"defer: {options.handoff} does not exist")
+
+    handoff = handoff_path.read_text(encoding="utf-8")
+    if not any(line.strip().startswith(DEFER_LINE_PREFIX) for line in handoff.splitlines()):
+        raise UsageError(f"defer: {options.handoff} holds no `{DEFER_LINE}` line. Write it there first.")
+
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if not session_id:
+        raise UsageError("defer: CLAUDE_CODE_SESSION_ID is not set, so the deferral cannot be recorded")
+
+    handback_store.record(session_id, handback_store.PLAN_RULING, decision="defer")
+    print_action("done", "The plan impacts wait for phase end, so the commit gate counts the review as clean.")
+
+
 def adopt_code_side_for_review(state):
     """A plan change that changes no acceptance criterion: the code wins with no question, and the user sees the
     deviation now and again in the closing block."""
@@ -1049,7 +1078,7 @@ def adopt_code_side_for_review(state):
 def main():
     arguments = sys.argv[1:]
     handlers = {"packet": command_packet, "launch": command_launch, "escape": command_escape,
-                "asks-done": command_asks_done, "decide": command_decide}
+                "asks-done": command_asks_done, "decide": command_decide, "defer": command_defer}
     if not arguments or arguments[0] not in handlers:
         print(__doc__)
         return 2

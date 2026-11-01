@@ -2138,6 +2138,42 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIs(packet["plan_impacts"][0]["applied"], False)
         self.assertEqual([row["actioned"] for row in self.finding_rows() if row["iter"] == "1"], ["none"])
 
+    def test_a_held_finding_the_next_round_re_reports_and_the_coder_fixes_leaves_the_open_list(self):
+        report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
+        rewordings = {
+            "same wording": "`app.py:2` the limit is wrong for `limit`",
+            "slightly different wording": "`app.py:2` the limit is wrong for `limit` here",
+        }
+        for number, (name, finding) in enumerate(rewordings.items()):
+            with self.subTest(name):
+                self.reset_fake_run()
+                fixed_source = APP_FIXED + f"# edit {number}\n"
+                second_review = f"## Fix\n- {finding}\n\n## Ask\nNone\n\n## Nit\nNone\n"
+                completed = self.run_script({
+                    "code-reviewer": [{"result": FIX_REVIEW}, {"result": second_review}, {"result": CLEAN_REVIEW}],
+                    "coder": [{"result": report}, {"result": "Fixed 1.", "edits": {"app.py": fixed_source}}],
+                    "closure": [{"result": CLOSED}],
+                })
+
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                _, packet = self.stored_packet()
+                self.assertEqual(packet["findings_remaining"], [])
+                self.assertEqual(len(packet["fixed"]), 1)
+
+    def test_fixing_a_different_finding_in_the_same_file_keeps_the_held_finding_open(self):
+        report = "Cannot fix 1: it needs a new column the plan rules out.\nplan-impact: yes"
+        second_review = "## Fix\n- `app.py:5` the timeout is never read\n\n## Ask\nNone\n\n## Nit\nNone\n"
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": second_review}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": report}, {"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]],
+                         ["`app.py:2` the limit is wrong for `limit`"])
+
     def test_a_finding_skipped_beside_an_impact_that_is_not_held_is_a_plain_skip_not_an_open_fix(self):
         reports = {
             "adopted": "Skipped 1: the limit is right.\nPLAN-IMPACT:\n  assumed: a column\n  found: none\n"
@@ -2291,7 +2327,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def test_a_resolved_block_handoff_makes_a_plan_marked_item_a_plain_fix(self):
         disagreement = (f"`app.py:3` [plan-drift] {PLAN_CHANGE_STATUS}: the fix needs a new column the plan rules out")
         block = ("RESOLVED: the user ruled on this disagreement. Review the code against the ruling.\n"
-                 f"Decision: Adopt plan change\nThe ruling:\n  add the column\n{plan_format.DISAGREEMENT_HEADER}\n"
+                 "Decision: Adopt plan change\nThe ruling:\n  add the column\nPLAN-IMPACT:\n"
                  f"  {disagreement}")
         footer = "    plan_impact: |\n" + "".join(f"      {line}\n" for line in block.splitlines())
 

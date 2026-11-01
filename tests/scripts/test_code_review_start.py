@@ -142,6 +142,16 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertEqual(["mode: review-first", "caller: code", "lane: lane-a", f"repo: {self.repo}"], header)
         self.assertEqual(SAMPLE_COMMANDS, commands)
 
+    def test_a_handoff_that_names_a_repo_root_file_gets_its_gate(self):
+        (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
+        (self.repo / "app.py").write_text("")
+        code_review_start = self.load_module()
+
+        commands = code_review_start.phase_gate_commands(self.repo, "-", "1", BASE,
+                                                         "handoff:\n  files:\n    - path: app.py\n      change: x\n")
+
+        self.assertEqual(SAMPLE_COMMANDS, commands)
+
     def test_too_few_arguments_print_the_usage(self):
         done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a"], cwd=self.repo, capture_output=True,
                               text=True, check=False)

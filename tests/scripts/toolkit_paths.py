@@ -23,7 +23,7 @@ WORK_HOOKS = ("scripts/bash-safety-gate.sh", "scripts/block-credential-read.sh",
 CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "makefile_text.py", "test_run_output.py",
                           "check_output.py", "check_scope.py", "numstat.py", "source_paths.py", "linked_installs.py",
                           "worktree_snapshot.py", "expected_red.py", "full_check_receipt.py", "reviewed_tree.py",
-                          "pytest_config.py")
+                          "pytest_config.py", "notes_paths.py")
 # A Python older than 3.14, or None: its pathlib raises on a path test of a word longer than a file name may be, where
 # 3.14 returns False, so a long-text test runs the script under it.
 PRE_314_PYTHON = shutil.which("python3.13") or shutil.which("python3.12") or shutil.which("python3.11")

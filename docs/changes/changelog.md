@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-751 changes
+753 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Code runs end phases on a statement, decide review asks and relay the stop word for word](notes/2026-11-01-code-runs-end-phases-on-a-statement-decide-review.md) [skill/code, agent/code-fork, script/code-relay] The /code fork asks no leave for a reversible step, ends every phase stop on a statement, and rules on review asks itself. The main session relays the fork's stop through `code_relay.py` and makes no other tool call before the user replies.
 * [Smell-reviewer reads code-reviewer's structure rules instead of a copy](notes/2026-11-01-smell-reviewer-reads-code-reviewer-s-structure.md) [agent/smell-reviewer, agent/code-reviewer] smell-reviewer drops from 1,026 to 464 words: it reads code-reviewer's Structure step at run time instead of carrying a near-verbatim copy, so the two lenses can no longer drift, and both now tag dead weight as fix.
 * [Frontend rules load on tsx and jsx files](notes/2026-10-31-frontend-rules-load-on-tsx-and-jsx-files.md) [rule/frontend-style, rule/typescript, rule/testing] React components now get the frontend style, TypeScript and testing rules: their path globs cover .tsx and .jsx beside .ts and .js.
 * [A plan impact no longer stops the review loop; all show once at the end](notes/2026-10-31-a-plan-impact-no-longer-stops-the-review-loop-all.md) [script/review-loop-script, script/review-fix, script/handback, script/plan-format, agent/review-loop, skill/review, skill/fix, skill/code] A review keeps fixing past a plan question instead of stopping and repeating its first round, and the user hears about plan impacts once, after the result.
@@ -131,6 +132,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Final check reads a Full suite section that documents CI](notes/2026-11-01-final-check-reads-a-full-suite-section-that.md) [agent/review-loop] A repo whose CLAUDE.md documents CI as its full suite in a Full suite section no longer stops the final check when its check-only command prints no test summary.
 * [Code skill names verify-branch and drops the no-op deep modifier](notes/2026-11-01-code-skill-names-verify-branch-and-drops-the-no-op.md) [skill/code] /code now points at the skill that exists: its three `/verify` mentions read `/verify-branch`, and the `+deep` modifier, which changed nothing, is no longer offered.
 * [Test-reviewer reports in the tagged-bullet form the review script parses](notes/2026-11-01-test-reviewer-reports-in-the-tagged-bullet-form.md) [agent/test-reviewer, agent/review-loop] The scripted review loop reads test-reviewer findings without a model call: the report template now writes top-level `- fix:`, `- ask:` and `- nit:` bullets, so the Sonnet disposition call that classified each test-reviewer report is no longer needed.
 * [Review loop quotes every path it passes to a log or script call](notes/2026-11-01-review-loop-quotes-every-path-it-passes-to-a-log.md) [agent/review-loop, shared/finding-log, skill/code] A review of a repo with dynamic route folders (`app/[id]/route.ts`) logs each finding on the first call: the loop's log and script templates single-quote every path, so zsh no longer fails the call with "no matches found" and costs a retry.

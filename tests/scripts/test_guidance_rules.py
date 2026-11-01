@@ -26,10 +26,26 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("A ListAgents peer named `child of <name>` is a headless step of that session's run, not a "
                       "rival worker", text)
 
-    def test_the_code_fork_acts_on_a_stop_question_the_user_already_answered(self):
+    def test_the_code_fork_acts_on_feedback_the_user_already_gave_on_a_stop(self):
         text = guidance_text("agents/code-fork.md")
-        self.assertIn("When the user already answered the run's last stop question in this conversation, apply that "
-                      "answer and never ask that question again.", text)
+        self.assertIn("When the user already gave feedback on the run's last stop in this conversation, apply it and "
+                      "never raise that stop again.", text)
+
+    def test_code_stops_end_as_statements_asks_are_decided_and_main_relays_with_no_tool_call(self):
+        text = guidance_text("skills/code/SKILL.md")
+        self.assertIn("A stop states what stopped and what the user does next; it never ends on a question.", text)
+        self.assertIn("Decide each `ask[]` entry yourself; never stop on one.", text)
+        self.assertIn("ask_decided_by=session", text)
+        self.assertIn("finding_id=<entry finding_id>", text)
+        self.assertIn("When two paths are both defensible, take the one closer to the plan and name it in the report.",
+                      text)
+        self.assertNotIn("or when two paths are both defensible", text)
+        self.assertIn("say the fork's stop word for word and make no other tool call", text)
+        self.assertNotIn("confirm here", text)
+        self.assertNotIn("present it as a STOP", text)
+        self.assertIn("Before a step that cannot be undone or that leaves this machine, STOP: name the step and say "
+                      "that `/code resume` runs it.", text)
+        self.assertNotIn("Ask only before", text)
 
     def test_the_main_session_is_told_to_send_simple_commands_after_enter_worktree(self):
         text = guidance_text("orchestration.md")

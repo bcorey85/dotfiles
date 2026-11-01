@@ -83,6 +83,10 @@ from worktree_snapshot import CHANGE_KINDS, changes_since, take
 FULL_SUITE_IN_CI = "Full suite: CI"
 # The marker line in any of its markdown forms: bare, a list item, a heading, bold or in backticks, in any case.
 FULL_SUITE_IN_CI_LINE = re.compile(r"^\s*(?:[-*]\s+)?(?:#{1,6}\s+)?[*`]*full suite[*`]*:[*`]*\s*[*`]*ci[*`]*\s*$", re.I)
+# A heading that names the full suite (`## Full suite`, `## Full test suite`); its section says where it runs.
+FULL_SUITE_HEADING = re.compile(r"^\s*#{1,6}\s+.*\bfull(?:\s+test)?\s+suite\b", re.I)
+ANY_HEADING = re.compile(r"^\s*#{1,6}\s")
+CI_WORD = re.compile(r"\bCI\b")
 # The CLAUDE.md line that names the repo's full check; group 1 is the command.
 QUALITY_CHECK_LINE = re.compile(r"^\s*[-*]?\s*Quality check:\s*`([^`]+)`", re.I | re.M)
 # A log name that still holds a template placeholder: `...`, or a `<branch>` never filled in.
@@ -124,15 +128,29 @@ BaseRun = collections.namedtuple("BaseRun", "result failing_lines log_lines fail
 UNTRACKED_DEPENDENCY_FOLDERS = ("node_modules", *VENV_FOLDERS)
 
 
+def documents_full_suite_section_in_ci(lines):
+    """True when a heading names the full suite and its heading or the prose under it, up to the next heading,
+    names CI."""
+    in_section = False
+    for line in lines:
+        if ANY_HEADING.match(line):
+            in_section = bool(FULL_SUITE_HEADING.match(line))
+        if in_section and CI_WORD.search(line):
+            return True
+    return False
+
+
 def full_suite_runs_in_ci(repo):
     """True when the repo's CLAUDE.md holds the line `Full suite: CI`: alone, as a list item, as a heading, in bold or
-    in backticks, in any case."""
+    in backticks, in any case. Also true when a heading names the full suite and the section under it names CI."""
     claude_md = pathlib.Path(repo) / "CLAUDE.md"
     if not claude_md.is_file():
         return False
 
     lines = claude_md.read_text(errors="replace").splitlines()
-    return any(FULL_SUITE_IN_CI_LINE.match(line) for line in lines)
+    if any(FULL_SUITE_IN_CI_LINE.match(line) for line in lines):
+        return True
+    return documents_full_suite_section_in_ci(lines)
 
 
 def configured_check_command(repo):

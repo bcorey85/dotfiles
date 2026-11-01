@@ -4,22 +4,21 @@
     `00-ticket.md`, and `acceptance-criteria.md` when step 17 wrote one. Never
     the ledger, research, or a conversation summary.
 
-19b. **Shard above 400 lines.** `wc -l` the plan. At or under, one dispatch at
-the whole file. Over, two parallel dispatches, each a `sed`-derived extract
-written to the task directory — the plan itself is never split:
-
-    - **A** — front matter + phases up to the boundary nearest the midpoint + back matter
-    - **B** — front matter + the remaining phases + back matter
-
-    Front matter is everything before the first `## Phase <number>:` heading.
-    Each phase ends at the next level-2 heading; back matter starts after the
-    final phase's section. Neither front nor back matter includes phase bodies.
+19b. **Shard above 400 lines.** Run
+`python3 ~/.claude/scripts/tools/plan_review_shards.py cut <task dir>/spec.md`
+and send one parallel dispatch per path it prints, in place of `spec.md`. One
+path is the plan itself: one dispatch at the whole file. Two paths are shard A
+and shard B in a temp folder outside the task directory; never write a shard
+into the task directory. A non-zero exit names a plan defect: fix the plan and
+run it again.
 
     Right after each hand-back, Write it whole to
     `review-round<n>-shard-<x>.md` in the task directory (`a` if unsharded).
     Before round 2 run `python3 ~/.claude/scripts/tools/plan_review_reports.py check <task dir> 2`;
     stop if it fails. Round 2 reads those files.
 
+    When `cut` printed two paths, once both hand-backs are written run
+    `python3 ~/.claude/scripts/tools/plan_review_shards.py clean <the folder holding them>`.
     Dedup the two reports by (section, claim) before step 20. A finding only
     one shard raised still counts.
 

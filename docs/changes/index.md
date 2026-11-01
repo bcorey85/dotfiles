@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-758 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+759 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [Plan review cuts its shards outside the plan folder](notes/2026-11-01-plan-review-cuts-its-shards-outside-the-plan.md).
+Latest change: 2026-11-01, [The test-reviewer runs on Sonnet instead of Opus](notes/2026-11-01-the-test-reviewer-runs-on-sonnet-instead-of-opus.md).
 
 ## Top gains
 

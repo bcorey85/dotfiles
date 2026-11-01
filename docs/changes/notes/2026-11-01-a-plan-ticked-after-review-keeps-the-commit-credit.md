@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "A plan ticked after review keeps the commit credit"
 description: "A /code commit of reviewed work now passes the commit gate after a later coder ticks the plan's status line or edits another note, instead of being denied until a whole new /review (about 6 minutes) runs; any code edit after the review is still denied."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T04:10:32-06:00"}
-seq: 431
+seq: 440
 kind: "fix"
 components: ["script/review-commit-gate"]
 evidence: ["census"]

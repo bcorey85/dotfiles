@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "Verify-branch reads a ticket's criteria from the criteria file when the ticket has no Acceptance heading"
 description: "/verify-branch on a ticket whose criteria sit under topical headings (B1, B2, ...) now takes them from the plan's acceptance-criteria.md and runs, instead of refusing at prep and spending a human question per branch."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T05:24:28-06:00"}
-seq: 436
+seq: 445
 kind: "fix"
 components: ["skill/verify-branch", "script/verify-prep", "script/verify-log"]
 evidence: ["judgment"]

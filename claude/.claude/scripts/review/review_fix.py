@@ -1076,6 +1076,20 @@ def record_ruling(session_id, decision, settled_line):
     return settled_line
 
 
+def mark_parse_failed():
+    """Saves stage `parse-failed` on the open packet's state. A finished packet keeps its stage, so a stray bad packet
+    cannot reopen it."""
+    if not review_fix_state_file().exists():
+        return
+    try:
+        state = load_fix_state()
+    except UsageError:
+        return
+    if state.get("stage") in FINISHED_STAGES:
+        return
+    save_fix_state({**state, "stage": "parse-failed"})
+
+
 def main():
     arguments = sys.argv[1:]
     handlers = {"packet": command_packet, "launch": command_launch, "escape": command_escape,
@@ -1088,11 +1102,7 @@ def main():
         return handlers[command](arguments[1:]) or 0
     except PacketError as error:
         stop_for_parse_failure(error, error.raw)
-        try:
-            if review_fix_state_file().exists():
-                save_fix_state({**load_fix_state(), "stage": "parse-failed"})
-        except UsageError:
-            pass
+        mark_parse_failed()
         return 2
     except UsageError as error:
         print_action("stop-usage", f"review_fix.py {command}: {error}", "Fix the call and run it again.")

@@ -25,7 +25,10 @@ ASK_POINTER = re.compile(r"\b(?:the|that|this|my)\s+(?:open|earlier|same|previou
 ITEM_MARKER = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
 ITEM_MARKER_STRIP = re.compile(r"^\s*(?:[-*]+|\d+[.)])\s+")
 ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
-NONE_LINE = re.compile(r"\[?(none|n/a|omitted|empty)[^\]]*\]?\.?", re.I)
+# A bare none marker inside a section, as in "- None." A line that goes on past the word is finding text.
+NONE_LINE = re.compile(r"[\[(*_`]*(?:none|n/a|omitted|empty)[\])*_`]*[.!]?", re.I)
+# A lead-in sentence about none before a section's first item, as in "None of the three queries filters by tenant:".
+NONE_LEAD_IN = re.compile(r"\[?(none|n/a|omitted|empty)[^\]]*\]?\.?", re.I)
 # A section's opening none line: a none word that ends its sentence, as in "None." or "None. What I checked:".
 NONE_OPENING = re.compile(r"[\[(*_`]*(?:none|n/a|omitted|empty)[\])*_`]*"
                           r"(?:[.:;,!]|\s+[\N{EM DASH}\N{EN DASH}-]|$)", re.I)
@@ -96,6 +99,8 @@ def review_section_findings(block):
         if not stripped:
             continue
         if NONE_LINE.fullmatch(stripped):
+            continue
+        if not found and index not in starts and NONE_LEAD_IN.fullmatch(stripped):
             continue
         if ASSESSMENT_LINE.match(stripped):
             continue

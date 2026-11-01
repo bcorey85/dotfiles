@@ -26,7 +26,6 @@ TEST_TARGET_FLAGS = ("--test", "--example", "--bench")
 CARGO_TARGET_FLAG = re.compile(r"--(?:test|bin|example|bench) \S+|\S+")
 UNKNOWN_FAMILY = "unknown"
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
-BARE_CARGO_MANIFEST = re.compile(r"`(Cargo\.toml)`")
 PYTHON_RUNNERS = (("uv.lock", ["uv", "run"]), ("poetry.lock", ["poetry", "run"]), ("pdm.lock", ["pdm", "run"]),
                   ("Pipfile.lock", ["pipenv", "run"]))
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&"}
@@ -412,10 +411,7 @@ def derive_gate_commands(repo_dir, phase_section):
     # test command is derived. A phase that lists none of those gets the test commands derived from the files it names.
     # Listed cargo commands replace the derived ones; when none of them runs clippy, a clippy scoped to the named
     # files' targets runs before them.
-    paths = []
-    for match in plan_format.PATH_IN_BACKTICKS.finditer(phase_section):
-        if match.group(1) not in paths:
-            paths.append(match.group(1))
+    paths = plan_format.named_paths(phase_section, repo_dir)
 
     by_package = {}
     for path in paths:
@@ -433,16 +429,14 @@ def derive_gate_commands(repo_dir, phase_section):
     commands = []
     for package_dir, package_paths in by_package.items():
         commands += script_package_commands(repo_dir, package_dir, package_paths, derives_js_tests)
-    root_manifests = BARE_CARGO_MANIFEST.findall(phase_section)
-    cargo_paths = paths + root_manifests
     listed_cargo = [command for command in listed if runs_cargo(command)]
     lists_clippy = any(check_scope.runs_cargo_clippy(command) for command in listed_cargo)
     if not listed_cargo:
-        commands += cargo_commands(repo_dir, cargo_paths, derives_cargo_tests)
+        commands += cargo_commands(repo_dir, paths, derives_cargo_tests)
     elif lists_clippy:
         commands += listed_cargo
     else:
-        commands += scoped_clippy_commands(repo_dir, cargo_paths) + listed_cargo
+        commands += scoped_clippy_commands(repo_dir, paths) + listed_cargo
     listed_runner = listed_python_runner(listed)
     listed_django = listed_django_test(listed)
     phase_lists_pytest = lists_pytest(listed)

@@ -33,14 +33,21 @@ def loop_steps(session_id, agent_id):
     return [row["step"] for row in session_rows(session_id, "step", agent_id)]
 
 
-def claim_no_review(session_id, agent_id):
-    """True when `agent_id` is exempt from the reviewer rule: it was exempted before, or the session holds more
-    no-review dispatches than exemptions, and this claims one. A dispatch row has no agent id, so a normal loop that
-    skips review while an unclaimed no-review loop runs in parallel can take that exemption."""
+def claim_no_review(session_id, agent_id, transcript):
+    """True when `agent_id` is exempt from the reviewer rule. With the loop's dispatch prompt read from its transcript,
+    only a loop whose own prompt asks for no-review is exempt, and it claims one exemption. With no prompt, it is
+    exempt when it was exempted before, or the session holds more no-review dispatches than exemptions and this claims
+    one; a dispatch row has no agent id, so there a normal loop can take the exemption of a no-review loop that never
+    claimed it."""
     stored_rows = session_rows(session_id)
     exempted = [row for row in stored_rows if row.get("kind") == "no-review-exempt"]
     if any(row.get("agent_id") == agent_id for row in exempted):
         return True
+    if transcript is not None and transcript.prompt is not None:
+        asked_no_review = loop_transcript.NO_REVIEW_MODE.search(transcript.prompt) is not None
+        if asked_no_review:
+            record(session_id, "no-review-exempt", agent_id=agent_id)
+        return asked_no_review
     no_review_dispatches = [row for row in hand_back_dispatch_rows(session_id) if row.get("no_review")]
     if len(no_review_dispatches) <= len(exempted):
         return False
@@ -160,18 +167,29 @@ def rerecord_dispatch_repo(session_id, transcript, cwd):
     record(session_id, DISPATCH_REPO_KIND, repo=transcript.reviewed_repo(cwd))
 
 
-def transcript_gates(event, session_id, agent_id, message, packet, clean_status):
+def read_loop_transcript(event):
+    """The loop's own transcript, read once, or None when it cannot be read: the gates that read it are then skipped
+    (fail-open on purpose: a hand-back hook never blocks on its own read error), and the error goes to stderr."""
+    try:
+        return loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
+    except Exception as error:
+        print(f"handback hook: transcript gates skipped, {type(error).__name__}: {error}", file=sys.stderr)
+        return None
+
+
+def transcript_gates(transcript, event, session_id, agent_id, message, packet, clean_status):
     """`(reason, reviewer_dead)`. `reason` is the deny reason of the first gate that reads the loop's own transcript,
     in order: a background dispatch or shell still open, a clean hand-back (`clean_status`) whose latest dispatch of
     one reviewer kind ended on an API error (denied once per dead dispatch), no valid full-check receipt for the
     tree, a plan file in the packet's files_touched, finding rows or a metrics line the packet owes and the loop did
     not log (the ledger reason, denied once per state). `reviewer_dead` is True for a clean hand-back whose latest
     dispatch of some reviewer kind died, denied or not: the hand-back that passes is stored as not reviewed.
-    The transcript is read once, and once it has been read its ROOT= line re-records the dispatch's repo before any
-    gate runs. One that cannot be read never blocks, records nothing and reports no dead reviewer, and a failed
-    full-check scan skips the full-check gate only."""
+    `transcript` is read_loop_transcript's, and its ROOT= line re-records the dispatch's repo before any gate runs.
+    None, or one whose dispatches cannot be read, never blocks, records nothing and reports no dead reviewer, and a
+    failed full-check scan skips the full-check gate only."""
+    if transcript is None:
+        return None, False
     try:
-        transcript = loop_transcript.LoopTranscript(script_utils.agent_transcript_path(event))
         open_dispatches = transcript.open_dispatches()
     except Exception as error:
         print(f"handback hook: transcript gates skipped, {type(error).__name__}: {error}", file=sys.stderr)
@@ -267,18 +285,20 @@ def handle_hook(event, kind):
         dispatch = dispatch_rows[-1] if dispatch_rows else {}
         clean_status = effective_status(packet, dispatch.get("repo"))
     steps = loop_steps(session_id, agent_id)
+    transcript = read_loop_transcript(event)
     unreviewed = (clean_status in CLEAN_STATUSES and "reviewer" not in steps
-                  and not claim_no_review(session_id, agent_id))
+                  and not claim_no_review(session_id, agent_id, transcript))
     if unreviewed and not was_recorded(session_id, agent_id, "unreviewed"):
         record(session_id, "unreviewed", agent_id=agent_id)
         return ("This review-loop hand-back is clean but no reviewer ran. Dispatch the code-reviewer on the diff, fix "
                 "what it finds, then hand back again.")
     capped_on_a_fix = (clean_status == CAP_REACHED and steps[-1:] == ["coder"]
-                       and not claim_no_review(session_id, agent_id))
+                       and not claim_no_review(session_id, agent_id, transcript))
     if capped_on_a_fix and not was_recorded(session_id, agent_id, "unreviewed-cap"):
         record(session_id, "unreviewed-cap", agent_id=agent_id)
         return CAPPED_ON_A_FIX_REASON
-    gate_reason, reviewer_dead = transcript_gates(event, session_id, agent_id, message, packet, clean_status)
+    gate_reason, reviewer_dead = transcript_gates(transcript, event, session_id, agent_id, message, packet,
+                                                  clean_status)
     if gate_reason:
         return gate_reason
 

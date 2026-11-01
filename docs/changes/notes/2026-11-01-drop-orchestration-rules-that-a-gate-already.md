@@ -4,7 +4,7 @@ change_type: "removed"
 title: "Drop orchestration rules that a gate already states"
 description: "The SessionStart orchestration text loses two rules that a gate enforces and states in its own deny message, cutting it from 2,318 to 2,120 tokens."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T04:33:42-06:00"}
-seq: 428
+seq: 437
 kind: "structured"
 components: ["rule/orchestration"]
 evidence: ["census"]

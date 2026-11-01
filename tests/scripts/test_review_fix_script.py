@@ -1826,6 +1826,19 @@ class ReviewFixScriptTest(unittest.TestCase):
         _code, output = self.packet(PLAN_IMPACT)
         self.assertIn("ACTION: done", output)
 
+    def test_a_stray_parse_failure_leaves_a_finished_packet_finished(self):
+        self.packet(PLAN_IMPACT)
+        self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
+        _code, output = self.packet(PLAN_IMPACT)
+        self.assertIn("ACTION: done", output)
+
+        _code, output = self.packet("status: bogus")
+        self.assertIn("ACTION: stop-parse-failure", output)
+
+        _code, output = self.packet(PLAN_IMPACT)
+        self.assertIn("ACTION: done", output)
+        self.assertNotIn("render-and-finish", output)
+
     def test_usage_error_without_a_skill_stops_loudly(self):
         code, output = self.run_script(["packet"], CLEAN_EMPTY)
         self.assertEqual(code, 2)

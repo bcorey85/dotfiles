@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-756 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+757 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [A plan ruling credits the tree the review covered, and the commit gate names the ruling step](notes/2026-11-01-a-plan-ruling-credits-the-tree-the-review-covered.md).
+Latest change: 2026-11-01, [A plan ticked after review keeps the commit credit](notes/2026-11-01-a-plan-ticked-after-review-keeps-the-commit-credit.md).
 
 ## Top gains
 

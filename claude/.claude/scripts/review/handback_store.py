@@ -108,13 +108,13 @@ def record(session_id, kind, **fields):
 
 
 def record_handback(session_id, **fields):
-    """Append a review-loop hand-back row with the tree it covered: [top level, fingerprint] of the repo its dispatch
-    reviewed, as the tree stands now, or None when the dispatch names no repo or git cannot fingerprint it. A plan
-    ruling made later credits this tree, not the tree at the time of the ruling. A DISPATCH_REPO_KIND row after the
-    last dispatch row replaces the dispatch row's repo."""
+    """Append a review-loop hand-back row with the tree it covered: [top level, reviewed_fingerprint] of the repo its
+    dispatch reviewed, as the tree stands now, or None when the dispatch names no repo or git cannot fingerprint it.
+    A plan ruling made later credits this tree, not the tree at the time of the ruling. A DISPATCH_REPO_KIND row
+    after the last dispatch row replaces the dispatch row's repo."""
     dispatch = hand_back_standing(session_id)["dispatch"] or {}
     repo = dispatch.get("repo")
-    tree = reviewed_tree.fingerprint(repo) if repo else None
+    tree = reviewed_tree.reviewed_fingerprint(repo) if repo else None
     return record(session_id, "handback", tree=tree, **fields)
 
 

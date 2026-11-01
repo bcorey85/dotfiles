@@ -7,9 +7,9 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-99 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+100 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-112 further findings are left out of this page.
+113 further findings are left out of this page.
 
 ## Rejected
 
@@ -58,6 +58,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-01 [Running the smell-reviewer on Sonnet cuts its cost 61% but loses two of 15 structure catches per review](../../../agent-evals/findings/2026-11-01-keeping-the-smell-reviewer-on-opus-holds-two-more.md) - HOLD: The smell-reviewer on Sonnet cut list cost per five-tree review 61% ($0.90 → $0.35 median) and wall time 46% (148 s → 80 s), but caught a median 10 of 15 seeded structure defects against Opus's 11.5 (94/120 → 78/120), outside the sealed one-catch bar. It loses naming drift against a README convention almost entirely (8/8 → 1/8). Keep it on Opus. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-01 [Main session prefix breakdown: what each always-loaded source costs](../../../agent-evals/findings/2026-11-01-main-session-prefix-breakdown-what-each-always.md) - HOLD: The main session's first request carries 30.6k–32.3k tokens in the agent-evals checkout; the repo CLAUDE.md (11.5k) and inline tool schemas (10.4k) are two thirds of it, and the SessionStart orchestration text is 2.3k. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-01 [A full-pass branch-exit review catches what own-branch peer review catches](../../../agent-evals/findings/2026-11-01-a-full-pass-branch-exit-review-catches-what-own.md) - HOLD: Over eight graded pairs on three mined feature branches, adding the author's own /peer-review after a full-pass branch-exit review gains no catches: each caught 11 of 20 known fix-PR bugs, with one bug only peer review caught and one only the exit review caught. Peer review costs $6.88 for all eight runs against the exit review's $53.69, but it fixes nothing. [watch: no watch]

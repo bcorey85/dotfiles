@@ -120,6 +120,16 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual("deny", self.stored_gate()["coders"]["a1"]["result"])
         self.assertIn("deny", done.stdout)
 
+    def test_a_failing_command_that_prints_a_byte_that_is_not_utf_8_denies_with_its_output(self):
+        self.gate_set(r"printf 'bad \377 byte\n'; exit 1")
+
+        done = self.gate_hook()
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual("deny", self.stored_gate()["coders"]["a1"]["result"])
+        decision = json.loads(done.stdout)
+        self.assertIn("bad � byte", json.dumps(decision, ensure_ascii=False))
+
     def test_set_judges_a_make_command_from_the_repo_root_the_gate_runs_it_in(self):
         (self.repo / "Makefile").write_text("test:\n\tpytest\n")
         (self.repo / "sub").mkdir()

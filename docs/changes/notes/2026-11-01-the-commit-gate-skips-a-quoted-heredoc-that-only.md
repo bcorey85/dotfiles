@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "the commit gate skips a quoted heredoc that only stores text"
 description: "The review commit gate no longer reads the body of a quoted heredoc as a commit when the heredoc only stores text: cat or tee writing a file, or an interpreter given a script file."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T02:20:57-06:00"}
-seq: 432
+seq: 437
 kind: "fix"
 components: ["script/review-commit-gate"]
 evidence: ["judgment"]

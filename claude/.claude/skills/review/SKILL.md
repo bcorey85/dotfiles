@@ -24,7 +24,7 @@ Thin wrapper over the review loop: the scripted loop for a working-tree review, 
    python3 ~/.claude/scripts/review/review_fix.py launch [--repo <absolute path>]
    ```
 
-   `--repo` when the work lives outside your cwd's repo. End the turn; when the command's completion notice arrives, run step 2. Do not dispatch an agent.
+   `--repo` when the work lives outside your cwd's repo. End the turn; when the command's completion notice arrives, run step 2. Do not dispatch an agent. If it printed `ACTION: stop-usage` (a clean tree), skip step 2: show the user its lines, never report a clean review.
 
    **Agent** otherwise. `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`. Pass, verbatim:
    - `mode: review-first`, `caller: review`

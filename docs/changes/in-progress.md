@@ -7,12 +7,14 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-5 open benches, by rank. Each line is the question the bench asks.
+7 open benches, by rank. Each line is the question the bench asks.
 
-2 further benches are left out of this page.
+0 further benches are left out of this page.
 
-* Blind vs sighted research: does goal-blind research change plan quality (running): Compare eng-spec research that never sees the ticket with research that does, on several trap tasks. Keep, cut or fund the guard by the result.
 * Bench: do structure and test defects that per-phase review misses get copied by later phases and later tickets (running): The placement bench scores catches on fixed code. This one lets the coder keep building: does a duplicated helper, a wrong-layer query or a weak assertion left in an early phase get copied by later phases and the next ticket, and how much rework does that add?
-* Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (blocked): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.
-* Plan review round 2 reads only the changed spec sections (running): Plan review round 2 can drop most of its Opus re-read if it reads only what round 1 changed.
-* Review findings carry the patch; a script applies it instead of a fix coder (queued): Reviewer findings carry the exact patch and a script applies it, so most review loops skip the fix-coder dispatch and its file re-reads.
+* Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (running): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.
+* Bench own-branch peer review against a full-pass exit review on fix-PR fixtures (running): Shows whether running /peer-review after the branch-exit review catches known bugs the exit review misses, so the exit review can take over what it finds.
+* Bench the main session on Sonnet against Opus (running): Moving orchestration off Opus could cut weekly Opus use by up to two thirds.
+* Bench a hook that moves main-session lookups to Haiku (running): Main-session Opus cache read could fall a third if search output stops landing in its context.
+* Bench a tool-call budget on the code reviewer (running): A hard tool-call budget on the code reviewer could cut its Opus cache read by a third or more if it loses no seeded catch.
+* Run verify-branch as a forked Sonnet skill instead of in the main session (running): Forking /verify-branch off the main session could cut main-session Opus on every branch end by half or more with the same criterion verdicts.

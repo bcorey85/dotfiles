@@ -50,7 +50,10 @@ def item_start_lines(lines):
     """The indexes of the section lines that start an item. A finding written as a paragraph opens with a bare
     file:line, and the bullets under it are its points: when the section opens with one, each bare file:line line at
     its indent starts an item. Otherwise a bullet or numbered marker at the first marker's indent starts one. A marker
-    indented deeper is a sub-bullet, and it and any other line, after a blank line too, continue the item before it."""
+    indented deeper is a sub-bullet, and it and any other line, after a blank line too, continue the item before it.
+    A line at the item indent that ends in a colon, after an item, leads in a list of the reviewer's notes ("The other
+    claims check out:"): the markers under it continue the item too, until one opens with a file:line or a plain line
+    at the item indent closes the list."""
     first_line = next(line for line in lines if line.strip())
     if is_bare_finding_head(first_line):
         return {index for index, line in enumerate(lines)
@@ -58,7 +61,21 @@ def item_start_lines(lines):
 
     marker_indents = [indent_of(line) for line in lines if ITEM_MARKER.match(line)]
     item_indent = marker_indents[0] if marker_indents else 0
-    return {index for index, line in enumerate(lines) if ITEM_MARKER.match(line) and indent_of(line) <= item_indent}
+    starts = set()
+    in_notes_list = False
+    for index, line in enumerate(lines):
+        if not line.strip() or indent_of(line) > item_indent:
+            continue
+        if not ITEM_MARKER.match(line):
+            in_notes_list = bool(starts) and line.rstrip().endswith(":")
+            continue
+
+        item_text = ITEM_MARKER_STRIP.sub("", line).strip()
+        if in_notes_list and not FINDING_HEAD.match(item_text):
+            continue
+        starts.add(index)
+        in_notes_list = False
+    return starts
 
 
 def review_section_findings(block):

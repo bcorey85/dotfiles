@@ -1838,7 +1838,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     # ---------- launch ----------
 
-    def loop_stub(self):
+    def loop_stub(self, message=CONVERGED):
         """A stand-in loop script: records its arguments and hands back through the real write_handback_rows, so the
         rows it writes are the ones `packet` reads."""
         stub = self.temp_root / "loop_stub.py"
@@ -1851,12 +1851,60 @@ class ReviewFixScriptTest(unittest.TestCase):
             "options = dict(zip(argv[1::2], argv[2::2]))\n"
             "args = review_loop_script.parse_review_loop_arguments(argv)\n"
             "print(json.dumps({'argv': argv, 'repo': argv[0], **options}))\n"
-            f"review_loop_packet.write_handback_rows(args, {CONVERGED!r}, 'converged', [], False)\n")
+            f"review_loop_packet.write_handback_rows(args, {message!r}, 'converged', [], False)\n")
         return stub
 
-    def launch(self, *flags, **extra):
+    def launch(self, *flags, message=CONVERGED, **extra):
         (self.repo / "README.md").write_text("hi, edited\n")
-        return self.run_script(["launch", *flags], REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub()), **extra)
+        return self.run_script(["launch", *flags], REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(message)), **extra)
+
+    def test_a_deferred_plan_impact_credits_the_tree_the_review_covered_and_not_a_later_edit(self):
+        self.assert_ruling_credits_the_reviewed_tree(["defer", "HANDOFF"])
+
+    def test_a_kept_plan_impact_credits_the_tree_the_review_covered_and_not_a_later_edit(self):
+        self.assert_ruling_credits_the_reviewed_tree(["decide", "keep", "--by", "user", "--ruling", "keep it"])
+
+    def test_a_ruling_on_a_review_that_stays_dirty_says_the_gate_still_counts_it_dirty(self):
+        home = self.temp_root / "home"
+        capped = json.dumps({**CONVERGED_FIELDS, "status": "cap-reached", "iter": "2 of 2",
+                             "blockers": [{"finding": "orders query lacked a tenant filter",
+                                           "file_line": "src/orders.ts:42"}],
+                             "plan_impacts": [HELD_IMPACT]})
+        code, output = self.launch(message=capped, HOME=str(home))
+        self.assertEqual(code, 0, output)
+        handoff = self.temp_root / "handoff.txt"
+        handoff.write_text("plan_impact: RESOLVED: deferred to phase end by the session, 2026-11-01: "
+                           "drop the retry\n", encoding="utf-8")
+
+        code, output = self.run_script(["defer", str(handoff)], HOME=str(home))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("still counts the review as dirty", output)
+        self.assertNotIn("counts the review as clean", output)
+
+    def assert_ruling_credits_the_reviewed_tree(self, ruling_args):
+        home = self.temp_root / "home"
+        held = json.dumps({**CONVERGED_FIELDS, "plan_impacts": [HELD_IMPACT]})
+        code, output = self.launch(message=held, HOME=str(home))
+        self.assertEqual(code, 0, output)
+        if ruling_args[0] == "decide":
+            code, output = self.packet(held, HOME=str(home))
+            self.assertEqual(code, 0, output)
+        late = self.repo / "late.py"
+        late.write_text("written after the review\n")
+        handoff = self.temp_root / "handoff.txt"
+        handoff.write_text("plan_impact: RESOLVED: deferred to phase end by the session, 2026-11-01: "
+                           "drop the retry\n", encoding="utf-8")
+
+        code, output = self.run_script([str(handoff) if arg == "HANDOFF" else arg for arg in ruling_args],
+                                       HOME=str(home))
+
+        self.assertEqual(code, 0, output)
+        with unittest.mock.patch.object(pathlib.Path, "home", return_value=home):
+            with_late_file = reviewed_tree.is_reviewed(SESSION, self.repo)
+            late.unlink()
+            reviewed_tree_only = reviewed_tree.is_reviewed(SESSION, self.repo)
+        self.assertEqual((with_late_file, reviewed_tree_only), (False, True))
 
     def crashing_stub(self):
         stub = self.temp_root / "crashing_stub.py"

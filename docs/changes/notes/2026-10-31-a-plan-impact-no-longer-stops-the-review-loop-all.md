@@ -6,7 +6,7 @@ description: "A review keeps fixing past a plan question instead of stopping and
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-31T15:15:30-05:00"}
 seq: 6
 kind: "user-rule"
-components: ["script/review-loop-script", "script/review-fix", "script/handback", "script/plan-format", "agent/review-loop", "skill/review", "skill/fix"]
+components: ["script/review-loop-script", "script/review-fix", "script/handback", "script/plan-format", "agent/review-loop", "skill/review", "skill/fix", "skill/code"]
 evidence: ["judgment"]
 watches: []
 test: ""
@@ -28,11 +28,13 @@ The scripted review loop no longer stops on a plan impact. `review_loop_script.p
   is a plain skip.
 - Only a held impact (not adopted, any cause but `toolkit`) keeps the review dirty. A toolkit-cause impact is only
   reported.
-- A `plan_impact: RESOLVED` handoff turns plan-marked items into plain fixes.
+- A `plan_impact: RESOLVED` handoff turns the plan-marked items the ruling or a carried finding names into plain fixes.
 
 `review_fix.py packet` prints the impacts once, after the review result. Adopted ones print as `## Plan Deviations` lines with no question. A toolkit-cause impact prints as a toolkit fault. Held ones get one closing question. `decide adopt` re-dispatches once with the impact resolved. `decide keep` records the ruling and writes a `plan-ruling` row to the hand-back store, so the commit gate counts the review as clean. `handback.false_clean_reason` keeps the review dirty while a held impact has no ruling.
 
 The plan-change mark (`lib/plan_format.py`) now reads `file:13`, `file:13-14`, `file:13–14` and `file:58-101,139-147` the same, so the outcome no longer depends on how a reviewer wrote a line number.
+
+`/code` no longer has a `plan-impact` route, because the loop never returns that status. When a converged packet holds a held impact, `/code` puts it on the phase-end list, writes `plan_impact: RESOLVED: deferred to phase end by the session, <date>: <summary>` into its handoff file, and runs `review_fix.py defer <handoff file>`, which records the ruling so the commit gate clears.
 
 Known gap. Counting plan impacts per run in the intake is a separate queue item.
 

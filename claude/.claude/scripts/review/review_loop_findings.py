@@ -92,7 +92,6 @@ def review_section_findings(block):
 TAGGED_BULLET = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+`?(fix|ask|nit)`?\s*:\s*(.+)$", re.I)
 
 
-LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
 BOLD_OPENING = re.compile(r"^\s*(?:(?:[-*]|\d+[.)])\s+)?(\*\*|__).+?\1")
 BOLD_REPORT_FIELD = re.compile(r"^\s*(\*\*|__)[^*_]+\1\s*:")
 STRAY_DISPOSITION_TAG = re.compile(r"`(?:fix|ask|nit)`|\((?:fix|ask|nit)\)|\*\*(?:fix|ask|nit)\*\*", re.I)
@@ -106,7 +105,7 @@ def opens_with_bold_head(line):
 def tagged_bullets_leave_items_out(lines):
     """True when the text holds an item the tagged-bullet parse would drop or mangle: a tagged bullet nested under
     another item, a bold-head item, an untagged top-level item that names a file:line, or a stray disposition tag."""
-    list_indents = [indent_of(line) for line in lines if LIST_ITEM.match(line)]
+    list_indents = [indent_of(line) for line in lines if ITEM_MARKER.match(line)]
     top_indent = min(list_indents, default=0)
     for line in lines:
         tagged = TAGGED_BULLET.match(line)
@@ -116,7 +115,7 @@ def tagged_bullets_leave_items_out(lines):
             continue
         if opens_with_bold_head(line) or STRAY_DISPOSITION_TAG.search(line):
             return True
-        top_level_item = LIST_ITEM.match(line) and indent_of(line) == top_indent
+        top_level_item = ITEM_MARKER.match(line) and indent_of(line) == top_indent
         if top_level_item and script_utils.PATH_LINE.search(line):
             return True
     return False
@@ -228,6 +227,16 @@ def merge_findings(findings):
 def near_title(title, other_title):
     """Whether two finding titles are the same or near."""
     return script_utils.text_similarity(title, other_title) >= REFILE_SIMILARITY
+
+
+def same_finding(finding, other):
+    """Whether two findings in the same file name the same issue: a near title when both have one, else the same
+    line."""
+    if finding.path != other.path:
+        return False
+    if finding.title and other.title:
+        return near_title(other.title, finding.title)
+    return finding.line == other.line
 
 
 def names_absent_file(repo, tree_paths, finding):

@@ -901,8 +901,8 @@ class PlanFileEditTest(unittest.TestCase):
     def test_the_resolved_texts_read_the_same_from_the_one_line_and_the_block_handoff(self):
         carried = f"  {plan_format.CARRIED_FINDINGS_KEY}  # open\n    - finding one\n    - finding two\n"
         one_line = "  plan_impact: RESOLVED - Adopt.\n" + carried
-        block = (f"RESOLVED: the user ruled. Review the code against the ruling.\nDecision: Adopt\nThe ruling:\n"
-                 f"  do it\n{plan_format.DISAGREEMENT_HEADER}\n  found: a\n  found: b")
+        block = ("RESOLVED: the user ruled. Review the code against the ruling.\nDecision: Adopt\nThe ruling:\n"
+                 "  do it\nPLAN-IMPACT:\n  found: a\n  found: b")
         block_form = "  plan_impact: |\n" + "".join(f"    {line}\n" for line in block.splitlines()) + carried
 
         self.assertEqual(["plan_impact: RESOLVED - Adopt.", "finding one", "finding two"],
@@ -910,6 +910,35 @@ class PlanFileEditTest(unittest.TestCase):
         self.assertEqual(["finding one", "finding two"], plan_format.resolved_plan_texts(block_form)[-2:])
         self.assertIn("found: a found: b", plan_format.resolved_plan_texts(block_form))
         self.assertEqual([], plan_format.resolved_plan_texts("  plan_impact: none\n" + carried))
+
+    def test_the_resolved_texts_keep_the_text_on_the_plan_impact_header_line(self):
+        block = "RESOLVED: the user ruled.\nPLAN-IMPACT: found: the queue is at-most-once\n  changes: the retry phase"
+        handoff = "  plan_impact: |\n" + "".join(f"    {line}\n" for line in block.splitlines())
+
+        self.assertIn("found: the queue is at-most-once changes: the retry phase",
+                      plan_format.resolved_plan_texts(handoff))
+
+    def test_the_resolved_texts_read_a_plan_impact_header_that_follows_a_location(self):
+        block = ("RESOLVED: the user ruled.\napp.py:14 [docs] — PLAN-IMPACT: found: the queue is at-most-once\n"
+                 "  changes: the retry phase")
+        handoff = "  plan_impact: |\n" + "".join(f"    {line}\n" for line in block.splitlines())
+
+        self.assertIn("found: the queue is at-most-once changes: the retry phase",
+                      plan_format.resolved_plan_texts(handoff))
+
+    def test_the_ruled_impact_text_ends_at_a_carried_findings_line_at_the_same_indent(self):
+        lines = ["RESOLVED: the user ruled.", "PLAN-IMPACT:", "  found: a", plan_format.CARRIED_FINDINGS_KEY,
+                 "  - finding one"]
+
+        self.assertEqual("found: a", plan_format.ruled_impact_text(lines, 0, 0))
+
+    def test_the_resolved_texts_read_a_bold_or_backticked_plan_impact_header(self):
+        for header in ("**PLAN-IMPACT:**", "`PLAN-IMPACT:`", "- **PLAN-IMPACT**:"):
+            with self.subTest(header):
+                block = f"RESOLVED: the user ruled.\n{header}\n  found: a\n  changes: b"
+                handoff = "  plan_impact: |\n" + "".join(f"    {line}\n" for line in block.splitlines())
+
+                self.assertIn("found: a changes: b", plan_format.resolved_plan_texts(handoff))
 
     def test_a_ruling_entry_with_no_phase_leaves_the_phase_out(self):
         entry = plan_format.ruling_deviation(None, "Keep plan as written", "the session, not the user",

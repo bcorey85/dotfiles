@@ -1123,7 +1123,7 @@ class ReviewerRequiredTest(HandbackTestBase):
 
     def test_a_dispatch_row_records_a_ruling_in_each_of_the_three_handoff_forms(self):
         block = ("RESOLVED: the user ruled. Review the code against the ruling.\nDecision: Adopt\nThe ruling:\n"
-                 "  do it\nThe disagreement it settles:\n  found: a")
+                 "  do it\nPLAN-IMPACT:\n  found: a")
         block_form = "plan_impact: |\n" + "".join(f"  {line}\n" for line in block.splitlines())
         forms = {
             "one-line": ("plan_impact: RESOLVED - adopt the change.\n", True),

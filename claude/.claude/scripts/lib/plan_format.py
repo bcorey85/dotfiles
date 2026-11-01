@@ -27,6 +27,7 @@ import pathlib
 import re
 
 import script_utils
+import source_text
 
 # A `path/with/a/folder.ext` in backticks, with an optional :line or :start-end suffix inside the ticks.
 PATH_IN_BACKTICKS = re.compile(r"`([\w.@-]+(?:/[\w.@\[\]()-]+)+\.\w+)(?::\d+(?:-\d+)?)?`")
@@ -646,7 +647,7 @@ def changes_acceptance_criteria(impact):
     return len(answers) < impacts or any(answer != "none" for answer in answers)
 
 
-def plan_impact_cause(block, missing="plan"):
+def plan_impact_cause(block, missing=PLAN_CAUSE):
     """The block's `cause:` value, lowercased; `missing` when the block has no cause key. A value outside
     PLAN_IMPACT_CAUSES comes back lowercased, for the caller to refuse."""
     match = PLAN_IMPACT_CAUSE.search(block)
@@ -663,21 +664,22 @@ def block_must_name_cause(block):
 
 def stopping_plan_impact_cause(blocks, cause_required=False):
     """The one cause for several PLAN-IMPACT blocks, each read on its own so no block borrows another's line: the
-    first block whose cause stops the run, else `plan`. The cause comes back lowercased (cause_stop words it). With
+    first block whose cause is not `plan` (`toolkit`, a missing `cause:` line, or a cause that does not parse), else
+    `plan`. The cause comes back lowercased (cause_stop words it). With
     `cause_required` a readable block with no cause key carries NO_CAUSE_LINE, which survives a packet field that
     reads an empty cause as `plan`."""
     for block in blocks:
         required = cause_required and block_must_name_cause(block)
-        cause = plan_impact_cause(block, missing=NO_CAUSE_LINE if required else "plan")
+        cause = plan_impact_cause(block, missing=NO_CAUSE_LINE if required else PLAN_CAUSE)
         if cause_stop(cause):
             return cause or NO_CAUSE_LINE
-    return "plan"
+    return PLAN_CAUSE
 
 
 def cause_stop(cause):
-    """The words that finish the stopping sentence when a PLAN-IMPACT cause stops the run: a toolkit fault is fixed
-    in the toolkit, and a cause that is neither is refused. None when the cause goes on to the plan rewrite."""
-    if cause == "toolkit":
+    """The words for a cause that is not `plan`: `toolkit`, a missing `cause:` line, or a cause that does not parse.
+    None for `plan`, which goes on to the plan rewrite."""
+    if cause == TOOLKIT_CAUSE:
         return "reported a toolkit gate or script fault with nothing wrong in the plan. Fix the toolkit, not the plan"
     if not cause or cause == NO_CAUSE_LINE:
         return f"wrote a PLAN-IMPACT with no `cause:` line: the cause is {' or '.join(PLAN_IMPACT_CAUSES)}"
@@ -731,33 +733,57 @@ def ruling_deviation(phase, decision, owner, ruled_at, ruling_words, disagreemen
 
 
 CARRIED_FINDINGS_KEY = "carried-findings:"
-DISAGREEMENT_HEADER = "The disagreement it settles:"
-RESOLVED_RULING_LINE = re.compile(r"^[ \t>*`-]*(?:(?i:plan_impact):[ \t]*RESOLVED\b|RESOLVED:)")
+RESOLVED_BLOCK_PATTERN = r"^[ \t>*`-]*RESOLVED:"
+RESOLVED_BLOCK_LINE = re.compile(RESOLVED_BLOCK_PATTERN)
+# The PLAN-IMPACT label inside a line of the block a RESOLVED: line settles: bold or backticked or plain, after an
+# optional location prefix such as `path:14 [docs] — `. The text after the label is the impact text.
+RESOLVED_IMPACT_HEADER = re.compile(r"PLAN-IMPACT[*`_]*:[*`_]*")
+RESOLVED_RULING_LINE = re.compile(
+    rf"^[ \t>*`-]*(?i:plan_impact):[ \t]*RESOLVED\b|{RESOLVED_BLOCK_PATTERN}")
+
+
+def ruled_impact_text(lines, index, indent):
+    """The PLAN-IMPACT text under the RESOLVED: line at `index`, or None when the block holds no PLAN-IMPACT label.
+    The block ends at a line indented less than the RESOLVED: line or at a carried-findings: line."""
+    block = []
+    for later in lines[index + 1:]:
+        if not later.strip():
+            continue
+        if source_text.indent_of(later) < indent or later.strip().startswith(CARRIED_FINDINGS_KEY):
+            break
+        block.append(later.strip())
+    for position, entry in enumerate(block):
+        header = RESOLVED_IMPACT_HEADER.search(entry)
+        if header:
+            header_rest = entry[header.end():].strip()
+            return " ".join(filter(None, [header_rest, *block[position + 1:]]))
+    return None
 
 
 def resolved_plan_texts(handoff):
     """The texts a handoff with a ruling names as settled: the ruling line (the one-line `plan_impact: RESOLVED` form
-    or the `RESOLVED:` line of the `plan_impact: |` block), the block's disagreement, and each carried finding.
-    Empty when the handoff holds no ruling."""
+    or the `RESOLVED:` line of the `plan_impact: |` block), the PLAN-IMPACT block that follows the `RESOLVED:` line,
+    and each carried finding. Empty when the handoff holds no ruling."""
     lines = handoff.splitlines()
     texts = []
     ruled = False
     for index, line in enumerate(lines):
         stripped = line.strip()
+        indent = source_text.indent_of(line)
         if RESOLVED_RULING_LINE.match(line):
             ruled = True
             texts.append(stripped)
-        elif stripped == DISAGREEMENT_HEADER or stripped.startswith(CARRIED_FINDINGS_KEY):
-            indent = len(line) - len(line.lstrip())
+        if RESOLVED_BLOCK_LINE.match(line):
+            impact_text = ruled_impact_text(lines, index, indent)
+            if impact_text is not None:
+                texts.append(impact_text)
+        elif stripped.startswith(CARRIED_FINDINGS_KEY):
             following = []
             for later in lines[index + 1:]:
-                if later.strip() and len(later) - len(later.lstrip()) <= indent:
+                if later.strip() and source_text.indent_of(later) <= indent:
                     break
                 following.append(later.strip())
-            if stripped == DISAGREEMENT_HEADER:
-                texts.append(" ".join(filter(None, following)))
-            else:
-                texts += [entry[2:] for entry in following if entry.startswith("- ")]
+            texts += [entry[2:] for entry in following if entry.startswith("- ")]
     return texts if ruled else []
 
 

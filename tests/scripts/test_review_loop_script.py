@@ -1595,6 +1595,22 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([(fix.path, fix.line) for fix in fixes],
                          [("src/matters/repository.ts", 12), ("src/entries/repository.ts", 40)])
 
+    def test_a_line_that_opens_with_a_none_word_after_the_first_finding_is_finding_text(self):
+        module = self.load_script_module()
+        review = ("### Fix\n- a.py:3 [bug] the loop never ends when the list is empty\n"
+                  "  Empty input reaches `walk` and spins forever\n"
+                  "- b.py:9 [bug] crash on the second call\n"
+                  "  None of the callers reset `state`, so it crashes\n\n"
+                  "- Empty catch in c.py:4 swallows the error\n- None.\n\n### Ask\nNone.\n")
+
+        fixes = module.parse_review(review)["fix"]
+
+        self.assertEqual([fix.text for fix in fixes], [
+            "a.py:3 [bug] the loop never ends when the list is empty Empty input reaches `walk` and spins forever",
+            "b.py:9 [bug] crash on the second call None of the callers reset `state`, so it crashes",
+            "Empty catch in c.py:4 swallows the error",
+        ])
+
     def test_a_reply_of_bold_head_items_with_a_tagged_sub_bullet_falls_back_to_the_disposition_call(self):
         module = self.load_script_module()
         for sub_bullet_indent in ("", "  "):
@@ -1700,6 +1716,17 @@ class ReviewLoopScriptTest(unittest.TestCase):
             with self.subTest(path=path):
                 files = {"svc/cart.py": [5, "M"], path: [module.LARGE_ADDED_LINES, "M"]}
                 self.assertEqual([agent for agent, _ in module.first_round_plan(files)], ["code-reviewer"])
+
+    def test_a_split_change_with_no_test_reviewer_gives_every_test_file_a_reviewer(self):
+        module = self.load_script_module()
+        files = {"a.py": [5, "M"], "b.py": [5, "M"], "c.py": [5, "M"],
+                 "tests/test_a.py": [100, "M"], "tests/test_b.py": [100, "M"], "tests/test_c.py": [100, "M"]}
+
+        dispatches = module.first_round_plan(files)
+
+        self.assertEqual([agent for agent, _ in dispatches], ["code-reviewer", "code-reviewer"])
+        owned = [path for _, paths in dispatches for path in paths]
+        self.assertEqual(sorted(owned), sorted(files))
 
     def test_the_finding_id_changes_with_the_gate(self):
         loader = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
@@ -2535,18 +2562,17 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertEqual([entry["file_line"] for entry in packet["fixed"]], ["app.py:2"])
 
-    def test_an_ask_with_an_empty_change_is_a_critical_blocker_that_keeps_the_ask_rows(self):
+    def test_an_ask_with_an_empty_change_asks_its_question_as_the_change(self):
         ask_review = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable? — change:\n\n"
                       "## Nit\nNone\n")
 
         completed = self.run_script({"code-reviewer": [{"result": ask_review}]})
 
-        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], "critical-blocker")
-        self.assertIn("ask entry has no change", packet["blockers"][0])
-        stop = self.store_rows()[-1]
-        self.assertEqual([(row["file"], row["line"]) for row in stop["ask_rows"]], [("app.py", 3)])
+        ask = packet["ask"][0]
+        question = "`app.py:3` should the limit be configurable?"
+        self.assertEqual((ask["question"], ask["change"]), (question, question))
 
     def test_prose_that_mentions_a_quality_check_does_not_name_the_check_command(self):
         completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
@@ -2878,6 +2904,22 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
     def call_keys(self):
         return [call["key"] for call in self.fake_calls()]
+
+    def test_a_fix_to_a_test_file_the_code_reviewer_owned_gets_a_second_review(self):
+        fix_in_test = ("## Fix\n- `tests/test_app.py:1` the assertion is wrong for `limit`\n\n## Ask\nNone\n\n"
+                       "## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+        (self.repo / "tests").mkdir()
+        self.commit_files({"tests/test_app.py": "assert 1 == 1\n"})
+        (self.repo / "tests/test_app.py").write_text("assert 1 == 2\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": fix_in_test}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"tests/test_app.py": "assert 2 == 2\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.call_keys().count("code-reviewer"), 2)
 
     def test_a_correctness_fix_to_a_markdown_file_gets_a_second_review(self):
         completed = self.run_script({

@@ -13,7 +13,7 @@ comes back in the packet.
 
 ## Inputs (from the dispatch prompt)
 
-- `mode`: `review-first` (callers `/code`, `/review`) or `fix-first` (callers `/fix`, `/cc`, `/verify-branch`).
+- `mode`: `review-first` (callers `/code`, `/review`) or `fix-first` (callers `/fix`, `/cc`).
 - `caller`: `code` | `review` | `fix` — for telemetry.
 - `lane`: `eng-spec` | `code` | `test-audit` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
@@ -143,7 +143,7 @@ Build `prior-issues` from the coder report (`issue` / `status: fixed|skipped|par
 
 ## Step 5b: `mode: fix-first`
 
-Callers `/fix`, `/cc`, `/verify-branch`. You are handed findings to fix, not a diff to review. Dispatch coders FIRST, then enter the review loop at step 1 to verify the fixes took.
+Callers `/fix`, `/cc`. You are handed findings to fix, not a diff to review. Dispatch coders FIRST, then enter the review loop at step 1 to verify the fixes took.
 
 **Sources of findings**, in priority order:
 

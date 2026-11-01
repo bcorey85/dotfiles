@@ -512,17 +512,30 @@ def render_items(lines, heading, items, item_line):
     lines += [item_line(item) for item in items]
 
 
+def touched_paths_named(named_path, touched_paths):
+    """The files_touched paths a fixed[] name stands for: the same path, else every touched path that ends with the
+    bare or partial name, or that an absolute name ends with. Empty for a file the loop did not touch."""
+    if named_path in touched_paths:
+        return [named_path]
+    return [touched for touched in touched_paths if is_same_file(named_path, touched)]
+
+
 def fixed_paths(packet):
-    """Every path the packet's fixed[] entries name, once each, in order."""
+    """Every path the packet's fixed[] entries name, once each, in order. With files_touched set, each name resolves to
+    the touched paths it stands for, so a bare file name and its full path count once and a file from another repo
+    named in a finding's text drops out."""
+    touched_paths = [str(path) for path in packet.get("files_touched") or []]
     paths = []
     for item in packet["fixed"]:
-        paths += [path for path in entry_paths(item) if path not in paths]
+        for named_path in entry_paths(item):
+            repo_paths = touched_paths_named(named_path, touched_paths) if touched_paths else [named_path]
+            paths += [path for path in repo_paths if path not in paths]
     return paths
 
 
 def unreviewed_fix_section(packet):
     """The (heading, lines) section for a clean hand-back whose last step was a coder: no reviewer read that fix."""
-    named_paths = ", ".join(fixed_paths(packet)) or "none named in fixed[]"
+    named_paths = ", ".join(fixed_paths(packet) or packet.get("files_touched") or []) or "none named in fixed[]"
     return ("Last fix not reviewed",
             [f"- No reviewer read the loop's last fixes. Their files are among: {named_paths}",
              "- Review-again is not advised: it ends on an unreviewed fix the same way. Read that diff yourself."])

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-740 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+741 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [A typed user approval lets an amend pass the git-discipline gate](notes/2026-10-31-a-typed-user-approval-lets-an-amend-pass-the-git.md).
+Latest change: 2026-10-31, [The unreviewed-fix list names only the reviewed repo's files, once each](notes/2026-10-31-the-unreviewed-fix-list-names-only-the-reviewed.md).
 
 ## Top gains
 

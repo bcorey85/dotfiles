@@ -31,12 +31,12 @@ Your first action is one Bash call. It appends the invocation line and prints
 the review scope:
 
 ```bash
-~/.claude/skills/review/review-scope caller=<caller> root=<repo> [base=<ref>]
+~/.claude/skills/review/review-scope caller=<caller> 'root=<repo>' [base=<ref>]
 ```
 
-Run it by this path as one plain command. A worktree-isolated session refuses a command that holds `$HOME`, a variable, `$(...)` or a second statement. Write `root=` with the repo's absolute path, literally. When the repo is a file path (a handoff file), write `root=` with that path's directory, literally. Add `base=<ref>` only when the dispatch gave one.
+Run it by this path as one plain command. Single-quote every path you pass to a command, as in each template here: zsh reads `[ ] * ?` in an unquoted path as a glob and fails the call. A worktree-isolated session refuses a command that holds `$HOME`, a variable, `$(...)` or a second statement. Write `root=` with the repo's absolute path, literally. When the repo is a file path (a handoff file), write `root=` with that path's directory, literally. Add `base=<ref>` only when the dispatch gave one.
 
-`ROOT` in the output is the repo for the whole loop. When ROOT differs from your cwd, run each git and check command (Step 6 included) as `cd <ROOT> && <command>` in one call, and give each logger call (Steps 7 and 7b) `root=<ROOT>` in place of the `cd`; otherwise run them plain. Put `Repo root: <ROOT>` in every reviewer and coder prompt. Exit 3 is a STOP: the branch has no merge base. Do nothing else, and return the script's message as the blocker of a `status: critical-blocker` packet, telling the caller to pass `base=<ref>`. An empty `ROOT=` or exit 2 "cannot enter" is also a STOP: return a `status: critical-blocker` packet naming the repo path you could not use. On any other failure, continue, and take the file list from `git status --porcelain` in the repo from Inputs, by the same rule: `cd <repo> &&` only when it differs from your cwd.
+`ROOT` in the output is the repo for the whole loop. When ROOT differs from your cwd, run each git and check command (Step 6 included) as `cd '<ROOT>' && <command>` in one call, and give each logger call (Steps 7 and 7b) `'root=<ROOT>'` in place of the `cd`; otherwise run them plain. Put `Repo root: <ROOT>` in every reviewer and coder prompt. Exit 3 is a STOP: the branch has no merge base. Do nothing else, and return the script's message as the blocker of a `status: critical-blocker` packet, telling the caller to pass `base=<ref>`. An empty `ROOT=` or exit 2 "cannot enter" is also a STOP: return a `status: critical-blocker` packet naming the repo path you could not use. On any other failure, continue, and take the file list from `git status --porcelain` in the repo from Inputs, by the same rule: `cd '<repo>' &&` only when it differs from your cwd.
 
 ## Loop ordering (GATE-CRITICAL — do not reorder)
 
@@ -223,7 +223,7 @@ return `status: cap-reached` with `findings_remaining` naming the unreviewed fil
 
 **Execution gate (before declaring convergence)**: the phase's one full run. Code changed in the phase whenever this loop runs, so always run the project's full quality-check command ONCE, after the last code change, with the Bash timeout at 600000:
 
-`python3 ~/.claude/scripts/review/full_check.py <ROOT> --log /tmp/review-gate-<branch>.log [--plan <plan> --phase <N>]`
+`python3 ~/.claude/scripts/review/full_check.py '<ROOT>' --log '/tmp/review-gate-<branch>.log' [--plan '<plan>' --phase <N>]`
 
 The script runs the CLAUDE.md quality-check command and no other; pass no command.
 

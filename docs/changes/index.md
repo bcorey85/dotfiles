@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-775 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
+776 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [The branch exit runs a peer review and one coder dispatch](notes/2026-11-01-the-branch-exit-runs-a-peer-review-and-one-coder.md).
+Latest change: 2026-11-01, [Scoped test gate runs the autofix formatters before it stops](notes/2026-11-01-scoped-test-gate-runs-the-autofix-formatters.md).
 
 ## Top gains
 

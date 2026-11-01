@@ -940,6 +940,34 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertTrue(packet["full_check"].startswith("pre-existing failure"), packet["full_check"])
         self.assertIn("did not verify this diff", packet["full_check"])
 
+    def run_scoped_tests_with_autofix(self, scoped_results):
+        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+        loop_script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loop_script)
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"app.py"}})
+        with mock.patch.object(loop_script.coder_gate, "run_scoped_tests", side_effect=scoped_results) as scoped, \
+                mock.patch.object(loop, "autofix_touched_files", return_value=True) as autofix:
+            passed = loop.run_test_commands(["npm run lint"])
+        return loop, passed, scoped.call_count, autofix.call_count
+
+    def test_a_scoped_run_red_only_on_format_errors_the_autofix_clears_does_not_stop_the_loop(self):
+        red = ("failed: npm run lint", ["app.ts: Insert `;` prettier/prettier"])
+        loop, passed, scoped_runs, autofix_runs = self.run_scoped_tests_with_autofix([red, ("passed", [])])
+
+        self.assertTrue(passed)
+        self.assertEqual((scoped_runs, autofix_runs), (2, 1))
+        self.assertNotEqual(loop.status, "critical-blocker")
+        self.assertEqual(loop.scoped_tests, "passed")
+
+    def test_a_scoped_run_still_red_after_the_autofix_stops_the_loop(self):
+        red = ("failed: npm test", ["FAIL app.test.ts: expected 20, got 99"])
+        loop, passed, scoped_runs, autofix_runs = self.run_scoped_tests_with_autofix([red, red])
+
+        self.assertFalse(passed)
+        self.assertEqual((scoped_runs, autofix_runs), (2, 1))
+        self.assertEqual(loop.status, "critical-blocker")
+        self.assertIn("expected 20, got 99", loop.remaining[0])
+
     def test_the_loop_base_run_gets_the_module_live_base_trees_and_the_gate_environment_assignments(self):
         spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
         loop_script = importlib.util.module_from_spec(spec)

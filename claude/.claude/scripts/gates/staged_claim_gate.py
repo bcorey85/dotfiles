@@ -17,13 +17,15 @@ subject of `left staged`, reports that actor's work. None of these covers `I sta
 `I've staged` or `I have staged`, which are judged by the review-data rule like any other claim.
 Spans in double quotes (straight or curly) or backticks on one line are dropped only when they hold a whole claim.
 
-The claim is checked against `git diff --cached --name-only` in the repo of each existing absolute path the
-sentence names, else in the repo of the session cwd. It blocks when that index is empty, or when a file the sentence
-names, and that exists in the repo, is not in it. A claim that names no existing absolute path and finds the cwd
-index empty passes when a work tree this session ran `git -C <tree> add` or `cd <tree> && ... git add` in, read from
-its transcript, holds staged files, and every relative path the sentence names that exists in the cwd checkout or in
-that tree, resolved against that tree, is among them: a session that stages that way keeps its cwd. A second stop
-in a row passes (stop_hook_active), so a stuck session cannot spin. Fails open: any error exits 0 with no output.
+The claim is checked against `git diff --cached --name-only` in the repo of each existing absolute or `~/` path the
+sentence names and of each folder a `git -C <folder>` in it names (a relative folder read from the cwd), else in the
+repo of the session cwd. It blocks when that index is empty, or when a file the sentence names, and that exists in the
+repo, is not in it; a relative file is read from the cwd in a repo that holds the cwd, else from that repo's top. A
+claim that names no such repo and no existing absolute path and finds the cwd index empty passes when a work tree
+this session ran `git -C <tree> add` or `cd <tree> && ... git add` in, read from its transcript, holds staged files,
+and every relative path the sentence names that exists in the cwd checkout or in that tree, resolved against that
+tree, is among them: a session that stages that way keeps its cwd. A second stop in a row passes (stop_hook_active),
+so a stuck session cannot spin. Fails open: any error exits 0 with no output.
 """
 import contextlib
 import functools
@@ -34,7 +36,7 @@ import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import script_utils
-from git_calls import git_calls
+from git_calls import git_calls, joined_directory
 
 STAGED_CLAIM = re.compile(r"\b(?:(?P<first_person>I(?:'ve| have)?\s+staged)"
                           r"|(?:is|are|were|was|now|all|been|(?P<left>left))\s+staged"
@@ -64,8 +66,10 @@ REPORTED_SPEECH = re.compile(r"(?<![\w/-])(?:says?|said|saying|claims?|claimed|c
 FIRST_PERSON = re.compile(r"\b(?:I|[Ww]e)\b")
 QUOTED_SPAN = re.compile(r'"[^"\n]*"|“[^”\n]*”|`[^`\n]*`')
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
-# A word that looks like a file path: `a.txt`, `docs/x.md`, `/abs/path`.
-PATH_WORD = re.compile(r"(?<![\w/.-])(?:/|\.{1,2}/)?[\w-]+(?:[./][\w-]+)+")
+# A word that looks like a file path: `a.txt`, `docs/x.md`, `/abs/path`, `~/folder`.
+PATH_WORD = re.compile(r"(?<![\w/.~-])(?:~/[\w-]+(?:[./][\w-]+)*|(?:/|\.{1,2}/)?[\w-]+(?:[./][\w-]+)+)")
+# The folder a `git -C <folder>` call in the sentence runs in, without the quotes around it.
+GIT_FOLDER = re.compile(r"\bgit\s+-C\s+['\"]?([^\s'\"`]+)")
 
 
 @functools.cache
@@ -127,11 +131,32 @@ def is_index_claim(sentence, claim):
     return not names_review_data or bool(GIT_INDEX.search(sentence))
 
 
-def named_files(sentence, cwd):
-    """The existing files a sentence names, as real absolute paths."""
+def path_words(sentence):
+    """The path words of a sentence, with a leading `~` expanded."""
+    return [os.path.expanduser(word) for word in PATH_WORD.findall(sentence)]
+
+
+def named_absolute_paths(sentence):
+    """The existing absolute paths a sentence names, as real paths."""
+    absolute = [word for word in path_words(sentence) if word.startswith("/")]
+    return [os.path.realpath(word) for word in absolute if os.path.exists(word)]
+
+
+def named_trees(sentence, cwd):
+    """The work trees a sentence names, as real paths: the tree of each existing absolute path, and of each folder a
+    `git -C <folder>` call runs in, a relative folder read from the cwd."""
+    joined_folders = [joined_directory(cwd, folder) for folder in GIT_FOLDER.findall(sentence)]
+    git_folders = [folder for folder in joined_folders if folder != cwd]
+    existing_folders = [os.path.realpath(folder) for folder in git_folders if os.path.isdir(folder)]
+    paths = named_absolute_paths(sentence) + existing_folders
+    return {top for top in map(script_utils.work_tree_top, paths) if top}
+
+
+def named_files(sentence, base):
+    """The existing files a sentence names, as real absolute paths. A relative path is read from base."""
     files = []
-    for word in PATH_WORD.findall(sentence):
-        path = word if word.startswith("/") else os.path.join(cwd, word)
+    for word in path_words(sentence):
+        path = os.path.join(base, word)
         if os.path.isfile(path):
             files.append(os.path.realpath(path))
     return files
@@ -141,7 +166,7 @@ def session_tree_holds(top, sentence, cwd, transcript_path):
     """Whether a work tree other than top, one the session staged in, has every relative path the sentence names in
     its index. A path counts when it exists in the cwd checkout or in that tree."""
     offset = os.path.relpath(os.path.realpath(cwd), top)
-    words = [word for word in PATH_WORD.findall(sentence) if not word.startswith("/")]
+    words = [word for word in path_words(sentence) if not word.startswith("/")]
     for tree in session_staging_trees(transcript_path, cwd) - {top}:
         staged_output = script_utils.git_output(tree, "diff", "--cached", "--name-only")
         tree_base = os.path.join(tree, offset)
@@ -153,21 +178,24 @@ def session_tree_holds(top, sentence, cwd, transcript_path):
 
 
 def sentence_problems(sentence, cwd, transcript_path):
-    """What the index of each repo the sentence speaks of lacks, one line per repo."""
-    files = named_files(sentence, cwd)
-    absolute = [os.path.realpath(word) for word in PATH_WORD.findall(sentence)
-                if word.startswith("/") and os.path.exists(word)]
-    named_tops = {top for top in map(script_utils.work_tree_top, absolute) if top}
+    """What the index of each repo the sentence speaks of lacks, one line per repo. A relative path is read from the
+    cwd in a repo that holds the cwd, else from that repo's top."""
+    named_tops = named_trees(sentence, cwd)
     tops = named_tops or {script_utils.work_tree_top(cwd)} - {None}
+    names_a_place = bool(named_tops or named_absolute_paths(sentence))
+    real_cwd = os.path.realpath(cwd)
 
     problems = []
     for top in sorted(tops):
         staged_output = script_utils.git_output(top, "diff", "--cached", "--name-only")
         if staged_output is None:
             continue
+
         staged = staged_output.splitlines()
-        named = [os.path.relpath(path, top) for path in files if path.startswith(top + os.sep)]
-        if not staged and not absolute and session_tree_holds(top, sentence, cwd, transcript_path):
+        base = real_cwd if script_utils.path_is_under(real_cwd, top) else top
+        named = [os.path.relpath(path, top) for path in named_files(sentence, base)
+                 if script_utils.path_is_under(path, top)]
+        if not staged and not names_a_place and session_tree_holds(top, sentence, cwd, transcript_path):
             continue
         if not staged:
             problems.append(f"the index of {top} holds nothing")

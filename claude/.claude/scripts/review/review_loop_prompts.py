@@ -3,6 +3,7 @@ import json
 
 import handback
 import plan_format
+import source_paths
 
 FENCE = (
     'Fix only the issues listed below. Do not refactor surrounding code. Do not "improve" things you '
@@ -59,7 +60,7 @@ def review_scope_lines(repo, owned, prior_issues, open_asks):
     return lines
 
 
-def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief=""):
+def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief="", testing_strategy=()):
     # The fix diff goes in a file the reviewer reads: inlined, a large diff runs the call past its prompt limit.
     lines = review_scope_lines(repo, owned, prior_issues, open_asks)
     lines.append("Your scope is the owned files listed under Review scope (this round).")
@@ -71,6 +72,9 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
         lines.append("Source under test: the diff's non-test files.")
     if agent == "smell-reviewer":
         lines.append("Bound: the round-one fix diff." if fix_diff_path else "Bound: the diff under first review.")
+    if testing_strategy and any(source_paths.is_test_path(path) for path in owned):
+        lines.append("The plan's Testing Strategy section (applies to every phase):")
+        lines += testing_strategy
     if brief:
         lines.append(brief)
     return "\n".join(lines)

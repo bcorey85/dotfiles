@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-5 open benches, by rank. Each line is the question the bench asks.
+6 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -15,4 +15,5 @@ description: "The benches that are open now and the question each asks."
 * Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (running): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.
 * One Opus reviewer per phase in place of code, test and structure reviewers (running): Dropping the separate test and structure reviewers could cut about a third of review Opus output and cache read if one Opus reviewer per phase catches the same planted defects.
 * Coder ranged-read hook for whole-file reads over 4k tokens (queued): A hook that turns the coder's whole-file read of a big file into a ranged read could cut coder cache read per dispatch by 30% or more.
-* Bench a peer-review pass with coder fixes in place of the full branch-exit review (running): Swapping the full branch-exit review loop for one peer-review pass whose findings a coder fixes cuts Opus tokens a third or more at the same catch rate.
+* Bench the code reviewer at low reasoning effort (running): Pinning the code reviewer to low reasoning effort is predicted to cut its Opus tokens 30-50% per review, if it keeps its catches on the 41 real-bug trees.
+* Full-ticket round: what peer review finds after per-phase and branch-exit review (running): Measures on a full ticket how many real defects own-branch peer review finds after per-phase review and the branch-exit review have both passed, the result the review-only bench could not show.

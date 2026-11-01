@@ -87,6 +87,13 @@ INTERPRETER_FAMILIES = {
     "php": {"name": r"php", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
             "value_options": {"-d", "-c", "-r"}, "inline_code_letters": "r", "inline_code_flags": set()},
 }
+INTERPRETER = re.compile("|".join(family["name"] for family in INTERPRETER_FAMILIES.values()), re.I)
+MANAGE_SCRIPT = "manage.py"
+# Words that name stdin as the program file of an interpreter, like `-`.
+STDIN_PROGRAM_FILES = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
+# Redirections that carry code inside the command: a heredoc or a here-string. A file read with `<` is a script file,
+# as in `python3 <file>`.
+STDIN_CODE_REDIRECTIONS = {"<<", "<<<"}
 
 
 def interpreter_family(word):
@@ -96,6 +103,41 @@ def interpreter_family(word):
         if re.fullmatch(rules["name"], program, re.I):
             return family
     return None
+
+
+def reads_code_from_stdin(words, redirections, piped):
+    """True when the simple command runs a bare interpreter whose program text arrives on stdin: `python3 -`, a
+    heredoc or here-string into it, or a pipe into it. An interpreter given a script file (also by `<`), `-m` or a
+    version flag reads stdin as data, not as code. `manage.py shell` is a bare interpreter: it runs stdin as code."""
+    words = command_after_wrappers(words)
+    if not words:
+        return False
+
+    if os.path.basename(words[0]) == MANAGE_SCRIPT:
+        words = ["python", *words]
+    if not INTERPRETER.fullmatch(os.path.basename(words[0])):
+        return False
+
+    family = interpreter_family(words[0])
+    value_options = INTERPRETER_FAMILIES[family]["value_options"]
+    no_stdin_code_flags = INTERPRETER_FAMILIES[family]["no_stdin_code_flags"]
+    index = 1
+    while index < len(words):
+        word = words[index]
+        if word in STDIN_PROGRAM_FILES:
+            return True
+        if os.path.basename(word) == MANAGE_SCRIPT and words[index + 1:index + 2] == ["shell"]:
+            break
+        if family == "python" and word.startswith("-m") and len(word) > 2:
+            return False
+        if word in no_stdin_code_flags or not word.startswith("-"):
+            return False
+        if word in value_options and words[index + 1:index + 2] and words[index + 1] in STDIN_PROGRAM_FILES:
+            return True
+        index += 2 if word in value_options else 1
+
+    has_stdin_code = any(operator in STDIN_CODE_REDIRECTIONS for operator, _target in redirections)
+    return piped or has_stdin_code
 
 
 def redirection_writes_file(operator, target):

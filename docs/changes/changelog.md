@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-764 changes
+765 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -134,6 +134,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [the commit gate skips a quoted heredoc that only stores text](notes/2026-11-01-the-commit-gate-skips-a-quoted-heredoc-that-only.md) [script/review-commit-gate] The review commit gate no longer reads the body of a quoted heredoc as a commit when the heredoc only stores text: cat or tee writing a file, or an interpreter given a script file.
 * [A stray parse failure leaves a finished packet finished](notes/2026-11-01-a-stray-parse-failure-leaves-a-finished-packet.md) [script/review-fix] A bad packet piped to `review_fix.py` after a packet finished no longer marks the saved state parse-failed, so rerunning the finished packet prints done instead of rendering and asking again.
 * [The hand-back store keeps the writing session's own file](notes/2026-11-01-the-hand-back-store-keeps-the-writing-session-s.md) [script/handback-store] Recording a hand-back row no longer deletes the writing session's own store file when it is more than 7 days old, so a long session keeps its dispatch and hand-back rows.
 * [A no-review exemption belongs to the loop that asked for it](notes/2026-11-01-a-no-review-exemption-belongs-to-the-loop-that.md) [script/handback] A review loop's hand-back is exempt from the reviewer check only when its own dispatch prompt asks for no-review, so a clean loop that ran no reviewer can no longer take the exemption of a no-review loop that failed.

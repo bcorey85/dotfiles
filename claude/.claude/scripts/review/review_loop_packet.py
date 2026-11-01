@@ -116,9 +116,9 @@ def write_handback_rows(args, message, status, ask_rows, unreviewed_fix):
     # The driver's skipped re-reviews are its benched routes, so a clean row never sets no_reviewer;
     # a coder pass after the last reviewer round sets unreviewed_fix.
     try:
-        handback_store.record(args.session, "handback", agent_id=args.agent_id, status=status, problems=[],
-                              message=message, no_reviewer=False,
-                              unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
+        handback_store.record_handback(args.session, agent_id=args.agent_id, status=status, problems=[],
+                                       message=message, no_reviewer=False,
+                                       unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
     except Exception as error:
         report_write_failure("hand-back row", error)
     review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)

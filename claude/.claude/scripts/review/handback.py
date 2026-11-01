@@ -45,6 +45,7 @@ from handback_store import (
     NO_DISPATCH,
     REDISPATCHED,
     hand_back_gap,
+    hand_back_standing,
     latest,
     plan_ruled_since,
     session_rows,
@@ -658,26 +659,41 @@ def standing_false_clean_reason(seen):
         return f"the latest review-loop hand-back is {status}"
     if seen["handback"].get("no_reviewer"):
         return "the review-loop handed back clean with no reviewer run"
-    held, parse_error = stored_held_plan_impacts(seen["handback"].get("message", ""))
+    _held, parse_error = stored_held_plan_impacts(seen["handback"].get("message", ""))
     # Fail closed: a hand-back whose plan impacts cannot be read never earns commit credit.
     if parse_error:
         return f"the latest review-loop hand-back does not parse, so its plan impacts cannot be read: {parse_error}"
-    if held and not plan_ruled_since(seen["handback"]["session_id"], seen["handback"]):
-        return f"the review-loop handed back {len(held)} plan impact(s) that await a ruling"
+    unruled = unruled_plan_impacts(seen)
+    if unruled:
+        return f"the review-loop handed back {len(unruled)} plan impact(s) that await a ruling"
     return None
 
 
+def unruled_plan_impacts(seen):
+    """The held plan impacts of the hand-back in a `latest` or `latest_for_repo` result that no ruling since settles:
+    none when there is no hand-back, its packet does not parse, or a ruling came after it."""
+    row = seen["handback"]
+    if row is None:
+        return []
+    held, _parse_error = stored_held_plan_impacts(row.get("message", ""))
+    if held and plan_ruled_since(row["session_id"], row):
+        return []
+    return held
+
+
 def record_clean_review(session_id, committing_session=None):
-    """Credit the tree of the repo the session's review-loop was dispatched on, when false_clean_reason finds the
-    session's review ended clean. The one writer of the reviewed-tree record. The credit goes to committing_session,
-    default the reviewing session. Returns (refusal, repo): the refusal text or None, and the repo the stored dispatch
-    names (None when it names none, and then no tree is recorded)."""
-    reason = false_clean_reason(session_id)
+    """Credit the tree the session's review-loop covered, when false_clean_reason finds the session's review ended
+    clean: the tree stored on the hand-back, else the dispatch repo's tree as it stands (a row from before hand-backs
+    stored one). The one writer of the reviewed-tree record. The credit goes to committing_session, default the
+    reviewing session. Returns (refusal, repo): the refusal text or None, and the repo the stored dispatch names (None
+    when it names none, and then no tree is recorded)."""
+    seen = hand_back_standing(session_id)
+    reason = standing_false_clean_reason(seen)
     if reason:
         return reason, None
-    repo = latest(session_id)["dispatch"].get("repo")
+    repo = seen["dispatch"].get("repo")
     if repo:
-        reviewed_tree.record_reviewed(committing_session or session_id, repo)
+        reviewed_tree.record_reviewed(committing_session or session_id, repo, tree=seen["handback"].get("tree"))
     return None, repo
 
 

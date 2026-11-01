@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-739 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+740 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [staged-claim gate checks a claim against the repo the message names](notes/2026-10-31-staged-claim-gate-checks-a-claim-against-the-repo.md).
+Latest change: 2026-10-31, [A typed user approval lets an amend pass the git-discipline gate](notes/2026-10-31-a-typed-user-approval-lets-an-amend-pass-the-git.md).
 
 ## Top gains
 

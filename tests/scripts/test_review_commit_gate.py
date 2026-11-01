@@ -16,7 +16,8 @@ INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
 STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), ("review", "handback_store.py"),
                 ("review", "capped_review.py"),
                 ("lib", "script_utils.py"), ("lib", "reviewed_tree.py"), ("lib", "hook_input.py"),
-                ("lib", "shell_command.py"), ("lib", "plan_format.py"), ("lib", "loop_transcript.py"),
+                ("lib", "user_prompts.py"), ("lib", "shell_command.py"), ("lib", "plan_format.py"),
+                ("lib", "loop_transcript.py"),
                 ("lib", "expected_red.py"), ("review", "full_check.py"), ("lib", "check_scope.py"),
                 ("lib", "check_output.py"), ("lib", "linked_installs.py"), ("lib", "test_run_output.py"),
                 ("lib", "worktree_snapshot.py"), ("lib", "numstat.py"), ("lib", "makefile_text.py"),
@@ -914,6 +915,11 @@ class ReviewedWorkCommitTest(GateCase):
 
     def test_a_commit_the_user_ordered_without_review_passes_that_turn(self):
         transcript = self.write_transcript(self.user_prompt("fix it"), self.user_prompt("[no-review] commit this"))
+        self.assert_silent(self.commit("git commit --allow-empty -m x", transcript_path=transcript))
+
+    def test_a_task_notification_after_the_order_leaves_it_standing(self):
+        notification = self.user_prompt("<task-notification>done</task-notification>")
+        transcript = self.write_transcript(self.user_prompt("[no-review] commit this"), notification)
         self.assert_silent(self.commit("git commit --allow-empty -m x", transcript_path=transcript))
 
     def test_a_later_prompt_without_the_marker_ends_the_order(self):

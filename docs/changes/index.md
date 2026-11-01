@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-745 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+746 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [Review loop quotes every path it passes to a log or script call](notes/2026-11-01-review-loop-quotes-every-path-it-passes-to-a-log.md).
+Latest change: 2026-11-01, [Code runs end phases on a statement, decide review asks and relay the stop word for word](notes/2026-11-01-code-runs-end-phases-on-a-statement-decide-review.md).
 
 ## Top gains
 

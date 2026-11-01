@@ -910,6 +910,18 @@ class StoreTest(HandbackTestBase):
         self.assertFalse(old.exists())
         self.assertTrue((self.store / "new.jsonl").exists())
 
+    def test_a_record_keeps_the_writing_session_s_own_stale_file(self):
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message="m")
+        own = self.store / (SESSION + ".jsonl")
+        stale = time.time() - 8 * 86400
+        os.utime(str(own), (stale, stale))
+
+        handback_store.record_asks_logged(SESSION, "packet-1", "/repo")
+
+        kinds = [json.loads(line)["kind"] for line in own.read_text().splitlines()]
+        self.assertEqual(kinds, ["dispatch", "handback", handback_store.ASKS_LOGGED_ROW])
+
 
 class CliTest(HandbackTestBase):
     def test_check_accepts_a_good_packet_and_names_the_status(self):

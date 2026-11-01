@@ -4,6 +4,10 @@ paths:
   - "**/*.test.js"
   - "**/*.spec.ts"
   - "**/*.spec.js"
+  - "**/*.test.tsx"
+  - "**/*.test.jsx"
+  - "**/*.spec.tsx"
+  - "**/*.spec.jsx"
 ---
 
 # Testing

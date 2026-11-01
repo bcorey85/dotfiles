@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-760 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+761 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [A reviewer's list of claims that check out stays out of the asks](notes/2026-11-01-a-reviewer-s-list-of-claims-that-check-out-stays.md).
+Latest change: 2026-11-01, [The asks-done call the review packet prints runs once its outcomes are filled in](notes/2026-11-01-the-asks-done-call-the-review-packet-prints-runs.md).
 
 ## Top gains
 

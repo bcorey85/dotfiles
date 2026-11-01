@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -802,7 +803,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("1. src/retry.ts:10  [code-reviewer/smell]", output)
         self.assertIn("2. src/db.ts:5  [perf-reviewer/perf]", output)
         self.assertIn("Proposed change: add the index", output)
-        self.assertIn("asks-done <outcome> x2", output)
+        self.assertIn("asks-done <outcome-1> <outcome-2>", output)
         self.assertNotIn("review-gate-mark", output)
 
         code, output = self.run_script(["asks-done", "accepted", "rejected"])
@@ -830,9 +831,9 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(WITH_ASK)
         second_id = self.stored_state()["packet_id"]
         self.assertNotEqual(first_id, second_id)
-        self.assertIn(f"asks-done --packet {second_id} <outcome> x2", output)
+        self.assertIn(f"asks-done --packet {second_id} <outcome-1> <outcome-2>", output)
         code, output = self.packet(WITH_ASK)
-        self.assertIn(f"asks-done --packet {second_id} <outcome> x2", output)
+        self.assertIn(f"asks-done --packet {second_id} <outcome-1> <outcome-2>", output)
         self.assertEqual([waiting["packet_id"] for waiting in self.stored_state()["waiting_packets"]], [first_id])
 
         code, output = self.run_script(["asks-done", "accepted", "accepted"])
@@ -947,11 +948,23 @@ class ReviewFixScriptTest(unittest.TestCase):
                               "class_closure": "n/a - fixed[] empty"})
         code, output = self.packet(message)
         self.assertEqual(code, 0, output)
-        self.assertIn("asks-done <outcome> x4", output)
+        self.assertIn("asks-done <outcome-1> <outcome-2> <outcome-3> <outcome-4>", output)
         code, output = self.run_script(["asks-done", "accepted", "accepted", "rejected", "accepted"])
         self.assertEqual(code, 0, output)
         outcome_rows = [row for row in self.ledger_writes() if "ask_outcome" in row]
         self.assertEqual([row["ask_outcome"] for row in outcome_rows], ["accepted", "accepted", "rejected", "accepted"])
+
+    def test_the_printed_asks_done_call_runs_once_each_outcome_is_filled_in(self):
+        code, output = self.packet(packet_text(CAP_FIELDS, ask=self.STOP_ASKS))
+        self.assertEqual(code, 0, output)
+        printed_line = next(line for line in output.splitlines() if "review_fix.py asks-done" in line)
+        printed_call = printed_line.split("review_fix.py asks-done ", 1)[1].split("  (", 1)[0]
+        filled_args = [re.sub(r"^<outcome-\d+>$", "accepted", word) for word in printed_call.split()]
+
+        code, output = self.run_script(["asks-done", *filled_args])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()], ["accepted", "accepted"])
 
     def test_asks_done_with_an_unknown_outcome_fails_loudly(self):
         self.packet(WITH_ASK)

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-741 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+742 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [Inline-interpreter hint lets a script run whose quoted argument names a dash-C flag](notes/2026-10-31-inline-interpreter-hint-lets-a-script-run-whose.md).
+Latest change: 2026-10-31, [The unreviewed-fix list names only the reviewed repo's files, once each](notes/2026-10-31-the-unreviewed-fix-list-names-only-the-reviewed.md).
 
 ## Top gains
 

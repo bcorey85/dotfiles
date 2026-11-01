@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-761 changes
+762 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -134,6 +134,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Verify-branch reads a ticket's criteria from the criteria file when the ticket has no Acceptance heading](notes/2026-11-01-verify-branch-reads-a-ticket-s-criteria-from-the.md) [skill/verify-branch, script/verify-prep, script/verify-log] /verify-branch on a ticket whose criteria sit under topical headings (B1, B2, ...) now takes them from the plan's acceptance-criteria.md and runs, instead of refusing at prep and spending a human question per branch.
 * [The asks-done call the review packet prints runs once its outcomes are filled in](notes/2026-11-01-the-asks-done-call-the-review-packet-prints-runs.md) [script/review-fix] The review packet now prints one numbered outcome slot per ask (`<outcome-1> <outcome-2>`), so a session that fills in the slots runs the asks-done call right the first time, instead of copying a count marker (`x2`) that asks-done refused as an extra outcome.
 * [A reviewer's list of claims that check out stays out of the asks](notes/2026-11-01-a-reviewer-s-list-of-claims-that-check-out-stays.md) [script/review-fix, script/review-loop] A review whose finding is followed by a lead-in such as "The other claims check out:" and a list of confirmations now gives one ask, not one ask per confirmation, so the user answers only real decisions (one real ask had become four).
 * [Plan review cuts its shards outside the plan folder](notes/2026-11-01-plan-review-cuts-its-shards-outside-the-plan.md) [skill/eng-spec, script/plan-review-shards] An eng-spec plan over 400 lines now gets its two review extracts from a script that writes them to a temp folder and deletes it after the hand-backs, so no stale review-shard copy is left in the plan folder for a later coder lane to treat as its own.

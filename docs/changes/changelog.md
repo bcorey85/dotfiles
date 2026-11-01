@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-759 changes
+760 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -134,6 +134,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A reviewer's list of claims that check out stays out of the asks](notes/2026-11-01-a-reviewer-s-list-of-claims-that-check-out-stays.md) [script/review-fix, script/review-loop] A review whose finding is followed by a lead-in such as "The other claims check out:" and a list of confirmations now gives one ask, not one ask per confirmation, so the user answers only real decisions (one real ask had become four).
 * [Plan review cuts its shards outside the plan folder](notes/2026-11-01-plan-review-cuts-its-shards-outside-the-plan.md) [skill/eng-spec, script/plan-review-shards] An eng-spec plan over 400 lines now gets its two review extracts from a script that writes them to a temp folder and deletes it after the hand-backs, so no stale review-shard copy is left in the plan folder for a later coder lane to treat as its own.
 * [A plan ticked after review keeps the commit credit](notes/2026-11-01-a-plan-ticked-after-review-keeps-the-commit-credit.md) [script/review-commit-gate] A /code commit of reviewed work now passes the commit gate after a later coder ticks the plan's status line or edits another note, instead of being denied until a whole new /review (about 6 minutes) runs; any code edit after the review is still denied.
 * [A plan ruling credits the tree the review covered, and the commit gate names the ruling step](notes/2026-11-01-a-plan-ruling-credits-the-tree-the-review-covered.md) [script/review-commit-gate, script/review-fix] A /code commit after a review that held a plan impact now passes the commit gate once the impact is ruled on, instead of being denied until a whole new /review (about 6 minutes) runs; a denial caused by an unruled plan impact now names the ruling command, not /review.

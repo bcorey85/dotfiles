@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-759 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+760 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [The test-reviewer runs on Sonnet instead of Opus](notes/2026-11-01-the-test-reviewer-runs-on-sonnet-instead-of-opus.md).
+Latest change: 2026-11-01, [A reviewer's list of claims that check out stays out of the asks](notes/2026-11-01-a-reviewer-s-list-of-claims-that-check-out-stays.md).
 
 ## Top gains
 

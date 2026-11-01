@@ -374,8 +374,14 @@ const isViewed = (state: State, file: DiffFile) =>
   state.viewed[file.path] === patchHash(file);
 
 /**
+ * Paths `o` collapsed since the last load. A mark read from disk opens raw, so
+ * only a mark in this set is one the screen shows.
+ */
+const collapsedPaths = new Set<string>();
+
+/**
  * Where to land after marking a file viewed: the next file in review order that
- * is not itself viewed, wrapping once so a sweep ends on the work that is left.
+ * is not shown collapsed, wrapping once so a sweep ends on the work that is left.
  * Null when the review is exhausted, or when it is not the one we recorded.
  */
 function nextUnviewed(state: State, fromPath: string): ReviewFile | null {
@@ -384,7 +390,8 @@ function nextUnviewed(state: State, fromPath: string): ReviewFile | null {
   if (from < 0) return null;
   for (let step = 1; step < files.length; step++) {
     const candidate = files[(from + step) % files.length];
-    if (state.viewed[candidate.path] !== candidate.hash) return candidate;
+    const marked = state.viewed[candidate.path] === candidate.hash;
+    if (!marked || !collapsedPaths.has(candidate.path)) return candidate;
   }
   return null;
 }
@@ -513,9 +520,13 @@ export default function claudeReview(hunk: HunkApi): void {
       const state = withState(ctx);
       if (!state) return;
 
-      if (isViewed(state, file)) {
+      // Toggle what the screen shows, not what the disk holds: a mark from an
+      // earlier load opens raw, and `p` leaves the view selected on raw.
+      const viewSelected = ctx.fileViews.isActive(VIEW_ID);
+      if (viewSelected && isViewed(state, file)) {
         delete state.viewed[file.path];
         writeState(state);
+        collapsedPaths.delete(file.path);
         // Restore raw diff before the view stops matching the file.
         ctx.fileViews.select(null);
         ctx.notify(`reopened ${file.path}`);
@@ -524,12 +535,18 @@ export default function claudeReview(hunk: HunkApi): void {
 
       state.viewed[file.path] = patchHash(file);
       writeState(state);
+      collapsedPaths.add(file.path);
       const history = markHistory.get(state.repoRoot) ?? [];
       history.push(file.path);
       markHistory.set(state.repoRoot, history);
-      // The mark is on disk first, so `matches` is already true here. Select
-      // before navigating: it acts on whichever file is selected right now.
-      ctx.fileViews.select(VIEW_ID);
+      // The mark is on disk first, so `matches` is already true here. Collapse
+      // before navigating: it acts on whichever file is selected right now. A
+      // view still selected from `p` makes `select` a no-op, so re-lay it out.
+      if (viewSelected) {
+        ctx.fileViews.refresh(VIEW_ID, { fileId: file.id });
+      } else {
+        ctx.fileViews.select(VIEW_ID);
+      }
       const count = Object.keys(state.viewed).length;
       const next = nextUnviewed(state, file.path);
       if (next) jumpAfterCollapse(ctx, next.id);
@@ -875,6 +892,8 @@ export default function claudeReview(hunk: HunkApi): void {
   hunk.on("note_created", ({ note }, ctx) => recordNote(note, ctx));
   hunk.on("note_edited", ({ note }, ctx) => recordNote(note, ctx));
   hunk.on("session_reload", ({ changeset }, ctx) => {
+    // A load opens every file raw.
+    collapsedPaths.clear();
     const paths = landingPaths;
     landingPaths = [];
     for (const path of paths) {

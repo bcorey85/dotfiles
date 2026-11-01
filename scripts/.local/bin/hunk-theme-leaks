@@ -1,0 +1,129 @@
+#!/usr/bin/env node
+// hunk-theme-leaks <hunk main.js> <base theme id> < custom_theme block
+//
+// Prints TOML `syntax_scopes` lines that stop hunk's base theme from leaking
+// through a [custom_theme]. hunk appends the block's scopes after the base
+// theme's rules, and TextMate picks the most specific selector, so a base rule
+// such as `keyword.operator.expression.delete` beats our `keyword.operator.expression`.
+// For every base selector deeper than our best matching scope, print that
+// selector with our scope's colour. Selectors we have no scope for keep the
+// base colour. Exits non-zero when the base theme is not found.
+
+"use strict";
+
+const fs = require("fs");
+
+const SCOPE_LINE = /^"([^"]+)"\s*=\s*"(#[0-9a-fA-F]{3,8})"/;
+const SCOPES_HEADER = "[custom_theme.syntax_scopes]";
+
+function decodeJsString(literal) {
+  return literal.replace(/\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)/g, (_match, escape) => {
+    if (escape[0] === "u" || escape[0] === "x") {
+      return String.fromCharCode(parseInt(escape.slice(1), 16));
+    }
+    const named = { n: "\n", t: "\t", r: "\r", b: "\b", f: "\f", v: "\v", 0: "\0" };
+    return named[escape] ?? escape;
+  });
+}
+
+function readBaseRules(mainJsPath, baseId) {
+  const nameMarker = `"name":"${baseId}"`;
+  const mainJs = fs.readFileSync(mainJsPath, "utf8");
+
+  for (const line of mainJs.split("\n")) {
+    if (!line.includes("JSON.parse('") || !line.includes(nameMarker)) {
+      continue;
+    }
+    if (!line.includes('"tokenColors":')) {
+      continue;
+    }
+
+    const start = line.indexOf("JSON.parse('") + "JSON.parse('".length;
+    const end = line.lastIndexOf("')");
+    const theme = JSON.parse(decodeJsString(line.slice(start, end)));
+    if (theme.name === baseId) {
+      return theme.tokenColors;
+    }
+  }
+  return null;
+}
+
+function readOverrides(blockText) {
+  const overrides = new Map();
+  let inScopes = false;
+
+  for (const line of blockText.split("\n")) {
+    if (line.startsWith("[")) {
+      inScopes = line.trim() === SCOPES_HEADER;
+      continue;
+    }
+    const scopeMatch = inScopes ? SCOPE_LINE.exec(line) : null;
+    if (scopeMatch) {
+      overrides.set(scopeMatch[1], scopeMatch[2]);
+    }
+  }
+  return overrides;
+}
+
+function bestOverride(selector, overrides) {
+  const scopeParts = selector.split(".");
+
+  for (let length = scopeParts.length; length > 0; length--) {
+    const prefix = scopeParts.slice(0, length).join(".");
+    if (overrides.has(prefix)) {
+      return { scope: prefix, depth: length, lastDepth: scopeParts.length };
+    }
+  }
+  return null;
+}
+
+function baseSelectors(rule) {
+  if (!rule.scope || !rule.settings?.foreground) {
+    return [];
+  }
+  const scopes = Array.isArray(rule.scope) ? rule.scope : rule.scope.split(",");
+  return scopes.map((scope) => scope.trim()).filter(Boolean);
+}
+
+function main() {
+  const [mainJsPath, baseId] = process.argv.slice(2);
+  if (!mainJsPath || !baseId) {
+    console.error("usage: hunk-theme-leaks <hunk main.js> <base theme id> < block");
+    process.exit(2);
+  }
+
+  const baseRules = readBaseRules(mainJsPath, baseId);
+  if (!baseRules) {
+    console.error(`hunk-theme-leaks: base theme "${baseId}" not found in ${mainJsPath}`);
+    process.exit(1);
+  }
+
+  const blockText = fs.readFileSync(0, "utf8");
+  const overrides = readOverrides(blockText);
+  const printed = new Set();
+
+  for (const rule of baseRules) {
+    for (const selector of baseSelectors(rule)) {
+      if (overrides.has(selector) || printed.has(selector)) {
+        continue;
+      }
+
+      // A descendant selector (`comment markup.link`) is context our flat
+      // scope table cannot express; it keeps the base colour.
+      if (/\s/.test(selector)) {
+        continue;
+      }
+
+      const best = bestOverride(selector, overrides);
+      if (!best || best.lastDepth <= best.depth) {
+        continue;
+      }
+
+      printed.add(selector);
+      const scopeColor = overrides.get(best.scope);
+      console.log(`${JSON.stringify(selector)} = "${scopeColor}"`);
+    }
+  }
+}
+
+main();

@@ -1832,7 +1832,9 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         with unittest.mock.patch.object(handback_hook.loop_transcript, "scan", side_effect=RuntimeError("boom")), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
-            reason, reviewer_dead = handback_hook.transcript_gates(event, SESSION, "a1", CONVERGED, packet, "converged")
+            transcript = handback_hook.read_loop_transcript(event)
+            reason, reviewer_dead = handback_hook.transcript_gates(transcript, event, SESSION, "a1", CONVERGED, packet,
+                                                                   "converged")
 
         self.assertEqual(reason, handback_hook.loop_transcript.PLAN_EDIT_REASON.format(plan="docs/plans/orders.md"))
         self.assertFalse(reviewer_dead)
@@ -1846,6 +1848,52 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertEqual(decision["permissionDecision"], "deny")
         self.assertIn("SendMessage", decision["permissionDecisionReason"])
         self.assertEqual(len(self.handback_rows()), 1)
+
+
+class NoReviewExemptionOwnerTest(HandbackTestBase):
+    def loop_hand_back(self, agent_id, prompt, message, steps=(), ledger=True):
+        """A hand-back from `agent_id` whose transcript opens on its dispatch `prompt` and, when `ledger`, logs the rows
+        CONVERGED owes, in a repo that holds a valid full-check receipt."""
+        repo = receipt_repo.make_repo(self)
+        receipt_repo.plant_receipt(repo)
+        prompt_line = {"type": "user", "message": {"role": "user", "content": prompt}}
+        ledger_lines = [ledger_call("tl1", FINDING_ROW), ledger_call("tl2", METRICS_ROW)] if ledger else []
+        lines = [prompt_line, *steps, *ledger_lines]
+        transcript = self.tmp / f"{agent_id}.jsonl"
+        transcript.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+        event = {"session_id": SESSION, "tool_name": "SubagentHandback", "agent_type": "review-loop",
+                 "agent_id": agent_id, "agent_transcript_path": str(transcript), "cwd": repo,
+                 "tool_input": {"message": message}}
+        return self.run_cli(["hook", "handback"], json.dumps(event))[1]
+
+    def handback_rows(self):
+        return handback_store.session_rows(SESSION, "handback")
+
+    def test_a_clean_loop_with_no_reviewer_cannot_take_a_failed_no_review_loop_s_exemption(self):
+        blocker = json_packet(status="critical-blocker", blockers=["migration drops a column"])
+        not_dispatched = ('~/.claude/skills/review/log-review-metrics lane=code iter=1 fix=0 ask=0 nit=0 fixed=0 '
+                          'result="NOT DISPATCHED"')
+        self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
+        self.assertEqual(self.loop_hand_back("l1", "scope: branch\nno-review\n", blocker,
+                                             [ledger_call("tl1", not_dispatched)], ledger=False), "")
+        self.dispatch("review-loop", prompt="scope: branch\n")
+        self.dispatch("coder", "l2")
+
+        first = self.loop_hand_back("l2", "scope: branch\n", CONVERGED, [coder_step("t1")])
+        second = self.loop_hand_back("l2", "scope: branch\n", CONVERGED, [coder_step("t1")])
+
+        self.assertIn("clean but no reviewer ran", json.loads(first)["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertEqual("", second)
+        self.assertTrue(self.handback_rows()[-1]["no_reviewer"])
+
+    def test_a_no_review_loop_s_own_clean_hand_back_passes_with_its_transcript(self):
+        self.dispatch("review-loop", prompt="scope: branch\nno-review\n")
+        self.dispatch("coder", "l1")
+
+        out = self.loop_hand_back("l1", "scope: branch\nno-review\n", CONVERGED, [coder_step("t1")])
+
+        self.assertEqual("", out)
+        self.assertFalse(self.handback_rows()[-1]["no_reviewer"])
 
 
 class NoStoreReExportTest(unittest.TestCase):

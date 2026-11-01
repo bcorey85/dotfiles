@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-755 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+756 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [A phase that names repo-root files gets its gate](notes/2026-11-01-a-phase-that-names-repo-root-files-gets-its-gate.md).
+Latest change: 2026-11-01, [A no-review exemption belongs to the loop that asked for it](notes/2026-11-01-a-no-review-exemption-belongs-to-the-loop-that.md).
 
 ## Top gains
 

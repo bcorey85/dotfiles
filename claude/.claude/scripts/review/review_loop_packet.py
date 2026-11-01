@@ -33,14 +33,16 @@ def finding_entry(finding):
 def ask_entry(ask, gate, finding_id):
     # The text before the last `change:` marker is the question; the text after it is the edit an accepted answer
     # makes. An ask with no marker carries its own recommended edit, so its whole text is both. An ask that opens
-    # with its marker asks its change.
+    # with its marker asks its change, and one that ends on an empty marker carries its edit in its question.
     text = ask.text
     question, change = text, text
     change_marks = list(ASK_CHANGE_MARK.finditer(text))
     if change_marks:
         last_mark = change_marks[-1]
-        change = text[last_mark.end():].strip()
-        question = text[:last_mark.start()].rstrip(" —-") or change
+        after_mark = text[last_mark.end():].strip()
+        before_mark = text[:last_mark.start()].rstrip(" —-")
+        question = before_mark or after_mark
+        change = after_mark or before_mark
 
     entry = {"question": question, "file_line": located(ask), "change": change, "gate": gate,
              "class": ask.finding_class}

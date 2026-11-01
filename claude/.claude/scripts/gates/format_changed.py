@@ -2,7 +2,9 @@
 """Stop and UserPromptSubmit hook: format only the files a turn changed, once, at turn end.
 
 UserPromptSubmit snapshots the dirty set with content hashes. Stop formats files new
-to that set or whose hash moved, so untouched hand edits are left alone. Silent and always exits 0.
+to that set or whose hash moved, so untouched hand edits are left alone. Always exits 0.
+UserPromptSubmit also prints code_context's systemMessage when a /code start finds the main context over its limit;
+it prints nothing else.
 Stop formats nothing while a merge, squash merge, cherry-pick, revert or rebase is unfinished: the files the other
 side brought in are in the dirty set, and reformatting them leaves unstaged edits behind the commit.
 A commit or reset deletes the message files git leaves for a squash merge or `cherry-pick -n`, so formatting resumes
@@ -19,6 +21,7 @@ import os
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import code_context
 import format_files
 import hook_input
 import script_utils
@@ -89,8 +92,14 @@ def main():
         event = event_field(documents, "hook_event_name")
         session = event_field(documents, "session_id")
         cwd = event_field(documents, "cwd")
+        prompt = event_field(documents, "prompt")
+        transcript_path = event_field(documents, "transcript_path")
     except (ValueError, hook_input.JqError):
         return 0
+    if event == "UserPromptSubmit":
+        warning = code_context.code_start_warning(prompt, transcript_path)
+        if warning is not None:
+            sys.stdout.write(warning)
     if session == "":
         return 0
     if cwd == "":

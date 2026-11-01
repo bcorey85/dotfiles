@@ -102,6 +102,11 @@ class GuidanceRulesTest(unittest.TestCase):
         coder_text = guidance_text("skills/coder-core/SKILL.md")
         self.assertIn("the user's name, and sign-offs (who and when) are banned", coder_text)
 
+    def test_frontend_style_calls_a_braceless_block_a_lint_error_only_where_eslint_enables_curly(self):
+        text = guidance_text("rules/frontend-style.md")
+        self.assertIn("eslint config enables `curly`", text)
+        self.assertNotIn("will break CI", text)
+
 
 if __name__ == "__main__":
     unittest.main()

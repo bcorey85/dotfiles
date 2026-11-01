@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-774 changes
+775 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -33,6 +33,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The branch exit runs a peer review and one coder dispatch](notes/2026-11-01-the-branch-exit-runs-a-peer-review-and-one-coder.md) [skill/verify-branch, shared/closing-phases, script/verify-prep, script/verify-log] The /verify-branch exit review is now a report-only peer review plus one coder dispatch that fixes every finding, nits included. On the bench it caught and fixed as much as the full review loop for 82% fewer Opus tokens (23.18M → 4.09M) and about a third of the wall time. **cuts tokens by 82% (23.2M → 4.1M)**
 * [The test-reviewer runs on Sonnet instead of Opus](notes/2026-11-01-the-test-reviewer-runs-on-sonnet-instead-of-opus.md) [agent/test-reviewer] The test-reviewer agent now runs on Sonnet. On the bench this cut its list cost 79% per review ($1.74 → $0.37 median) and its wall time 63% (198 s → 73 s), while it caught a median 9 of 11 seeded test-suite gaps against Opus's 10 of 11, inside the one-gap bar set before the runs.
 * [Code runs end phases on a statement, decide review asks and relay the stop word for word](notes/2026-11-01-code-runs-end-phases-on-a-statement-decide-review.md) [skill/code, agent/code-fork, script/code-relay] The /code fork asks no leave for a reversible step, ends every phase stop on a statement, and rules on review asks itself. The main session relays the fork's stop through `code_relay.py` and makes no other tool call before the user replies.
 * [Smell-reviewer reads code-reviewer's structure rules instead of a copy](notes/2026-11-01-smell-reviewer-reads-code-reviewer-s-structure.md) [agent/smell-reviewer, agent/code-reviewer] smell-reviewer drops from 1,026 to 464 words: it reads code-reviewer's Structure step at run time instead of carrying a near-verbatim copy, so the two lenses can no longer drift, and both now tag dead weight as fix.

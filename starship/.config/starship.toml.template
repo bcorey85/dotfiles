@@ -62,33 +62,32 @@ fg = "#3a4238"
 bg = "#fafae0"
 grey = "#838781"
 
-# gruvbox-material HARD dark, foreground=original — accents are original
-# gruvbox's, the ground is a stop darker (#1d2021 vs medium's #282828).
+# gruvbox-material SOFT dark (#32302f), foreground=material.
 [palettes.gruvbox-material-dark]
-red = "#fb4934"
-orange = "#fe8019"
-yellow = "#fabd2f"
-green = "#b8bb26"
-blue = "#83a598"
-branch = "#83a598"
-teal = "#8ec07c"
+red = "#ea6962"
+orange = "#e78a4e"
+yellow = "#d8a657"
+green = "#a9b665"
+blue = "#7daea3"
+branch = "#7daea3"
+teal = "#89b482"
 purple = "#d3869b"
-fg = "#ebdbb2"
-bg = "#1d2021"
+fg = "#d4be98"
+bg = "#32302f"
 grey = "#928374"
 
-# gruvbox-material HARD light (#f9f5d7, lighter than gruvbox's medium cream).
+# gruvbox-material SOFT light (#f2e5bc), foreground=material.
 [palettes.gruvbox-material-light]
-red = "#9d0006"
-orange = "#af3a03"
-yellow = "#b57614"
-green = "#79740e"
-blue = "#076678"
-branch = "#076678"
-teal = "#427b58"
-purple = "#8f3f71"
-fg = "#3c3836"
-bg = "#f9f5d7"
+red = "#c14a4a"
+orange = "#c35e0a"
+yellow = "#b47109"
+green = "#6c782e"
+blue = "#45707a"
+branch = "#45707a"
+teal = "#4c7a5d"
+purple = "#945e80"
+fg = "#654735"
+bg = "#f2e5bc"
 grey = "#928374"
 
 # solarized-osaka dark (craftzdog/solarized-osaka.nvim).

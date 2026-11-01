@@ -46,22 +46,21 @@ local FAMILIES = {
     },
   },
   ["gruvbox-material"] = {
-    -- sainnhe/gruvbox-material, HARD background, foreground = "original" — the
-    -- ORIGINAL gruvbox accents (red #fb4934, fg #ebdbb2) over hard grounds
-    -- (#1d2021 dark / #f9f5d7 light, a stop past gruvbox's medium #282828 /
-    -- #fbf1c7) and material's own role table (Function green, Operator orange,
-    -- Constant aqua, PreProc purple). One colorscheme follows
+    -- sainnhe/gruvbox-material, SOFT background, foreground = "material" —
+    -- material accents (red #ea6962, fg #d4be98) over soft grounds (#32302f
+    -- dark / #f2e5bc light) and material's own role table (Function green,
+    -- Operator orange, Constant aqua, PreProc purple). One colorscheme follows
     -- vim.o.background and sets colors_name "gruvbox-material" in both modes.
     schemes = { dark = "gruvbox-material", light = "gruvbox-material" },
     colors_name = "gruvbox-material",
     -- The variant globals are read at :colorscheme time, hence `pre`.
     pre = function()
-      vim.g.gruvbox_material_background = "hard"
-      vim.g.gruvbox_material_foreground = "original"
+      vim.g.gruvbox_material_background = "soft"
+      vim.g.gruvbox_material_foreground = "material"
     end,
     accents = {
-      dark = { heading1 = "#fb4934", heading = "#fabd2f" }, -- red + yellow
-      light = { heading1 = "#9d0006", heading = "#b57614" },
+      dark = { heading1 = "#ea6962", heading = "#d8a657" }, -- red + yellow
+      light = { heading1 = "#c14a4a", heading = "#b47109" },
     },
   },
   ["edge"] = {
@@ -348,6 +347,19 @@ local function set_dashboard()
   end
 end
 
+-- Clear the editor background so the terminal's translucent one shows
+-- through. Floats keep theirs to stay readable. Must run last: the passes
+-- above read Normal's bg.
+local function set_transparent()
+  local groups = { "Normal", "NormalNC", "SignColumn", "LineNr", "FoldColumn", "EndOfBuffer" }
+  for _, name in ipairs(groups) do
+    local spec = vim.api.nvim_get_hl(0, { name = name, link = false })
+    spec.bg = nil
+    spec.ctermbg = nil
+    vim.api.nvim_set_hl(0, name, spec)
+  end
+end
+
 -- Runs on every ColorScheme. A manual :colorscheme (theme audition) won't
 -- match the active family's scheme — skip its accents and apply only
 -- the theme-agnostic word-diff glue, so auditions aren't painted over.
@@ -368,6 +380,7 @@ local function apply_overrides()
   set_org_agenda()
   set_dashboard()
   set_prose()
+  set_transparent()
 end
 
 -- Apply family+mode by setting background and re-running :colorscheme. Skips

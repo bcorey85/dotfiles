@@ -124,6 +124,10 @@ class LaterPhasePathsTest(unittest.TestCase):
         text = PLAN.replace("- [ ] Phase 2:", "- [x] Phase 2:")
         self.assertEqual([], expected_red.later_phase_paths(plan_lines(text), "1"))
 
+    def test_a_repo_root_file_only_an_open_later_phase_names_is_closed(self):
+        text = PLAN.replace("**File**: `app/audit.py`", "**File**: `app/audit.py`\n**File**: `Makefile.toml`")
+        self.assertEqual(["Makefile.toml", "app/audit.py"], expected_red.later_phase_paths(plan_lines(text), "1"))
+
     def test_a_path_a_later_phase_only_mentions_stays_open(self):
         mention = "**File**: `app/audit.py`\n\nVerify `app/report.py` still loads."
         text = PLAN.replace("**File**: `app/audit.py`", mention)

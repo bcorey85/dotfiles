@@ -21,6 +21,7 @@ from shell_command import (
     contains_word_run,
     docker_forwarded_variables,
     docker_set_variables,
+    interpreter_family,
     is_git_word,
     names_code_runner,
     parse_simple_commands,
@@ -37,6 +38,17 @@ from shell_command import (
     unwrap_docker,
     without_assignments,
 )
+
+
+class InterpreterFamilyTest(unittest.TestCase):
+    def test_a_word_names_its_family_by_basename(self):
+        cases = {
+            "python3": "python", "/usr/bin/python3.12": "python", "nodejs": "node", "NODE": "node",
+            "perl": "perl", "ruby": "ruby", "php": "php", "python3x": None, "bash": None,
+        }
+        for word, family in cases.items():
+            with self.subTest(word=word):
+                self.assertEqual(family, interpreter_family(word))
 
 
 class IsGitWordTest(unittest.TestCase):

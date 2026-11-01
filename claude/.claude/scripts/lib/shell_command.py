@@ -89,6 +89,15 @@ INTERPRETER_FAMILIES = {
 }
 
 
+def interpreter_family(word):
+    # The INTERPRETER_FAMILIES key whose name fully matches the basename of word (/usr/bin/python3.12, nodejs), or None.
+    program = os.path.basename(word)
+    for family, rules in INTERPRETER_FAMILIES.items():
+        if re.fullmatch(rules["name"], program, re.I):
+            return family
+    return None
+
+
 def redirection_writes_file(operator, target):
     """True when a redirection can create or change a file: an output operator (`>`, `>>`, `&>`, `>&`, `<>`) whose
     target is not /dev/null and not a file-descriptor copy (`>&1`, `>&2`, `>&-`). An input redirection never does."""

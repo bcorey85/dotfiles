@@ -23,7 +23,7 @@ Any remaining text after the modifier is passed as a focus area (e.g., `/test-re
 
 2. **Determine scope** if no modifier: diff + untracked files, classify fe/be per project layout (CLAUDE.md if unclear). Only-fe → frontend; only-be → backend; both → fullstack; ambiguous → ask.
 
-3. **Dispatch** (omit `model` throughout — frontmatter pins Opus): frontend-only → scope `frontend`; backend-only → `backend`; fullstack → TWO in parallel; branch → ONE scope `branch` (agent diffs merge-base itself), ad-hoc use only per above. Include focus area throughout.
+3. **Dispatch** (omit `model` throughout — frontmatter pins Sonnet): frontend-only → scope `frontend`; backend-only → `backend`; fullstack → TWO in parallel; branch → ONE scope `branch` (agent diffs merge-base itself), ad-hoc use only per above. Include focus area throughout.
 
 4. **Present the report(s)**; ask about dispatching coders for fixes.
 

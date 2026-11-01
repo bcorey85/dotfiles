@@ -1,7 +1,7 @@
 ---
 name: test-reviewer
 description: "Reviews a test suite for coverage gaps, weak assertions and stale tests. Dispatched by /test-review, /refactor and review-loop."
-model: opus
+model: sonnet
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow
 ---

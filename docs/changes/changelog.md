@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-745 changes
+746 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -127,6 +127,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Final check reads a Full suite section that documents CI](notes/2026-11-01-final-check-reads-a-full-suite-section-that.md) [agent/review-loop] A repo whose CLAUDE.md documents CI as its full suite in a Full suite section no longer stops the final check when its check-only command prints no test summary.
 * [Review loop quotes every path it passes to a log or script call](notes/2026-11-01-review-loop-quotes-every-path-it-passes-to-a-log.md) [agent/review-loop, shared/finding-log, skill/code] A review of a repo with dynamic route folders (`app/[id]/route.ts`) logs each finding on the first call: the loop's log and script templates single-quote every path, so zsh no longer fails the call with "no matches found" and costs a retry.
 * [comment-bloat gate lets agent-evals and shell code name plan impacts and acceptance criteria](notes/2026-10-31-comment-bloat-gate-lets-agent-evals-and-shell-code.md) [script/comment-bloat-gate] The plan-impact and acceptance-criteria markers no longer fire in an agent-evals checkout or on a shell line that is not a comment. A comment in any other repo still blocks.
 * [The unreviewed-fix list names only the reviewed repo's files, once each](notes/2026-10-31-the-unreviewed-fix-list-names-only-the-reviewed.md) [script/handback] A review packet's 'Last fix not reviewed' list resolves each fixed[] name against files_touched, so a bare file name and its full path count once and a file from another repo named in a finding's text drops out.

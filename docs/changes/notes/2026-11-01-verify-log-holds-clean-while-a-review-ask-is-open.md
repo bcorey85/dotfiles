@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "verify-log holds CLEAN while a review ask is open"
 description: "verify-branch no longer prints CLEAN while the branch review logged an ask on the same tree; it prints ASKS OPEN until the ask is ruled on or the code is fixed and reviewed again."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T02:36:55-06:00"}
-seq: 438
+seq: 449
 kind: "fix"
 components: ["script/verify-log", "script/verify-prep", "skill/verify-branch"]
 evidence: ["defect report"]

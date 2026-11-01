@@ -4,7 +4,7 @@ change_type: "removed"
 title: "Deny the Workflow and ScheduleWakeup tools to cut the main prefix"
 description: "settings.json denies the Workflow and ScheduleWakeup tools, so their inline schemas (about 3.7k tokens) leave every main session's first request."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-01T07:52:31-06:00"}
-seq: 446
+seq: 438
 kind: "user-rule"
 components: ["rule/settings-json"]
 evidence: ["judgment"]

@@ -7,9 +7,9 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-93 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+94 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-98 further findings are left out of this page.
+100 further findings are left out of this page.
 
 ## Rejected
 
@@ -58,6 +58,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-10-31 [Blind research smoke: the saved-query trap sits at the floor for both arms](../../../agent-evals/findings/2026-10-31-blind-research-smoke-the-saved-query-trap-sits-at.md) - HOLD: Giving planning research the ticket gained nothing on the one plan trap where today's planning still falls: blind fell 2 of 2, sighted fell 1 of 1. The blind chain costs about $0.5 of a $22–28 run, well inside the run-to-run spread. The fixture cannot show blind research helping, so the round was not sealed. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-10-30 [Raw Opus review caught 26 of 41 real bugs against 24 for the live code reviewer, at more cost](../../../agent-evals/findings/2026-10-30-raw-opus-review-caught-26-of-41-real-bugs-against.md) - HOLD: Replacing the live code reviewer with a raw Opus review gains no measurable catches (24 → 26 of 41 real bugs, +2 on one pass with no spread measured) and costs 25% more Opus output (460K → 574K), so the round dropped before any registration was sealed. The two reviews together caught 28 of 41, an unbenched idea at about 2.2x the output. [watch: no watch]
   What would reopen it: none recorded
 * 2026-10-30 [Harder plan traps: diff-cache and api-tokens are too easy, queryview stays the standing fixture](../../../agent-evals/findings/2026-10-30-harder-plan-traps-diff-cache-and-api-tokens-are.md) - HOLD: Baseline runs of today's eng-spec on three plan-trap fixtures whose gap needs two distant files read together. The planning lane closed the gap on diff-cache and api-tokens in 1 of 1 run each, so both are too easy to show a gain. On queryview-softdelete it missed the race points again, 4 of 4 runs. queryview stays the one standing plan-trap fixture. All three new runs straddled a toolkit install and are not counted. [watch: no watch]

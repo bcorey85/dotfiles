@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-745 changes
+746 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Stop hook sends back a closing permission question](notes/2026-11-01-stop-hook-sends-back-a-closing-permission-question.md) [script/staged-claim-gate] The Stop hook now sends a main-session turn back once when it ends on a permission question for a reversible step, including "do you want that ...?" forms. On the bench this cut ask-ended turns from 7 of 8 to 0 of 8 and fixed the reported bug in 5 of 8 runs against 0 of 8, with no unasked commit, push or deploy. The hook's median time is 47 ms against a 12 ms bare Python start.
 * [Replay corpus pins every local Bash gate decision](notes/2026-10-31-replay-corpus-pins-every-local-bash-gate-decision.md) [script/shell-write-gate, script/git-discipline-gate, script/inline-interpreter-hint, script/pipe-shell-check] A labelled corpus of 64 hand-written Bash calls now replays through shell-write-gate, git-discipline-gate, the inline-interpreter hint and the pipe-shell check on every suite run, and fails on any must-deny bypass or decision against its label. Before, a gate edit was checked only by its own unit tests, with no side-by-side count of denials, redundant denials, bypasses, deny-text tokens and latency against an earlier ref.
 * [Press Enter in herdr panes stuck at the usage-limit reset prompt](notes/2026-10-31-press-enter-in-herdr-panes-stuck-at-the-usage.md) [script/herdr-wake-limited] A two-minute timer presses Enter in a Claude pane that shows the usage-limit reset prompt, so a worker the laptop slept past the reset continues within minutes instead of sitting idle.
 * [Toolkit edits show the component's settled results first](notes/2026-10-31-toolkit-edits-show-the-component-s-settled-results.md) [script/settled-lessons-hook] A PreToolUse hook on Write, Edit and MultiEdit shows a component's settled results before the session's first edit of it, so a settled result is not retested or reversed by accident.
@@ -888,6 +889,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [Stop hook sends back a closing permission question](notes/2026-11-01-stop-hook-sends-back-a-closing-permission-question.md) - No intake metric reads ask-ended turns yet; lane B adds the watch id and replaces this line.
 * [Toolkit edits need a bench proof sized by task class](notes/2026-10-24-toolkit-edits-need-a-bench-proof-sized-by-task.md) - it gates the ledger and dotfiles commits on this machine, which no work intake reads; the ledger itself shows whether change files carry proof
 * [The metrics switch reads only the environment variable](notes/2026-10-24-the-metrics-switch-reads-only-the-environment.md) - The change decides only whether metrics rows are written, not what any agent does. The intake's toolkit-telemetry line reads the switch on each pull.
 * [Escape loggers file false or stale prose as docs](notes/2026-10-24-escape-loggers-file-false-or-stale-prose-as-docs.md) - The before period has almost no docs escapes because the skills never offered the class, so a before-and-after watch on the class reads a false rise. Read it as a share: once about 40 new review escapes have landed, count the docs share of review escapes and compare it with the census share of false or stale prose.

@@ -179,6 +179,29 @@ class ReviewCommitGateTest(GateCase):
             with self.subTest(command=command):
                 self.assert_silent(self.bash(command))
 
+    def test_a_search_that_quotes_the_commit_words_through_a_text_tool_cd_or_loop_passes_while_dirty(self):
+        self.dispatch()
+        for command in ("""grep -o '"command":"[^"]*git commit[^}]*' log.jsonl | sort | uniq -c""",
+                        "grep -o 'git commit[^}]*' log.jsonl | jq -r .x", "grep 'git commit' log.txt | cut -c1-80",
+                        "cd /tmp && grep 'git commit' log.txt", "ls; grep -c 'git commit' log.txt",
+                        "grep 'git commit' $(ls log*)", "git log --all --grep='git commit' | sort",
+                        """for f in a b; do grep 'git commit' "$f"; done""",
+                        "if grep -q 'git commit' log.txt; then echo found; fi"):
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(command))
+
+    def test_a_commit_after_a_cd_keyword_or_text_tool_is_still_denied(self):
+        self.dispatch()
+        for command in ("cd /tmp && git commit -m x", "for f in a; do git commit -m x; done",
+                        "if true; then git commit -m x; fi", "! git commit -m x",
+                        "grep x f | sort --compress-program=sh git commit",
+                        "grep x f | sort --compress-program sh git commit",
+                        "grep x f | sort --compress=sh git commit",
+                        "grep x f | sort --compress-p sh git commit",
+                        "for f in $(git commit -m x); do echo $f; done"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
     def test_a_heredoc_body_that_holds_the_commit_words_is_denied(self):
         self.dispatch()
         for body in ("echo git commit -m x", "note git commit -m x"):

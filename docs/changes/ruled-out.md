@@ -7,9 +7,9 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-93 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+96 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-98 further findings are left out of this page.
+101 further findings are left out of this page.
 
 ## Rejected
 
@@ -58,6 +58,12 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-01 [The no-nested-call rule earns its place under prompt pressure](../../../agent-evals/findings/2026-11-01-the-no-nested-call-rule-earns-its-place-under.md) - HOLD: Keeping the global CLAUDE.md rule against passing a call's result straight into an argument call raised compliance from 6/16 to 13/16 under a prompt asking for one-line bodies (Fisher two-sided p = 0.029), so the rule's text changes behavior and stays. [watch: no watch]
+  What would reopen it: none recorded
+* 2026-10-31 [Three more always-loaded CLAUDE.md rules show no on-off gap at 8 runs per arm](../../../agent-evals/findings/2026-10-31-three-more-always-loaded-claude-md-rules-show-no.md) - HOLD: Deleting the domain-naming, code-paragraph or no-blockquote rule from the global CLAUDE.md would save about 170 always-loaded words, and removing the rules lost 1 of 24 rule-off runs, inside the run-to-run spread, in this bench: 8/8 vs 8/8, 8/8 vs 7/8 and 8/8 vs 8/8 (rule on vs off) under a prompt that pushed against each rule, on code planted to tempt it. [watch: no watch]
+  What would reopen it: HOLD until the user signs off, then REMOVE the domain-naming, code-paragraph and no-blockquote paragraphs from the global CLAUDE.md: across 48 runs the rule-off arm complied 15 of 16 times on the two coding rules and 8 of 8 on the blockquote rule, so the 170 words buy nothing this bench can see.
+* 2026-10-31 [Blind research smoke: the saved-query trap sits at the floor for both arms](../../../agent-evals/findings/2026-10-31-blind-research-smoke-the-saved-query-trap-sits-at.md) - HOLD: Giving planning research the ticket gained nothing on the one plan trap where today's planning still falls: blind fell 2 of 2 (one a straddle), sighted fell 1 of 1. The blind chain costs about $0.5 of a $22–28 run, well inside the run-to-run spread. The fixture cannot show blind research helping, so the round was not sealed. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-10-30 [Raw Opus review caught 26 of 41 real bugs against 24 for the live code reviewer, at more cost](../../../agent-evals/findings/2026-10-30-raw-opus-review-caught-26-of-41-real-bugs-against.md) - HOLD: Replacing the live code reviewer with a raw Opus review gains no measurable catches (24 → 26 of 41 real bugs, +2 on one pass with no spread measured) and costs 25% more Opus output (460K → 574K), so the round dropped before any registration was sealed. The two reviews together caught 28 of 41, an unbenched idea at about 2.2x the output. [watch: no watch]
   What would reopen it: none recorded
 * 2026-10-30 [Harder plan traps: diff-cache and api-tokens are too easy, queryview stays the standing fixture](../../../agent-evals/findings/2026-10-30-harder-plan-traps-diff-cache-and-api-tokens-are.md) - HOLD: Baseline runs of today's eng-spec on three plan-trap fixtures whose gap needs two distant files read together. The planning lane closed the gap on diff-cache and api-tokens in 1 of 1 run each, so both are too easy to show a gain. On queryview-softdelete it missed the race points again, 4 of 4 runs. queryview stays the one standing plan-trap fixture. All three new runs straddled a toolkit install and are not counted. [watch: no watch]

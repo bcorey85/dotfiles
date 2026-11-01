@@ -385,5 +385,55 @@ class StagedClaimGateTest(unittest.TestCase):
         self.assert_passes("The files are staged.", cwd=self.outside)
 
 
+class PermissionQuestionTest(unittest.TestCase):
+    """The same Stop hook sends back a main-session turn that ends asking permission for a reversible step."""
+
+    setUp = StagedClaimGateTest.setUp
+    make_repo = StagedClaimGateTest.make_repo
+    run_gate = StagedClaimGateTest.run_gate
+    assert_passes = StagedClaimGateTest.assert_passes
+
+    def assert_sent_back(self, message, **options):
+        decision = json.loads(self.run_gate(message, **options))
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn("take the step yourself", decision["reason"])
+        return decision["reason"]
+
+    def test_a_turn_ending_on_a_permission_question_is_sent_back(self):
+        for message in ("Fixed the invoice total. The monthly report has the same bug. Want me to fix it too?",
+                        "Fixed the invoice total. The report repeats the bug. Do you want me to fix that too?",
+                        "Fixed the invoice total; the report has the same loop. Do you want that fixed too?",
+                        "The golden file holds the wrong figure. Shall I regenerate it?",
+                        "Tests pass. Would you like me to add a test for the empty invoice?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
+    def test_a_question_about_an_outward_or_lasting_step_passes(self):
+        for message in ("The fix is ready. Do you want me to commit it?", "Tests pass. Should I push the branch?",
+                        "The build is green. Want me to deploy it to production?",
+                        "The old rows are unused. Shall I delete them from the database?"):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_question_that_asks_for_a_choice_or_sits_early_passes(self):
+        long_tail = " The fix keeps every invoice line in the sum, and the test covers two lines." * 8
+        for message in ("Which name do you prefer, totals or sums?", "Do you want the short or the long report?",
+                        "Want me to fix the report too?" + long_tail, "Fixed it. Nothing is left to do."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_trigger_phrase_does_not_join_a_choice_question_in_the_next_sentence(self):
+        self.assert_passes("The tests are ready to run. Which name do you prefer, totals or sums?")
+
+    def test_a_second_stop_and_a_subagent_hand_back_pass(self):
+        message = "The report has the same bug. Want me to fix it too?"
+        self.assert_passes(message, stop_hook_active=True)
+        self.assert_passes(message, event="SubagentStop")
+
+    def test_a_staged_claim_and_a_permission_question_send_back_both_reasons(self):
+        reason = self.assert_sent_back("The files are staged. Want me to fix the report too?")
+        self.assertIn("git diff --cached --name-only", reason)
+
+
 if __name__ == "__main__":
     unittest.main()

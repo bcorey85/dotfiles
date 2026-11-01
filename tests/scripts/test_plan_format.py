@@ -188,6 +188,24 @@ class SectionShapeTest(unittest.TestCase):
         )
         self.assertEqual([("b", "1"), ("late", None)], [(i["text"], i["phase"]) for i in parse(text)])
 
+    def test_test_strategy_section_takes_a_level_3_test_strategy_heading_and_its_sub_heading(self):
+        lines = ["## Phase 1: x", "", "### Test Strategy", "", "Cover it.", "#### Sub", "more", "### Next", "out"]
+        section = plan_format.test_strategy_section(lines)
+        self.assertEqual("### Test Strategy\n\nCover it.\n#### Sub\nmore", section)
+
+    def test_test_strategy_range_skips_a_heading_in_a_fence_and_is_none_without_one(self):
+        fenced = ["## Phase 1: x", "```", "### Test Strategy", "```", "text"]
+        real = ["## Phase 1: x", "```", "### Test Strategy", "```", "## Test Strategy", "rules", "---", "out"]
+
+        self.assertIsNone(plan_format.test_strategy_range(fenced))
+        self.assertEqual((4, 6), plan_format.test_strategy_range(real))
+
+    def test_test_strategy_range_ignores_a_heading_in_a_shared_section_before_the_first_phase(self):
+        lines = ["## Shared", "### Test Strategy", "early", "## Phase 1: x", "body", "## Test Strategy", "late"]
+
+        self.assertEqual((5, 7), plan_format.test_strategy_range(lines))
+        self.assertEqual("## Test Strategy\nlate", plan_format.test_strategy_section(lines))
+
     def test_phase_resets_at_a_non_phase_heading_of_the_same_level(self):
         text = "## Phase 1: x\n\n## Testing Strategy\n\n#### Manual Verification:\n\n- [ ] late\n"
         self.assertIsNone(parse(text)[0]["phase"])

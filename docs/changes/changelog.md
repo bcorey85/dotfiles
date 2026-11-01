@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-746 changes
+747 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,6 +31,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Code runs end phases on a statement, decide review asks and relay the stop word for word](notes/2026-11-01-code-runs-end-phases-on-a-statement-decide-review.md) [skill/code, agent/code-fork, script/code-relay] The /code fork asks no leave for a reversible step, ends every phase stop on a statement, and rules on review asks itself. The main session relays the fork's stop through `code_relay.py` and makes no other tool call before the user replies.
 * [Frontend rules load on tsx and jsx files](notes/2026-10-31-frontend-rules-load-on-tsx-and-jsx-files.md) [rule/frontend-style, rule/typescript, rule/testing] React components now get the frontend style, TypeScript and testing rules: their path globs cover .tsx and .jsx beside .ts and .js.
 * [A plan impact no longer stops the review loop; all show once at the end](notes/2026-10-31-a-plan-impact-no-longer-stops-the-review-loop-all.md) [script/review-loop-script, script/review-fix, script/handback, script/plan-format, agent/review-loop, skill/review, skill/fix, skill/code] A review keeps fixing past a plan question instead of stopping and repeating its first round, and the user hears about plan impacts once, after the result.
 * [Bash hooks start 5-10 ms faster: check_scope loads its Makefile and pytest config readers only when it judges make or pytest](notes/2026-10-31-bash-hooks-start-5-10-ms-faster-check-scope-loads.md) [script/check-scope, script/quality-check-cap, script/coder-gate] check_scope imports makefile_text and pytest_config inside the two functions that use them, so quality_check_cap and coder_gate stop paying about 8 ms of imports on every Bash, Edit and Write call.

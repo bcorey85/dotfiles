@@ -9,7 +9,9 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 ```bash
 # Each row is its own plain Bash call by this path: no $HOME, variable, array or $(...).
 # Repeat lane/scope/phase/iter on every call; omit phase when there is none. The script adds repo and branch itself.
-# When the reviewed repo is not your cwd, add root=<its absolute path> to every call; the script runs there.
+# Single-quote every argument that holds a path, as written below: zsh reads [ ] * ? in an unquoted path
+# (`app/[id]/route.ts`) as a glob and fails the call.
+# When the reviewed repo is not your cwd, add 'root=<its absolute path>' to every call; the script runs there.
 
 # ONE run row per gate dispatched — INCLUDING gates that returned nothing.
 ~/.claude/skills/review/log-review-finding kind=run lane=<lane> scope=<phase|branch-exit|standalone> [phase=<index>] iter=<N> \
@@ -19,7 +21,7 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 ~/.claude/skills/review/log-review-finding kind=finding lane=<lane> scope=<phase|branch-exit|standalone> [phase=<index>] iter=<N> \
   gate=<agent name> disposition=<fix|ask|nit> [blocker=yes] \
   class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other> \
-  <file=<path> line=<n>|file=unlocated> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|class|gate|scoped>]
+  <'file=<path>' line=<n>|file=unlocated> actioned=<fixed|skipped_fp|deferred|ask|none> [source=<round|class|gate|scoped>]
 # Prints finding_id=<id>.
 ```
 

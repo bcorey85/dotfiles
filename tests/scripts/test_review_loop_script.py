@@ -24,12 +24,12 @@ import finding_record
 import handback
 import handback_store
 import plan_format
+import review_loop_closure
 import review_loop_findings
 import review_loop_packet
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_LOOP_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_loop_script.py")
 SESSION = "session-1"
-RUN_ID = "run-1"
 AGENT_ID = "agent-1"
 FINDING_ID = re.compile(r"[0-9a-f]{16}")
 PLAN_CHANGE_STATUS = handback.STATUSES[2]
@@ -135,6 +135,48 @@ class LastJsonObjectTest(unittest.TestCase):
                 self.assertEqual(expected, review_loop_findings.last_json_object(reply, keys))
 
 
+class ClosureCheckTest(unittest.TestCase):
+    def closure(self, reply):
+        def claude_call(*_args, **_kwargs):
+            return reply
+
+        return review_loop_closure.closure_check(pathlib.Path("/repo"), pathlib.Path("/out"), ["app.py:3 - limit"],
+                                                 claude_call)
+
+    def test_a_receipt_with_a_raw_quote_still_reads_its_open_list(self):
+        cases = [
+            ("empty open list", 'Done.\n{"receipt": "load_state(repo)["stage"] re-read", "open": []}', [],
+             'load_state(repo)["stage"] re-read'),
+            ("one open member", '{"receipt": "a "b" c", "open": ["app.py:4 - same limit - fix it"]}',
+             ["app.py:4 - same limit - fix it"], 'a "b" c'),
+            ("receipt ending in an escaped quote", '{"receipt": "a "b" and \\"c\\"", "open": []}', [],
+             'a "b" and \\"c\\"'),
+            ("no receipt key", 'Done.\n{"open": [], "note": "a "b""}', [], ""),
+        ]
+        for message, reply, expected, expected_receipt in cases:
+            with self.subTest(message):
+                closure = self.closure(reply)
+
+                self.assertEqual(expected, closure["open"])
+                self.assertEqual(expected_receipt, closure["receipt"])
+
+    def test_an_open_list_that_does_not_decode_still_raises(self):
+        with self.assertRaises(ValueError):
+            self.closure('{"receipt": "a "b" c", "open": ["app.py:4 - unclosed]}')
+
+    def test_the_prompt_tells_the_model_to_escape_quotes_in_the_receipt(self):
+        prompts = []
+
+        def claude_call(_label, prompt, *_args, **_kwargs):
+            prompts.append(prompt)
+            return '{"receipt": "none", "open": []}'
+
+        review_loop_closure.closure_check(pathlib.Path("/repo"), pathlib.Path("/out"), ["app.py:3 - limit"],
+                                          claude_call)
+
+        self.assertIn('escape every double quote inside the receipt as \\"', prompts[0])
+
+
 class ReviewLoopScriptTest(unittest.TestCase):
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
@@ -169,7 +211,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.env.pop("CLAUDE_SKIP_HOOKS", None)
         self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
         self.env["PATH"] = f"{claude.parent}{os.pathsep}{self.env['PATH']}"
-        # /code starts the loop with its own state folder, the one that also holds the run events.
+        # /code starts the loop with its own state folder.
         self.state_dir = pathlib.Path(git(self.repo, "rev-parse", "--path-format=absolute", "--git-path", "code-step"))
 
     def commit_files(self, files):
@@ -183,8 +225,9 @@ class ReviewLoopScriptTest(unittest.TestCase):
                 f"{header_extra}\nhandoff:\n  files:\n    - path: app.py\n{footer}")
 
     def script_command(self, prompt, session=SESSION):
+        gate_flags = [flag for command in getattr(self, "gate_commands", []) for flag in ("--gate-command", command)]
         return [sys.executable, str(SCRIPT), str(self.repo), "--state-dir", str(self.state_dir), "--session", session,
-                "--run-id", RUN_ID, "--agent-id", AGENT_ID, "--prompt-file", str(prompt)]
+                "--agent-id", AGENT_ID, "--prompt-file", str(prompt), *gate_flags]
 
     def run_script(self, scenario, header_extra="", quality_check=None, claude_md=None, footer="", session=SESSION):
         if quality_check:
@@ -212,11 +255,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         path = self.scratch / "handback" / f"{SESSION}.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()]
 
-    def run_events(self):
-        code_step = git(self.repo, "rev-parse", "--path-format=absolute", "--git-path", "code-step")
-        path = pathlib.Path(code_step) / "runs" / RUN_ID / "events.jsonl"
-        return [json.loads(line) for line in path.read_text().splitlines()]
-
     def usage_rows(self):
         path = self.scratch / "agent-usage.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()]
@@ -241,11 +279,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("one exit, all re-read", packet["class_closure"])
         self.assertEqual((row["agent_id"], row["status"], row["no_reviewer"]), (AGENT_ID, "converged", False))
         self.assertFalse(row["unreviewed_fix"])
-
-        handback_events = [event for event in self.run_events() if event["event"] == "handback"]
-        self.assertEqual(len(handback_events), 1)
-        self.assertEqual((handback_events[0]["agent_id"], handback_events[0]["agent_type"]), (AGENT_ID, "review-loop"))
-        self.assertEqual(handback_events[0]["message"], row["message"])
 
         kinds = [stored["kind"] for stored in self.store_rows()]
         self.assertEqual(kinds, ["handback", "stop"])
@@ -460,10 +493,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("feature.py (12)", packet["blockers"][0])
 
     def save_gate_commands(self, gate_commands):
-        # The state file of a /code run whose phase names these gate commands.
-        self.state_dir.mkdir()
-        saved_state = {"stage": "review", "gateCommands": gate_commands}
-        (self.state_dir / "state.json").write_text(json.dumps(saved_state))
+        # The gate commands the caller passes with --gate-command.
+        self.gate_commands = gate_commands
 
     def run_with_scoped_tests(self, gate_commands, scenario):
         self.save_gate_commands(gate_commands)
@@ -761,7 +792,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((sent["status"], sent["iter"], sent["files_touched"]), ("converged", 2, ["app.py"]))
         self.assertEqual(sent["fixed"][0]["file_line"], "app.py:2")
         self.assertEqual(handback.load(row["message"]), packet)
-        self.assertNotIn("old free-text packet", completed.stderr)
 
     def test_the_crash_packet_is_one_json_object_with_its_blocker_and_tool_fault(self):
         progress = {"iter": 1, "fixed": [], "files_touched": {"app.py"}}
@@ -1677,6 +1707,41 @@ class ReviewLoopScriptTest(unittest.TestCase):
         asks = [row for row in self.finding_rows() if row["disposition"] == "ask"]
         self.assertEqual(len(asks), 2)
 
+    def test_an_ask_that_only_points_back_to_another_ask_is_dropped(self):
+        asks_with_a_pointer = ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the window be pinned?\n"
+                               "- `app.py:4` should the limit be cached?\n"
+                               "- The open ask about pinning the window still stands.\n"
+                               "- After ask 1 is answered, should the cache key change too?\n\n## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": asks_with_a_pointer}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([item["question"] for item in packet["ask"]][-1],
+                         "After ask 1 is answered, should the cache key change too?")
+        self.assertEqual(len(packet["ask"]), 3)
+        asks = [row for row in self.finding_rows() if row["disposition"] == "ask"]
+        self.assertEqual(len(asks), 3)
+        self.assertEqual(packet["dropped_asks"], ["ask only points back to another ask, so it was dropped: "
+                                                  "'The open ask about pinning the window still stands.'"])
+
+    def test_a_pointer_ask_repeated_in_a_later_round_is_one_dropped_ask_warning(self):
+        pointer_and_ask = ("## Ask\n- `app.py:3` should the window be pinned?\n"
+                           "- The open ask about pinning the window still stands.\n\n## Nit\nNone\n")
+        first_round = "## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n" + pointer_and_ask
+        second_round = "## Fix\nNone\n\n" + pointer_and_ask
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": first_round}, {"result": second_round}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["dropped_asks"], ["ask only points back to another ask, so it was dropped: "
+                                                  "'The open ask about pinning the window still stands.'"])
+
     def test_two_fixes_at_one_line_are_two_rows_with_distinct_ids(self):
         two_at_one_line = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
                            "- `app.py:2` the name `limit` shadows the module setting\n\n"
@@ -2223,10 +2288,11 @@ class ReviewLoopScriptTest(unittest.TestCase):
         coder_prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "coder")
         self.assertIn("needs a new column", coder_prompt)
 
-    def test_a_resolved_block_handoff_from_code_step_makes_a_plan_marked_item_a_plain_fix(self):
+    def test_a_resolved_block_handoff_makes_a_plan_marked_item_a_plain_fix(self):
         disagreement = (f"`app.py:3` [plan-drift] {PLAN_CHANGE_STATUS}: the fix needs a new column the plan rules out")
-        block = plan_format.resolved_block("the user ruled on this disagreement", "Adopt plan change", "the user",
-                                           "2026-10-31 09:00", "add the column", disagreement)
+        block = ("RESOLVED: the user ruled on this disagreement. Review the code against the ruling.\n"
+                 f"Decision: Adopt plan change\nThe ruling:\n  add the column\n{plan_format.DISAGREEMENT_HEADER}\n"
+                 f"  {disagreement}")
         footer = "    plan_impact: |\n" + "".join(f"      {line}\n" for line in block.splitlines())
 
         completed = self.run_script({

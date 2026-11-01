@@ -1,4 +1,6 @@
-"""Which file paths count as source: not a test, a lockfile or a generated file."""
+"""Which file paths count as source: not a test, a lockfile or a generated file. The one owner of the two test-file
+rules every gate reads: `is_test_path` (the file belongs to the tests) and `is_runnable_test_file` (a test runner
+can take it alone as a target)."""
 
 LOCKFILE_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "Cargo.lock",
                   "Gemfile.lock", "composer.lock", "go.sum", "bun.lockb"}
@@ -6,6 +8,9 @@ SCRIPT_SUFFIXES = (".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs")
 
 
 def is_test_path(path):
+    """Whether the file belongs to the tests: test-named, or anywhere under a test folder, support files
+    (conftest.py, factories, fixtures) included. It never counts toward source size. A file can be a test file and
+    still not run alone; see `is_runnable_test_file`."""
     lowered = path.lower()
     name = lowered.rsplit("/", 1)[-1]
     parts = lowered.split("/")[:-1]
@@ -13,28 +18,41 @@ def is_test_path(path):
 
 
 def is_test_name(name):
-    return (name.startswith("test_") or ".test." in name or ".spec." in name or "_test." in name
+    return (name.startswith("test_") or ".test." in name or is_spec_name(name) or "_test." in name
             or name in ("test.py", "tests.py"))
 
 
-def is_runnable_test_file(path, counts_jest_tests_folder=False):
-    # A file a test runner can take as a target: test-named, or, for jest, which runs every script file under
-    # __tests__/ by default, such a file. Support files under tests/ (__init__.py, conftest.py, factories) are not.
-    # The test_ prefix, _test. infix and test.py/tests.py names are Python conventions; .test. and .spec. hold for
-    # every language.
-    lowered = path.lower()
-    name = lowered.rsplit("/", 1)[-1]
-    if ".test." in name or ".spec." in name:
+def is_spec_name(name):
+    return ".spec." in name.lower()
+
+
+def names_spec_file(text):
+    """Whether any word of the text, such as a failing check's log tail, names a spec file."""
+    return any(is_spec_name(word.rsplit("/", 1)[-1]) for word in text.split())
+
+
+def is_runnable_test_file(path, counts_jest_tests_folder=False, discovers_django_tests=False):
+    """Whether a test runner can take the file alone as a target: test-named, or, for jest, which runs every script
+    file under __tests__/ by default, such a file. Support files under tests/ (__init__.py, conftest.py, factories)
+    are test files but do not run alone. The test_ prefix, _test. infix and test.py/tests.py names are Python
+    conventions; .test. and .spec. hold for every language. `manage.py test` finds only modules that match its
+    default pattern, test*.py."""
+    name = path.rsplit("/", 1)[-1]
+    if discovers_django_tests:
+        return name.startswith("test") and name.endswith(".py")
+
+    lowered_name = name.lower()
+    if ".test." in lowered_name or is_spec_name(lowered_name):
         return True
 
-    if name.endswith(".py") and is_test_name(name):
+    if lowered_name.endswith(".py") and is_test_name(lowered_name):
         return True
 
     if not counts_jest_tests_folder:
         return False
 
     parts = path.split("/")[:-1]
-    return "__tests__" in parts and name.endswith(SCRIPT_SUFFIXES)
+    return "__tests__" in parts and lowered_name.endswith(SCRIPT_SUFFIXES)
 
 
 def is_uncounted_path(path):

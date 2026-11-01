@@ -4,7 +4,7 @@ change_type: "fixed"
 title: "Hand-back no longer waits on a nested agent that ended on an API error"
 description: "A review loop no longer waits on a nested reviewer that died on a usage limit, so it is not stuck behind a report that will never come; a clean packet whose latest dispatch of one reviewer kind died is denied."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-10-30T20:33:02-05:00"}
-seq: 389
+seq: 404
 kind: "fix"
 components: ["script/handback", "script/script-utils", "script/review-loop-gate", "script/open-child-gate"]
 evidence: ["judgment"]

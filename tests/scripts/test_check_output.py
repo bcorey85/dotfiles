@@ -1,6 +1,8 @@
 """Tests for check_output.py: which check failures are setup faults, and which lines name a failed test."""
 import importlib.util
+import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -13,10 +15,9 @@ sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import check_output
 import check_scope
-import code_step_gates
-import code_step_verification
 import criteria_verdict
 import full_check
+import gate_commands
 import script_utils
 import test_run_output
 
@@ -49,6 +50,10 @@ VERDICT_ROWS = [
      "Ran 0 tests in 0.000s\n\nOK\n===== 3 passed in 0.10s =====", check_output.NO_TESTS_RAN, full_check.UNVERIFIED,
      "setup-fault"),
     ("a passing run that logs the phrase", "pytest tests/", 0, "no tests ran\n===== 3 passed in 0.10s =====",
+     check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "setup-fault"),
+    ("jest with --passWithNoTests", "npx jest --passWithNoTests", 0, "No tests found, exiting with code 0",
+     check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "setup-fault"),
+    ("jest with a zero-total summary", "npm test", 0, "Test Suites: 0 total\nTests:       0 total\n",
      check_output.NO_TESTS_RAN, full_check.UNVERIFIED, "setup-fault"),
     ("a non-test command that prints the phrase", "cat ci.log", 0, "no tests ran\n===== 3 passed in 0.10s =====",
      check_output.PASSED, full_check.PASSED, "pass"),
@@ -633,40 +638,6 @@ class CommandClassificationTest(unittest.TestCase):
         self.addCleanup(temp_directory.cleanup)
         self.repo = pathlib.Path(temp_directory.name)
 
-    def ran_and_skipped_commands(self, command, configured, run_whole_suites=False):
-        # What run_verification_commands does with a listed command when no one asked for the configured check to
-        # run and the repo's configured quality check is `configured`.
-        run_result = mock.Mock(return_value=(0, ""))
-        verdict = mock.Mock(code=0, output="", hits=None)
-        with mock.patch.object(code_step_verification, "verification_command", return_value=command), \
-                mock.patch.object(code_step_verification.plan_format, "automated_verification_rows",
-                                  return_value=[(0, "- [ ] **Check**: `x`")]), \
-                mock.patch.object(code_step_verification, "run_command", run_result), \
-                mock.patch.object(full_check, "configured_check_command", return_value=configured), \
-                mock.patch.object(code_step_verification.full_check_receipt, "valid_receipt",
-                                  return_value={"result": full_check.PASSED}), \
-                mock.patch.object(code_step_verification, "item_verdict", return_value=verdict):
-            results, skipped, _unparsed = code_step_verification.run_verification_commands(
-                self.repo, "section", run_whole_suites=run_whole_suites)
-        ran_commands = [result[0] for result in results]
-        return ran_commands, skipped
-
-    def test_only_the_configured_check_is_skipped_and_run_whole_suites_runs_it(self):
-        configured = "npm test && npm run lint"
-        for command in ("npm run test:e2e", "npm run lint:fix", "npm run build && node x.js"):
-            with self.subTest(runs=command):
-                ran_commands, skipped = self.ran_and_skipped_commands(command, configured)
-                self.assertEqual([command], ran_commands)
-                self.assertEqual([], skipped)
-        for command in ("npm test", "npm run lint", configured):
-            with self.subTest(skipped=command):
-                ran_commands, skipped = self.ran_and_skipped_commands(command, configured)
-                self.assertEqual([], ran_commands)
-                self.assertEqual([command], skipped)
-                ran_commands, skipped = self.ran_and_skipped_commands(command, configured, run_whole_suites=True)
-                self.assertEqual([command], ran_commands)
-                self.assertEqual([], skipped)
-
     def test_each_command_gets_one_answer_from_check_scope_and_every_former_decider_agrees(self):
         for command, runs_tests, families, is_check, scope in COMMAND_ROWS:
             with self.subTest(command=command):
@@ -678,9 +649,9 @@ class CommandClassificationTest(unittest.TestCase):
                 runs_whole = scope == "whole"
                 self.assertEqual(runs_whole, check_scope.runs_whole_check(command, self.repo))
                 self.assertEqual(runs_tests and not runs_whole,
-                                 code_step_gates.takes_listed_test_command(command, self.repo))
-                self.assertEqual(families or {code_step_gates.UNKNOWN_FAMILY},
-                                 code_step_gates.test_command_families(command))
+                                 gate_commands.takes_listed_test_command(command, self.repo))
+                self.assertEqual(families or {gate_commands.UNKNOWN_FAMILY},
+                                 gate_commands.test_command_families(command))
                 self.assertEqual(command != "cat run.log" and command != "! pytest x",
                                  check_output.prints_own_runner_summary(command))
 
@@ -742,6 +713,21 @@ class CommandClassificationTest(unittest.TestCase):
         self.assertFalse(check_scope.runs_whole_check(command, self.repo))
         self.assertFalse(check_scope.names_test_filter(command))
 
+    def test_runs_cargo_clippy_ignores_a_quoted_cargo_clippy_word(self):
+        quoted_commands = ["echo 'cargo clippy' && cargo test --test orders", "git grep -n 'cargo clippy' -- crate"]
+
+        for command in quoted_commands:
+            with self.subTest(command=command):
+                self.assertFalse(check_scope.runs_cargo_clippy(command))
+
+    def test_runs_cargo_clippy_sees_clippy_behind_wrappers_toolchains_and_global_flags(self):
+        commands = ["cd crate && nice -n 19 cargo +nightly clippy --lib", "cargo --locked clippy --lib",
+                    "cargo --manifest-path crate/Cargo.toml clippy"]
+
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertTrue(check_scope.runs_cargo_clippy(command))
+
     def test_a_check_is_any_test_lint_typecheck_or_build_run_through_its_wrappers(self):
         checks = ("python3 -m pytest", "uv run pytest", "time npx vitest run", "env A=1 cargo +nightly clippy",
                   "cargo nextest run", "bundle exec rspec", "pnpm exec jest", "npm run test:unit", "yarn lint",
@@ -788,3 +774,15 @@ class CommandClassificationTest(unittest.TestCase):
         for command in full:
             with self.subTest(full=command):
                 self.assertFalse(check_scope.names_cargo_test_target(command))
+
+
+class HookStartImportTest(unittest.TestCase):
+    def test_importing_check_output_leaves_the_makefile_and_pytest_config_readers_unloaded(self):
+        # Every Bash hook that imports these modules pays their import time on each call; the Makefile and pytest
+        # config readers load only when a make or pytest command is judged.
+        probe = "import sys, check_output; print(sorted({'makefile_text', 'pytest_config'} & set(sys.modules)))"
+        env = {**os.environ, "PYTHONPATH": str(toolkit_paths.LIB_DIR)}
+
+        loaded = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, check=True)
+
+        self.assertEqual(loaded.stdout.strip(), "[]")

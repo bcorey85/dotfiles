@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Press Enter in Claude panes stuck at the usage-limit "press enter" prompt.
+
+Usage: herdr-wake-limited [-h|--help]
+
+Claude Code waits out a usage limit and continues at the reset. When the
+computer slept past the reset it instead shows `Your usage limit has reset`
+and `Press enter to continue`, and nothing continues until someone presses
+Enter; herdr reports such a pane as idle or done.
+
+This reads the visible screen of every claude agent that `herdr-api agent list`
+names as idle or done. A pane whose last six non-empty lines hold both phrases gets one Enter, one line on
+stdout (pane id and cwd) and one line in
+${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.log (ISO time, pane id,
+cwd); when the log cannot be written, only a stderr line names the pane. Any other pane gets nothing. When herdr does not answer it exits 0 and
+prints nothing, so a timer can run it every few minutes.
+"""
+import datetime
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+PHRASES = ("your usage limit has reset", "press enter to continue")
+VISIBLE_LINES = "15"
+BOTTOM_LINES = 6
+
+
+def herdr_api(*args):
+    """Return herdr-api's stdout, or None when herdr gives no answer."""
+    env = dict(os.environ)
+    env["PATH"] = f"{pathlib.Path.home() / '.local' / 'bin'}:{env.get('PATH', '')}"
+    try:
+        answer = subprocess.run(["herdr-api", *args], env=env, capture_output=True,
+                                text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if answer.returncode != 0:
+        return None
+    return answer.stdout
+
+
+def claude_agents():
+    listing = herdr_api("agent", "list")
+    if listing is None:
+        return []
+    try:
+        agents = json.loads(listing)["result"]["agents"]
+    except (ValueError, KeyError, TypeError):
+        return []
+    return [agent for agent in agents
+            if agent.get("agent") == "claude" and agent.get("pane_id")
+            and agent.get("agent_status") in ("idle", "done")]
+
+
+def holds_limit_reset_prompt(text):
+    """True when the prompt's lines sit at the bottom of the screen. Lines are joined with spaces, so a phrase a
+    narrow pane wrapped still matches, and a pane that only quotes the phrases higher up does not."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    bottom = " ".join(" ".join(lines[-BOTTOM_LINES:]).split()).lower()
+    return all(phrase in bottom for phrase in PHRASES)
+
+
+def log_wake(pane_id, cwd):
+    state_home = os.environ.get("XDG_STATE_HOME") or str(pathlib.Path.home() / ".local" / "state")
+    log_file = pathlib.Path(state_home) / "herdr-wake-limited.log"
+    stamp = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with log_file.open("a") as log:
+            log.write(f"{stamp} {pane_id} {cwd}\n")
+    except OSError as error:
+        print(f"herdr-wake-limited: could not write {log_file}: {error}", file=sys.stderr)
+
+
+def main():
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ("-h", "--help"):
+            print(__doc__.strip())
+            return 0
+        print(f"herdr-wake-limited: unknown argument: {sys.argv[1]}", file=sys.stderr)
+        return 1
+
+    for agent in claude_agents():
+        pane_id = agent["pane_id"]
+        screen = herdr_api("agent", "read", pane_id, "--source", "visible", "--lines", VISIBLE_LINES) or ""
+        if not holds_limit_reset_prompt(screen):
+            continue
+        if herdr_api("agent", "send-keys", pane_id, "enter") is None:
+            print(f"herdr-wake-limited: could not send Enter to {pane_id}", file=sys.stderr)
+            continue
+        cwd = agent.get("cwd", "")
+        log_wake(pane_id, cwd)
+        print(f"woke {pane_id} {cwd}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

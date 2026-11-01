@@ -4,7 +4,7 @@ change_type: "changed"
 title: "A plan impact no longer stops the review loop; all show once at the end"
 description: "A review keeps fixing past a plan question instead of stopping and repeating its first round, and the user hears about plan impacts once, after the result."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-10-31T15:15:30-05:00"}
-seq: 2
+seq: 6
 kind: "user-rule"
 components: ["script/review-loop-script", "script/review-fix", "script/handback", "script/plan-format", "agent/review-loop", "skill/review", "skill/fix"]
 evidence: ["judgment"]
@@ -30,7 +30,7 @@ The scripted review loop no longer stops on a plan impact. `review_loop_script.p
   reported.
 - A `plan_impact: RESOLVED` handoff turns plan-marked items into plain fixes.
 
-`review_fix.py packet` prints the impacts once, after the review result. Adopted ones print as `## Plan Deviations` lines with no question. A toolkit-cause impact prints as a toolkit fault. Held ones get one closing question. `decide adopt` re-dispatches once with the impact resolved. `decide keep` records the ruling and writes a `plan-ruling` row to the hand-back store, so the review can be marked clean. `handback.false_clean_reason` refuses a clean mark while a held impact has no ruling.
+`review_fix.py packet` prints the impacts once, after the review result. Adopted ones print as `## Plan Deviations` lines with no question. A toolkit-cause impact prints as a toolkit fault. Held ones get one closing question. `decide adopt` re-dispatches once with the impact resolved. `decide keep` records the ruling and writes a `plan-ruling` row to the hand-back store, so the commit gate counts the review as clean. `handback.false_clean_reason` keeps the review dirty while a held impact has no ruling.
 
 The plan-change mark (`lib/plan_format.py`) now reads `file:13`, `file:13-14`, `file:13–14` and `file:58-101,139-147` the same, so the outcome no longer depends on how a reviewer wrote a line number.
 

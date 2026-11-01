@@ -922,6 +922,131 @@ class ReviewGateTest(VerifyBranchBase):
         self.assertEqual(self.escape_rows(), [])
 
 
+class OpenAskTest(VerifyBranchBase):
+    """A review ask left open on the tree verify-log checks keeps the run from printing CLEAN."""
+
+    ASK = json.dumps([{"desc": "code keeps the plan's reading of Ticket #2, not the ticket's", "file": "src/a.py",
+                       "line": 1, "disposition": "ask", "actioned": "ask"}])
+
+    def setUp(self):
+        super().setUp()
+        self.task_dir()
+        self.assertEqual(self.prep().returncode, 0)
+
+    def rows(self):
+        built = [{"item": f"AC{n}: item", "verdict": "done", "file": f"src/f{n}.py", "line": 1,
+                  "evidence": "e"} for n in (1, 2, 3)]
+        return json.dumps([*built, *ticket_rows(built)])
+
+    def test_an_open_ask_on_the_reviewed_tree_is_not_clean(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+
+        done = self.log("--rows", "-", stdin=self.rows())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("CLEAN", done.stdout)
+        self.assertNotIn("Smoke-test", done.stdout)
+        self.assertIn("ASKS OPEN: 1", done.stdout)
+        self.assertIn("Ticket #2", done.stdout)
+        self.assertEqual(self.verifier_rows(), [])
+
+    def test_a_long_ask_reaches_the_user_whole(self):
+        long_ask = ("the code keeps the plan's reading of the ticket and the ticket says otherwise " * 5
+                    + "... END-OF-ASK")
+        self.assertGreater(len(long_ask), 200)
+        asks = json.dumps([{"desc": long_ask, "file": "src/a.py", "line": 1, "disposition": "ask",
+                            "actioned": "ask"}])
+        self.assertEqual(self.log_review(asks, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+
+        done = self.log("--rows", "-", stdin=self.rows())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("ASKS OPEN", done.stdout)
+        self.assertIn("END-OF-ASK", done.stdout)
+        self.assertTrue(self.context()["reviewAsks"][0].endswith("END-OF-ASK"))
+
+    def test_a_ruled_rerun_after_asks_open_is_the_only_logged_run(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+        self.assertIn("ASKS OPEN", self.log("--rows", "-", stdin=self.rows()).stdout)
+        self.assertEqual(self.prep().returncode, 0)
+
+        done = self.log("--rows", "-", "--asks-ruled", "user kept the plan's reading, 2026-11-01", stdin=self.rows())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLEAN", done.stdout)
+        self.assertEqual(len(self.verifier_rows()), 1)
+
+    def test_an_ask_saved_for_another_tree_is_ignored(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+        state_file = next((self.temp_root / "state").glob("*.json"))
+        saved = self.context()
+        saved["reviewLoggedTree"] = "0" * 40
+        state_file.write_text(json.dumps(saved))
+
+        done = self.log("--rows", "-", stdin=self.rows())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLEAN", done.stdout)
+        self.assertNotIn("ASKS OPEN", done.stdout)
+
+    def test_a_fixed_finding_does_not_hold_clean(self):
+        fixed = json.dumps([{"desc": "typo", "file": "src/a.py", "line": 1, "disposition": "fix",
+                             "actioned": "fixed"}])
+        self.assertEqual(self.log_review(fixed, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+
+        done = self.log("--rows", "-", stdin=self.rows())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLEAN", done.stdout)
+        self.assertNotIn("ASKS OPEN", done.stdout)
+
+    def test_a_ruling_on_the_open_asks_lets_the_run_print_clean(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+
+        done = self.log("--rows", "-", "--asks-ruled", "user kept the plan's reading, 2026-11-01", stdin=self.rows())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLEAN", done.stdout)
+        self.assertIn("asks ruled: user kept the plan's reading, 2026-11-01", done.stdout)
+
+    def test_a_long_ruling_is_shown_whole(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+        ruling = "user kept the plan's reading " + "and the reason " * 30 + "end-marker"
+
+        done = self.log("--rows", "-", "--asks-ruled", ruling, stdin=self.rows())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn(f"asks ruled: {ruling}", done.stdout)
+
+    def test_a_blank_ruling_is_refused(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+
+        done = self.log("--rows", "-", "--asks-ruled", " ", stdin=self.rows())
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("--asks-ruled", done.stderr)
+        self.assertEqual(self.verifier_rows(), [])
+
+    def test_a_later_review_of_a_fixed_tree_with_no_ask_is_clean(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.write("src/a.py", "print(3)\n")
+        self.assertEqual(self.log_review().returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+
+        done = self.log("--rows", "-", stdin=self.rows())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLEAN", done.stdout)
+
+
 class LogTest(VerifyBranchBase):
     def setUp(self):
         super().setUp()

@@ -1647,6 +1647,23 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual([len(parsed[key]) for key in ("fix", "ask", "nit")], [1, 1, 1])
 
+    def test_a_report_in_the_test_reviewer_template_form_parses_with_no_disposition_call(self):
+        module = self.load_script_module()
+        review = ("## Test Review Report\n\n"
+                  "**Scope**: the invoice tests\n\n"
+                  "---\n\n"
+                  "### Coverage Gaps in Business Logic\n\n"
+                  "- fix: `src/invoices/finalize.ts:40` — `finalize` has no test for the voided state.\n\n"
+                  "### Assertions the Spec Does Not Support\n\n"
+                  "- ask: `src/invoices/finalize.test.ts:12` — pins status `open`; the criteria are silent — "
+                  "change: keep it.\n\n"
+                  "### Test Hygiene Issues\n\n"
+                  "- nit: `src/invoices/finalize.test.ts:3` — name the test for its outcome.\n")
+
+        parsed = module.parse_review(review)
+
+        self.assertEqual([len(parsed[key]) for key in ("fix", "ask", "nit")], [1, 1, 1])
+
     def test_change_if_accepted_marker_splits_question_from_change(self):
         ask = "`app.py:3` should it be configurable? Change if accepted: read from settings"
 

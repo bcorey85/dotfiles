@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-745 changes
+750 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,6 +31,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Smell-reviewer reads code-reviewer's structure rules instead of a copy](notes/2026-11-01-smell-reviewer-reads-code-reviewer-s-structure.md) [agent/smell-reviewer, agent/code-reviewer] smell-reviewer drops from 1,026 to 464 words: it reads code-reviewer's Structure step at run time instead of carrying a near-verbatim copy, so the two lenses can no longer drift, and both now tag dead weight as fix.
 * [Frontend rules load on tsx and jsx files](notes/2026-10-31-frontend-rules-load-on-tsx-and-jsx-files.md) [rule/frontend-style, rule/typescript, rule/testing] React components now get the frontend style, TypeScript and testing rules: their path globs cover .tsx and .jsx beside .ts and .js.
 * [A plan impact no longer stops the review loop; all show once at the end](notes/2026-10-31-a-plan-impact-no-longer-stops-the-review-loop-all.md) [script/review-loop-script, script/review-fix, script/handback, script/plan-format, agent/review-loop, skill/review, skill/fix, skill/code] A review keeps fixing past a plan question instead of stopping and repeating its first round, and the user hears about plan impacts once, after the result.
 * [Bash hooks start 5-10 ms faster: check_scope loads its Makefile and pytest config readers only when it judges make or pytest](notes/2026-10-31-bash-hooks-start-5-10-ms-faster-check-scope-loads.md) [script/check-scope, script/quality-check-cap, script/coder-gate] check_scope imports makefile_text and pytest_config inside the two functions that use them, so quality_check_cap and coder_gate stop paying about 8 ms of imports on every Bash, Edit and Write call.
@@ -114,6 +115,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [Prompt trims cut text that gates and scripts already enforce](notes/2026-11-01-prompt-trims-cut-text-that-gates-and-scripts.md) [agent/review-loop, agent/coder, agent/code-reviewer, agent/test-reviewer, skill/coder-core, skill/review, skill/fix, skill/code, skill/cc, skill/stage, skill/commit] The ten most-used skills and agents load about 2,100 fewer words per call: text a hook, gate or script already enforces or prints, text repeated in the same or an always-loaded file, and pointers to readers that do not exist are cut, with every judgment rule and parsed contract kept.
+* [Global CLAUDE.md drops four rules the model follows unprompted or a gate enforces](notes/2026-11-01-global-claude-md-drops-four-rules-the-model.md) [rule/global-claude-md] Every session loads about 150 fewer words: the domain-naming, code-paragraph and no-blockquote rules go because the model kept them with the text removed, and the coder test-scope sentence goes because the coder Bash hook enforces it.
 * [Review fix drops the plan-impact status route the loop no longer emits](notes/2026-10-31-review-fix-drops-the-plan-impact-status-route-the.md) [script/review-fix] review_fix.py loses about 40 lines that served a packet status the review loop stopped emitting. Plan impacts now reach the user only through the plan_impacts list on a converged or capped packet.
 * [/code runs as plain prompt steps with no code-step script](notes/2026-10-31-code-runs-as-plain-prompt-steps-with-no-code-step.md) [skill/code, script/code-step, agent/code-fork, skill/eng-spec, agent/spec-criteria, script/review-loop-script, script/handback] Running /code as plain prompt steps in its Sonnet fork cuts cost 15% ($7.86 → $6.66 a run, mean) with 13 of 13 checks passing in all 16 bench runs. The code-step script and its state, hooks and tests are removed; small standalone scripts keep the plan check, the concentration gate, the coder-report parse, the review start and the waits. **cuts cost by 15% ($7.86 → $6.66)**
 * [hand-back packets are JSON only: the free-text fallback parser is gone](notes/2026-10-30-hand-back-packets-are-json-only-the-free-text.md) [script/handback, script/loop-transcript, script/script-utils] handback.parse reads only one JSON object; the old free-text key: value grammar, its stderr note and its grammar-only tests are deleted.
@@ -127,6 +130,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Code skill names verify-branch and drops the no-op deep modifier](notes/2026-11-01-code-skill-names-verify-branch-and-drops-the-no-op.md) [skill/code] /code now points at the skill that exists: its three `/verify` mentions read `/verify-branch`, and the `+deep` modifier, which changed nothing, is no longer offered.
+* [Test-reviewer reports in the tagged-bullet form the review script parses](notes/2026-11-01-test-reviewer-reports-in-the-tagged-bullet-form.md) [agent/test-reviewer, agent/review-loop] The scripted review loop reads test-reviewer findings without a model call: the report template now writes top-level `- fix:`, `- ask:` and `- nit:` bullets, so the Sonnet disposition call that classified each test-reviewer report is no longer needed.
 * [Review loop quotes every path it passes to a log or script call](notes/2026-11-01-review-loop-quotes-every-path-it-passes-to-a-log.md) [agent/review-loop, shared/finding-log, skill/code] A review of a repo with dynamic route folders (`app/[id]/route.ts`) logs each finding on the first call: the loop's log and script templates single-quote every path, so zsh no longer fails the call with "no matches found" and costs a retry.
 * [comment-bloat gate lets agent-evals and shell code name plan impacts and acceptance criteria](notes/2026-10-31-comment-bloat-gate-lets-agent-evals-and-shell-code.md) [script/comment-bloat-gate] The plan-impact and acceptance-criteria markers no longer fire in an agent-evals checkout or on a shell line that is not a comment. A comment in any other repo still blocks.
 * [The unreviewed-fix list names only the reviewed repo's files, once each](notes/2026-10-31-the-unreviewed-fix-list-names-only-the-reviewed.md) [script/handback] A review packet's 'Last fix not reviewed' list resolves each fixed[] name against files_touched, so a bare file name and its full path count once and a file from another repo named in a finding's text drops out.

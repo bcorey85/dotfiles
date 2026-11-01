@@ -6,16 +6,12 @@ allowed-tools: [Bash, Read, Glob, Grep, Skill]
 
 # Read & Apply Claude Comments
 
-The user authors inline comments in two readers — Neovim (`<leader>cc` → `:ClaudeReviewComment`, stored in `~/.claude/claude-comments.md`) and hunk (`prefix d`, built-in inline notes on `c`, mirrored per-checkout to `$XDG_STATE_HOME/hunk-claude/<slug>.comments.jsonl` by the `claude-review` extension). Both are explicit user-written requests (highest-priority feedback, not heuristic findings). This skill merges them into ONE queue, drives each to a terminal state, then clears handled ones through their owning reader.
-
-One queue, one escape-log pass. The source only decides which script clears the entry.
-
-**Not every comment asks for a diff** — a question is as legitimate as a change request, and answering one IS handling it. `/fix` runs only for entries asking for a change.
+The user's comments come from two readers, Neovim and hunk. Both are explicit user-written requests (highest-priority feedback, not heuristic findings). This skill merges them into ONE queue, drives each to a terminal state, then clears handled ones through their owning reader.
 
 ## Modifiers
 
-- `+fast` / `+deep` — semantics defined in `~/.claude/skills/_shared/modifiers.md`; pass through to `/fix` unchanged. `+fast` for trivial comments; `+deep` when a comment needs deep reasoning.
-- `+show` — read and present the comments, then **stop**. Do not hand off to `/fix` and do not resolve anything. Use when you just want to see what you flagged without acting on it. (The editor-side equivalent is `<leader>cp` in Neovim.)
+- `+fast` / `+deep` — per `~/.claude/skills/_shared/modifiers.md`; pass through to `/fix` unchanged.
+- `+show` — read and present the comments, then stop (step 4).
 
 ## Instructions
 
@@ -32,7 +28,7 @@ One queue, one escape-log pass. The source only decides which script clears the 
    bash "${CLAUDE_SKILL_DIR}/hunk-comments-consume" list "<repo-root>"
    ```
 
-   Both return fresh (≤48h) current-repo JSON (`id`, `path`, `line`, `timestamp`, `body`; hunk adds `side`, `hunk_index`). Stale entries are counted on stderr — sum for the summary. An empty reader returns `[]`.
+   Stale entries are counted on stderr — sum for the summary.
 
    **Tag each entry with its source** (`nvim`/`hunk`) — it routes the resolve. Merge into one queue ordered by `timestamp`.
 
@@ -73,11 +69,6 @@ One queue, one escape-log pass. The source only decides which script clears the 
    ```
 
    Skip a call entirely when that source has no ids. Pass the `id` of every entry that was **fixed**, **answered**, or **skipped after triage** (note skip reasons in the summary). Do **NOT** pass ids of **deferred** entries — they stay in the queue for next time.
-
-   Both re-read at resolve time, so entries written since the list survive:
-   - **nvim**: rewrites `claude-comments.md` without the resolved ids, deleting the file when nothing remains.
-   - **hunk**: rewrites the mirrored JSONL without them, deleting the file when it empties. The note itself stays in hunk's own UI until cleared there, but nothing re-lists it — no by-hand step.
-
 7. **Log escapes.** Every comment that resulted in a real fix is ground truth: the human caught something the automated gates blessed. For each entry **fixed** (not answered, not skipped-as-FP, not deferred), log one line. A run with no `change` entries logs nothing here.
 
    ```bash

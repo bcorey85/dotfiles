@@ -501,6 +501,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
                         "result": "PASS"}
         self.prior_issues = []
+        self.testing_strategy = []  # the plan's Testing Strategy lines, set once in main when the plan is on disk
         self.status = "converged"
         self.class_closure = NO_CLOSURE
         self.open_classes = []  # the class members the repair pass left unfixed
@@ -530,8 +531,9 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def review_one(self, dispatch):
         agent, owned = dispatch
+        open_asks = tuple(ask.text for ask in self.asks)
         prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
-                                 tuple(ask.text for ask in self.asks), self.brief)
+                                 open_asks, self.brief, self.testing_strategy)
         text = claude_call(f"review{self.iter_count}-{agent}", prompt, self.repo, self.out, agent=agent)
         return parse_review(text) or disposition_call(text, self.repo, self.out)
 
@@ -904,6 +906,8 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     plan = header.get("plan")
     plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
     check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, header.get("phase"))
+    if plan_on_disk:
+        loop.testing_strategy = plan_format.testing_strategy_body((pathlib.Path(repo) / plan_on_disk).read_text())
 
     loop.files = scope(repo)
     loop.dispatches = first_round_plan(loop.files, structure_pass_skipped)

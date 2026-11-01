@@ -2826,6 +2826,37 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["ask"][0]["file_line"], "util.test.py:1")
         self.assertEqual([entry["file_line"] for entry in packet["nit"]], ["util.test.py:1"])
 
+    def run_split_review_with_plan(self, plan_text):
+        """A source file and its test, so the code reviewer and the test reviewer each own one; returns the prompts."""
+        self.commit_files({"plan.md": plan_text})
+        (self.repo / "util.py").write_text("limit = 20\n")
+        (self.repo / "util.test.py").write_text("assert limit == 20\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "test-reviewer": [{"result": CLEAN_REVIEW}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return {call["key"]: call["prompt"] for call in self.fake_calls()}
+
+    def test_the_test_reviewer_prompt_carries_the_plans_testing_strategy_and_the_code_reviewer_does_not(self):
+        plan = ("# Plan\n\n## Phase 1: Limits\n\nDo it.\n\n## Testing Strategy\n\n"
+                "- each check constraint has a direct-insert test\n\n## Phase 2: Later\n\nPhase two body only.\n")
+
+        prompts = self.run_split_review_with_plan(plan)
+        self.assertNotIn("Phase two body only.", prompts["test-reviewer"])
+
+        self.assertIn("The plan's Testing Strategy section (applies to every phase):", prompts["test-reviewer"])
+        self.assertIn("- each check constraint has a direct-insert test", prompts["test-reviewer"])
+        self.assertNotIn("direct-insert", prompts["code-reviewer"])
+
+    def test_a_plan_with_no_testing_strategy_adds_nothing_to_the_test_reviewer_prompt(self):
+        prompts = self.run_split_review_with_plan("# Plan\n\n## Phase 1: Limits\n\nDo it.\n")
+
+        self.assertNotIn("Testing Strategy", prompts["test-reviewer"])
+
     def test_a_full_check_failing_in_a_spec_file_stops_with_no_repair_coder(self):
         failing_spec = f"{FAILS_ONLY_WITH_THE_DIFF}echo 'FAIL src/orders.spec.ts'; exit 1"
 

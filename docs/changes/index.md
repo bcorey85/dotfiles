@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-729 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+730 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [code-step resume goes on past an unreadable state file in the cwd checkout](notes/2026-10-31-code-step-resume-goes-on-past-an-unreadable-state.md).
+Latest change: 2026-10-31, [Test reviewers get the plan's Testing Strategy section in their prompt](notes/2026-10-31-test-reviewers-get-the-plan-s-testing-strategy.md).
 
 ## Top gains
 
@@ -28,7 +28,7 @@ Each saving is the measured before and after of one change's finding, so a total
 ## Gains by metric
 
 * tokens: 2
-* cost: 4
+* cost: 3
 * wall-clock: 1
 * quality: 8
 

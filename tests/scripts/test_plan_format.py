@@ -150,6 +150,41 @@ class SectionShapeTest(unittest.TestCase):
         self.assertIsNone(items[0]["phase"])
 
 
+class TestingStrategyBodyTest(unittest.TestCase):
+    def test_the_body_stops_at_its_ending_and_only_the_exact_level_2_heading_matches(self):
+        cases = [
+            ("next heading", "## Testing Strategy\n\n- a\n- b\n\n## Phase 2: x\n\nlater\n", ["- a", "- b"]),
+            ("rule", "## Testing Strategy\n\n- a\n\n---\n\nafter the rule\n", ["- a"]),
+            ("end of plan", "# Plan\n\n## Testing Strategy\n\n- a\n", ["- a"]),
+            ("level 3 sub heading stays inside", "## Testing Strategy\n\n### Unit\n\n- a\n\n## Next\n",
+             ["### Unit", "", "- a"]),
+            ("Test Strategy spelling", "## Test Strategy\n\n- a\n", []),
+            ("level 3 heading", "### Testing Strategy\n\n- a\n", []),
+            ("mixed case", "## testing strategy\n\n- a\n", []),
+        ]
+        for name, plan_text, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(plan_format.testing_strategy_body(plan_text), expected, name)
+
+
+class TestingStrategySpanTest(unittest.TestCase):
+    def test_the_span_skips_fenced_headings_and_ends_where_the_body_ends(self):
+        cases = [
+            ("rule ends it", "# P\n\n## Testing Strategy\n\n- a\n\n---\n\nafter\n", (2, 6)),
+            ("next heading ends it", "## Testing Strategy\n\n- a\n\n## Next\n", (0, 4)),
+            ("fenced rule and heading stay inside", "## Testing Strategy\n\n```\n---\n## x\n```\n\n- a\n\n## Next\n",
+             (0, 9)),
+            ("fenced heading ignored", "```\n## Testing Strategy\n```\n", None),
+            ("none", "## Phase 1: x\n", None),
+        ]
+        for name, plan_text, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(plan_format.testing_strategy_span(plan_text.splitlines()), expected, name)
+
+    def test_the_body_keeps_the_indent_of_its_first_line(self):
+        self.assertEqual(plan_format.testing_strategy_body("## Testing Strategy\n\n  - nested\n"), ["  - nested"])
+
+
 class PhaseSectionsTest(unittest.TestCase):
     ONE = "6"
     DOTTED = "6.1"

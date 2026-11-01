@@ -866,6 +866,40 @@ def section_body(lines, start_index):
     return body
 
 
+TESTING_STRATEGY_HEADING = re.compile(r"^##\s+Testing Strategy\s*$")
+
+
+def testing_strategy_span(lines):
+    """(start, end) of the `## Testing Strategy` section: the 0-based index of its heading line and the index after
+    its last line: the first `---` rule or heading of level 2 or higher after the heading. A `---` or heading inside
+    a fenced code block does not count. None when the plan has none."""
+    fenced = script_utils.fenced_line_indexes(lines)
+    for index, line in enumerate(lines):
+        if index in fenced or not TESTING_STRATEGY_HEADING.match(line.strip()):
+            continue
+        end = len(lines)
+        for after in range(index + 1, len(lines)):
+            if after in fenced:
+                continue
+            next_level = heading_level(lines[after])
+            if lines[after].strip() == "---" or (next_level and next_level <= 2):
+                end = after
+                break
+        return index, end
+    return None
+
+
+def testing_strategy_body(plan_text):
+    """The body lines of the plan's `## Testing Strategy` section, with the leading and trailing blank lines
+    dropped, or [] when the plan has none."""
+    lines = plan_text.splitlines()
+    span = testing_strategy_span(lines)
+    if span is None:
+        return []
+    start, end = span
+    return "\n".join(lines[start + 1:end]).strip("\n").splitlines()
+
+
 def top_level_items(body, name="section", first_line=1):
     """Top-level list items of a section; wrapped and nested lines are folded into the item above.
 

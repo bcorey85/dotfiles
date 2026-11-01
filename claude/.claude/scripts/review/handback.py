@@ -56,7 +56,8 @@ from script_utils import first_number, is_blocker, one_line
 
 # The status for a loop that stopped because the fix passes removed the change under review.
 FIX_REMOVED_CHANGE = "fix-removed-change"
-STATUSES = ["converged", DEFERRED, "plan-impact", "critical-blocker", CAP_REACHED, "setup-fault",
+PLAN_IMPACT_STATUS = "plan-impact"
+STATUSES = ["converged", DEFERRED, PLAN_IMPACT_STATUS, "critical-blocker", CAP_REACHED, "setup-fault",
             FIX_REMOVED_CHANGE]
 CLEAN_STATUSES = ("converged", DEFERRED)
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
@@ -76,7 +77,7 @@ ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining
 # The file_line of a finding that names no file. Its row takes no line.
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
-STATUS_REQUIRES = {"plan-impact": ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
+STATUS_REQUIRES = {PLAN_IMPACT_STATUS: ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
                    "setup-fault": ("blockers", "empty"), FIX_REMOVED_CHANGE: ("blockers", "empty"),
                    CAP_REACHED: ("findings_remaining", "empty"),
                    DEFERRED: ("findings_remaining", "missing or empty")}
@@ -170,16 +171,10 @@ def is_plan_impact_ask(item):
     return any(PLAN_CHANGE_MARK.match(str(item.get(key) or "").lstrip()) for key in ("finding", "question"))
 
 
-def carried_findings(packet, include_asks=True):
-    """What a plan-impact, critical-blocker or cap-reached round leaves open for the next review, one line each: its
-    asks (unless the asks route rules them; the plan ruling settles a PLAN-IMPACT ask), its blockers, its remaining
-    findings and its closing prose, where the loop lists fix findings it did not dispatch."""
-    lines = []
-    if include_asks:
-        open_asks = [item for item in packet["ask"] if not is_plan_impact_ask(item)]
-        for item in open_asks:
-            lines.append(f"ask: {one_line(script_utils.ask_text(item), 800)} ({item.get('file_line', '-')})")
-    lines += ["blocker: " + one_line(item_text(item, "finding", "file_line"), 800) for item in packet["blockers"]]
+def carried_findings(packet):
+    """What a round that holds plan impacts leaves open for the next review, one line each: its
+    blockers, its remaining findings and its closing prose, where the loop lists fix findings it did not dispatch."""
+    lines = ["blocker: " + one_line(item_text(item, "finding", "file_line"), 800) for item in packet["blockers"]]
     lines += ["finding: " + one_line(item_text(item, "finding", "file_line"), 800)
               for item in packet["findings_remaining"]]
     if packet["trailer"]:

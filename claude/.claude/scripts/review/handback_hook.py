@@ -7,11 +7,11 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import loop_transcript
-import plan_format
 import script_utils
 from capped_review import CAP_REACHED, effective_status
 from handback import (
     CLEAN_STATUSES,
+    PLAN_IMPACT_STATUS,
     REVIEW_LOOP,
     PacketError,
     load,
@@ -89,7 +89,7 @@ def unchecked_code_reason(ungated, last_step, session_id, agent_id):
 def hand_back_plan_edit_reason(transcript, packet):
     """loop_transcript.PLAN_EDIT_REASON when the packet, of any status but plan-impact, has a files_touched that
     names the plan file of the loop's dispatch prompt, else None."""
-    if packet is None or packet["status"] == "plan-impact":
+    if packet is None or packet["status"] == PLAN_IMPACT_STATUS:
         return None
 
     return loop_transcript.plan_edit_reason(transcript, packet)
@@ -199,7 +199,6 @@ def handle_dispatch(event, session_id, tool_input):
     elif subagent_type == REVIEW_LOOP:
         prompt = str(tool_input.get("prompt") or "")
         record(session_id, "dispatch", no_review=loop_transcript.NO_REVIEW_MODE.search(prompt) is not None,
-               resolved_plan_impact=bool(plan_format.resolved_plan_texts(prompt)),
                repo=loop_transcript.reviewed_repo(prompt, event.get("cwd")), tool_use_id=event.get("tool_use_id"))
 
 

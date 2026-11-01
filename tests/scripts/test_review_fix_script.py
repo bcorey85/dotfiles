@@ -100,13 +100,11 @@ PLAN_IMPACT_TEXT = ("PLAN-IMPACT:\n"
                     "  assumed: the queue is at-least-once\n"
                     "  found: the queue is at-most-once\n"
                     "  changes: phase 3 needs a dedupe table")
-PLAN_IMPACT_FIELDS = {"status": "plan-impact", "iter": 1, "spec_iter": 2, "plan_impact": PLAN_IMPACT_TEXT}
+PLAN_IMPACT_FIELDS = {"status": "converged", "iter": 1, "spec_iter": 2, "fixed": [], "ask": [],
+                      "class_closure": "n/a - fixed[] empty",
+                      "plan_impacts": [{"text": PLAN_IMPACT_TEXT, "gate": "code-reviewer", "ac_change": True,
+                                        "cause": "plan", "adopted": False}]}
 PLAN_IMPACT = json.dumps(PLAN_IMPACT_FIELDS)
-
-
-def plan_impact_packet(criteria, **changes):
-    impact_with_criteria = f"{PLAN_IMPACT_TEXT}\n  acceptance_criteria: {criteria}"
-    return packet_text(PLAN_IMPACT_FIELDS, plan_impact=impact_with_criteria, **changes)
 
 
 BLOCKER_FIELDS = {"status": "critical-blocker", "iter": 1,
@@ -293,6 +291,15 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("removed 9 of the 10", output)
         self.assertIn("removed half or more of the change under review", output)
         self.assertIn("Do not re-dispatch", output)
+        self.assertNotIn("render-and-finish", output)
+
+    def test_a_plan_impact_status_stops_and_shows_the_plan_impact_text(self):
+        packet = json.dumps({"status": "plan-impact", "iter": 1, "plan_impact": "X"})
+        code, output = self.packet(packet)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("no longer emits plan-impact", output)
+        self.assertIn("X", output)
         self.assertNotIn("render-and-finish", output)
 
     def test_cap_reached_stops_and_keeps_the_commit_blocked(self):
@@ -577,60 +584,6 @@ class ReviewFixScriptTest(unittest.TestCase):
                 self.assertNotIn("ACTION: redispatch", output)
                 self.assertLess(output.index("END USER TEXT"), output.rindex("ACTION:"))
 
-    def test_plan_impact_that_changes_no_acceptance_criterion_is_adopted_without_asking(self):
-        code, output = self.packet(plan_impact_packet("none"))
-        self.assertEqual(code, 0, output)
-        self.assertNotIn("ask-user-plan-impact", output)
-        self.assertIn("ACTION: redispatch", output)
-        self.assertIn("plan_impact: RESOLVED - Adopt plan change. The session ruled, not the user.", output)
-        self.assertIn("Add these lines under ## Plan Deviations", output)
-        self.assertIn("iter=1", output)
-        self.assertIn("spec_iter=2", output)
-
-    def test_plan_impact_that_changes_an_acceptance_criterion_still_asks_the_user(self):
-        code, output = self.packet(plan_impact_packet("AC-2 drops the retry"))
-        self.assertEqual(code, 0, output)
-        self.assertIn("ACTION: ask-user-plan-impact", output)
-        self.assertNotIn("ACTION: redispatch", output)
-
-    def test_every_plan_impact_route_prints_the_dropped_ask_warning(self):
-        routes = (("asks the user", "AC-2 drops the retry", "ACTION: ask-user-plan-impact"),
-                  ("no acceptance criterion changed", "none", "ACTION: redispatch"))
-        for route, criteria, action in routes:
-            with self.subTest(route=route):
-                code, output = self.packet(plan_impact_packet(criteria, ask=[POINTER_ASK]))
-
-                self.assertEqual(code, 0, output)
-                self.assertIn(action, output)
-                self.assertIn(DROPPED_ASK_WARNING, output)
-
-    def test_a_loosely_marked_plan_change_with_no_criteria_line_still_asks_the_user(self):
-        two_impacts = (f"{PLAN_IMPACT_TEXT}\n  acceptance_criteria: none\n"
-                       "plan impact: the retry window is a day, not an hour")
-        two_changes = packet_text(PLAN_IMPACT_FIELDS, plan_impact=two_impacts)
-        code, output = self.packet(two_changes)
-        self.assertEqual(code, 0, output)
-        self.assertIn("ACTION: ask-user-plan-impact", output)
-        self.assertNotIn("ACTION: redispatch", output)
-
-    def test_plan_impact_redispatch_carries_the_round_s_open_findings(self):
-        open_finding = {"finding": "parity script compares the wrong column", "file_line": "bin/parity.py:40",
-                        "disposition": "fix"}
-        index_ask = {"finding": "no index", "file_line": "src/db.ts:5", "question": "Add an index on tenant_id?",
-                     "change": "add the index"}
-        impact_ask = {"finding": "PLAN-IMPACT: the queue is at-most-once", "file_line": "src/queue.ts:1",
-                      "change": "add a dedupe table"}
-        with_open_findings = packet_text(PLAN_IMPACT_FIELDS, findings_remaining=[open_finding],
-                                         ask=[index_ask, impact_ask])
-        code, output = self.packet(with_open_findings)
-        self.assertEqual(code, 0, output)
-        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
-        self.assertEqual(code, 0, output)
-        carried = output.split("carried-findings:", 1)[1]
-        self.assertIn("  - finding: parity script compares the wrong column - bin/parity.py:40", carried)
-        self.assertIn("  - ask: no index", carried)
-        self.assertNotIn("the queue is at-most-once", carried)
-
     def test_adopting_a_held_impact_carries_the_remaining_findings_and_the_impact_text(self):
         open_finding = {"finding": "parity script compares the wrong column", "file_line": "bin/parity.py:40",
                         "disposition": "fix"}
@@ -653,68 +606,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: ask-user-plan-impact", output)
         self.assertIn("the queue is at-most-once", output)
         self.assertIn("Gate: do not commit yet", output)
-
-    def test_a_located_plan_impact_ask_is_not_carried_after_the_ruling(self):
-        located_ask = {"finding": "`src/queue.ts:1` [correctness] plan impact: the queue is at-most-once",
-                       "file_line": "src/queue.ts:1", "change": "add a dedupe table"}
-        located_impact = packet_text(PLAN_IMPACT_FIELDS, ask=[located_ask])
-        code, output = self.packet(located_impact)
-        self.assertEqual(code, 0, output)
-        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
-        self.assertEqual(code, 0, output)
-        self.assertNotIn("the queue is at-most-once", output.split("RESOLVED", 1)[1])
-
-    def test_plan_impact_that_touches_no_criterion_redispatches_and_shows_the_deviation_with_no_question(self):
-        code, output = self.packet(plan_impact_packet("none"))
-        self.assertEqual(code, 0, output)
-        self.assertNotIn("ask-user-plan-impact", output)
-        self.assertNotIn("AskUserQuestion", output)
-        self.assertIn("ACTION: redispatch", output)
-        self.assertIn("Plan deviation adopted: No acceptance criterion changes, so the code wins",
-                      output)
-        self.assertIn("assumed: the queue is at-least-once", output)
-        self.assertIn("plan_impact: RESOLVED - Adopt plan change. The session ruled, not the user.", output)
-        self.assertIn("Ruled by the session, not the user", output)
-
-        self.dispatch(prompt="mode: review-first\nplan_impact: RESOLVED - Adopt plan change.\niter=1")
-        self.hand_back(CONVERGED)
-        code, output = self.packet("")
-        self.assertEqual(code, 0, output)
-        self.assertIn("### Plan deviations adopted (the code won; no acceptance criterion changed)", output)
-        self.assertIn("- assumed: the queue is at-least-once", output.split("### Plan deviations adopted", 1)[1])
-
-        code, output = self.packet(CLEAN_EMPTY)
-        self.assertEqual(code, 0, output)
-        self.assertNotIn("Plan deviations adopted", output)
-
-    def test_two_plan_impacts_adopted_across_one_redispatch_are_both_listed_in_the_closing_block(self):
-        first_impact = plan_impact_packet("none")
-        second_impact = first_impact.replace("the queue is at-least-once", "the cache is write-through")
-        resolved_prompt = "mode: review-first\nplan_impact: RESOLVED - Adopt plan change.\niter=1"
-        self.packet(first_impact)
-        self.dispatch(prompt=resolved_prompt)
-        self.hand_back(second_impact, agent_id="a1")
-        code, output = self.packet("")
-        self.assertIn("ACTION: redispatch", output)
-        self.dispatch(prompt=resolved_prompt)
-        self.hand_back(CONVERGED, agent_id="a2")
-
-        code, output = self.packet("")
-        self.assertEqual(code, 0, output)
-        deviations = output.split("### Plan deviations adopted", 1)[1]
-        self.assertIn("assumed: the queue is at-least-once", deviations)
-        self.assertIn("assumed: the cache is write-through", deviations)
-
-    def test_an_unrelated_review_after_an_abandoned_redispatch_shows_no_adopted_deviation(self):
-        code, output = self.packet(plan_impact_packet("none"))
-        self.assertIn("ACTION: redispatch", output)
-
-        self.dispatch(prompt="mode: review-first\ncaller: review")
-        self.hand_back(CONVERGED)
-        code, output = self.packet("")
-        self.assertEqual(code, 0, output)
-        self.assertNotIn("Plan deviations adopted", output)
-        self.assertNotIn("the queue is at-least-once", output)
 
     def test_decide_appends_to_an_existing_plan_deviations_section_before_the_next_heading(self):
         self.packet(PLAN_IMPACT)

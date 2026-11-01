@@ -1121,25 +1121,6 @@ class ReviewerRequiredTest(HandbackTestBase):
         self.assertFalse(plan_format.resolved_plan_texts("- Resolved the null deref in foo.py"))
         self.assertFalse(plan_format.resolved_plan_texts("- Resolved: the null deref in foo.py"))
 
-    def test_a_dispatch_row_records_a_ruling_in_each_of_the_three_handoff_forms(self):
-        block = ("RESOLVED: the user ruled. Review the code against the ruling.\nDecision: Adopt\nThe ruling:\n"
-                 "  do it\nPLAN-IMPACT:\n  found: a")
-        block_form = "plan_impact: |\n" + "".join(f"  {line}\n" for line in block.splitlines())
-        forms = {
-            "one-line": ("plan_impact: RESOLVED - adopt the change.\n", True),
-            "deferred": ("plan_impact: RESOLVED: deferred to phase end by the session, 2026-10-31: keep it\n", True),
-            "block": (block_form, True),
-            "no-ruling": ("plan_impact: none\n", False),
-        }
-        for name, (handoff, expected) in forms.items():
-            with self.subTest(name):
-                session_id = f"ruling-{name}"
-                event = {"session_id": session_id, "tool_name": "Agent",
-                         "tool_input": {"subagent_type": "review-loop", "prompt": f"scope: branch\n{handoff}"}}
-                self.assertEqual(self.run_cli(["hook", "dispatch"], json.dumps(event))[:2], (0, ""))
-                row = handback_store.latest(session_id)["dispatch"]
-                self.assertIs(expected, row["resolved_plan_impact"])
-
     def test_a_normal_loop_is_denied_after_a_later_no_review_loop_claimed_the_exemption(self):
         self.dispatch("review-loop")
         self.dispatch("review-loop", prompt="no-review")

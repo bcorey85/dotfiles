@@ -512,6 +512,49 @@ class AskOutcomeFindingIdTest(unittest.TestCase):
         self.assertIn("(no finding_id)", first_note)
 
 
+FIX_TOUCHED_PATHS = ("claude/.claude/scripts/review/review_fix.py", "tests/scripts/test_review_fix_script.py")
+
+
+class FixedPathsTest(unittest.TestCase):
+    def test_a_bare_file_name_and_its_full_path_count_once(self):
+        packet = {"files_touched": list(FIX_TOUCHED_PATHS),
+                  "fixed": [{"file_line": "claude/.claude/scripts/review/review_fix.py:12", "finding": "x"},
+                            {"file_line": "review_fix.py:40", "finding": "y"}]}
+
+        self.assertEqual(handback.fixed_paths(packet), ["claude/.claude/scripts/review/review_fix.py"])
+
+    def test_a_file_from_another_repo_named_in_a_finding_drops_out(self):
+        packet = {"files_touched": list(FIX_TOUCHED_PATHS),
+                  "fixed": [{"file_line": "tests/scripts/test_review_fix_script.py:9",
+                             "finding": "mirrors backend/src/modules/timekeepers/schema.ts:30"}]}
+
+        self.assertEqual(handback.fixed_paths(packet), ["tests/scripts/test_review_fix_script.py"])
+
+    def test_an_absolute_name_resolves_to_the_touched_path_it_ends_with(self):
+        packet = {"files_touched": list(FIX_TOUCHED_PATHS),
+                  "fixed": [{"file_line": "/home/u/dotfiles/tests/scripts/test_review_fix_script.py:3"}]}
+
+        self.assertEqual(handback.fixed_paths(packet), ["tests/scripts/test_review_fix_script.py"])
+
+    def test_a_name_that_is_only_a_suffix_of_a_touched_file_name_drops_out(self):
+        packet = {"files_touched": list(FIX_TOUCHED_PATHS), "fixed": [{"file_line": "fix.py:1"}]}
+
+        self.assertEqual(handback.fixed_paths(packet), [])
+
+    def test_with_no_files_touched_every_named_path_is_kept(self):
+        packet = {"files_touched": [], "fixed": [{"file_line": "src/a.ts:1", "finding": "see src/b.ts:2"}]}
+
+        self.assertEqual(handback.fixed_paths(packet), ["src/a.ts", "src/b.ts"])
+
+    def test_the_unreviewed_fix_section_names_files_touched_when_no_fixed_name_matches(self):
+        packet = {"files_touched": list(FIX_TOUCHED_PATHS),
+                  "fixed": [{"file_line": "unlocated", "finding": "see other.ts:4"}]}
+
+        _, lines = handback.unreviewed_fix_section(packet)
+
+        self.assertIn(f"Their files are among: {', '.join(list(FIX_TOUCHED_PATHS))}", lines[0])
+
+
 class RenderTest(HandbackTestBase):
     def test_findings_remaining_show_on_converged(self):
         remaining = [{"disposition": "fix", "finding": "left over", "file_line": "a.ts:1"}]

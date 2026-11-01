@@ -451,12 +451,15 @@ def log_escapes(state, escapes, lane):
     notes = []
     logged = state.setdefault("escapes_logged", [])
     for fields in escapes:
-        file = script_utils.normalize_path(fields["file"])
+        named_file = script_utils.normalize_path(fields["file"])
+        fixed_files = handback.touched_paths_named(named_file, state.get("fixed_paths", []))
+        if not fixed_files:
+            notes.append(f"escape for {named_file} not logged: no fixed[] entry names that file (not applied).")
+            continue
+
+        file = fixed_files[0] if len(fixed_files) == 1 else named_file
         if file in logged:
             notes.append(f"escape for {file} already logged: skipped.")
-            continue
-        if file not in state.get("fixed_paths", []):
-            notes.append(f"escape for {file} not logged: no fixed[] entry names that file (not applied).")
             continue
         repo = script_utils.repo_name(".")
         code, output = run_command(["bash", str(CLAUDE_DIR / "scripts/telemetry/log-escape"), f"repo={repo}",

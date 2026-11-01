@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge solarized-osaka alabaster; }
 
 claude_theme_file() { # <family> <mode> -> the authored Claude Code theme JSON, empty if none
   # A family that ships claude/.claude/themes/<slug>.json gets it copied into
@@ -142,6 +142,14 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     duskfox:*)              echo "Duskfox" ;;
     dredge:light)           echo "dredge-light" ;;
     dredge:*)               echo "dredge" ;;
+    # solarized-osaka: custom files in ghostty/themes/, copied from the
+    # plugin's extras/ghostty.
+    solarized-osaka:light)  echo "solarized-osaka-light" ;;
+    solarized-osaka:*)      echo "solarized-osaka-dark" ;;
+    # alabaster: the light half is a ghostty BUILTIN; the dark half is a custom
+    # file from the plugin's terminal colours.
+    alabaster:light)        echo "Alabaster" ;;
+    alabaster:*)            echo "alabaster-dark" ;;
   esac
 }
 
@@ -188,6 +196,15 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # table; one-light leaks its red variables and blue operators.
     dredge:light)           echo "github-light" ;;
     dredge:*)               echo "one-dark-pro" ;;
+    # solarized-osaka: BASE of a full [custom_theme]. hunk's solarized
+    # builtins render code #ffffff / #000000 (their text fails 4.5:1 on hunk's
+    # own panel), so the bases are the nearest greys that pass.
+    solarized-osaka:light)  echo "ayu-light" ;;
+    solarized-osaka:*)      echo "one-dark-pro" ;;
+    # alabaster: BASE of a diff-only [custom_theme]. hunk has no alabaster; the
+    # VS Code default pair has the nearest passing text (#d4d4d4 / #000000).
+    alabaster:light)        echo "light-plus" ;;
+    alabaster:*)            echo "dark-plus" ;;
   esac
 }
 
@@ -196,6 +213,23 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
 # hunk's own keys/tables.
 HUNK_BLOCK_BEGIN="# >>> theme-mode custom_theme (do not edit inside markers)"
 HUNK_BLOCK_END="# <<< theme-mode custom_theme"
+
+drop_overridden_scopes() { # <extra scope lines> — stdin minus every scope line extra re-sets
+  # TOML refuses a repeated key, so a family's `extra` replaces a generic scope
+  # line instead of repeating it.
+  EXTRA_SCOPES="$1" awk '
+    BEGIN {
+      line_count = split(ENVIRON["EXTRA_SCOPES"], extra_lines, "\n")
+      for (i = 1; i <= line_count; i++) {
+        if (match(extra_lines[i], /^"[^"]+"/)) {
+          overridden[substr(extra_lines[i], RSTART, RLENGTH)] = 1
+        }
+      }
+    }
+    match($0, /^"[^"]+"/) && (substr($0, RSTART, RLENGTH) in overridden) { next }
+    { print }
+  '
+}
 
 hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, or nothing
   # A family that renders via a hunk builtin gets a comment-only block: hunk
@@ -210,6 +244,65 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   esac
   if [ -n "$cmt" ]; then
     printf '[custom_theme]\nbase = "%s"\n\n[custom_theme.syntax_scopes]\n"comment" = "%s"\n"punctuation.definition.comment" = "%s"\n' "$3" "$cmt" "$cmt"
+    return 0
+  fi
+  # A diff-only block: syntax stays the builtin's, the diff colours follow nvim,
+  # so hunk, delta and nvim show one diff. Dark rows are the washes neogit
+  # renders (dimmer than DiffAdd/DiffDelete), words those rows 15% toward the
+  # sign; light is DiffAdd/DiffDelete/DiffText. Fields: row washes, word
+  # washes, signs, line number, border, text (delta_apply reads the last three).
+  # chrome_colors puts the family's panels, accent, muted and badges back over
+  # the base's: panel, panelAlt, accent, accentMuted, muted, modified.
+  local diff_colors="" chrome_colors=""
+  case "$1:$2" in
+    alabaster:light)
+      diff_colors="#adffb7 #f8b28f #92db97 #ea9072 #284918 #b40600 #7d7c7c #c9c9c9 #000000"
+      chrome_colors="#ececec #e7e7e7 #007acc #bfdbfe #696969 #9a5c00"
+      ;;
+    alabaster:*)
+      diff_colors="#244032 #462c32 #2e5334 #5b2d31 #6abf40 #d2322d #5c5c5c #2b3d40 #cecece"
+      chrome_colors="#162022 #182325 #71aed7 #354c50 #7d7d7d #ec8013"
+      ;;
+  esac
+  if [ -n "$diff_colors" ]; then
+    local d_add d_rem d_add_word d_rem_word d_sign_add d_sign_rem d_line_number d_border d_text
+    read -r d_add d_rem d_add_word d_rem_word d_sign_add d_sign_rem d_line_number d_border d_text <<<"$diff_colors"
+
+    local c_panel c_panel_alt c_accent c_accent_muted c_muted c_modified
+    read -r c_panel c_panel_alt c_accent c_accent_muted c_muted c_modified <<<"$chrome_colors"
+    cat <<EOF
+[custom_theme]
+base             = "$3"
+addedBg          = "$d_add"
+removedBg        = "$d_rem"
+movedAddedBg     = "$d_add"
+movedRemovedBg   = "$d_rem"
+addedContentBg   = "$d_add_word"
+removedContentBg = "$d_rem_word"
+addedSignColor   = "$d_sign_add"
+removedSignColor = "$d_sign_rem"
+fileNew          = "$d_sign_add"
+fileDeleted      = "$d_sign_rem"
+lineNumberFg     = "$d_line_number"
+border           = "$d_border"
+text             = "$d_text"
+panel            = "$c_panel"
+panelAlt         = "$c_panel_alt"
+accent           = "$c_accent"
+accentMuted      = "$c_accent_muted"
+muted            = "$c_muted"
+selectedHunk     = "$c_accent"
+badgeAdded       = "$d_sign_add"
+badgeRemoved     = "$d_sign_rem"
+badgeNeutral     = "$c_accent"
+fileRenamed      = "$c_accent"
+fileModified     = "$c_modified"
+fileUntracked    = "$d_sign_add"
+
+[custom_theme.syntax_scopes]
+"source"         = "$d_text"
+"text"           = "$d_text"
+EOF
     return 0
   fi
   # Some per-family branches below are inert (their families are gone);
@@ -513,7 +606,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
       bg="#1c1e20"; panel="#151719"; panelAlt="#292b2d"; border="#414244"
-      accent="#71b3a8"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
+      accent="#61978f"; accentMuted="#414244"; text="#a2a9b1"; muted="#9b9fa6"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness. The washes share one lightness. Red reads
@@ -526,16 +619,16 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       sAdd="#5da37e"; sRem="#be6146"; lnFg="#777b82"
       badgeAdd="#74d5a1"; badgeRem="#fb784f"; badgeNeu="#d7bb70"
       fRename="#5da37e"; fMod="#5da37e"; fUntracked="#5da37e"; note="#151719"
-      kw="#858990"; str="#71b3a8"; num="#cb8998"; fn="#9e9dd9"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
-      konst="#cb8998"; esc="#cb8998"; cmt="#b2a99d"; param="#c1c8d2"
-      attr="#c1c8d2"; tag="#858990"; vbi="#c1c8d2"; lang="#cb8998"; imp="#858990"; pre="#858990"
-      prim="#c1c8d2"; ns="#c1c8d2"; mac="#9e9dd9"; bfn="#c1c8d2"; var="#9e9dd9"; key="#c1c8d2"; cls="#9e9dd9"
+      kw="#72757b"; str="#61978f"; num="#ab7582"; fn="#9291cb"; typ="#a2a9b1"; punct="#6a6f74"; op="#6a6f74"
+      konst="#ab7582"; esc="#ab7582"; cmt="#928c82"; param="#a2a9b1"
+      attr="#a2a9b1"; tag="#72757b"; vbi="#a2a9b1"; lang="#ab7582"; imp="#72757b"; pre="#72757b"
+      prim="#a2a9b1"; ns="#a2a9b1"; mac="#9291cb"; bfn="#a2a9b1"; var="#9291cb"; key="#a2a9b1"; cls="#9291cb"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.
-      use="#c1c8d2"; call="#c1c8d2"; mem="#c1c8d2"
+      use="#a2a9b1"; call="#a2a9b1"; mem="#a2a9b1"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. Headings ($fn) and bullet mirror theme-sync's markdown.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local bright="#d4dbe5" quote="#a8adb4" bullet="#9b9fa6"
+      local bright="#d4dbe5" quote="#898d93" bullet="#9b9fa6"
       if [ "$2" = light ]; then
         bg="#c3c5c8"; panel="#bec0c3"; panelAlt="#babcbf"; border="#9a9c9f"
         accent="#18796d"; accentMuted="#9a9c9f"; text="#30363f"; muted="#666a71"
@@ -714,6 +807,60 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 EOF
       )
       ;;
+    # solarized-osaka: roles are the resolved fg of nvim's groups under this
+    # config (comments carry theme-sync's contrast floor). Diff washes are the
+    # neogit-dim rows (dark) and DiffAdd/DiffDelete (light).
+    solarized-osaka:*)
+      local sep="#849900" regexp="#2aeddd" heading="#c94c16" null="#c94c16"
+      bg="#001419"; panel="#000c10"; panelAlt="#001e26"; border="#063540"
+      accent="#268bd3"; accentMuted="#063540"; text="#9eabac"; muted="#657b83"
+      addedBg="#142d2e"; removedBg="#2c0e0d"; ctxBg="#001419"
+      addWord="#173f3e"; remWord="#461312"
+      sAdd="#29a298"; sRem="#db302d"; lnFg="#586e74"
+      badgeAdd="#29a298"; badgeRem="#db302d"; badgeNeu="#268bd3"
+      fRename="#268bd3"; fMod="#b28500"; fUntracked="#29a298"; note="#000c10"
+      esc="#a13c10"; cmt="#909fa1"
+      if [ "$2" = light ]; then
+        bg="#fdf5e2"; panel="#f7f1df"; panelAlt="#f1ecdb"; border="#d8d0b6"
+        accent="#1b6498"; accentMuted="#eee8d5"; text="#637981"; muted="#647a82"
+        addedBg="#b7fefa"; removedBg="#ffd2d1"; ctxBg="#fdf5e2"
+        addWord="#6cf8ed"; remWord="#ff9a99"; lnFg="#93a1a1"
+        badgeNeu="#1b6498"; fRename="#1b6498"; fMod="#8f6b00"; note="#f7f1df"
+        esc="#f74f0c"; cmt="#637981"; regexp="#1a6265"
+      fi
+      kw="#849900"; str="#29a298"; num="#29a298"; fn="#268bd3"; typ="#b28500"; punct="#c94c16"; op="#849900"
+      konst="#29a298"; mem="#29a298"; param="#c94c16"; attr="#db302d"; tag="#849900"
+      vbi="#c94c16"; imp="#db302d"; pre="#db302d"; prim="#b28500"; ns="#db302d"
+      mac="#db302d"; bfn="#c94c16"; var="$text"; lang="#29a298"; cls="#b28500"
+      use="$text"; call="#268bd3"; key="#268bd3"
+      # Brackets are @punctuation.bracket orange; separators are
+      # @punctuation.delimiter green.
+      extra=$(cat <<EOF
+"punctuation.separator"             = "$sep"
+"punctuation.separator.key-value"   = "$sep"
+"punctuation.separator.dictionary.key-value.json" = "$sep"
+"punctuation.separator.dictionary.pair.json" = "$sep"
+"punctuation.separator.array.json"  = "$sep"
+"punctuation.separator.list.comma"  = "$sep"
+"punctuation.separator.delimiter"   = "$sep"
+"punctuation.terminator"            = "$sep"
+"punctuation.accessor"              = "$sep"
+"constant.language.null"            = "$null"
+"constant.language.null.json"       = "$null"
+"string.regexp"                     = "$regexp"
+"markup.heading"                    = "$heading"
+"entity.name.section"               = "$heading"
+"entity.name.section.markdown"      = "$heading"
+"markup.heading entity.name.section.markdown" = "$heading"
+"markup.heading punctuation.definition.heading.markdown" = "$heading"
+"punctuation.definition.heading.markdown" = "$heading"
+"markup.list punctuation.definition.list.begin.markdown" = "$fn"
+"punctuation.definition.list.begin.markdown" = "$fn"
+"markup.underline.link"             = "$fn"
+"string.other.link.title.markdown"  = "$fn"
+EOF
+      )
+      ;;
     *) return 0 ;;
   esac
   # Roles the retired families never set; default them so their (inert) branches
@@ -726,6 +873,7 @@ EOF
   imp="${imp:-$typ}"; pre="${pre:-$num}"; prim="${prim:-$num}"
   ns="${ns:-$typ}"; mac="${mac:-$esc}"; bfn="${bfn:-$esc}"; var="${var:-$text}"
   lang="${lang:-$num}"; cls="${cls:-$typ}"; use="${use:-$var}"; call="${call:-$fn}"
+  {
   cat <<EOF
 [custom_theme]
 base             = "$3"
@@ -922,6 +1070,7 @@ EOF
 "support.type.type.flowtype"        = "$typ"
 EOF
   fi
+  } | drop_overridden_scopes "${extra:-}"
   if [ -n "${extra:-}" ]; then
     printf '%s\n' "$extra"
   fi
@@ -1302,9 +1451,50 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       accent="#4c8e84" panel_bg="#151719" surface_dim="#292b2d"
       surface0="#343638" surface1="#414244"
       overlay0="#7c8086" overlay1="#9b9fa6"
-      text="#c1c8d2" subtext0="#9b9fa6"
+      text="#a2a9b1" subtext0="#9b9fa6"
       green="#8dd09b" yellow="#d7bb70" red="#ed8c84"
-      blue="#85beef" teal="#71b3a8" peach="#f6a981"
+      blue="#85beef" teal="#61978f" peach="#f6a981"
+      ;;
+    solarized-osaka:light)
+      # solarized-osaka light (base3 #fdf6e2 ground, base2 panel). Accents are
+      # the plugin's darker tiers, so sidebar text holds on cream.
+      base_name="one-light"
+      accent="#1b6498" panel_bg="#ede7d3" surface_dim="#e2dac3"
+      surface0="#d8d0b6" surface1="#c9c0a4"
+      overlay0="#647a82" overlay1="#586e74"
+      text="#073541" subtext0="#586e74"
+      green="#6f8000" yellow="#8f6b00" red="#b7221f"
+      blue="#1b6498" teal="#238682" peach="#a23c11"
+      ;;
+    solarized-osaka:*)
+      # solarized-osaka dark (base04 #001419 ground, panel a step darker).
+      base_name="one-dark"
+      accent="#268bd3" panel_bg="#000c10" surface_dim="#002c38"
+      surface0="#063540" surface1="#0d4350"
+      overlay0="#586e74" overlay1="#647a82"
+      text="#9fabad" subtext0="#647a82"
+      green="#849900" yellow="#b28500" red="#db302d"
+      blue="#268bd3" teal="#29a298" peach="#ca4c16"
+      ;;
+    alabaster:light)
+      # alabaster light (#f7f7f7 ground, pmenu grey panel).
+      base_name="one-light"
+      accent="#007acc" panel_bg="#e7e7e7" surface_dim="#d4d4d4"
+      surface0="#c9c9c9" surface1="#b7b7b7"
+      overlay0="#696969" overlay1="#555555"
+      text="#000000" subtext0="#555555"
+      green="#448c27" yellow="#876004" red="#aa3731"
+      blue="#325cc0" teal="#0083b2" peach="#9a5c00"
+      ;;
+    alabaster:*)
+      # alabaster dark (#0e1415 ground, panel a step darker).
+      base_name="one-dark"
+      accent="#71aed7" panel_bg="#0a0f10" surface_dim="#1d2a2c"
+      surface0="#293a3d" surface1="#354c50"
+      overlay0="#7d7d7d" overlay1="#9f9f9f"
+      text="#cecece" subtext0="#9f9f9f"
+      green="#95cb82" yellow="#cd974b" red="#d2322d"
+      blue="#71aed7" teal="#47bea9" peach="#ec8013"
       ;;
   esac
 

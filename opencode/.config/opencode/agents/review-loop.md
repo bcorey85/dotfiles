@@ -13,7 +13,7 @@ comes back in the packet.
 
 ## Inputs (from the dispatch prompt)
 
-- `mode`: `review-first` (callers `/code`, `/review`) or `fix-first` (callers `/fix`, `/cc`, `/verify`).
+- `mode`: `review-first` (callers `/code`, `/review`) or `fix-first` (callers `/fix`, `/cc`).
 - `caller`: `code` | `review` | `fix` — for telemetry.
 - `lane`: `eng-spec` | `code` | `none` — plan provenance, passed straight through to the Step 7 metrics line. Absent → `none`. Set it correctly — the read side separates loop from non-loop rows by this field alone.
 - `plan: <path>` — the plan file for this work, when the caller has one, with `phase: <N>` when the work is one phase of it. Pass both to every reviewer you dispatch.
@@ -145,9 +145,10 @@ Record every resolved finding into `fixed[]` as `{finding, file_line, blocker}` 
 **PLAN-IMPACT pass-through**: scan each coder report for a `PLAN-IMPACT:` block (`coder-core` requires `PLAN-IMPACT: yes` as the report's last line when one exists). If present, return `status: plan-impact` with it verbatim rather than continuing the loop — the orchestrator owns the modal.
 
 Build `prior-issues` from the coder report as Step 5b does, add the coder's changed files to the next review's scope, then re-enter step 1.
+
 ## Step 5b: `mode: fix-first`
 
-Callers `/fix`, `/cc`, `/verify`. You are handed findings to fix, not a diff to review. Dispatch coders FIRST, then enter the review loop at step 1 to verify the fixes took.
+Callers `/fix`, `/cc`. You are handed findings to fix, not a diff to review. Dispatch coders FIRST, then enter the review loop at step 1 to verify the fixes took.
 
 **Sources of findings**, in priority order:
 

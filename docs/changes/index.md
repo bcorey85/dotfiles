@@ -15,12 +15,11 @@ Latest change: 2026-11-01, [The branch exit runs a peer review and one coder dis
 * [`code-reviewer` files taste breaks such as dead code and single-use pass-throughs as `fix`, not `nit`](notes/2026-10-14-code-reviewer-files-taste-breaks-as-fix-not-nit.md): **cuts planted taste defects not filed as fix (of 28) by 100% (14 → 0)** [agent/code-reviewer, skill/fix] ([2026-10-14-catchlist-sealed-4-runs-per-arm](../../../agent-evals/findings/2026-10-14-catchlist-sealed-4-runs-per-arm.md)) - 2026-10-14 [watch: TOO FEW]
 * [plan-reviewer now flags oversized phases, a skeleton phase with no Phase 0 contract, and criteria files over 8 criteria](notes/2026-10-12-plan-reviewer-a-new-finding-class-phase-shape.md): **cuts planted shape defects missed (of 9) by 100% (9 → 0)** [agent/plan-reviewer] ([2026-10-09-planfmt-sealed-planfmt-md-graded-edit](../../../agent-evals/findings/2026-10-09-planfmt-sealed-planfmt-md-graded-edit.md)) - 2026-10-12 [watch: TOO FEW]
 * [`code-reviewer` checks each added line against every written rule in the conventions doc, the docs it names and the loaded CLAUDE.md files](notes/2026-10-12-code-reviewer-checks-each-added-line-against-each.md): **cuts planted naming breaks not filed as fix (of 64) by 93% (15 → 1)** [agent/code-reviewer, rule/global-claude-md, skill/fix] ([2026-10-12-namefix-sealed-8-runs-per-arm](../../../agent-evals/findings/2026-10-12-namefix-sealed-8-runs-per-arm.md)) - 2026-10-12 [watch: no watch]
-* [The branch exit runs a peer review and one coder dispatch](notes/2026-11-01-the-branch-exit-runs-a-peer-review-and-one-coder.md): **cuts tokens by 82% (23.18 → 4.09)** [skill/verify-branch, shared/closing-phases, script/verify-prep, script/verify-log] ([2026-11-01-peer-review-plus-one-coder-dispatch-nits-included](../../../agent-evals/findings/2026-11-01-peer-review-plus-one-coder-dispatch-nits-included.md)) - 2026-11-01 [watch: no reading]
+* [The branch exit runs a peer review and one coder dispatch](notes/2026-11-01-the-branch-exit-runs-a-peer-review-and-one-coder.md): **cuts tokens by 82% (23.2M → 4.1M)** [skill/verify-branch, shared/closing-phases, script/verify-prep, script/verify-log] ([2026-11-01-peer-review-plus-one-coder-dispatch-nits-included](../../../agent-evals/findings/2026-11-01-peer-review-plus-one-coder-dispatch-nits-included.md)) - 2026-11-01 [watch: no reading]
 
 ## Total saved
 
-* tokens: 19.09 M Opus tokens saved
-* tokens: 670k saved
+* tokens: 19.8M saved
 * cost: $53.01 saved
 * wall-clock: 1140 seconds saved
 

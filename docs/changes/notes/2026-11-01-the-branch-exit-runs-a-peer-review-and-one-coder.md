@@ -14,7 +14,7 @@ asked: ""
 proof: ["2026-11-01-peer-review-plus-one-coder-dispatch-nits-included", "2026-11-01-a-peer-review-pass-with-one-coder-dispatch-matches"]
 unmeasured: ""
 overlap: "Ten open watches read review escapes per code-reviewer run; this one ships anyway because the bench already showed the single pass catches and fixes as much as the loop, and the escape watch only guards against a drop at work. Its reading after 2026-11-01 cannot be told apart from code-plain-steps-review-escapes (2026-11-02)."
-impact: {"metric": "tokens", "before": 23.18, "after": 4.09, "unit": "M Opus tokens", "finding": "2026-11-01-peer-review-plus-one-coder-dispatch-nits-included"}
+impact: {"metric": "tokens", "before": 23180000, "after": 4090000, "unit": "tokens", "finding": "2026-11-01-peer-review-plus-one-coder-dispatch-nits-included"}
 ---
 
 ## Change

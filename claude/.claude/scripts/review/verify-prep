@@ -231,17 +231,18 @@ def print_plan(context):
         if untracked:
             lines.append(f"  {untracked}: read them too.")
         lines.append("  ---")
-        lines.append("  Keep the reviewer's `[blocker]` tag at the start of that finding's `desc`. Read the diff "
-                     "yourself for anything the reviewer missed and add it as a finding.")
+        lines.append("  Read the diff yourself for anything the reviewer missed and add it as a finding.")
         lines.append("  Dispatch Agent subagent_type=coder ONCE with every finding, nits included, each with its "
                      "file, line and proposed change. An `ask` takes its proposed change, unless that change cuts "
                      "or changes a ticket AC: that ask goes to the user and is logged with disposition `ask` and "
-                     "actioned `ask`. The coder runs the tests for the files it changed.")
+                     "actioned `ask`. A correct finding the coder could not fix goes to the user the same way. "
+                     "The coder runs the tests for the files it changed.")
         lines.append("  With no finding, skip the coder. Log the review after the fixes.")
         lines.append("  Write the findings to a JSON list ([] when none) of")
         lines.append(
             '  {"desc","file","line","actioned", optional "class","disposition"} and run. `actioned` is required: '
-            "fixed or skipped_fp (ask only for an ask the user must rule on); nothing is deferred."
+            "fixed or skipped_fp (ask only for an ask the user must rule on; "
+            "an open ask also needs disposition ask); nothing is deferred."
         )
         lines.append("  verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|->")
         lines.append("  Then rerun verify-prep (it must report the review as ran) before STEP 2.")

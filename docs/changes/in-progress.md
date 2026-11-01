@@ -7,12 +7,11 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-5 open benches, by rank. Each line is the question the bench asks.
+4 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
 * Bench: do structure and test defects that per-phase review misses get copied by later phases and later tickets (running): The placement bench scores catches on fixed code. This one lets the coder keep building: does a duplicated helper, a wrong-layer query or a weak assertion left in an early phase get copied by later phases and the next ticket, and how much rework does that add?
 * Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (running): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.
-* One Opus reviewer per phase in place of code, test and structure reviewers (running): Dropping the separate test and structure reviewers could cut about a third of review Opus output and cache read if one Opus reviewer per phase catches the same planted defects.
 * Coder ranged-read hook for whole-file reads over 4k tokens (queued): A hook that turns the coder's whole-file read of a big file into a ranged read could cut coder cache read per dispatch by 30% or more.
 * Sealed-branch review bench: first sealed branches and their graded keys (queued): Give the reviewer a bench of real coder defects so reviewer changes can be ranked on catch rate, not on plants Opus always catches.

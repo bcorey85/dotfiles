@@ -25,7 +25,7 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("lib", "check_output.py"), ("lib", "linked_installs.py"), ("lib", "test_run_output.py"),
                 ("lib", "worktree_snapshot.py"), ("lib", "numstat.py"), ("lib", "makefile_text.py"),
                 ("lib", "full_check_receipt.py"), ("lib", "pytest_config.py"),
-                ("lib", "source_text.py"))
+                ("lib", "source_text.py"), ("lib", "notes_paths.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
@@ -102,12 +102,18 @@ class GateCase(unittest.TestCase):
             subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
         return repo.resolve()
 
-    def assert_silent(self, finished):
-        self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
+    @staticmethod
+    def bad_entry_stderr(line, entry):
+        """The line reviewed_tree prints to stderr for a bad entry of the committed notes-paths list."""
+        return (f"[reviewed-tree] HEAD:.claude/notes-paths:{line}: entry {entry!r} is not a normalized "
+                "repo-root-relative literal: no leading `/` or `./`, no glob, no `..`; a folder ends in `/`\n")
 
-    def assert_commit_denied(self, finished):
+    def assert_silent(self, finished, stderr=""):
+        self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", stderr))
+
+    def assert_commit_denied(self, finished, stderr=""):
         self.assertEqual(finished.returncode, 0)
-        self.assertEqual(finished.stderr, "")
+        self.assertEqual(finished.stderr, stderr)
         self.assertEqual(json.loads(finished.stdout), {"hookSpecificOutput": {
             "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": COMMIT_DENIED}})
 
@@ -433,16 +439,18 @@ class NotesOnlyCommitTest(GateCase):
     def test_a_bad_list_does_not_change_the_verdict_of_a_code_or_docs_only_commit(self):
         self.commit_notes_list("/queue/\n")
         self.stage("src/a.py")
-        self.assert_commit_denied(self.commit_in('git commit -q -m "code"'))
+        self.assert_commit_denied(self.commit_in('git commit -q -m "code"'),
+                                  stderr=self.bad_entry_stderr(1, "/queue/"))
         repo = self.make_repo("bad-list-docs")
         self.commit_notes_list("/queue/\n", repo=repo)
         self.stage("docs/a.md", repo=repo)
-        self.assert_silent(self.commit_in('git commit -q -m "docs"', repo))
+        self.assert_silent(self.commit_in('git commit -q -m "docs"', repo), stderr=self.bad_entry_stderr(1, "/queue/"))
 
     def test_a_bad_list_does_not_replace_the_review_deny_of_code_mixed_with_a_note(self):
         self.commit_notes_list("/queue/\n")
         self.stage("src/a.py", "queue/item.md")
-        self.assert_commit_denied(self.commit_in('git commit -q -m "mixed"'))
+        self.assert_commit_denied(self.commit_in('git commit -q -m "mixed"'),
+                                  stderr=self.bad_entry_stderr(1, "/queue/"))
 
     def test_the_check_verb_with_a_wrong_argument_count_prints_usage_and_exits_2(self):
         finished = subprocess.run([sys.executable, str(self.script), "check"], capture_output=True, text=True)
@@ -799,7 +807,19 @@ class ReviewedWorkCommitTest(GateCase):
         env = {"PATH": os.environ["PATH"], "HOME": str(self.home),
                "PYTHONPATH": f"{self.scripts / 'review'}:{self.scripts / 'lib'}"}
         finished = subprocess.run([sys.executable, "-c", record], capture_output=True, text=True, env=env)
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+
+    def review_converged_through_the_store(self, repo):
+        """A converged review whose hand-back row is written by handback_store.record_handback, which stores the
+        reviewed tree as it stands then; the review is then credited from that row."""
+        self.seed_handback("converged", repo=str(pathlib.Path(repo).resolve()), handed_back=False)
+        record = ("import handback_store\n"
+                  "handback_store.record_handback('s1', status='converged', message='')")
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.home),
+               "PYTHONPATH": f"{self.scripts / 'review'}:{self.scripts / 'lib'}"}
+        finished = subprocess.run([sys.executable, "-c", record], capture_output=True, text=True, env=env)
         self.assertEqual((finished.returncode, finished.stderr), (0, ""))
+        self.record_reviewed_tree()
 
     def review_converged(self, repo=None):
         """A converged review of repo (the top level of self.repo by default)."""
@@ -876,6 +896,104 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_silent(self.dispatch())
         (self.repo / "base.py").write_text("changed again\n")
         self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def commit_notes_list(self, *entries):
+        """Commit a `.claude/notes-paths` list holding the entries, as the repo's HEAD."""
+        (self.repo / ".claude").mkdir(exist_ok=True)
+        (self.repo / ".claude" / "notes-paths").write_text("".join(entry + "\n" for entry in entries))
+        self.git(self.repo, "add", ".claude/notes-paths")
+        self.git(self.repo, "commit", "-q", "-m", "notes list")
+
+    def review_then_edit(self, relative, text="ticked after review\n"):
+        """A converged review of a code change, a later coder dispatch, then a write of the file at `relative`."""
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        self.assert_silent(self.dispatch())
+        edited = self.repo / relative
+        edited.parent.mkdir(parents=True, exist_ok=True)
+        edited.write_text(text)
+
+    def test_a_plan_under_docs_ticked_after_the_converged_review_keeps_the_commit_credit(self):
+        plan = self.repo / "docs" / "plans" / "plan.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("Phase Status: running\n")
+        self.git(self.repo, "add", "docs/plans/plan.md")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+
+        self.review_then_edit("docs/plans/plan.md", "Phase Status: done\n")
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_an_untracked_note_under_docs_added_after_the_converged_review_keeps_the_commit_credit(self):
+        self.review_then_edit("docs/notes.md")
+        self.assert_silent(self.commit("git add docs/notes.md && git commit -a -m x"))
+
+    def test_a_plan_edited_before_a_review_recorded_by_the_store_keeps_the_credit_when_ticked_again(self):
+        plan = self.repo / "docs" / "plans" / "plan.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("Phase Status: pending\n")
+        self.git(self.repo, "add", "docs/plans/plan.md")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        (self.repo / "base.py").write_text("changed\n")
+        plan.write_text("Phase Status: running\n")
+        self.review_converged_through_the_store(self.repo)
+        self.assert_silent(self.dispatch())
+
+        plan.write_text("Phase Status: done\n")
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_markdown_file_under_a_listed_notes_folder_edited_after_the_review_keeps_the_commit_credit(self):
+        self.commit_notes_list("plans/", "NOTES.md")
+        for relative in ("plans/deep/plan.md", "NOTES.md"):
+            committed = self.repo / relative
+            committed.parent.mkdir(parents=True, exist_ok=True)
+            committed.write_text("before the review\n")
+            self.git(self.repo, "add", relative)
+        self.git(self.repo, "commit", "-q", "-m", "listed notes")
+        self.review_then_edit("plans/deep/plan.md")
+        (self.repo / "NOTES.md").write_text("a listed file\n")
+        self.assert_silent(self.commit("git add plans/deep/plan.md NOTES.md && git commit -a -m x"))
+
+    def test_a_code_file_under_docs_edited_after_the_converged_review_is_denied(self):
+        self.review_then_edit("docs/build.py")
+        self.assert_commit_denied(self.commit("git add docs/build.py && git commit -a -m x"))
+
+    def test_a_markdown_file_outside_docs_and_the_list_edited_after_the_review_is_denied(self):
+        self.commit_notes_list("plans/")
+        self.review_then_edit("README.md")
+        self.assert_commit_denied(self.commit("git add README.md && git commit -a -m x"))
+
+    def test_a_non_markdown_file_under_a_listed_notes_folder_edited_after_the_review_is_denied(self):
+        self.commit_notes_list("plans/")
+        self.review_then_edit("plans/run.py")
+        self.assert_commit_denied(self.commit("git add plans/run.py && git commit -a -m x"))
+
+    def test_a_folder_listed_only_in_the_working_tree_after_the_review_grants_no_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        (self.repo / ".claude").mkdir()
+        (self.repo / ".claude" / "notes-paths").write_text("src/\n")
+        self.review_converged()
+        self.assert_silent(self.dispatch())
+        (self.repo / "src").mkdir()
+        (self.repo / "src" / "design.md").write_text("not yet listed in HEAD\n")
+        self.assert_commit_denied(self.commit("git add src/design.md && git commit -a -m x"))
+
+    def test_a_bad_notes_list_leaves_only_docs_out_of_the_reviewed_tree(self):
+        self.commit_notes_list("plans/", "bad/*")
+        self.review_then_edit("plans/x.md")
+        self.assert_commit_denied(self.commit("git add plans/x.md && git commit -a -m x"),
+                                  stderr=self.bad_entry_stderr(2, "bad/*"))
+
+    def test_a_bad_notes_list_still_leaves_a_committed_docs_plan_out_of_the_reviewed_tree(self):
+        plan = self.repo / "docs" / "plan.md"
+        plan.parent.mkdir()
+        plan.write_text("Phase Status: running\n")
+        self.git(self.repo, "add", "docs/plan.md")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        self.commit_notes_list("plans/", "bad/*")
+        self.review_then_edit("docs/plan.md", "Phase Status: done\n")
+        self.assert_silent(self.commit("git commit -a -m x"), stderr=self.bad_entry_stderr(2, "bad/*"))
 
     def test_a_review_run_in_a_subdirectory_covers_the_whole_repo_tree_for_a_commit_from_it(self):
         sub = self.repo / "sub"

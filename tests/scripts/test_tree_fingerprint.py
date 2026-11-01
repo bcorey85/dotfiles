@@ -112,6 +112,16 @@ class TreeFingerprint(unittest.TestCase):
         found = reviewed_tree.fingerprint(self.top)
         self.assertEqual(found, (str(top), GOLDEN_WHOLE_TREE))
 
+    def test_reviewed_fingerprint_of_a_tree_with_no_notes_path_is_the_whole_tree_value(self):
+        top = pathlib.Path(self.directory).resolve()
+        self.assertEqual(reviewed_tree.reviewed_fingerprint(self.top), (str(top), GOLDEN_WHOLE_TREE))
+
+    def test_a_docs_markdown_edit_changes_the_whole_tree_value_and_not_the_reviewed_one(self):
+        reviewed_before = reviewed_tree.reviewed_fingerprint(self.top)
+        write(self.top, "docs/plan.md", b"ticked\n")
+        self.assertNotEqual(reviewed_tree.fingerprint(self.top)[1], GOLDEN_WHOLE_TREE)
+        self.assertEqual(reviewed_tree.reviewed_fingerprint(self.top), reviewed_before)
+
     def test_fingerprint_is_none_when_git_fails(self):
         with mock.patch.object(reviewed_tree, "tree_fingerprint",
                                side_effect=reviewed_tree.TreeFingerprintError("boom")):

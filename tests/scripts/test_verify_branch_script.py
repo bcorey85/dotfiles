@@ -128,6 +128,9 @@ CRITERIA = """# Acceptance Criteria
 - **AC3** — needs a real machine.
 """
 
+# A ticket whose criteria sit under topical headings, with no Acceptance or Requirements heading.
+TOPICAL_TICKET = "# LED-9: Thing\n\n## B1. Imports\n\n- First thing works\n\n## B2. Exports\n\n- Second thing\n"
+
 LEGACY_TICKET = "# RES-2: Queue\n\n## Acceptance\n\n- Queue shows\n- Queue sorts\n"
 LEGACY_PLAN = "# Plan\n\n## Queue\n\n#### Manual Verification:\n\n- [ ] human-only: look at it\n"
 
@@ -356,7 +359,7 @@ class PrepTest(VerifyBranchBase):
 
     def test_ticket_criteria_wrapping_nesting_and_stop(self):
         common = load_common()
-        found = common.ticket_criteria(TICKET)
+        found = common.branch_ticket_criteria(TICKET)
         self.assertEqual([c["number"] for c in found], [1, 2, 3])
         self.assertEqual([c["label"] for c in found], ["Ticket #1", "Ticket #2", "Ticket #3"])
         self.assertIn("wraps onto a second line", found[1]["text"])
@@ -403,25 +406,25 @@ class PrepTest(VerifyBranchBase):
     def test_heading_variants_match(self):
         common = load_common()
         for heading in ("## Acceptance criteria", "## Requirements", "## ACCEPTANCE", "### Acceptance"):
-            found = common.ticket_criteria(f"# T\n\n{heading}\n\n1. **One** - x\n2. Two\n")
+            found = common.branch_ticket_criteria(f"# T\n\n{heading}\n\n1. **One** - x\n2. Two\n")
             self.assertEqual(len(found), 2, heading)
 
     def test_a_heading_that_only_starts_like_a_criteria_heading_fails_with_path_and_line(self):
         common = load_common()
         for heading in ("## Acceptance Stubs", "## Requirements and Constraints"):
             with self.assertRaises(common.VerifyError, msg=heading) as caught:
-                common.ticket_criteria(f"# T\n\n{heading}\n\n- a stub\n", "ticket.md")
+                common.branch_ticket_criteria(f"# T\n\n{heading}\n\n- a stub\n", "ticket.md")
             self.assertIn("ticket.md:3:", str(caught.exception))
 
     def test_prose_line_in_the_criteria_section_fails_with_path_and_line(self):
         common = load_common()
         with self.assertRaises(common.VerifyError) as caught:
-            common.ticket_criteria("# T\n\n## Acceptance\n\nThese hold:\n\n- one\n", "ticket.md")
+            common.branch_ticket_criteria("# T\n\n## Acceptance\n\nThese hold:\n\n- one\n", "ticket.md")
         self.assertIn("ticket.md:5:", str(caught.exception))
 
     def test_blank_and_wordless_lines_in_the_criteria_section_are_not_prose(self):
         common = load_common()
-        found = common.ticket_criteria("# T\n\n## Acceptance\n\n***\n\n- one\n")
+        found = common.branch_ticket_criteria("# T\n\n## Acceptance\n\n***\n\n- one\n")
         self.assertEqual(len(found), 1)
 
     def test_criteria_file_id_forms(self):
@@ -484,6 +487,34 @@ class PrepTest(VerifyBranchBase):
             done = self.prep()
             self.assertEqual(done.returncode, 2, done.stdout)
             self.assertIn("zero criteria", done.stderr)
+
+    def test_a_ticket_with_topical_criteria_headings_takes_its_criteria_from_the_criteria_file(self):
+        self.task_dir(ticket=TOPICAL_TICKET)
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        payload = done.stdout.split("subagent_type=plan-verifier", 1)[1]
+        self.assertIn("  AC1: First thing works.\n  AC2: Second thing.\n  AC3: Third thing.\n", payload)
+        self.assertNotIn("needs a real machine", payload)
+
+    def test_only_a_missing_heading_falls_back_to_the_criteria_file(self):
+        cases = (
+            ("# T\n\n## Acceptance\n\n---\n", "has no list items"),
+            ("# T\n\n## Acceptance notes\n\n- a\n", "not a recognized criteria heading"),
+        )
+        for ticket, message in cases:
+            with self.subTest(message=message):
+                self.task_dir(ticket=ticket)
+                done = self.prep()
+                self.assertEqual(done.returncode, 2, done.stdout)
+                self.assertIn(message, done.stderr)
+
+    def test_a_topical_ticket_whose_criteria_file_holds_only_manual_entries_fails_loudly(self):
+        self.task_dir(ticket=TOPICAL_TICKET, criteria="## Manual only\n\n- **AC1** — x.\n")
+        done = self.prep()
+        self.assertEqual(done.returncode, 2, done.stdout)
+        self.assertIn("no `## Acceptance*` or `## Requirements*` heading", done.stderr)
 
     def test_unknown_option_and_second_positional_exit_2(self):
         self.task_dir()
@@ -1123,6 +1154,18 @@ class LogTest(VerifyBranchBase):
         self.assertIn("no verdict row for Ticket #2", done.stderr)
         self.assertEqual(self.verifier_rows(), [])
 
+    def test_a_topical_ticket_checklist_lists_the_criteria_file_ids_and_rows_naming_them(self):
+        self.task_dir(ticket=TOPICAL_TICKET)
+        self.assertEqual(self.prep().returncode, 0)
+        built = [{"item": f"AC{n}: item", "verdict": "done"} for n in (1, 2, 3)]
+
+        done = self.log("--rows", "-", stdin=json.dumps(built))
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- [ ] AC1: First thing works.\n      steps: <model>\n"
+                      "- [ ] AC2: Second thing.\n      steps: <model>\n"
+                      "- [ ] AC3: Third thing.", done.stdout)
+
     def test_missing_ids_and_ticket_labels_are_named_in_one_message(self):
         done = self.log("--rows", "-", stdin=json.dumps([{"item": "AC2: item", "verdict": "done"}]))
         self.assertEqual(done.returncode, 2)
@@ -1579,12 +1622,14 @@ class RealPlansTest(unittest.TestCase):
         counts = []
         for task_dir in dirs:
             with self.subTest(task_dir=str(task_dir)):
-                found = common.ticket_criteria(self.ticket_path(task_dir).read_text(), str(task_dir))
-                self.assertGreaterEqual(len(found), 1)
                 criteria_path = task_dir / "acceptance-criteria.md"
+                entries, manual, text = [], [], ""
                 if criteria_path.is_file():
                     text = criteria_path.read_text()
                     entries, manual = common.parse_criteria_file(text, str(criteria_path))
+                found = common.branch_ticket_criteria(self.ticket_path(task_dir).read_text(), str(task_dir), entries)
+                self.assertGreaterEqual(len(found), 1)
+                if criteria_path.is_file():
                     parsed = len(entries) + len(manual)
                     expected = sum(len(re.findall(r"AC\d+", span)) for span in self.BOLD_ID_LINE.findall(text))
                     plain = len(re.findall(r"\*\*AC\d+\*\*", text))
@@ -1608,7 +1653,7 @@ class RealPlansTest(unittest.TestCase):
         for plan_path in plans:
             with self.subTest(plan=plan_path):
                 with self.assertRaises(common.VerifyError) as caught:
-                    common.ticket_criteria(pathlib.Path(plan_path).read_text(), plan_path)
+                    common.branch_ticket_criteria(pathlib.Path(plan_path).read_text(), plan_path)
                 self.assertIn("Acceptance Stubs", str(caught.exception))
                 self.assertIn(f"{plan_path}:", str(caught.exception))
 

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-756 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+757 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [A no-review exemption belongs to the loop that asked for it](notes/2026-11-01-a-no-review-exemption-belongs-to-the-loop-that.md).
+Latest change: 2026-11-01, [The hand-back store keeps the writing session's own file](notes/2026-11-01-the-hand-back-store-keeps-the-writing-session-s.md).
 
 ## Top gains
 

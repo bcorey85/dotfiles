@@ -28,7 +28,7 @@ Each saving is the measured before and after of one change's finding, so a total
 ## Gains by metric
 
 * tokens: 2
-* cost: 4
+* cost: 3
 * wall-clock: 1
 * quality: 8
 

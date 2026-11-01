@@ -93,6 +93,7 @@ sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 import hook_input
 import reviewed_tree
 import script_utils
+import user_prompts
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
     GIT_VALUE_OPTIONS,
@@ -629,49 +630,13 @@ def on_post_tool_use(root, state_file):
     script_utils.append_jsonl(state_file, {"kind": "dispatch", "ts": time.time(), "agent": agent_id or None})
 
 
-# Records a user prompt never is: a peer session's message (old form) and Claude Code's own shell and command echoes.
-NOT_TYPED_PREFIXES = ("<bash-input>", "<bash-stdout>", "<bash-stderr>", "<local-command-", "<cross-session-message",
-                      "Another Claude session sent a message")
-
-
-def prompt_text(record):
-    """The text of a transcript record when it is a prompt the user typed in the main session, else None. A tool
-    result, a meta record (command expansions, reminders), a subagent record, a record with an origin other than
-    the human (a peer message, a task notification), a compaction summary and a shell or command echo are not the
-    user's words."""
-    if record.get("type") != "user" or record.get("isMeta") or record.get("isSidechain"):
-        return None
-    origin = record.get("origin")
-    if record.get("isCompactSummary") or (isinstance(origin, dict) and origin.get("kind") != "human"):
-        return None
-    content = (record.get("message") or {}).get("content")
-    if isinstance(content, list) and all(isinstance(block, dict) and block.get("type") == "text"
-                                         for block in content):
-        content = "".join(str(block.get("text", "")) for block in content)
-    if not isinstance(content, str) or content.lstrip().startswith(NOT_TYPED_PREFIXES):
-        return None
-    return content
-
-
 def user_ordered_no_review(root):
     """True when the user's latest prompt in the main transcript starts with the no-review marker. Records that are
     not the user's prompt are skipped, so a message that arrives later does not end the order."""
     transcript_path = jq_field(root, "transcript_path")
     if not transcript_path:
         return False
-    latest_prompt = None
-    try:
-        with open(transcript_path, encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                try:
-                    record = json.loads(line)
-                except ValueError:
-                    continue
-                text = prompt_text(record) if isinstance(record, dict) else None
-                if text is not None and text.strip():
-                    latest_prompt = text
-    except OSError:
-        return False
+    latest_prompt = user_prompts.latest_prompt(transcript_path)
     return latest_prompt is not None and latest_prompt.lstrip().startswith(NO_REVIEW_MARKER)
 
 

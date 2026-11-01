@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-736 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
+737 changes, 15 with a measured gain, 257 behavior changes that no intake metric reads.
 
-Latest change: 2026-10-31, [shell-write-gate reads a name joined onto a base off the cwd as no write to the cwd file](notes/2026-10-31-shell-write-gate-reads-a-name-joined-onto-a-base.md).
+Latest change: 2026-10-31, [A typed user approval lets an amend pass the git-discipline gate](notes/2026-10-31-a-typed-user-approval-lets-an-amend-pass-the-git.md).
 
 ## Top gains
 

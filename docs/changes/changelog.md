@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-757 changes
+758 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -132,6 +132,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [the commit gate skips a quoted heredoc that only stores text](notes/2026-11-01-the-commit-gate-skips-a-quoted-heredoc-that-only.md) [script/review-commit-gate] The review commit gate no longer reads the body of a quoted heredoc as a commit when the heredoc only stores text: cat or tee writing a file, or an interpreter given a script file.
 * [an ask with an empty change marker asks its question](notes/2026-11-01-an-ask-with-an-empty-change-marker-asks-its.md) [script/review-loop-script] An ask that ends on an empty change: marker uses its question as its change, as an ask with no marker does, in place of failing the packet as a critical blocker.
 * [review loop re-reviews a test-file fix the code reviewer owned](notes/2026-11-01-review-loop-re-reviews-a-test-file-fix-the-code.md) [script/review-loop-script] Round two of the review loop sends a fixed test file back to the code reviewer that owned it in round one when no test reviewer read it, so a test-file fix is re-reviewed.
 * [review loop split gives every test file a reviewer](notes/2026-11-01-review-loop-split-gives-every-test-file-a-reviewer.md) [script/review-loop-script] When a wide change splits its code review in two, the split halves the files the first code reviewer owned, so test files keep a reviewer when no test reviewer runs.

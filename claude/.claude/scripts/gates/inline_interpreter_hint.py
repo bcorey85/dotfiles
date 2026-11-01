@@ -36,14 +36,8 @@ HEREDOC_OPERATOR = re.compile(r"<<<?")
 PIPE_BOTH = re.compile(r"\|&")
 REDIRECT_OPERATOR = re.compile(r"\d*[<>]+&?")
 REDIRECT_WORD = re.compile(r"\d*[<>]")
-# Words that name stdin as the program file of an interpreter, like `-`.
-STDIN_PROGRAM_FILES = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
-# Redirections that carry code inside the command: a heredoc or a here-string. A file read with `<` is a script file,
-# as in `python3 <file>`.
-STDIN_CODE_REDIRECTIONS = {"<<", "<<<"}
 INTERPRETER_FAMILIES = shell_command.INTERPRETER_FAMILIES
-INTERPRETER =re.compile("|".join(family["name"] for family in INTERPRETER_FAMILIES.values()), re.I)
-MANAGE_SCRIPT = "manage.py"
+INTERPRETER = shell_command.INTERPRETER
 TEXT = ("Inline interpreter runs (python3 -c, node -e, perl -e, manage.py shell -c) and code fed on stdin to a bare "
         "interpreter (python3 -, python3 <<'EOF', cat file | python3) are blocked. Do not retry another inline form. "
         "Write the code to a script file in your scratchpad directory with the Write tool, then run the file: "
@@ -56,39 +50,6 @@ def grep(pattern, command):
     return subprocess.run(["grep", "-qiE", pattern], input=command + "\n", text=True).returncode == 0
 
 
-def reads_code_from_stdin(words, redirections, piped):
-    """True when the simple command runs a bare interpreter whose program text arrives on stdin: `python3 -`, a
-    heredoc or here-string into it, or a pipe into it. An interpreter given a script file (also by `<`), `-m` or a
-    version flag reads stdin as data, not as code. `manage.py shell` is a bare interpreter: it runs stdin as code."""
-    words = shell_command.command_after_wrappers(words)
-    if not words:
-        return False
-
-    if os.path.basename(words[0]) == MANAGE_SCRIPT:
-        words = ["python", *words]
-    if not INTERPRETER.fullmatch(os.path.basename(words[0])):
-        return False
-
-    interpreter_family = shell_command.interpreter_family(words[0])
-    value_options = INTERPRETER_FAMILIES[interpreter_family]["value_options"]
-    no_stdin_code_flags = INTERPRETER_FAMILIES[interpreter_family]["no_stdin_code_flags"]
-    index = 1
-    while index < len(words):
-        word = words[index]
-        if word in STDIN_PROGRAM_FILES:
-            return True
-        if os.path.basename(word) == MANAGE_SCRIPT and words[index + 1:index + 2] == ["shell"]:
-            break
-        if interpreter_family == "python" and word.startswith("-m") and len(word) > 2:
-            return False
-        if word in no_stdin_code_flags or not word.startswith("-"):
-            return False
-        index += 2 if word in value_options else 1
-
-    has_stdin_code = any(operator in STDIN_CODE_REDIRECTIONS for operator, _target in redirections)
-    return piped or has_stdin_code
-
-
 def runs_stdin_code(command):
     command = shell_statements.strip_comments(shell_statements.strip_heredocs(command))
     try:
@@ -96,7 +57,8 @@ def runs_stdin_code(command):
     except ValueError:
         return unparsed_runs_stdin_code(command)
 
-    return any(reads_code_from_stdin(words, redirections, piped) for words, redirections, piped in piped_commands)
+    return any(shell_command.reads_code_from_stdin(words, redirections, piped)
+               for words, redirections, piped in piped_commands)
 
 
 def unparsed_runs_stdin_code(command):
@@ -118,7 +80,7 @@ def part_reads_stdin_code(part, piped):
     except ValueError:
         return split_part_reads_stdin_code(part, piped)
 
-    return any(reads_code_from_stdin(words, redirections, command_piped or (piped and position == 0))
+    return any(shell_command.reads_code_from_stdin(words, redirections, command_piped or (piped and position == 0))
                for position, (words, redirections, command_piped) in enumerate(piped_commands))
 
 
@@ -142,7 +104,7 @@ def split_part_reads_stdin_code(part, piped):
             continue
         else:
             words.append(word)
-    return reads_code_from_stdin(words, redirections, piped)
+    return shell_command.reads_code_from_stdin(words, redirections, piped)
 
 
 def split_on_pipe_both(core):

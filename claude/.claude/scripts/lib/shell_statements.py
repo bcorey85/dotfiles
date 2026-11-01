@@ -24,6 +24,43 @@ def strip_heredocs(command):
     follow in order. The delimiter is the whole shell word, quotes removed. A `<<` inside quotes, a comment or
     arithmetic and a `<<<` here-string open none; a heredoc with no terminator line is not cut. A kept body is
     wrapped in `(` and `)` lines: the shell runs it in its own process."""
+    def keep_bodies(line, lines, index, heredocs):
+        bodies = heredoc_bodies(lines, index, [delimiter for delimiter, _quoted in heredocs])
+        if not heredocs or bodies is None:
+            return None
+
+        added = []
+        shell_body = opens_shell_heredoc(line)
+        for (_delimiter, quoted), body in zip(heredocs, bodies, strict=True):
+            if shell_body:
+                added += ["(", *body, ")"]
+            elif not quoted:
+                added += [piece for _start, _end, span in code_spans("\n".join(body)) for piece in ("(", span, ")")]
+        return added, sum(len(body) + 1 for body in bodies)
+
+    return rewrite_heredoc_lines(command, keep_bodies)
+
+
+def strip_stored_heredocs(command):
+    """The command with the body and terminator line of each heredoc cut out where every heredoc its line opens is
+    quoted and only stores text: cat or tee writing a file, or an interpreter given a script file. Every other
+    heredoc stays as written."""
+    def cut_stored(line, lines, index, heredocs):
+        if not heredocs or not all(quoted for _delimiter, quoted in heredocs):
+            return None
+
+        bodies = heredoc_bodies(lines, index, [delimiter for delimiter, _quoted in heredocs])
+        if bodies is None or not stores_heredoc_text(line):
+            return None
+
+        return [], sum(len(body) + 1 for body in bodies)
+
+    return rewrite_heredoc_lines(command, cut_stored)
+
+
+def rewrite_heredoc_lines(command, handle):
+    # Walk the lines, keeping each. For a line that holds `<<`, handle(line, lines, next_index, heredocs) returns None
+    # to leave the following lines alone, or (lines to add after it, count of following lines to skip).
     lines = command.split("\n")
     kept = []
     index = 0
@@ -36,18 +73,71 @@ def strip_heredocs(command):
 
         text = "\n".join(kept)
         heredocs = heredoc_openers(text, len(text) - len(line))
-        bodies = heredoc_bodies(lines, index, [delimiter for delimiter, _quoted in heredocs])
-        if not heredocs or bodies is None:
+        result = handle(line, lines, index, heredocs)
+        if result is None:
             continue
 
-        shell_body = opens_shell_heredoc(line)
-        for (_delimiter, quoted), body in zip(heredocs, bodies, strict=True):
-            if shell_body:
-                kept += ["(", *body, ")"]
-            elif not quoted:
-                kept += [piece for _start, _end, span in code_spans("\n".join(body)) for piece in ("(", span, ")")]
-        index += sum(len(body) + 1 for body in bodies)
+        added, skipped = result
+        kept += added
+        index += skipped
     return "\n".join(kept)
+
+
+def stores_heredoc_text(line):
+    # True when the line parses, a command on it takes a heredoc, and each such command reads it as data that no
+    # later command is piped from.
+    try:
+        piped_commands = shell_command.parse_piped_commands(strip_comments(line))
+    except ValueError:
+        return False
+
+    takers = [position for position, (_words, redirections, _piped) in enumerate(piped_commands)
+              if any(operator == "<<" for operator, _target in redirections)]
+    if not takers:
+        return False
+
+    for position in takers:
+        following = piped_commands[position + 1:position + 2]
+        if following and following[0][2]:
+            return False
+        words, redirections, _piped = piped_commands[position]
+        if not reads_heredoc_as_data(words, redirections):
+            return False
+    return True
+
+
+def reads_heredoc_as_data(words, redirections):
+    # cat or tee that writes a file, or an interpreter given a script file: stdin is text it stores or reads.
+    words = shell_command.command_after_wrappers(words)
+    if not words:
+        return False
+
+    program = os.path.basename(words[0])
+    if program in {"cat", "tee"}:
+        writes_file = any(shell_command.redirection_writes_file(operator, target) for operator, target in redirections)
+        tee_file = program == "tee" and any(not word.startswith("-") for word in words[1:])
+        return writes_file or tee_file
+    if not shell_command.INTERPRETER.fullmatch(program):
+        return False
+    if shell_command.reads_code_from_stdin(words, redirections, False):
+        return False
+    return given_script_file_after_value_options(words)
+
+
+def given_script_file_after_value_options(words):
+    # True when the interpreter's options are all value-taking ones and a script file follows them. Any other option
+    # (-i, -d, -m, --interactive) may read stdin as code, so the body stays readable.
+    family = shell_command.interpreter_family(words[0])
+    value_options = shell_command.INTERPRETER_FAMILIES[family]["value_options"]
+    index = 1
+    while index < len(words):
+        word = words[index]
+        if not word.startswith("-"):
+            return True
+        if word not in value_options:
+            return False
+        index += 2
+    return False
 
 
 def heredoc_bodies(lines, start, delimiters):

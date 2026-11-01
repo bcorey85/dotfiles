@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-753 changes
+754 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -132,6 +132,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A gate command that prints a non-UTF-8 byte denies the hand-back](notes/2026-11-01-a-gate-command-that-prints-a-non-utf-8-byte-denies.md) [script/coder-gate, script/script-utils] A coder gate command whose output holds a byte that is not UTF-8 now denies the hand-back with its output, in place of crashing the hook open.
 * [Final check reads a Full suite section that documents CI](notes/2026-11-01-final-check-reads-a-full-suite-section-that.md) [agent/review-loop] A repo whose CLAUDE.md documents CI as its full suite in a Full suite section no longer stops the final check when its check-only command prints no test summary.
 * [Code skill names verify-branch and drops the no-op deep modifier](notes/2026-11-01-code-skill-names-verify-branch-and-drops-the-no-op.md) [skill/code] /code now points at the skill that exists: its three `/verify` mentions read `/verify-branch`, and the `+deep` modifier, which changed nothing, is no longer offered.
 * [Test-reviewer reports in the tagged-bullet form the review script parses](notes/2026-11-01-test-reviewer-reports-in-the-tagged-bullet-form.md) [agent/test-reviewer, agent/review-loop] The scripted review loop reads test-reviewer findings without a model call: the report template now writes top-level `- fix:`, `- ask:` and `- nit:` bullets, so the Sonnet disposition call that classified each test-reviewer report is no longer needed.

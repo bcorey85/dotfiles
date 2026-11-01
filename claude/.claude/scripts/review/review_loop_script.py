@@ -522,6 +522,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.scoped_tests = ""
         self.later_phase_files = set()  # the plan's later-phase files, which no coder pass may edit
         self.guidance = ""
+        self.test_strategy = ""  # the plan's test strategy section, which only the test reviewer gets
         self.change_added = {}  # the lines the change under review adds, which the fix passes must not remove
 
     def next_round(self):
@@ -535,7 +536,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
     def review_one(self, dispatch):
         agent, owned = dispatch
         prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
-                                 tuple(ask.text for ask in self.asks), self.brief)
+                                 tuple(ask.text for ask in self.asks), self.brief, self.test_strategy)
         text = claude_call(f"review{self.iter_count}-{agent}", prompt, self.repo, self.out, agent=agent)
         return parse_review(text) or disposition_call(text, self.repo, self.out)
 
@@ -910,6 +911,9 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     plan = header.get("plan")
     plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
     check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, header.get("phase"))
+    if plan_on_disk:
+        plan_lines = (pathlib.Path(repo) / plan_on_disk).read_text().splitlines()
+        loop.test_strategy = plan_format.test_strategy_section(plan_lines)
 
     loop.files = scope(repo)
     loop.dispatches = first_round_plan(loop.files, structure_pass_skipped)

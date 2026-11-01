@@ -2943,6 +2943,42 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["ask"][0]["file_line"], "util.test.py:1")
         self.assertEqual([entry["file_line"] for entry in packet["nit"]], ["util.test.py:1"])
 
+    def test_only_the_test_reviewer_gets_the_plans_test_strategy_section(self):
+        self.commit_files({"plan.md": "# Plan\n\n## Phase 2: Limits\n\nSet the limit.\n\n"
+                                      "## Testing Strategy\n\nEach check constraint has a direct-insert test.\n\n"
+                                      "## Rollout\n\nShip it.\n"})
+        (self.repo / "util.py").write_text("limit = 20\n")
+        (self.repo / "util.test.py").write_text("assert limit == 20\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "test-reviewer": [{"result": CLEAN_REVIEW}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        prompts = {call["key"]: call["prompt"] for call in self.fake_calls()}
+        strategy = "## Testing Strategy\n\nEach check constraint has a direct-insert test."
+        self.assertIn(strategy, prompts["test-reviewer"])
+        self.assertNotIn("Rollout", prompts["test-reviewer"])
+        self.assertNotIn("direct-insert", prompts["code-reviewer"])
+        self.assertNotIn("direct-insert", prompts["smell-reviewer"])
+
+    def test_a_plan_without_a_test_strategy_adds_no_strategy_line_to_the_test_reviewer(self):
+        self.commit_files({"plan.md": "# Plan\n\n## Phase 2: Limits\n\nSet the limit.\n\n## Rollout\n\nShip it.\n"})
+        (self.repo / "util.py").write_text("limit = 20\n")
+        (self.repo / "util.test.py").write_text("assert limit == 20\n")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "test-reviewer": [{"result": CLEAN_REVIEW}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        prompts = {call["key"]: call["prompt"] for call in self.fake_calls()}
+        self.assertNotIn("test strategy binds", prompts["test-reviewer"])
+
     def test_a_test_reviewer_reply_of_bold_head_items_goes_to_the_disposition_call(self):
         (self.repo / "util.py").write_text("limit = 20\n")
         (self.repo / "util.test.py").write_text("assert limit == 20\n")

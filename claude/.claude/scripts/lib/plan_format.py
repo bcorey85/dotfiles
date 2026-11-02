@@ -187,6 +187,18 @@ def file_entry_paths(plan_lines, section):
     return paths
 
 
+def required_structure(plan_lines):
+    """What the plan requires a refactor to keep: {"files": every path its phases' Changes Required entries name,
+    sorted, "deviations": the non-blank lines of its `## Plan Deviations` section, in file order}."""
+    spans, _ = phase_spans(plan_lines)
+    files = set()
+    for _, section in spans:
+        files |= file_entry_paths(plan_lines, section)
+    deviation_indexes = script_utils.heading_section_indexes(plan_lines, DEVIATIONS_HEADING)
+    deviations = [plan_lines[index] for index in deviation_indexes if plan_lines[index].strip()]
+    return {"files": sorted(files), "deviations": deviations}
+
+
 def phase_status_entries(lines, closing_skill):
     """The `- [ ] Phase <id>: <title>` lines under the `Phase Status` heading, in file order, and the failures for a
     list line that does not parse or an id listed twice. `closing_skill(title)` names the skill a closing phase runs,

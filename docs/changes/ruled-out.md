@@ -7,7 +7,7 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-100 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+101 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 114 further findings are left out of this page.
 
@@ -58,6 +58,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-02 [Fix-diff second review cuts round-two tokens 67% and names fix-caused defects as well, but drops every round-one miss](../../../agent-evals/findings/2026-11-02-fix-diff-second-review-cuts-round-two-tokens-67.md) - HOLD: On 8 sealed phases, a round-two reviewer that reads only the round-one fix diff spends 67% fewer Opus tokens than a full second review and names 5 of 7 fix-caused defects against 3 of 7. It names none of the 4 defects round one missed; the full second review names all 4. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-01 [Running the smell-reviewer on Sonnet cuts its cost 61% but loses two of 15 structure catches per review](../../../agent-evals/findings/2026-11-01-keeping-the-smell-reviewer-on-opus-holds-two-more.md) - HOLD: The smell-reviewer on Sonnet cut list cost per five-tree review 61% ($0.90 → $0.35 median) and wall time 46% (148 s → 80 s), but caught a median 10 of 15 seeded structure defects against Opus's 11.5 (94/120 → 78/120), outside the sealed one-catch bar. It loses naming drift against a README convention almost entirely (8/8 → 1/8). Keep it on Opus. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-01 [Main session prefix breakdown: what each always-loaded source costs](../../../agent-evals/findings/2026-11-01-main-session-prefix-breakdown-what-each-always.md) - HOLD: The main session's first request carries 30.6k–32.3k tokens in the agent-evals checkout; the repo CLAUDE.md (11.5k) and inline tool schemas (10.4k) are two thirds of it, and the SessionStart orchestration text is 2.3k. [watch: no watch]

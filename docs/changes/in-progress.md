@@ -7,21 +7,18 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-14 open benches, by rank. Each line is the question the bench asks.
+11 open benches, by rank. Each line is the question the bench asks.
 
-0 further benches are left out of this page.
+1 further benches are left out of this page.
 
 * Bench: do structure and test defects that per-phase review misses get copied by later phases and later tickets (running): The placement bench scores catches on fixed code. This one lets the coder keep building: does a duplicated helper, a wrong-layer query or a weak assertion left in an early phase get copied by later phases and the next ticket, and how much rework does that add?
 * Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (running): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.
 * Sealed-branch review bench: first sealed branches and their graded keys (blocked): Give the reviewer a bench of real coder defects so reviewer changes can be ranked on catch rate, not on plants Opus always catches.
 * Bench: one merged closing phase plus a report-only fix-diff gate against the four closing phases (running): Merging refactor, test audit and branch review into one parallel-review phase with one fix coder, then a pass/fail gate on the fix diff, could cut closing-phase tokens by a third without losing catches.
 * Bench: scripts write phase state to JSON instead of the agent ticking Markdown boxes (blocked): Phase state written by scripts from real gate results could end self-reported done, so fewer plan-drift escapes reach the branch-end check.
-* Make the closing check prove each failure-path criterion instead of trusting the happy path (queued): Catches more real defects at branch end by making the verifier show, for each failure or race criterion, the code path and the test that fails without it.
-* Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (queued): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
-* Run the plan as an Opus-driven loop so a Sonnet main session only hands off (queued): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
+* Make the closing check prove each failure-path criterion instead of trusting the happy path (blocked): Catches more real defects at branch end by making the verifier show, for each failure or race criterion, the code path and the test that fails without it.
+* Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
+* Run the plan as an Opus-driven loop so a Sonnet main session only hands off (blocked): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
 * Replay reviewers on the 29 sealed phases of TLDR-1 to 3 to find rules that lock in coder and reviewer behavior (running): A fixed bug list per sealed phase shows which coder and reviewer rules catch more of the 68 late bugs, each replay taking minutes, not hours.
 * Coder ranged-read hook for whole-file reads over 4k tokens (queued): A hook that turns the coder's whole-file read of a big file into a ranged read could cut coder cache read per dispatch by 30% or more.
-* Bench: frontend changed-line mutation before first review (running): A no-model mutation pass could hand the coder its test gaps before review and cut test-gap items in review rounds.
 * Bench the Sonnet main session at 8 pairs per arm on a pinned toolkit (queued): A Sonnet main session cut Opus cache reads 42-48% on two smoke pairs; 8 pairs per arm settle whether it loses hidden keys.
-* Bench a reachability-probe pass added to the code-reviewer for known-bug recall (running): A probe pass that enumerates every input, control and exit a diff touches may lift first-pass known-bug recall from 14/19 to at least 17/19.
-* Bench: does the branch-end review catch the defects a fix-diff second review drops (running): Cut round-two review tokens by two-thirds if the branch-wide review at branch end still names the defects round one missed.

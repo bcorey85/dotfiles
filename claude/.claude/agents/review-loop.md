@@ -289,7 +289,7 @@ Hand back one JSON object alone: no code fence, no prose before or after it, and
   "check_created": ["<path>"],
   "nit": ["<one entry per item>"],
   "load_bearing_clean": "<one line, or omit the key>",
-  "tool_fault": "<what failed, or omit the key>",
+  "tool_fault": "<what failed, or omit the key; include the script's note when a fix coder deleted untracked files and the loop restored them>",
   "blocked_agents": ["<agent>: <step it skipped> (<the refused call>)"],
   "scoped_tests": "<see below, or omit the key>",
   "unrun_reviewer": "<see below, or omit the key>"

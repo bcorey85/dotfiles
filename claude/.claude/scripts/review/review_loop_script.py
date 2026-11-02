@@ -67,6 +67,7 @@ sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "c
 import change_removal
 import coder_gate
 import coder_report
+import file_backup
 import full_check
 import full_check_gate
 import handback
@@ -111,6 +112,8 @@ CHILD_ENV = {**{name: value for name, value in os.environ.items() if name not in
 
 CALLS = []
 CALLS_LOCK = threading.Lock()
+# One note per fix call that deleted an untracked file it did not make, for the packet's tool_fault.
+UNTRACKED_FAULTS = []
 LIVE_CHILDREN = full_check_gate.LIVE_CHILDREN
 # The ListAgents label of the session that ran this loop; main() sets it. Each child session's --name carries it.
 PARENT_SESSION = {"label": ""}
@@ -329,15 +332,30 @@ def changed_paths(before, after):
     return sorted(path for path in set(before) | set(after) if before.get(path, "") != after.get(path, ""))
 
 
+def put_back_untracked(role, backup):
+    """A fix call may edit an untracked file but never delete one it did not make. Writes back each one that
+    vanished, and notes it in UNTRACKED_FAULTS; a file too large to have been saved is noted as lost."""
+    restored, lost = file_backup.restore_missing(backup)
+    if restored:
+        UNTRACKED_FAULTS.append(f"{role} deleted untracked files it did not make; the loop restored "
+                                + ", ".join(restored))
+    if lost:
+        UNTRACKED_FAULTS.append(f"{role} deleted untracked files too large to save, so they are gone: "
+                                + ", ".join(lost))
+
+
 def coder_call(role, prompt, repo, out):
     """The fix coder. Returns (report, diffs, changed): the diffs of what it changed feed the round-two brief, and
     one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the class-closure check;
     changed lists the paths whose text differs. A failed call raises CoderCallError naming the files it changed
     before it died."""
     before = file_texts(repo)
+    untracked = [path for path, entry in scope(repo).items() if entry[1] == "??"]
+    backup = file_backup.save_files(repo, untracked)
     try:
         report = claude_call(role, prompt, repo, out, agent="coder")
     except RuntimeError as error:
+        put_back_untracked(role, backup)
         after = file_texts(repo)
         changed = changed_paths(before, after)
         if not changed:
@@ -346,6 +364,7 @@ def coder_call(role, prompt, repo, out):
                    "that may fail its checks")
         raise CoderCallError(message, changed) from error
 
+    put_back_untracked(role, backup)
     after = file_texts(repo)
     diffs = []
     paths = sorted(set(before) | set(after))
@@ -885,7 +904,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
             "scoped_tests": self.scoped_tests,
-            "tool_fault": full_check.fault_note(self.full_check),
+            "tool_fault": " ".join(filter(None, [full_check.fault_note(self.full_check), *UNTRACKED_FAULTS])),
         }
 
 

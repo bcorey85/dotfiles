@@ -81,6 +81,9 @@ reply = replies[position]
 for old_path, new_path in reply.get("renames", {}).items():
     os.rename(old_path, new_path)
 
+for path in reply.get("deletes", []):
+    os.remove(path)
+
 edits = dict(reply.get("edits", {}))
 if os.environ.get("CLAUDE_FORMAT_HOOK_OFF") != "1":
     edits.update(reply.get("edits_when_format_hook_on", {}))
@@ -340,6 +343,23 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(1, keys.count("code-reviewer"))
         self.assertEqual("", packet["scoped_tests"])
         self.assertEqual(packet["files_touched"], ["app.py"])
+
+    def test_a_fix_coder_that_deletes_an_untracked_file_it_did_not_make_finds_it_restored_and_noted(self):
+        scratch = self.repo / "scratch.txt"
+        scratch.write_text("select 1;\n")
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "smell-reviewer": [{"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}, "deletes": [str(scratch)]}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(scratch.read_text(), "select 1;\n")
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertIn("scratch.txt", packet["tool_fault"])
+        self.assertIn("restored", packet["tool_fault"])
 
     def test_a_fix_that_moves_the_added_lines_into_a_new_file_converges(self):
         added = self.start_with_a_twelve_line_change()

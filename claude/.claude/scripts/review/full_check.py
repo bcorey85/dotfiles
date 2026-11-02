@@ -3,8 +3,12 @@
 
     full_check.py <repo> --log <path> [--timeout <seconds>] [--base <rev>] [--plan <path> --phase <id>]
 
-Runs only the repo's declared check: the command of the CLAUDE.md `Quality check:` line. A command handed after `--`
-never runs; when it differs from the declared one a note on stderr says so and the declared check runs.
+Runs only the repo's resolved check, the first of: the repo's `Quality check (<repo name>): `<command>`` entry in the
+machine-local CLAUDE.local.md (the repo name is the folder name of the main checkout, so a linked worktree
+matches), the command of the CLAUDE.md `Quality check:` line, the check found from the repo's own files
+(check_discovery.py: `make check`, the package `check` script, then its lint, type check and tests); a repo whose
+CLAUDE.md says `Full suite: CI` and holds no entry or line discovers none. A command handed after `--`
+never runs; when it differs from the resolved one a note on stderr says so and the resolved check runs.
 
 With --plan and --phase, the phase's `Expected red:` lines whose later phase is still open leave their `&&` steps out
 of the command (lib/expected_red.py), and each left-out line prints as `expected red: <command> until Phase <id>`
@@ -24,7 +28,8 @@ default; a path the diff removed or moved is a failure), `not run (timeout)` whe
 `not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and names no `Quality check:` command,
 `passed (check only; CI runs the full suite)` when that repo's check exits 0 with no runner summary or ran no test.
 A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">`
-or `summary: not found`. With no `Quality check:` line the result is `not run (no check found; ...)`.
+or `summary: not found`. With no check resolved the result is `not run (no check found; ...)`, followed by a
+`note:` line that says how to name one.
 `base_run` runs the same check on HEAD for the pre-existing comparison and writes no receipt.
 Every run writes the full-check receipt (lib/full_check_receipt.py): a started row before the check starts, one row per
 && step (none when there is no command to run), and a finished row with the exit and the tree fingerprint after the
@@ -60,12 +65,13 @@ import tempfile
 import time
 import tomllib
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 
 import check_output
 import check_scope
 import expected_red
 import full_check_receipt
+import local_check
 import reviewed_tree
 import script_utils
 from check_output import (
@@ -105,6 +111,14 @@ NOT_RUN_TIMEOUT = "not run (timeout)"
 # package-manager or engine version mismatch.
 SETUP_FAULT = "setup fault"
 NOT_RUN_NO_CHECK = "not run (no check found; the coder's scoped tests stand)"
+NO_CHECK_NOTE = ("no full check ran: no local entry, no CLAUDE.md `Quality check:` line and no Makefile or package "
+                 "check was found. Add the line `Quality check (<repo name>): `<command>`` "
+                 "to your machine-local CLAUDE.local.md.")
+# Where the command came from, kept in the receipt's started row.
+ResolvedCheck = collections.namedtuple("ResolvedCheck", "command source")
+SOURCE_LOCAL = "local"
+SOURCE_REPO = "repo"
+SOURCE_DISCOVERED = "discovered"
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)'?")
 REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 # Under the Bash tool's 600 s ceiling, so a loop's shell call ends before the tool moves it to the background.
@@ -153,7 +167,7 @@ def full_suite_runs_in_ci(repo):
     return documents_full_suite_section_in_ci(lines)
 
 
-def configured_check_command(repo):
+def declared_check_command(repo):
     """The command of the repo's CLAUDE.md `Quality check:` line, or None when the file or the line is missing."""
     claude_md = pathlib.Path(repo) / "CLAUDE.md"
     if not claude_md.is_file():
@@ -164,6 +178,35 @@ def configured_check_command(repo):
         return None
 
     return match.group(1)
+
+
+def resolved_check(repo):
+    """(the full check command, where it came from) for the repo: the repo's entry in the machine-local
+    CLAUDE.local.md, else the CLAUDE.md `Quality check:` line, else what the repo's own files give
+    (check_discovery.py), unless the repo's full suite runs in CI. (None, None) when none is found."""
+    local = local_check.local_check_command(repo)
+    if local:
+        return ResolvedCheck(local, SOURCE_LOCAL)
+
+    declared = declared_check_command(repo)
+    if declared:
+        return ResolvedCheck(declared, SOURCE_REPO)
+
+    if full_suite_runs_in_ci(repo):
+        return ResolvedCheck(None, None)
+
+    # Imported here: the hooks that import this module never discover a check.
+    import check_discovery
+
+    discovered = check_discovery.discovered_check_command(repo)
+    if discovered:
+        return ResolvedCheck(discovered, SOURCE_DISCOVERED)
+    return ResolvedCheck(None, None)
+
+
+def configured_check_command(repo):
+    """The command resolved_check gives, or None when it finds none."""
+    return resolved_check(repo).command
 
 
 def pinned_interpreter_env(repo, env):
@@ -345,7 +388,9 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
     in_ci = full_suite_runs_in_ci(repo)
     run_id = None
     if receipt:
-        run_id = full_check_receipt.write_started_row(repo, configured_check_command(repo), check_command, left_out)
+        resolved = resolved_check(repo)
+        run_id = full_check_receipt.write_started_row(repo, resolved.command, check_command, left_out,
+                                                      source=resolved.source)
 
     def finish(result, tail, exit_code=0, satisfied=False):
         if run_id:
@@ -621,6 +666,8 @@ def print_result(result, details, left_out, tree=None, command=None):
     if tree:
         print(f"tree: {tree}")
     print(f"command: {command or 'none'}")
+    if result == NOT_RUN_NO_CHECK:
+        print(f"note: {NO_CHECK_NOTE}")
     for entry in left_out:
         print("expected red: " + expected_red.entry_text(entry))
     summary = summary_text(result, details["summaries"])

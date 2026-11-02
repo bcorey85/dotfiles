@@ -27,6 +27,10 @@ handoff:
 
 `/code` writes only the `why` entries; `code_review_start.py` replaces `files` with the paths git shows changed since the phase base (tracked changes plus untracked files), keeping each entry's `why`. Never list a changed file, an export or a line number from memory.
 
+## Who writes `files` for `/fix` and `/refactor`
+
+Neither writes the list by hand. `/refactor` (`refactor_flow.py`) prints the files git shows changed against HEAD, untracked files included, and keeps the `change` text of each path the input lists. `/fix`'s scoped rerun after a review cap (`review_fix.py`) lists the files git shows changed against HEAD in the reviewed repo; the files the capped run's fixes touched keep that change text. Neither path has a phase base, so HEAD is the base: a refactor's or fix's edits are uncommitted.
+
 ## The `why` channel
 
 `change` serves the reviewer; `why` serves the human.

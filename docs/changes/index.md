@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-782 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
+783 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [The review loop puts back untracked files a fix coder deleted](notes/2026-11-01-the-review-loop-puts-back-untracked-files-a-fix.md).
+Latest change: 2026-11-01, [The fix and refactor handoffs take their file list from git](notes/2026-11-01-the-fix-and-refactor-handoffs-take-their-file-list.md).
 
 ## Top gains
 

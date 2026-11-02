@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-782 changes
+783 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -138,6 +138,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The fix and refactor handoffs take their file list from git](notes/2026-11-01-the-fix-and-refactor-handoffs-take-their-file-list.md) [skill/refactor, skill/fix] /fix's scoped rerun and /refactor's handoff now list what git shows changed, so no handoff can leave out a changed file.
 * [The review loop puts back untracked files a fix coder deleted](notes/2026-11-01-the-review-loop-puts-back-untracked-files-a-fix.md) [agent/review-loop] A fix coder can no longer lose an untracked file: the loop saves untracked files before each fix call, writes back any that vanish, and names them in the packet.
 * [A full check that times out says so in the review packet](notes/2026-11-01-a-full-check-that-times-out-says-so-in-the-review.md) [agent/review-loop] A timed-out full check now puts a note in the packet's tool_fault, so a phase can no longer finish with no full check and only a label to show it.
 * [A review line that states no findings is no longer an ask, and a clean prose hit is no longer a skipped finding](notes/2026-11-01-a-review-line-that-states-no-findings-is-no-longer.md) [agent/review-loop] The review record stops counting clean passes as asks and skipped findings, so false-positive and ask counts read true.

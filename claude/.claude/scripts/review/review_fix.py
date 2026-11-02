@@ -67,6 +67,7 @@ import capped_review
 import handback
 import handback_hook
 import handback_store
+import handoff_files
 import plan_format
 import review_asks
 import script_utils
@@ -622,17 +623,24 @@ SCOPED_RERUN = ("The review cap was reached with a class still open. Report thes
 
 
 def scoped_rerun_lines(packet, skill):
-    """The dispatch that reviews only the files the capped run's fixes touched after a cap-reached with an open
-    class, or [] when the packet's open_classes is empty or it names no file the fix touched."""
+    """The dispatch for the next scoped review after a cap-reached with an open class, or [] when the packet's
+    open_classes is empty, it names no file the fix touched, or git shows no change. The files are the ones git shows
+    changed against HEAD in the dispatched repo (the packet names no start commit, and the loop reviews the working
+    tree against HEAD); a file the fixes touched keeps its own change text."""
     if not packet["open_classes"]:
         return []
     fix_files = [str(path) for path in packet["files_touched"]]
     if not fix_files:
         return []
 
-    lines = ["mode: review-first", f"caller: {skill}", "iter=0", "handoff:", "  files:"]
-    for path in fix_files:
-        lines += [f"    - path: {path}", "      change: touched by the capped run's fixes"]
+    repo = dispatched_repo() or pathlib.Path.cwd()
+    changed = script_utils.changed_files(repo, "HEAD")
+    if not changed:
+        return []
+
+    touched_text = dict.fromkeys(fix_files, "touched by the capped run's fixes")
+    lines = ["mode: review-first", f"caller: {skill}", "iter=0", "handoff:", "  files:",
+             *handoff_files.file_entry_lines(changed, touched_text, "changed in the working tree against HEAD")]
     lines += ["  tests-run: none", f"  flagged: the open class - {one_line('; '.join(packet['open_classes']))}",
               "  prior-issues:"]
     for item in packet["findings_remaining"]:

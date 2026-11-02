@@ -46,6 +46,8 @@ For each async action you add to a view, decide what every control does while it
 
 When you fix a review finding, search the code for every other site with the same defect and fix those too. Name each site in your report.
 
+When you fix a review finding, update every comment, docstring, doc file and user-facing message that describes the old behavior, in the same change. Search for the old wording and the old value, and name each place you updated.
+
 ## Tests are yours
 
 Write the tests for the behavior you implement, in the project's test layout. Assert what the plan and the acceptance criteria state, not what your code happens to do. A red test the plan supports is a bug in your code: fix the code, never the assertion. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.

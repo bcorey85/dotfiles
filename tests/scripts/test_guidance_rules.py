@@ -47,6 +47,14 @@ class GuidanceRulesTest(unittest.TestCase):
                       "that `/code resume` runs it.", text)
         self.assertNotIn("Ask only before", text)
 
+    def test_a_code_resume_finds_its_plan_and_an_unresolved_task_writes_no_stop_file(self):
+        text = guidance_text("skills/code/SKILL.md")
+        self.assertIn("`To go on: /code resume <plan path> <your feedback>`, with the plan's absolute path", text)
+        self.assertIn("an absolute path right after it names the plan, and that plan's git repo is the repo root", text)
+        self.assertIn("run the stop's `To go on:` line with their reply", text)
+        self.assertEqual(text.count("no run started, so write no stop file"), 2)
+        self.assertNotIn("Exit 4 → STOP", text)
+
     def test_the_main_session_is_told_to_send_simple_commands_after_enter_worktree(self):
         text = guidance_text("orchestration.md")
         self.assertIn("After `EnterWorktree`, Claude Code's own worktree guard refuses", text)

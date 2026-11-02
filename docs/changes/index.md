@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-779 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
+780 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [With no ledger the skill-use and test-edit hooks keep their rows](notes/2026-11-01-with-no-ledger-the-skill-use-and-test-edit-hooks.md).
+Latest change: 2026-11-01, [A code resume finds its plan and an unresolved task writes no stop file](notes/2026-11-01-a-code-resume-finds-its-plan-and-an-unresolved.md).
 
 ## Top gains
 

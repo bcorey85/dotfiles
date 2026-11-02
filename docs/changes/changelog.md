@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-779 changes
+780 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -138,6 +138,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A code resume finds its plan and an unresolved task writes no stop file](notes/2026-11-01-a-code-resume-finds-its-plan-and-an-unresolved.md) [skill/code, script/code-relay] A /code stop's resume line now carries the plan path, so a resume from another cwd finds its run, and a run that resolved no task leaves every stop file alone.
 * [With no ledger the skill-use and test-edit hooks keep their rows](notes/2026-11-01-with-no-ledger-the-skill-use-and-test-edit-hooks.md) [script/ledger-hook, script/hook-local-row] With no ledger and the telemetry switch on, skill-use and test-edit events now land in the jsonl files the intake copies, where they were lost before.
 * [A ledger refusal or failure never stops log-escape](notes/2026-11-01-a-ledger-refusal-or-failure-never-stops-log-escape.md) [script/log-escape, script/ledger-write] A row the ledger refuses or fails on now lands in the local jsonl with one stderr note and exit 0. log-escape checks its own required fields, so a bad call still exits 1.
 * [Scoped test gate runs the autofix formatters before it stops](notes/2026-11-01-scoped-test-gate-runs-the-autofix-formatters.md) [script/review-loop-script, skill/code, skill/review] The review loop no longer stops a finished phase on format-only scoped-test failures: a red scoped run gets one autofix formatter pass and one rerun, and only a run still red stops the loop.

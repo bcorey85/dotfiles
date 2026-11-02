@@ -3,8 +3,10 @@
 #
 # usage: ledger-hook <event>
 #
-# Finds the ledger with ledger_bin (PATH, then the cargo bin folder). With no ledger, or when the
-# ledger fails, it exits 0: a telemetry hook never blocks the session.
+# Finds the ledger with ledger_bin (PATH, then the cargo bin folder). With no ledger and the telemetry
+# switch on, a skill-use or test-edit event goes to its jsonl file through hook_local_row.py; other
+# events write nothing. With no ledger, or when the ledger fails, it exits 0: a telemetry hook never
+# blocks the session.
 set -uo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
@@ -14,6 +16,16 @@ kv_help_exit "${BASH_SOURCE[0]}" "$@"
 # shellcheck source=../lib/_ledger.sh
 source "$script_dir/../lib/_ledger.sh"
 
-ledger=$(ledger_bin) || exit 0
+if ! ledger=$(ledger_bin); then
+  case "${1:-}" in
+    skill-use | test-edit)
+      if "$script_dir/telemetry_enabled.sh" 2>/dev/null; then
+        sh "$script_dir/../tools/hook-python" "$script_dir/hook_local_row.py" "$1"
+      fi
+      ;;
+  esac
+  exit 0
+fi
+
 "$ledger" hook "$@"
 exit 0

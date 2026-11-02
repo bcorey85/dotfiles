@@ -11,6 +11,14 @@ hl.monitor({
     bitdepth = 10,
 })
 
+-- Auto-HDR flips the OLED into HDR when fullscreen video tags itself HDR;
+-- the panel then runs at peak luminance and ignores intel_backlight.
+hl.config({
+    render = {
+        cm_auto_hdr = 0,
+    },
+})
+
 -- Attach to the desktop's herdr session over SSH ("pc" is a Host in ~/.ssh/config).
 -- Launched from Hyprland, not a pane, so no HERDR_* vars trip herdr's nesting guard.
 -- Server keybindings: with local ones, herdr drops [[keys.command]] binds (popups).

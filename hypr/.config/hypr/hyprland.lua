@@ -1,6 +1,9 @@
 -- Shared Hyprland config (Lua, Hyprland 0.55+). Machine-specific monitors and
 -- env vars live in machine.lua (symlinked per host via install/hyprland).
-pcall(require, "machine")
+local machine_ok, machine_err = pcall(dofile, os.getenv("HOME") .. "/.config/hypr/machine.lua")
+if not machine_ok then
+    io.stderr:write("machine.lua failed: " .. tostring(machine_err) .. "\n")
+end
 
 
 ------------------

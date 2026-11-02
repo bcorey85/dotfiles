@@ -140,7 +140,7 @@ expect "no planted path, branch, desc or note reaches the root" "" "$leaked"
 # --- a missing gate_missed is refused ------------------------------------------
 "$escape" stage_found=pr-human severity=high class=bug guard=none miss_reason=unknown >"$work/out.txt" 2>"$work/err.txt"
 rc=$?
-expect "escape: missing gate_missed exits 2" 2 "$rc"
+expect "escape: missing gate_missed exits 1" 1 "$rc"
 
 # --- the yield total equals the table count ------------------------------------
 fresh_cache

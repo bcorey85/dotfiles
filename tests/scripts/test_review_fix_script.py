@@ -1038,13 +1038,15 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(self.escape_rows(), [])
         self.assertIn("no fixed[] entry names that file", output)
 
-    def test_escape_the_ledger_refuses_is_noted_and_not_logged(self):
+    def test_escape_the_ledger_refuses_is_kept_in_the_local_file(self):
         code, output = self.packet(CONVERGED, "--source", "conversation",
                                    "--escape", self.escape_spec(), skill="fix",
                                    FAKE_LEDGER_WRITE_EXIT="2")
         self.assertEqual(code, 0, output)
-        self.assertIn("escape log FAILED for src/orders.ts", output)
+        self.assertIn("escape logged for src/orders.ts", output)
         self.assertEqual(self.escape_rows(), [])
+        local_rows = [json.loads(line) for line in self.escapes_file.read_text().splitlines()]
+        self.assertEqual([row["file"] for row in local_rows], ["src/orders.ts"])
 
     def test_unknown_guard_reaches_the_ledger_as_given(self):
         code, output = self.packet(CONVERGED, "--source", "conversation",

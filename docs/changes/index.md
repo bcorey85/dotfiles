@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-777 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
+778 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [Every review escape records why review missed it](notes/2026-11-01-every-review-escape-records-why-review-missed-it.md).
+Latest change: 2026-11-01, [A ledger refusal or failure never stops log-escape](notes/2026-11-01-a-ledger-refusal-or-failure-never-stops-log-escape.md).
 
 ## Top gains
 

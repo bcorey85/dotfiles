@@ -95,8 +95,9 @@
 # desc and scan_flagged are dropped, file becomes path_key and
 # branch becomes branch_key. With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) `ledger-write` appends the
 # row to ~/.claude/review-escapes.jsonl and prints one stderr line. A ledger build that refuses
-# miss_reason gets the row without it, with one stderr note and exit 0. Any other row `ledger write`
-# refuses exits 2.
+# miss_reason gets the row without it, with one stderr note and exit 0. Any other refusal or failure
+# of `ledger write` keeps the row in that file, with one stderr note and exit 0. gate_missed,
+# stage_found, class, guard and miss_reason are checked here, and a bad call exits 1.
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
@@ -145,6 +146,14 @@ escape_file_check() {
 kv_fold "desc file" escape_file_check "$@"
 kv_require_whole_numbers "line"
 
+for required_field in gate_missed stage_found class; do
+  required_value=$(jq -r --arg field "$required_field" '.[$field] // ""' <<< "$json")
+  if [ -z "$required_value" ]; then
+    echo "refusing to log: $required_field= is required." >&2
+    exit 1
+  fi
+done
+
 guard=$(jq -r '.guard // ""' <<< "$json")
 if [ -z "$guard" ]; then
   echo "refusing to log: guard= is required." >&2
@@ -180,5 +189,11 @@ if [ "$write_rc" -eq 2 ] && [[ $writer_stderr == *"field_unknown miss_reason"* ]
   ledger_send_row "$script_dir/ledger-write" review_escape "$payload" || write_rc=$?
 fi
 
-[ -z "$writer_stderr" ] || printf '%s\n' "$writer_stderr" >&2
-exit "$write_rc"
+if [ "$write_rc" -eq 0 ]; then
+  [ -z "$writer_stderr" ] || printf '%s\n' "$writer_stderr" >&2
+  exit 0
+fi
+
+# The ledger never stops a caller: a row it refused or failed on goes to the local file.
+kept_note=$(printf '%s\n' "$payload" | bash "$script_dir/ledger-write" --local review_escape 2>&1) || true
+echo "note: ledger write exit $write_rc (${writer_stderr//$'\n'/ }); $kept_note" >&2

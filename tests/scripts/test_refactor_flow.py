@@ -171,6 +171,43 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("cross-phase smells", done.stdout)
         self.assertEqual(self.last_line(done)[:5], "NEXT:")
 
+    def test_branch_prep_hands_the_plan_structure_and_deviations_to_the_smell_reviewer(self):
+        # The shape of real /code plans: Changes Required entries with **File**: lines, and a Plan Deviations
+        # section that records a re-export the plan kept on purpose.
+        plan = ("# Plan\n\n## Phase Status\n\n- [x] Phase 1: package\n\n## Phase 1: package\n\n"
+                "### Changes Required:\n\n#### 1. Re-exports\n\n**File**: `pkg/__init__.py`\n\n"
+                "Re-export `parse` and `render` from the package root.\n\n"
+                "## Plan Deviations\n\n- 2026-10-30, Phase 1: keep the `render` re-export though one caller "
+                "uses it. Owner: the user.\n")
+        self.branch_with({"pkg/__init__.py": "from .core import parse, render\n",
+                          "docs/plans/T-1-pkg/spec.md": plan})
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        prompt = done.stdout.split("## smell-reviewer dispatch prompt", 1)[1].split("\nNEXT:", 1)[0]
+        self.assertIn("## Plan-required structure (`docs/plans/T-1-pkg/spec.md`)", prompt)
+        self.assertIn("- pkg/__init__.py", prompt)
+        self.assertIn("keep the `render` re-export though one caller uses it", prompt)
+        self.assertIn("`### Ask` with the `[plan-structure]` tag, never under `### Fix`", prompt)
+        self.assertIn("`plan_structure: true`", self.last_line(done))
+
+    def test_branch_prep_without_a_plan_on_the_branch_prints_no_plan_section(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        done = self.flow("branch-prep")
+        self.assertNotIn("Plan-required structure", done.stdout)
+        self.assertNotIn("[plan-structure]` tag", done.stdout)
+
+    def test_log_refuses_a_plan_structure_finding_logged_as_a_fix(self):
+        payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "convention"}}
+        for disposition, actioned in (("fix", "fixed"), ("ask", "fixed"), ("fix", "none")):
+            with self.subTest(disposition=disposition, actioned=actioned):
+                finding = self.finding(disposition=disposition, actioned=actioned, plan_structure=True)
+                done = self.log("branch", {**payload, "findings": [finding]})
+                self.assertEqual(done.returncode, 1, done.stdout)
+                self.assertIn("[plan-structure]", done.stderr)
+        asked = self.finding(disposition="ask", actioned="ask", plan_structure=True)
+        done = self.log("branch", {**payload, "findings": [asked]}, extra_env=None)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
     def test_branch_prep_next_names_test_audit_and_the_nothing_found_case(self):
         self.branch_with({"a.py": "x = 1\n"})
         done = self.flow("branch-prep")

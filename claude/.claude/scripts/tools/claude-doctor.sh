@@ -102,7 +102,7 @@ if grep -Eq 'ledger-hook (skill-use|test-edit)' <<<"$reg_blob"; then
   # shellcheck source=../lib/_ledger.sh
   source "$CLAUDE_DIR/scripts/lib/_ledger.sh"
   if ! ledger_bin >/dev/null; then
-    print_warn "ledger-hook registered but no ledger found on PATH or in the cargo bin folder (\$CARGO_HOME/bin, default ~/.cargo/bin): skill_use and test_edit rows are not captured"
+    print_warn "ledger-hook registered but no ledger found on PATH or in the cargo bin folder (\$CARGO_HOME/bin, default ~/.cargo/bin): skill_use and test_edit rows go to their local jsonl files"
   else
     print_success "ledger-hook registered, ledger found"
   fi

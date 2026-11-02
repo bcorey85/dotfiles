@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-786 changes
+787 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -139,6 +139,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [With no ledger the skill-use and test-edit hooks keep their rows](notes/2026-11-01-with-no-ledger-the-skill-use-and-test-edit-hooks.md) [script/ledger-hook, script/hook-local-row] With no ledger and the telemetry switch on, skill-use and test-edit events now land in the jsonl files the intake copies, where they were lost before.
 * [A ledger refusal or failure never stops log-escape](notes/2026-11-01-a-ledger-refusal-or-failure-never-stops-log-escape.md) [script/log-escape, script/ledger-write] A row the ledger refuses or fails on now lands in the local jsonl with one stderr note and exit 0. log-escape checks its own required fields, so a bad call still exits 1.
 * [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md) [agent/test-intent-reviewer] The test-intent reviewer never culls a test whose input shape differs from every sibling, and each cull names the surviving test. Audits that kept all such tests rose from 3 of 8 to 8 of 8. **raises of 8 audits kept every distinct-shape test by 167% (3 → 8)**
 * [The fix and refactor handoffs take their file list from git](notes/2026-11-01-the-fix-and-refactor-handoffs-take-their-file-list.md) [skill/refactor, skill/fix] /fix's scoped rerun and /refactor's handoff now list what git shows changed, so no handoff can leave out a changed file.

@@ -10,7 +10,6 @@ code_review_start.py process that `code_review_start.py --detach` left and print
 WAIT_SECONDS, under the fork's 600-second Bash timeout, then says to run the same command again.
 """
 
-import json
 import os
 import pathlib
 import sys
@@ -34,14 +33,6 @@ def agent_transcript(agent_id):
     if not transcripts:
         return None
     return max(transcripts, key=lambda transcript: transcript.stat().st_mtime)
-
-
-def agent_finished(transcript):
-    meta_path = transcript.with_suffix(".meta.json")
-    if meta_path.exists() and json.loads(meta_path.read_text()).get("finished"):
-        return True
-
-    return loop_transcript.has_delivered_handback(transcript)
 
 
 def agent_report(transcript):
@@ -70,7 +61,7 @@ def review_running(repo):
 def wait_agent(agent_id):
     def finished():
         transcript = agent_transcript(agent_id)
-        return transcript is not None and agent_finished(transcript)
+        return transcript is not None and loop_transcript.agent_finished(transcript)
 
     if not script_utils.wait_for(finished, WAIT_SECONDS, POLL_SECONDS):
         print(STILL_WORKING)

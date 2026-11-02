@@ -91,6 +91,58 @@ class OpenChildGateTest(unittest.TestCase):
         self.assertEqual(proc.stdout, "")
         self.assertEqual(proc.stderr, "")
 
+    def fork_hand_back(self, records):
+        return self.hand_back(records, agent_type="code-fork", agent_id="fork-1")
+
+    def assert_fork_denied(self, proc, child):
+        decision = json.loads(proc.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("code_wait.py agent", decision["permissionDecisionReason"])
+        self.assertIn("600000", decision["permissionDecisionReason"])
+        self.assertIn(child, decision["permissionDecisionReason"])
+
+    def write_child(self, agent_id, meta=None):
+        folder = os.path.dirname(self.transcript)
+        with open(os.path.join(folder, f"agent-{agent_id}.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": []}}) + "\n")
+        if meta is not None:
+            with open(os.path.join(folder, f"agent-{agent_id}.meta.json"), "w", encoding="utf-8") as fh:
+                json.dump(meta, fh)
+
+    def test_code_fork_hand_back_while_its_coder_runs_is_denied(self):
+        # The shape of a real /code fork turn: a background coder launch, its async result, then a hand-back while
+        # the coder still writes its transcript.
+        self.write_child("a7bf12f9c51bc4875", meta={"agentType": "coder"})
+        records = [launch("toolu_c", subagent_type="coder"), launch_result("toolu_c")]
+
+        self.assert_fork_denied(self.fork_hand_back(records), "a7bf12f9c51bc4875")
+
+    def test_code_fork_hand_back_passes_once_the_coder_finished(self):
+        self.write_child("a7bf12f9c51bc4875", meta={"agentType": "coder", "finished": True})
+        records = [launch("toolu_c", subagent_type="coder"), launch_result("toolu_c")]
+
+        proc = self.fork_hand_back(records)
+
+        self.assertEqual(proc.stdout, "")
+        self.assertEqual(proc.stderr, "")
+
+    def test_code_fork_is_denied_once_per_child(self):
+        records = [launch("toolu_c", subagent_type="coder"), launch_result("toolu_c")]
+        self.assert_fork_denied(self.fork_hand_back(records), "a7bf12f9c51bc4875")
+        self.assertEqual(self.fork_hand_back(records).stdout, "")
+
+        second_result = {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_d",
+             "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: a0000000000000002"}]}]}}
+        records += [launch("toolu_d", subagent_type="coder"), second_result]
+
+        self.assert_fork_denied(self.fork_hand_back(records), "a0000000000000002")
+
+    def test_code_fork_with_no_child_passes(self):
+        proc = self.fork_hand_back([])
+        self.assertEqual(proc.stdout, "")
+        self.assertEqual(proc.stderr, "")
+
     def test_transcript_is_found_from_session_path_and_agent_id(self):
         session = os.path.join(os.path.dirname(self.transcript), "session")
         os.makedirs(os.path.join(session, "subagents"))

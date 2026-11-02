@@ -6,6 +6,7 @@ review_loop_gate.py (the SubagentStop backstop), handback.py (the hand-back hook
 transcripts through it. Not a hook itself."""
 import json
 import os
+import pathlib
 import re
 import shlex
 
@@ -371,6 +372,19 @@ def has_delivered_handback(transcript_path):
     """Whether the transcript holds a SubagentHandback whose result is not an error: a denied hand-back returns an
     error result and the agent goes on working."""
     return bool(LoopTranscript(transcript_path).handback_lines)
+
+
+def agent_finished(transcript_path):
+    """Whether the subagent whose transcript this is has ended: its meta file says finished, or it delivered a
+    hand-back. False for a transcript that is not written yet."""
+    transcript_path = pathlib.Path(transcript_path)
+    if not transcript_path.exists():
+        return False
+    meta_path = transcript_path.with_suffix(".meta.json")
+    if meta_path.exists() and json.loads(meta_path.read_text()).get("finished"):
+        return True
+
+    return has_delivered_handback(transcript_path)
 
 
 def last_coder_step(transcript):

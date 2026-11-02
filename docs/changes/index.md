@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-794 changes, 20 with a measured gain, 261 behavior changes that no intake metric reads.
+795 changes, 20 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-02, [Rule anchors fail CI when a prompt block drifts](notes/2026-11-02-rule-anchors-fail-ci-when-a-prompt-block-drifts.md).
+Latest change: 2026-11-02, [a /code fork cannot hand back while its coder still runs](notes/2026-11-02-a-code-fork-cannot-hand-back-while-its-coder-still.md).
 
 ## Top gains
 

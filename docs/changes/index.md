@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-786 changes, 17 with a measured gain, 259 behavior changes that no intake metric reads.
+787 changes, 17 with a measured gain, 259 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [A ledger refusal or failure never stops log-escape](notes/2026-11-01-a-ledger-refusal-or-failure-never-stops-log-escape.md).
+Latest change: 2026-11-01, [With no ledger the skill-use and test-edit hooks keep their rows](notes/2026-11-01-with-no-ledger-the-skill-use-and-test-edit-hooks.md).
 
 ## Top gains
 

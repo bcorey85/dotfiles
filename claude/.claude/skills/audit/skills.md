@@ -4,7 +4,7 @@ Data-driven monthly audit of `~/.claude/skills/`. The guidance this implements: 
 
 ## Inputs
 
-1. **Telemetry**: `ledger query "select ts, skill, via, repo from skill_use"` — the `ledger-hook skill-use` hook writes this table (`via` is `user` for typed slash commands, `model` for Skill-tool invocations, `agent` for review-loop scope rows). Handle exit 75, `ledger worker --once` and `not read (<last stderr line>)` as in the exempt list below. If the table is empty, say the telemetry hooks haven't fired yet (check they're registered in settings.json), and still run the static checks below. `${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}` is older history only, plus the `via: agent` review_scope rows written when no ledger is found; the hook does not write it.
+1. **Telemetry**: `ledger query "select ts, skill, via, repo from skill_use"` — the `ledger-hook skill-use` hook writes this table (`via` is `user` for typed slash commands, `model` for Skill-tool invocations, `agent` for review-loop scope rows). Handle exit 75, `ledger worker --once` and `not read (<last stderr line>)` as in the exempt list below. If the table is empty, say the telemetry hooks haven't fired yet (check they're registered in settings.json), and still run the static checks below. `${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}` is older history plus the rows written when no ledger is found: the hook's `user` and `model` rows and the `via: agent` review_scope rows.
 2. **Inventory**: every `~/.claude/skills/*/SKILL.md` — name, description, body line count.
 
 ## Exempt list (never flag)

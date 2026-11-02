@@ -626,7 +626,7 @@ EOF
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     dredge:*)
       bg="#1c1e20"; panel="#151719"; panelAlt="#292b2d"; border="#414244"
-      accent="#61978f"; accentMuted="#414244"; text="#a2a9b1"; muted="#9b9fa6"
+      accent="#71b3a8"; accentMuted="#414244"; text="#c1c8d2"; muted="#9b9fa6"
       # Words must stay >= RGB distance 28 from the line wash, or hunk
       # replaces them with its own blend of the sign colour. Words separate by
       # chroma, not lightness. The washes share one lightness. Red reads
@@ -639,16 +639,16 @@ EOF
       sAdd="#5da37e"; sRem="#be6146"; lnFg="#777b82"
       badgeAdd="#74d5a1"; badgeRem="#fb784f"; badgeNeu="#d7bb70"
       fRename="#5da37e"; fMod="#5da37e"; fUntracked="#5da37e"; note="#151719"
-      kw="#72757b"; str="#61978f"; num="#ab7582"; fn="#9291cb"; typ="#a2a9b1"; punct="#6a6f74"; op="#6a6f74"
-      konst="#ab7582"; esc="#ab7582"; cmt="#928c82"; param="#a2a9b1"
-      attr="#a2a9b1"; tag="#72757b"; vbi="#a2a9b1"; lang="#ab7582"; imp="#72757b"; pre="#72757b"
-      prim="#a2a9b1"; ns="#a2a9b1"; mac="#9291cb"; bfn="#a2a9b1"; var="#9291cb"; key="#a2a9b1"; cls="#9291cb"
+      kw="#858990"; str="#71b3a8"; num="#cb8998"; fn="#9e9dd9"; typ="#c1c8d2"; punct="#7c8187"; op="#7c8187"
+      konst="#cb8998"; esc="#cb8998"; cmt="#b2a99d"; param="#c1c8d2"
+      attr="#c1c8d2"; tag="#858990"; vbi="#c1c8d2"; lang="#cb8998"; imp="#858990"; pre="#858990"
+      prim="#c1c8d2"; ns="#c1c8d2"; mac="#9e9dd9"; bfn="#c1c8d2"; var="#9e9dd9"; key="#c1c8d2"; cls="#9e9dd9"
       # Colour marks definitions. Builtins, uses, calls and members are plain text.
-      use="#a2a9b1"; call="#a2a9b1"; mem="#a2a9b1"
+      use="#c1c8d2"; call="#c1c8d2"; mem="#c1c8d2"
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. Headings ($fn) and bullet mirror theme-sync's markdown.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local bright="#d4dbe5" quote="#898d93" bullet="#9b9fa6"
+      local bright="#d4dbe5" quote="#a8adb4" bullet="#9b9fa6"
       if [ "$2" = light ]; then
         bg="#c3c5c8"; panel="#bec0c3"; panelAlt="#babcbf"; border="#9a9c9f"
         accent="#18796d"; accentMuted="#9a9c9f"; text="#30363f"; muted="#666a71"
@@ -1583,9 +1583,9 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       accent="#4c8e84" panel_bg="#151719" surface_dim="#292b2d"
       surface0="#343638" surface1="#414244"
       overlay0="#7c8086" overlay1="#9b9fa6"
-      text="#a2a9b1" subtext0="#9b9fa6"
+      text="#c1c8d2" subtext0="#9b9fa6"
       green="#8dd09b" yellow="#d7bb70" red="#ed8c84"
-      blue="#85beef" teal="#61978f" peach="#f6a981"
+      blue="#85beef" teal="#71b3a8" peach="#f6a981"
       ;;
     solarized-osaka:light)
       # solarized-osaka light (base3 #fdf6e2 ground, base2 panel). Accents are

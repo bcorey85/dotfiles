@@ -2,18 +2,16 @@
 -- charcoal ground (OKLCH L 0.232) with a whisper of blue (h 258, C 0.005). fg and fg_bright
 -- carry more (C 0.016; light C 0.018) so they don't read warm. The text greys (keywords,
 -- punctuation, line numbers, muted, quotes, ANSI greys) carry two thirds of it (C 0.011; light C 0.012).
--- Dark is dimmed against halation by WCAG ratio on the ground: fg 7.0, comments 5.0,
--- strings 5.0, definitions 5.7, literals 4.5, keywords 3.6, punctuation 3.3 — every code
--- colour is the old palette blended toward the ground by one shared amount, except
--- definitions, lifted to L 0.68 C 0.085 so the indigo stays clear of the blue-grey fg. Light is tuned
--- in APCA Lc: fg 64, definitions 50, comments 48, punctuation 33. Lc is a floor, not a target: coloured
+-- Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
+-- light-on-dark. Dark is deliberately dim against halation: fg Lc 71,
+-- definitions 47, comments 55, punctuation 33. Light: fg Lc 64, definitions 50, comments 48, punctuation 33. Lc is a floor, not a target: coloured
 -- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
 -- Colour marks definitions; uses and calls are fg. Every definition is
 -- indigo (h 285, leaning violet): top-level variables and constants, functions and
 -- classes. Keys, fields, attributes, parameters and builtins (self, JSON) are
 -- fg. Literals are dusty rose (h 5; light is pinker, h 355 C 0.14; None, numbers, booleans,
 -- symbols, escapes, regex).
--- Strings are sea teal (h 184, dark L 0.64 C 0.059); comments are sand (h 80, C 0.016; light C 0.034). No italics: hunk can't render
+-- Strings are sea teal (h 182, dark L 0.72 C 0.070); comments are sand (h 80, C 0.020; light C 0.034). No italics: hunk can't render
 -- them, and the two must match.
 -- Light mirrors dark's hues and order: comments sit between fg and the
 -- keywords. Code accents keep OKLab dE >= 0.17 from the near-black fg, or thin
@@ -45,24 +43,24 @@ palettes.dark = {
   nontext = "#454648",
   linenr = "#777b82",
   muted = "#9b9fa6",
-  comment = "#898d93",
-  punct = "#6a6f74",
-  fg = "#a2a9b1",
+  comment = "#a8adb4",
+  punct = "#7c8187",
+  fg = "#c1c8d2",
   fg_bright = "#d4dbe5",
 
   red = "#ed8c84",
   amber = "#f6a981",
   yellow = "#d7bb70",
   green = "#8dd09b",
-  teal = "#61978f",
+  teal = "#71b3a8",
   blue = "#85beef",
   magenta = "#c799c9",
 
-  kw = "#72757b",
-  fn = "#9291cb",
-  remark = "#928c82",
-  str = "#61978f",
-  const = "#ab7582",
+  kw = "#858990",
+  fn = "#9e9dd9",
+  remark = "#b2a99d",
+  str = "#71b3a8",
+  const = "#cb8998",
 
   added = "#5da37e",
   removed = "#be6146",
@@ -75,7 +73,7 @@ palettes.dark = {
   search = "#5b4032",
 
   term = {
-    "#151719", "#ed8c84", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#61978f", "#a2a9b1",
+    "#151719", "#ed8c84", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#71b3a8", "#c1c8d2",
     "#777b81", "#f9aea7", "#aee4b8", "#e9d296", "#a7d3f8", "#d8b1d9", "#b1dfd6", "#d4dbe5",
   },
 }

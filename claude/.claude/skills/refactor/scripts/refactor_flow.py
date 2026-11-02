@@ -46,12 +46,13 @@ import subprocess
 import sys
 import tempfile
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from stat import S_ISREG
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
 import handoff_files
 import numstat
+import plan_format
 import script_utils
 import source_text
 
@@ -78,6 +79,11 @@ SMELL_BOUND = ("Your review bound for this run is the whole branch diff (`git di
 SMELL_PRIORITY = ("Prioritize cross-phase smells — things no single-phase view could see (multi-task "
                   "duplication, drifted naming, orphaned dead code, idiom divergence from unchanged siblings). "
                   "Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).")
+PLAN_STRUCTURE_TAG = "[plan-structure]"
+PLAN_STRUCTURE_RULE = (f"A finding that would remove, rename, move or reshape anything the plan names (its files, "
+                       f"exports, layers) or that a Plan Deviations line records goes under `### Ask` with the "
+                       f"`{PLAN_STRUCTURE_TAG}` tag, never under `### Fix`. Read the plan for the exports and "
+                       f"layers it names.")
 AUDIT_BOUND = ("Audit mode: your bound is the existing code of `{target}` — pre-existing smells ARE the target "
                "this run, per your audit-bound clause.")
 AUDIT_ASK = ("Find duplication across files, pattern/idiom drift between sibling modules, and wrong-altitude code. "
@@ -245,6 +251,30 @@ def fresh_log_input():
     return str(folder / f"{LOG_INPUT_PREFIX}{uuid.uuid4().hex[:LOG_INPUT_HEX_DIGITS]}.json")
 
 
+def span_plans(files):
+    """The plan files the branch adds or changes: the plans /code works from are committed on the branch."""
+    return [path for path, label in files
+            if "deleted" not in label and PurePosixPath(path).match(plan_format.PLAN_FILES_GLOB)]
+
+
+def print_plan_structure(plan_paths, head):
+    for plan_path in plan_paths:
+        plan_text = git("show", f"{head}:{plan_path}").stdout
+        structure = plan_format.required_structure(plan_text.splitlines())
+        print(f"## Plan-required structure (`{plan_path}`)")
+        print("Files the plan's phases name:")
+        for named_path in structure["files"]:
+            print(f"- {named_path}")
+        if not structure["files"]:
+            print("- none")
+        print(f"{plan_format.DEVIATIONS_HEADING}:")
+        for deviation in structure["deviations"]:
+            print(deviation)
+        if not structure["deviations"]:
+            print("- none")
+    print(PLAN_STRUCTURE_RULE)
+
+
 def branch_prep(opts):
     require_repo()
     head = opts.head or "HEAD"
@@ -293,10 +323,14 @@ def branch_prep(opts):
         print(file_line(path, label))
     print(SMELL_BOUND.format(base=base, head=head))
     print(SMELL_PRIORITY)
+    plan_paths = span_plans(files)
+    if plan_paths:
+        print_plan_structure(plan_paths, head)
     print()
     print(next_line("dispatch ONE smell-reviewer with the prompt above; make the work list = findings + sweep "
-                    "matches (`[design-decision]` goes to the user); then dispatch the coder, run the step-5 test "
-                    "audit when the refactor could change test guarantees, run the ratchet for each distinct "
+                    f"matches (`[design-decision]` and every `### Ask` finding go to the user; log a "
+                    f"`{PLAN_STRUCTURE_TAG}` finding with `plan_structure: true`); then dispatch the coder, "
+                    "run the step-5 test audit when the refactor could change test guarantees, run the ratchet for each distinct "
                     f"class, write the log input to {log_input}, and call "
                     f"`log --mode branch --base {base} --input {log_input}`. Nothing found: call the same "
                     "`log` empty-handed and stop."))
@@ -482,6 +516,12 @@ def validate_finding(finding, index, mode):
         raise RefactorFlowError(f"{where}: `line` must be an integer (0 when the finding names no line)")
 
     finding["desc"] = single_line(finding, "desc", where)
+    plan_structure = finding.get("plan_structure", False)
+    if not isinstance(plan_structure, bool):
+        raise RefactorFlowError(f"{where}: `plan_structure` must be true or false (got {plan_structure!r})")
+    if plan_structure and (finding["disposition"] != "ask" or finding["actioned"] == "fixed"):
+        raise RefactorFlowError(f"{where}: a {PLAN_STRUCTURE_TAG} finding is an ask the user answers: "
+                                f"disposition=ask, never actioned=fixed")
     if not isinstance(finding.get("escape", False), bool):
         raise RefactorFlowError(f"{where}: `escape` must be true or false (got {finding['escape']!r})")
     if not finding.get("escape"):

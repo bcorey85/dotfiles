@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-799 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
+802 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-02, [The refactor smell pass gets the plan's structure and files plan-structure findings as asks](notes/2026-11-02-the-refactor-smell-pass-gets-the-plan-s-structure.md).
+Latest change: 2026-11-02, [pr-comments hands the user the Aikido replies as one line](notes/2026-11-02-pr-comments-hands-the-user-the-aikido-replies-as.md).
 
 ## Top gains
 

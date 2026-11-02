@@ -611,6 +611,19 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("no full check ran", packet["tool_fault"])
         self.assertIn("CLAUDE.local.md", packet["tool_fault"])
 
+    def test_a_packet_whose_full_check_timed_out_carries_a_tool_fault_naming_the_faster_command_fix(self):
+        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+        loop_script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loop_script)
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.full_check = loop_script.full_check.NOT_RUN_TIMEOUT
+
+        packet = loop.outcome([], [])
+
+        self.assertIn("did not finish", packet["tool_fault"])
+        self.assertIn("Quality check (<repo name>)", packet["tool_fault"])
+        self.assertIn("CLAUDE.local.md", packet["tool_fault"])
+
     def test_a_repo_with_a_makefile_check_target_runs_make_check(self):
         (self.repo / "Makefile").write_text("check:\n\t@echo '3 passed in 0.1s'\n")
         git(self.repo, "add", "Makefile")

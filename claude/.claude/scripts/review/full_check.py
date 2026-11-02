@@ -114,6 +114,16 @@ NOT_RUN_NO_CHECK = "not run (no check found; the coder's scoped tests stand)"
 NO_CHECK_NOTE = ("no full check ran: no local entry, no CLAUDE.md `Quality check:` line and no Makefile or package "
                  "check was found. Add the line `Quality check (<repo name>): `<command>`` "
                  "to your machine-local CLAUDE.local.md.")
+TIMEOUT_NOTE = ("the full check ran past its time limit and did not finish, so no full check result stands. "
+                "Add a faster command as the line `Quality check (<repo name>): `<command>`` "
+                "to your machine-local CLAUDE.local.md.")
+FAULT_NOTES = {NOT_RUN_NO_CHECK: NO_CHECK_NOTE, NOT_RUN_TIMEOUT: TIMEOUT_NOTE}
+
+
+def fault_note(result):
+    """The packet's tool-fault note for a full-check result that left no check standing, else an empty string."""
+    return FAULT_NOTES.get(result, "")
+
 # Where the command came from, kept in the receipt's started row.
 ResolvedCheck = collections.namedtuple("ResolvedCheck", "command source")
 SOURCE_LOCAL = "local"
@@ -666,8 +676,8 @@ def print_result(result, details, left_out, tree=None, command=None):
     if tree:
         print(f"tree: {tree}")
     print(f"command: {command or 'none'}")
-    if result == NOT_RUN_NO_CHECK:
-        print(f"note: {NO_CHECK_NOTE}")
+    if fault_note(result):
+        print(f"note: {fault_note(result)}")
     for entry in left_out:
         print("expected red: " + expected_red.entry_text(entry))
     summary = summary_text(result, details["summaries"])

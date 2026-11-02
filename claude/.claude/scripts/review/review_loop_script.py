@@ -860,7 +860,6 @@ class LoopRun(full_check_gate.FullCheckSteps):
         return True
 
     def outcome(self, ask_ids, ask_rows):
-        no_check_fault = full_check.NO_CHECK_NOTE if self.full_check == full_check.NOT_RUN_NO_CHECK else ""
         return {
             "status": self.status,
             "iter": self.iter_count,
@@ -886,7 +885,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
             "scoped_tests": self.scoped_tests,
-            "tool_fault": no_check_fault,
+            "tool_fault": full_check.fault_note(self.full_check),
         }
 
 

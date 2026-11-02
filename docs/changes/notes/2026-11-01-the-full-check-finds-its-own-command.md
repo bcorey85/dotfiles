@@ -29,7 +29,7 @@ The Makefile, local-entry and no-check tests fail on the old code and pass on th
 
 ## Watch
 
-None. A discovered check that runs past 540 seconds reports `not run (timeout)` and the loop still converges with no repair coder. A local entry names a faster command for such a repo.
+None. A discovered check that runs past its limit (900 seconds in the scripted loop, 540 on the agent-run path) reports `not run (timeout)` and the loop still converges with no repair coder. A local entry names a faster command for such a repo.
 
 ## Back-out
 

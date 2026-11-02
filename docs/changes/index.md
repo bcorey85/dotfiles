@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-780 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
+781 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [A review line that states no findings is no longer an ask, and a clean prose hit is no longer a skipped finding](notes/2026-11-01-a-review-line-that-states-no-findings-is-no-longer.md).
+Latest change: 2026-11-01, [A full check that times out says so in the review packet](notes/2026-11-01-a-full-check-that-times-out-says-so-in-the-review.md).
 
 ## Top gains
 

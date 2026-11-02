@@ -23,6 +23,10 @@ class IsCountedSourceTest(unittest.TestCase):
             "src/generated/api.ts": False,
             "web/dist/bundle.js": False,
             "web/app.min.js": False,
+            "backend/drizzle/meta/0001_snapshot.json": False,
+            "worker/drizzle/migrations/meta/_journal.json": False,
+            "backend/drizzle/0001_add_orders.sql": True,
+            "web/meta/config.json": True,
         }
 
         for path, expected in cases.items():

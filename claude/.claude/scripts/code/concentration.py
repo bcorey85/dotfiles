@@ -3,7 +3,9 @@
 
 Prints the added source lines of the branch's largest module and of the whole branch (`git diff <base-sha>...HEAD`),
 then either the module to run `/refactor simplify` on and why, or that the gate does not trigger. A module is a
-directory; tests, lockfiles, generated files and anything under a docs folder do not count.
+directory; tests, lockfiles, generated files (migration snapshots and journals included) and anything under a docs
+folder do not count. Only committed work counts: uncommitted and untracked changes are left out, so commit the finished
+phase before running the gate.
 """
 import pathlib
 import sys

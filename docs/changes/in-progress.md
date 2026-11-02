@@ -23,4 +23,4 @@ description: "The benches that are open now and the question each asks."
 * Coder ranged-read hook for whole-file reads over 4k tokens (queued): A hook that turns the coder's whole-file read of a big file into a ranged read could cut coder cache read per dispatch by 30% or more.
 * Bench: frontend changed-line mutation before first review (queued): A no-model mutation pass could hand the coder its test gaps before review and cut test-gap items in review rounds.
 * Bench the Sonnet main session at 8 pairs per arm on a pinned toolkit (queued): A Sonnet main session cut Opus cache reads 42-48% on two smoke pairs; 8 pairs per arm settle whether it loses hidden keys.
-* Blind bench: fix-diff second review vs full second review (queued): A fix-diff-only second review could cut about a third of round-two tokens; prove it loses no defects.
+* Blind bench: fix-diff second review vs full second review (running): A fix-diff-only second review could cut about a third of round-two tokens; prove it loses no defects.

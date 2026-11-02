@@ -204,12 +204,38 @@ class LogEscapeTest(unittest.TestCase):
         self.assertEqual(done.stdout, "not logged: toolkit telemetry is off\n")
         self.assertEqual(self.escape_rows(), [])
 
-    def test_ledger_exit_code_passes_through(self):
-        for code in (2, 1):
+    def local_rows(self):
+        log_text = (self.home / ".claude" / "review-escapes.jsonl").read_text()
+        return [json.loads(line) for line in log_text.splitlines()]
+
+    def test_a_ledger_failure_keeps_the_row_locally_with_one_note_and_exit_0(self):
+        for code in (2, 1, 75):
             with self.subTest(code=code):
                 done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_WRITE_EXIT=str(code)))
-                self.assertEqual(done.returncode, code, done.stderr)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
+                self.assertIn(f"ledger write exit {code}", done.stderr)
+                self.assertEqual(self.local_rows()[-1]["miss_reason"], "overlooked")
+        self.assertEqual(len(self.local_rows()), 3)
         self.assertEqual(self.escape_rows(), [])
+
+    def test_the_local_row_names_the_file_and_branch_as_the_no_ledger_path_does(self):
+        env = self.environment(FAKE_LEDGER_WRITE_EXIT="1")
+        done = self.run_escape(*VALID_ARGS, "file=src/planted_widget_zq.rs", env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        (row,) = self.local_rows()
+        self.assertEqual(row["file"], "src/planted_widget_zq.rs")
+        self.assertEqual(row["branch"], PLANTED_BRANCH)
+
+    def test_each_required_field_is_refused_before_the_ledger(self):
+        for field in ("gate_missed", "stage_found", "class"):
+            with self.subTest(field=field):
+                args = [argument for argument in VALID_ARGS if not argument.startswith(f"{field}=")]
+                done = self.run_escape(*args)
+                self.assertEqual(done.returncode, 1)
+                self.assertIn(f"refusing to log: {field}= is required.", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        self.assertFalse((self.home / ".claude" / "review-escapes.jsonl").exists())
 
     def test_a_ledger_build_without_miss_reason_gets_the_row_without_it_and_the_caller_goes_on(self):
         done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason"))
@@ -220,12 +246,21 @@ class LogEscapeTest(unittest.TestCase):
         self.assertNotIn("miss_reason", row)
         self.assertEqual(row["gate_missed"], "review")
 
-    def test_a_refusal_of_another_field_is_not_retried_and_exits_2(self):
+    def test_a_refusal_of_another_field_keeps_the_row_locally_with_its_miss_reason(self):
         done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_UNKNOWN_FIELDS="guard"))
-        self.assertEqual(done.returncode, 2)
+        self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("field_unknown guard", done.stderr)
         self.assertNotIn("does not store", done.stderr)
         self.assertEqual(self.escape_rows(), [])
+        (row,) = self.local_rows()
+        self.assertEqual(row["miss_reason"], "overlooked")
+
+    def test_a_refusal_after_the_miss_reason_retry_keeps_the_row_locally(self):
+        env = self.environment(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason,guard")
+        done = self.run_escape(*VALID_ARGS, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        self.assertEqual(len(self.local_rows()), 1)
 
     def test_with_no_ledger_the_row_lands_in_the_local_file_with_its_miss_reason(self):
         no_ledger_path = fake_ledger.path_without_ledger(self.ledger_env["PATH"])
@@ -233,8 +268,7 @@ class LogEscapeTest(unittest.TestCase):
         done = self.run_escape(*VALID_ARGS, env=env)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("no ledger found; row appended to", done.stderr)
-        log_text = (self.home / ".claude" / "review-escapes.jsonl").read_text()
-        (row,) = [json.loads(line) for line in log_text.splitlines()]
+        (row,) = self.local_rows()
         self.assertEqual(row["miss_reason"], "overlooked")
 
     def test_help_prints_usage_and_writes_nothing(self):

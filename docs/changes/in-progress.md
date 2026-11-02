@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-8 open benches, by rank. Each line is the question the bench asks.
+10 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -18,4 +18,6 @@ description: "The benches that are open now and the question each asks."
 * Sealed-branch review bench: first sealed branches and their graded keys (queued): Give the reviewer a bench of real coder defects so reviewer changes can be ranked on catch rate, not on plants Opus always catches.
 * Bench: one merged closing phase plus a report-only fix-diff gate against the four closing phases (running): Merging refactor, test audit and branch review into one parallel-review phase with one fix coder, then a pass/fail gate on the fix diff, could cut closing-phase tokens by a third without losing catches.
 * Bench: scripts write phase state to JSON instead of the agent ticking Markdown boxes (queued): Phase state written by scripts from real gate results could end self-reported done, so fewer plan-drift escapes reach the branch-end check.
+* Make the closing check prove each failure-path criterion instead of trusting the happy path (queued): Catches more real defects at branch end by making the verifier show, for each failure or race criterion, the code path and the test that fails without it.
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (queued): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
+* Run the plan as an Opus-driven loop so a Sonnet main session only hands off (queued): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.

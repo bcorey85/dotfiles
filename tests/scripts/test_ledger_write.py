@@ -63,7 +63,8 @@ CASES = {
     ),
     "review_escape": (
         toolkit_paths.TELEMETRY_DIR / "log-escape",
-        ["gate_missed=review", "stage_found=pr-human", "severity=high", "class=bug", "guard=none"],
+        ["gate_missed=review", "stage_found=pr-human", "severity=high", "class=bug", "guard=none",
+         "miss_reason=overlooked"],
         "review-escapes.jsonl",
         {"class": "bug", "branch": BRANCH},
     ),

@@ -624,7 +624,8 @@ def build_writes(mode, base, validated_log):
                 continue
             pairs = ["stage_found=refactor", "gate_missed=review", f"class={finding['class']}",
                      f"severity={finding['severity']}", f"lane={validated_log['lane']}",
-                     f"guard={guards[finding['class']]}", f"desc={finding['desc']}", f"file={finding['file']}"]
+                     f"guard={guards[finding['class']]}", "miss_reason=unknown", f"desc={finding['desc']}",
+                     f"file={finding['file']}"]
             if finding["line"]:
                 pairs.append(f"line={finding['line']}")
             writes.append((LOG_ESCAPE, pairs))

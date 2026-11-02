@@ -330,6 +330,7 @@ class SwitchTest(unittest.TestCase):
         "severity=high",
         "class=bug",
         "guard=none",
+        "miss_reason=overlooked",
         "desc=a bug",
     ]
 
@@ -339,7 +340,7 @@ class SwitchTest(unittest.TestCase):
         finished = self.run_command([script, "class=nonsense"])
         self.assertEqual(finished.returncode, 1)
         self.assertIn("refusing to log", finished.stderr)
-        finished = self.run_command([script, "class=nonsense", "guard=none"])
+        finished = self.run_command([script, "class=nonsense", "guard=none", "miss_reason=unknown"])
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(finished.stdout, "not logged: toolkit telemetry is off\n")
 

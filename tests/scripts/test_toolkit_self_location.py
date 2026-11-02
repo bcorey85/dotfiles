@@ -65,6 +65,7 @@ ALLOWED_HITS = [
     ("scripts/review/review_fix.py", "After the user answers, run once", PRINTED),
     ("scripts/review/review_loop_gate.py", "handoff-block.md and dispatch again", PRINTED),
     ("scripts/telemetry/log-escape", "Run the ratchet (", PRINTED),
+    ("scripts/telemetry/log-escape", "Pick the label from", PRINTED),
     ("scripts/telemetry/log-escape-check", 'mkdir -p "$HOME/.claude"', LEDGER_DIR),
     ("scripts/telemetry/log_agent_usage.py", "os.path.join(os.environ.get", DATA_FILE + ", name on the next line"),
     ("scripts/tools/claude-doctor.sh", "CLAUDE.md is newer than opencode", PRINTED),

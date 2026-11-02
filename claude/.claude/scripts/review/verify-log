@@ -347,7 +347,7 @@ def plan_row_writes(rows, context, not_applicable, escapes_only):
             already_recorded += 1
             continue
         escape_argv = ["bash", escaper, f"repo={context['repo']}", "stage_found=verify", "gate_missed=drift-gate",
-                      "class=plan-drift", "lane=eng-spec", f"guard={row['guard']}",
+                      "class=plan-drift", "lane=eng-spec", f"guard={row['guard']}", "miss_reason=unknown",
                       f"desc={log_text(row['item'])}", f"file={row.get('file') or plan_rel}"]
         if row.get("severity"):
             escape_argv.append(f"severity={row['severity']}")

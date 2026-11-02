@@ -71,6 +71,11 @@
 #       rung: a command added to the spec finalization sweep. `none` =
 #       considered and rejected. `n-a` = this row
 #       is not review-flywheel data.)
+#     miss_reason=out-of-scope|needs-other-file|needs-runtime|plan-gap|seen-dismissed
+#                 |rule-absent|overlooked|unknown   (REQUIRED — why the gate missed
+#       it; see ~/.claude/skills/_shared/escape-ratchet.md. Stored as plain text like
+#       class. A value outside the list is refused. `unknown` = a script with no
+#       judgment; a model caller picks a real label.)
 #     desc="one line"   accepted for the caller's own record; never stored
 #     file=path         sent as path_key (a keyed hash); the path is never stored
 #                       (with no ledger, stored raw in the local jsonl file)
@@ -141,6 +146,14 @@ if [ -z "$guard" ]; then
   echo "refusing to log: guard= is required." >&2
   echo "Run the ratchet (~/.claude/skills/_shared/escape-ratchet.md), then pass" >&2
   echo "guard=type|convention|gotcha|rule|check|none (or guard=n-a for non-flywheel logs)." >&2
+  exit 1
+fi
+
+miss_reasons="out-of-scope needs-other-file needs-runtime plan-gap seen-dismissed rule-absent overlooked unknown"
+miss_reason=$(jq -r '.miss_reason // ""' <<< "$json")
+if [[ " $miss_reasons " != *" $miss_reason "* || -z "$miss_reason" ]]; then
+  echo "refusing to log: miss_reason='$miss_reason' is not one of: $miss_reasons." >&2
+  echo "Pick the label from ~/.claude/skills/_shared/escape-ratchet.md." >&2
   exit 1
 fi
 

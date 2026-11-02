@@ -21,12 +21,12 @@ One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`
 
    If the description is too vague to classify, ask ONE clarifying question. A new requirement or changed mind is NOT an escape.
 
-2. **Ratchet** — run the guard decision per `~/.claude/skills/_shared/escape-ratchet.md` (including its ADR addendum) and carry the chosen rung into the log line below.
+2. **Ratchet** — run the guard decision and pick the miss reason per `~/.claude/skills/_shared/escape-ratchet.md` (including its ADR addendum), and carry both into the log line below.
 
 3. **Log it**:
 
    ```bash
-   ~/.claude/scripts/telemetry/log-escape stage_found=<...> gate_missed=<...> class=<...> severity=<...> lane=<...> guard=<...> desc="<...>" file=<...>
+   ~/.claude/scripts/telemetry/log-escape stage_found=<...> gate_missed=<...> class=<...> severity=<...> lane=<...> guard=<...> miss_reason=<...> desc="<...>" file=<...>
    ```
 
 4. **Confirm** by echoing the logged fields plus guard, then stop. Never fixes — route through `/fix`.

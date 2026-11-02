@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-776 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
+777 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [Scoped test gate runs the autofix formatters before it stops](notes/2026-11-01-scoped-test-gate-runs-the-autofix-formatters.md).
+Latest change: 2026-11-01, [Every review escape records why review missed it](notes/2026-11-01-every-review-escape-records-why-review-missed-it.md).
 
 ## Top gains
 

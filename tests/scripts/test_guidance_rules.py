@@ -64,7 +64,8 @@ class GuidanceRulesTest(unittest.TestCase):
         text = guidance_text("agents/test-intent-reviewer.md")
         self.assertNotIn("one of the six", text)
         self.assertNotIn("shape pass", text)
-        self.assertIn("the assertion (or `absent` when no assertion holds the promise), the wrong value it accepts", text)
+        self.assertIn("the assertion (or `absent` when no assertion holds the promise), the wrong value it accepts",
+                      text)
 
     def test_a_main_push_line_waits_for_the_branch_s_verify_branch_and_non_negotiables_results(self):
         text = guidance_text("orchestration.md")

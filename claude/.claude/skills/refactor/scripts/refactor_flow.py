@@ -26,7 +26,8 @@ Input file (JSON; `log` reads all of it, `handoff` reads only `handoff` and `mod
                  "file": "a.py", "line": 3, "desc": "...", "severity": "medium",
                  "escape": true}],
    "guards": {"duplication": "convention"},
-   "handoff": {"files": [{"path": "a.py", "change": "..."}],
+   "handoff": {"files": [{"path": "a.py", "change": "..."}],   (optional: the printed files are the ones git shows
+                changed against HEAD; a listed path keeps its `change`, any other gets a stock line)
                "tests_run": "pytest a -> exit 0", "flagged": "none", "plan_impact": "none"},
    "modifier": "+fast"}
 Exit codes: 0 ok or a clean stop, 1 bad input (nothing was written), 2 a writer refused a row.
@@ -49,6 +50,7 @@ from pathlib import Path
 from stat import S_ISREG
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
+import handoff_files
 import numstat
 import script_utils
 import source_text
@@ -495,9 +497,9 @@ def validate_finding(finding, index, mode):
 def validate_handoff(handoff):
     if not isinstance(handoff, dict):
         raise RefactorFlowError("`handoff` must be an object")
-    files = handoff.get("files")
-    if not isinstance(files, list) or not files:
-        raise RefactorFlowError("handoff.files must list at least one {path, change}")
+    files = handoff.get("files", [])
+    if not isinstance(files, list):
+        raise RefactorFlowError("handoff.files must be a list of {path, change}; the file list comes from git")
 
     for entry in files:
         if not isinstance(entry, dict):
@@ -569,11 +571,14 @@ def diff_loc_for(mode, base, targets):
     return sum(int(count) for count in re.findall(r"(\d+) insertion", stat))
 
 
-def render_handoff(handoff, modifier):
-    lines = ["handoff:", "  files:"]
-    for entry in handoff["files"]:
-        lines.append(f"    - path: {entry['path'].strip()}")
-        lines.append(f"      change: {entry['change'].strip()}")
+def render_handoff(root, handoff, modifier):
+    """The review handoff block. Its files are the ones git shows changed against HEAD in root (the refactor's edits
+    are uncommitted, and no commit marks where they started), untracked files included. The `change` text of a
+    handoff.files entry is kept for the path it names."""
+    change_by_path = {entry["path"].strip(): entry["change"].strip() for entry in handoff.get("files", [])}
+    changed = script_utils.changed_files(root, "HEAD")
+    lines = ["handoff:", "  files: []" if not changed else "  files:"]
+    lines += handoff_files.file_entry_lines(changed, change_by_path, "changed in the working tree against HEAD")
     lines.append(f"  tests-run: {handoff['tests_run'].strip()}")
     lines.append(f"  flagged: {handoff['flagged'].strip()}")
 
@@ -778,7 +783,7 @@ def log_verb(opts):
 
     if validated_log["handoff"]:
         print()
-        print(render_handoff(validated_log["handoff"], modifier))
+        print(render_handoff(root, validated_log["handoff"], modifier))
         print()
     sys.stdout.flush()
 
@@ -792,6 +797,7 @@ def log_verb(opts):
 
 
 def handoff_verb(opts):
+    root = require_repo()
     refactor_log = read_refactor_log(opts.input)
     handoff = refactor_log.get("handoff")
     if not handoff:
@@ -799,7 +805,7 @@ def handoff_verb(opts):
     validate_handoff(handoff)
     modifier = read_modifier(refactor_log)
 
-    print(render_handoff(handoff, modifier))
+    print(render_handoff(root, handoff, modifier))
     print()
     print(review_dispatch_next())
     return 0

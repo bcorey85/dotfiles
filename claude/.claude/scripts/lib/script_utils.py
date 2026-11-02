@@ -225,6 +225,15 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+def changed_files(directory, base="HEAD"):
+    """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded) plus
+    untracked files that .gitignore does not hide."""
+    tracked_files = git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d", base) or ""
+    untracked_files = git_output(directory, "ls-files", "--others", "--exclude-standard") or ""
+    names = [name for name in (tracked_files + "\n" + untracked_files).split("\n") if name]
+    return sorted(set(names))
+
+
 def git_path(cwd, name):
     """The absolute path git keeps `name` at for the repo of cwd (inside its git dir), or None when git cannot say."""
     found = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-path", name)

@@ -41,7 +41,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    b. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model` unless `+fast`) with the prompt the script printed. Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).
 
-   c. **Work list** = finder findings + the sweep matches; present as a statement, not a question. `[design-decision]` → user, never coder list. Nothing found → say so, run step 5's `log` (empty-handed), and stop.
+   c. **Work list** = finder findings + the sweep matches; present as a statement, not a question. `[design-decision]` and every `### Ask` finding → user, never coder list. Log a `[plan-structure]` ask with `"disposition": "ask"`, `"plan_structure": true`; `log` refuses it as `fixed`. Nothing found → say so, run step 5's `log` (empty-handed), and stop.
 
 4. **Targeted mode** — when `$ARGUMENTS` names specific code or a specific goal:
    - Read the referenced files; name the goal (structure, readability, perf, maintainability, pattern alignment)

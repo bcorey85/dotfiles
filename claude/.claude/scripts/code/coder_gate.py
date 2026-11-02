@@ -247,10 +247,10 @@ def command_directory(command, repo_root):
     return repo_root
 
 
-def changed_files(directory):
-    # Tracked changes against HEAD, deletions excluded, plus untracked files, all relative to directory.
+def changed_files(directory, base="HEAD"):
+    # Tracked changes against base, deletions excluded, plus untracked files, all relative to directory.
     tracked_files = script_utils.git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d",
-                                            "HEAD") or ""
+                                            base) or ""
     untracked_files = script_utils.git_output(directory, "ls-files", "--others", "--exclude-standard") or ""
     names = [name for name in (tracked_files + "\n" + untracked_files).split("\n") if name]
     return sorted(set(names))

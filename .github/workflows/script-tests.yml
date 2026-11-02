@@ -33,6 +33,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install ruff, which tests/lint.sh requires
+        run: pip install ruff==0.17.2
+
       - name: Link ~/.claude to the repo config, as install does
         run: ln -s "$GITHUB_WORKSPACE/claude/.claude" "$HOME/.claude"
 

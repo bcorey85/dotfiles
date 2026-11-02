@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-11 open benches, by rank. Each line is the question the bench asks.
+13 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -22,3 +22,5 @@ description: "The benches that are open now and the question each asks."
 * Run the plan as an Opus-driven loop so a Sonnet main session only hands off (queued): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
 * Replay reviewers on the 29 sealed phases of TLDR-1 to 3 to find rules that lock in coder and reviewer behavior (running): A fixed bug list per sealed phase shows which coder and reviewer rules catch more of the 68 late bugs, each replay taking minutes, not hours.
 * Coder ranged-read hook for whole-file reads over 4k tokens (queued): A hook that turns the coder's whole-file read of a big file into a ranged read could cut coder cache read per dispatch by 30% or more.
+* Bench: frontend changed-line mutation before first review (queued): A no-model mutation pass could hand the coder its test gaps before review and cut test-gap items in review rounds.
+* Blind bench: fix-diff second review vs full second review (queued): A fix-diff-only second review could cut about a third of round-two tokens; prove it loses no defects.

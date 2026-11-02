@@ -2,6 +2,7 @@
 # _ledger.sh — finds the `ledger` program for the telemetry scripts and hooks. Source it; do not run it.
 #
 # usage: ledger=$(ledger_bin) || <no ledger>
+#        ledger_send_row <ledger-write path> <type> <row json> || write_rc=$?
 #
 # ledger_bin prints the path of the first `ledger` on PATH, else of the one `cargo install` puts in
 # ${CARGO_HOME:-$HOME/.cargo}/bin, and returns 1 when neither exists. A hook or a Bash tool call can run
@@ -20,4 +21,13 @@ ledger_bin() {
     return 0
   fi
   return 1
+}
+
+# ledger_send_row pipes a row into ledger-write and keeps what it printed on stderr in writer_stderr,
+# so a caller can read a `reject: field_unknown <field>` line. An older ledger build refuses a field
+# it does not know, with exit 2: the caller drops that field and sends the row again.
+ledger_send_row() {
+  local rc=0
+  { writer_stderr=$(printf '%s\n' "$3" | bash "$1" "$2" 2>&1 >&3); } 3>&1 || rc=$?
+  return "$rc"
 }

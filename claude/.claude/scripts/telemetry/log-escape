@@ -94,13 +94,17 @@
 # and lane fold to `other` silently. `ledger registry` lists the allowed values.
 # desc and scan_flagged are dropped, file becomes path_key and
 # branch becomes branch_key. With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`) `ledger-write` appends the
-# row to ~/.claude/review-escapes.jsonl and prints one stderr line. A row `ledger write` refuses exits 2.
+# row to ~/.claude/review-escapes.jsonl and prints one stderr line. A ledger build that refuses
+# miss_reason gets the row without it, with one stderr note and exit 0. Any other row `ledger write`
+# refuses exits 2.
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 # shellcheck source=../lib/_kv.sh
 source "$script_dir/../lib/_kv.sh"
 kv_help_exit "${BASH_SOURCE[0]}" "$@"
+# shellcheck source=../lib/_ledger.sh
+source "$script_dir/../lib/_ledger.sh"
 
 # --check as the first argument runs every validation below, writes nothing, ignores the
 # telemetry switch and exits 0 when the arguments would be logged.
@@ -165,4 +169,16 @@ if ! "$script_dir/telemetry_enabled.sh" 2>/dev/null; then
 fi
 
 payload=$(jq -c 'del(.desc, .scan_flagged) | with_entries(.key |= ({"file": "path_key", "branch": "branch_key"}[.] // .))' <<< "$json")
-printf '%s\n' "$payload" | bash "$script_dir/ledger-write" review_escape
+write_rc=0
+ledger_send_row "$script_dir/ledger-write" review_escape "$payload" || write_rc=$?
+
+# An older ledger build refuses miss_reason. The ledger never blocks a caller, so the row lands without it.
+if [ "$write_rc" -eq 2 ] && [[ $writer_stderr == *"field_unknown miss_reason"* ]]; then
+  echo "note: this ledger build does not store miss_reason; the row is logged without it" >&2
+  payload=$(jq -c 'del(.miss_reason)' <<< "$payload")
+  write_rc=0
+  ledger_send_row "$script_dir/ledger-write" review_escape "$payload" || write_rc=$?
+fi
+
+[ -z "$writer_stderr" ] || printf '%s\n' "$writer_stderr" >&2
+exit "$write_rc"

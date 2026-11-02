@@ -27,7 +27,7 @@ The label list was checked against the 37 escape rows in `~/dev/evals/review-gol
 
 `tests/scripts/test_log_escape.py` covers each label stored as plain text, a missing label refused, and a label outside the list refused.
 
-`ledger write` refuses a field the registry does not name, with exit 2. `registry/review_escape.toml` in agent-ledger must gain `miss_reason` before this reaches a machine, or every escape row is lost. `log-escape-check` fails against a ledger without the field.
+`ledger write` refuses a field the registry does not name, with exit 2. The ledger never blocks the workflow: `log-escape` drops `miss_reason` on that refusal, sends the row again, prints one stderr note and exits 0. With no ledger the row lands in the local file with its label. `log-escape-check` passes on either build. The label is stored once `registry/review_escape.toml` gains it (LED-85); rows logged before then have none.
 
 ## Watch
 

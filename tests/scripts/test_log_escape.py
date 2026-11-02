@@ -5,6 +5,7 @@ set to a temp dir, so nothing reaches a real log.
 
 Script location: LOG_ESCAPE_SCRIPT, defaulting to ~/.claude/scripts/telemetry/log-escape.
 """
+import json
 import os
 import pathlib
 import subprocess
@@ -209,6 +210,32 @@ class LogEscapeTest(unittest.TestCase):
                 done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_WRITE_EXIT=str(code)))
                 self.assertEqual(done.returncode, code, done.stderr)
         self.assertEqual(self.escape_rows(), [])
+
+    def test_a_ledger_build_without_miss_reason_gets_the_row_without_it_and_the_caller_goes_on(self):
+        done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("does not store miss_reason", done.stderr)
+        self.assertNotIn("field_unknown", done.stderr)
+        (row,) = self.escape_rows()
+        self.assertNotIn("miss_reason", row)
+        self.assertEqual(row["gate_missed"], "review")
+
+    def test_a_refusal_of_another_field_is_not_retried_and_exits_2(self):
+        done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_UNKNOWN_FIELDS="guard"))
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("field_unknown guard", done.stderr)
+        self.assertNotIn("does not store", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+
+    def test_with_no_ledger_the_row_lands_in_the_local_file_with_its_miss_reason(self):
+        no_ledger_path = fake_ledger.path_without_ledger(self.ledger_env["PATH"])
+        env = self.environment(PATH=no_ledger_path, CARGO_HOME=str(self.home / ".cargo"))
+        done = self.run_escape(*VALID_ARGS, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("no ledger found; row appended to", done.stderr)
+        log_text = (self.home / ".claude" / "review-escapes.jsonl").read_text()
+        (row,) = [json.loads(line) for line in log_text.splitlines()]
+        self.assertEqual(row["miss_reason"], "overlooked")
 
     def test_help_prints_usage_and_writes_nothing(self):
         for flag in ("--help", "-h"):

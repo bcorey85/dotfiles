@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-790 changes, 19 with a measured gain, 260 behavior changes that no intake metric reads.
+791 changes, 19 with a measured gain, 260 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-02, [Code reviewer fixes every reachable defect and sweeps sibling sites](notes/2026-11-02-code-reviewer-fixes-every-reachable-defect-and.md).
+Latest change: 2026-11-02, [concentration gate skips drizzle migration metadata](notes/2026-11-02-concentration-gate-skips-drizzle-migration.md).
 
 ## Top gains
 

@@ -75,6 +75,23 @@ class ConcentrationGateTest(unittest.TestCase):
         self.assertIn("branch 5 added lines", done.stdout)
         self.assertIn("Not triggered", done.stdout)
 
+    def test_drizzle_migration_metadata_does_not_count_and_the_real_largest_module_is_named(self):
+        self.commit_files({"backend/drizzle/meta/0001_snapshot.json": 900, "backend/drizzle/meta/_journal.json": 40,
+                           "backend/src/orders.ts": 120})
+
+        done = self.run_gate(self.base)
+
+        self.assertIn("largest module backend/src 120 added lines", done.stdout)
+        self.assertIn("run `/refactor simplify backend/src`", done.stdout)
+
+    def test_uncommitted_changes_do_not_count(self):
+        self.commit_files({"src/a/one.py": 10})
+        self.write("src/b/two.py", lines(200))
+
+        done = self.run_gate(self.base)
+
+        self.assertIn("branch 10 added lines", done.stdout)
+
     def test_a_base_that_does_not_exist_stops_with_a_reason(self):
         done = self.run_gate("0" * 40)
 

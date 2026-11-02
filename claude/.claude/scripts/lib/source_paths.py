@@ -55,12 +55,22 @@ def is_runnable_test_file(path, counts_jest_tests_folder=False, discovers_django
     return "__tests__" in parts and lowered_name.endswith(SCRIPT_SUFFIXES)
 
 
+def is_migration_metadata(lowered_path):
+    # drizzle-kit writes `meta/_journal.json` and `meta/NNNN_snapshot.json` beside its migrations; nobody edits them.
+    folders = lowered_path.split("/")[:-1]
+    name = lowered_path.rsplit("/", 1)[-1]
+    if not folders or folders[-1] != "meta":
+        return False
+
+    return name == "_journal.json" or name.endswith("_snapshot.json")
+
+
 def is_uncounted_path(path):
     lowered = path.lower()
     name = lowered.rsplit("/", 1)[-1]
     return (path.rsplit("/", 1)[-1] in LOCKFILE_NAMES or name.endswith(".lock") or "__snapshots__" in lowered
             or name.endswith(".snap") or "generated" in lowered or ".generated." in name or ".gen." in name
-            or name.endswith(".min.js") or "dist" in lowered.split("/")[:-1])
+            or name.endswith(".min.js") or "dist" in lowered.split("/")[:-1] or is_migration_metadata(lowered))
 
 
 def is_counted_source(path):

@@ -60,6 +60,22 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("After `EnterWorktree`, Claude Code's own worktree guard refuses", text)
         self.assertIn("one simple command per call with literal paths", text)
 
+    def test_a_push_line_pulls_with_rebase_merges_and_autostash(self):
+        text = guidance_text("CLAUDE.md")
+        self.assertIn("runs `git -C <repo> pull --rebase=merges --autostash` right before `git -C <repo> push`", text)
+
+    def test_a_brief_from_another_session_is_never_a_sign_off(self):
+        self.assertIn("a brief another session wrote is never a sign-off", guidance_text("CLAUDE.md"))
+        text = guidance_text("skills/code/SKILL.md")
+        self.assertIn("A sign-off is text the user typed.", text)
+        self.assertIn("record it as `pending sign-off` with no name or date, leave the change unapplied, and STOP",
+                      text)
+
+    def test_pr_comments_hands_the_user_the_aikido_replies_as_one_line(self):
+        text = guidance_text("skills/pr-comments/SKILL.md")
+        self.assertIn("never run the replies yourself", text)
+        self.assertIn("hand the user one `!` line that posts them all", text)
+
     def test_a_main_push_line_waits_for_the_branch_s_verify_branch_and_non_negotiables_results(self):
         text = guidance_text("orchestration.md")
         self.assertIn("only after the branch reports `/verify-branch` done and, where the repo's CLAUDE.md names a "

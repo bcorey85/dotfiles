@@ -7,9 +7,15 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-787 changes
+788 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
+
+## Week of 2026-11-02
+
+### Changed
+
+* [Code reviewer fixes every reachable defect and sweeps sibling sites](notes/2026-11-02-code-reviewer-fixes-every-reachable-defect-and.md) [agent/code-reviewer] One review pass now names 14 of 19 known bugs as fixes, up from 8 (blind). A reachable defect is always a fix, and a found defect sends the reviewer to every other site of its kind. Each pass costs 9% more tokens and gives the coder about 75% more items. **raises of 19 known bugs named as fixes by 75% (8 → 14)**
 
 ## Week of 2026-10-26
 

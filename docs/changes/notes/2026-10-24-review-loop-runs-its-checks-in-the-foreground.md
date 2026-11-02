@@ -33,6 +33,10 @@ Pending the watch.
 
 `review-loop-foreground-checks`: review-loop (sonnet) wall-clock seconds per dispatch, good direction down. The quality guard is the same day's review-findings-per-run guard on the coder make refusal. The two cannot be separated on that metric, so no second guard was added.
 
+### Reading 2026-11-02: BETTER
+
+Review-loop wall-clock per Sonnet dispatch at work: 1107 s before (range 1049-1545), 937 s after over 86 dispatches. Most of the drop sits in the last three days, when the loop also moved to a script on 2026-10-27, so part of it is that change. Kept; watch closed.
+
 ## Back-out
 
 Revert the fifth shape in `wait_loop_gate.py`: the `starts_detached_job` function, the `BACKGROUND_*` constants and the branch in `main`.

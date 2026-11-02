@@ -7,7 +7,7 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-101 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+105 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 114 further findings are left out of this page.
 
@@ -58,6 +58,14 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-02 [A coder rule to add a failing-first test for each review fix does not clear the bar on Sonnet](../../../agent-evals/findings/2026-11-02-a-coder-rule-to-add-a-failing-first-test-for-each.md) - HOLD: On the Sonnet coder, a coder-core line telling it to add a test that fails on the pre-fix code lifts compliance only from 75% to 100% (12/16 to 16/16), a 25-point gap with overlapping intervals, below the 33-point bar. [watch: no watch]
+  What would reopen it: none recorded
+* 2026-11-02 [Reachability probe pass lifts reviewer recall 11 rows, short of the 14-row bar](../../../agent-evals/findings/2026-11-02-reachability-probe-pass-lifts-reviewer-recall-11.md) - HOLD: Adding a probe pass that lists every input, control, state and exit a diff touches lifts known-bug recall 22% → 34% (20 → 31 of 92 rows) for about double the review tokens, short of the sealed 14-row bar. [watch: no watch]
+  What would reopen it: none recorded
+* 2026-11-02 [Branch-end review does not catch what round one missed, so the full second review stays](../../../agent-evals/findings/2026-11-02-branch-end-review-does-not-catch-what-round-one.md) - HOLD: The branch-wide review at branch end named 1 of the 4 defects a first-pass phase review missed, and only as a dismissed nit. Narrowing the second review round to the fix diff would let those defects ship, so the full second review stays. [watch: no watch]
+  What would reopen it: none recorded
+* 2026-11-02 [Keep-unnamed-inputs rule holds on one fixture, not on a second](../../../agent-evals/findings/2026-11-02-keep-unnamed-inputs-rule-holds-on-one-fixture-not.md) - HOLD: A coder rule to keep every input a review finding does not name working as today held 16/16 vs 8/16 on one fixture with no pressure, but two more fixtures never tempted the coder without the rule, so it does not ship. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-02 [Fix-diff second review cuts round-two tokens 67% and names fix-caused defects as well, but drops every round-one miss](../../../agent-evals/findings/2026-11-02-fix-diff-second-review-cuts-round-two-tokens-67.md) - HOLD: On 8 sealed phases, a round-two reviewer that reads only the round-one fix diff spends 67% fewer Opus tokens than a full second review and names 5 of 7 fix-caused defects against 3 of 7. It names none of the 4 defects round one missed; the full second review names all 4. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-01 [Running the smell-reviewer on Sonnet cuts its cost 61% but loses two of 15 structure catches per review](../../../agent-evals/findings/2026-11-01-keeping-the-smell-reviewer-on-opus-holds-two-more.md) - HOLD: The smell-reviewer on Sonnet cut list cost per five-tree review 61% ($0.90 → $0.35 median) and wall time 46% (148 s → 80 s), but caught a median 10 of 15 seeded structure defects against Opus's 11.5 (94/120 → 78/120), outside the sealed one-catch bar. It loses naming drift against a README convention almost entirely (8/8 → 1/8). Keep it on Opus. [watch: no watch]

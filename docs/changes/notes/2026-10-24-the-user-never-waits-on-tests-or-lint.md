@@ -29,6 +29,10 @@ The lane installers in the current fix batch now only back up and write files, a
 
 None. See `unmeasured`.
 
+### Reading 2026-11-02: WORSE, kept
+
+Share of user shell commands that run a test or lint: 0 of 216 before, 1 of 111 after. One command in ten days is noise against a zero baseline, and the rule only stops the agent handing the user a check, which cannot raise the share. Kept; the watch stays open.
+
 ## Back-out
 
 Remove the line from `## Quality Checks` in `CLAUDE.md`.

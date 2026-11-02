@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-790 changes, 19 with a measured gain, 260 behavior changes that no intake metric reads.
+791 changes, 20 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-02, [Code reviewer fixes every reachable defect and sweeps sibling sites](notes/2026-11-02-code-reviewer-fixes-every-reachable-defect-and.md).
+Latest change: 2026-11-02, [Coder fixes every site of a reviewed defect](notes/2026-11-02-coder-fixes-every-site-of-a-reviewed-defect.md).
 
 ## Top gains
 
@@ -15,7 +15,7 @@ Latest change: 2026-11-02, [Code reviewer fixes every reachable defect and sweep
 * [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md): **raises of 8 audits kept every distinct-shape test by 167% (3 → 8)** [agent/test-intent-reviewer] ([2026-11-01-a-cull-rule-keeps-tests-with-a-distinct-input](../../../agent-evals/findings/2026-11-01-a-cull-rule-keeps-tests-with-a-distinct-input.md)) - 2026-11-01 [watch: no watch]
 * [`code-reviewer` files taste breaks such as dead code and single-use pass-throughs as `fix`, not `nit`](notes/2026-10-14-code-reviewer-files-taste-breaks-as-fix-not-nit.md): **cuts planted taste defects not filed as fix (of 28) by 100% (14 → 0)** [agent/code-reviewer, skill/fix] ([2026-10-14-catchlist-sealed-4-runs-per-arm](../../../agent-evals/findings/2026-10-14-catchlist-sealed-4-runs-per-arm.md)) - 2026-10-14 [watch: TOO FEW]
 * [plan-reviewer now flags oversized phases, a skeleton phase with no Phase 0 contract, and criteria files over 8 criteria](notes/2026-10-12-plan-reviewer-a-new-finding-class-phase-shape.md): **cuts planted shape defects missed (of 9) by 100% (9 → 0)** [agent/plan-reviewer] ([2026-10-09-planfmt-sealed-planfmt-md-graded-edit](../../../agent-evals/findings/2026-10-09-planfmt-sealed-planfmt-md-graded-edit.md)) - 2026-10-12 [watch: TOO FEW]
-* [`code-reviewer` checks each added line against every written rule in the conventions doc, the docs it names and the loaded CLAUDE.md files](notes/2026-10-12-code-reviewer-checks-each-added-line-against-each.md): **cuts planted naming breaks not filed as fix (of 64) by 93% (15 → 1)** [agent/code-reviewer, rule/global-claude-md, skill/fix] ([2026-10-12-namefix-sealed-8-runs-per-arm](../../../agent-evals/findings/2026-10-12-namefix-sealed-8-runs-per-arm.md)) - 2026-10-12 [watch: no watch]
+* [Coder fixes every site of a reviewed defect](notes/2026-11-02-coder-fixes-every-site-of-a-reviewed-defect.md): **cuts % of runs leaving a sibling site unfixed by 94% (100 → 6)** [skill/coder-core] ([2026-11-02-fix-sweep-rule-makes-the-coder-fix-every-site-of-a](../../../agent-evals/findings/2026-11-02-fix-sweep-rule-makes-the-coder-fix-every-site-of-a.md)) - 2026-11-02 [watch: no watch]
 
 ## Total saved
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 3
 * cost: 3
 * wall-clock: 1
-* quality: 11
+* quality: 12
 
 ## Pages
 

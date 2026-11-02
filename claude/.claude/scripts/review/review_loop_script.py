@@ -92,6 +92,7 @@ from review_loop_findings import (
     ruled_plan_split,
     same_finding,
 )
+from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
 from review_loop_prompts import coder_prompt, reviewer_prompt
 
@@ -454,9 +455,10 @@ def new_spot(path, title, entries):
     return f"{path}\0{title}#{number}"
 
 
-def telemetry(repo, session, lane, scope_fields, iter_count, tallies, run_rows):
+def telemetry(repo, session, lane, scope_fields, iter_count, tallies, run_rows, out=None):
     """Writes the metrics row, and each run and finding row. Returns ({ask text: finding_id}, ask_rows): the id that
-    log-review-finding printed for each ask row, and the {file, line, finding_id} entries the stop row carries."""
+    log-review-finding printed for each ask row, and the {file, line, finding_id} entries the stop row carries. With
+    `out`, a finding of round two or later gets `fix_induced` from the fix diff that the round before it wrote there."""
     log_call(repo, [str(SKILLS / "log-review-metrics"), f"lane={lane}", f"iter={iter_count}", f"fix={tallies['fix']}",
                     f"ask={tallies['ask']}", f"nit={tallies['nit']}", f"blocker={tallies['blocker']}",
                     f"fixed={tallies['fixed']}", f"skipped_fp={tallies['skipped_fp']}", "test_intent_ran=0",
@@ -467,6 +469,7 @@ def telemetry(repo, session, lane, scope_fields, iter_count, tallies, run_rows):
         log_call(repo, [logger, "kind=run", f"lane={lane}", *scope_fields, f"iter={row['iter']}",
                         f"gate={row['gate']}", f"n_findings={len(row['findings'])}", f"diff_loc={row['loc']}",
                         f"result={row['result']}"])
+        fix_ranges = previous_fix_ranges(out, row["iter"]) if out and row["iter"] > 1 else {}
         for finding in row["findings"]:
             path, line = finding["finding"].path, finding["finding"].line
             location = [f"file={path}", f"line={line}"] if path else [f"file={UNLOCATED}"]
@@ -476,6 +479,9 @@ def telemetry(repo, session, lane, scope_fields, iter_count, tallies, run_rows):
                        f"class={finding['finding'].finding_class}", *location, f"actioned={finding['actioned']}"]
             if finding["disposition"] == "fix":
                 command.append(f"source={finding['source']}")
+            fix_induced = fix_induced_tag(finding.get("fix_induced", ""), row["iter"], path, line, fix_ranges)
+            if fix_induced:
+                command.append(f"fix_induced={fix_induced}")
             code, output = log_call(repo, command)
             printed_ids = loop_transcript.PRINTED_FINDING_ID.findall(output)
             if finding["disposition"] == "ask" and code == 0 and printed_ids:
@@ -965,7 +971,8 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     every_actioned = [finding["actioned"] for row in loop.run_rows for finding in row["findings"]]
     loop.tallies["fixed"] = every_actioned.count("fixed") + loop.check_fixed
     loop.tallies["skipped_fp"] = every_actioned.count("skipped_fp")
-    ask_ids, ask_rows = telemetry(repo, session, lane, scope_fields, loop.iter_count, loop.tallies, loop.run_rows)
+    ask_ids, ask_rows = telemetry(repo, session, lane, scope_fields, loop.iter_count, loop.tallies, loop.run_rows,
+                                  out)
     return loop.outcome(ask_ids, ask_rows)
 
 

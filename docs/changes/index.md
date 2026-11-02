@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-784 changes, 17 with a measured gain, 259 behavior changes that no intake metric reads.
+786 changes, 17 with a measured gain, 259 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md).
+Latest change: 2026-11-01, [A ledger refusal or failure never stops log-escape](notes/2026-11-01-a-ledger-refusal-or-failure-never-stops-log-escape.md).
 
 ## Top gains
 

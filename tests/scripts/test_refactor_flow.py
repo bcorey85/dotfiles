@@ -880,7 +880,8 @@ class RefactorFlowTest(unittest.TestCase):
             pathlib.Path(REAL_CLAUDE_DIR) / "skills" / "review" / "log-review-finding")
         env = {**os.environ, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": telemetry,
                "REVIEW_ESCAPES_FILE": str(self.escapes), **self.ledger_env}
-        escape_base = ["stage_found=refactor", "gate_missed=review", "class=smell", "severity=low", "guard=none"]
+        escape_base = ["stage_found=refactor", "gate_missed=review", "class=smell", "severity=low", "guard=none",
+                       "miss_reason=unknown"]
         finding_base = ["kind=finding", "gate=smell-reviewer", "lane=code", "scope=standalone", "phase=-", "iter=0",
                         "disposition=fix", "class=smell", "line=1", "actioned=none"]
 
@@ -926,12 +927,12 @@ class RefactorFlowTest(unittest.TestCase):
                 self.assertIn("file= holds a line break or whitespace then a name=", done.stderr, f"{name} {file!r}")
             self.assertEqual(rows(), [], name)
 
-    def test_log_reports_a_ledger_refusal_and_a_rerun_writes_only_the_missing_rows(self):
+    def test_log_reports_a_writer_refusal_and_a_rerun_writes_only_the_missing_rows(self):
         self.branch_with({"a.py": "x = 1\n"})
         payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "vibes"},
                    "findings": [self.finding()]}
         refusing = self.temp_root / "refusing-escape-writer"
-        refusing.write_text(f'#!/usr/bin/env bash\nFAKE_LEDGER_WRITE_EXIT=2 exec "{LOG_ESCAPE}" "$@"\n')
+        refusing.write_text('#!/usr/bin/env bash\n[ "$1" = --check ] && exit 0\nexit 1\n')
         first = self.log("branch", payload, extra_env={"REFACTOR_LOG_ESCAPE": str(refusing)})
         self.assertEqual(first.returncode, 2)
         self.assertRegex(first.stdout, r"writer refused \d+ row\(s\), tell the user which")

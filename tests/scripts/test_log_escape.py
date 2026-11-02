@@ -5,6 +5,7 @@ set to a temp dir, so nothing reaches a real log.
 
 Script location: LOG_ESCAPE_SCRIPT, defaulting to ~/.claude/scripts/telemetry/log-escape.
 """
+import json
 import os
 import pathlib
 import subprocess
@@ -20,7 +21,10 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COM
            "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
 
 PLANTED_BRANCH = "planted-branch-zq"
-VALID_ARGS = ["gate_missed=review", "stage_found=pr-human", "severity=high", "class=bug", "guard=none"]
+VALID_ARGS = ["gate_missed=review", "stage_found=pr-human", "severity=high", "class=bug", "guard=none",
+              "miss_reason=overlooked"]
+MISS_REASONS = ("out-of-scope", "needs-other-file", "needs-runtime", "plan-gap", "seen-dismissed", "rule-absent",
+                "overlooked", "unknown")
 
 
 class LogEscapeTest(unittest.TestCase):
@@ -114,7 +118,8 @@ class LogEscapeTest(unittest.TestCase):
     def test_pairs_in_one_unsplit_argument_are_folded_one_by_one(self):
         # zsh does not split an unquoted variable: C="gate_missed=review severity=high"; log-escape $C
         # sends one argument.
-        done = self.run_escape("gate_missed=review stage_found=pr-human  severity=high", "class=bug", "guard=none")
+        done = self.run_escape("gate_missed=review stage_found=pr-human  severity=high", "class=bug", "guard=none",
+                               "miss_reason=unknown")
         self.assertEqual(done.returncode, 0, done.stderr)
         row = self.escape_rows()[0]
         self.assertEqual((row["gate_missed"], row["stage_found"], row["severity"]), ("review", "pr-human", "high"))
@@ -151,6 +156,31 @@ class LogEscapeTest(unittest.TestCase):
         self.assertIn("escape-ratchet.md", done.stderr)
         self.assertEqual(self.escape_rows(), [])
 
+    def test_each_miss_reason_reaches_the_ledger_as_plain_text(self):
+        for label in MISS_REASONS:
+            with self.subTest(label=label):
+                args = [argument for argument in VALID_ARGS if not argument.startswith("miss_reason=")]
+                done = self.run_escape(*args, f"miss_reason={label}")
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(self.escape_rows()[-1]["miss_reason"], label)
+
+    def test_a_missing_miss_reason_is_refused_with_the_ratchet_pointer(self):
+        args = [argument for argument in VALID_ARGS if not argument.startswith("miss_reason=")]
+        done = self.run_escape(*args)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("refusing to log: miss_reason=", done.stderr)
+        self.assertIn("escape-ratchet.md", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+
+    def test_a_miss_reason_outside_the_list_is_refused(self):
+        for label in ("vibes", "plan", "plan-gap,unknown", ""):
+            with self.subTest(label=label):
+                args = [argument for argument in VALID_ARGS if not argument.startswith("miss_reason=")]
+                done = self.run_escape(*args, f"miss_reason={label}")
+                self.assertEqual(done.returncode, 1)
+                self.assertIn("refusing to log: miss_reason=", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+
     def test_unknown_class_reaches_the_ledger(self):
         args = [argument.replace("class=bug", "class=nonsense") for argument in VALID_ARGS]
         done = self.run_escape(*args)
@@ -174,12 +204,72 @@ class LogEscapeTest(unittest.TestCase):
         self.assertEqual(done.stdout, "not logged: toolkit telemetry is off\n")
         self.assertEqual(self.escape_rows(), [])
 
-    def test_ledger_exit_code_passes_through(self):
-        for code in (2, 1):
+    def local_rows(self):
+        log_text = (self.home / ".claude" / "review-escapes.jsonl").read_text()
+        return [json.loads(line) for line in log_text.splitlines()]
+
+    def test_a_ledger_failure_keeps_the_row_locally_with_one_note_and_exit_0(self):
+        for code in (2, 1, 75):
             with self.subTest(code=code):
                 done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_WRITE_EXIT=str(code)))
-                self.assertEqual(done.returncode, code, done.stderr)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
+                self.assertIn(f"ledger write exit {code}", done.stderr)
+                self.assertEqual(self.local_rows()[-1]["miss_reason"], "overlooked")
+        self.assertEqual(len(self.local_rows()), 3)
         self.assertEqual(self.escape_rows(), [])
+
+    def test_the_local_row_names_the_file_and_branch_as_the_no_ledger_path_does(self):
+        env = self.environment(FAKE_LEDGER_WRITE_EXIT="1")
+        done = self.run_escape(*VALID_ARGS, "file=src/planted_widget_zq.rs", env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        (row,) = self.local_rows()
+        self.assertEqual(row["file"], "src/planted_widget_zq.rs")
+        self.assertEqual(row["branch"], PLANTED_BRANCH)
+
+    def test_each_required_field_is_refused_before_the_ledger(self):
+        for field in ("gate_missed", "stage_found", "class"):
+            with self.subTest(field=field):
+                args = [argument for argument in VALID_ARGS if not argument.startswith(f"{field}=")]
+                done = self.run_escape(*args)
+                self.assertEqual(done.returncode, 1)
+                self.assertIn(f"refusing to log: {field}= is required.", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        self.assertFalse((self.home / ".claude" / "review-escapes.jsonl").exists())
+
+    def test_a_ledger_build_without_miss_reason_gets_the_row_without_it_and_the_caller_goes_on(self):
+        done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("does not store miss_reason", done.stderr)
+        self.assertNotIn("field_unknown", done.stderr)
+        (row,) = self.escape_rows()
+        self.assertNotIn("miss_reason", row)
+        self.assertEqual(row["gate_missed"], "review")
+
+    def test_a_refusal_of_another_field_keeps_the_row_locally_with_its_miss_reason(self):
+        done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_UNKNOWN_FIELDS="guard"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("field_unknown guard", done.stderr)
+        self.assertNotIn("does not store", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        (row,) = self.local_rows()
+        self.assertEqual(row["miss_reason"], "overlooked")
+
+    def test_a_refusal_after_the_miss_reason_retry_keeps_the_row_locally(self):
+        env = self.environment(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason,guard")
+        done = self.run_escape(*VALID_ARGS, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        self.assertEqual(len(self.local_rows()), 1)
+
+    def test_with_no_ledger_the_row_lands_in_the_local_file_with_its_miss_reason(self):
+        no_ledger_path = fake_ledger.path_without_ledger(self.ledger_env["PATH"])
+        env = self.environment(PATH=no_ledger_path, CARGO_HOME=str(self.home / ".cargo"))
+        done = self.run_escape(*VALID_ARGS, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("no ledger found; row appended to", done.stderr)
+        (row,) = self.local_rows()
+        self.assertEqual(row["miss_reason"], "overlooked")
 
     def test_help_prints_usage_and_writes_nothing(self):
         for flag in ("--help", "-h"):

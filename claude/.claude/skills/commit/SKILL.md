@@ -30,10 +30,10 @@ Use `JIRAPROJECT-TICKETNUMBER: description` if the branch has a ticket key, othe
 6. **Escape check (silent, non-blocking).** One conservative judgment: does this commit fix a defect in branch-loop-blessed code (corrects already-committed branch work — not first commit, net-new, or requirement change)? Only when confident, log one line per defect (no prompt):
 
    ```bash
-   ~/.claude/scripts/telemetry/log-escape stage_found=pr-human gate_missed=review class=<bug|smell|duplication|test-gap|docs|other> severity=<high|medium|low> guard=<...> desc="<one line>" file=<representative path>
+   ~/.claude/scripts/telemetry/log-escape stage_found=pr-human gate_missed=review class=<bug|smell|duplication|test-gap|docs|other> severity=<high|medium|low> guard=<...> miss_reason=<...> desc="<one line>" file=<representative path>
    ```
 
-   `guard` from `~/.claude/skills/_shared/escape-ratchet.md`, picked without pausing; name it in step 7 (commit landed — guard is follow-up, not blocker).
+   `guard` and `miss_reason` from `~/.claude/skills/_shared/escape-ratchet.md`, picked without pausing; name it in step 7 (commit landed — guard is follow-up, not blocker).
 
 7. Report commit hash, branch, push result. Never end unconfirmed.
 

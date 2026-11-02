@@ -1,6 +1,6 @@
 ---
 name: code
-description: Dispatch a coder subagent for implementation, then auto-run `/review`. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first. When it hands back, run `python3 ~/.claude/scripts/code/code_relay.py` from the repo root and do what it prints: say the fork's stop word for word and make no other tool call. When the user replies, run `/code resume <their reply>`.
+description: Dispatch a coder subagent for implementation, then auto-run `/review`. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first. When it hands back, run `python3 ~/.claude/scripts/code/code_relay.py` from the repo root and do what it prints: say the fork's stop word for word and make no other tool call. When the user replies, run the stop's `To go on:` line with their reply as its feedback.
 context: fork
 agent: code-fork
 model: sonnet
@@ -23,17 +23,17 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 A coder makes every code and plan edit. You write only `<run folder>/handoff.txt` and `<run folder>/stop.md`, with a Bash heredoc.
 
-**Ending the run hands back.** Every STOP below ends the run: write its text to `<run folder>/stop.md`, then make it your final reply, ending with the line `To go on: /code resume <your feedback>`. A stop states what stopped and what the user does next; it never ends on a question. Never call AskUserQuestion.
+**Ending the run hands back.** Every STOP below ends the run: write its text to `<run folder>/stop.md`, then make it your final reply, ending with the line `To go on: /code resume <plan path> <your feedback>`, with the plan's absolute path, or `To go on: /code resume <your feedback>` for a run with no plan file. A stop states what stopped and what the user does next; it never ends on a question. Never call AskUserQuestion.
 
 **Waiting.** An `Agent` call returns at once and names an `agentId`. Then run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>` with the Bash timeout set to 600000; it prints the agent's report. Never end the run while an agent you dispatched works.
 
 **Run notes.** Text after the plan file or ticket id in the task text (other than `resume` and its feedback) is the run notes. A number right after the plan path picks that phase in place of the first unchecked one. It isn't a run note. Run notes are the text after it. Put the run notes, word for word, under the line `Run notes from the user. They bind this run; the plan stays the spec:` in the prompt of every coder you dispatch for the phase. The review loop's own fix coders do not get it.
 
-**Resume.** When the task text starts with `resume`, the rest is the user's feedback on the last stop; none means go on. Rebuild where the run stopped from `<run folder>/stop.md`, the plan's `## Phase Status`, `git status --short`, `<run folder>/handoff.txt` and `<run folder>/review.out` (the last review packet). Apply the feedback to that stop, then go on from the step that stopped.
+**Resume.** When the task text starts with `resume`, an absolute path right after it names the plan, and that plan's git repo is the repo root for the run. The rest is the user's feedback on the last stop; none means go on. With no path and no `<run folder>/stop.md`, go to step 0. Rebuild where the run stopped from `<run folder>/stop.md`, the plan's `## Phase Status`, `git status --short`, `<run folder>/handoff.txt` and `<run folder>/review.out` (the last review packet). Apply the feedback to that stop, then go on from the step that stopped.
 
 **Plan impacts never stop the run.** A coder's `PLAN-IMPACT:` block and a review packet's plan impacts go on one list for the phase end. At the phase end, before the phase-boundary decision: an impact that changes no acceptance criterion is adopted with no question: a coder adds it as one line under the plan's `## Plan Deviations` (create it if absent) and makes the plan change. An impact that changes an acceptance criterion (a line in `acceptance-criteria.md` or a phase's Success Criteria) stays unapplied: show it in the phase-complete block under `Plan changes awaiting sign-off` (assumed → found → what changes), and the phase ends on a STOP. On resume, a coder records the user's feedback, who signed off and the date, under `## Plan Deviations` and makes the change only when the user signed off.
 
-0. **No arguments** (after stripping modifiers): run `bash ~/.claude/scripts/tools/resolve-task-dir.sh`. Exit 0 → the task directory's `spec.md` is the task input; exit 5 → the printed plan file. Say what resolved. Exit 3 → STOP: list the candidates and say that `/code resume <path>` picks one. Exit 4 → STOP: say that `/code resume <task or plan path>` names the work.
+0. **No arguments** (after stripping modifiers): run `bash ~/.claude/scripts/tools/resolve-task-dir.sh`. Exit 0 → the task directory's `spec.md` is the task input; exit 5 → the printed plan file. Say what resolved. Exit 3: no run started, so write no stop file; list the candidates as your final reply and say that `/code resume <path>` picks one. Exit 4: no run started, so write no stop file; say in your final reply that `/code resume <task or plan path>` names the work.
 
 1. **Modifiers**: `+fast` → pass `model: "haiku"`.
 
@@ -144,9 +144,9 @@ Human-only verification remaining:
 
 Next:
   1. Read the queue (`]k`/`[k` in nvim); spot-check the evidence lines; run the human-only items.
-  2. Stage what you've read, then run /clear and /code to start Phase <N+1> fresh, or `/code resume` to go on in this context.
+  2. Stage what you've read, then run /clear and /code to start Phase <N+1> fresh, or `/code resume <plan path>` to go on in this context.
 
-Revisions to Phase <N>: `/code resume <your feedback>`.
+Revisions to Phase <N>: `/code resume <plan path> <your feedback>`.
 ```
 
 Omit either plan-change list and the asks list when it is empty.

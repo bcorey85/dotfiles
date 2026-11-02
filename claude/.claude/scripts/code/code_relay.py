@@ -23,7 +23,7 @@ STOP_FILE = "stop.md"
 RELAYED_FILE = "relayed"
 RULE = ("Say the text between the markers as your whole reply, word for word. Make no other tool call before the "
         "user's next message: no search, read, edit or check of the fork's work. A fix goes back through "
-        "`/code resume <what to fix>`.")
+        "the stop's `To go on:` line.")
 FALLBACK = "Say the /code Skill result word for word as your whole reply, and make no other tool call."
 
 

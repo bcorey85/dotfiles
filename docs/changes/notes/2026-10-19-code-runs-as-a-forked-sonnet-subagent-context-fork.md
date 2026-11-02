@@ -42,6 +42,10 @@ the `/code` share of Opus main-session tokens, and review escapes.
 
 Main-session Opus per `/code` turn at work: 653k cache read before the edit, 687k after (126 turns over four days). The share of main-session Opus fell from 17.3 to 13.3 percent only because there were fewer `/code` turns a day. Kept for now: reverting saves about 8M Sonnet cache read a day and recovers no Opus. The turn label carries into follow-up turns, so the reading cannot yet tell the turn that calls `/code` from the turns after it. Keep or revert waits on that split.
 
+### Reading 2026-11-02: not read, stream stale
+
+Not read. The intake showed review escapes per review run falling from 0.17 to 0.06, but the work machine has written no escape rows since 2026-10-20 (telemetry off) while review runs kept counting, so the after window divides by runs that could not log an escape. The watch stays open until escape rows flow again.
+
 ## Back-out
 
 restore the earlier `skills/code/SKILL.md` from git and delete the `code-step.py hook` entry from settings.json

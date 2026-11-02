@@ -46,6 +46,10 @@ overlap: "The open escape watches read every review run; this one guards against
 - `code-scripted-loop-cache-read`: review-loop cache-read tokens per `/code` loop run (caller `code`), down. The agent path counts the review-loop and every agent it dispatched; the script path counts its `claude -p` sessions. It replaces `scripted-review-loop-tokens`, closed NOT TRACKED because its per-dispatch agent rows cannot see the script's `claude -p` sessions.
 - `scripted-review-loop-escapes`: review escapes per code-reviewer run, flat.
 
+### Reading 2026-11-02: BETTER
+
+Review-loop cache read per run at work: 8.16M before (range 5.14M-9.36M), 3.04M after over 114 runs, a 63% cut. Kept; watch closed.
+
 ## Back-out
 
 Set `CODE_STEP_REVIEW_LOOP=agent` to dispatch the agent again, or revert the commit.

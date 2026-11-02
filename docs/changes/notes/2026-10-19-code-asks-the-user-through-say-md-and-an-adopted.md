@@ -49,6 +49,10 @@ A live bench rerun on the fixed script asked the conflict once. A coder made 4 e
 
 review escapes per review run. The work log holds only 2 plan-disagreement rows, too few for a rate, so the watch shares the review-escape reading of the forked-router change.
 
+### Reading 2026-11-02: not read, stream stale
+
+Not read. The intake showed review escapes per review run falling from 0.17 to 0.06, but the work machine has written no escape rows since 2026-10-20 (telemetry off) while review runs kept counting, so the after window divides by runs that could not log an escape. The watch stays open until escape rows flow again.
+
 ## Back-out
 
 Restore `skills/code/SKILL.md` and `scripts/code-step.py` from git.

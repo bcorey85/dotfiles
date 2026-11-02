@@ -37,6 +37,10 @@ The harness now ends a subagent run that waits on an agent it continued by SendM
 
 review escapes per review run, and loop results in the review metrics.
 
+### Reading 2026-11-02: not read, stream stale
+
+Not read. The intake showed review escapes per review run falling from 0.17 to 0.06, but the work machine has written no escape rows since 2026-10-20 (telemetry off) while review runs kept counting, so the after window divides by runs that could not log an escape. The watch stays open until escape rows flow again.
+
 ## Back-out
 
 restore the continuity paragraphs in Steps 3, 3a and 5 and SendMessage in the tool list

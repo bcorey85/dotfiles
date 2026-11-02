@@ -37,6 +37,10 @@ Reading, 2026-10-27 intake: BETTER on the report, held open. Deferred fix findin
 
 Reading, 2026-10-30 intake: BETTER on the report, held open. Deferred fix findings per review run read 0.13 against the 0.67 median. The first after bin still reads 0.43, inside the before range, and the low bin, 0.04, covers 10-26 to 10-29. On 10-28 and 10-29, 851 of 923 fix rows read fixed and 4 read deferred, across 330 run rows. That is too few deferrals to trust until someone confirms these rows follow the coder's result. Read again after that check.
 
+### Reading 2026-11-02: not read, stream stale
+
+Not read. The intake showed review escapes per review run falling from 0.17 to 0.06, but the work machine has written no escape rows since 2026-10-20 (telemetry off) while review runs kept counting, so the after window divides by runs that could not log an escape. The watch stays open until escape rows flow again.
+
 ## Back-out
 
 restore `agents/review-loop.md`, `skills/_shared/finding-log.md` and `skills/review/log-review-finding` from git

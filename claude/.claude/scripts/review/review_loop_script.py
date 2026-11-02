@@ -77,7 +77,7 @@ import script_utils
 import source_paths
 import worktree_snapshot
 from finding_record import parse_finding
-from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check
+from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check, receipt_after_class_repair
 from review_loop_findings import (
     PLAN_CHANGE_YES,
     UNLOCATED,
@@ -807,7 +807,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.files_touched.update(changed)
 
     def class_closure_pass(self, check_command):
-        """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open."""
+        """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open. When
+        that pass changes a file, the receipt names the members it fixed, so no member shows as both fixed and open."""
         closure = closure_check(self.repo, self.out, [finding.text for finding in self.fixed], claude_call)
         self.class_closure = closure["receipt"]
         if not closure["open"]:
@@ -816,7 +817,9 @@ class LoopRun(full_check_gate.FullCheckSteps):
         open_findings = [parse_finding(text) for text in closure["open"]]
         _report, _diffs, class_changed = self.repair("coder-class", open_findings)
         self.mark_repaired(open_findings, class_changed)
-        if not class_changed:
+        if class_changed:
+            self.class_closure = receipt_after_class_repair(closure["open"])
+        else:
             self.open_classes = closure["open"]
 
         self.next_round()

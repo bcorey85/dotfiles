@@ -25,12 +25,16 @@ ASK_POINTER = re.compile(r"\b(?:the|that|this|my)\s+(?:open|earlier|same|previou
 ITEM_MARKER = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
 ITEM_MARKER_STRIP = re.compile(r"^\s*(?:[-*]+|\d+[.)])\s+")
 ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
+# The words that state a section holds nothing: "None", or "No new findings" and its forms.
+NONE_WORDS = (r"(?:none|n/a|omitted|empty"
+              r"|no(?:\s+(?:new|further|other|more|remaining))?\s+(?:findings?|issues?|asks?|nits?|concerns?|problems?)"
+              r"(?:\s+(?:found|remain|to\s+report))?)")
 # A bare none marker inside a section, as in "- None." A line that goes on past the word is finding text.
-NONE_LINE = re.compile(r"[\[(*_`]*(?:none|n/a|omitted|empty)[\])*_`]*[.!]?", re.I)
+NONE_LINE = re.compile(r"[\[(*_`]*" + NONE_WORDS + r"[\])*_`]*[.!]?", re.I)
 # A lead-in sentence about none before a section's first item, as in "None of the three queries filters by tenant:".
 NONE_LEAD_IN = re.compile(r"\[?(none|n/a|omitted|empty)[^\]]*\]?\.?", re.I)
 # A section's opening none line: a none word that ends its sentence, as in "None." or "None. What I checked:".
-NONE_OPENING = re.compile(r"[\[(*_`]*(?:none|n/a|omitted|empty)[\])*_`]*"
+NONE_OPENING = re.compile(r"[\[(*_`]*" + NONE_WORDS + r"[\])*_`]*"
                           r"(?:[.:;,!]|\s+[\N{EM DASH}\N{EN DASH}-]|$)", re.I)
 # A finding's head: its file:line first, after an optional [blocker] tag and bold markup.
 FINDING_HEAD = re.compile(rf"(?:{script_utils.BLOCKER_TAG_PATTERN}\s*)?[*_]*" + script_utils.PATH_LINE.pattern,

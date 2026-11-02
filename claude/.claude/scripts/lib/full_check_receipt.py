@@ -4,8 +4,9 @@ read by every gate that asks whether it did. A gate never matches a command's te
 Store: append-only JSON lines at `git rev-parse --git-path full-check/receipts.jsonl`, so each work tree keeps its own.
 Every row carries the `run_id` of one run and a `kind`:
 
-  started   before the check starts: ts, configured (the CLAUDE.md `Quality check:` command), command (the command run),
-            left_out (the Expected red steps it left out: [{"command", "until"}]).
+  started   before the check starts: ts, configured (the resolved check command), source (where it came from: local,
+            repo or discovered; null when none), command (the command run), left_out
+            (the Expected red steps it left out: [{"command", "until"}]).
   step      one per && step of the command run, written from the parsed command before it starts: index, step (its
             text), runs_tests, scope (its lib/check_scope.py scope; a test step with scope "targeted"
             voids the receipt).
@@ -66,10 +67,11 @@ def append(repo, row):
     script_utils.append_jsonl(path, {"ts": stamp, **row})
 
 
-def write_started_row(repo, configured, command, left_out=()):
-    """Write the started row, before the check process starts. Returns the run id."""
+def write_started_row(repo, configured, command, left_out=(), source=None):
+    """Write the started row, before the check process starts. Returns the run id. `source` says where `configured`
+    came from: `local`, `repo` or `discovered`; None when there is none."""
     run_id = uuid.uuid4().hex
-    append(repo, {"kind": STARTED, "run_id": run_id, "configured": configured, "command": command,
+    append(repo, {"kind": STARTED, "run_id": run_id, "configured": configured, "command": command, "source": source,
                   "left_out": [{"command": entry["command"], "until": entry["until"]} for entry in left_out]})
     return run_id
 

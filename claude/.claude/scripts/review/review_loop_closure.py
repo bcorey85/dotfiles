@@ -49,6 +49,13 @@ def diff_stat_lines(stats):
     return lines
 
 
+def receipt_after_class_repair(closed_members):
+    """The closure receipt once the class-fix coder fixed every member the closure check named open. It replaces the
+    check's receipt, whose prose still calls those members open."""
+    return ("every class member the closure check found open was fixed by the class repair: "
+            + "; ".join(closed_members))
+
+
 def closure_check(repo, out, fixed, claude_call):
     """The closure call's receipt and open findings. `claude_call` is the loop's model step."""
     if not fixed:

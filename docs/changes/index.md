@@ -5,17 +5,17 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-783 changes, 16 with a measured gain, 258 behavior changes that no intake metric reads.
+784 changes, 17 with a measured gain, 259 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [The fix and refactor handoffs take their file list from git](notes/2026-11-01-the-fix-and-refactor-handoffs-take-their-file-list.md).
+Latest change: 2026-11-01, [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md).
 
 ## Top gains
 
 * [`code-reviewer` now runs on opus and catches defects sonnet missed](notes/2026-08-08-code-reviewer-pinned-to-opus.md): **raises substantive true findings per review by 226% (1.583 → 5.167)** [agent/code-reviewer] - 2026-08-08 [watch: no watch]
+* [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md): **raises of 8 audits kept every distinct-shape test by 167% (3 → 8)** [agent/test-intent-reviewer] ([2026-11-01-a-cull-rule-keeps-tests-with-a-distinct-input](../../../agent-evals/findings/2026-11-01-a-cull-rule-keeps-tests-with-a-distinct-input.md)) - 2026-11-01 [watch: no watch]
 * [`code-reviewer` files taste breaks such as dead code and single-use pass-throughs as `fix`, not `nit`](notes/2026-10-14-code-reviewer-files-taste-breaks-as-fix-not-nit.md): **cuts planted taste defects not filed as fix (of 28) by 100% (14 → 0)** [agent/code-reviewer, skill/fix] ([2026-10-14-catchlist-sealed-4-runs-per-arm](../../../agent-evals/findings/2026-10-14-catchlist-sealed-4-runs-per-arm.md)) - 2026-10-14 [watch: TOO FEW]
 * [plan-reviewer now flags oversized phases, a skeleton phase with no Phase 0 contract, and criteria files over 8 criteria](notes/2026-10-12-plan-reviewer-a-new-finding-class-phase-shape.md): **cuts planted shape defects missed (of 9) by 100% (9 → 0)** [agent/plan-reviewer] ([2026-10-09-planfmt-sealed-planfmt-md-graded-edit](../../../agent-evals/findings/2026-10-09-planfmt-sealed-planfmt-md-graded-edit.md)) - 2026-10-12 [watch: TOO FEW]
 * [`code-reviewer` checks each added line against every written rule in the conventions doc, the docs it names and the loaded CLAUDE.md files](notes/2026-10-12-code-reviewer-checks-each-added-line-against-each.md): **cuts planted naming breaks not filed as fix (of 64) by 93% (15 → 1)** [agent/code-reviewer, rule/global-claude-md, skill/fix] ([2026-10-12-namefix-sealed-8-runs-per-arm](../../../agent-evals/findings/2026-10-12-namefix-sealed-8-runs-per-arm.md)) - 2026-10-12 [watch: no watch]
-* [The branch exit runs a peer review and one coder dispatch](notes/2026-11-01-the-branch-exit-runs-a-peer-review-and-one-coder.md): **cuts tokens by 82% (23.2M → 4.1M)** [skill/verify-branch, shared/closing-phases, script/verify-prep, script/verify-log] ([2026-11-01-peer-review-plus-one-coder-dispatch-nits-included](../../../agent-evals/findings/2026-11-01-peer-review-plus-one-coder-dispatch-nits-included.md)) - 2026-11-01 [watch: no reading]
 
 ## Total saved
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 3
 * cost: 3
 * wall-clock: 1
-* quality: 8
+* quality: 9
 
 ## Pages
 

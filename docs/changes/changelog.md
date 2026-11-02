@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-783 changes
+784 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -138,6 +138,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md) [agent/test-intent-reviewer] The test-intent reviewer never culls a test whose input shape differs from every sibling, and each cull names the surviving test. Audits that kept all such tests rose from 3 of 8 to 8 of 8. **raises of 8 audits kept every distinct-shape test by 167% (3 → 8)**
 * [The fix and refactor handoffs take their file list from git](notes/2026-11-01-the-fix-and-refactor-handoffs-take-their-file-list.md) [skill/refactor, skill/fix] /fix's scoped rerun and /refactor's handoff now list what git shows changed, so no handoff can leave out a changed file.
 * [The review loop puts back untracked files a fix coder deleted](notes/2026-11-01-the-review-loop-puts-back-untracked-files-a-fix.md) [agent/review-loop] A fix coder can no longer lose an untracked file: the loop saves untracked files before each fix call, writes back any that vanish, and names them in the packet.
 * [A full check that times out says so in the review packet](notes/2026-11-01-a-full-check-that-times-out-says-so-in-the-review.md) [agent/review-loop] A timed-out full check now puts a note in the packet's tool_fault, so a phase can no longer finish with no full check and only a label to show it.
@@ -926,6 +927,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md) - The work logs carry no row for a culled test's input shape, so no intake number can read this edit.
 * [Drop orchestration rules that a gate already states](notes/2026-11-01-drop-orchestration-rules-that-a-gate-already.md) - A measured prefix drop with no behavior change: both removed rules stay enforced by a gate whose deny message states the same instruction, so no intake number moves; the token cut is read directly by the headless prefix run.
 * [Toolkit edits need a bench proof sized by task class](notes/2026-10-24-toolkit-edits-need-a-bench-proof-sized-by-task.md) - it gates the ledger and dotfiles commits on this machine, which no work intake reads; the ledger itself shows whether change files carry proof
 * [The metrics switch reads only the environment variable](notes/2026-10-24-the-metrics-switch-reads-only-the-environment.md) - The change decides only whether metrics rows are written, not what any agent does. The intake's toolkit-telemetry line reads the switch on each pull.

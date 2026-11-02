@@ -65,7 +65,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
    - `finder` (the dispatched agent; omit in targeted mode), `lane` (required whenever there is a finder; from conversation/planning artifacts), `result` (optional).
    - `findings`: one entry per finder finding, each `{class, disposition, actioned, file, line, desc}` (`line` 0 when none; `desc` one line). Add `escape: true` plus `severity` for each distinct smell in branch-loop code (branch-audit: `duplication` for scope-item-1, `smell` otherwise; simplify: `complexity`). One entry per smell, not per file. Never `escape` mechanical-sweep matches or legacy targets — old debt is not an escape.
    - `guards`: an object, `{"<class>": "<guard>"}`, one guard per escape `class` group, from the ratchet (`escape-ratchet.md`, read in step 3a; read it now in simplify mode). The script refuses an escape class with no guard.
-   - `handoff`: `files` (`{path, change}`, one line each), `tests_run` (exact command + exit code, or `none`), `flagged` (one line, `none` when nothing is flagged), optional `plan_impact` (may span lines). Add `modifier` if one was given.
+   - `handoff`: optional `files` (`{path, change}`, one line each: the printed file list is what git shows changed against HEAD, untracked files included, and a path you list keeps its `change`), `tests_run` (exact command + exit code, or `none`), `flagged` (one line, `none` when nothing is flagged), optional `plan_impact` (may span lines). Add `modifier` if one was given.
 
    ```json
    {

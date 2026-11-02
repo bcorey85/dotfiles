@@ -7,9 +7,15 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-787 changes
+788 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
+
+## Week of 2026-11-02
+
+### Changed
+
+* [Coder decides each control's state during an async action](notes/2026-11-02-coder-decides-each-control-s-state-during-an-async.md) [skill/coder-core] The coder now handles every control during an async action in 88-100% of runs, up from 0% (0/8 → 7/8 on a dialog, 0/8 → 8/8 on a search panel). Coder-core gains one paragraph on what controls do mid-request and on close. **cuts % of runs with an unsafe control by 88% (100 → 12)**
 
 ## Week of 2026-10-26
 
@@ -930,6 +936,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [Coder decides each control's state during an async action](notes/2026-11-02-coder-decides-each-control-s-state-during-an-async.md) - Finding text in the work logs is hashed, so no intake number can tell an in-flight bug from any other bug.
 * [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md) - The work logs carry no row for a culled test's input shape, so no intake number can read this edit.
 * [Drop orchestration rules that a gate already states](notes/2026-11-01-drop-orchestration-rules-that-a-gate-already.md) - A measured prefix drop with no behavior change: both removed rules stay enforced by a gate whose deny message states the same instruction, so no intake number moves; the token cut is read directly by the headless prefix run.
 * [Toolkit edits need a bench proof sized by task class](notes/2026-10-24-toolkit-edits-need-a-bench-proof-sized-by-task.md) - it gates the ledger and dotfiles commits on this machine, which no work intake reads; the ledger itself shows whether change files carry proof

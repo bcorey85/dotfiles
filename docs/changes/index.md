@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-787 changes, 17 with a measured gain, 259 behavior changes that no intake metric reads.
+788 changes, 18 with a measured gain, 260 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-01, [With no ledger the skill-use and test-edit hooks keep their rows](notes/2026-11-01-with-no-ledger-the-skill-use-and-test-edit-hooks.md).
+Latest change: 2026-11-02, [Coder decides each control's state during an async action](notes/2026-11-02-coder-decides-each-control-s-state-during-an-async.md).
 
 ## Top gains
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 3
 * cost: 3
 * wall-clock: 1
-* quality: 9
+* quality: 10
 
 ## Pages
 

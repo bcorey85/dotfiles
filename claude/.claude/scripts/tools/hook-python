@@ -1,25 +1,62 @@
 #!/bin/sh
-# Runs a hook's Python script on a real interpreter, skipping a version manager's python3 shim wherever it can:
-# pyenv's shim spends a second or more starting up, and one tool call fires a dozen Python hooks. Runs on pyenv's
-# version, from PYENV_VERSION or $PYENV_ROOT/version; otherwise the first python3 on PATH outside a shims folder;
-# otherwise plain python3. A pyenv version the launcher cannot find under versions/ (a prefix such as 3.12) runs on
-# the shim.
+# Runs a hook's Python script on a python3 no older than 3.MIN_MINOR, skipping a version manager's python3 shim:
+# a shim spends a second or more starting up, and it follows the project's .python-version, which can name a Python
+# the toolkit cannot run on. Order: pyenv's version, from PYENV_VERSION or $PYENV_ROOT/version, when it names 3.12 or
+# newer (a prefix such as 3.12 takes a matching folder under versions/); then python3.N outside a shims folder on
+# PATH, newest first; then the first python3 outside a shims folder; then plain python3.
+
+# The toolkit's oldest Python, ruff.toml's target-version. tests/scripts/test_hook_python.py keeps the two equal.
+MIN_MINOR=12
+MAX_MINOR=20
+
+# Sets version_minor to the minor of a version such as 3.12 or 3.12.4; empty for system or a virtualenv name.
+read_minor() {
+    version_minor=""
+    case "$1" in
+        3.*) ;;
+        *) return ;;
+    esac
+    version_rest=${1#3.}
+    version_minor=${version_rest%%.*}
+    case "$version_minor" in
+        '' | *[!0-9]*) version_minor="" ;;
+    esac
+}
 
 pyenv_root="${PYENV_ROOT:-$HOME/.pyenv}"
 pyenv_version="$PYENV_VERSION"
 if [ -z "$pyenv_version" ] && [ -r "$pyenv_root/version" ]; then
     read -r pyenv_version < "$pyenv_root/version"
 fi
-pyenv_python="$pyenv_root/versions/${pyenv_version%%:*}/bin/python3"
-if [ -n "$pyenv_version" ] && [ "$pyenv_version" != system ]; then
-    if [ -x "$pyenv_python" ]; then
+pyenv_version=${pyenv_version%%:*}
+read_minor "$pyenv_version"
+if [ -n "$version_minor" ] && [ "$version_minor" -ge "$MIN_MINOR" ]; then
+    pyenv_python=""
+    for version_dir in "$pyenv_root/versions/$pyenv_version".* "$pyenv_root/versions/$pyenv_version"; do
+        if [ -x "$version_dir/bin/python3" ]; then
+            pyenv_python="$version_dir/bin/python3"
+        fi
+    done
+    if [ -n "$pyenv_python" ]; then
         exec "$pyenv_python" "$@"
     fi
-    exec python3 "$@"
 fi
 
 set -f
 IFS=:
+minor=$MAX_MINOR
+while [ "$minor" -ge "$MIN_MINOR" ]; do
+    for path_dir in $PATH; do
+        case "$path_dir" in
+            */shims) continue ;;
+        esac
+        if [ -x "$path_dir/python3.$minor" ]; then
+            exec "$path_dir/python3.$minor" "$@"
+        fi
+    done
+    minor=$((minor - 1))
+done
+
 for path_dir in $PATH; do
     case "$path_dir" in
         */shims) continue ;;

@@ -1,5 +1,5 @@
 """Checks for hook-python, the launcher every Python hook in settings.json runs through so that hooks skip a
-version manager's python3 shim, except when pyenv names a version the launcher cannot find, which runs on the shim.
+version manager's python3 shim and never run on a Python older than ruff.toml's target-version.
 
 Each case runs the launcher with HOME in a temp dir and a PATH of planted stand-in interpreters that print their own
 name, so the case reads which interpreter the launcher chose.
@@ -10,6 +10,7 @@ import pathlib
 import re
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 import toolkit_paths
@@ -33,9 +34,9 @@ class HookPythonTest(unittest.TestCase):
         self.home = self.temp_root / "home"
         self.home.mkdir()
 
-    def plant_interpreter(self, folder, label):
+    def plant_interpreter(self, folder, label, name="python3"):
         folder.mkdir(parents=True, exist_ok=True)
-        interpreter = folder / "python3"
+        interpreter = folder / name
         interpreter.write_text(FAKE_INTERPRETER_SOURCE.format(label=label))
         interpreter.chmod(0o755)
         return interpreter
@@ -79,7 +80,7 @@ class HookPythonTest(unittest.TestCase):
 
         self.assertEqual("system gate.py hook", chosen)
 
-    def test_pyenv_version_prefix_the_launcher_cannot_find_runs_on_the_shim(self):
+    def test_pyenv_version_prefix_runs_a_matching_version_folder(self):
         shims = self.home / ".pyenv" / "shims"
         system_bin = self.temp_root / "usr-bin"
         self.plant_interpreter(shims, "shim")
@@ -89,7 +90,49 @@ class HookPythonTest(unittest.TestCase):
 
         chosen = self.run_launcher([shims, system_bin])
 
-        self.assertEqual("shim gate.py hook", chosen)
+        self.assertEqual("pyenv gate.py hook", chosen)
+
+    def test_pyenv_version_older_than_the_floor_takes_a_versioned_python_on_path(self):
+        shims = self.home / ".pyenv" / "shims"
+        old_bin = self.temp_root / "old-bin"
+        homebrew_bin = self.temp_root / "homebrew-bin"
+        self.plant_interpreter(shims, "shim")
+        self.plant_interpreter(old_bin, "old")
+        self.plant_interpreter(homebrew_bin, "newer", name="python3.12")
+        self.plant_interpreter(homebrew_bin, "newest", name="python3.13")
+        self.plant_pyenv_version("3.9.12", "pyenv")
+
+        chosen = self.run_launcher([shims, old_bin, homebrew_bin])
+
+        self.assertEqual("newest gate.py hook", chosen)
+
+    def test_pyenv_virtualenv_name_takes_a_versioned_python_on_path(self):
+        homebrew_bin = self.temp_root / "homebrew-bin"
+        self.plant_interpreter(homebrew_bin, "homebrew", name="python3.12")
+        self.plant_interpreter(self.home / ".pyenv" / "versions" / "toolbox" / "bin", "virtualenv")
+
+        chosen = self.run_launcher([homebrew_bin], PYENV_VERSION="toolbox")
+
+        self.assertEqual("homebrew gate.py hook", chosen)
+
+    def test_versioned_python_in_a_shims_folder_is_skipped(self):
+        mise_shims = self.temp_root / "mise" / "shims"
+        system_bin = self.temp_root / "usr-bin"
+        self.plant_interpreter(mise_shims, "shim", name="python3.13")
+        self.plant_interpreter(system_bin, "system")
+
+        chosen = self.run_launcher([mise_shims, system_bin])
+
+        self.assertEqual("system gate.py hook", chosen)
+
+    def test_launcher_floor_matches_the_ruff_target_version(self):
+        ruff_config = tomllib.loads((toolkit_paths.CLAUDE_DIR.resolve().parents[1] / "ruff.toml").read_text())
+        target_minor = ruff_config["target-version"].removeprefix("py3")
+        floor_match = re.search(r"^MIN_MINOR=(\d+)$", HOOK_PYTHON.read_text(), re.MULTILINE)
+
+        if floor_match is None:
+            self.fail("hook-python has no MIN_MINOR= line")
+        self.assertEqual(target_minor, floor_match.group(1))
 
     def test_with_no_pyenv_a_shims_folder_on_path_is_skipped(self):
         mise_shims = self.temp_root / "mise" / "shims"

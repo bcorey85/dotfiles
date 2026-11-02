@@ -330,8 +330,8 @@ def branch_prep(opts):
     print(next_line("dispatch ONE smell-reviewer with the prompt above; make the work list = findings + sweep "
                     f"matches (`[design-decision]` and every `### Ask` finding go to the user; log a "
                     f"`{PLAN_STRUCTURE_TAG}` finding with `plan_structure: true`); then dispatch the coder, "
-                    "run the step-5 test audit when the refactor could change test guarantees, run the ratchet for each distinct "
-                    f"class, write the log input to {log_input}, and call "
+                    "run the step-5 test audit when the refactor could change test guarantees, run the ratchet "
+                    f"for each distinct class, write the log input to {log_input}, and call "
                     f"`log --mode branch --base {base} --input {log_input}`. Nothing found: call the same "
                     "`log` empty-handed and stop."))
     return 0

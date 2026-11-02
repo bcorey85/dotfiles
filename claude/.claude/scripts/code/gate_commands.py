@@ -43,6 +43,19 @@ def in_directory(command, package_rel):
     return f"cd {shlex.quote(package_rel)} && {command}" if package_rel else command
 
 
+def typecheck_script_name(scripts):
+    """The name of the package script that type-checks, or None."""
+    return next((name for name in TYPECHECK_SCRIPTS if name in scripts), None)
+
+
+def js_test_runner(dependencies, scripts):
+    """(the runner a package's dependencies name: `vitest run`, `jest` or None, whether its tests run under jest)."""
+    runner = "vitest run" if "vitest" in dependencies else "jest" if "jest" in dependencies else None
+    # With no runner dependency, a test script that names jest or react-scripts runs jest through a wrapper.
+    wraps_jest = runner is None and re.search(r"\b(?:jest|react-scripts)\b", scripts.get("test", "")) is not None
+    return runner, runner == "jest" or wraps_jest
+
+
 def script_package_commands(repo_dir, package_dir, paths, derives_tests):
     package_json = json.loads((package_dir / "package.json").read_text())
     scripts = package_json.get("scripts", {})
@@ -51,7 +64,7 @@ def script_package_commands(repo_dir, package_dir, paths, derives_tests):
     relative_paths = [str((repo_dir / path).relative_to(package_dir)) for path in paths]
     commands = []
 
-    typecheck_name = next((name for name in TYPECHECK_SCRIPTS if name in scripts), None)
+    typecheck_name = typecheck_script_name(scripts)
     if typecheck_name:
         commands.append(in_directory(f"npm run {typecheck_name}", package_rel))
     elif (package_dir / "tsconfig.json").is_file():
@@ -71,10 +84,7 @@ def script_package_commands(repo_dir, package_dir, paths, derives_tests):
 
     # With no test file named, the gate runs the test files the coder changed. Only jest runs a file under __tests__/
     # that is not test-named.
-    runner = "vitest run" if "vitest" in dependencies else "jest" if "jest" in dependencies else None
-    # With no runner dependency, a test script that names jest or react-scripts runs jest through a wrapper.
-    wraps_jest = runner is None and re.search(r"\b(?:jest|react-scripts)\b", scripts.get("test", "")) is not None
-    runs_jest = runner == "jest" or wraps_jest
+    runner, runs_jest = js_test_runner(dependencies, scripts)
     test_paths = [p for p in relative_paths if p.endswith(SCRIPT_SUFFIXES) and is_runnable_test_file(p, runs_jest)]
     placeholder = "jest-tests" if runs_jest else "tests"
     scope = " ".join(shlex.quote(p) for p in test_paths) or "{" + placeholder + ":" + ",".join(SCRIPT_SUFFIXES) + "}"
@@ -204,6 +214,19 @@ def python_test_command(runner, test_paths, django_options, manage_script="manag
     return shlex.join([*python_words, manage_script, "test", *labels, *django_options, *prompt_options])
 
 
+def ruff_check_command(repo_dir, runner):
+    """`ruff check` through the runner (a bare system python gets none: ruff is usually its own program) when the
+    repo's pyproject.toml names ruff, else None."""
+    pyproject = repo_dir / "pyproject.toml"
+    if not (pyproject.is_file() and "ruff" in pyproject.read_text()):
+        return None
+
+    program_words = [word for word in runner if not ENV_ASSIGNMENT.match(word)]
+    runs_system_python = program_words[:1] in (["python"], ["python3"])
+    ruff_runner = [] if runs_system_python else runner
+    return shlex.join([*ruff_runner, "ruff", "check"])
+
+
 def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, phase_lists_pytest=False, *,
                     derives_tests):
     # Tests run through the phase's listed runner, else the repo's lock file or virtualenv, else python3. Ruff runs
@@ -228,14 +251,9 @@ def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, pha
     runner = listed_runner if listed_runner is not None else project_python_runner(repo_dir)
     if runner is None:
         runner = ["python3", "-m"]
-    program_words = [word for word in runner if not ENV_ASSIGNMENT.match(word)]
-    runs_system_python = program_words[:1] in (["python"], ["python3"])
-    ruff_runner = [] if runs_system_python else runner
-
     commands = []
-    pyproject = (repo_dir / "pyproject.toml")
-    if pyproject.is_file() and "ruff" in pyproject.read_text():
-        ruff_command = shlex.join([*ruff_runner, "ruff", "check"])
+    ruff_command = ruff_check_command(repo_dir, runner)
+    if ruff_command:
         commands.append(f"{ruff_command} {{files:.py}}")
 
     if not derives_tests:

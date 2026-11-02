@@ -597,9 +597,32 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         row, packet = self.stored_packet()
         self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
-        self.assertEqual((1, 1), (len(packet["fixed"]), len(packet["skipped_fp"])))
+        self.assertEqual((1, 0), (len(packet["fixed"]), len(packet["skipped_fp"])))
         self.assertEqual(2, packet["iter"])
         self.assertFalse(row["unreviewed_fix"])
+
+    def test_a_packet_with_no_full_check_found_carries_a_tool_fault_and_still_converges(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="Run make ci before you push.\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertIn("no full check ran", packet["tool_fault"])
+        self.assertIn("CLAUDE.local.md", packet["tool_fault"])
+
+    def test_a_repo_with_a_makefile_check_target_runs_make_check(self):
+        (self.repo / "Makefile").write_text("check:\n\t@echo '3 passed in 0.1s'\n")
+        git(self.repo, "add", "Makefile")
+        git(self.repo, "commit", "-q", "-m", "make")
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    claude_md="Run make ci before you push.\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual((packet["full_check"], packet["full_check_command"]), ("passed", "make check"))
+        self.assertEqual("", packet["tool_fault"])
 
     def test_a_stale_prose_hit_report_over_the_tail_limit_reaches_the_coder_whole(self):
         script = self.scratch / "stale_prose.py"
@@ -1560,6 +1583,14 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual(len(asks), 2)
         self.assertTrue(asks[1].text.startswith("`app.py:4` second"))
+
+    def test_a_reviewer_line_that_states_no_findings_is_not_an_ask(self):
+        module = self.load_script_module()
+        for line in ("No new findings.", "- No new findings", "No findings found", "None"):
+            with self.subTest(line=line):
+                review = f"## Fix\nNone\n\n## Ask\n{line}\n\n## Nit\nNone\n"
+
+                self.assertEqual([], module.parse_review(review)["ask"])
 
     def test_an_ask_with_nested_bullets_and_a_trailing_paragraph_parses_as_one_ask(self):
         module = self.load_script_module()

@@ -219,7 +219,7 @@ Pass `--plan` and `--phase` when the inputs hold both. The script then leaves ou
 
 Any test count you report comes from the script's `summary:` line, never from other output. Call a run the full suite only when it ran the CLAUDE.md quality-check command and the result is not `passed (check only; CI runs the full suite)`, which is a check with no tests; name any other run by its exact command. Paths on the `changed by the check:` and `created by the check:` lines are the check's own writes, left in place: neither goes in `files_touched`. Paths on `rewrote edited files:` hold coder edits the check then rewrote: they stay in `files_touched`. A path an earlier run in this invocation named on `changed by the check:` or `created by the check:` stays there unless a coder edited it.
 
-When CLAUDE.md names no quality-check command, the script prints `not run (no check found; the coder's scoped tests stand)`: copy it into `full_check` and proceed.
+The script finds the command itself: a local entry, then the CLAUDE.md line, then the repo's Makefile or package.json. When it finds none, it prints `not run (no check found; the coder's scoped tests stand)` and a note: copy the result into `full_check`, put the note in the packet's `tool_fault`, and proceed.
 
 **Exception**: failures in acceptance spec tests (`*.spec.*`, or any test the plan's `Acceptance Criteria` file names as covering a criterion) are critical BLOCKERS — never route them to auto-fix. Either the code is wrong or the intent changed, and only the user decides which; an auto-fixer's cheapest path to green is editing the spec.
 

@@ -65,6 +65,7 @@ from check_output import (
     tail_with_failing_tests,
 )
 from check_scope import names_django_test_run, scanned_command
+from script_utils import changed_files
 from source_paths import is_runnable_test_file
 
 USAGE = "usage: coder_gate.py set [--env NAME=value]... <command>... | summary | clear | hook | bash-hook"
@@ -245,15 +246,6 @@ def command_directory(command, repo_root):
     if len(words) >= 3 and words[0] == "cd" and words[2] in ("&&", ";"):
         return str((pathlib.Path(repo_root) / words[1]).resolve())
     return repo_root
-
-
-def changed_files(directory, base="HEAD"):
-    # Tracked changes against base, deletions excluded, plus untracked files, all relative to directory.
-    tracked_files = script_utils.git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d",
-                                            base) or ""
-    untracked_files = script_utils.git_output(directory, "ls-files", "--others", "--exclude-standard") or ""
-    names = [name for name in (tracked_files + "\n" + untracked_files).split("\n") if name]
-    return sorted(set(names))
 
 
 def fill_files(command, repo_root):

@@ -24,6 +24,7 @@ import coder_gate
 import expected_red
 import gate_commands
 import handback_hook
+import handoff_files
 import plan_format
 import script_utils
 from code_wait import PID_FILE, REVIEW_OUTPUT, phase_dir
@@ -84,10 +85,8 @@ def handoff_with_git_files(repo, base, handoff):
     if not changed:
         return "\n".join([*lines[:start], f"{HANDOFF_FILES_LINE} []", *lines[end:]]) + "\n"
 
-    files_lines = [HANDOFF_FILES_LINE]
-    for path in changed:
-        files_lines += [f"    - path: {path}", "      change: changed since the phase base",
-                        *why_by_path.get(path, [])]
+    files_lines = [HANDOFF_FILES_LINE, *handoff_files.file_entry_lines(changed, {}, "changed since the phase base",
+                                                                        why_by_path)]
     return "\n".join([*lines[:start], *files_lines, *lines[end:]]) + "\n"
 
 

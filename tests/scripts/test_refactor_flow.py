@@ -716,6 +716,7 @@ class RefactorFlowTest(unittest.TestCase):
     # --------------------------------------------------------------------- log
     def test_log_branch_writes_escape_finder_and_handoff(self):
         self.branch_with({"a.py": "x = 1\n"})
+        self.write("a.py", "x = 2\n")
         payload = {
             "finder": "smell-reviewer", "lane": "code",
             "findings": [self.finding(), self.finding(file="b.py", line=0, desc="second", escape=False,
@@ -745,9 +746,43 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(len([row for row in finding_rows if row["kind"] == "finding"]), 2)
         self.assertIn("  iter: 0", done.stdout)
         self.assertIn("- path: a.py", done.stdout)
+        self.assertIn("      change: merged parse", done.stdout)
         self.assertIn("modifier `+fast`", done.stdout)
         self.assertEqual(self.last_line(done)[:5], "NEXT:")
         self.assertIn("Skill-invoke /review", self.last_line(done))
+
+    def handoff_files_block(self, output):
+        _, _, after = output.partition("  files:")
+        return after.partition("  tests-run:")[0]
+
+    def test_the_handoff_files_come_from_git_and_keep_the_listed_change_text(self):
+        self.branch_with({"a.py": "x = 1\n", "b.py": "y = 1\n"})
+        self.write("a.py", "x = 2\n")
+        self.write("new_helper.py", "z = 1\n")
+        handoff = self.handoff_input(files=[{"path": "a.py", "change": "merged parse"},
+                                            {"path": "b.py", "change": "listed but not changed"}])
+        done = self.flow("handoff", "--input", self.log_input({"handoff": handoff}))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        block = self.handoff_files_block(done.stdout)
+        self.assertIn("    - path: a.py\n      change: merged parse\n", block)
+        self.assertIn("    - path: new_helper.py\n      change: changed in the working tree against HEAD\n", block)
+        self.assertNotIn("b.py", block)
+
+    def test_the_handoff_needs_no_files_list_and_names_the_changed_files(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        self.write("a.py", "x = 2\n")
+        handoff = {"tests_run": "none", "flagged": "none"}
+        done = self.flow("handoff", "--input", self.log_input({"handoff": handoff}))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("    - path: a.py\n", done.stdout)
+
+    def test_the_handoff_of_a_clean_tree_has_an_empty_files_list(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        handoff = self.handoff_input(files=[{"path": "a.py", "change": "claimed but not on disk"}])
+        done = self.flow("handoff", "--input", self.log_input({"handoff": handoff}))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("  files: []\n", done.stdout)
+        self.assertNotIn("a.py", done.stdout)
 
     def test_log_escape_row_without_a_line_carries_no_line_field(self):
         self.branch_with({"a.py": "x = 1\n"})

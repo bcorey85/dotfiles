@@ -372,7 +372,19 @@ class ReviewFixScriptTest(unittest.TestCase):
                 self.assertIn("ACTION: stop", output)
                 self.assertNotIn("render-and-finish", output)
 
+    def write_dirty(self, *paths):
+        """Create each path as an untracked file in the test repo, as a fix leaves it."""
+        for path in paths:
+            target = self.repo / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("changed\n")
+
+    def dispatch_lines(self, output):
+        _, _, dispatch = output.partition("Dispatch lines (pass exactly these):")
+        return dispatch.partition("  tests-run:")[0]
+
     def test_a_cap_reached_with_an_open_class_and_a_passed_check_of_the_final_tree_keeps_the_scoped_rerun(self):
+        self.write_dirty("src/retry.ts", "src/queue.ts")
         code, output = self.packet(self.capped_packet(open_classes=["a log with a trailing blank line"]))
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: stop", output)
@@ -380,6 +392,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("render-and-finish", output)
 
     def test_a_cap_reached_with_an_open_class_routes_the_next_run_to_the_files_the_fixes_touched_only(self):
+        self.write_dirty("src/logs.ts")
         code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: stop", output)
@@ -390,6 +403,30 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("iter=0", output)
         self.assertNotIn("Do not re-dispatch", output)
 
+    def test_the_scoped_rerun_files_come_from_git_not_from_the_packets_files_touched(self):
+        self.write_dirty("src/logs.ts", "src/added_by_a_coder_and_unreported.ts")
+        (self.repo / "README.md").write_text("edited\n")
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        dispatch = self.dispatch_lines(output)
+        self.assertIn("    - path: README.md\n      change: changed in the working tree against HEAD", dispatch)
+        self.assertIn("    - path: src/added_by_a_coder_and_unreported.ts\n", dispatch)
+        self.assertIn("    - path: src/logs.ts\n      change: touched by the capped run's fixes", dispatch)
+
+    def test_the_scoped_rerun_drops_a_file_the_fixes_touched_that_git_shows_unchanged(self):
+        self.write_dirty("src/other.ts")
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        dispatch = self.dispatch_lines(output)
+        self.assertNotIn("src/logs.ts", dispatch)
+        self.assertIn("    - path: src/other.ts\n", dispatch)
+
+    def test_a_cap_reached_with_an_open_class_and_a_clean_tree_keeps_the_plain_stop(self):
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        self.assertIn("Do not re-dispatch", output)
+        self.assertNotIn("Dispatch lines", output)
+
     def test_a_cap_reached_with_every_class_closed_keeps_the_plain_stop(self):
         closed_closure = CAP_WITH_AN_OPEN_CLASS_FIELDS["class_closure"].replace("still open", "closed")
         closed = packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, class_closure=closed_closure, open_classes=[])
@@ -399,6 +436,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("files the capped run's fixes touched", output)
 
     def test_open_classes_alone_routes_the_scoped_rerun(self):
+        self.write_dirty("src/logs.ts")
         closed_closure = CAP_WITH_AN_OPEN_CLASS_FIELDS["class_closure"].replace("still open", "closed")
         code, output = self.packet(packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, class_closure=closed_closure))
         self.assertEqual(code, 0, output)

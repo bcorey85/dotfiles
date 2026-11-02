@@ -295,6 +295,18 @@ class FullCheckRunRowsTest(ReceiptTestCase):
         self.assertEqual(len({row["run_id"] for row in self.rows()}), 1)
         self.assertIsNotNone(full_check_receipt.valid_receipt(self.repo))
 
+    def test_the_started_row_names_where_the_check_came_from(self):
+        self.declare(PASSING_SUITE)
+        self.run_declared()
+        pathlib.Path(self.repo, "CLAUDE.md").write_text("# Repo\n")
+        pathlib.Path(self.repo, "Makefile").write_text(f"check:\n\t@{PASSING_SUITE}\n")
+        self.run_declared()
+
+        started_rows = self.rows_of("started")
+
+        self.assertEqual([(row["source"], row["command"]) for row in started_rows],
+                         [("repo", PASSING_SUITE), ("discovered", "make check")])
+
     def test_a_multi_step_check_writes_one_step_row_per_step_and_no_test_counts_on_the_finished_row(self):
         self.declare("echo '2 passed in 0.1s' && echo '5 passed, 1 skipped in 0.2s'")
 

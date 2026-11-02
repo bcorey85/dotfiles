@@ -776,10 +776,12 @@ class LoopRun(full_check_gate.FullCheckSteps):
                      and all(path.endswith(".md") for path in changed))
         return not docs_only
 
-    def mark_repaired(self, findings, changed):
-        """A repair's findings go to fixed when it changed a file, else to skipped_fp."""
+    def mark_repaired(self, findings, changed, records_skip=True):
+        """A repair's findings go to fixed when it changed a file, else to skipped_fp. With `records_skip` False, a
+        repair that changed nothing records nothing: the findings are a gate's prompt, not a reviewer's claim."""
         if not changed:
-            self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in findings]
+            if records_skip:
+                self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in findings]
             return
         self.fixed += findings
         self.check_fixed += len(findings)
@@ -848,7 +850,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         hits = [parse_finding("\n\n".join(hit_outputs))]
         pass_before_repair = self.last_pass
         _report, _diffs, prose_changed = self.repair("coder-prose", hits)
-        self.mark_repaired(hits, prose_changed)
+        self.mark_repaired(hits, prose_changed, records_skip=False)
         if not prose_changed:
             self.last_pass = pass_before_repair
             return False
@@ -858,6 +860,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         return True
 
     def outcome(self, ask_ids, ask_rows):
+        no_check_fault = full_check.NO_CHECK_NOTE if self.full_check == full_check.NOT_RUN_NO_CHECK else ""
         return {
             "status": self.status,
             "iter": self.iter_count,
@@ -883,6 +886,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
             "scoped_tests": self.scoped_tests,
+            "tool_fault": no_check_fault,
         }
 
 

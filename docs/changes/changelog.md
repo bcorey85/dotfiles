@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-778 changes
+780 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -138,6 +138,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A review line that states no findings is no longer an ask, and a clean prose hit is no longer a skipped finding](notes/2026-11-01-a-review-line-that-states-no-findings-is-no-longer.md) [agent/review-loop] The review record stops counting clean passes as asks and skipped findings, so false-positive and ask counts read true.
+* [The full check finds its own command](notes/2026-11-01-the-full-check-finds-its-own-command.md) [agent/review-loop] The review loop now runs a full check on repos with no CLAUDE.md line, so a repo no longer loses its suite for lack of one line, and a personal entry can name the command without touching the repo.
 * [The code review scope comes from git, not the coder's list](notes/2026-11-01-the-code-review-scope-comes-from-git-not-the-coder.md) [skill/code] The /code handoff now takes its changed files from git, so reviewers stop spending findings on files and claims the coder got wrong.
 * [Scoped test gate runs the autofix formatters before it stops](notes/2026-11-01-scoped-test-gate-runs-the-autofix-formatters.md) [script/review-loop-script, skill/code, skill/review] The review loop no longer stops a finished phase on format-only scoped-test failures: a red scoped run gets one autofix formatter pass and one rerun, and only a run still red stops the loop.
 * [A plan ruling credits the tree the review covered, and the commit gate names the ruling step](notes/2026-11-01-a-plan-ruling-credits-the-tree-the-review-covered.md) [script/review-commit-gate, script/review-fix] A /code commit after a review that held a plan impact now passes the commit gate once the impact is ruled on, instead of being denied until a whole new /review (about 6 minutes) runs; a denial caused by an unruled plan impact now names the ruling command, not /review.

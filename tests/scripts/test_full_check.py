@@ -259,6 +259,60 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.splitlines()[0], f"full check: {full_check.NOT_RUN_NO_CHECK}")
 
+    def test_a_repo_with_no_check_says_how_to_name_one(self):
+        completed = self.check(None, claude_md="# Repo\n", env=self.env_with_home())
+
+        self.assertIn(f"note: {full_check.NO_CHECK_NOTE}", completed.stdout.splitlines())
+
+    def env_with_home(self, local_text=None):
+        """The environment with HOME in a scratch folder that holds a CLAUDE.local.md of `local_text`, when given."""
+        home = self.repo.parent / (self.repo.name + "-home")
+        (home / ".claude").mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        if local_text is not None:
+            (home / ".claude" / "CLAUDE.local.md").write_text(local_text)
+        return {**os.environ, "HOME": str(home)}
+
+    def test_a_repo_with_a_makefile_check_target_and_no_line_runs_make_check(self):
+        (self.repo / "Makefile").write_text(f"check:\n\t@{PASSING_SUITE}\n")
+
+        completed = self.check(None, claude_md="# Repo\n", env=self.env_with_home())
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        lines = completed.stdout.splitlines()
+        self.assertEqual(lines[0], "full check: passed")
+        self.assertIn("command: make check", lines)
+
+    def test_a_claude_md_line_wins_over_a_discovered_makefile_check(self):
+        (self.repo / "Makefile").write_text("check:\n\t@exit 1\n")
+
+        completed = self.check(PASSING_SUITE, env=self.env_with_home())
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
+        self.assertIn(f"command: {PASSING_SUITE}", completed.stdout.splitlines())
+
+    def test_a_local_entry_for_the_repo_wins_over_the_claude_md_line(self):
+        local_text = f"Quality check ({self.repo.name}): `echo '9 passed in 0.1s'`\n"
+
+        completed = self.check("exit 1", env=self.env_with_home(local_text))
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
+        self.assertIn("command: echo '9 passed in 0.1s'", completed.stdout.splitlines())
+
+    def test_a_local_entry_for_another_repo_is_ignored(self):
+        local_text = "Quality check (some-other-repo): `exit 1`\n"
+
+        completed = self.check(PASSING_SUITE, env=self.env_with_home(local_text))
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: passed")
+
+    def test_a_ci_repo_with_a_makefile_check_target_and_no_line_discovers_nothing(self):
+        (self.repo / "Makefile").write_text("check:\n\t@exit 1\n")
+
+        completed = self.check(None, claude_md="- Full suite: CI\n", env=self.env_with_home())
+
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
+
     def test_a_handed_command_that_differs_from_the_declared_check_is_ignored(self):
         marker = self.repo / "ran"
         self.declare_check(PASSING_SUITE)

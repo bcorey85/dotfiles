@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-792 changes
+793 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -19,6 +19,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Coder fixes every site of a reviewed defect](notes/2026-11-02-coder-fixes-every-site-of-a-reviewed-defect.md) [skill/coder-core] The coder now fixes every sibling site of a reviewed defect in 94% of runs, up from 0% (0/16 → 15/16, two fixtures). Coder-core gains one sentence: when fixing a review finding, find and fix every other site with the same defect. **cuts % of runs leaving a sibling site unfixed by 94% (100 → 6)**
 * [Code reviewer fixes every reachable defect and sweeps sibling sites](notes/2026-11-02-code-reviewer-fixes-every-reachable-defect-and.md) [agent/code-reviewer] One review pass now names 14 of 19 known bugs as fixes, up from 8 (blind). A reachable defect is always a fix, and a found defect sends the reviewer to every other site of its kind. Each pass costs 9% more tokens and gives the coder about 75% more items. **raises of 19 known bugs named as fixes by 75% (8 → 14)**
 * [Coder decides each control's state during an async action](notes/2026-11-02-coder-decides-each-control-s-state-during-an-async.md) [skill/coder-core] The coder now handles every control during an async action in 88-100% of runs, up from 0% (0/8 → 7/8 on a dialog, 0/8 → 8/8 on a search panel). Coder-core gains one paragraph on what controls do mid-request and on close. **cuts % of runs with an unsafe control by 88% (100 → 12)**
+
+### Fixed
+
+* [Rule anchors fail CI when a prompt block drifts](notes/2026-11-02-rule-anchors-fail-ci-when-a-prompt-block-drifts.md) [script/rule-anchors] A prompt block that changes without its row in the rule-anchors page now fails the script suite, instead of piling up unseen: the page had drifted to 69 stale and 69 unanchored rows before anything reported it.
 
 ## Week of 2026-10-26
 

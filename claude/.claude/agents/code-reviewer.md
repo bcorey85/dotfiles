@@ -36,6 +36,8 @@ If the project has a CLAUDE.md or similar conventions doc, read it and every doc
 
 Then check every claim in prose: comments, docstrings, docs, ADRs, and description or context text that a model or a user reads at run time. Check the prose the diff adds, and the prose that names a symbol, rule or file whose behavior the diff changes, renames or removes (`rg` for the name). Each claim must hold for the code after the diff: what it does or returns, which rule or filter applies, what a link or line citation points at, and what a sibling doc says about the same fact. A false, stale or contradicting claim is a `fix` that names the code or doc it contradicts. It is never a `[smell]` or a `nit`.
 
+When you find a defect, search the whole diff for every other site of the same kind (each control, each exit path, each caller, each parsed field), and report each site.
+
 ### Step 3: Structure
 
 After the correctness pass, review the shape of the change, inside the same scope:
@@ -82,6 +84,7 @@ Never audit pre-existing smells in surrounding code. The one sanctioned reach ou
 
 ### Nit
 [One combined line. Never fixed, never re-raised. Omit when empty.]
+[A defect a user or caller can reach is a `fix`, however rare the path. A nit never describes wrong behavior.]
 ```
 
 Do not include "Positive Observations" or "Recommendations" sections. They add noise without value.

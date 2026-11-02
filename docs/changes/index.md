@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-795 changes, 20 with a measured gain, 261 behavior changes that no intake metric reads.
+796 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-02, [a /code fork cannot hand back while its coder still runs](notes/2026-11-02-a-code-fork-cannot-hand-back-while-its-coder-still.md).
+Latest change: 2026-11-02, [Coder updates the docs a fix makes stale](notes/2026-11-02-coder-updates-the-docs-a-fix-makes-stale.md).
 
 ## Top gains
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 3
 * cost: 3
 * wall-clock: 1
-* quality: 12
+* quality: 13
 
 ## Pages
 

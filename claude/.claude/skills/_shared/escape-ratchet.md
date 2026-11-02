@@ -24,9 +24,23 @@ Per escape: _cheapest structural guard that would have caught it?_ First applica
 
 Propose the guard; on approval apply it (or ticket it for another repo). Pass the rung as `guard=` — the script rejects lines without one.
 
+## Miss reason
+
+Every `log-escape` call also carries `miss_reason=`, why the gate missed this defect. First label that fits:
+
+1. **`plan-gap`** — the plan was wrong or silent, and the code matched it.
+2. **`out-of-scope`** — the defect sits in code the reviewed diff did not change.
+3. **`seen-dismissed`** — a reviewer raised it and it was dropped.
+4. **`needs-runtime`** — it shows only when the code runs.
+5. **`needs-other-file`** — seeing it needs a file outside the diff, such as an existing helper or owner.
+6. **`rule-absent`** — it is visible in the diff and no rule told a reviewer to flag it.
+7. **`overlooked`** — it is visible in the diff, a rule covers it, and nobody flagged it.
+
+`unknown` is for scripts. A model caller picks a label.
+
 ## Batching
 
-Several escapes one pass → group by `class`, ONE guard per group. Every row still carries a `guard` value.
+Several escapes one pass → group by `class`, ONE guard per group. Every row still carries a `guard` value and its own `miss_reason`.
 
 ## ADR addendum
 

@@ -20,7 +20,10 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COM
            "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
 
 PLANTED_BRANCH = "planted-branch-zq"
-VALID_ARGS = ["gate_missed=review", "stage_found=pr-human", "severity=high", "class=bug", "guard=none"]
+VALID_ARGS = ["gate_missed=review", "stage_found=pr-human", "severity=high", "class=bug", "guard=none",
+              "miss_reason=overlooked"]
+MISS_REASONS = ("out-of-scope", "needs-other-file", "needs-runtime", "plan-gap", "seen-dismissed", "rule-absent",
+                "overlooked", "unknown")
 
 
 class LogEscapeTest(unittest.TestCase):
@@ -114,7 +117,8 @@ class LogEscapeTest(unittest.TestCase):
     def test_pairs_in_one_unsplit_argument_are_folded_one_by_one(self):
         # zsh does not split an unquoted variable: C="gate_missed=review severity=high"; log-escape $C
         # sends one argument.
-        done = self.run_escape("gate_missed=review stage_found=pr-human  severity=high", "class=bug", "guard=none")
+        done = self.run_escape("gate_missed=review stage_found=pr-human  severity=high", "class=bug", "guard=none",
+                               "miss_reason=unknown")
         self.assertEqual(done.returncode, 0, done.stderr)
         row = self.escape_rows()[0]
         self.assertEqual((row["gate_missed"], row["stage_found"], row["severity"]), ("review", "pr-human", "high"))
@@ -149,6 +153,31 @@ class LogEscapeTest(unittest.TestCase):
         self.assertEqual(done.returncode, 1)
         self.assertIn("refusing to log: guard= is required.", done.stderr)
         self.assertIn("escape-ratchet.md", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+
+    def test_each_miss_reason_reaches_the_ledger_as_plain_text(self):
+        for label in MISS_REASONS:
+            with self.subTest(label=label):
+                args = [argument for argument in VALID_ARGS if not argument.startswith("miss_reason=")]
+                done = self.run_escape(*args, f"miss_reason={label}")
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(self.escape_rows()[-1]["miss_reason"], label)
+
+    def test_a_missing_miss_reason_is_refused_with_the_ratchet_pointer(self):
+        args = [argument for argument in VALID_ARGS if not argument.startswith("miss_reason=")]
+        done = self.run_escape(*args)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("refusing to log: miss_reason=", done.stderr)
+        self.assertIn("escape-ratchet.md", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+
+    def test_a_miss_reason_outside_the_list_is_refused(self):
+        for label in ("vibes", "plan", "plan-gap,unknown", ""):
+            with self.subTest(label=label):
+                args = [argument for argument in VALID_ARGS if not argument.startswith("miss_reason=")]
+                done = self.run_escape(*args, f"miss_reason={label}")
+                self.assertEqual(done.returncode, 1)
+                self.assertIn("refusing to log: miss_reason=", done.stderr)
         self.assertEqual(self.escape_rows(), [])
 
     def test_unknown_class_reaches_the_ledger(self):

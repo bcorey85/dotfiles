@@ -70,12 +70,14 @@ scalar() { # sql -> the first cell of the first row
 
 # --- an escape with a class outside the vocabulary -----------------------------
 "$escape" gate_missed=review stage_found=pr-human severity=high class=nonsense \
-  guard=none "desc=$planted_desc" "file=$planted_file" >"$work/out.txt" 2>"$work/err.txt"
+  guard=none miss_reason=rule-absent "desc=$planted_desc" "file=$planted_file" >"$work/out.txt" 2>"$work/err.txt"
 rc=$?
 expect "escape: unknown class exits 0" 0 "$rc"
 contains "escape: unknown class prints a reject line" "$(cat "$work/err.txt")" "reject: enum_value_unknown class"
 expect "escape: unknown class stored as other" other \
   "$(scalar "select class from review_escape where gate_missed = 'review'")"
+expect "escape: miss_reason stored as plain text" rule-absent \
+  "$(scalar "select miss_reason from review_escape where gate_missed = 'review'")"
 rejects=$(grep -rh '' "$AGENT_LEDGER_ROOT/data/rejects" 2>/dev/null)
 expect "escape: one class reject line" 1 "$(printf '%s\n' "$rejects" | grep -c '"field":"class"')"
 contains "escape: the reject line names the class field" "$rejects" '"class"'
@@ -83,7 +85,7 @@ contains "escape: the reject line names the class field" "$rejects" '"class"'
 # --- an escape with a guard outside the vocabulary -----------------------------
 guard_root="$work/guard-root"
 AGENT_LEDGER_ROOT="$guard_root" "$escape" gate_missed=coder stage_found=pr-human severity=high class=bug \
-  guard=vibes "desc=$planted_desc" "file=$planted_file" >"$work/out.txt" 2>"$work/err.txt"
+  guard=vibes miss_reason=unknown "desc=$planted_desc" "file=$planted_file" >"$work/out.txt" 2>"$work/err.txt"
 rc=$?
 expect "escape: unknown guard exits 0" 0 "$rc"
 contains "escape: unknown guard prints a reject line" "$(cat "$work/err.txt")" "reject: enum_value_unknown guard"

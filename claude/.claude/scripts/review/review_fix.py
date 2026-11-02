@@ -467,7 +467,7 @@ def log_escapes(state, escapes, lane):
                                     "stage_found=walkthrough", f"gate_missed={fields['gate_missed']}",
                                     f"class={fields['class']}", f"severity={fields['severity']}",
                                     f"lane={fields.get('lane') or lane}", f"guard={fields['guard']}",
-                                    f"desc={one_line(fields['desc'])}", f"file={file}"])
+                                    "miss_reason=unknown", f"desc={one_line(fields['desc'])}", f"file={file}"])
         if code == 0:
             logged.append(file)
             notes.append(f"escape logged for {file} (guard={fields['guard']})")

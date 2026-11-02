@@ -47,7 +47,7 @@ diff and what it touches, not a fresh read.
     cross-reference the repair touched — a stale pointer left by a repair returns
     as the next round's finding.
 
-20b. **Log every real BLOCKER and GAP** — one `log-escape` line each (`stage_found=plan-review gate_missed=eng-spec`). Not a NIT, not out-of-scope, **never an `ALT`** (counted on the row below).
+20b. **Log every real BLOCKER and GAP** — one `log-escape` line each (`stage_found=plan-review gate_missed=eng-spec miss_reason=plan-gap`). Not a NIT, not out-of-scope, **never an `ALT`** (counted on the row below).
 
 21. **Log the plan.** One row, once, now that the plan is final:
 

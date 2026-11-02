@@ -845,7 +845,8 @@ class RefactorFlowTest(unittest.TestCase):
             pathlib.Path(REAL_CLAUDE_DIR) / "skills" / "review" / "log-review-finding")
         env = {**os.environ, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": telemetry,
                "REVIEW_ESCAPES_FILE": str(self.escapes), **self.ledger_env}
-        escape_base = ["stage_found=refactor", "gate_missed=review", "class=smell", "severity=low", "guard=none"]
+        escape_base = ["stage_found=refactor", "gate_missed=review", "class=smell", "severity=low", "guard=none",
+                       "miss_reason=unknown"]
         finding_base = ["kind=finding", "gate=smell-reviewer", "lane=code", "scope=standalone", "phase=-", "iter=0",
                         "disposition=fix", "class=smell", "line=1", "actioned=none"]
 

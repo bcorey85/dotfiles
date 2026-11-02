@@ -7,11 +7,15 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-799 changes
+800 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
 ## Week of 2026-11-02
+
+### Added
+
+* [A session start deletes the temp folders of sessions idle a day or more](notes/2026-11-02-a-session-start-deletes-the-temp-folders-of.md) [script/sweep-scratchpads] Old session scratchpads no longer pile up until the per-user temp quota fills and every shell call fails.
 
 ### Changed
 

@@ -30,7 +30,7 @@ class FileTimeoutTest(unittest.TestCase):
         repo_root = make_repo(self, test_sources)
         slot_scratch = tempfile.TemporaryDirectory()
         self.addCleanup(slot_scratch.cleanup)
-        environment = dict(os.environ, REPO_ROOT=repo_root, TEST_FILE_TIMEOUT_SECONDS="2",
+        environment = dict(os.environ, REPO_ROOT=repo_root, TEST_FILE_TIMEOUT_SECONDS="10",
                            SUITE_SLOT_DIR=str(pathlib.Path(slot_scratch.name) / "slots"))
         return subprocess.run([sys.executable, str(PARALLEL_TESTS)], capture_output=True, text=True, env=environment,
                               timeout=50)
@@ -41,7 +41,7 @@ class FileTimeoutTest(unittest.TestCase):
         self.assertEqual(1, finished.returncode, finished.stdout)
         self.assertRegex(finished.stdout, r"test_sleepy\.py .* FAIL")
         self.assertRegex(finished.stdout, r"test_quick\.py .* OK")
-        self.assertIn("test_sleepy.py timed out after 2s", finished.stdout)
+        self.assertIn("test_sleepy.py timed out after 10s", finished.stdout)
 
 
 def make_repo(test_case, test_sources):

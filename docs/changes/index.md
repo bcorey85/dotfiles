@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-792 changes, 20 with a measured gain, 261 behavior changes that no intake metric reads.
+793 changes, 20 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-02, [Every push line pulls with rebase first](notes/2026-11-02-every-push-line-pulls-with-rebase-first.md).
+Latest change: 2026-11-02, [Rule anchors fail CI when a prompt block drifts](notes/2026-11-02-rule-anchors-fail-ci-when-a-prompt-block-drifts.md).
 
 ## Top gains
 

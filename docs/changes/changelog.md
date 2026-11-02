@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-778 changes
+779 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -138,6 +138,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [With no ledger the skill-use and test-edit hooks keep their rows](notes/2026-11-01-with-no-ledger-the-skill-use-and-test-edit-hooks.md) [script/ledger-hook, script/hook-local-row] With no ledger and the telemetry switch on, skill-use and test-edit events now land in the jsonl files the intake copies, where they were lost before.
 * [A ledger refusal or failure never stops log-escape](notes/2026-11-01-a-ledger-refusal-or-failure-never-stops-log-escape.md) [script/log-escape, script/ledger-write] A row the ledger refuses or fails on now lands in the local jsonl with one stderr note and exit 0. log-escape checks its own required fields, so a bad call still exits 1.
 * [Scoped test gate runs the autofix formatters before it stops](notes/2026-11-01-scoped-test-gate-runs-the-autofix-formatters.md) [script/review-loop-script, skill/code, skill/review] The review loop no longer stops a finished phase on format-only scoped-test failures: a red scoped run gets one autofix formatter pass and one rerun, and only a run still red stops the loop.
 * [A plan ruling credits the tree the review covered, and the commit gate names the ruling step](notes/2026-11-01-a-plan-ruling-credits-the-tree-the-review-covered.md) [script/review-commit-gate, script/review-fix] A /code commit after a review that held a plan impact now passes the commit gate once the impact is ruled on, instead of being denied until a whole new /review (about 6 minutes) runs; a denial caused by an unruled plan impact now names the ruling command, not /review.

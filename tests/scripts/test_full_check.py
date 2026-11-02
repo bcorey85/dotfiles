@@ -516,7 +516,8 @@ class FullCheckSideEffectsTest(unittest.TestCase):
         completed = self.check("echo generated v2 > generated.ts; sleep 30", timeout=1)
 
         self.assertEqual(self.result_lines(completed),
-                         ["full check: not run (timeout)", "changed by the check: generated.ts"])
+                         ["full check: not run (timeout)", f"note: {full_check.TIMEOUT_NOTE}",
+                          "changed by the check: generated.ts"])
         self.assertEqual("generated v2\n", (self.repo / "generated.ts").read_text())
 
     def test_a_repo_that_leaves_its_log_inside_the_work_tree_does_not_report_the_log_as_created(self):

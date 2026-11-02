@@ -211,7 +211,7 @@ Pass `--plan` and `--phase` when the inputs hold both. The script then leaves ou
 - `unverified (exit 0, no test result shown)` → the command exited 0 but printed no test runner summary or ran no test, so no test is known to have run. No finding; proceed. Never call it a pass.
 - `failed (exit N)`, or `failed (exit 0, summary reports failures)` → the failures are ground truth: treat them as `fix` findings carrying `blocker` and route into the disposition gating above. A missing module from outside the repo that the repo's dependency files do not declare is a code failure and gets one coder repair.
 - `setup fault (exit N)` → the check could not run here (no program, a runner that cannot start, no package manifest, no test found, a package-manager or engine version mismatch). Return `status: setup-fault` with the printed lines in `blockers`; dispatch no coder.
-- `not run (timeout)` → no finding. Proceed.
+- `not run (timeout)` → no finding; never a blocker. The script prints a note that the check ran past its limit: put it in the packet's `tool_fault`, and proceed.
 - `not run (environment gap: No module named 'X')` → the check's interpreter lacks a module the repo declares as a dependency. No finding; never a blocker. Proceed.
 - `not run (check-command error: <line>)` → a step of the command stopped on a path that does not exist. No finding. Proceed.
 - `not run (expected red until Phase <id>[, <id>...])` → the plan expects the whole check to fail until that phase. No finding. Run the tests of the files this phase changed, by name, once, redirected to the same log. A failure there is a `fix` finding carrying `blocker`.

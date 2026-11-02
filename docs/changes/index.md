@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-795 changes, 20 with a measured gain, 261 behavior changes that no intake metric reads.
+796 changes, 20 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-02, [a /code fork cannot hand back while its coder still runs](notes/2026-11-02-a-code-fork-cannot-hand-back-while-its-coder-still.md).
+Latest change: 2026-11-02, [Review packet's class-closure receipt names the members the class repair fixed](notes/2026-11-02-review-packet-s-class-closure-receipt-names-the.md).
 
 ## Top gains
 

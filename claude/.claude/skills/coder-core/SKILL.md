@@ -42,6 +42,10 @@ Before you write a new helper, constant, type, or block of logic, search the rep
 
 For each async action you add to a view, decide what every control does while it runs and what happens if the view closes: block it or cancel it. Clear all view state on close. Test one control used mid-request and one close-and-reopen.
 
+## Fixing a review finding
+
+When you fix a review finding, search the code for every other site with the same defect and fix those too. Name each site in your report.
+
 ## Tests are yours
 
 Write the tests for the behavior you implement, in the project's test layout. Assert what the plan and the acceptance criteria state, not what your code happens to do. A red test the plan supports is a bug in your code: fix the code, never the assertion. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.

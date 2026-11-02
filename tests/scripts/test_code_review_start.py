@@ -130,9 +130,10 @@ class CodeReviewStartTest(unittest.TestCase):
     def test_a_dash_for_the_plan_leaves_out_the_plan_lines_and_takes_the_gate_files_from_the_handoff(self):
         (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
         (self.repo / "handoff.txt").write_text("handoff:\n  files:\n    - path: src/one.py\n      change: x\n")
+        base = self.commit_base()
         code_review_start = self.load_module()
 
-        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base", BASE,
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base", base,
                                "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False)
         commands = code_review_start.phase_gate_commands(self.repo, "-", "1", BASE,
                                                          (self.repo / "handoff.txt").read_text())
@@ -151,6 +152,45 @@ class CodeReviewStartTest(unittest.TestCase):
                                                          "handoff:\n  files:\n    - path: app.py\n      change: x\n")
 
         self.assertEqual(SAMPLE_COMMANDS, commands)
+
+    def commit_base(self):
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run([*git, "add", "-A"], cwd=self.repo, check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "base"], cwd=self.repo, check=True)
+        done = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True, check=True)
+        return done.stdout.strip()
+
+    def test_the_handoff_files_come_from_git_and_only_the_coders_why_lines_are_kept(self):
+        base = self.commit_base()
+        (self.repo / "src").mkdir()
+        (self.repo / "src/tracked.py").write_text("a = 1\n")
+        subprocess.run(["git", "add", "src/tracked.py"], cwd=self.repo, check=True)
+        (self.repo / "docs/plans/p/spec.md").write_text(PLAN + "edited\n")
+        (self.repo / "src/untracked.py").write_text("b = 2\n")
+        coder_handoff = "\n".join([
+            "handoff:", "  files:", "    - path: src/untracked.py", "      change: invented export foo",
+            "      why:", "        - lines: 1-1", "          note: kept", "    - path: src/forgotten_by_git.py",
+            "      change: not changed at all", "  tests-run: none", "  iter: 0", ""])
+        (self.repo / "handoff.txt").write_text(coder_handoff)
+
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base", base,
+                               "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        handoff = done.stdout.partition("\n\n")[2]
+        paths = [line.split("path: ")[1] for line in handoff.splitlines() if "path: " in line]
+        self.assertEqual(["docs/plans/p/spec.md", "handoff.txt", "src/tracked.py", "src/untracked.py"], paths)
+        self.assertNotIn("invented export", handoff)
+        self.assertNotIn("forgotten_by_git", handoff)
+        self.assertIn("      why:\n        - lines: 1-1\n          note: kept\n  tests-run: none", handoff)
+
+    def test_a_base_that_is_not_a_commit_stops_the_run_when_the_handoff_lists_files(self):
+        (self.repo / "handoff.txt").write_text("handoff:\n  files:\n    - path: a.py\n  iter: 0\n")
+
+        done = self.start("--dry-run")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("is not a commit", done.stderr)
 
     def test_too_few_arguments_print_the_usage(self):
         done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a"], cwd=self.repo, capture_output=True,

@@ -23,6 +23,10 @@ handoff:
   spec_iter: <integer>    # post-convergence specialist re-entries consumed (default 0; omit on a first dispatch)
 ```
 
+## Who writes `files` for `/code`
+
+`/code` writes only the `why` entries; `code_review_start.py` replaces `files` with the paths git shows changed since the phase base (tracked changes plus untracked files), keeping each entry's `why`. Never list a changed file, an export or a line number from memory.
+
 ## The `why` channel
 
 `change` serves the reviewer; `why` serves the human.

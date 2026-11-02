@@ -38,6 +38,59 @@ NO_PLAN = gate_commands.NO_PLAN
 HANDOFF_FILE_PATH = re.compile(r"^\s*-\s*path:\s*(\S+)", re.M)
 
 
+HANDOFF_FILES_LINE = "  files:"
+HANDOFF_WHY_LINE = re.compile(r"^\s{6}why:")
+
+
+def coder_why_blocks(entry_lines):
+    # {path: the entry's `why:` lines} of the coder's files entries. Only the why lines are kept.
+    why_by_path = {}
+    path = None
+    in_why = False
+    for line in entry_lines:
+        entry = HANDOFF_FILE_PATH.match(line)
+        if entry:
+            path = entry.group(1)
+            in_why = False
+            continue
+        if path and HANDOFF_WHY_LINE.match(line):
+            in_why = True
+        if path and in_why:
+            why_by_path.setdefault(path, []).append(line)
+    return why_by_path
+
+
+def handoff_with_git_files(repo, base, handoff):
+    # The handoff's `files:` list is the files git shows changed since base (tracked changes plus untracked files).
+    # The coder's own list is dropped; only its `why:` lines are kept, under the matching path.
+    lines = handoff.splitlines()
+    starts = [at for at, line in enumerate(lines) if line.rstrip() == HANDOFF_FILES_LINE]
+    if not starts:
+        return handoff
+
+    start = starts[0]
+    end = len(lines)
+    for at in range(start + 1, len(lines)):
+        if lines[at].strip() and not lines[at].startswith("    "):
+            end = at
+            break
+
+    base_commit = script_utils.git_output(repo, "rev-parse", "--verify", f"{base}^{{commit}}")
+    if base_commit is None:
+        sys.exit(f"code_review_start: --base {base} is not a commit in {repo}; the handoff's files come from git")
+
+    why_by_path = coder_why_blocks(lines[start + 1:end])
+    changed = coder_gate.changed_files(repo, base_commit)
+    if not changed:
+        return "\n".join([*lines[:start], f"{HANDOFF_FILES_LINE} []", *lines[end:]]) + "\n"
+
+    files_lines = [HANDOFF_FILES_LINE]
+    for path in changed:
+        files_lines += [f"    - path: {path}", "      change: changed since the phase base",
+                        *why_by_path.get(path, [])]
+    return "\n".join([*lines[:start], *files_lines, *lines[end:]]) + "\n"
+
+
 def review_prompt(repo, lane, plan, phase, handoff):
     header = ["mode: review-first", "caller: code", f"lane: {lane}", f"repo: {repo}"]
 
@@ -98,7 +151,8 @@ def main(argv):
     lane, plan, phase, handoff_file = argv[1:5]
     base = base_option(argv)
     repo = pathlib.Path.cwd().resolve()
-    handoff = pathlib.Path(handoff_file).read_text()
+    coder_handoff = pathlib.Path(handoff_file).read_text()
+    handoff = handoff_with_git_files(repo, base, coder_handoff)
     prompt = review_prompt(repo, lane, plan, phase, handoff)
     if "--dry-run" in argv:
         print(prompt)

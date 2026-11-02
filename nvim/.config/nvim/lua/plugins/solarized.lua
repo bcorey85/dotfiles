@@ -5,4 +5,8 @@ return {
   "maxmx03/solarized.nvim",
   lazy = false,
   priority = 1000,
+  opts = {
+    -- The theme hardcodes bold on the Keyword group; styles.keywords overrides it.
+    styles = { keywords = { bold = false } },
+  },
 }

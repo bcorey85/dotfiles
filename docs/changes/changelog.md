@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-797 changes
+798 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Push lines pull with rebase and autostash](notes/2026-11-02-push-lines-pull-with-rebase-and-autostash.md) [rule/global-claude-md] Push lines handed to the user run pull --rebase --autostash, so uncommitted edits in unrelated files no longer stop the line before the push.
 * [Coder updates the docs a fix makes stale](notes/2026-11-02-coder-updates-the-docs-a-fix-makes-stale.md) [skill/coder-core] The coder now updates the comments, docs and messages a fix makes wrong in 62% of runs, up from 0% (0/16 → 10/16). Coder-core gains one sentence under Fixing a review finding. **cuts % of runs leaving stale text by 62% (100 → 38)**
 * [Every push line pulls with rebase first](notes/2026-11-02-every-push-line-pulls-with-rebase-first.md) [rule/global-claude-md] Push lines handed to the user no longer fail when another machine pushed first: every one runs pull --rebase before push.
 * [Coder fixes every site of a reviewed defect](notes/2026-11-02-coder-fixes-every-site-of-a-reviewed-defect.md) [skill/coder-core] The coder now fixes every sibling site of a reviewed defect in 94% of runs, up from 0% (0/16 → 15/16, two fixtures). Coder-core gains one sentence: when fixing a review finding, find and fix every other site with the same defect. **cuts % of runs leaving a sibling site unfixed by 94% (100 → 6)**

@@ -4,7 +4,7 @@
 -- Functions and calls are violet (definitions not bold), strings teal, literals
 -- magenta, types green, builtins and modules blue, parameters orange, attributes
 -- and preprocessor red, comments yellow. Warnings take an amber, clear of the
--- orange parameters and the yellow comments. Markdown headings are violet.
+-- orange parameters and the yellow comments. Markdown H1 is magenta, H2-H6 violet.
 -- No italics: hunk can't render them, and the two must match.
 -- Diffs take osaka's washes: teal add, deep-red remove. Signs (added, removed,
 -- changed) fade toward the ground, 25% dark and 15% light, so the gutter sits under the text.
@@ -187,7 +187,7 @@ local groups = {
   SpecialKey = { fg = c.nontext },
   Conceal = { fg = c.muted },
   Directory = { fg = c.fg, bold = true },
-  Title = { fg = c.teal, bold = true },
+  Title = { fg = c.fn, bold = true },
   ErrorMsg = { fg = c.red },
   WarningMsg = { fg = c.warn },
   MoreMsg = { fg = c.green },
@@ -324,7 +324,7 @@ local groups = {
   ["@markup.strikethrough"] = { strikethrough = true },
   ["@markup.underline"] = { underline = true },
   ["@markup.heading"] = { fg = c.fn, bold = true },
-  ["@markup.quote"] = { fg = c.comment, italic = true },
+  ["@markup.quote"] = { fg = c.comment },
   ["@markup.math"] = { fg = c.str },
   ["@markup.link"] = { fg = c.fn },
   ["@markup.link.label"] = { fg = c.fn },

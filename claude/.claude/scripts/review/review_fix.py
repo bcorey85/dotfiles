@@ -25,12 +25,13 @@ posts the Aikido replies, and prints what the model still judges.
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
   review_fix.py launch [--repo <abs path>]
-                                         run the scripted review loop (review_loop_script.py) in the foreground, as a
-                                         review-first run for /review, and print its log path first. Records the
-                                         session's dispatch row, writes the prompt file (lane none; review the working
-                                         tree against HEAD), and keeps its state under
-                                         <git dir>/review-script. It exits when the loop script exits, after it has
-                                         handed back or crashed; run `packet --skill review` next either way. Exits 2
+                                         start the scripted review loop (review_loop_script.py --reviewers main) as a
+                                         detached process, as a review-first run for /review, and print its log path
+                                         first. Records the session's dispatch row, writes the prompt file (lane none;
+                                         review the working tree against HEAD) and the loop's pid, and keeps its state
+                                         under <git dir>/review-script. It returns when the loop asks for reviewers
+                                         (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop
+                                         script exits; run `packet --skill review` after the exit either way. Exits 2
                                          when CLAUDE_CODE_SESSION_ID is not set, and when the working tree has no
                                          changes against HEAD (review committed work with base=<ref>).
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
@@ -70,12 +71,13 @@ import handback_store
 import handoff_files
 import plan_format
 import review_asks
+import reviewer_dispatch
 import script_utils
 import worktree_snapshot
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
-from review_loop_script import loop_script_command, write_script_prompt
+from review_loop_script import REVIEWERS_MAIN, loop_script_command, write_script_prompt
 from saved_handback import LoopWaitingError, NoHandbackError, dispatched_repo, read_message
 from script_utils import one_line, run_command, split_location
 
@@ -773,8 +775,9 @@ def launch_arguments(argv):
 
 
 def command_launch(argv):
-    # Runs the loop script the way /code's launcher does, minus the /code run state, and waits for it: the skill runs
-    # this verb as a background command, so its completion is the wake-up.
+    # Starts the loop script the way /code's launcher does, minus the /code run state, with the main session as the
+    # reviewers, and waits for its first reviewer request or its exit: the skill runs this verb as a background
+    # command, so its completion is the wake-up.
     options = launch_arguments(argv)
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not session_id:
@@ -801,11 +804,19 @@ def command_launch(argv):
     sys.stdout.flush()
 
     handback_hook.record_script_dispatch(session_id, repo)
-    command = loop_script_command(LOOP_SCRIPT, repo, state_dir, session_id, agent_id, prompt_file)
+    command = loop_script_command(LOOP_SCRIPT, repo, state_dir, session_id, agent_id, prompt_file,
+                                  reviewers=REVIEWERS_MAIN)
     with log_path.open("w") as log:
-        finished = subprocess.run(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+        loop = subprocess.Popen(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                                start_new_session=True)
+    loop_dir = log_path.parent
+    script_utils.write_text_atomically(loop_dir / reviewer_dispatch.PID_FILE, f"{loop.pid}\n")
 
-    print(f"The review loop script exited {finished.returncode}. Run `{DECIDE_SCRIPT} packet --skill review` now.")
+    dispatch_lines = reviewer_dispatch.wait_for_step(loop_dir, lambda: loop.poll() is None)
+    if dispatch_lines is not None:
+        print("\n".join(dispatch_lines))
+        return 0
+    print(f"The review loop script exited {loop.returncode}. Run `{DECIDE_SCRIPT} packet --skill review` now.")
     return 0
 
 

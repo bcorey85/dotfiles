@@ -18,7 +18,9 @@ allowed-tools: [Agent, Bash, Read, Edit, AskUserQuestion]
    python3 ~/.claude/scripts/review/review_fix.py launch [--repo <absolute path>]
    ```
 
-   `--repo` when the work lives outside your cwd's repo. End the turn; when the command's completion notice arrives, run step 2. Do not dispatch an agent. If it printed `ACTION: stop-usage` (a clean tree), skip step 2: show the user its lines, never report a clean review.
+   `--repo` when the work lives outside your cwd's repo. End the turn; when the command's completion notice arrives, read its output. If it printed `ACTION: stop-usage` (a clean tree), skip step 2: show the user its lines, never report a clean review.
+
+   On `ACTION: dispatch-reviewer`: in one message, dispatch one `Agent` per listed line, `subagent_type` its agent, no `model`, prompt `Read <prompt file> whole and do that task.` When they return, Write each one's final text verbatim to its report file. Then run the printed `wait` command with `run_in_background: true`, end the turn, and handle its output the same way. Run step 2 once a line says the loop finished or exited. Dispatch no other agent.
 
    **Agent** otherwise. `Agent` with `subagent_type: "review-loop"`, `model: "sonnet"`. Pass, verbatim:
    - `mode: review-first`, `caller: review`

@@ -300,6 +300,47 @@ class ReviewLoopScriptTest(unittest.TestCase):
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
 
+    def answer_round(self, round_number, text, process):
+        """Plays the main session for one review round: waits for the round's manifest, writes `text` as every
+        report. Returns the round's requests."""
+        manifest = self.state_dir / "loop-script" / AGENT_ID / "reviewer-requests" / f"round-{round_number}.json"
+        deadline = time.time() + 60
+        while not manifest.is_file():
+            if process.poll() is not None:
+                self.fail(f"loop exited {process.returncode}: {process.stderr.read()}")
+            self.assertLess(time.time(), deadline, f"no {manifest}")
+            time.sleep(0.05)
+        requests = json.loads(manifest.read_text())["requests"]
+        for request in requests:
+            pathlib.Path(request["report_file"]).write_text(text)
+        return requests
+
+    def test_main_mode_hands_each_round_to_the_main_session_and_reads_its_reports(self):
+        (self.fake_dir / "scenario.json").write_text(json.dumps(FIX_THEN_CLEAN))
+        prompt = self.scratch / "prompt.txt"
+        prompt.write_text(self.prompt_file_text())
+        process = subprocess.Popen([*self.script_command(prompt), "--reviewers", "main"], stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=self.env)
+        self.addCleanup(process.kill)
+
+        first = self.answer_round(1, FIX_REVIEW, process)
+        second = self.answer_round(2, CLEAN_REVIEW, process)
+        _stdout, stderr = process.communicate(timeout=120)
+
+        self.assertEqual(process.returncode, 0, stderr)
+        self.assertEqual([(request["role"], request["agent"]) for request in first + second],
+                         [("review1-code-reviewer", "code-reviewer"), ("review2-code-reviewer", "code-reviewer")])
+        self.assertIn("app.py", pathlib.Path(first[0]["prompt_file"]).read_text())
+        self.assertNotIn("code-reviewer", [call["key"] for call in self.fake_calls()])
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["iter"]), ("converged", 2))
+        self.assertEqual(packet["fixed"][0]["file_line"], "app.py:2")
+        calls = [json.loads(line)
+                 for line in (self.state_dir / "loop-script" / AGENT_ID / "calls.jsonl").read_text().splitlines()]
+        main_rows = [call for call in calls if call.get("via") == "main"]
+        self.assertEqual([(call["role"], call["tokens"]) for call in main_rows],
+                         [("review1-code-reviewer", 0), ("review2-code-reviewer", 0)])
+
     def test_a_review_prompt_with_no_phase_logs_a_standalone_scope(self):
         self.prompt_file_text = lambda header_extra="", footer="": (
             "mode: review-first\ncaller: review\nlane: none\n\nhandoff:\n  files:\n    - path: app.py\n")

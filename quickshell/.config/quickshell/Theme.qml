@@ -185,7 +185,10 @@ Singleton {
     })
 
     // Unknown family falls back to onedarkpro rather than leaving the bar unpainted.
-    readonly property var p: palettes[family + "-" + mode] ?? palettes["onedarkpro-" + mode] ?? palettes["onedarkpro-dark"]
+    // Families that differ only in nvim syntax borrow another family's palette (theme-mode asset_family).
+    readonly property var aliases: ({ "dredge-roles": "dredge" })
+    readonly property string paletteFamily: aliases[family] ?? family
+    readonly property var p: palettes[paletteFamily + "-" + mode] ?? palettes["onedarkpro-" + mode] ?? palettes["onedarkpro-dark"]
 
     readonly property color bg: p.bg
     readonly property color panel: p.panel

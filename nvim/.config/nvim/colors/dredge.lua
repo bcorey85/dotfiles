@@ -1,29 +1,13 @@
--- dredge — personal theme-mode family, dark and light. Prose first, diffs second:
--- charcoal ground (OKLCH L 0.232) with a whisper of blue (h 258, C 0.005). fg and fg_bright
--- carry more (C 0.016; light C 0.018) so they don't read warm. The text greys (keywords,
--- punctuation, line numbers, muted, quotes, ANSI greys) carry two thirds of it (C 0.011; light C 0.012).
--- Contrast is tuned in APCA Lc, not WCAG ratios, which overrate
--- light-on-dark. Dark is deliberately dim against halation: fg Lc 71,
--- definitions 47, comments 55, punctuation 33. Light: fg Lc 64, definitions 50, comments 48, punctuation 33. Lc is a floor, not a target: coloured
--- token pairs also keep OKLab dE >= 0.09 in light, >= 0.085 in dark.
--- Colour marks definitions; uses and calls are fg. Every definition is
--- indigo (h 285, leaning violet): top-level variables and constants, functions and
--- classes. Keys, fields, attributes, parameters and builtins (self, JSON) are
--- fg. Literals are dusty rose (h 5; light is pinker, h 355 C 0.14; None, numbers, booleans,
--- symbols, escapes, regex).
--- Strings are sea teal (h 182, dark L 0.72 C 0.070); comments are sand (h 80, C 0.020; light C 0.034). No italics: hunk can't render
--- them, and the two must match.
--- Light mirrors dark's hues and order: comments sit between fg and the
--- keywords. Code accents keep OKLab dE >= 0.17 from the near-black fg, or thin
--- strokes read as black; teal is chroma-capped in sRGB, so it gets there by lightness. Keywords are
--- the ground's grey, a step above punctuation, and so are markup tags. Types are fg.
--- Modules stay fg. Markdown headings are indigo, like definitions.
--- Diffs: added = green signs on a green wash (green is free: code never uses it),
--- removed = orange-red (h 38) on sign, rail and wash alike, clear of the rose
--- literals and the yellow change sign; same washes as hunk. Changed words
--- separate by chroma, not lightness. Red reads louder than green, so the
--- removed wash carries less chroma. Signs (added, removed, changed) fade toward
--- the ground, 25% dark and 15% light, so the gutter sits under the text.
+-- dredge — personal theme-mode family, dark and light: solarized-osaka's hues on
+-- dredge's roles. Dark ground is slate (OKLCH L 0.205, h 225, C 0.030), midway
+-- between charcoal and osaka's navy. Keywords, punctuation and line numbers are greys.
+-- Functions and calls are violet (definitions not bold), strings teal, literals
+-- magenta, types green, builtins and modules blue, parameters orange, attributes
+-- and preprocessor red, comments yellow. Warnings take an amber, clear of the
+-- orange parameters and the yellow comments. Markdown headings are violet.
+-- No italics: hunk can't render them, and the two must match.
+-- Diffs take osaka's washes: teal add, deep-red remove. Signs (added, removed,
+-- changed) fade toward the ground, 25% dark and 15% light, so the gutter sits under the text.
 -- Teal is the accent; yellow marks changed. The palette below is the source of truth; the
 -- ghostty/herdr/hunk/starship/quickshell/claude-theme copies mirror it by hand.
 -- Editing: one value at a time, judged on a real file in nvim and hunk before the
@@ -33,97 +17,112 @@
 local palettes = {}
 
 palettes.dark = {
-  bg = "#1c1e20",
-  bg_dark = "#151719",
-  bg_line = "#292b2d",
-  bg_cursor = "#222426",
-  bg_sel = "#343638",
-  bg_visual = "#3b3c3e",
-  border = "#414244",
-  nontext = "#454648",
+  bg = "#061a21",
+  bg_dark = "#01131a",
+  bg_line = "#13272f",
+  bg_cursor = "#0c2028",
+  bg_sel = "#1e323a",
+  bg_visual = "#243841",
+  border = "#2a3e47",
+  nontext = "#2e434b",
   linenr = "#777b82",
   muted = "#9b9fa6",
   comment = "#a8adb4",
   punct = "#7c8187",
-  fg = "#c1c8d2",
+  fg = "#a0adb4",
   fg_bright = "#d4dbe5",
 
   red = "#ed8c84",
   amber = "#f6a981",
   yellow = "#d7bb70",
+  warn = "#e3a257",
   green = "#8dd09b",
-  teal = "#71b3a8",
+  teal = "#29a298",
   blue = "#85beef",
-  magenta = "#c799c9",
+  magenta = "#e34990",
 
   kw = "#858990",
-  fn = "#9e9dd9",
-  remark = "#b2a99d",
-  str = "#71b3a8",
-  const = "#cb8998",
+  fn = "#7980d4",
+  call = "#7980d4",
+  type = "#849900",
+  builtin = "#1c90cb",
+  param = "#d66e31",
+  attr = "#de4f46",
+  preproc = "#de4f46",
+  remark = "#bf983f",
+  str = "#29a298",
+  const = "#e34990",
 
-  added = "#5da37e",
-  removed = "#be6146",
+  added = "#29a298",
+  removed = "#db302d",
   changed = "#b19950",
-  diff_add = "#1e2a24",
-  diff_delete = "#2d2423",
-  diff_change = "#1e2a24",
-  diff_text = "#154b2f",
-  diff_text_delete = "#552b20",
+  diff_add = "#142d2e",
+  diff_delete = "#2c0e0d",
+  diff_change = "#142d2e",
+  diff_text = "#173f3e",
+  diff_text_delete = "#461312",
   search = "#5b4032",
 
   term = {
-    "#151719", "#ed8c84", "#8dd09b", "#d7bb70", "#85beef", "#c799c9", "#71b3a8", "#c1c8d2",
-    "#777b81", "#f9aea7", "#aee4b8", "#e9d296", "#a7d3f8", "#d8b1d9", "#b1dfd6", "#d4dbe5",
+    "#01131a", "#ed8c84", "#8dd09b", "#d7bb70", "#85beef", "#e34990", "#29a298", "#c1c8d2",
+    "#777b81", "#f9aea7", "#aee4b8", "#e9d296", "#a7d3f8", "#f37fae", "#9ad8d1", "#d4dbe5",
   },
 }
 
--- Light: light grey (OKLCH L 0.82) with the same whisper of blue (C 0.005). Accents sit around
--- L 0.47-0.52; luminance over contrast. Strings keep full chroma (C 0.087), or
--- they sit too close to the grey keywords.
+-- Light: dim cream (OKLCH L 0.746, C 0.024, h 87). The ground ramp and washes
+-- sit at 0.783 of a bright cream ramp; text keeps full-strength hues.
 palettes.light = {
-  bg = "#c3c5c8",
-  bg_dark = "#bec0c3",
-  bg_line = "#babcbf",
-  bg_cursor = "#bec0c3",
-  bg_sel = "#adaeb0",
-  bg_visual = "#abaebf",
-  border = "#9a9c9f",
-  nontext = "#a3a5a8",
-  linenr = "#81868d",
-  muted = "#666a71",
-  comment = "#52565d",
-  punct = "#7c8189",
-  fg = "#30363f",
+  bg = "#bbb4a4",
+  bg_dark = "#b7b0a0",
+  bg_line = "#b4ad9d",
+  bg_cursor = "#b7b0a0",
+  bg_sel = "#a9a292",
+  bg_visual = "#a0a2b3",
+  border = "#9a9384",
+  nontext = "#a19a8b",
+  linenr = "#60656b",
+  muted = "#4e5158",
+  comment = "#3e4148",
+  punct = "#575b62",
+  fg = "#2e3c46",
   fg_bright = "#131820",
 
   red = "#b0423f",
   amber = "#9e510f",
   yellow = "#846322",
+  warn = "#7a4400",
   green = "#317a46",
-  teal = "#18796d",
+  teal = "#006f68",
   blue = "#296caa",
-  magenta = "#79437c",
+  magenta = "#ae1967",
 
-  kw = "#6d7279",
-  fn = "#574fa0",
-  remark = "#6a5e4a",
-  str = "#18796d",
-  const = "#9d3a67",
+  kw = "#454950",
+  fn = "#4e4bba",
+  call = "#4e4bba",
+  type = "#576600",
+  builtin = "#00649a",
+  param = "#9e441d",
+  attr = "#ac312a",
+  preproc = "#ac312a",
+  remark = "#6d4a00",
+  str = "#006f68",
+  const = "#ae1967",
 
-  added = "#36885f",
-  removed = "#b65a3e",
+  added = "#038880",
+  removed = "#d72d2b",
   changed = "#917031",
-  diff_add = "#b4c5bc",
-  diff_delete = "#cabdba",
-  diff_change = "#b4c5bc",
-  diff_text = "#99bfa7",
-  diff_text_delete = "#caa59b",
-  search = "#cba289",
+  diff_add = "#9bb1af",
+  diff_delete = "#b7a8a5",
+  diff_change = "#9bb1af",
+  diff_text = "#72aca6",
+  diff_text_delete = "#bb908b",
+  search = "#a78773",
 
+  -- Bright slots are deeper shades, as in solarized-osaka light: on a light
+  -- ground a lighter "bright" colour reads fainter, not louder.
   term = {
-    "#25292f", "#b0423f", "#317a46", "#846322", "#296caa", "#79437c", "#18796d", "#4d5158",
-    "#4b4f56", "#cc544f", "#3e8d53", "#ab8731", "#3d7ebe", "#8b538f", "#348b7f", "#25292f",
+    "#25292f", "#962929", "#0e5e2c", "#6b4b00", "#07538f", "#a0005c", "#005b55", "#4d5158",
+    "#4b4f56", "#860914", "#004c15", "#5b3a00", "#00417d", "#82004b", "#004a44", "#25292f",
   },
 }
 
@@ -190,7 +189,7 @@ local groups = {
   Directory = { fg = c.fg, bold = true },
   Title = { fg = c.teal, bold = true },
   ErrorMsg = { fg = c.red },
-  WarningMsg = { fg = c.yellow },
+  WarningMsg = { fg = c.warn },
   MoreMsg = { fg = c.green },
   OkMsg = { fg = c.green },
   ModeMsg = { fg = c.fg, bold = true },
@@ -218,15 +217,15 @@ local groups = {
   Operator = { fg = c.punct },
   Keyword = { fg = c.kw },
   Exception = { fg = c.kw },
-  PreProc = { fg = c.kw },
+  PreProc = { fg = c.preproc },
   Include = { fg = c.kw },
   Define = { fg = c.kw },
   Macro = { fg = c.fg },
   PreCondit = { fg = c.kw },
-  Type = { fg = c.fg },
+  Type = { fg = c.type },
   StorageClass = { fg = c.kw },
-  Structure = { fg = c.fg },
-  Typedef = { fg = c.fg },
+  Structure = { fg = c.type },
+  Typedef = { fg = c.type },
   Special = { fg = c.const },
   SpecialChar = { fg = c.const },
   Tag = { fg = c.kw },
@@ -240,8 +239,8 @@ local groups = {
   -- treesitter
   -- Variables are plain at use; indigo marks their top-level definition.
   ["@variable"] = { fg = c.fg },
-  ["@variable.builtin"] = { fg = c.fg },
-  ["@variable.parameter"] = { fg = c.fg },
+  ["@variable.builtin"] = { fg = c.builtin },
+  ["@variable.parameter"] = { fg = c.param },
   -- Shell arguments, flags and $VAR uses are uses: plain.
   ["@variable.parameter.bash"] = { fg = c.fg },
   ["@constant.bash"] = { fg = c.fg },
@@ -255,8 +254,8 @@ local groups = {
   ["@constant"] = { fg = c.fg },
   ["@constant.builtin"] = { fg = c.const },
   ["@constant.macro"] = { fg = c.fg },
-  ["@module"] = { fg = c.fg },
-  ["@module.builtin"] = { fg = c.fg },
+  ["@module"] = { fg = c.builtin },
+  ["@module.builtin"] = { fg = c.builtin },
   ["@label"] = { fg = c.kw },
   ["@string"] = { fg = c.str },
   ["@string.documentation"] = { fg = c.remark },
@@ -280,22 +279,21 @@ local groups = {
   ["@declaration.variable"] = { fg = c.fn },
   ["@number"] = { fg = c.const },
   ["@boolean"] = { fg = c.const },
-  -- Types are plain; indigo marks them at their definition.
-  ["@type"] = { fg = c.fg },
-  ["@type.builtin"] = { fg = c.fg },
-  ["@type.definition"] = { fg = c.fg },
-  ["@attribute"] = { fg = c.fg },
+  ["@type"] = { fg = c.type },
+  ["@type.builtin"] = { fg = c.type },
+  ["@type.definition"] = { fg = c.type },
+  ["@attribute"] = { fg = c.attr },
   ["@function"] = { fg = c.fn },
-  -- Calls are plain; purple marks functions at their definition.
-  ["@function.builtin"] = { fg = c.fg },
-  ["@function.call"] = { fg = c.fg },
+  -- Calls take the function violet, without the definition's bold.
+  ["@function.builtin"] = { fg = c.builtin },
+  ["@function.call"] = { fg = c.call },
   ["@function.macro"] = { fg = c.fg },
   ["@function.method"] = { fg = c.fn },
-  ["@function.method.call"] = { fg = c.fg },
-  ["@constructor"] = { fg = c.fg },
+  ["@function.method.call"] = { fg = c.call },
+  ["@constructor"] = { fg = c.type },
   -- Python has no pure types; tree-sitter captures capitalised names as @type.
-  ["@type.python"] = { fg = c.fg },
-  ["@type.definition.python"] = { fg = c.fn },
+  ["@type.python"] = { fg = c.type },
+  ["@type.definition.python"] = { fg = c.type == c.fg and c.fn or c.type },
   -- Lua captures table braces as @constructor.
   ["@constructor.lua"] = { link = "@punctuation.bracket" },
   ["@operator"] = { fg = c.punct },
@@ -314,7 +312,7 @@ local groups = {
   ["@punctuation.special"] = { fg = c.punct },
   ["@comment"] = { link = "Comment" },
   ["@comment.error"] = { fg = c.red, bold = true },
-  ["@comment.warning"] = { fg = c.yellow, bold = true },
+  ["@comment.warning"] = { fg = c.warn, bold = true },
   ["@comment.note"] = { fg = c.teal, bold = true },
   ["@comment.todo"] = { link = "Todo" },
   ["@tag"] = { fg = c.kw },
@@ -372,12 +370,12 @@ local groups = {
 
   -- diagnostics
   DiagnosticError = { fg = c.red },
-  DiagnosticWarn = { fg = c.yellow },
+  DiagnosticWarn = { fg = c.warn },
   DiagnosticInfo = { fg = c.blue },
   DiagnosticHint = { fg = c.teal },
   DiagnosticOk = { fg = c.green },
   DiagnosticUnderlineError = { sp = c.red, undercurl = true },
-  DiagnosticUnderlineWarn = { sp = c.yellow, undercurl = true },
+  DiagnosticUnderlineWarn = { sp = c.warn, undercurl = true },
   DiagnosticUnderlineInfo = { sp = c.blue, undercurl = true },
   DiagnosticUnderlineHint = { sp = c.teal, undercurl = true },
   DiagnosticUnderlineOk = { sp = c.green, undercurl = true },

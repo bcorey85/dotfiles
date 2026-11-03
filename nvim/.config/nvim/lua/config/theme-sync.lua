@@ -117,9 +117,9 @@ local FAMILIES = {
     -- split them from docstrings and from hunk.
     own_comment_contrast = true,
     accents = {
-      -- Headings are periwinkle at every level: a heading defines a section.
-      dark = { heading = "#9e9dd9", bullet = "#9b9fa6" },
-      light = { heading = "#574fa0", bullet = "#666a71" },
+      -- H1 takes the constant magenta; H2-H6 the function violet.
+      dark = { heading1 = "#e34990", heading = "#7980d4", bullet = "#9b9fa6" },
+      light = { heading1 = "#ae1967", heading = "#4e4bba", bullet = "#4e5158" },
     },
   },
   ["solarized-osaka"] = {
@@ -340,8 +340,17 @@ local function set_org_agenda()
 end
 
 -- Snacks dashboard shortcuts in the family's purple, their text in plain fg.
+-- Path prefixes take the line-number grey (snacks' NonText default vanishes on
+-- dark grounds); todo keywords take the warning amber.
 local function set_dashboard()
-  local links = { Key = "Function", Icon = "Function", Desc = "Normal", File = "Normal" }
+  local links = {
+    Key = "Function",
+    Icon = "Function",
+    Desc = "Normal",
+    File = "Normal",
+    Dir = "LineNr",
+    Todo = "DiagnosticWarn",
+  }
   for group, target in pairs(links) do
     vim.api.nvim_set_hl(0, "SnacksDashboard" .. group, { link = target })
   end

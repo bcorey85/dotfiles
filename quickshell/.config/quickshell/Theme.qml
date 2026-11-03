@@ -147,16 +147,16 @@ Singleton {
             orange: "#d7827e", yellow: "#ea9d34", magenta: "#907aa9"
         },
         "dredge-dark": {
-            bg: "#1c1e20", panel: "#151719", border: "#414244",
-            fg: "#c1c8d2", muted: "#9b9fa6",
-            green: "#8dd09b", red: "#ed8c84", teal: "#4c8e84",
-            orange: "#f6a981", yellow: "#d7bb70", magenta: "#c799c9"
+            bg: "#061a21", panel: "#01131a", border: "#2a3e47",
+            fg: "#a0adb4", muted: "#9b9fa6",
+            green: "#8dd09b", red: "#ed8c84", teal: "#29a298",
+            orange: "#f6a981", yellow: "#d7bb70", magenta: "#e34990"
         },
         "dredge-light": {
-            bg: "#c3c5c8", panel: "#bec0c3", border: "#9a9c9f",
-            fg: "#30363f", muted: "#666a71",
-            green: "#317a46", red: "#b0423f", teal: "#18796d",
-            orange: "#9e510f", yellow: "#846322", magenta: "#79437c"
+            bg: "#bbb4a4", panel: "#b7b0a0", border: "#9a9384",
+            fg: "#2e3c46", muted: "#4e5158",
+            green: "#317a46", red: "#b0423f", teal: "#006f68",
+            orange: "#7a4400", yellow: "#6d4a00", magenta: "#ae1967"
         },
         "aura-dark": {
             bg: "#15141b", panel: "#1e1c28", border: "#3b3557",

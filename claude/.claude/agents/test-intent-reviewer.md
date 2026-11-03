@@ -58,7 +58,7 @@ For every test **added** in the diff — never a modified pre-existing test, and
 
 A weak test: right test, right behavior, loose oracle — accepts wrong values that matter. Over the tests the branch **added or modified**, flag every assertion that accepts a wrong value the plan rules out.
 
-Then the absence pass, which the shape pass cannot see. Enumerate the plan's promises for the units the branch touched: every success-criterion line, every named contract value or mapping (a field, a key, a rendered string, a fallback such as "`X` when nil"), and every edge-case row. For each promise, grep the suite for the assertion that pins it. **Report the count in the header, always**: `Promises walked: N, unpinned: M`. A promise no assertion holds is a WEAK finding of class `absent`, cited to the plan line. No count reported means the pass did not run.
+Then the absence pass, for promises no assertion touches. Enumerate the plan's promises for the units the branch touched: every success-criterion line, every named contract value or mapping (a field, a key, a rendered string, a fallback such as "`X` when nil"), and every edge-case row. For each promise, grep the suite for the assertion that pins it. **Report the count in the header, always**: `Promises walked: N, unpinned: M`. A promise no assertion holds is a WEAK finding of class `absent`, cited to the plan line. No count reported means the pass did not run.
 
 Every WEAK finding cites the plan line it under-pins. **No plan citation → UNVERIFIABLE, not WEAK.** Recommended fix names the exact stronger assertion — route is `/fix`.
 
@@ -92,7 +92,7 @@ Every WEAK finding cites the plan line it under-pins. **No plan citation → UNV
 [Each: test file:line, the exact mutation to apply, which test you expect to kill it, and what the cull verdict becomes under each outcome. Route to `mutation-tester`. Empty section omitted.]
 
 ### WEAK — assertion covers the behavior but under-pins the plan
-[Each: test file:line, the assertion, its shape (one of the six, or `absent`), the plan line it under-pins, and the exact stronger/missing assertion. Route to `/fix`. Empty section omitted; always report `WEAK: <n>` in the header counts.]
+[Each: test file:line, the assertion (or `absent` when no assertion holds the promise), the wrong value it accepts, the plan line it under-pins, and the exact stronger/missing assertion. Route to `/fix`. Empty section omitted; always report `WEAK: <n>` in the header counts.]
 
 ### INTENT-ALIGNED (summary count)
 [Just a count + one line. Do not enumerate — these are fine.]

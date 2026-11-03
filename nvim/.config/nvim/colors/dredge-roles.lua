@@ -32,6 +32,7 @@ local by_role = {
   read = {
     "Identifier", "@variable", "@variable.builtin", "@variable.kwarg",
     "@variable.parameter.bash", "@module", "@module.builtin", "@constant", "@constant.macro",
+    "@type.sql",
   },
   act = {
     "Macro", "@function.call", "@function.method.call", "@function.builtin",

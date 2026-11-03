@@ -50,21 +50,25 @@
   (#set! priority 129))
 
 ; The written name only: the attribute, or the container of a subscript; keys keep their own role.
-[
-  (assignment
-    left: (attribute
-      attribute: (identifier) @variable.write))
-  (augmented_assignment
-    left: (attribute
-      attribute: (identifier) @variable.write))
-  (assignment
-    left: (subscript
-      value: (_) @variable.write))
-  (augmented_assignment
-    left: (subscript
-      value: (_) @variable.write))
-]
-(#set! priority 131)
+(assignment
+  left: (attribute
+    attribute: (identifier) @variable.write)
+  (#set! priority 131))
+
+(augmented_assignment
+  left: (attribute
+    attribute: (identifier) @variable.write)
+  (#set! priority 131))
+
+(assignment
+  left: (subscript
+    value: (_) @variable.write)
+  (#set! priority 131))
+
+(augmented_assignment
+  left: (subscript
+    value: (_) @variable.write)
+  (#set! priority 131))
 
 (augmented_assignment
   left: (identifier) @variable.write

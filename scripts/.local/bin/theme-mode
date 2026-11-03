@@ -709,6 +709,7 @@ EOF
 "keyword.control.flow.tsx"          = "$exit_fg"
 "keyword.control.flow.js"           = "$exit_fg"
 "keyword.control.trycatch.ts"       = "$kw"
+"storage.type.sql"                  = "$desc"
 "heading.1.markdown entity.name.section.markdown" = "$heading1"
 "heading.1.markdown punctuation.definition.heading.markdown" = "$heading1"
 EOF

@@ -149,14 +149,14 @@ Singleton {
         "dredge-dark": {
             bg: "#061a21", panel: "#01131a", border: "#2a3e47",
             fg: "#a0adb4", muted: "#9b9fa6",
-            green: "#8dd09b", red: "#ed8c84", teal: "#29a298",
-            orange: "#f6a981", yellow: "#d7bb70", magenta: "#e34990"
+            green: "#849900", red: "#de4f46", teal: "#29a298",
+            orange: "#d66e31", yellow: "#bf983f", magenta: "#e34990"
         },
         "dredge-light": {
             bg: "#bbb4a4", panel: "#b7b0a0", border: "#9a9384",
             fg: "#2e3c46", muted: "#4e5158",
-            green: "#317a46", red: "#b0423f", teal: "#006f68",
-            orange: "#7a4400", yellow: "#6d4a00", magenta: "#ae1967"
+            green: "#576600", red: "#ac312a", teal: "#006f68",
+            orange: "#9e441d", yellow: "#6d4a00", magenta: "#ae1967"
         },
         "aura-dark": {
             bg: "#15141b", panel: "#1e1c28", border: "#3b3557",

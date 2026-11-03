@@ -119,7 +119,7 @@ local FAMILIES = {
     accents = {
       -- H1 takes the constant magenta; H2-H6 the function violet.
       dark = { heading1 = "#e34990", heading = "#7980d4", bullet = "#9b9fa6" },
-      light = { heading1 = "#ae1967", heading = "#4e4bba", bullet = "#4e5158" },
+      light = { heading1 = "#a80e62", heading = "#4b47b6", bullet = "#4e5158" },
     },
   },
   ["solarized-osaka"] = {

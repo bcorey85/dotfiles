@@ -155,8 +155,8 @@ Singleton {
         "dredge-light": {
             bg: "#bbb4a4", panel: "#b7b0a0", border: "#9a9384",
             fg: "#2e3c46", muted: "#4e5158",
-            green: "#576600", red: "#ac312a", teal: "#006f68",
-            orange: "#9e441d", yellow: "#6d4a00", magenta: "#ae1967"
+            green: "#4f5d00", red: "#a32822", teal: "#00625c",
+            orange: "#943b12", yellow: "#6d4a00", magenta: "#a80e62"
         },
         "aura-dark": {
             bg: "#15141b", panel: "#1e1c28", border: "#3b3557",

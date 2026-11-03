@@ -70,14 +70,13 @@ Pull every review comment on the branch PR (inline plus top-level, any author), 
    - **Low Priority** → `@AikidoSec ignore: low priority — <the Reason>`.
    - **Valid** → no triage reply. The fix skill replies after the fix (`+fix`, or a later `/fix` given the `comment_id`). When `+fix` is absent, pass the `comment_id`s in the step-6 line so a later `/fix` carries them.
 
-   Run from the PR's checkout (the worktree, when the branch lives in one):
+   A hook denies every mutating `gh api` call from a session, so never run the replies yourself. Under `### Aikido replies`, list each reply and hand the user one `!` line that posts them all, with the literal `<owner>/<name>` from `gh repo view --json nameWithOwner --jq '.nameWithOwner'` run in the PR's checkout:
 
    ```bash
-   repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   gh api --method POST "repos/$repo/pulls/<pr>/comments/<id>/replies" -f body='<reply>'
+   ! gh api --method POST "repos/<owner>/<name>/pulls/<pr>/comments/<id>/replies" -f body='<reply>' && gh api --method POST "repos/<owner>/<name>/pulls/<pr>/comments/<id2>/replies" -f body='<reply2>'
    ```
 
-   Best-effort: a failed reply never blocks the triage or the fix. List posted replies under `### Aikido replies`.
+   Best-effort: an unposted reply never blocks the triage or the fix.
 
 5. **If `+fix` modifier is present** and there are valid actionable items:
    - Format valid findings as review feedback (paths, lines, issues, author). Aikido findings also pass each comment's `id` from the fetch output as `comment_id` for thread replies in the fix skill.

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-801 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
+804 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-02, [The test-intent reviewer's weak-assertion report no longer asks for a shape from a list it never gives](notes/2026-11-02-the-test-intent-reviewer-s-weak-assertion-report.md).
+Latest change: 2026-11-02, [pr-comments hands the user the Aikido replies as one line](notes/2026-11-02-pr-comments-hands-the-user-the-aikido-replies-as.md).
 
 ## Top gains
 

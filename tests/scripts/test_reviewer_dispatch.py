@@ -57,6 +57,18 @@ class ReviewerDispatchTest(unittest.TestCase):
                          [(role, agent) for role, agent, _prompt in REQUESTS])
         self.assertEqual(pathlib.Path(manifest["requests"][0]["prompt_file"]).read_text(), "review the diff")
 
+    def test_two_requests_for_one_role_get_their_own_files_and_both_reports_return(self):
+        split = [("review1-code-reviewer", "code-reviewer", "review half one"),
+                 ("review1-code-reviewer", "code-reviewer", "review half two")]
+        entries = reviewer_dispatch.write_round(self.loop_dir, 1, split)
+        self.assertEqual(len({entry["report_file"] for entry in entries}), 2)
+        self.assertEqual([pathlib.Path(entry["prompt_file"]).read_text() for entry in entries],
+                         ["review half one", "review half two"])
+        for entry, text in zip(entries, ("one ok", "two ok"), strict=True):
+            pathlib.Path(entry["report_file"]).write_text(text)
+        replies = reviewer_dispatch.request_round(self.loop_dir, 1, split, timeout=5, poll=0.01)
+        self.assertEqual([text for text, _wall in replies], ["one ok", "two ok"])
+
     def test_a_round_with_no_report_in_time_raises_naming_the_missing_report(self):
         with self.assertRaisesRegex(RuntimeError, "review1-test-reviewer.report.md"):
             reviewer_dispatch.request_round(self.loop_dir, 1, REQUESTS, timeout=0.05, poll=0.01)

@@ -51,7 +51,16 @@ def write_round(loop_dir, round_number, requests):
     folder = requests_dir(loop_dir)
     folder.mkdir(parents=True, exist_ok=True)
     entries = []
-    for role, agent, prompt in requests:
+    taken = set()
+    for given_role, agent, prompt in requests:
+        # A large diff splits one agent over several dispatches that share a role. Number the repeats, or their
+        # files collide and the wait counts one report for two requests and never finishes.
+        role = given_role
+        copy_number = 1
+        while role in taken:
+            copy_number += 1
+            role = f"{given_role}-{copy_number}"
+        taken.add(role)
         prompt_file = folder / f"{role}.prompt.md"
         prompt_file.write_text(prompt)
         report_file = folder / f"{role}.report.md"

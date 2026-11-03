@@ -128,8 +128,8 @@ local FAMILIES = {
     colors_name = "dredge-roles",
     own_comment_contrast = true,
     accents = {
-      dark = { heading1 = "#e34990", heading = "#7980d4", bullet = "#9b9fa6" },
-      light = { heading1 = "#a80e62", heading = "#4b47b6", bullet = "#4e5158" },
+      dark = { heading1 = "#e34990", heading = "#9a9fe8", bullet = "#9b9fa6" },
+      light = { heading1 = "#a80e62", heading = "#36328f", bullet = "#4e5158" },
     },
   },
   ["solarized-osaka"] = {

@@ -7,6 +7,7 @@
 
 A file listed in SHARDS runs as several processes, each taking every Nth test, so one huge file cannot bound the
 wall-clock. Expected failures and skips follow unittest: they do not fail the file."""
+
 import concurrent.futures
 import fcntl
 import functools
@@ -32,8 +33,7 @@ WORKER_NICENESS = 10
 # Files known to take minutes; each runs as this many processes.
 SHARDS = {}
 # Slowest files by measured time, started before the rest (the rest start by file size, largest first).
-HEAVY_FIRST = ["test_verify_branch_script.py", "test_refactor_flow.py", "test_review_fix_script.py",
-               "test_adr_flow.py"]
+HEAVY_FIRST = ["test_verify_branch_script.py", "test_refactor_flow.py", "test_review_fix_script.py", "test_adr_flow.py"]
 
 
 def flatten(suite):
@@ -81,17 +81,22 @@ def write_fixed_git_config(config_folder):
     config_path = pathlib.Path(config_folder) / "gitconfig"
     empty_path = pathlib.Path(config_folder) / "empty"
     empty_path.write_text("")
-    config_path.write_text('[user]\n\tname = ci\n\temail = ci@example.com\n[init]\n\tdefaultBranch = master\n'
-                          f'[core]\n\texcludesFile = "{empty_path}"\n\tattributesFile = "{empty_path}"\n')
+    config_path.write_text(
+        "[user]\n\tname = ci\n\temail = ci@example.com\n[init]\n\tdefaultBranch = master\n"
+        f'[core]\n\texcludesFile = "{empty_path}"\n\tattributesFile = "{empty_path}"\n'
+    )
     return config_path
 
 
 def fixed_git_environment(config_path):
     # Returns the environment for a test process: the fixed config replaces the machine's global and system git config,
     # and config passed through the environment is dropped.
-    environment = {name: value for name, value in os.environ.items()
-                   if name not in ("GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
-                   and not name.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in ("GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
+        and not name.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))
+    }
     environment["GIT_CONFIG_GLOBAL"] = str(config_path)
     environment["GIT_CONFIG_NOSYSTEM"] = "1"
     return environment
@@ -140,18 +145,35 @@ def run_job(job, environment):
 def run_job_in_slot(job, environment):
     test_file, shard_index, shard_count = job
     started = time.monotonic()
-    command = [sys.executable, str(pathlib.Path(__file__).resolve()), "--worker", test_file, str(shard_index),
-               str(shard_count)]
+    command = [
+        sys.executable,
+        str(pathlib.Path(__file__).resolve()),
+        "--worker",
+        test_file,
+        str(shard_index),
+        str(shard_count),
+    ]
     # The worker leads its own process group, so a timeout kills the subprocesses its tests started too.
-    process = subprocess.Popen(command, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                               encoding="utf-8", errors="replace", env=environment, start_new_session=True)
+    process = subprocess.Popen(
+        command,
+        cwd=str(REPO_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=environment,
+        start_new_session=True,
+    )
     timed_out = False
+
     try:
         stdout, stderr = process.communicate(timeout=FILE_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         timed_out = True
         os.killpg(process.pid, signal.SIGKILL)
         stdout, stderr = process.communicate()
+
     seconds = time.monotonic() - started
     output = (stdout or "") + (stderr or "")
     if timed_out:
@@ -199,8 +221,10 @@ def main(file_names=()):
         for output in per_file[test_file]["failures"]:
             print(output)
     wall = time.monotonic() - wall_started
-    print(f"\n{total_tests} tests in {len(per_file)} files, wall-clock {wall:.1f}s, "
-          f"sum of per-file seconds {total_seconds:.1f}s, {len(failed_files)} failed")
+    print(
+        f"\n{total_tests} tests in {len(per_file)} files, wall-clock {wall:.1f}s, "
+        f"sum of per-file seconds {total_seconds:.1f}s, {len(failed_files)} failed"
+    )
     return 1 if failed_files else 0
 
 

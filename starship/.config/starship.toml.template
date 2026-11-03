@@ -174,6 +174,34 @@ fg = "#53676d"
 bg = "#fbf3db"
 grey = "#909995"
 
+# flexoki dark (kepano's 400 accents on black #100f0f).
+[palettes.flexoki-dark]
+red = "#d14d41"
+orange = "#da702c"
+yellow = "#d0a215"
+green = "#879a39"
+blue = "#4385be"
+branch = "#4385be"
+teal = "#3aa99f"
+purple = "#8b7ec8"
+fg = "#cecdc3"
+bg = "#100f0f"
+grey = "#878580"
+
+# flexoki light (kepano's 600 accents on paper #fffcf0).
+[palettes.flexoki-light]
+red = "#af3029"
+orange = "#bc5215"
+yellow = "#ad8301"
+green = "#66800b"
+blue = "#205ea6"
+branch = "#205ea6"
+teal = "#24837b"
+purple = "#5e409d"
+fg = "#100f0f"
+bg = "#fffcf0"
+grey = "#6f6e69"
+
 # alabaster dark (p00f/alabaster.nvim).
 [palettes.alabaster-dark]
 red = "#d2322d"
@@ -394,7 +422,7 @@ blue = "#005b91"
 branch = "#4b47b6"
 teal = "#00625c"
 purple = "#a80e62"
-fg = "#2e3c46"
+fg = "#202d37"
 bg = "#bbb4a4"
 grey = "#4e5158"
 

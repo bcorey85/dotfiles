@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge solarized-osaka solarized selenized alabaster; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge solarized-osaka solarized selenized alabaster flexoki; }
 
 claude_theme_file() { # <family> <mode> -> the authored Claude Code theme JSON, empty if none
   # A family that ships claude/.claude/themes/<slug>.json gets it copied into
@@ -155,6 +155,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # selenized: ghostty BUILTINS, Warchoł's dark and light variants.
     selenized:light)        echo "Selenized Light" ;;
     selenized:*)            echo "Selenized Dark" ;;
+    # flexoki: ghostty BUILTINS, kepano's sixteen.
+    flexoki:light)          echo "Flexoki Light" ;;
+    flexoki:*)              echo "Flexoki Dark" ;;
   esac
 }
 
@@ -218,6 +221,10 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # base, under a diff-only block that sets selenized's text and diff.
     selenized:light)        echo "solarized-light" ;;
     selenized:*)            echo "solarized-dark" ;;
+    # flexoki: BASE of a full [custom_theme]. hunk has no flexoki; these have
+    # the nearest neutrals (warm grey on near-black, black on white).
+    flexoki:light)          echo "light-plus" ;;
+    flexoki:*)              echo "vitesse-black" ;;
   esac
 }
 
@@ -631,7 +638,7 @@ EOF
       local bright quote bullet type_fg builtin_fg param_fg attr_fg
       if [ "$2" = light ]; then
         bg="#bbb4a4"; panel="#b7b0a0"; panelAlt="#b4ad9d"; border="#9a9384"; note="#b7b0a0"
-        accent="#00625c"; accentMuted="#9a9384"; text="#2e3c46"; muted="#4e5158"; lnFg="#60656b"
+        accent="#00625c"; accentMuted="#9a9384"; text="#202d37"; muted="#4e5158"; lnFg="#60656b"
         addWord="#72aca6"; remWord="#bb908b"
         addedBg="#9bb1af"; removedBg="#b7a8a5"; ctxBg="#bbb4a4"
         sAdd="#038880"; sRem="#d72d2b"; badgeNeu="#846322"
@@ -654,8 +661,8 @@ EOF
       fi
       op="$punct"; tag="$kw"; imp="$kw"
       konst="$num"; esc="$num"; lang="$num"
-      # Functions, calls, macros and top-level variables take the violet.
-      mac="$fn"; var="$fn"; call="$fn"
+      # Functions, calls and macros take the violet; top-level variables stay plain.
+      mac="$fn"; var="$text"; call="$fn"
       key="$text"; use="$text"; mem="$text"
       # Types take osaka's green: type names, classes, builtin types.
       typ="$type_fg"; prim="$type_fg"; cls="$type_fg"
@@ -974,6 +981,34 @@ EOF
 "markup.italic"                     = "$text"
 EOF
       )
+      ;;
+    # flexoki (kepano/flexoki-neovim): roles are the resolved fg of nvim's
+    # groups. Rows are the green/red 15% into the ground, words 30%; the
+    # comment is theme-sync's contrast floor over those rows.
+    flexoki:*)
+      local addWord remWord cls
+      bg="#100f0f"; panel="#1c1b1a"; panelAlt="#282726"; border="#403e3c"
+      accent="#3aa99f"; accentMuted="#343331"; text="#cecdc3"; muted="#878580"
+      addedBg="#222415"; removedBg="#2d1816"; ctxBg="#100f0f"
+      addWord="#34391c"; remWord="#4a221e"
+      sAdd="#879a39"; sRem="#d14d41"; lnFg="#575653"
+      badgeNeu="#4385be"; fRename="#4385be"; fMod="#d0a215"; note="#1c1b1a"
+      kw="#879a39"; str="#3aa99f"; num="#8b7ec8"; fn="#da702c"; punct="#878580"
+      konst="#d0a215"; esc="#ce5d97"; var="#4385be"; ns="#da702c"; cmt="#8b8a84"
+      if [ "$2" = light ]; then
+        bg="#fffcf0"; panel="#f2f0e5"; panelAlt="#e6e4d9"; border="#cecdc3"
+        accent="#24837b"; accentMuted="#dad8ce"; text="#100f0f"; muted="#6f6e69"
+        addedBg="#e8e9ce"; removedBg="#f3ddd2"; ctxBg="#fffcf0"
+        addWord="#d1d7ab"; remWord="#e7bfb4"
+        sAdd="#66800b"; sRem="#af3029"; lnFg="#b7b5ac"
+        badgeNeu="#205ea6"; fRename="#205ea6"; fMod="#ad8301"; note="#f2f0e5"
+        kw="#66800b"; str="#24837b"; num="#5e409d"; fn="#bc5215"; punct="#6f6e69"
+        konst="#ad8301"; esc="#a02f6f"; var="#205ea6"; ns="#bc5215"; cmt="#65645f"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      typ="$kw"; cls="$kw"; imp="$kw"; op="$punct"; vbi="$punct"; bfn="$punct"; prim="$punct"
+      lang="$esc"; attr="$esc"; pre="$esc"; mac="$esc"; tag="$str"
+      mem="$var"; param="$var"; use="$var"; call="$fn"
       ;;
     *) return 0 ;;
   esac
@@ -1575,7 +1610,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       accent="#00625c" panel_bg="#b7b0a0" surface_dim="#a9a292"
       surface0="#a19a8b" surface1="#9a9384"
       overlay0="#4e5158" overlay1="#454950"
-      text="#2e3c46" subtext0="#454950"
+      text="#202d37" subtext0="#454950"
       green="#038880" yellow="#846322" red="#d72d2b"
       blue="#4b47b6" teal="#00625c" peach="#a80e62"
       ;;
@@ -1668,6 +1703,26 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#cecece" subtext0="#9f9f9f"
       green="#95cb82" yellow="#cd974b" red="#d2322d"
       blue="#71aed7" teal="#47bea9" peach="#ec8013"
+      ;;
+    flexoki:light)
+      # flexoki light (paper #fffcf0 ground, bg-2 panel).
+      base_name="one-light"
+      accent="#24837b" panel_bg="#f2f0e5" surface_dim="#dad8ce"
+      surface0="#cecdc3" surface1="#b7b5ac"
+      overlay0="#6f6e69" overlay1="#65645f"
+      text="#100f0f" subtext0="#6f6e69"
+      green="#66800b" yellow="#ad8301" red="#af3029"
+      blue="#205ea6" teal="#24837b" peach="#bc5215"
+      ;;
+    flexoki:*)
+      # flexoki dark (black #100f0f ground, bg-2 panel).
+      base_name="one-dark"
+      accent="#3aa99f" panel_bg="#1c1b1a" surface_dim="#343331"
+      surface0="#403e3c" surface1="#575653"
+      overlay0="#878580" overlay1="#8b8a84"
+      text="#cecdc3" subtext0="#878580"
+      green="#879a39" yellow="#d0a215" red="#d14d41"
+      blue="#4385be" teal="#3aa99f" peach="#da702c"
       ;;
   esac
 

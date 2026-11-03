@@ -158,6 +158,30 @@ local FAMILIES = {
       light = { heading1 = "#7a3e9d", heading = "#325cc0" },
     },
   },
+  ["flexoki"] = {
+    -- kepano/flexoki-neovim: flexoki-dark / flexoki-light both set colors_name "flexoki".
+    schemes = { dark = "flexoki-dark", light = "flexoki-light" },
+    colors_name = "flexoki",
+    -- Stock diffs are solid accent blocks; rows take the green/red/purple 15%
+    -- into the ground and words the blue 30%, so syntax stays readable.
+    pre = function(mode)
+      local bg = mode == "light" and "#fffcf0" or "#100f0f"
+      local hues = mode == "light" and { gr = "#66800b", re = "#af3029", pu = "#5e409d", bl = "#205ea6" }
+        or { gr = "#879a39", re = "#d14d41", pu = "#8b7ec8", bl = "#4385be" }
+      require("flexoki").setup({
+        highlight_groups = {
+          DiffAdd = { bg = blend(hues.gr, bg, 0.15) },
+          DiffDelete = { bg = blend(hues.re, bg, 0.15) },
+          DiffChange = { bg = blend(hues.pu, bg, 0.12) },
+          DiffText = { bg = blend(hues.bl, bg, 0.30) },
+        },
+      })
+    end,
+    accents = {
+      dark = { heading1 = "#ce5d97", heading = "#4385be" },
+      light = { heading1 = "#a02f6f", heading = "#205ea6" },
+    },
+  },
 }
 
 local applied ---@type string|nil  last family+mode we set, to skip redundant reloads

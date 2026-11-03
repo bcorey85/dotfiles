@@ -83,7 +83,7 @@ palettes.light = {
   muted = "#4e5158",
   comment = "#3e4148",
   punct = "#575b62",
-  fg = "#2e3c46",
+  fg = "#202d37",
   fg_bright = "#131820",
 
   red = "#b0423f",
@@ -235,7 +235,7 @@ local groups = {
   Todo = { fg = c.bg, bg = c.const, bold = true },
 
   -- treesitter
-  -- Variables are plain at use; indigo marks their top-level definition.
+  -- Variables are plain at use and at definition.
   ["@variable"] = { fg = c.fg },
   ["@variable.builtin"] = { fg = c.builtin },
   ["@variable.parameter"] = { fg = c.param },
@@ -271,10 +271,8 @@ local groups = {
   ["@character.special"] = { fg = c.punct },
   -- Names at their definition (after/queries); colour comes from the other captures.
   ["@declaration"] = {},
+  -- Violet marks functions only.
   ["@declaration.function"] = { fg = c.fn },
-  ["@declaration.class"] = { fg = c.fn },
-  ["@declaration.type"] = { fg = c.fn },
-  ["@declaration.variable"] = { fg = c.fn },
   ["@number"] = { fg = c.const },
   ["@boolean"] = { fg = c.const },
   ["@type"] = { fg = c.type },

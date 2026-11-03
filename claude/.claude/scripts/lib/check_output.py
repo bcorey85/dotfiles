@@ -119,7 +119,8 @@ MISSING_PATH_LINES = (
     re.compile(r"^\S*sh: (?:line \d+: )?(?:cd: )?(?P<path>\S+): No such file or directory"),
     re.compile(r"^\S*sh: \d+: cd: can't cd to (?P<path>\S+)"),
     re.compile(r"^ERROR: file or directory not found: (?P<path>\S+)"),
-    re.compile(r"^\S*python[\d.]*: can't open file '(?P<path>[^']+)': \[Errno 2\] No such file or directory"),
+    # A macOS framework build names itself by its full path, ending in `MacOS/Python`.
+    re.compile(r"^\S*[Pp]ython[\d.]*: can't open file '(?P<path>[^']+)': \[Errno 2\] No such file or directory"),
 )
 
 

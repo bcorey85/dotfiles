@@ -30,7 +30,7 @@ class Repo:
     def __init__(self, test):
         self.scratch = tempfile.TemporaryDirectory()
         test.addCleanup(self.scratch.cleanup)
-        root = pathlib.Path(self.scratch.name)
+        root = pathlib.Path(self.scratch.name).resolve()
         self.home = root / "home"
         self.bin = root / "bin"
         self.repo = root / "repo"

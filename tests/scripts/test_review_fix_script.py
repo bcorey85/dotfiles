@@ -148,7 +148,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
-        self.temp_root = pathlib.Path(temp_dir.name)
+        self.temp_root = pathlib.Path(temp_dir.name).resolve()
         self.repo = self.temp_root / "myrepo"
         self.repo.mkdir()
         self.ledger_env = fake_ledger.install(self.temp_root)

@@ -593,8 +593,14 @@ class BaseComparisonTest(unittest.TestCase):
     def test_a_base_run_of_a_declared_scoped_looking_command_is_not_refused_when_the_claude_md_is_untracked(self):
         declared = "echo 'FAIL: test_old'; pytest tests/; exit 1"
         (self.repo / "CLAUDE.md").write_text(f"Quality check: `{declared}`\n")
+        # A stub, so a pytest on the machine's PATH cannot stop the run on the missing tests/ folder.
+        stub_bin = self.scratch / "bin"
+        stub_bin.mkdir()
+        (stub_bin / "pytest").write_text("#!/bin/sh\nexit 0\n")
+        (stub_bin / "pytest").chmod(0o755)
+        env = {**os.environ, "PATH": f"{stub_bin}{os.pathsep}{os.environ['PATH']}"}
 
-        base = self.base_lines(declared)
+        base = full_check.base_run(str(self.repo), declared, self.base_log, 60, env=env)
 
         self.assertEqual((base.result, base.failing_lines), ("failed (exit 1)", {"FAIL: test_old"}))
 

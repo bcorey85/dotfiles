@@ -70,6 +70,7 @@ class TreeFingerprint(unittest.TestCase):
         write(self.top, "new.txt", b"other\n")
         self.assertNotEqual(reviewed_tree.tree_fingerprint(self.top, "HEAD", EXCLUDED_DIR), GOLDEN_WITHOUT_TASK_DIR)
 
+    @unittest.skipIf(sys.platform == "darwin", "APFS refuses a file name that is not valid UTF-8 (Errno 92)")
     def test_non_utf8_untracked_name_is_fingerprinted(self):
         non_utf8_name = os.fsdecode(b"n\xe9")
         write(self.top, non_utf8_name, b"x\n")

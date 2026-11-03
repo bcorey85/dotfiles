@@ -586,6 +586,16 @@
             "command": "~/.claude/scripts/warn-skip-hooks.sh"
           }
         ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/tools/sweep_scratchpads.py",
+            "async": true
+          }
+        ]
       }
     ],
     "SessionEnd": [

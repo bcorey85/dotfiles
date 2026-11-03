@@ -631,12 +631,12 @@ EOF
       local bright quote bullet type_fg builtin_fg param_fg attr_fg
       if [ "$2" = light ]; then
         bg="#bbb4a4"; panel="#b7b0a0"; panelAlt="#b4ad9d"; border="#9a9384"; note="#b7b0a0"
-        accent="#006f68"; accentMuted="#9a9384"; text="#2e3c46"; muted="#4e5158"; lnFg="#60656b"
+        accent="#00625c"; accentMuted="#9a9384"; text="#2e3c46"; muted="#4e5158"; lnFg="#60656b"
         addWord="#72aca6"; remWord="#bb908b"
         addedBg="#9bb1af"; removedBg="#b7a8a5"; ctxBg="#bbb4a4"
         sAdd="#038880"; sRem="#d72d2b"; badgeNeu="#846322"
-        kw="#454950"; punct="#575b62"; str="#006f68"; num="#ae1967"; fn="#4e4bba"; cmt="#6d4a00"
-        type_fg="#576600"; builtin_fg="#00649a"; param_fg="#9e441d"; attr_fg="#ac312a"
+        kw="#454950"; punct="#575b62"; str="#00625c"; num="#a80e62"; fn="#4b47b6"; cmt="#6d4a00"
+        type_fg="#4f5d00"; builtin_fg="#005b91"; param_fg="#943b12"; attr_fg="#a32822"
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
         bg="#061a21"; panel="#01131a"; panelAlt="#13272f"; border="#2a3e47"; note="#01131a"
@@ -1572,12 +1572,12 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:light)
       base_name="one-light"
-      accent="#006f68" panel_bg="#b7b0a0" surface_dim="#a9a292"
+      accent="#00625c" panel_bg="#b7b0a0" surface_dim="#a9a292"
       surface0="#a19a8b" surface1="#9a9384"
       overlay0="#4e5158" overlay1="#454950"
       text="#2e3c46" subtext0="#454950"
       green="#038880" yellow="#846322" red="#d72d2b"
-      blue="#4e4bba" teal="#006f68" peach="#ae1967"
+      blue="#4b47b6" teal="#00625c" peach="#a80e62"
       ;;
     dredge:*)
       base_name="one-dark"

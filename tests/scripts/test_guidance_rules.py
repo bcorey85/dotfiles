@@ -60,6 +60,13 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("After `EnterWorktree`, Claude Code's own worktree guard refuses", text)
         self.assertIn("one simple command per call with literal paths", text)
 
+    def test_the_test_intent_reviewer_names_no_shape_list_it_never_gives(self):
+        text = guidance_text("agents/test-intent-reviewer.md")
+        self.assertNotIn("one of the six", text)
+        self.assertNotIn("shape pass", text)
+        self.assertIn("the assertion (or `absent` when no assertion holds the promise), the wrong value it accepts",
+                      text)
+
     def test_a_main_push_line_waits_for_the_branch_s_verify_branch_and_non_negotiables_results(self):
         text = guidance_text("orchestration.md")
         self.assertIn("only after the branch reports `/verify-branch` done and, where the repo's CLAUDE.md names a "

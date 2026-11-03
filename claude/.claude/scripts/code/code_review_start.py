@@ -8,7 +8,9 @@ The prompt header is: lane, repo, plan, phase and later-phase files, then the ha
 A <plan> of `-` means the run has no plan file: the header leaves out the plan, phase and later-phase lines, and the
 gate commands come from the handoff block's files.
 The loop's state folder is <git dir>/code-step. The pid goes in <git dir>/code-phase/pid, where `code_wait.py review`
-looks, so the session can end its turn while the loop runs. Prints the hand-back packet when the loop ends.
+looks, so the session can end its turn while the loop runs. The loop runs with `--reviewers main`: the fork dispatches
+each round's reviewers as its own subagents, and <git dir>/code-phase/loop-dir names the folder that holds the
+requests. Prints the hand-back packet when the loop ends.
 """
 
 import os
@@ -27,8 +29,8 @@ import handback_hook
 import handoff_files
 import plan_format
 import script_utils
-from code_wait import PID_FILE, REVIEW_OUTPUT, phase_dir
-from review_loop_script import loop_script_command, write_script_prompt
+from code_wait import LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, phase_dir
+from review_loop_script import REVIEWERS_MAIN, loop_script_command, write_script_prompt
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
 WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
@@ -128,6 +130,8 @@ def detach(repo, argv):
     folder.mkdir(exist_ok=True)
     pid_file = folder / PID_FILE
     review_output = folder / REVIEW_OUTPUT
+    # A folder left by an earlier phase's loop would show its unanswered requests as this loop's.
+    (folder / LOOP_DIR_FILE).unlink(missing_ok=True)
     command = [sys.executable, __file__, *[arg for arg in argv[1:] if arg != "--detach"]]
     with review_output.open("w") as output:
         loop = subprocess.Popen(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
@@ -173,7 +177,10 @@ def main(argv):
     handback_hook.record_script_dispatch(session_id, repo)
     prompt_file, log_path = write_script_prompt(state_dir, agent_id, prompt)
     commands = phase_gate_commands(repo, plan, phase, base, handoff)
-    command = loop_script_command(LOOP_SCRIPT, repo, state_dir, session_id, agent_id, prompt_file, commands)
+    # The fork runs the reviewers as its own subagents; `code_wait.py review` finds their requests in this folder.
+    command = loop_script_command(LOOP_SCRIPT, repo, state_dir, session_id, agent_id, prompt_file, commands,
+                                  reviewers=REVIEWERS_MAIN)
+    script_utils.write_text_atomically(folder / LOOP_DIR_FILE, f"{prompt_file.parent}\n")
     with log_path.open("w") as log:
         finished = subprocess.run(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
 

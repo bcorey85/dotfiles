@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-807 changes
+808 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -29,6 +29,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [code runs its review rounds' reviewers as fork subagents](notes/2026-11-03-code-runs-its-review-rounds-reviewers-as-fork.md) [script/code-review-start, script/code-wait, script/reviewer-dispatch, skill/code] /code's scripted review loop hands each round's reviewers to the /code fork, which runs them as its own subagents, in place of headless claude -p reviewers; the two-round cap stays the script's.
 * [pr-comments hands the user the Aikido replies as one line](notes/2026-11-02-pr-comments-hands-the-user-the-aikido-replies-as.md) [skill/pr-comments] The Aikido triage replies reach the PR through one `!` line the user runs, in place of a `gh api` call the session's hook always denies.
 * [A brief another session wrote is never recorded as the user's sign-off](notes/2026-11-02-a-brief-another-session-wrote-is-never-recorded-as.md) [skill/code, rule/global-claude-md] /code records a plan change as signed off only from text the user typed; an instruction from another session's brief is logged as pending sign-off and the run stops.
 * [Shell-write gate lets in-place edits of Claude scratch files through](notes/2026-11-02-shell-write-gate-lets-in-place-edits-of-claude.md) [script/shell-write-gate] An in-place edit (sed -i and the like) of a file under the session temp root passes the gate, so read-only agents can finish a probe.

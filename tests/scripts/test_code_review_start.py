@@ -115,6 +115,28 @@ class CodeReviewStartTest(unittest.TestCase):
 
         return output.getvalue(), prompt_folders[0], loop_folder, command
 
+    def test_the_live_run_hands_the_reviewers_to_the_fork_and_names_the_loop_folder(self):
+        code_review_start = self.load_module()
+
+        _printed, prompt_folder, _loop_folder, command = self.run_live(code_review_start, write_packet=False)
+
+        self.assertEqual(command[command.index("--reviewers") + 1], "main")
+        loop_dir_file = self.repo / ".git/code-phase/loop-dir"
+        self.assertEqual(loop_dir_file.read_text().strip(), str(prompt_folder))
+
+    def test_detach_drops_the_loop_folder_an_earlier_phase_named(self):
+        code_review_start = self.load_module()
+        phase_dir = self.repo / ".git/code-phase"
+        phase_dir.mkdir()
+        (phase_dir / "loop-dir").write_text("/old/loop\n")
+
+        with mock.patch.object(code_review_start, "subprocess") as fake_subprocess, \
+                contextlib.redirect_stdout(io.StringIO()):
+            fake_subprocess.Popen.return_value = mock.Mock(pid=4242)
+            code_review_start.detach(self.repo, ["code_review_start.py", "lane-a", "--detach"])
+
+        self.assertFalse((phase_dir / "loop-dir").exists())
+
     def test_the_live_run_prints_the_packet_the_loop_wrote_beside_the_prompt(self):
         printed, prompt_folder, loop_folder, _command = self.run_live(self.load_module(), write_packet=True)
 

@@ -60,6 +60,7 @@ ALLOWED_HITS = [
     ("scripts/code/code_review_start.py", "WAIT_COMMAND = ", PRINTED),
     ("scripts/code/code_wait.py", "code_wait.py agent <agent id>", PRINTED),
     ("scripts/code/code_wait.py", "python3 ~/.claude/scripts/code/code_wait.py review", PRINTED),
+    ("scripts/code/code_wait.py", "AGENT_COMMAND = ", PRINTED),
     ("scripts/code/code_relay.py", "python3 ~/.claude/scripts/code/code_relay.py", PRINTED),
     ("scripts/review/open_child_gate.py", "code_wait.py agent <agentId>", PRINTED),
     ("scripts/review/review_fix.py", "DECIDE_SCRIPT = ", PRINTED),

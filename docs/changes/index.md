@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-807 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
+808 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-03, [The /review loop runs its reviewers as subagents of the main session](notes/2026-11-03-the-review-loop-runs-its-reviewers-as-subagents-of.md).
+Latest change: 2026-11-03, [code runs its review rounds' reviewers as fork subagents](notes/2026-11-03-code-runs-its-review-rounds-reviewers-as-fork.md).
 
 ## Top gains
 

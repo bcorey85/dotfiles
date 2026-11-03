@@ -21,4 +21,4 @@ description: "The benches that are open now and the question each asks."
 * Replay reviewers on the 29 sealed phases of TLDR-1 to 3 to find rules that lock in coder and reviewer behavior (running): A fixed bug list per sealed phase shows which coder and reviewer rules catch more of the 68 late bugs, each replay taking minutes, not hours.
 * Coder ranged-read hook for whole-file reads over 4k tokens (queued): A hook that turns the coder's whole-file read of a big file into a ranged read could cut coder cache read per dispatch by 30% or more.
 * Bench the Sonnet main session at 8 pairs per arm on a pinned toolkit (queued): A Sonnet main session cut Opus cache reads 42-48% on two smoke pairs; 8 pairs per arm settle whether it loses hidden keys.
-* One review round: deep reviewer, fix, scripted fix-diff check, no second reviewer (queued): Cut the second reviewer call per loop when a deep first round leaves round 2 finding mostly docs and nits.
+* One review round: deep reviewer, fix, scripted fix-diff check, no second reviewer (running): Cut the second reviewer call per loop when a deep first round leaves round 2 finding mostly docs and nits.

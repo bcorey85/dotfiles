@@ -89,6 +89,29 @@ class ShellWriteGateTest(unittest.TestCase):
                                           "Write/Edit hook pipeline. Use the Write or Edit tool."))
         self.assertIn(HINT, reason)
 
+    def make_claude_scratch_file(self):
+        root = pathlib.Path("/tmp/claude-" + str(os.getuid()))
+        root.mkdir(exist_ok=True)
+        scratch = pathlib.Path(tempfile.mkdtemp(dir=root, prefix="shell-write-gate-test-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        (scratch / "probe.txt").write_text("a\n")
+        return scratch
+
+    def test_in_place_edit_under_claude_temp_root_allowed(self):
+        scratch = self.make_claude_scratch_file()
+        self.assert_allowed("sed -i s/a/b/ " + str(scratch / "probe.txt"))
+        self.assert_allowed("sed -i s/a/b/ probe.txt", cwd=str(scratch))
+
+    def test_in_place_edit_in_other_tmp_path_still_denied(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/tmp", prefix="shell-write-gate-test-"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        self.assertIn("in-place editing of", self.assert_denied("sed -i s/a/b/ " + str(outside / "probe.txt")))
+
+    def test_in_place_edit_escaping_claude_temp_root_denied(self):
+        scratch = self.make_claude_scratch_file()
+        escape = str(scratch / ".." / ".." / "shell-write-gate-escape.txt")
+        self.assertIn("in-place editing of", self.assert_denied("sed -i s/a/b/ " + escape))
+
     def test_in_place_variants_denied(self):
         for command in ("gsed --in-place s/a/b/ f", "sed --in-place=.bak s/a/b/ f", "sed -ni 's/a/b/p' f",
                         "perl -pi -e 's/a/b/' f", "perl -i -ne 'print' f", "awk -i inplace '{print}' f",

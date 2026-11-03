@@ -267,6 +267,16 @@ def temp_roots():
     return [os.path.realpath(root) for root in roots]
 
 
+def claude_temp_root():
+    """The real path of the session temp root, /tmp/claude-<uid>, where Claude Code keeps its scratchpads."""
+    return os.path.realpath("/tmp/claude-" + str(os.getuid()))
+
+
+def is_under_claude_temp_root(path):
+    """True when the path, once symlinks and `..` are resolved, lies inside the session temp root."""
+    return script_utils.path_is_under(os.path.realpath(path), claude_temp_root())
+
+
 def is_under_temp_dir(path):
     real = os.path.realpath(path)
     return any(script_utils.path_is_under(real, root) for root in temp_roots())

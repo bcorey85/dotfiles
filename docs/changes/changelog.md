@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-806 changes
+807 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -19,6 +19,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The /review loop runs its reviewers as subagents of the main session](notes/2026-11-03-the-review-loop-runs-its-reviewers-as-subagents-of.md) [skill/review, script/review-fix, script/review-loop-script] A reviewer launched as `claude -p` named 1 to 3 of 25 known bug lines per pass at medium effort, against 6 to 8 as a subagent of an interactive session. The scripted loop that /review launches now hands each review round to the main session, which dispatches the reviewers with Agent; the loop control, the coder and the closure calls stay in the script.
 * [Push lines pull with rebase and autostash](notes/2026-11-02-push-lines-pull-with-rebase-and-autostash.md) [rule/global-claude-md] Push lines handed to the user run pull --rebase --autostash, so uncommitted edits in unrelated files no longer stop the line before the push.
 * [Coder updates the docs a fix makes stale](notes/2026-11-02-coder-updates-the-docs-a-fix-makes-stale.md) [skill/coder-core] The coder now updates the comments, docs and messages a fix makes wrong in 62% of runs, up from 0% (0/16 → 10/16). Coder-core gains one sentence under Fixing a review finding. **cuts % of runs leaving stale text by 62% (100 → 38)**
 * [Every push line pulls with rebase first](notes/2026-11-02-every-push-line-pulls-with-rebase-first.md) [rule/global-claude-md] Push lines handed to the user no longer fail when another machine pushed first: every one runs pull --rebase before push.

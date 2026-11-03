@@ -2,6 +2,7 @@
 """The scripted review loop: the walking between steps is code, the judgment inside each step is a model call.
 
     review_loop_script.py <repo> --state-dir <dir> --session <id> --agent-id <id> --prompt-file <path>
+        [--gate-command <cmd>]... [--reviewers headless|main]
 
 The prompt file is the review prompt of a review-first dispatch: header lines (mode, caller, lane, plan, phase, an
 optional `structure-pass: skip`), a blank line, then the handoff block. The script walks review-loop.md's fixed graph:
@@ -31,6 +32,9 @@ reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (
 judgment (Sonnet). A Sonnet disposition call runs
 only when a reviewer's output has no Fix/Ask/Nit sections the parser can read. Every call is logged to
 <state dir>/loop-script/<agent id>/calls.jsonl with its session id, role, wall time and token counts.
+With `--reviewers main` the reviewers are no `claude -p` call: reviewer_dispatch.py hands each round's reviewer
+prompts to the main session, which runs them as its subagents and writes their reports back; each gets a call log
+row with `via: main` and no token count.
 
 On finish, or on any uncaught error, the script validates its packet with handback.load, then appends the rows the
 review-loop agent leaves: the hand-back store row, the stop row, and, when the telemetry
@@ -49,14 +53,11 @@ import argparse
 import contextlib
 import difflib
 import hashlib
-import json
 import os
 import pathlib
 import re
 import signal
 import sys
-import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
@@ -73,10 +74,20 @@ import full_check_gate
 import handback
 import loop_transcript
 import plan_format
+import reviewer_dispatch
 import script_utils
 import source_paths
 import worktree_snapshot
 from finding_record import parse_finding
+from review_loop_calls import (
+    CALL_TIMEOUT_SECONDS,
+    CALLS,
+    LIVE_CHILDREN,
+    PARENT_SESSION,
+    claude_call,
+    now,
+    record_main_dispatch,
+)
 from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check, receipt_after_class_repair
 from review_loop_findings import (
     PLAN_CHANGE_YES,
@@ -102,92 +113,14 @@ LARGE_ADDED_LINES = source_paths.LARGE_ADDED_LINES
 SPLIT_FILES = 5
 SPLIT_LINES = 300
 DIFF_CONTEXT = 12
-CALL_TIMEOUT_SECONDS = 1800
 LOG_TIMEOUT_SECONDS = 60
-TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+# Who runs the reviewers (--reviewers): `claude -p` calls of this script, or the main session as its subagents.
+REVIEWERS_HEADLESS = "headless"
+REVIEWERS_MAIN = "main"
 ABSENT_FILE_REASON = "the file is not in the tree"
 NO_CHANGE_REASON = "the coder made no change"
-TERMINAL_PANE_ENV = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET")
-CHILD_ENV = {**{name: value for name, value in os.environ.items() if name not in TERMINAL_PANE_ENV},
-             "CLAUDE_FORMAT_HOOK_OFF": "1"}
-
-CALLS = []
-CALLS_LOCK = threading.Lock()
 # One note per fix call that deleted an untracked file it did not make, for the packet's tool_fault.
 UNTRACKED_FAULTS = []
-LIVE_CHILDREN = full_check_gate.LIVE_CHILDREN
-# The ListAgents label of the session that ran this loop; main() sets it. Each child session's --name carries it.
-PARENT_SESSION = {"label": ""}
-
-
-def now():
-    return time.time()
-
-
-def token_total(payload):
-    usage = payload.get("usage") if isinstance(payload, dict) else None
-    if not isinstance(usage, dict):
-        return 0
-    return sum(usage.get(field) or 0 for field in TOKEN_FIELDS)
-
-
-def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
-    """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises. The
-    prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument."""
-    command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto",
-               "--name", f"child of {PARENT_SESSION['label']} ({role})"]
-    if agent:
-        command += ["--agent", agent]
-        skills_prompt = script_utils.preloaded_skills_prompt(agent)
-        if skills_prompt:
-            command += ["--append-system-prompt", skills_prompt]
-    if model:
-        command += ["--model", model]
-    if tools:
-        command += ["--tools", tools]
-
-    started = now()
-    child_pids = []
-
-    def child_started(pid):
-        child_pids.append(pid)
-        LIVE_CHILDREN.add(pid)
-
-    try:
-        return_code, stdout, stderr = script_utils.run_process(command, repo, stdin=prompt,
-                                                               timeout=CALL_TIMEOUT_SECONDS, env=CHILD_ENV,
-                                                               on_start=child_started)
-    finally:
-        LIVE_CHILDREN.difference_update(child_pids)
-    wall = round(now() - started, 1)
-
-    with CALLS_LOCK:
-        sequence = len(CALLS) + 1
-        CALLS.append(None)
-    raw = out / f"call-{sequence:02d}-{role}.json"
-    raw.write_text(stdout)
-    errors = out / f"call-{sequence:02d}-{role}.err"
-    errors.write_text(stderr)
-
-    try:
-        payload = json.loads(stdout)
-    except json.JSONDecodeError:
-        payload = None
-    replied = isinstance(payload, dict)
-    text = (payload.get("result") or "") if replied else ""
-    session = (payload.get("session_id") or "") if replied else ""
-    tokens = token_total(payload)
-
-    record = {"n": sequence, "role": role, "agent": agent, "model": model, "session": session, "wall": wall,
-              "rc": return_code, "tokens": tokens}
-    with CALLS_LOCK:
-        CALLS[sequence - 1] = record
-        script_utils.append_jsonl(out / "calls.jsonl", record)
-
-    if return_code != 0 or not replied:
-        said = f" saying \"{script_utils.one_line(text)}\"" if text.strip() else ""
-        raise RuntimeError(f"the {role} call failed (exit {return_code}){said}; reply {raw}, stderr {errors}")
-    return text
 
 
 def git_lines(repo, *args):
@@ -559,6 +492,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.guidance = ""
         self.test_strategy = ""  # the plan's test strategy section, which only the test reviewer gets
         self.change_added = {}  # the lines the change under review adds, which the fix passes must not remove
+        self.reviewers = REVIEWERS_HEADLESS  # who runs the reviewers: REVIEWERS_HEADLESS or REVIEWERS_MAIN
 
     def next_round(self):
         self.iter_count += 1
@@ -568,12 +502,36 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.status = status
         self.remaining = remaining
 
-    def review_one(self, dispatch):
+    def review_request(self, dispatch):
+        """(role, agent, prompt) of one reviewer of this round."""
         agent, owned = dispatch
         prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
                                  tuple(ask.text for ask in self.asks), self.brief, self.test_strategy)
-        text = claude_call(f"review{self.iter_count}-{agent}", prompt, self.repo, self.out, agent=agent)
+        return f"review{self.iter_count}-{agent}", agent, prompt
+
+    def read_review(self, text):
         return parse_review(text) or disposition_call(text, self.repo, self.out)
+
+    def review_one(self, dispatch):
+        role, agent, prompt = self.review_request(dispatch)
+        text = claude_call(role, prompt, self.repo, self.out, agent=agent)
+        return self.read_review(text)
+
+    def reviews_from_main(self):
+        """The round's reviews, run by the main session as its subagents (`--reviewers main`)."""
+        requests = [self.review_request(dispatch) for dispatch in self.dispatches]
+        replies = reviewer_dispatch.request_round(self.out, self.iter_count, requests, CALL_TIMEOUT_SECONDS)
+        reviews = []
+        for (role, agent, _prompt), (text, wall) in zip(requests, replies, strict=True):
+            record_main_dispatch(self.out, role, agent, wall)
+            reviews.append(self.read_review(text))
+        return reviews
+
+    def run_reviewers(self):
+        if self.reviewers == REVIEWERS_MAIN:
+            return self.reviews_from_main()
+        with ThreadPoolExecutor(max_workers=len(self.dispatches)) as pool:
+            return list(pool.map(self.review_one, self.dispatches))
 
     def earlier_filing(self, entries, finding):
         """The entry from an earlier round that this finding refiles: not yet claimed this round, with the same
@@ -694,8 +652,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
     def review_round(self):
         """Runs the round's reviewers in parallel and sorts their findings. Returns (round_fix, round_nits). A plan
         impact never stops the round: route_plan_items sends it to the coder or holds it."""
-        with ThreadPoolExecutor(max_workers=len(self.dispatches)) as pool:
-            reviews = list(pool.map(self.review_one, self.dispatches))
+        reviews = self.run_reviewers()
         self.last_pass = "reviewer"
 
         self.round_claimed, self.round_fixes = set(), []
@@ -933,9 +890,9 @@ def walk(loop, check_command, gate_commands):
         loop.scoped_tests_pass(check_command, list(gate_commands))
 
 
-def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
+def run_loop(repo, out, session, header, handoff, progress, gate_commands=(), reviewers=REVIEWERS_HEADLESS):
     """Walks the graph. Returns the outcome mapping. `progress` holds what a crash still reports: iter, fixed and
-    files_touched, updated in place as the loop goes."""
+    files_touched, updated in place as the loop goes. `reviewers` says who runs the reviewers."""
     lane = header["lane"]
     structure_pass_skipped = header.get("structure-pass") == "skip"
     brief = reviewer_brief(header, handoff)
@@ -945,6 +902,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=()):
     if caller == "code":
         scope_fields = ["scope=phase", f"phase={header['phase']}"] if header.get("phase") else ["scope=phase"]
     loop = LoopRun(repo, out, brief, gate_env, progress, header.get("plan", ""))
+    loop.reviewers = reviewers
     loop.later_phase_files = set(filter(None, header.get("later-phase files", "").split(", ")))
     loop.guidance = header.get("guidance", "")
     loop.resolved_texts = plan_format.resolved_plan_texts(handoff)
@@ -997,10 +955,11 @@ def write_script_prompt(state_dir, agent_id, prompt):
     return prompt_file, script_dir / "script.log"
 
 
-def loop_script_command(loop_script, repo_dir, state_dir, session_id, agent_id, prompt_file, gate_commands=()):
+def loop_script_command(loop_script, repo_dir, state_dir, session_id, agent_id, prompt_file, gate_commands=(),
+                        reviewers=REVIEWERS_HEADLESS):
     """The argv that runs review_loop_script.py, with one --gate-command per gate command."""
     command = [sys.executable, str(loop_script), str(repo_dir), "--state-dir", str(state_dir), "--session", session_id,
-               "--agent-id", agent_id, "--prompt-file", str(prompt_file)]
+               "--agent-id", agent_id, "--prompt-file", str(prompt_file), "--reviewers", reviewers]
     for gate_command in gate_commands:
         command += ["--gate-command", gate_command]
     return command
@@ -1014,6 +973,7 @@ def parse_review_loop_arguments(argv):
     parser.add_argument("--agent-id", required=True)
     parser.add_argument("--prompt-file", required=True)
     parser.add_argument("--gate-command", action="append", default=[])
+    parser.add_argument("--reviewers", choices=(REVIEWERS_HEADLESS, REVIEWERS_MAIN), default=REVIEWERS_HEADLESS)
     return parser.parse_args(argv)
 
 
@@ -1031,7 +991,7 @@ def main(argv=None):
     outcome = None
     try:
         header, handoff = read_prompt(args.prompt_file)
-        outcome = run_loop(repo, out, args.session, header, handoff, progress, args.gate_command)
+        outcome = run_loop(repo, out, args.session, header, handoff, progress, args.gate_command, args.reviewers)
         message = packet_message(outcome)
         handback.load(message)
     except handback.PacketError as error:

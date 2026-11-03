@@ -92,7 +92,16 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge solarized-osaka solarized selenized alabaster flexoki; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles solarized-osaka solarized selenized alabaster flexoki; }
+
+# A family that differs from another only in nvim's syntax colours borrows that
+# family's terminal, prompt, herdr, hunk, delta and claude themes.
+asset_family() { # <family> -> the family whose non-nvim themes it uses
+  case "$1" in
+    dredge-roles) echo "dredge" ;;
+    *) echo "$1" ;;
+  esac
+}
 
 claude_theme_file() { # <family> <mode> -> the authored Claude Code theme JSON, empty if none
   # A family that ships claude/.claude/themes/<slug>.json gets it copied into
@@ -202,8 +211,8 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     duskfox:*)              echo "rose-pine-moon" ;;
     # dredge light: github-light leaks the fewest scopes past the dark-tuned
     # table; one-light leaks its red variables and blue operators.
-    dredge:light)           echo "github-light" ;;
-    dredge:*)               echo "one-dark-pro" ;;
+    dredge:light | dredge-roles:light) echo "github-light" ;;
+    dredge:* | dredge-roles:*)         echo "one-dark-pro" ;;
     # solarized-osaka: BASE of a full [custom_theme]. hunk's solarized
     # builtins render code #ffffff / #000000 (their text fails 4.5:1 on hunk's
     # own panel), so the bases are the nearest greys that pass.
@@ -631,7 +640,8 @@ EOF
       prim="#a6dae3"; ns="#a6dae3"; mac="#f0a6cc"; bfn="#eb6f92"
       ;;
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
-    dredge:*)
+    # dredge-roles (colors/dredge-roles.lua) keeps dredge's chrome and recolours syntax by role.
+    dredge:* | dredge-roles:*)
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. Headings (H1 $num, others $fn) and bullet mirror theme-sync's markdown.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
@@ -672,6 +682,38 @@ EOF
       param="$param_fg"; attr="$attr_fg"; pre="$attr_fg"
       badgeAdd="$sAdd"; badgeRem="$sRem"
       fRename="$sAdd"; fMod="$sAdd"; fUntracked="$sAdd"
+      local heading1="$num" role_extra=""
+      if [ "$1" = dredge-roles ]; then
+        local bind act exit_fg lit desc
+        if [ "$2" = light ]; then
+          bind="#4b47b6"; act="#00625c"; exit_fg="#a80e62"; lit="#6d4a00"; desc="#005b91"; cmt="#4f5d00"
+        else
+          bind="#7980d4"; act="#29a298"; exit_fg="#e34990"; lit="#bf983f"; desc="#1c90cb"; cmt="#849900"
+        fi
+        # Binds: names where they are introduced. Acts: calls, decorators, builtins.
+        fn="$bind"; cls="$bind"; param="$bind"; var="$bind"
+        call="$act"; bfn="$act"; mac="$act"; attr="$act"; pre="$act"
+        str="$lit"; num="$lit"; konst="$lit"; esc="$lit"; lang="$lit"
+        typ="$desc"; prim="$desc"
+        vbi="$text"; ns="$text"; use="$text"; mem="$text"
+        role_extra=$(cat <<EOF
+"entity.other.inherited-class"      = "$desc"
+"support.class"                     = "$desc"
+"meta.function-call entity.name.function" = "$act"
+"new.expr entity.name.type"         = "$act"
+"new.expr entity.name.function"     = "$act"
+"meta.function.decorator.python"    = "$act"
+"meta.object-literal.key"           = "$bind"
+"keyword.control.return.shell"      = "$exit_fg"
+"keyword.control.flow.ts"           = "$exit_fg"
+"keyword.control.flow.tsx"          = "$exit_fg"
+"keyword.control.flow.js"           = "$exit_fg"
+"keyword.control.trycatch.ts"       = "$kw"
+"heading.1.markdown entity.name.section.markdown" = "$heading1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$heading1"
+EOF
+        )
+      fi
       extra=$(cat <<EOF
 "punctuation.separator.key-value"   = "$punct"
 "punctuation.separator.key-value.mapping.yaml" = "$punct"
@@ -834,6 +876,13 @@ EOF
 "string.unquoted.plain.out.yaml"    = "$text"
 EOF
       )
+      if [ -n "$role_extra" ]; then
+        # A role line replaces the shared line with the same scope; TOML forbids duplicate keys.
+        extra="$(printf '%s\n' "$extra" |
+          ROLES="$role_extra" awk 'BEGIN { n = split(ENVIRON["ROLES"], r, "\n"); for (i = 1; i <= n; i++) { split(r[i], kv, " *= "); skip[kv[1]] = 1 } }
+            { split($0, kv, " *= ") } !(kv[1] in skip)')"
+        extra="$extra"$'\n'"$role_extra"
+      fi
       ;;
     # solarized-osaka: roles are the resolved fg of nvim's groups under this
     # config (comments carry theme-sync's contrast floor). Diff washes are the
@@ -1886,6 +1935,8 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   mkdir -p "$(dirname "$MODE_FILE")"
   printf '%s\n' "$mode" >"$MODE_FILE"     # nvim picks these up
   printf '%s\n' "$family" >"$FAMILY_FILE" # via its own watcher
+  local assets
+  assets="$(asset_family "$family")"
 
   # ghostty: machine-local include; wins over the fallback `theme =` line
   # because config-file includes are processed after the main config.
@@ -1899,7 +1950,7 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   # platform. Builtins have no file on disk and still go through `theme =`.
   mkdir -p "$(dirname "$GHOSTTY_SWITCH")"
   local theme custom
-  theme="$(ghostty_theme "$family" "$mode")"
+  theme="$(ghostty_theme "$assets" "$mode")"
   custom="$(dirname "$GHOSTTY_SWITCH")/themes/$theme"
   {
     echo "# Written by theme-mode — do not edit. Reload ghostty: ctrl+shift+,"
@@ -1923,7 +1974,7 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   if command -v jq >/dev/null 2>&1 && [ -f "$claude_settings" ]; then
     local claude_active="$HOME/.claude/themes/active.json"
     local claude_source claude_tmp
-    claude_source="$(claude_theme_file "$family" "$mode")"
+    claude_source="$(claude_theme_file "$assets" "$mode")"
     mkdir -p "$HOME/.claude/themes"
     claude_tmp="$(mktemp)"
     if { [ -n "$claude_source" ] && [ -f "$claude_source" ] &&
@@ -1953,22 +2004,22 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   local starship_tmpl="$HOME/.config/starship.toml.template"
   local starship_cfg="$HOME/.config/starship.toml"
   if [ -f "$starship_tmpl" ]; then
-    sed "s/^palette = .*/palette = \"$family-$mode\"/" "$starship_tmpl" >"$starship_cfg"
+    sed "s/^palette = .*/palette = \"$assets-$mode\"/" "$starship_tmpl" >"$starship_cfg"
   fi
 
   # herdr: regenerate ~/.config/herdr/config.toml from the stowed template with
   # the active palette, then reload the running server. No-op without herdr.
-  herdr_apply "$family" "$mode"
+  herdr_apply "$assets" "$mode"
 
   # tuios: its theme file, from the family's ghostty palette. No-op without tuios.
-  tuios_apply "$family" "$mode"
+  tuios_apply "$assets" "$mode"
 
   # hunk: one builtin theme id per family x mode, edited in place. No-op for a
   # family with no mapping.
   hunk_apply "$family" "$mode"
 
   # delta: git reads its include on every run, so the next diff flips.
-  delta_apply "$family" "$mode"
+  delta_apply "$assets" "$mode"
 
   echo "$family $mode"
 }
@@ -1992,8 +2043,11 @@ case "$arg" in
     ;;
   list) families ;;
   status) echo "$(current_family) $(current_mode)" ;;
-  herdr) herdr_apply "$(current_family)" "$(current_mode)" ;;
-  tuios) tuios_apply "$(current_family)" "$(current_mode)" ;;
+  herdr | tuios)
+    family="$(current_family)"
+    assets="$(asset_family "$family")"
+    "${arg}_apply" "$assets" "$(current_mode)"
+    ;;
   *)
     echo "usage: theme-mode [dark|light|toggle] | use <family> [mode] | list | status | herdr | tuios" >&2
     exit 2

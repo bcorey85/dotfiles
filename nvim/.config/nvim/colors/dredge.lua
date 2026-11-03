@@ -271,6 +271,10 @@ local groups = {
   ["@character.special"] = { fg = c.punct },
   -- Names at their definition (after/queries); colour comes from the other captures.
   ["@declaration"] = {},
+  -- Role captures for dredge-roles; empty here so they don't fall back to @variable.
+  ["@declaration.local"] = {},
+  ["@variable.write"] = {},
+  ["@keyword.exit"] = { fg = c.kw },
   -- Violet marks functions only.
   ["@declaration.function"] = { fg = c.fn },
   ["@number"] = { fg = c.const },

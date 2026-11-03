@@ -122,6 +122,16 @@ local FAMILIES = {
       light = { heading1 = "#a80e62", heading = "#4b47b6", bullet = "#4e5158" },
     },
   },
+  ["dredge-roles"] = {
+    -- colors/dredge-roles.lua: dredge coloured by role; theme-mode lends it dredge's other themes.
+    schemes = { dark = "dredge-roles", light = "dredge-roles" },
+    colors_name = "dredge-roles",
+    own_comment_contrast = true,
+    accents = {
+      dark = { heading1 = "#e34990", heading = "#7980d4", bullet = "#9b9fa6" },
+      light = { heading1 = "#a80e62", heading = "#4b47b6", bullet = "#4e5158" },
+    },
+  },
   ["solarized-osaka"] = {
     -- craftzdog/solarized-osaka.nvim: both colorschemes set colors_name "solarized-osaka".
     schemes = { dark = "solarized-osaka", light = "solarized-osaka-light" },

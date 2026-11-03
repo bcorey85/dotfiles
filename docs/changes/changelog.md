@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-805 changes
+806 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -30,6 +30,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 * [pr-comments hands the user the Aikido replies as one line](notes/2026-11-02-pr-comments-hands-the-user-the-aikido-replies-as.md) [skill/pr-comments] The Aikido triage replies reach the PR through one `!` line the user runs, in place of a `gh api` call the session's hook always denies.
 * [A brief another session wrote is never recorded as the user's sign-off](notes/2026-11-02-a-brief-another-session-wrote-is-never-recorded-as.md) [skill/code, rule/global-claude-md] /code records a plan change as signed off only from text the user typed; an instruction from another session's brief is logged as pending sign-off and the run stops.
+* [Shell-write gate lets in-place edits of Claude scratch files through](notes/2026-11-02-shell-write-gate-lets-in-place-edits-of-claude.md) [script/shell-write-gate] An in-place edit (sed -i and the like) of a file under the session temp root passes the gate, so read-only agents can finish a probe.
 * [Push lines pull with rebase=merges so a merged branch keeps its merge](notes/2026-11-02-push-lines-pull-with-rebase-merges-so-a-merged.md) [rule/global-claude-md] A push line on a branch that holds a merge commit no longer replays the merged commits one by one and stops on conflicts the merge already resolved.
 * [The test-intent reviewer's weak-assertion report no longer asks for a shape from a list it never gives](notes/2026-11-02-the-test-intent-reviewer-s-weak-assertion-report.md) [agent/test-intent-reviewer] Each weak-assertion finding names the wrong value its assertion accepts, in place of a shape from a list the agent no longer carries.
 * [Review loop tags round-2 findings fix_induced by script](notes/2026-11-02-review-loop-tags-round-2-findings-fix-induced-by.md) [script/review-loop-script, skill/review] The scripted review loop sets fix_induced to yes or no on every located finding of round two or later, from the lines the earlier round's fix changed, with no model call, so the logs can tell fix-caused defects from ones round one missed.

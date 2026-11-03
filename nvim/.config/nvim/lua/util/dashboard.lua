@@ -107,7 +107,7 @@ local function todo_line(todo, line_width)
   local keyword = todo.keyword .. " "
   local heading_width = line_width - vim.api.nvim_strwidth(keyword)
   local heading = Snacks.picker.util.truncate(todo.heading, heading_width)
-  return { { keyword, hl = "dir" }, { heading, hl = "file" } }
+  return { { keyword, hl = "SnacksDashboardTodo" }, { heading, hl = "file" } }
 end
 
 local function open_todo(todo)

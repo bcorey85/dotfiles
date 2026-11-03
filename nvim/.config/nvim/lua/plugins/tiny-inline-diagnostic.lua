@@ -15,6 +15,10 @@ return {
       -- A `signs` table makes the preset merge keep ours; without it the preset forces blend back to 0.22.
       signs = {},
       blend = { factor = 0.07 },
+      -- theme-sync clears Normal's bg, and tiny then mixes into pure white or black.
+      -- CursorLine's bg sits on the line the chips draw on; NormalFloat's is darker
+      -- than the ground and reads as a heavy pill.
+      hi = { mixing_color = "CursorLine" },
       options = {
         show_source = { enabled = true, if_many = true },
         multilines = { enabled = true, always_show = false },

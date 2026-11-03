@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """PreToolUse hook on Bash: deny shell writes that bypass the Write/Edit hook pipeline.
 
-  1. In-place editors (sed -i, perl -pi, awk -i inplace), any target.
+  1. In-place editors (sed -i, perl -pi, awk -i inplace), any target except a file inside the session temp root
+     (/tmp/claude-<uid>, symlinks and `..` resolved): those are throwaway, and a read-only agent has no Write/Edit.
   2. Redirection (>, >>) and tee onto a git-tracked file.
   3. Agent type `coder` (any coder variant, subagent or main session): a redirect or tee that creates a new file
      outside a temp dir, or whose target still holds a `$` after `$TMPDIR` and `$HOME` are expanded; also any
@@ -55,7 +56,7 @@ from code_text import (
     tuple_fields,
     without_comments,
 )
-from hook_input import JqError, expand_env_names, is_under_temp_dir, jq_get, jq_str
+from hook_input import JqError, expand_env_names, is_under_claude_temp_root, is_under_temp_dir, jq_get, jq_str
 from hook_input import bash_basename as shell_basename
 from hook_input import bash_dirname as shell_dirname
 from shell_statements import strip_comments, strip_heredocs
@@ -358,7 +359,6 @@ def run(raw):
     texts = code_texts(code)
     segment_folders = [(segment, folders) for text in texts for step, folders, _unread in step_folders(text, cwd)
                        for segment in simple_command_texts(step)]
-    segments = [segment for segment, _folders in segment_folders]
     targets = [target for text in texts for target in step_targets(text, cwd)]
     text_targets = [target for text in texts if shell_command.names_code_runner(text)
                     for target in regex_written_targets(text, skip_quoted=False)]
@@ -386,11 +386,14 @@ def run(raw):
     if not PRECHECK.search(command):
         return
 
-    for segment in segments:
+    for segment, folders in segment_folders:
         word = find_editor_word(segment)
         if word is None or not is_inplace(word, segment):
             continue
         target = in_place_target(segment, word)
+        resolved = resolve_target(target, folders[-1])
+        if resolved is not None and is_under_claude_temp_root(resolved):
+            continue
         raise DenyError(deny_text("in-place editing of " + target + " bypasses the Write/Edit hook pipeline.",
                                   cannot_skip))
 

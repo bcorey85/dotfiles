@@ -2014,6 +2014,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         parsed = review_loop_script.parse_review_loop_arguments(called_with["argv"])
         self.assertEqual(parsed.session, SESSION)
         self.assertEqual(parsed.prompt_file, str(log_path.parent / "prompt.txt"))
+        self.assertEqual(parsed.reviewers, review_loop_script.REVIEWERS_MAIN)
 
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
@@ -2086,6 +2087,48 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-no-handback", output)
+
+    def dispatching_stub(self):
+        """A stand-in loop script that asks the main session for one reviewer, waits for its report, records the
+        report it read, then hands back."""
+        stub = self.temp_root / "dispatching_stub.py"
+        stub.write_text(
+            "import pathlib, sys\n"
+            f"sys.path[:0] = [{str(toolkit_paths.REVIEW_DIR)!r}, {str(toolkit_paths.CODE_DIR)!r}, "
+            f"{str(toolkit_paths.LIB_DIR)!r}, {str(toolkit_paths.TELEMETRY_DIR)!r}]\n"
+            "import review_loop_packet, review_loop_script, reviewer_dispatch\n"
+            "args = review_loop_script.parse_review_loop_arguments(sys.argv[1:])\n"
+            "out = pathlib.Path(args.state_dir) / 'loop-script' / args.agent_id\n"
+            "replies = reviewer_dispatch.request_round(out, 1, [('review1-code-reviewer', 'code-reviewer', "
+            "'review it')], timeout=60, poll=0.05)\n"
+            "(out / 'read.txt').write_text(args.reviewers + '|' + replies[0][0])\n"
+            f"review_loop_packet.write_handback_rows(args, {CONVERGED!r}, 'converged', [], False)\n")
+        return stub
+
+    def test_launch_hands_the_reviewers_to_the_main_session_and_wait_reports_the_finish(self):
+        (self.repo / "README.md").write_text("hi, edited\n")
+        code, output = self.run_script(["launch"], REVIEW_FIX_LOOP_SCRIPT=str(self.dispatching_stub()))
+        self.assertEqual(code, 0, output)
+        lines = output.splitlines()
+        self.assertIn("ACTION: dispatch-reviewer", lines)
+        request = next(line for line in lines if line.startswith("- agent code-reviewer; prompt "))
+        prompt_file = pathlib.Path(request.split("; prompt ")[1].split("; report ")[0])
+        report_file = pathlib.Path(request.split("; report ")[1])
+        self.assertEqual(prompt_file.read_text(), "review it")
+        loop_dir = report_file.parent.parent
+        self.assertIn(f"reviewer_dispatch.py wait {loop_dir}", lines[-1])
+
+        report_file.write_text("## Fix\n\nnone\n")
+        waited = subprocess.run(["python3", "-I", str(toolkit_paths.REVIEW_DIR / "reviewer_dispatch.py"), "wait",
+                                 str(loop_dir)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(waited.returncode, 0, waited.stderr)
+        self.assertIn("finished", waited.stdout)
+        self.assertIn("packet --skill review", waited.stdout)
+        self.assertEqual((loop_dir / "read.txt").read_text(), "main|## Fix\n\nnone\n")
+
+        code, output = self.packet("")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
 
     def test_launch_with_a_repo_outside_git_stops_with_no_dispatch(self):
         outside = self.temp_root / "plain"

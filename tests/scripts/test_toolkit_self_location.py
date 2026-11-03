@@ -63,6 +63,8 @@ ALLOWED_HITS = [
     ("scripts/code/code_relay.py", "python3 ~/.claude/scripts/code/code_relay.py", PRINTED),
     ("scripts/review/open_child_gate.py", "code_wait.py agent <agentId>", PRINTED),
     ("scripts/review/review_fix.py", "DECIDE_SCRIPT = ", PRINTED),
+    ("scripts/review/reviewer_dispatch.py", "WAIT_COMMAND = ", PRINTED),
+    ("scripts/review/reviewer_dispatch.py", "PACKET_COMMAND = ", PRINTED),
     ("scripts/review/review_fix.py", "After the user answers, run once", PRINTED),
     ("scripts/review/review_loop_gate.py", "handoff-block.md and dispatch again", PRINTED),
     ("scripts/telemetry/log-escape", "Run the ratchet (", PRINTED),

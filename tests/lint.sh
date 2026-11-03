@@ -46,10 +46,12 @@ givenFiles=()
 givenGatedFiles=()
 for givenFile in "$@"; do
     case "$givenFile" in
-        /*) givenAbsolute="$(realpath -m "$givenFile")" ;;
-        *) givenAbsolute="$(realpath -m "$callerDir/$givenFile")" ;;
+        /*) givenPath="$givenFile" ;;
+        *) givenPath="$callerDir/$givenFile" ;;
     esac
-    givenRelative="$(realpath -m --relative-to="$repoRoot" "$givenAbsolute")"
+    # macOS realpath has no -m or --relative-to; os.path.realpath also resolves a path that does not exist.
+    givenAbsolute="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$givenPath")"
+    givenRelative="$(python3 -c 'import os, sys; print(os.path.relpath(sys.argv[1], os.path.realpath(sys.argv[2])))' "$givenAbsolute" "$repoRoot")"
     case "$givenRelative" in
         *.py | claude/.claude/scripts/review/verify-log | claude/.claude/scripts/review/verify-prep) ;;
         *) continue ;;

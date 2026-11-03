@@ -519,13 +519,14 @@ def sweep_stale_base_trees(root, base_parent, max_age_seconds):
         shutil.rmtree(child, ignore_errors=True)
 
 
-def base_run_would_test_head(root, repo_path, check_command, env, gate_env):
+def base_run_would_test_head(root, repo_path, repo_spellings, check_command, env, gate_env):
     """True when a base run would test the head tree: the repo holds an editable or linked install, the command or a
-    `gate_env` value names the repo's own path as a whole path, or an inherited import path enters the repo."""
-    if holds_editable_install(repo_path, env):
+    `gate_env` value names the repo's own path as a whole path, or an inherited import path enters the repo.
+    `repo_spellings` are the path strings that name the repo: the resolved path and the one the caller gave."""
+    if holds_editable_install(repo_path, env, repo_spellings):
         return True
 
-    own_paths = (str(repo_path), str(root))
+    own_paths = tuple(dict.fromkeys((*repo_spellings, str(root))))
     gate_values = (gate_env or {}).values()
     names_repo_path = any(script_utils.names_path(path, text)
                           for path in own_paths for text in (check_command, *gate_values))
@@ -555,7 +556,10 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
         return None
 
     repo_path = pathlib.Path(repo).resolve()
-    if base_run_would_test_head(root, repo_path, check_command, env, gate_env):
+    # Under a symlinked folder (macOS /var is /private/var) the command and the install files name the given path.
+    given_path = pathlib.Path(repo).absolute()
+    repo_spellings = tuple(dict.fromkeys((str(repo_path), str(given_path))))
+    if base_run_would_test_head(root, repo_path, repo_spellings, check_command, env, gate_env):
         return None
 
     common_dir = script_utils.git_output(root, "rev-parse", "--git-common-dir")

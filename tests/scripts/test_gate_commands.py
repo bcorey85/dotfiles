@@ -1,11 +1,13 @@
 """Tests for gate_commands.py: the commands derived from the files and Automated Verification items of a phase."""
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -163,6 +165,15 @@ class CargoCommandsTest(GateCommandsTestCase):
         nextest = "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(orders_total)'"
         check = "taskset -c 0-5 nice -n 19 env CARGO_BUILD_JOBS=4 cargo check --all-targets"
         after_cd = "cd crate && cargo test --test orders"
+        # A listed command must start with a program on PATH; macOS has no taskset, so a stub stands in for it.
+        stub_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(stub_dir.cleanup)
+        stub_taskset = pathlib.Path(stub_dir.name) / "taskset"
+        stub_taskset.write_text("#!/bin/sh\nexit 0\n")
+        stub_taskset.chmod(0o755)
+        stub_path = mock.patch.dict(os.environ, {"PATH": f"{stub_dir.name}{os.pathsep}{os.environ['PATH']}"})
+        stub_path.start()
+        self.addCleanup(stub_path.stop)
         cases = [
             ("wrappers", f"- [ ] Orders total passes: `{nextest}`\n- [ ] Crate builds: `{check}`",
              ["cd crate && cargo clippy --tests -- -D warnings", nextest, check]),

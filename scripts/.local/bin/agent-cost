@@ -285,7 +285,8 @@ else
 fi
 
 extract() {
-  find "$ROOT" -path '*/subagents/agent-*.jsonl' "${find_args[@]}" -print 2>/dev/null |
+  # macOS bash 3.2 under set -u calls an empty "${a[@]}" unbound; the + form expands to nothing instead.
+  find "$ROOT" -path '*/subagents/agent-*.jsonl' ${find_args[@]+"${find_args[@]}"} -print 2>/dev/null |
   while IFS= read -r t; do
     meta="${t%.jsonl}.meta.json"
     [ -f "$meta" ] || meta=/dev/null

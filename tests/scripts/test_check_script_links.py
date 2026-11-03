@@ -18,7 +18,7 @@ class CheckScriptLinksTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.home = pathlib.Path(self.tmp.name)
+        self.home = pathlib.Path(self.tmp.name).resolve()
         self.target_dir = self.home / ".local" / "bin"
         self.target_dir.mkdir(parents=True)
         self.scripts = sorted(path for path in SOURCE_DIR.iterdir() if path.is_file())

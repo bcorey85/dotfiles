@@ -143,5 +143,70 @@ class WaitReviewTest(unittest.TestCase):
         self.assertFalse((main_repo / ".git" / "code-phase").exists())
 
 
+class ReviewerRequestTest(unittest.TestCase):
+    """The /code fork runs the loop's reviewers: `review` returns at each request, `agent --report-file` answers it."""
+
+    def setUp(self):
+        self.repo, self.phase_dir = WaitReviewTest.repo_with_pid(self, os.getpid())
+        self.loop_dir = temp_dir(self)
+        (self.phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{self.loop_dir}\n")
+        self.entries = code_wait.reviewer_dispatch.write_round(
+            self.loop_dir, 1, [("review1-code-reviewer", "code-reviewer", "Review app.py.")])
+        self.projects = temp_dir(self)
+        for name, value in (("PROJECTS", self.projects), ("WAIT_SECONDS", 0)):
+            patcher = mock.patch.object(code_wait, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def write_finished_reviewer(self, records):
+        subagents = self.projects / "proj/session/subagents"
+        subagents.mkdir(parents=True)
+        transcript = subagents / f"agent-{AGENT_ID}.jsonl"
+        transcript.write_text("".join(json.dumps(record) + "\n" for record in records))
+        transcript.with_suffix(".meta.json").write_text(json.dumps({"finished": True}))
+
+    def test_a_running_loop_that_asks_for_a_reviewer_prints_the_dispatch_and_both_wait_commands(self):
+        lines = printed(code_wait.wait_review, self.repo).splitlines()
+
+        self.assertEqual(lines[0], "ACTION: dispatch-reviewer")
+        self.assertIn("agent code-reviewer", lines[1])
+        self.assertIn(self.entries[0]["report_file"], lines[1])
+        self.assertIn("code_wait.py agent <agentId> --report-file", lines[-1])
+        self.assertIn("code_wait.py review", lines[-1])
+
+    def test_an_answered_request_lets_the_review_wait_go_on(self):
+        pathlib.Path(self.entries[0]["report_file"]).write_text("## Fix\nNone\n")
+
+        self.assertEqual(printed(code_wait.wait_review, self.repo).strip(), code_wait.STILL_WORKING)
+
+    def test_a_loop_dir_from_before_the_run_named_one_is_no_request(self):
+        (self.phase_dir / code_wait.LOOP_DIR_FILE).unlink()
+
+        self.assertEqual(printed(code_wait.wait_review, self.repo).strip(), code_wait.STILL_WORKING)
+
+    def test_a_finished_reviewer_writes_its_report_to_the_report_file(self):
+        review = "## Fix\nNone\n\nOverall Assessment: PASS\n"
+        self.write_finished_reviewer([{"type": "assistant", "message": {"content": [{"type": "text",
+                                                                                     "text": review}]}}])
+        report_file = self.entries[0]["report_file"]
+
+        output = printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID, "--report-file", report_file])
+
+        self.assertEqual(output.strip(), review.strip())
+        self.assertEqual(pathlib.Path(report_file).read_text(), review)
+        self.assertEqual(code_wait.open_reviewer_requests(self.repo), [])
+
+    def test_a_reviewer_with_no_report_writes_nothing_and_exits_one(self):
+        self.write_finished_reviewer([{"type": "assistant", "message": {"content": []}}])
+        report_file = self.entries[0]["report_file"]
+
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            code = code_wait.main(["code_wait.py", "agent", AGENT_ID, "--report-file", report_file])
+
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.NO_REPORT, output.getvalue())
+        self.assertFalse(pathlib.Path(report_file).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

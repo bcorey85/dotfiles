@@ -111,12 +111,16 @@ def pending_requests(loop_dir):
     return pending
 
 
-def dispatch_lines(loop_dir, pending):
+def request_lines(pending):
+    """The `ACTION: dispatch-reviewer` line and one line per open request, for any caller's wait command."""
     lines = [f"ACTION: {DISPATCH_ACTION}"]
     lines += [f"- agent {entry['agent']}; prompt {entry['prompt_file']}; report {entry['report_file']}"
               for entry in pending]
-    lines.append(f"Then run `{WAIT_COMMAND} {loop_dir}` in the background.")
     return lines
+
+
+def dispatch_lines(loop_dir, pending):
+    return [*request_lines(pending), f"Then run `{WAIT_COMMAND} {loop_dir}` in the background."]
 
 
 def wait_for_step(loop_dir, is_running, poll=POLL_SECONDS):

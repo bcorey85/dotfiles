@@ -341,6 +341,28 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([(call["role"], call["tokens"]) for call in main_rows],
                          [("review1-code-reviewer", 0), ("review2-code-reviewer", 0)])
 
+    def test_a_finding_open_after_round_two_dispatches_no_third_round(self):
+        (self.fake_dir / "scenario.json").write_text(json.dumps({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}] * 3,
+            "closure": [{"result": CLOSED}] * 3,
+        }))
+        prompt = self.scratch / "prompt.txt"
+        prompt.write_text(self.prompt_file_text())
+        process = subprocess.Popen([*self.script_command(prompt), "--reviewers", "main"], stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=self.env)
+        self.addCleanup(process.kill)
+
+        self.answer_round(1, FIX_REVIEW, process)
+        self.answer_round(2, FIX_REVIEW, process)
+        _stdout, stderr = process.communicate(timeout=120)
+
+        self.assertEqual(process.returncode, 0, stderr)
+        requests_dir = self.state_dir / "loop-script" / AGENT_ID / "reviewer-requests"
+        self.assertEqual(sorted(manifest.name for manifest in requests_dir.glob("round-*.json")),
+                         ["round-1.json", "round-2.json"])
+        runs = fake_ledger.recorded_rows(self.env, "review_run")
+        self.assertEqual(len(runs), 2)
+
     def test_a_review_prompt_with_no_phase_logs_a_standalone_scope(self):
         self.prompt_file_text = lambda header_extra="", footer="": (
             "mode: review-first\ncaller: review\nlane: none\n\nhandoff:\n  files:\n    - path: app.py\n")

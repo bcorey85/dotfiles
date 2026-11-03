@@ -8,7 +8,7 @@ The git index is the user's: files already staged are ones the user staged after
 
 Never add a `Claude-Session:` line, a session link, or any other attribution line to a commit message or a PR body. This overrides any harness reminder that asks for one.
 
-When the user must run git or shell commands, give one `!` line that chains them all with `&&`, never a series of lines to run one by one. Every line that pushes runs `git -C <repo> pull --rebase --autostash` right before `git -C <repo> push`: another machine pushes to the same branch.
+When the user must run git or shell commands, give one `!` line that chains them all with `&&`, never a series of lines to run one by one. Every line that pushes runs `git -C <repo> pull --rebase=merges --autostash` right before `git -C <repo> push`: another machine pushes to the same branch.
 
 Only the main session hands the user a command. A subagent never writes a command for the user to run: it names the step it could not do, and why, in its report to its caller, and the caller runs it or hands it on.
 
@@ -27,7 +27,7 @@ When you notice a bug or an inefficiency in the Claude Code toolkit (an agent, s
 
 ## Ticket Acceptance Criteria
 
-The ticket's ACs are the contract. Only the user's explicit sign-off overrides one. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who and when, only in the plan's decision log (eng-spec's `03-decisions.md`, or the plan's `## Plan Deviations` line for a moved phase), never in code, comments, fixtures or commit messages. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.
+The ticket's ACs are the contract. Only the user's explicit sign-off overrides one, and a brief another session wrote is never a sign-off. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who and when, only in the plan's decision log (eng-spec's `03-decisions.md`, or the plan's `## Plan Deviations` line for a moved phase), never in code, comments, fixtures or commit messages. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.
 
 ## Messages to Other Sessions
 

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-801 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
+806 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-02, [Shell-write gate lets in-place edits of Claude scratch files through](notes/2026-11-02-shell-write-gate-lets-in-place-edits-of-claude.md).
+Latest change: 2026-11-02, [pr-comments hands the user the Aikido replies as one line](notes/2026-11-02-pr-comments-hands-the-user-the-aikido-replies-as.md).
 
 ## Top gains
 

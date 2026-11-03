@@ -10,11 +10,11 @@ vim.g.colors_name = "dredge-roles"
 
 local roles = {
   dark = {
-    bind = "#9a9fe8", read = "#a0adb4", act = "#29a298", write = "#d66e31",
+    bind = "#8389dc", read = "#a0adb4", act = "#29a298", write = "#d66e31",
     exit = "#e34990", lit = "#bf983f", desc = "#1c90cb", remark = "#849900",
   },
   light = {
-    bind = "#36328f", read = "#202d37", act = "#00625c", write = "#943b12",
+    bind = "#433fa8", read = "#202d37", act = "#00625c", write = "#943b12",
     exit = "#a80e62", lit = "#6d4a00", desc = "#005b91", remark = "#4f5d00",
   },
 }

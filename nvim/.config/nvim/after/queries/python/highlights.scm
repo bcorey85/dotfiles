@@ -49,6 +49,36 @@
   left: (identifier) @declaration.local
   (#set! priority 129))
 
+; Unpacked names: a, b = ...; for k, v in ...; (a, b) = ...
+(assignment
+  left: [
+    (pattern_list
+      (identifier) @declaration.local)
+    (tuple_pattern
+      (identifier) @declaration.local)
+    (list_pattern
+      (identifier) @declaration.local)
+  ]
+  (#set! priority 129))
+
+(for_statement
+  left: [
+    (pattern_list
+      (identifier) @declaration.local)
+    (tuple_pattern
+      (identifier) @declaration.local)
+  ]
+  (#set! priority 129))
+
+(for_in_clause
+  left: [
+    (pattern_list
+      (identifier) @declaration.local)
+    (tuple_pattern
+      (identifier) @declaration.local)
+  ]
+  (#set! priority 129))
+
 ; The written name only: the attribute, or the container of a subscript; keys keep their own role.
 (assignment
   left: (attribute

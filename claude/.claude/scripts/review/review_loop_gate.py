@@ -26,6 +26,10 @@
       error is reported on stderr and never blocks the stop.
       The row also carries `ask_rows`: the file, line and printed finding_id of each `actioned=ask` row the loop
       logged, so `review_fix.py packet` can give each ask its id.
+    A stop with no delivered SubagentHandback, no open background dispatch and no other block, whose final message
+      parses as a packet, runs the hand-back hook (handback_hook.handle_hook) on that message: the packet is stored
+      as the hand-back when the hook's gates pass, and a gate's deny reason blocks the stop (a denied stop_hook_active
+      stop is not blocked and stores nothing). A loop resumed by SendMessage can end this way.
   PreToolUse (Agent): a review-loop dispatch whose prompt says `caller: code` must carry a
       `handoff:` line. A review-loop dispatch from a subagent other than the /code fork is refused: the
       nested loop cannot ask for permission or wake on its reviewer's report, so it never hands back.
@@ -399,6 +403,27 @@ def record_stop(hook, open_dispatches, ask_rows=(), blocked=False):
         print(f"review-loop-gate: stop row skipped, {type(e).__name__}: {e}", file=sys.stderr)
 
 
+def final_text_hand_back_reasons(hook, transcript):
+    """Run the hand-back hook on a final message that parses as a packet, for a loop that ended with no
+    SubagentHandback call. The hook stores the packet as the hand-back when its gates pass. A gate's deny reason
+    blocks the stop, unless the stop cannot be blocked (stop_hook_active). Fail-open on purpose: an error stores
+    nothing, goes to stderr, and never blocks the stop."""
+    final = hook.get("last_assistant_message") or transcript.last_text
+    if final_packet(transcript, final) is None:
+        return []
+    # Imported here: only a stop that ends on a packet pays for the hand-back hook's imports.
+    import handback_hook
+    event = {**hook, "tool_input": {"message": final}}
+    try:
+        reason = handback_hook.handle_hook(event, "handback")
+    except Exception as e:
+        print(f"review-loop-gate: final-text hand-back skipped, {type(e).__name__}: {e}", file=sys.stderr)
+        return []
+    if not reason or reason == handback_hook.ALREADY_DELIVERED_REASON or hook.get("stop_hook_active"):
+        return []
+    return [reason]
+
+
 def check_stop(hook):
     try:
         transcript = LoopTranscript(hook["agent_transcript_path"])
@@ -418,6 +443,8 @@ def check_stop(hook):
     except Exception:
         record_stop(hook, scanned[1], transcript.ask_rows)
         raise
+    if not why and not delivered and not scanned[1]:
+        why = final_text_hand_back_reasons(hook, transcript)
     record_stop(hook, scanned[1], transcript.ask_rows, blocked=bool(why))
     if why:
         print(json.dumps({"decision": "block", "reason": " ".join(why)}))

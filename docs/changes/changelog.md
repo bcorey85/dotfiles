@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-816 changes
+817 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -33,6 +33,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Dotfiles toolkit markdown commits without review](notes/2026-11-03-dotfiles-toolkit-markdown-commits-without-review.md) [script/review-commit-gate] The dotfiles repo lists its toolkit Markdown (agents, skills, rules, CLAUDE.md files, orchestration.md) in .claude/notes-paths, so a dirty session commits a Markdown-only rule change without /review.
 * [verify-prep gives plan-verifier an output folder and falls back to origin/HEAD for the base](notes/2026-11-03-verify-prep-gives-plan-verifier-an-output-folder.md) [agent/plan-verifier, skill/verify-branch] Plan-verifier now has a named folder inside the checkout's git dir for command output, and verify-prep finds the base on a repo whose default branch is not main or master.
 * [Toolkit scripts run on Python 3.10](notes/2026-11-03-toolkit-scripts-run-on-python-3-10.md) [script/toml-file, script/full-check, script/format-files, script/pytest-config, script/worktree-snapshot, script/full-check-receipt, script/hook-python] The review, code and eng-spec scripts no longer crash on a Python 3.10 python3: a TOML file there reads as empty and each caller takes its no-config path.
+* [A review-loop that ends on a packet with no hand-back call still hands back](notes/2026-11-03-a-review-loop-that-ends-on-a-packet-with-no-hand.md) [script/review-loop-gate] The review-loop SubagentStop gate runs the hand-back hook on a final message that parses as a packet, so a loop resumed by SendMessage that returns its packet as text is stored, not reported as stop-no-handback.
 * [A coder that edited no work tree leaves every repo clean](notes/2026-11-03-a-coder-that-edited-no-work-tree-leaves-every-repo.md) [script/review-commit-gate] review-commit-gate counts a coder whose readable transcript shows no edit inside a work tree (nothing, a scratch file, a git dir, a deleted worktree) against no repo, so scratch-repo commits and a /code fork's reviewed commit pass.
 * [shell-write-gate in-place denial names the session temp root](notes/2026-11-03-shell-write-gate-in-place-denial-names-the-session.md) [script/shell-write-gate] An in-place edit of an untracked file outside the session temp root is denied with the temp root named, so an agent with no Write or Edit has a path it can follow.
 * [Ask rows log the last reviewer round, not a repair-pass iter](notes/2026-11-03-ask-rows-log-the-last-reviewer-round-not-a-repair.md) [script/review-loop-script, script/handback, script/review-fix] Ask and ask-outcome rows from /code and /review carry the last round a reviewer ran in, so a closure or stale-prose repair no longer reads as an over-cap round 3.

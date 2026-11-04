@@ -67,7 +67,7 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "tool_fault", "blocked_agents", "scoped_tests", "open_classes",
                "unrun_reviewer", "plan_impacts"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
-SCRIPT_PACKET_KEYS = ["plan_impact_cause"]
+SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
              "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "plan_impacts"]
 # The list fields whose every JSON entry is a string.
@@ -98,7 +98,7 @@ class PacketError(Exception):
 
 # ---------- parsing ----------
 
-INTEGER_KEYS = ("iter", "spec_iter")
+INTEGER_KEYS = ("iter", "spec_iter", "review_round")
 
 
 def json_packet_text(message):
@@ -213,13 +213,15 @@ def claim_logged_ask_id(item, logged_rows):
 
 def ask_row_fields(context, item):
     """The log-review-finding fields that an ask's row and its outcome row share. context holds the run's branch, lane,
-    scope and iter, and a phase when the run has one (the writer takes phase as a token, so a run with none sends
-    none)."""
+    scope, iter and review_round, and a phase when the run has one (the writer takes phase as a token, so a run with
+    none sends none). The row's iter is the last reviewer round; a state saved before review_round existed gives
+    iter."""
     path, line = script_utils.split_location(item.get("file_line") or "-")
     location_fields = [f"file={path}"] if path == UNLOCATED else [f"file={path}", f"line={line}"]
     phase_fields = [f"phase={context['phase']}"] if context.get("phase") else []
+    reviewer_round = context.get("review_round", context["iter"])
     return [f"branch={context['branch']}", f"lane={context['lane']}", f"scope={context['scope']}", *phase_fields,
-            f"iter={context['iter']}", f"gate={item.get('gate', 'code-reviewer')}", "disposition=ask",
+            f"iter={reviewer_round}", f"gate={item.get('gate', 'code-reviewer')}", "disposition=ask",
             f"class={item.get('class', 'other')}", *location_fields, "actioned=ask"]
 
 
@@ -297,12 +299,18 @@ def read_header(raw):
     spec_iter = first_number(raw.get("spec_iter"))
     if raw.get("spec_iter", "").strip() and spec_iter is None:
         problems.append("spec_iter has no number")
+    # The script's last reviewer round; a repair pass raises iter without one. An agent packet counts only rounds.
+    review_round = first_number(raw.get("review_round"))
+    if raw.get("review_round", "").strip() and review_round is None:
+        problems.append("review_round has no number")
+    if review_round is None:
+        review_round = iter_round
 
     plan_impact = raw.get("plan_impact", "").strip()
     # The review-loop script one-lines the block and sends its cause; a reviewer agent's block keeps its lines and
     # a block with no cause reads as plan.
     cause = raw.get("plan_impact_cause", "").strip().lower() or plan_impact_cause(plan_impact)
-    header = {"status": status, "iter": iter_round, "spec_iter": spec_iter,
+    header = {"status": status, "iter": iter_round, "spec_iter": spec_iter, "review_round": review_round,
               "class_closure": raw.get("class_closure", "").strip(),
               "full_check": raw.get("full_check", "").strip(),
               "full_check_command": raw.get("full_check_command", "").strip(),

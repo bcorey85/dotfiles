@@ -1,0 +1,9 @@
+# Markdown a commit ships without /review: toolkit rules, agents and skills.
+claude/.claude/agents/
+claude/.claude/skills/
+claude/.claude/rules/
+claude/.claude/CLAUDE.md
+claude/.claude/orchestration.md
+claude/.claude/scripts/CLAUDE.md
+.claude/rules/
+CLAUDE.md

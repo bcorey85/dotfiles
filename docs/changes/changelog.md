@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-819 changes
+820 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -30,6 +30,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Turn-end formatter leaves prompt markdown alone](notes/2026-11-04-turn-end-formatter-leaves-prompt-markdown-alone.md) [script/format-changed, script/format-files] format_files.run_formatters skips .md files a model reads as prompt text (under .claude or .config/opencode/, and CLAUDE.md, CLAUDE.local.md and AGENTS.md at any depth), so the Stop hook no longer reflows agent and skill prompts.
 * [Commit gate's folder-change refusal names the plain commit for notes-only commits](notes/2026-11-04-commit-gate-s-folder-change-refusal-names-the.md) [script/review-commit-gate] A cd commit of staged notes files is told to run a plain commit from the repo root, so one notes commit meets one refusal in place of two.
 * [Full check runs the repo's own test command before a pytest guess](notes/2026-11-03-full-check-runs-the-repo-s-own-test-command-before.md) [script/check-discovery, script/full-check] A repo with no check command but a Makefile test target, or else a package.json test script, gets that command in its discovered full check in place of a guessed pytest or JS runner.
 * [Dotfiles toolkit markdown commits without review](notes/2026-11-03-dotfiles-toolkit-markdown-commits-without-review.md) [script/review-commit-gate] The dotfiles repo lists its toolkit Markdown (agents, skills, rules, CLAUDE.md files, orchestration.md) in .claude/notes-paths, so a dirty session commits a Markdown-only rule change without /review.

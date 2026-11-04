@@ -10,7 +10,8 @@ side brought in are in the dirty set, and reformatting them leaves unstaged edit
 A commit or reset deletes the message files git leaves for a squash merge or `cherry-pick -n`, so formatting resumes
 then.
 Files under docs/plans/ are never formatted: a plan's later Edits and its review shards quote its text exactly, and a
-reflow between turns makes them miss.
+reflow between turns makes them miss. Prompt markdown (format_files.is_prompt_markdown: .md under .claude or
+.config/opencode/, and CLAUDE.md, CLAUDE.local.md and AGENTS.md) is never formatted either: a model reads it literally.
 CLAUDE_SKIP_HOOKS or CLAUDE_FORMAT_HOOK_OFF set to any non-empty value exits 0: the scripted review loop sets
 CLAUDE_FORMAT_HOOK_OFF in every child session it starts, so no reflow lands between a coder pass and a review.
 Snapshots live in ~/.claude/state/format-changed and snapshots older than 2 days are deleted on every run.

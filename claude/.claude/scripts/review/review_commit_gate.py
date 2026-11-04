@@ -5,8 +5,9 @@
   PreToolUse(Bash):   `git commit` in a dirty session is denied, with the reason telling the session to run /review
                       and commit after it converges. A review's hand-back (handback.py) is what earns the credit.
 
-A coder dispatch makes dirty each repo its transcript shows it edited through the EDIT_TOOL_PATH_KEYS tools, and every
-repo when no edited file lies in a repo, its transcript cannot be read or it has no agent id. A dirty event makes
+A coder dispatch makes dirty each repo its transcript shows it edited through the EDIT_TOOL_PATH_KEYS tools: no repo
+when no edited file lies in a work tree (a scratch file, a git dir, a deleted worktree), and every repo when its
+transcript cannot be read, git cannot place an edited folder, or it has no agent id. A dirty event makes
 every repo dirty. A commit is judged when a repo it commits in is dirty.
 
 A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
@@ -542,10 +543,28 @@ def worked_until(transcript_path, agent_id):
         return 0
 
 
+def folder_repo_top(folder):
+    """The top level of the work tree that holds folder (its nearest existing ancestor when it is gone), as a
+    string; "" when it lies outside every work tree: in a git dir, or with no `.git` in it or above it; None when
+    git cannot tell, so the caller fails closed."""
+    existing = pathlib.Path(folder)
+    while not existing.is_dir() and existing != existing.parent:
+        existing = existing.parent
+    top = script_utils.repo_root(str(existing), timeout=GIT_TIMEOUT_SECONDS)
+    if top:
+        return str(top)
+    if ".git" in existing.parts:
+        return ""
+    has_git_above = any((ancestor / ".git").exists() for ancestor in (existing, *existing.parents))
+    return None if has_git_above else ""
+
+
 def edited_repos(transcript_path, agent_id, top_by_dir):
     """The top levels of the repos a coder agent edited through the EDIT_TOOL_PATH_KEYS tools, read from its
-    transcript, or None when no edited file lies in a repo or the transcript cannot be read. A file outside every
-    repo is left out. top_by_dir caches each folder's repo top, shared across agents."""
+    transcript: an empty set when no edited file lies in a work tree, None when the transcript cannot be read or git
+    cannot place an edited folder. top_by_dir caches each folder's repo top, shared across agents. Fail-open on a
+    readable transcript with no work-tree edit: the shell-write-gate keeps coder shell writes out of tracked files,
+    so the edit tools are the record of coder writes."""
     agent_transcript = subagent_transcript(transcript_path, agent_id)
     if agent_transcript is None:
         return None
@@ -559,12 +578,13 @@ def edited_repos(transcript_path, agent_id, top_by_dir):
 
     for folder in edited_dirs:
         if folder not in top_by_dir:
-            top_by_dir[folder] = (script_utils.repo_root(folder, timeout=GIT_TIMEOUT_SECONDS)
-                                  if os.path.isdir(folder) else None)
+            top_by_dir[folder] = folder_repo_top(folder)
 
     repo_tops = {top_by_dir[folder] for folder in edited_dirs}
-    repo_tops.discard(None)
-    return {str(top) for top in repo_tops} or None
+    if None in repo_tops:
+        return None
+    repo_tops.discard("")
+    return repo_tops
 
 
 def edited_dirs_in(line):
@@ -587,10 +607,10 @@ def edited_repos_by_agent(events, transcript_path):
 
 def dirty_since(events, transcript_path, repo_top, edited_by_agent):
     """When the work in repo_top became dirty: the latest dirty event, or coder dispatch that edited repo_top, or None
-    when none did. A dirty event stands for every repo. A coder counts for the repos its transcript shows it edited,
-    and for every repo when edited_repos names none. It counts from its dispatch or its transcript's last change,
-    whichever is later, since a background coder edits after its dispatch is recorded. A coder with no agent id on
-    record counts as dirty now, in every repo, since its edits cannot be read."""
+    when none did. A dirty event stands for every repo. A coder counts for the repos its transcript shows it edited
+    (none when it edited no work tree), and for every repo when edited_repos is None. It counts from its dispatch or
+    its transcript's last change, whichever is later, since a background coder edits after its dispatch is recorded.
+    A coder with no agent id on record counts as dirty now, in every repo, since its edits cannot be read."""
     dirty_times = []
     for event in events:
         if event.get("kind") != "dispatch":

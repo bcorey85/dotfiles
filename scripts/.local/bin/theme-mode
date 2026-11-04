@@ -647,12 +647,12 @@ EOF
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
       local bright quote bullet type_fg builtin_fg param_fg attr_fg
       if [ "$2" = light ]; then
-        bg="#bbb4a4"; panel="#b7b0a0"; panelAlt="#b4ad9d"; border="#9a9384"; note="#b7b0a0"
-        accent="#00625c"; accentMuted="#9a9384"; text="#202d37"; muted="#4e5158"; lnFg="#60656b"
+        bg="#c8d0d3"; panel="#c2cacd"; panelAlt="#bfc7ca"; border="#a5adb0"; note="#c2cacd"
+        accent="#00625c"; accentMuted="#a5adb0"; text="#293741"; muted="#4e5158"; lnFg="#60656b"
         addWord="#72aca6"; remWord="#bb908b"
-        addedBg="#9bb1af"; removedBg="#b7a8a5"; ctxBg="#bbb4a4"
+        addedBg="#9bb1af"; removedBg="#b7a8a5"; ctxBg="#c8d0d3"
         sAdd="#038880"; sRem="#d72d2b"; badgeNeu="#846322"
-        kw="#454950"; punct="#575b62"; str="#00625c"; num="#a80e62"; fn="#4b47b6"; cmt="#6d4a00"
+        kw="#4c5158"; punct="#575b62"; str="#00625c"; num="#a80e62"; fn="#4b47b6"; cmt="#6d4a00"
         type_fg="#4f5d00"; builtin_fg="#005b91"; param_fg="#943b12"; attr_fg="#a32822"
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
@@ -686,15 +686,17 @@ EOF
       if [ "$1" = dredge-roles ]; then
         local bind act exit_fg lit desc
         if [ "$2" = light ]; then
-          bind="#433fa8"; act="#00625c"; exit_fg="#a80e62"; lit="#6d4a00"; desc="#005b91"; cmt="#4f5d00"
+          bind="#433fa8"; act="#006c66"; exit_fg="#a80e62"; lit="#2a7000"; desc="#07549f"
+          kw="#4c5158"; cmt="#6d4a00"
         else
-          bind="#8389dc"; act="#29a298"; exit_fg="#e34990"; lit="#bf983f"; desc="#1c90cb"; cmt="#849900"
+          bind="#7d83d6"; act="#29a298"; exit_fg="#df4a8f"; lit="#849900"; desc="#1c90cb"
+          kw="#858990"; cmt="#af8931"
         fi
         # Binds: names where they are introduced. Acts: calls, decorators, builtins.
         fn="$bind"; cls="$bind"; param="$bind"; var="$bind"
         call="$act"; bfn="$act"; mac="$act"; attr="$act"; pre="$act"
-        str="$lit"; num="$lit"; konst="$lit"; esc="$lit"; lang="$lit"
-        typ="$desc"; prim="$desc"
+        num="$lit"; konst="$lit"; esc="$lit"; lang="$lit"; str="$lit"
+        typ="$desc"; prim="$desc"; tag="$kw"; imp="$kw"; heading1="$exit_fg"
         vbi="$text"; ns="$text"; use="$text"; mem="$text"
         role_extra=$(cat <<EOF
 "entity.other.inherited-class"      = "$desc"
@@ -1657,10 +1659,10 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:light)
       base_name="one-light"
-      accent="#00625c" panel_bg="#b7b0a0" surface_dim="#a9a292"
-      surface0="#a19a8b" surface1="#9a9384"
+      accent="#00625c" panel_bg="#c2cacd" surface_dim="#b4bcbf"
+      surface0="#acb4b7" surface1="#a5adb0"
       overlay0="#4e5158" overlay1="#454950"
-      text="#202d37" subtext0="#454950"
+      text="#293741" subtext0="#454950"
       green="#038880" yellow="#846322" red="#d72d2b"
       blue="#4b47b6" teal="#00625c" peach="#a80e62"
       ;;

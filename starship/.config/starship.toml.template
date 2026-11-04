@@ -422,8 +422,8 @@ blue = "#005b91"
 branch = "#4b47b6"
 teal = "#00625c"
 purple = "#a80e62"
-fg = "#202d37"
-bg = "#bbb4a4"
+fg = "#293741"
+bg = "#c8d0d3"
 grey = "#4e5158"
 
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).

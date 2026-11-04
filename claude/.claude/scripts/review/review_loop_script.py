@@ -461,6 +461,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.progress = progress
         self.fixed, self.files_touched = progress["fixed"], progress["files_touched"]
         self.iter_count = 0
+        self.last_review_round = 0  # the last round a reviewer ran in; a repair pass raises iter_count, never this
         self.skipped_fp, self.remaining, self.asks, self.nits, self.run_rows = [], [], [], [], []
         self.plan_impacts = []  # {text, gate, ac_change, cause, adopted, applied} of each plan impact, shown at the end
         # every finding the coder skipped or left unchanged in a round whose plan impact is held: still open, not false
@@ -654,6 +655,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         impact never stops the round: route_plan_items sends it to the coder or holds it."""
         reviews = self.run_reviewers()
         self.last_pass = "reviewer"
+        self.last_review_round = self.iter_count
 
         self.round_claimed, self.round_fixes = set(), []
         round_fix, round_nits = [], []
@@ -848,6 +850,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         return {
             "status": self.status,
             "iter": self.iter_count,
+            "review_round": self.last_review_round,
             "fixed": self.fixed,
             "skipped_fp": self.skipped_fp,
             "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],

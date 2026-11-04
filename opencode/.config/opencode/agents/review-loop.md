@@ -77,11 +77,9 @@ the cap stops a reviewer, never a coder; a coder change after the last reviewer 
 
 ## Step 3: Dispatch code-reviewer subagent(s)
 
-**Reviewer continuity (`iter >= 1`)**: when this is a re-review inside the same fix loop (handoff has `prior-issues`) and the previous iteration's reviewer is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block. Spawn fresh only if: no prior reviewer exists, the depth modifier changed, or the split boundaries changed.
+**Reviewer continuity (`iter >= 1`)**: when this is a re-review inside the same fix loop (handoff has `prior-issues`) and the previous iteration's reviewer is still addressable, do NOT spawn a fresh reviewer — continue it via `SendMessage` with the handoff block. Spawn fresh only if: no prior reviewer exists, the depth modifier changed, or the reviewer count changed.
 
-**Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; read `SHORTSTAT` from Step 0). A many-file but small diff is one reviewer's job.
-
-**When splitting**, choose the largest natural boundary: frontend vs backend; source vs tests; two unrelated subsystems; rules/config vs runtime code. Pick the split that minimizes overlap. Launch both in a single message with multiple Task tool calls.
+**First review of a multi-file change**: dispatch two code-reviewers in one message (multiple Task tool calls), each over every file in scope. End the first one's prompt with: "Own state and lifecycle: UI state while an action is pending, after close or cancel, and on re-open; stale async results arriving late; cache invalidation after writes. Trace each changed handler through every state it can be entered from." End the second one's with: "Own inputs and surfaces: edge inputs (empty, zero, huge, malformed, duplicate); layout, CSS and accessibility of every changed element; contracts with unchanged code the change reuses or sits next to. Read the whole enclosing function and every unchanged helper the change calls." A one-file change and every re-review get one reviewer with no lens line.
 
 Pass each reviewer: the exact file list it owns (never let it rediscover scope), the relevant subsets of `prior-issues` and `flagged`, and the `plan` path with its `phase` when one was passed in, telling it to read the plan phase-scoped per `~/.claude/skills/_shared/plan-reading.md`.
 

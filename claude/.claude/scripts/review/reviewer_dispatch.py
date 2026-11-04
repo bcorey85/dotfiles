@@ -26,7 +26,9 @@ PID_FILE = "loop.pid"
 POLL_SECONDS = 2.0
 DISPATCH_ACTION = "dispatch-reviewer"
 WAIT_COMMAND = "python3 ~/.claude/scripts/review/reviewer_dispatch.py wait"
-PACKET_COMMAND = "python3 ~/.claude/scripts/review/review_fix.py packet --skill review"
+PACKET_COMMAND = "python3 ~/.claude/scripts/review/review_fix.py packet"
+# The packet arguments of a run `review_fix.py launch` started: {"packet_args": [...]}.
+LAUNCH_FILE = "launch.json"
 
 
 class ManifestError(Exception):
@@ -45,9 +47,9 @@ def report_text(report_file):
         return ""
 
 
-def write_round(loop_dir, round_number, requests):
+def write_round(loop_dir, round_number, requests, model=""):
     """Writes each (role, agent, prompt) prompt file and the round's manifest, the manifest last. Returns the
-    manifest's request list."""
+    manifest's request list. A model names the model every request runs on."""
     folder = requests_dir(loop_dir)
     folder.mkdir(parents=True, exist_ok=True)
     entries = []
@@ -64,17 +66,19 @@ def write_round(loop_dir, round_number, requests):
         prompt_file = folder / f"{role}.prompt.md"
         prompt_file.write_text(prompt)
         report_file = folder / f"{role}.report.md"
-        entries.append({"role": role, "agent": agent, "prompt_file": str(prompt_file),
-                        "report_file": str(report_file)})
+        entry = {"role": role, "agent": agent, "prompt_file": str(prompt_file), "report_file": str(report_file)}
+        if model:
+            entry["model"] = model
+        entries.append(entry)
     manifest = {"round": round_number, "requests": entries}
     script_utils.write_text_atomically(folder / f"round-{round_number}.json", json.dumps(manifest, indent=2) + "\n")
     return entries
 
 
-def request_round(loop_dir, round_number, requests, timeout, poll=POLL_SECONDS):
+def request_round(loop_dir, round_number, requests, timeout, poll=POLL_SECONDS, model=""):
     """Hands the round's reviewers to the main session and waits for their reports. Returns [(text, wall seconds)]
     in request order. Raises RuntimeError when a report is still missing after `timeout` seconds."""
-    entries = write_round(loop_dir, round_number, requests)
+    entries = write_round(loop_dir, round_number, requests, model)
     started = time.time()
     walls = {}
     while True:
@@ -123,8 +127,11 @@ def pending_requests(loop_dir):
 def request_lines(pending):
     """The `ACTION: dispatch-reviewer` line and one line per open request, for any caller's wait command."""
     lines = [f"ACTION: {DISPATCH_ACTION}"]
-    lines += [f"- agent {entry['agent']}; prompt {entry['prompt_file']}; report {entry['report_file']}"
-              for entry in pending]
+    for entry in pending:
+        line = f"- agent {entry['agent']}; prompt {entry['prompt_file']}; report {entry['report_file']}"
+        if entry.get("model"):
+            line += f"; model {entry['model']}"
+        lines.append(line)
     return lines
 
 
@@ -154,6 +161,19 @@ def pid_is_running(pid):
     return True
 
 
+def packet_command(loop_dir):
+    """The packet command of the run: `packet` plus the arguments `launch` saved in <loop dir>/launch.json, or
+    `--skill review` for a run with no such file (one /code started)."""
+    launch_file = pathlib.Path(loop_dir) / LAUNCH_FILE
+    if not launch_file.is_file():
+        return f"{PACKET_COMMAND} --skill review"
+    try:
+        packet_args = json.loads(launch_file.read_text())["packet_args"]
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ManifestError(f"{launch_file}: {error!r}; expected {{\"packet_args\": [...]}}") from error
+    return " ".join([PACKET_COMMAND, *packet_args])
+
+
 def command_wait(loop_dir):
     pid_file = pathlib.Path(loop_dir) / PID_FILE
     try:
@@ -165,7 +185,7 @@ def command_wait(loop_dir):
 
     lines = wait_for_step(loop_dir, lambda: pid_is_running(pid))
     if lines is None:
-        lines = [f"The review loop script finished. Run `{PACKET_COMMAND}` now."]
+        lines = [f"The review loop script finished. Run `{packet_command(loop_dir)}` now."]
     print("\n".join(lines))
     return 0
 

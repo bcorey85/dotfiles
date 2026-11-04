@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""review_fix.py: the fixed steps of /review and /fix as a script. /review with no
-handoff: block, base=, file path, +fast/+deep or iter= runs `launch`, which runs the review loop as a script; /fix
-still dispatches the review-loop agent. Either way the main session runs `packet` and does exactly what the ACTION
-lines say. The script reads the packet through handback.py, routes on status, renders the packet, logs the rows,
-posts the Aikido replies, and prints what the model still judges.
+"""review_fix.py: the fixed steps of /review and /fix as a script. Both skills run `launch`, which runs the review
+loop as a script, then `packet`, and do exactly what the ACTION lines say. The script reads the packet through
+handback.py, routes on status, renders the packet, logs the rows, posts the Aikido replies, and prints what the model
+still judges.
 
   review_fix.py packet --skill review|fix [options] [< packet]
       --scope branch-exit|standalone   scope of the ask rows (review passes branch-exit when it dispatched with base=)
@@ -24,16 +23,14 @@ posts the Aikido replies, and prints what the model still judges.
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
-  review_fix.py launch [--repo <abs path>]
-                                         start the scripted review loop (review_loop_script.py --reviewers main) as a
-                                         detached process, as a review-first run for /review, and print its log path
-                                         first. Records the session's dispatch row, writes the prompt file (lane none;
-                                         review the working tree against HEAD) and the loop's pid, and keeps its state
-                                         under <git dir>/review-script. It returns when the loop asks for reviewers
+  review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review]] [--base <ref>] [--file <path>]...
+                       [--handoff <file>] [--fast|--deep] [--iter N] [--lane <lane>]
+                                         start the scripted review loop as a detached process (review_launch.py; `launch
+                                         --help` lists the flags). It returns when the loop asks for reviewers
                                          (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop
-                                         script exits; run `packet --skill review` after the exit either way. Exits 2
-                                         when CLAUDE_CODE_SESSION_ID is not set, and when the working tree has no
-                                         changes against HEAD (review committed work with base=<ref>).
+                                         script exits, and then names the packet command to run. Exits 2 when
+                                         CLAUDE_CODE_SESSION_ID is not set, on a bad flag or findings file, and on a
+                                         review-first run with nothing to review.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review_fix.py asks-done [--by <user|session>] [--packet <packet_id>] <outcome>...
                                          one outcome per ask, in order: accepted | rejected | modified, optional
@@ -58,7 +55,7 @@ import datetime
 import json
 import os
 import pathlib
-import subprocess
+import shlex
 import sys
 import time
 
@@ -66,18 +63,15 @@ SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
 import capped_review
 import handback
-import handback_hook
 import handback_store
 import handoff_files
 import plan_format
 import review_asks
-import reviewer_dispatch
+import review_launch
 import script_utils
-import worktree_snapshot
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
-from review_loop_script import REVIEWERS_MAIN, loop_script_command, write_script_prompt
 from saved_handback import LoopWaitingError, NoHandbackError, dispatched_repo, read_message
 from script_utils import one_line, run_command, split_location
 
@@ -95,9 +89,6 @@ DEFER_LINE = f"{DEFER_LINE_PREFIX} by the session, <date>: <summary>"
 NEW_FINDING_ID = "new-finding-id"
 LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_LOOP_SCRIPT",
                                           pathlib.Path(__file__).resolve().parent / "review_loop_script.py"))
-LAUNCH_STATE_NAME = "review-script"
-LAUNCH_AGENT_PREFIX = "review-script-"
-DEFAULT_HANDOFF = "Review the working tree against HEAD."
 # Exit code of `wait-for-loop`: non-zero so no caller reads it as a finished run, and not 2, the code of a real stop.
 WAIT_EXIT_CODE = 3
 
@@ -275,9 +266,7 @@ def stop_for_missing_hand_back(skill, last_hand_back_id):
         print_action("stop-no-handback",
                      "The review-loop ended without calling SubagentHandback, so no packet is stored. Nothing was "
                      "routed, logged or posted, and the earlier run's state is untouched.",
-                     "Re-dispatch review-loop once with the same arguments"
-                     + ("" if skill == "fix" else " (run `launch` again when the script started it)")
-                     + ", then run `packet` again.")
+                     "Run `launch` once more with the same flags, then run `packet` again.")
         return
     print_action("stop-no-handback",
                  f"The review-loop ended {misses} times in a row without calling SubagentHandback. Nothing was routed, "
@@ -316,9 +305,8 @@ def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
     count; the second time in a row, it stops."""
     if unreviewed_in_a_row < 2:
         lines = ("The review-loop handed back clean but dispatched no reviewer. Nothing was routed, logged or posted.",
-                 f"Re-dispatch review-loop once with the same arguments plus the line below, in place of any "
-                 f"`iter=` line, then run `packet --skill {skill}` again.",
-                 f"iter={packet['iter']}")
+                 f"Run `launch` once more with the same flags plus `--iter {packet['iter']}` in place of any "
+                 f"`--iter`, then run `packet --skill {skill}` again.")
     else:
         lines = (f"The review-loop handed back clean with no reviewer run {unreviewed_in_a_row} times in a row. "
                  "Nothing was routed, logged or posted.",
@@ -619,16 +607,16 @@ STOP_STATUSES = {
 
 SCOPED_RERUN = ("The review cap was reached with a class still open. Report these findings. Another full review "
                 "would find one more member at a time, so do not offer one: the next run is a scoped review of the "
-                "files the capped run's fixes touched. When the user asks to go on, dispatch review-loop "
-                "(model: \"sonnet\") with the dispatch lines below. "
+                "files the capped run's fixes touched. When the user asks to go on, Write the handoff lines below to a "
+                "file and run the launch line below with `--handoff <that file>` added, in the background. "
                 "Do not run /fix. The session stays dirty, so git commit stays blocked.")
 
 
-def scoped_rerun_lines(packet, skill):
-    """The dispatch for the next scoped review after a cap-reached with an open class, or [] when the packet's
-    open_classes is empty, it names no file the fix touched, or git shows no change. The files are the ones git shows
-    changed against HEAD in the dispatched repo (the packet names no start commit, and the loop reviews the working
-    tree against HEAD); a file the fixes touched keeps its own change text."""
+def scoped_rerun_lines(packet):
+    """The launch line and handoff of the next scoped review after a cap-reached with an open class, or [] when the
+    packet's open_classes is empty, it names no file the fix touched, or git shows no change. The files are the ones
+    git shows changed against HEAD in the dispatched repo (the packet names no start commit, and the loop reviews the
+    working tree against HEAD); a file the fixes touched keeps its own change text."""
     if not packet["open_classes"]:
         return []
     fix_files = [str(path) for path in packet["files_touched"]]
@@ -641,7 +629,9 @@ def scoped_rerun_lines(packet, skill):
         return []
 
     touched_text = dict.fromkeys(fix_files, "touched by the capped run's fixes")
-    lines = ["mode: review-first", f"caller: {skill}", "iter=0", "handoff:", "  files:",
+    file_flags = " ".join(f"--file {shlex.quote(path)}" for path in changed)
+    lines = [f"Launch line: {DECIDE_SCRIPT} launch --repo {shlex.quote(str(repo))} --iter 0 {file_flags}",
+             "Handoff lines (write exactly these):", "handoff:", "  files:",
              *handoff_files.file_entry_lines(changed, touched_text, "changed in the working tree against HEAD")]
     lines += ["  tests-run: none", f"  flagged: the open class - {one_line('; '.join(packet['open_classes']))}",
               "  prior-issues:"]
@@ -661,10 +651,10 @@ def stop_for_status(packet, options, state):
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
     entries = entry_lines(packet)
-    rerun_lines = scoped_rerun_lines(packet, options.skill) if packet["status"] == CAP_REACHED else []
+    rerun_lines = scoped_rerun_lines(packet) if packet["status"] == CAP_REACHED else []
     if rerun_lines:
         instruction = SCOPED_RERUN
-        entries += ["Dispatch lines (pass exactly these):", *rerun_lines]
+        entries += rerun_lines
     ask_lines = []
     if packet["ask"]:
         ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
@@ -764,60 +754,11 @@ def model_duties(packet, options):
     return "; ".join(duties) + "."
 
 
-def launch_arguments(argv):
-    parser = argument_parser("launch")
-    parser.description = ("Run the scripted review loop on the working tree against HEAD, as a review-first run for "
-                          "/review. A clean working tree has nothing to review: launch stops, and committed work is "
-                          "reviewed by dispatching review-loop with base=<ref>.")
-    parser.add_argument("-h", "--help", action="help", help="show this help and exit")
-    parser.add_argument("--repo", help="absolute path of the repo to review, when it is not the cwd's repo")
-    return parser.parse_args(argv)
-
-
 def command_launch(argv):
-    # Starts the loop script the way /code's launcher does, minus the /code run state, with the main session as the
-    # reviewers, and waits for its first reviewer request or its exit: the skill runs this verb as a background
-    # command, so its completion is the wake-up.
-    options = launch_arguments(argv)
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    if not session_id:
-        raise UsageError("CLAUDE_CODE_SESSION_ID is not set, so the review loop cannot be tied to this session. "
-                         "Nothing was launched. Tell the user.")
-
-    repo = script_utils.repo_root(options.repo or os.getcwd())
-    if repo is None:
-        raise UsageError(f"{options.repo or os.getcwd()} is not inside a git work tree")
-
-    repo = repo.resolve()
-    dirty_paths = worktree_snapshot.status_codes(repo)
-    if not dirty_paths:
-        raise UsageError(f"the working tree of {repo} has no changes against HEAD, so the review scope is empty and "
-                         "no reviewer would read anything. Nothing was launched. To review committed work, dispatch "
-                         "review-loop with base=<ref> (the agent route of /review step 1).")
-
-    state_dir = script_utils.git_path(repo, LAUNCH_STATE_NAME)
-    run_id = script_utils.sortable_unique_id()
-    agent_id = f"{LAUNCH_AGENT_PREFIX}{run_id}"
-    prompt = f"mode: review-first\ncaller: review\nlane: none\n\n{DEFAULT_HANDOFF}\n"
-    prompt_file, log_path = write_script_prompt(state_dir, agent_id, prompt)
-    print(f"The review loop runs as a script; its log is {log_path}")
-    sys.stdout.flush()
-
-    handback_hook.record_script_dispatch(session_id, repo)
-    command = loop_script_command(LOOP_SCRIPT, repo, state_dir, session_id, agent_id, prompt_file,
-                                  reviewers=REVIEWERS_MAIN)
-    with log_path.open("w") as log:
-        loop = subprocess.Popen(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                                start_new_session=True)
-    loop_dir = log_path.parent
-    script_utils.write_text_atomically(loop_dir / reviewer_dispatch.PID_FILE, f"{loop.pid}\n")
-
-    dispatch_lines = reviewer_dispatch.wait_for_step(loop_dir, lambda: loop.poll() is None)
-    if dispatch_lines is not None:
-        print("\n".join(dispatch_lines))
-        return 0
-    print(f"The review loop script exited {loop.returncode}. Run `{DECIDE_SCRIPT} packet --skill review` now.")
-    return 0
+    try:
+        return review_launch.command_launch(argv, LOOP_SCRIPT)
+    except review_launch.LaunchError as error:
+        raise UsageError(str(error)) from error
 
 
 def command_escape(argv):
@@ -1056,8 +997,8 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
         "redispatch",
         f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else NO_PLAN_LINE,
         *entry,
-        'Re-dispatch review-loop (same Agent call, model: "sonnet") with the same arguments as the first dispatch '
-        "and these lines added, both counters kept:",
+        f"Write the first run's handoff plus the lines below to a file, then run `launch` in the background with the "
+        f"first run's flags plus `--iter {state['iter']}` and `--handoff <that file>`:",
         *lines,
     )
 

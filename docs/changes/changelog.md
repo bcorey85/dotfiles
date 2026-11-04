@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-820 changes
+821 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -30,6 +30,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Every review entry runs the script loop](notes/2026-11-04-every-review-entry-runs-the-script-loop.md) [script/review-fix, script/review-loop-script, script/reviewer-dispatch, skill/review, skill/fix, agent/review-loop] /review and /fix sent a run to the review-loop agent whenever the call carried a handoff block, a base, a file path, a model modifier, an iter count or findings, and to the script loop otherwise, so the main session dispatched reviewers on some runs and an agent drove the loop on others. Every /review and /fix entry now runs `review_fix.py launch`, which takes each of those as a flag, and the review-loop agent is deleted.
 * [Turn-end formatter leaves prompt markdown alone](notes/2026-11-04-turn-end-formatter-leaves-prompt-markdown-alone.md) [script/format-changed, script/format-files] format_files.run_formatters skips .md files a model reads as prompt text (under .claude or .config/opencode/, and CLAUDE.md, CLAUDE.local.md and AGENTS.md at any depth), so the Stop hook no longer reflows agent and skill prompts.
 * [Commit gate's folder-change refusal names the plain commit for notes-only commits](notes/2026-11-04-commit-gate-s-folder-change-refusal-names-the.md) [script/review-commit-gate] A cd commit of staged notes files is told to run a plain commit from the repo root, so one notes commit meets one refusal in place of two.
 * [Full check runs the repo's own test command before a pytest guess](notes/2026-11-03-full-check-runs-the-repo-s-own-test-command-before.md) [script/check-discovery, script/full-check] A repo with no check command but a Makefile test target, or else a package.json test script, gets that command in its discovered full check in place of a guessed pytest or JS runner.

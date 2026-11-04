@@ -30,7 +30,7 @@ import handoff_files
 import plan_format
 import script_utils
 from code_wait import LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, phase_dir
-from review_loop_script import REVIEWERS_MAIN, loop_script_command, write_script_prompt
+from review_loop_prompt_file import REVIEWERS_MAIN, loop_script_command, write_script_prompt
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
 WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"

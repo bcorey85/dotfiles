@@ -4,11 +4,14 @@
     review_loop_script.py <repo> --state-dir <dir> --session <id> --agent-id <id> --prompt-file <path>
         [--gate-command <cmd>]... [--reviewers headless|main]
 
-The prompt file is the review prompt of a review-first dispatch: header lines (mode, caller, lane, plan, phase, an
-optional `structure-pass: skip`), a blank line, then the handoff block. The script walks review-loop.md's fixed graph:
-scope, first-round reviewers (code, plus smell and test reviewers on a large diff), disposition routing, one fix coder,
-re-review by every reviewer that filed a fix and owns a changed file (the smell reviewer only past the size bar), the
-two-round cap, the full-check execution gate, the class-closure check, telemetry rows, and the hand-back packet.
+The prompt file (review_loop_prompt_file.py holds its header keys) is header lines, a blank line, then the handoff
+block. A `findings:` line makes the run fix-first: the fix coder applies the caller's findings before any reviewer, and
+`no-review: yes` then plans no reviewer. `base:` reviews every change since that commit, `files:` only the named files,
+`reviewer-model:` runs each reviewer on that model, and `iter:` counts the rounds an earlier run already used.
+The script walks a fixed graph: scope, first-round reviewers (code, plus smell and test reviewers on a large
+diff), disposition routing, one fix coder, re-review by every reviewer that filed a fix and owns a changed file
+(the smell reviewer only past the size bar), the two-round cap, the full-check execution gate, the class-closure
+check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py and writes the full-check receipt. It runs only the `Quality check:` command
 of the repo's CLAUDE.md; it runs none in a repo with no such line. In a repo whose CLAUDE.md holds `Full suite: CI`,
 where the coder calls run the changed files' tests, a run with no runner summary or that ran no test is
@@ -36,17 +39,16 @@ With `--reviewers main` the reviewers are no `claude -p` call: reviewer_dispatch
 prompts to the main session, which runs them as its subagents and writes their reports back; each gets a call log
 row with `via: main` and no token count.
 
-On finish, or on any uncaught error, the script validates its packet with handback.load, then appends the rows the
-review-loop agent leaves: the hand-back store row, the stop row, and, when the telemetry
-switch is on, one agent-usage row. Exit 0 on a normal finish; exit 1 when the run crashed or the packet failed
-validation (a critical-blocker packet and the rows are still written). A SIGTERM (a caller stopping the loop)
-kills every running claude call and exits 143 with no packet and no rows.
+On finish, or on any uncaught error, the script validates its packet with handback.load, then appends the
+hand-back rows: the hand-back store row, the stop row, and, when the telemetry switch is on, one agent-usage row.
+Exit 0 on a normal finish; exit 1 when the run crashed or the packet failed validation (a critical-blocker packet and
+the rows are still written). A SIGTERM (a caller stopping the loop) kills every running claude call and exits 143 with
+no packet and no rows.
 
 review_loop_findings.py reads the reviewers' text; review_loop_closure.py runs the class-closure check;
 review_loop_packet.py writes the packet and the hand-back rows.
 
-Not covered: the second-order caller supplement, the critical-blocker judgment (a reviewer routes it as an ask), and
-the fix-first mode.
+Not covered: the second-order caller supplement and the critical-blocker judgment (a reviewer routes it as an ask).
 """
 
 import argparse
@@ -105,22 +107,27 @@ from review_loop_findings import (
 )
 from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
+from review_loop_plan import first_round_plan, review_files, scope, second_round_plan
+from review_loop_prompt_file import (
+    BASE_KEY,
+    FILES_KEY,
+    NO_REVIEW_KEY,
+    REVIEWER_MODEL_KEY,
+    REVIEWERS_HEADLESS,
+    REVIEWERS_MAIN,
+    YES,
+    header_iter,
+    header_list,
+    read_findings,
+    read_prompt,
+    reviewer_brief,
+)
 from review_loop_prompts import coder_prompt, reviewer_prompt
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
-LARGE_ADDED_LINES = source_paths.LARGE_ADDED_LINES
-LENS_A = ("Own state and lifecycle: UI state while an action is pending, after close or cancel, and on re-open; "
-          "stale async results arriving late; cache invalidation after writes. Trace each changed handler through "
-          "every state it can be entered from.")
-LENS_B = ("Own inputs and surfaces: edge inputs (empty, zero, huge, malformed, duplicate); layout, CSS and "
-          "accessibility of every changed element; contracts with unchanged code the change reuses or sits next to. "
-          "Read the whole enclosing function and every unchanged helper the change calls.")
 DIFF_CONTEXT = 12
 LOG_TIMEOUT_SECONDS = 60
-# Who runs the reviewers (--reviewers): `claude -p` calls of this script, or the main session as its subagents.
-REVIEWERS_HEADLESS = "headless"
-REVIEWERS_MAIN = "main"
 ABSENT_FILE_REASON = "the file is not in the tree"
 NO_CHANGE_REASON = "the coder made no change"
 # One note per fix call that deleted an untracked file it did not make, for the packet's tool_fault.
@@ -132,73 +139,6 @@ def git_lines(repo, *args):
     if output is None:
         raise RuntimeError(f"`git {' '.join(args)}` failed in {repo}")
     return output.splitlines()
-
-
-def scope(repo):
-    """{path: [added, status]} for the working tree against HEAD, untracked files included."""
-    files = {}
-    for path, change in worktree_snapshot.working_tree_changes(repo).items():
-        status = change["code"].strip()
-        files[path] = [change["added"], "??" if status == "??" else status[0]]
-    return files
-
-
-class LensOwned(list):
-    """The files a reviewer owns, plus the one lens line its dispatch prompt carries."""
-
-    def __init__(self, paths, lens):
-        super().__init__(paths)
-        self.lens = lens
-
-
-def first_round_plan(files, structure_pass_skipped=False):
-    """Which reviewers go out in the first round, and who owns which files."""
-    source = [path for path in files if not source_paths.is_test_path(path)]
-    tests = [path for path in files if source_paths.is_test_path(path)]
-    added = sum(files[path][0] for path in files if source_paths.counts_toward_size(path))
-    new_paths = [path for path in source if files[path][1] in ("??", "A")]
-    large = source_paths.is_large_change(added, new_paths)
-
-    dispatches = []
-    if large and tests:
-        dispatches.append(("code-reviewer", source))
-        dispatches.append(("test-reviewer", tests))
-    else:
-        dispatches.append(("code-reviewer", list(files)))
-    if large and not structure_pass_skipped:
-        dispatches.append(("smell-reviewer", list(files)))
-    code_owned = dispatches[0][1]
-    if len(files) > 1 and len(code_owned) > 1:
-        dispatches[0] = ("code-reviewer", LensOwned(code_owned, LENS_A))
-        dispatches.insert(1, ("code-reviewer", LensOwned(code_owned, LENS_B)))
-    return dispatches
-
-
-def owns_in_round_two(agent, path, round_one_owned, test_reviewed):
-    """A reviewer re-reads the files of its kind, and a test file it owned in round one that no test reviewer read."""
-    if source_paths.is_test_path(path) == (agent == "test-reviewer"):
-        return True
-    return path in round_one_owned and path not in test_reviewed
-
-
-def second_round_plan(round_fix, changed, skipped_findings, coder_diffs):
-    """Which reviewers go out in round two, and who owns which files. round_fix holds (agent, owned, fixes) per
-    round-one dispatch."""
-    smell_runs = added_source_lines(coder_diffs) >= LARGE_ADDED_LINES
-    test_reviewed = {path for agent, owned, _fixes in round_fix if agent == "test-reviewer" for path in owned}
-    dispatches = []
-    for agent, round_one_owned, fixes in round_fix:
-        if not fixes:
-            continue
-        skipped_paths = [fix.path for fix in fixes if any(fix.text in item.text for item in skipped_findings)]
-        owned = [path for path in dict.fromkeys(changed + skipped_paths)
-                 if path and owns_in_round_two(agent, path, round_one_owned, test_reviewed)]
-        if agent == "smell-reviewer" and not smell_runs:
-            continue
-        if not owned:
-            continue
-        dispatches.append((agent, owned))
-    return dispatches
 
 
 def disposition_call(text, repo, out):
@@ -241,18 +181,6 @@ def change_under_review(repo):
         if added:
             added_by_file[path] = added
     return added_by_file
-
-
-def added_source_lines(diffs):
-    """Lines the given unified diffs add to files that count toward the size bar (`source_paths.counts_toward_size`)."""
-    total, source = 0, False
-    for diff in diffs:
-        for line in diff.splitlines():
-            if line.startswith("+++ b/"):
-                source = source_paths.counts_toward_size(line[6:])
-            elif line.startswith("+") and source:
-                total += 1
-    return total
 
 
 class LaterPhaseEditError(RuntimeError):
@@ -313,7 +241,9 @@ def coder_call(role, prompt, repo, out):
     diffs = []
     paths = sorted(set(before) | set(after))
     for path in paths:
-        old_lines = before.get(path, "").splitlines()
+        # A file clean before the call diffs against its HEAD text, not against nothing.
+        old_text = before[path] if path in before else script_utils.git_output(repo, "show", f"HEAD:{path}") or ""
+        old_lines = old_text.splitlines()
         new_lines = after.get(path, "").splitlines()
         difference = list(difflib.unified_diff(old_lines, new_lines, f"a/{path}", f"b/{path}", n=DIFF_CONTEXT,
                                                lineterm=""))
@@ -339,27 +269,6 @@ def skipped_issues(report, issue_count):
         if match and 1 <= int(match.group(1)) <= issue_count:
             skips.setdefault(int(match.group(1)), line.strip())
     return skips
-
-
-# ---------- prompt file ----------
-
-def read_prompt(path):
-    """({header key: value}, handoff block) of the review prompt file. The header ends at the first blank line."""
-    header_text, _separator, handoff = pathlib.Path(path).read_text().partition("\n\n")
-    header = {}
-    for line in header_text.splitlines():
-        key, separator, value = line.partition(":")
-        if separator:
-            header[key.strip()] = value.strip()
-    if not header.get("lane"):
-        raise ValueError(f"the prompt file {path} has no lane line")
-    return header, handoff.strip()
-
-
-def reviewer_brief(header, handoff):
-    lines = [f"{key}: {header[key]}" for key in ("plan", "phase") if header.get(key)]
-    lines += ["Handoff:", handoff]
-    return "\n".join(lines)
 
 
 # ---------- telemetry ----------
@@ -494,7 +403,10 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.filed = {}  # {(reviewer, file): [finding entries]}, so a refiled finding updates its first row
         self.round_claimed = set()  # ids of the entries this round filed or refiled, so no two reports share one
         self.round_fixes = []  # the fix entries this round's reviewers filed, for fix_round to mark
-        self.check_fixed = 0  # findings the full check and the class closure fixed, which file no finding row
+        # findings fixed outside a reviewer round (the caller's fix-first findings, the full check, the class
+        # closure), which file no finding row
+        self.check_fixed = 0
+        self.given_skipped = 0  # the caller's fix-first findings the coder skipped, which file no finding row
         self.last_pass = ""
         # a change (a coder pass, or a whole expected-red not-run) that no passed full check ran after
         self.untested_fix = False
@@ -504,6 +416,12 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.test_strategy = ""  # the plan's test strategy section, which only the test reviewer gets
         self.change_added = {}  # the lines the change under review adds, which the fix passes must not remove
         self.reviewers = REVIEWERS_HEADLESS  # who runs the reviewers: REVIEWERS_HEADLESS or REVIEWERS_MAIN
+        self.reviewer_model = ""  # the model every reviewer runs on; "" leaves each agent's own
+        self.review_base = ""  # the commit the review diffs against; "" is HEAD
+        self.only_files = []  # the files the caller scoped the review to; [] is every changed file
+
+    def review_scope(self):
+        return review_files(self.repo, self.review_base, self.only_files)
 
     def next_round(self):
         self.iter_count += 1
@@ -528,13 +446,14 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def review_one(self, dispatch):
         role, agent, prompt = self.review_request(dispatch)
-        text = claude_call(role, prompt, self.repo, self.out, agent=agent)
+        text = claude_call(role, prompt, self.repo, self.out, agent=agent, model=self.reviewer_model or None)
         return self.read_review(text)
 
     def reviews_from_main(self):
         """The round's reviews, run by the main session as its subagents (`--reviewers main`)."""
         requests = [self.review_request(dispatch) for dispatch in self.dispatches]
-        replies = reviewer_dispatch.request_round(self.out, self.iter_count, requests, CALL_TIMEOUT_SECONDS)
+        replies = reviewer_dispatch.request_round(self.out, self.iter_count, requests, CALL_TIMEOUT_SECONDS,
+                                                  model=self.reviewer_model)
         reviews = []
         for (role, agent, _prompt), (text, wall) in zip(requests, replies, strict=True):
             record_main_dispatch(self.out, role, agent, wall)
@@ -695,9 +614,10 @@ class LoopRun(full_check_gate.FullCheckSteps):
         """One coder pass on the findings. Returns (report, diffs, changed files). Raises LaterPhaseEditError when the
         pass edited a later-phase file, and ChangeRemovedError when the passes so far removed half or more of the
         lines the change under review adds."""
-        before = scope(self.repo)
+        finding_paths = [finding.path for finding in findings if finding.path]
+        files_in_scope = list(dict.fromkeys([*self.review_scope(), *finding_paths]))
         prompt = coder_prompt(self.repo, [finding.text for finding in findings], [nit.text for nit in nits],
-                              list(before), self.gate_env, self.later_phase_files, self.guidance)
+                              files_in_scope, self.gate_env, self.later_phase_files, self.guidance)
         self.last_pass = "coder"
         self.untested_fix = True
         try:
@@ -762,7 +682,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
                            if not any(same_finding(item, fixed) for fixed in applied)]
         self.prior_issues = prior_issue_entries(round_findings, skips)
 
-        self.files = scope(self.repo)
+        self.files = self.review_scope()
         if self.iter_count < ROUND_BUDGET:
             fix_diff_file = self.out / f"round{self.iter_count}-fix.diff"
             fix_diff_file.write_text("\n\n".join(coder_diffs))
@@ -772,6 +692,26 @@ class LoopRun(full_check_gate.FullCheckSteps):
         docs_only = (bool(applied) and all(item.finding_class == "docs" for item in applied)
                      and all(path.endswith(".md") for path in changed))
         return not docs_only
+
+    def fix_first(self, texts):
+        """The fix coder on the caller's findings, before any reviewer. Their skips and fixes file no finding row."""
+        findings = [parse_finding(text) for text in texts]
+        report, _diffs, changed = self.repair("coder0", findings)
+        self.files_touched.update(changed)
+        if PLAN_CHANGE_YES.search(report.strip()):
+            self.record_coder_plan_impact(report, changed)
+
+        skips = skipped_issues(report, len(findings))
+        skipped = [{"item": findings[number - 1], "reason": line} for number, line in sorted(skips.items())]
+        kept = [item for number, item in enumerate(findings, 1) if number not in skips]
+        if not changed:
+            skipped += [{"item": item, "reason": NO_CHANGE_REASON} for item in kept]
+            kept = []
+        self.skipped_fp += skipped
+        self.given_skipped += len(skipped)
+        self.fixed += kept
+        self.check_fixed += len(kept)
+        self.prior_issues = prior_issue_entries(findings, skips)
 
     def mark_repaired(self, findings, changed, records_skip=True):
         """A repair's findings go to fixed when it changed a file, else to skipped_fp. With `records_skip` False, a
@@ -906,6 +846,19 @@ def walk(loop, check_command, gate_commands):
         loop.scoped_tests_pass(check_command, list(gate_commands))
 
 
+def first_pass(loop, findings, no_review, structure_pass_skipped):
+    """The first round's reviewers. A fix-first run sends the caller's findings to the coder first, and then skips
+    the structure pass; with no_review it plans no reviewer at all."""
+    if findings:
+        loop.fix_first(findings)
+        structure_pass_skipped = True
+    loop.files = loop.review_scope()
+    if no_review or not loop.files:
+        loop.dispatches = []
+        return
+    loop.dispatches = first_round_plan(loop.files, structure_pass_skipped)
+
+
 def run_loop(repo, out, session, header, handoff, progress, gate_commands=(), reviewers=REVIEWERS_HEADLESS):
     """Walks the graph. Returns the outcome mapping. `progress` holds what a crash still reports: iter, fixed and
     files_touched, updated in place as the loop goes. `reviewers` says who runs the reviewers."""
@@ -933,9 +886,13 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=(), re
         plan_lines = (pathlib.Path(repo) / plan_on_disk).read_text().splitlines()
         loop.test_strategy = plan_format.test_strategy_section(plan_lines)
 
-    loop.files = scope(repo)
-    loop.dispatches = first_round_plan(loop.files, structure_pass_skipped)
+    loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
+    loop.review_base = header.get(BASE_KEY, "")
+    loop.only_files = header_list(header, FILES_KEY)
+    loop.iter_count = min(header_iter(header), ROUND_BUDGET - 1)
+    progress["iter"] = loop.iter_count
     try:
+        first_pass(loop, read_findings(header), header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, gate_commands)
     except LaterPhaseEditError as error:
         loop.stop("critical-blocker", [str(error)])
@@ -944,7 +901,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=(), re
 
     every_actioned = [finding["actioned"] for row in loop.run_rows for finding in row["findings"]]
     loop.tallies["fixed"] = every_actioned.count("fixed") + loop.check_fixed
-    loop.tallies["skipped_fp"] = every_actioned.count("skipped_fp")
+    loop.tallies["skipped_fp"] = every_actioned.count("skipped_fp") + loop.given_skipped
     ask_ids, ask_rows = telemetry(repo, session, lane, scope_fields, loop.iter_count, loop.tallies, loop.run_rows,
                                   out)
     return loop.outcome(ask_ids, ask_rows)
@@ -960,25 +917,6 @@ def stop_on_sigterm(_signal_number, _frame):
             os.killpg(pid, signal.SIGKILL)
     full_check_gate.remove_live_base_trees()
     os._exit(128 + signal.SIGTERM)
-
-
-def write_script_prompt(state_dir, agent_id, prompt):
-    """(prompt file, log file) of a script run under <state dir>/loop-script/<agent id>, with the prompt written."""
-    script_dir = pathlib.Path(state_dir) / "loop-script" / agent_id
-    script_dir.mkdir(parents=True, exist_ok=True)
-    prompt_file = script_dir / "prompt.txt"
-    prompt_file.write_text(prompt)
-    return prompt_file, script_dir / "script.log"
-
-
-def loop_script_command(loop_script, repo_dir, state_dir, session_id, agent_id, prompt_file, gate_commands=(),
-                        reviewers=REVIEWERS_HEADLESS):
-    """The argv that runs review_loop_script.py, with one --gate-command per gate command."""
-    command = [sys.executable, str(loop_script), str(repo_dir), "--state-dir", str(state_dir), "--session", session_id,
-               "--agent-id", agent_id, "--prompt-file", str(prompt_file), "--reviewers", reviewers]
-    for gate_command in gate_commands:
-        command += ["--gate-command", gate_command]
-    return command
 
 
 def parse_review_loop_arguments(argv):

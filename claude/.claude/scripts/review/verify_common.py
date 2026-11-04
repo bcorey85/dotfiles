@@ -133,14 +133,36 @@ def repo_top(cwd):
     return top.resolve()
 
 
+DEFAULT_BASE_REFS = ("origin/master", "origin/main", "master", "main")
+
+
+def remote_default_branch(top):
+    """The remote's default branch as `origin/<name>`, read from origin/HEAD; None when origin/HEAD is not set."""
+    done = run(["git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], cwd=top)
+    name = done.stdout.strip()
+    if done.returncode != 0 or not name:
+        return None
+    return name
+
+
 def find_base(top, override=None):
-    """(ref, mergeBaseSha). An explicit override wins; otherwise origin/master, origin/main, master, main."""
-    refs = [override] if override else ["origin/master", "origin/main", "master", "main"]
+    """(ref, mergeBaseSha). An explicit override wins; otherwise origin/master, origin/main, master, main, then the
+    remote's default branch (origin/HEAD)."""
+    if override:
+        refs = [override]
+    else:
+        refs = list(DEFAULT_BASE_REFS)
+        remote_default = remote_default_branch(top)
+        if remote_default and remote_default not in refs:
+            refs.append(remote_default)
     for ref in refs:
         done = run(["git", "merge-base", "HEAD", ref], cwd=top)
         if done.returncode == 0 and done.stdout.strip():
             return ref, done.stdout.strip()
-    raise VerifyError(f"no base found (tried {', '.join(refs)}); pass --base <ref> for a sprint branch")
+    tried = list(refs)
+    if not override and len(refs) == len(DEFAULT_BASE_REFS):
+        tried.append("origin/HEAD (not set)")
+    raise VerifyError(f"no base found (tried {', '.join(tried)}); pass --base <ref>")
 
 
 def require_branch(top):

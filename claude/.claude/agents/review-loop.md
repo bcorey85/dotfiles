@@ -61,9 +61,7 @@ Run it by this path as one plain command. Single-quote every path you pass to a 
 
 **Re-review (`iter >= 1`)**: when the handoff has `prior-issues`, dispatch a fresh reviewer with the Agent tool and pass it the handoff block. Never continue an earlier reviewer or coder. A continued agent does not keep your run open, so the harness ends your run before its result arrives.
 
-**Split threshold — parallel reviewers only when BOTH hold**: more than 5 files in scope AND a substantial combined diff (~300+ changed lines; read `SHORTSTAT` from Step 0). A many-file but small diff is one reviewer's job.
-
-**When splitting**, choose the largest natural boundary: frontend vs backend; source vs tests; two unrelated subsystems; rules/config vs runtime code. Pick the split that minimizes overlap. Launch both in a single message with multiple Agent tool calls.
+**First review of a multi-file change**: dispatch two code-reviewers in one message, each over every file in scope. End the first one's prompt with: "Own state and lifecycle: UI state while an action is pending, after close or cancel, and on re-open; stale async results arriving late; cache invalidation after writes. Trace each changed handler through every state it can be entered from." End the second one's with: "Own inputs and surfaces: edge inputs (empty, zero, huge, malformed, duplicate); layout, CSS and accessibility of every changed element; contracts with unchanged code the change reuses or sits next to. Read the whole enclosing function and every unchanged helper the change calls." A one-file change and every re-review get one reviewer with no lens line.
 
 Pass each reviewer: the exact file list it owns (never let it rediscover scope), the relevant subsets of `prior-issues` and `flagged`, and the `plan` path with its `phase` when one was passed in, telling it to read the plan phase-scoped per `~/.claude/skills/_shared/plan-reading.md`.
 

@@ -166,6 +166,20 @@ class RunFormattersTest(unittest.TestCase):
         self.assertEqual((changed, no_ruff), ([], []))
         self.assertEqual((self.repo / "app.py").read_text(), "x = 1\n")
 
+    def test_prompt_markdown_is_never_formatted_but_other_files_beside_it_are(self):
+        calls = self.install_recording_npx()
+        prompt_files = ["claude/.claude/agents/x.md", "opencode/.config/opencode/agents/x.md", "sub/CLAUDE.md",
+                        "AGENTS.md", "sub/CLAUDE.local.md"]
+        for name in [*prompt_files, "claude/.claude/settings.json", "docs/readme.md"]:
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text("> quote\nplain line\n")
+
+        format_files.run_formatters(str(self.repo), prompt_files)
+        self.assertFalse(calls.exists())
+
+        format_files.run_formatters(str(self.repo), [*prompt_files, "claude/.claude/settings.json", "docs/readme.md"])
+        self.assertIn("prettier --write claude/.claude/settings.json docs/readme.md\n", calls.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

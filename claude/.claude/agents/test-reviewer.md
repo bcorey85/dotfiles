@@ -1,6 +1,6 @@
 ---
 name: test-reviewer
-description: "Reviews a test suite for coverage gaps, weak assertions and stale tests. Dispatched by /test-review, /refactor and review-loop."
+description: "Reviews a test suite for coverage gaps, weak assertions and stale tests. Dispatched by /test-review, /refactor and the review loop."
 model: sonnet
 tools: Bash, Read, Glob, Grep, LSP
 color: yellow

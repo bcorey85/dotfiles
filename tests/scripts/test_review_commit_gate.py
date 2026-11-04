@@ -1443,6 +1443,22 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_denies(finished, f"`git -C {os.path.realpath(self.repo)} commit`")
         self.assert_denies(finished, "Do not run /review again")
 
+    def test_a_cd_commit_of_staged_notes_names_the_plain_commit_not_git_c(self):
+        (self.repo / "QUEUE.md").write_text("queue\n")
+        self.git(self.repo, "add", "QUEUE.md")
+        (self.repo / ".claude").mkdir()
+        (self.repo / ".claude" / "notes-paths").write_text("QUEUE.md\n")
+        self.git(self.repo, "add", ".claude/notes-paths")
+        self.git(self.repo, "commit", "-q", "-m", "list")
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        (self.repo / "QUEUE.md").write_text("queue edited\n")
+        self.git(self.repo, "add", "QUEUE.md")
+        finished = self.commit(f"cd {self.repo} && git commit -m x", cwd=self.tmp)
+        self.assert_denies(finished, "Do not run /review again")
+        self.assert_denies(finished, "plain `git commit` from the repo root")
+        self.assertNotIn(f"`git -C {os.path.realpath(self.repo)} commit`", finished.stderr + finished.stdout)
+
     def test_a_cd_commit_with_a_reviewed_tree_on_record_names_the_cd_and_git_c(self):
         (self.repo / "base.py").write_text("changed\n")
         self.seed_repo_handback(self.repo)

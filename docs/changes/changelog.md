@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-811 changes
+813 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -29,6 +29,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Full check runs the repo's own test command before a pytest guess](notes/2026-11-03-full-check-runs-the-repo-s-own-test-command-before.md) [script/check-discovery, script/full-check] A repo with no check command but a Makefile test target, or else a package.json test script, gets that command in its discovered full check in place of a guessed pytest or JS runner.
+* [Toolkit scripts run on Python 3.10](notes/2026-11-03-toolkit-scripts-run-on-python-3-10.md) [script/toml-file, script/full-check, script/format-files, script/pytest-config, script/worktree-snapshot, script/full-check-receipt, script/hook-python] The review, code and eng-spec scripts no longer crash on a Python 3.10 python3: a TOML file there reads as empty and each caller takes its no-config path.
 * [shell-write-gate in-place denial names the session temp root](notes/2026-11-03-shell-write-gate-in-place-denial-names-the-session.md) [script/shell-write-gate] An in-place edit of an untracked file outside the session temp root is denied with the temp root named, so an agent with no Write or Edit has a path it can follow.
 * [Ask rows log the last reviewer round, not a repair-pass iter](notes/2026-11-03-ask-rows-log-the-last-reviewer-round-not-a-repair.md) [script/review-loop-script, script/handback, script/review-fix] Ask and ask-outcome rows from /code and /review carry the last round a reviewer ran in, so a closure or stale-prose repair no longer reads as an over-cap round 3.
 * [review loop numbers repeated reviewer roles in a round](notes/2026-11-03-review-loop-numbers-repeated-reviewer-roles-in-a.md) [script/reviewer-dispatch] When a large diff split one reviewer agent over two dispatches in a round, both shared a role and so one report file, and the scripted loop waited out its 1800 s timeout. The round writer now numbers repeated roles (`-2`, `-3`) before any file is written, so each dispatch gets its own prompt and report file.

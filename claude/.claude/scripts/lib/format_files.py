@@ -6,8 +6,8 @@ import os
 import pathlib
 import shutil
 import subprocess
-import tomllib
 
+from toml_file import read_toml
 from worktree_snapshot import UNREADABLE, file_hash
 
 LINT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".vue")
@@ -101,14 +101,8 @@ def repo_configures_ruff(repo):
     if (repo_path / "ruff.toml").is_file() or (repo_path / ".ruff.toml").is_file():
         return True
 
-    pyproject = repo_path / "pyproject.toml"
-    if not pyproject.is_file():
-        return False
-
-    try:
-        return "ruff" in tomllib.loads(pyproject.read_text(errors="replace")).get("tool", {})
-    except (OSError, tomllib.TOMLDecodeError):
-        return False
+    pyproject = read_toml(repo_path / "pyproject.toml")
+    return "ruff" in pyproject.get("tool", {})
 
 
 def repo_formats_with_ruff(repo, check_command=""):
@@ -119,14 +113,12 @@ def repo_formats_with_ruff(repo, check_command=""):
         return True
 
     for name in ("ruff.toml", ".ruff.toml"):
-        with contextlib.suppress(OSError, tomllib.TOMLDecodeError):
-            if "format" in tomllib.loads((repo_path / name).read_text(errors="replace")):
-                return True
-
-    with contextlib.suppress(OSError, tomllib.TOMLDecodeError):
-        pyproject = tomllib.loads((repo_path / "pyproject.toml").read_text(errors="replace"))
-        if "format" in pyproject.get("tool", {}).get("ruff", {}):
+        if "format" in read_toml(repo_path / name):
             return True
+
+    pyproject = read_toml(repo_path / "pyproject.toml")
+    if "format" in pyproject.get("tool", {}).get("ruff", {}):
+        return True
 
     with contextlib.suppress(OSError):
         return RUFF_FORMAT_COMMAND in (repo_path / ".pre-commit-config.yaml").read_text(errors="replace")

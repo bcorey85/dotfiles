@@ -68,22 +68,22 @@ palettes.dark = {
   },
 }
 
--- Light: dim cream (OKLCH L 0.746, C 0.024, h 87). The ground ramp and washes
--- sit at 0.783 of a bright cream ramp; text keeps full-strength hues.
+-- Light: cool grey ground (OKLCH L 0.85, C 0.01, h 224): dark's hue at a third of its
+-- chroma, faint enough to leave teal clear.
 palettes.light = {
-  bg = "#bbb4a4",
-  bg_dark = "#b7b0a0",
-  bg_line = "#b4ad9d",
-  bg_cursor = "#b7b0a0",
-  bg_sel = "#a9a292",
+  bg = "#c8d0d3",
+  bg_dark = "#c2cacd",
+  bg_line = "#bfc7ca",
+  bg_cursor = "#c2cacd",
+  bg_sel = "#b4bcbf",
   bg_visual = "#a0a2b3",
-  border = "#9a9384",
-  nontext = "#a19a8b",
+  border = "#a5adb0",
+  nontext = "#acb4b7",
   linenr = "#60656b",
   muted = "#4e5158",
   comment = "#3e4148",
   punct = "#575b62",
-  fg = "#202d37",
+  fg = "#293741",
   fg_bright = "#131820",
 
   red = "#b0423f",
@@ -95,7 +95,7 @@ palettes.light = {
   blue = "#296caa",
   magenta = "#a80e62",
 
-  kw = "#454950",
+  kw = "#4c5158",
   fn = "#4b47b6",
   type = "#4f5d00",
   builtin = "#005b91",

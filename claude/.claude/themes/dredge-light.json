@@ -4,8 +4,8 @@
   "overrides": {
     "claude": "#00625c",
     "claudeShimmer": "#188b83",
-    "text": "#202d37",
-    "inverseText": "#bbb4a4",
+    "text": "#293741",
+    "inverseText": "#c8d0d3",
     "inactive": "#4e5158",
     "inactiveShimmer": "#60656b",
     "subtle": "#60656b",
@@ -18,7 +18,7 @@
     "warning": "#6d4a00",
     "warningShimmer": "#ab8731",
     "merged": "#a80e62",
-    "promptBorder": "#9a9384",
+    "promptBorder": "#a5adb0",
     "promptBorderShimmer": "#797c82",
     "planMode": "#00625c",
     "autoAccept": "#a80e62",
@@ -29,10 +29,10 @@
     "diffRemovedDimmed": "#b7afa9",
     "diffAddedWord": "#72aca6",
     "diffRemovedWord": "#bb908b",
-    "userMessageBackground": "#b4ad9d",
-    "userMessageBackgroundHover": "#afa897",
-    "bashMessageBackgroundColor": "#b4ad9d",
-    "memoryBackgroundColor": "#b4ad9d",
+    "userMessageBackground": "#bfc7ca",
+    "userMessageBackgroundHover": "#bac2c5",
+    "bashMessageBackgroundColor": "#bfc7ca",
+    "memoryBackgroundColor": "#bfc7ca",
     "selectionBg": "#a0a2b3"
   }
 }

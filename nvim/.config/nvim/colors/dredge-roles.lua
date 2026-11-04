@@ -2,7 +2,7 @@
 -- Binds violet: any name where it is introduced (function, class, variable, parameter, key).
 -- Reads plain fg. Calls teal (decorators and constructors are calls). Writes orange:
 -- a store into something that already exists. Exits magenta: return, raise, break, continue.
--- Literals yellow, types blue, comments olive, keywords and punctuation grey.
+-- Literals olive, strings included. Keywords grey, types blue. Comments yellow.
 -- Everything outside syntax is dredge's own.
 
 vim.cmd.runtime("colors/dredge.lua")
@@ -10,12 +10,14 @@ vim.g.colors_name = "dredge-roles"
 
 local roles = {
   dark = {
-    bind = "#8389dc", read = "#a0adb4", act = "#29a298", write = "#d66e31",
-    exit = "#e34990", lit = "#bf983f", desc = "#1c90cb", remark = "#849900",
+    bind = "#7d83d6", read = "#a0adb4", act = "#29a298", write = "#d66e31",
+    exit = "#df4a8f", lit = "#849900", kw = "#858990", desc = "#1c90cb", remark = "#af8931",
   },
+  -- Orange, green and blue sit at the hues where a dark shade keeps the most chroma.
+  -- Teal and green sit lighter, at full chroma for their lightness.
   light = {
-    bind = "#433fa8", read = "#202d37", act = "#00625c", write = "#943b12",
-    exit = "#a80e62", lit = "#6d4a00", desc = "#005b91", remark = "#4f5d00",
+    bind = "#433fa8", read = "#293741", act = "#006c66", write = "#992406",
+    exit = "#a80e62", lit = "#2a7000", kw = "#4c5158", desc = "#07549f", remark = "#6d4a00",
   },
 }
 local role = roles[vim.o.background == "light" and "light" or "dark"]
@@ -40,10 +42,17 @@ local by_role = {
   },
   write = { "@variable.write", "@lsp.mod.mutable" },
   exit = { "@keyword.return", "@keyword.exit" },
+  kw = {
+    "Statement", "Conditional", "Repeat", "Label", "Keyword", "Exception", "Include",
+    "Define", "PreCondit", "StorageClass", "@label",
+    "@keyword", "@keyword.function", "@keyword.operator", "@keyword.import",
+    "@keyword.exception", "@keyword.conditional", "@keyword.repeat", "@keyword.coroutine",
+    "@keyword.directive", "@keyword.modifier", "@keyword.type",
+  },
   lit = {
-    "String", "Character", "Number", "Boolean", "Float", "Constant", "Special", "SpecialChar",
-    "@string", "@string.special", "@string.plain", "@string.escape", "@string.regexp",
-    "@string.special.symbol", "@character", "@number", "@boolean", "@constant.builtin",
+    "String", "@string", "@string.special", "@string.plain", "@string.special.symbol",
+    "Character", "Number", "Boolean", "Float", "Constant", "Special", "SpecialChar",
+    "@string.escape", "@string.regexp", "@character", "@number", "@boolean", "@constant.builtin",
     "@constant.regex", "@variable.builtin.regex", "@property.regex",
   },
   remark = { "Comment", "SpecialComment", "@comment", "@string.documentation" },

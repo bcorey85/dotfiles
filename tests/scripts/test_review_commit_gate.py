@@ -407,6 +407,15 @@ class NotesOnlyCommitTest(GateCase):
         self.assert_silent(self.commit_in('git commit -q -m "queue"'))
         self.assertEqual(self.state(), "dirty\n")
 
+    def test_the_dotfiles_list_passes_a_markdown_only_rule_commit_and_denies_a_skill_script(self):
+        dotfiles_list = toolkit_paths.CLAUDE_DIR.parents[1] / ".claude" / "notes-paths"
+        self.commit_notes_list(dotfiles_list.read_text())
+        self.stage("claude/.claude/skills/code/SKILL.md", "claude/.claude/agents/coder.md",
+                   "claude/.claude/CLAUDE.md", "claude/.claude/rules/x.md", "CLAUDE.md", "docs/x.md")
+        self.assert_silent(self.commit_in('git commit -q -m "rule"'))
+        self.stage("claude/.claude/skills/code/scripts/step.py")
+        self.assert_commit_denied(self.commit_in('git commit -q -m "rule"'))
+
     def test_a_listed_folder_with_a_non_markdown_file_is_denied(self):
         self.commit_notes_list()
         self.stage("queue/item.txt")
@@ -1160,15 +1169,43 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_commit_denied(self.commit(f"git -C {self.repo} commit --allow-empty -m x", cwd=other,
                                               session="s2", transcript_path=transcript))
 
-    def test_a_coder_that_edited_only_a_file_outside_every_repo_denies_a_commit_in_any_repo(self):
-        other = self.make_repo("other")
+    def test_a_coder_that_edited_no_work_tree_lets_a_commit_in_a_scratch_repo_through(self):
+        scratch = self.make_repo("scratch")
         loose = self.tmp / "loose.txt"
         loose.write_text("loose\n")
-        transcript = self.coder_transcript("a1", loose)
+        cases = {"nothing": (), "a file outside every repo": (loose,),
+                 "a git dir": (self.repo / ".git" / "loop" / "r.report.md",),
+                 "a deleted worktree": (self.tmp / "gone-worktree" / "src" / "a.py",)}
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        for label, edited in cases.items():
+            with self.subTest(edited=label):
+                transcript = self.coder_transcript("a1", *edited)
+                for repo in (scratch, self.repo):
+                    self.assert_silent(self.commit("git commit --allow-empty -m x", cwd=repo, session="s2",
+                                                   transcript_path=transcript))
+
+    def test_a_coder_edit_git_cannot_place_denies_a_commit_in_any_repo(self):
+        other = self.make_repo("other")
+        broken = self.tmp / "broken"
+        broken.mkdir()
+        (broken / ".git").write_text("gitdir: /no/such/git/dir\n")
+        transcript = self.coder_transcript("a1", broken / "a.py")
         self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
 
         self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
                                               transcript_path=transcript))
+
+    def test_a_converged_review_in_a_code_fork_credits_its_commit_after_a_scratch_only_coder(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.coder_transcript("a1", self.repo / "base.py")
+        transcript = self.coder_transcript("a2", self.tmp / "scratchpad" / "verify-rows.json")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        self.seed_repo_handback(self.repo, session="s2")
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a2"}))
+
+        self.assert_silent(self.commit("git commit -a -m x", session="s2", transcript_path=transcript))
+        self.coder_transcript("a2", self.repo / "base.py")
+        self.assert_commit_denied(self.commit("git commit -a -m x", session="s2", transcript_path=transcript))
 
     def test_a_commit_in_a_folder_that_is_no_repo_is_denied_while_readable_coder_edits_exist(self):
         elsewhere = self.tmp / "elsewhere"
@@ -1191,13 +1228,11 @@ class ReviewedWorkCommitTest(GateCase):
 
     def test_a_coder_whose_edits_cannot_be_read_denies_a_commit_in_any_repo(self):
         other = self.make_repo("other")
-        no_edits = self.coder_transcript("a1")
         self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
-        for transcript in (no_edits, "/no/such/transcript.jsonl"):
-            for cwd in (other, self.repo):
-                with self.subTest(transcript=transcript, cwd=cwd):
-                    self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=cwd, session="s2",
-                                                          transcript_path=transcript))
+        for cwd in (other, self.repo):
+            with self.subTest(cwd=cwd):
+                self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=cwd, session="s2",
+                                                      transcript_path="/no/such/transcript.jsonl"))
 
     def test_a_dirty_event_still_denies_a_commit_in_any_repo(self):
         other = self.make_repo("other")

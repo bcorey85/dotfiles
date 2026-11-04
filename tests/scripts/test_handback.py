@@ -295,12 +295,6 @@ class JsonPacketTest(HandbackTestBase):
         code, out, _err = self.run_cli(["check"], json_packet(ask=[JSON_ASK]))
         self.assertEqual((code, out.splitlines()[0]), (0, "ok: status=converged fixed=0 ask=1"))
 
-    def test_the_agent_doc_template_is_one_json_object_with_every_packet_key(self):
-        doc = (toolkit_paths.CLAUDE_DIR / "agents" / "review-loop.md").read_text()
-        section = doc.split("## Return packet", 1)[1]
-        template = re.search(r"```json\n(.*?)\n```", section, re.S).group(1)
-        self.assertEqual(set(json.loads(template)), set(handback.PACKET_KEYS) - {"plan_impact"})
-
     def test_plan_impacts_entries_fill_the_defaults_of_a_held_criterion_changing_impact(self):
         impacts = [{"text": "PLAN-IMPACT: a column"},
                    {"text": "PLAN-IMPACT: x", "gate": "smell-reviewer", "ac_change": "false", "cause": "Toolkit",

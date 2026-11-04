@@ -27,6 +27,7 @@ import plan_format
 import review_loop_closure
 import review_loop_findings
 import review_loop_packet
+import review_loop_plan
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_LOOP_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_loop_script.py")
 SESSION = "session-1"
@@ -340,6 +341,80 @@ class ReviewLoopScriptTest(unittest.TestCase):
         main_rows = [call for call in calls if call.get("via") == "main"]
         self.assertEqual([(call["role"], call["tokens"]) for call in main_rows],
                          [("review1-code-reviewer", 0), ("review2-code-reviewer", 0)])
+
+    def findings_header(self, *findings):
+        findings_file = self.scratch / "findings.json"
+        findings_file.write_text(json.dumps(list(findings)))
+        return f"mode: fix-first\nfindings: {findings_file}\n"
+
+    def test_a_fix_first_run_sends_the_given_findings_to_the_coder_before_any_reviewer(self):
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header("app.py:2 the limit is wrong for `limit`"))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        keys = [call["key"] for call in self.fake_calls()]
+        self.assertEqual(keys[:2], ["coder", "code-reviewer"])
+        self.assertIn("the limit is wrong", self.fake_calls()[0]["prompt"])
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["files_touched"], ["app.py"])
+
+    def test_a_fix_first_run_with_no_review_calls_no_reviewer(self):
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header("app.py:2 the limit is wrong") + "no-review: yes\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        keys = [call["key"] for call in self.fake_calls()]
+        self.assertIn("coder", keys)
+        self.assertNotIn("code-reviewer", keys)
+
+    def test_a_base_line_reviews_the_commits_since_that_ref(self):
+        base = git(self.repo, "rev-parse", "HEAD")
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                                    header_extra=f"base: {base}\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        reviews = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
+        self.assertEqual(len(reviews), 1)
+        self.assertIn(f"Review every change since {base}", reviews[0]["prompt"])
+        self.assertIn("app.py", reviews[0]["prompt"])
+
+    def test_a_files_line_scopes_the_review_to_those_files(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                                    header_extra="files: notes.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        reviews = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
+        self.assertEqual(len(reviews), 1)
+        self.assertIn("owned files:\n    - notes.py\nYour scope", reviews[0]["prompt"])
+
+    def test_an_iter_line_counts_the_rounds_an_earlier_run_used(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                                    header_extra="iter: 1\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["iter"], 2)
+
+    def test_a_reviewer_model_line_names_the_model_on_each_main_session_request(self):
+        (self.fake_dir / "scenario.json").write_text(json.dumps({"closure": [{"result": CLOSED}]}))
+        prompt = self.scratch / "prompt.txt"
+        prompt.write_text(self.prompt_file_text("reviewer-model: haiku\n"))
+        process = subprocess.Popen([*self.script_command(prompt), "--reviewers", "main"], stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=self.env)
+        self.addCleanup(process.kill)
+
+        requests = self.answer_round(1, CLEAN_REVIEW, process)
+        _stdout, stderr = process.communicate(timeout=120)
+
+        self.assertEqual(process.returncode, 0, stderr)
+        self.assertEqual([request["model"] for request in requests], ["haiku"])
 
     def test_a_finding_open_after_round_two_dispatches_no_third_round(self):
         (self.fake_dir / "scenario.json").write_text(json.dumps({
@@ -1887,7 +1962,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         test_paths = ["web/__tests__/cart.js", "svc/test_cart.py", "svc/cart_test.go", "svc/tests/unit/helpers.py"]
         files = {"svc/cart.py": [5, "M"]}
         files.update({path: [5, "M"] for path in test_paths})
-        files["svc/big.py"] = [module.LARGE_ADDED_LINES, "M"]
+        files["svc/big.py"] = [review_loop_plan.LARGE_ADDED_LINES, "M"]
 
         dispatches = dict(module.first_round_plan(files))
 
@@ -1901,7 +1976,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         for path in uncounted:
             with self.subTest(path=path):
-                files = {"svc/cart.py": [5, "M"], path: [module.LARGE_ADDED_LINES, "M"]}
+                files = {"svc/cart.py": [5, "M"], path: [review_loop_plan.LARGE_ADDED_LINES, "M"]}
                 agents = {agent for agent, _ in module.first_round_plan(files)}
                 self.assertEqual(agents, {"code-reviewer"})
 
@@ -1913,7 +1988,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual([agent for agent, _ in dispatches], ["code-reviewer", "code-reviewer"])
         self.assertEqual([sorted(owned) for _, owned in dispatches], [["a.py", "b.py"], ["a.py", "b.py"]])
-        self.assertEqual([owned.lens for _, owned in dispatches], [module.LENS_A, module.LENS_B])
+        self.assertEqual([owned.lens for _, owned in dispatches], [review_loop_plan.LENS_A, review_loop_plan.LENS_B])
 
     def test_a_one_file_change_sends_one_code_reviewer_with_no_lens(self):
         module = self.load_script_module()
@@ -1928,15 +2003,15 @@ class ReviewLoopScriptTest(unittest.TestCase):
         module = self.load_script_module()
         loop = mock.Mock(repo=self.repo, prior_issues=[], round_two_fix_diff_path="", asks=[], brief="",
                          test_strategy="", iter_count=1)
-        lensed = ("code-reviewer", module.LensOwned(["a.py", "b.py"], module.LENS_B))
+        lensed = ("code-reviewer", review_loop_plan.LensOwned(["a.py", "b.py"], review_loop_plan.LENS_B))
         plain = ("code-reviewer", ["a.py"])
 
         _role, _agent, lensed_prompt = module.LoopRun.review_request(loop, lensed)
         _role, _agent, plain_prompt = module.LoopRun.review_request(loop, plain)
 
-        self.assertTrue(lensed_prompt.endswith("\n" + module.LENS_B))
-        self.assertNotIn(module.LENS_A, plain_prompt)
-        self.assertNotIn(module.LENS_B, plain_prompt)
+        self.assertTrue(lensed_prompt.endswith("\n" + review_loop_plan.LENS_B))
+        self.assertNotIn(review_loop_plan.LENS_A, plain_prompt)
+        self.assertNotIn(review_loop_plan.LENS_B, plain_prompt)
 
     def test_a_lens_split_with_no_test_reviewer_gives_every_test_file_a_reviewer(self):
         module = self.load_script_module()
@@ -2271,7 +2346,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         app_diff_file = diff_files[0]
         self.assertIn("-limit = 2", app_diff_file.read_text())
         self.assertIn(f"- app.py (+2 -2): {app_diff_file}", closure_prompt)
-        self.assertIn("- generated/snapshot.json (+20000 -0): regenerated, do not read", closure_prompt)
+        self.assertIn("- generated/snapshot.json (+20000 -1): regenerated, do not read", closure_prompt)
         self.assertNotIn(str(diff_files[1]), closure_prompt)
 
     def test_a_class_closure_reply_with_braces_in_its_prose_still_reads_the_closing_object(self):

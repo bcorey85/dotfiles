@@ -237,9 +237,10 @@ def handle_dispatch_ran(event, session_id):
         record(session_id, DISPATCH_RAN, tool_use_id=tool_use_id)
 
 
-def record_script_dispatch(session_id, repo_dir):
-    """The dispatch row the Agent hook writes for a review-loop, for a loop that runs as a script instead."""
-    record(session_id, "dispatch", no_review=False, repo=loop_transcript.reviewed_repo("", str(repo_dir)))
+def record_script_dispatch(session_id, repo_dir, no_review=False):
+    """The dispatch row the Agent hook writes for a review-loop, for a loop that runs as a script instead. no_review
+    marks a fix-first run told to skip the review."""
+    record(session_id, "dispatch", no_review=no_review, repo=loop_transcript.reviewed_repo("", str(repo_dir)))
 
 
 def handle_hook(event, kind):

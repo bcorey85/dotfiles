@@ -380,7 +380,7 @@ class ReviewFixScriptTest(unittest.TestCase):
             target.write_text("changed\n")
 
     def dispatch_lines(self, output):
-        _, _, dispatch = output.partition("Dispatch lines (pass exactly these):")
+        _, _, dispatch = output.partition("Handoff lines (write exactly these):")
         return dispatch.partition("  tests-run:")[0]
 
     def test_a_cap_reached_with_an_open_class_and_a_passed_check_of_the_final_tree_keeps_the_scoped_rerun(self):
@@ -397,10 +397,11 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: stop", output)
         self.assertIn("files the capped run's fixes touched", output)
-        self.assertIn("Dispatch lines (pass exactly these):", output)
+        self.assertIn("Handoff lines (write exactly these):", output)
         self.assertIn("    - path: src/logs.ts", output)
         self.assertIn("trailing blank line compares as different", output)
-        self.assertIn("iter=0", output)
+        self.assertIn("launch --repo", output)
+        self.assertIn("--iter 0 --file src/logs.ts", output)
         self.assertNotIn("Do not re-dispatch", output)
 
     def test_the_scoped_rerun_files_come_from_git_not_from_the_packets_files_touched(self):
@@ -425,7 +426,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
         self.assertEqual(code, 0, output)
         self.assertIn("Do not re-dispatch", output)
-        self.assertNotIn("Dispatch lines", output)
+        self.assertNotIn("Handoff lines", output)
 
     def test_a_cap_reached_with_every_class_closed_keeps_the_plain_stop(self):
         closed_closure = CAP_WITH_AN_OPEN_CLASS_FIELDS["class_closure"].replace("still open", "closed")
@@ -448,7 +449,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("Do not re-dispatch", output)
         self.assertNotIn("files the capped run's fixes touched", output)
-        self.assertNotIn("Dispatch lines", output)
+        self.assertNotIn("Handoff lines", output)
 
     def test_plan_impact_prints_the_modal_and_decide_builds_the_redispatch_with_both_counters(self):
         code, output = self.packet(PLAN_IMPACT)
@@ -1279,8 +1280,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.unreviewed_loop("a1", packet_text(CONVERGED_FIELDS, iter=2))
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
-        self.assertIn("Re-dispatch review-loop once", output)
-        self.assertIn("\niter=2\n", output)
+        self.assertIn("Run `launch` once more with the same flags plus `--iter 2`", output)
         self.assertNotIn("review-gate-mark", output)
 
     def test_a_second_unreviewed_hand_back_in_a_row_says_stop_and_no_re_dispatch(self):
@@ -1292,7 +1292,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: stop-no-reviewer", output)
         self.assertIn("2 times in a row", output)
         self.assertIn("Do not re-dispatch again", output)
-        self.assertNotIn("Re-dispatch review-loop once", output)
+        self.assertNotIn("Run `launch` once more", output)
         self.assertNotIn("review-gate-mark", output)
 
     def test_a_converged_hand_back_ending_on_a_fix_finishes_and_names_the_unreviewed_fix_files(self):
@@ -1363,7 +1363,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-no-handback", output)
-        self.assertIn("Re-dispatch review-loop once", output)
+        self.assertIn("Run `launch` once more", output)
         self.assertNotIn("stop-parse-failure", output)
         self.assertNotIn("review-gate-mark", output)
         self.assertEqual(self.saved_stage(), "asks")
@@ -1378,7 +1378,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-no-handback", output)
         self.assertIn("Show the user the loop's final text", output)
-        self.assertNotIn("Re-dispatch review-loop once", output)
+        self.assertNotIn("Run `launch` once more", output)
         self.assertNotIn("review-gate-mark", output)
         self.assertEqual(self.saved_stage(), "asks")
 
@@ -1477,7 +1477,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-no-handback", output)
-        self.assertIn("Re-dispatch review-loop once", output)
+        self.assertIn("Run `launch` once more", output)
 
     def test_a_hand_back_after_the_wait_is_read_normally(self):
         self.dispatch()
@@ -1490,10 +1490,10 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_sessions_in_one_repo_keep_separate_miss_counts(self):
         self.dispatch(OTHER_SESSION)
         _, output = self.packet("", CLAUDE_CODE_SESSION_ID=OTHER_SESSION)
-        self.assertIn("Re-dispatch review-loop once", output)
+        self.assertIn("Run `launch` once more", output)
         self.dispatch()
         _code, output = self.packet("")
-        self.assertIn("Re-dispatch review-loop once", output)
+        self.assertIn("Run `launch` once more", output)
         self.assertNotIn("Stop. Do not re-dispatch", output)
 
     def test_review_and_fix_keep_separate_miss_counts(self):
@@ -1502,7 +1502,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet("", skill="review")
         self.dispatch()
         _, output = self.packet("", skill="fix")
-        self.assertIn("Re-dispatch review-loop once", output)
+        self.assertIn("Run `launch` once more", output)
         self.dispatch()
         _code, output = self.packet("", skill="review")
         self.assertIn("Show the user the loop's final text", output)
@@ -2038,6 +2038,55 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(dispatches[0]["repo"], str(second.resolve()))
         self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
 
+    def launched_run(self):
+        loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"
+        loop_dir = next(loop_root.glob("review-script-*"))
+        prompt = (loop_dir / "prompt.txt").read_text()
+        packet_args = json.loads((loop_dir / "launch.json").read_text())["packet_args"]
+        return loop_dir, prompt, packet_args
+
+    def test_launch_with_fix_writes_the_findings_and_hands_packet_the_fix_skill(self):
+        findings = self.temp_root / "findings.md"
+        findings.write_text("- README.md:1 the greeting is wrong\n  and too short\n\n- README.md:2 second\n")
+        code, output = self.launch("--fix", str(findings), "--no-review")
+        self.assertEqual(code, 0, output)
+        self.assertIn("packet --skill fix --lane code", output.splitlines()[-1])
+
+        loop_dir, prompt, packet_args = self.launched_run()
+        self.assertEqual(packet_args, ["--skill", "fix", "--lane", "code"])
+        findings_json = loop_dir / "findings.json"
+        self.assertIn("mode: fix-first\ncaller: fix\nlane: code\n", prompt)
+        self.assertIn(f"findings: {findings_json}\nno-review: yes\n", prompt)
+        self.assertEqual(json.loads(findings_json.read_text()),
+                         ["README.md:1 the greeting is wrong and too short", "README.md:2 second"])
+        self.assertIs(self.dispatch_rows()[0]["no_review"], True)
+
+    def test_launch_with_a_findings_line_out_of_form_stops_naming_the_line(self):
+        findings = self.temp_root / "findings.md"
+        findings.write_text("- README.md:1 the greeting is wrong\nREADME.md:2 no dash\n")
+        code, output = self.launch("--fix", str(findings))
+        self.assertEqual(code, 2, output)
+        self.assertIn(f"{findings}:2", output)
+        self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
+
+    def test_launch_with_no_review_and_no_fix_stops(self):
+        code, output = self.launch("--no-review")
+        self.assertEqual(code, 2, output)
+        self.assertIn("--no-review needs --fix", output)
+        self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
+
+    def test_launch_with_base_file_fast_and_iter_writes_each_header_and_the_branch_exit_packet(self):
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True,
+                              check=True).stdout.strip()
+        code, output = self.launch("--base", "HEAD", "--file", "README.md", "--fast", "--iter", "1")
+        self.assertEqual(code, 0, output)
+        self.assertIn("packet --skill review --scope branch-exit --lane none", output.splitlines()[-1])
+
+        _loop_dir, prompt, packet_args = self.launched_run()
+        self.assertEqual(packet_args, ["--skill", "review", "--scope", "branch-exit", "--lane", "none"])
+        self.assertIn(f"base: {base}\nfiles: README.md\nreviewer-model: haiku\niter: 1\n", prompt)
+        self.assertIn("Review only these files: README.md.", prompt)
+
     def test_each_launch_reviews_the_working_tree_and_has_its_own_ids(self):
         loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"
         for _ in range(2):
@@ -2055,7 +2104,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-usage", output)
         self.assertIn("review scope is empty", output)
-        self.assertIn("base=<ref>", output)
+        self.assertIn("--base <ref>", output)
         self.assertEqual(self.dispatch_rows(), [])
         self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
 

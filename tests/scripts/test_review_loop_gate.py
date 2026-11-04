@@ -6,10 +6,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 import fake_ledger
 import receipt_repo
 import toolkit_paths
+
+sys.path[:0] = [str(toolkit_paths.REVIEW_DIR), str(toolkit_paths.LIB_DIR)]
+import handback_store  # noqa: E402
 
 SCRIPT = os.environ.get("REVIEW_LOOP_GATE_SCRIPT") or str(toolkit_paths.REVIEW_DIR / "review_loop_gate.py")
 SCRIPTS_ROOT = str(toolkit_paths.SCRIPTS_DIR)
@@ -1336,3 +1340,70 @@ class LedgerRowsTest(StopHookMixin, unittest.TestCase):
     def test_a_plan_path_that_ends_in_the_touched_path_is_blocked(self):
         records = self.loop(FINDING_ROW, METRICS_ROW, plan="/repo/docs/spec.md")
         self.assertIn("never edits the plan", json.loads(self.stop_with_packet(records, "docs/spec.md"))["reason"])
+
+
+class FinalTextHandBackTest(StopHookMixin, unittest.TestCase):
+    """A loop resumed after a spend-limit stop can end with its packet as final text and no SubagentHandback call."""
+
+    def setUp(self):
+        store_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(store_dir.cleanup)
+        env = unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store_dir.name})
+        env.start()
+        self.addCleanup(env.stop)
+        self.repo = loop_repo(self, unchecked=False)
+        handback_store.record("sess-1", "dispatch", no_review=False, repo=self.repo)
+        handback_store.record("sess-1", "step", agent_id="a1", step="reviewer")
+
+    def stop_on_final_packet(self, records, **extra):
+        return self.stop(records, cwd=self.repo, session_id="sess-1", agent_id="a1",
+                         last_assistant_message=PACKET % "b.py", **extra)
+
+    def logged_loop(self):
+        return [user("review loop\nlane: code\nplan: other.md"), bash(FINDING_ROW), bash(METRICS_ROW)]
+
+    def test_a_final_text_packet_is_stored_as_the_hand_back(self):
+        self.assertEqual(self.stop_on_final_packet(self.logged_loop()), "")
+
+        standing = handback_store.latest("sess-1")
+        self.assertEqual(json.loads(standing["handback"]["message"])["status"], "converged")
+        self.assertEqual(standing["unanswered"], 0)
+
+    def test_a_final_text_packet_a_hand_back_gate_denies_blocks_the_stop_then_the_next_stop_stores_it(self):
+        handback_store.record("sess-2", "dispatch", no_review=False, repo=self.repo)
+        stop = {"cwd": self.repo, "session_id": "sess-2", "agent_id": "a1",
+                "last_assistant_message": PACKET % "b.py"}
+
+        out = self.stop(self.logged_loop(), **stop)
+
+        self.assertIn("no reviewer ran", json.loads(out)["reason"])
+        self.assertIsNone(handback_store.latest("sess-2")["handback"])
+        self.assertEqual(self.stop(self.logged_loop(), stop_hook_active=True, **stop), "")
+        self.assertTrue(handback_store.latest("sess-2")["handback"]["no_reviewer"])
+
+    def test_a_delivered_hand_back_is_not_stored_twice(self):
+        handback_store.record("sess-1", "handback", agent_id="a1", status="converged", problems=[], message="{}")
+        handing_back = {"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback", "input": {"message": "{}"}}
+        delivered = [{"type": "assistant", "message": {"role": "assistant", "content": [handing_back]}},
+                     result("toolu_hb", "delivered")]
+
+        self.assertEqual(self.stop_on_final_packet([*self.logged_loop(), *delivered]), "")
+
+        rows = handback_store.session_rows("sess-1", "handback")
+        self.assertEqual([row["message"] for row in rows], ["{}"])
+
+    def test_a_stop_while_a_background_dispatch_is_open_stores_nothing(self):
+        self.stop_on_final_packet([*self.logged_loop(), *coder_and_background_reviewer()[1:]])
+
+        self.assertIsNone(handback_store.latest("sess-1")["handback"])
+
+    def test_the_hand_back_of_an_earlier_dispatch_is_never_read_as_the_new_one(self):
+        handback_store.record("sess-1", "handback", agent_id="a0", status="converged", problems=[], message="{}")
+        handback_store.record("sess-1", "dispatch", no_review=False, repo=self.repo)
+        handback_store.record("sess-1", "step", agent_id="a1", step="reviewer")
+
+        self.stop_on_final_packet(self.logged_loop())
+
+        standing = handback_store.latest("sess-1")
+        self.assertEqual(standing["handback"]["agent_id"], "a1")
+        self.assertEqual(standing["unanswered"], 0)

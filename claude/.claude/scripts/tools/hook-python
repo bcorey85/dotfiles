@@ -1,12 +1,12 @@
 #!/bin/sh
 # Runs a hook's Python script on a python3 no older than 3.MIN_MINOR, skipping a version manager's python3 shim:
 # a shim spends a second or more starting up, and it follows the project's .python-version, which can name a Python
-# the toolkit cannot run on. Order: pyenv's version, from PYENV_VERSION or $PYENV_ROOT/version, when it names 3.12 or
-# newer (a prefix such as 3.12 takes a matching folder under versions/); then python3.N outside a shims folder on
+# the toolkit cannot run on. Order: pyenv's version, from PYENV_VERSION or $PYENV_ROOT/version, when it names 3.MIN_MINOR
+# or newer (a prefix such as 3.12 takes a matching folder under versions/); then python3.N outside a shims folder on
 # PATH, newest first; then the first python3 outside a shims folder; then plain python3.
 
 # The toolkit's oldest Python, ruff.toml's target-version. tests/scripts/test_hook_python.py keeps the two equal.
-MIN_MINOR=12
+MIN_MINOR=10
 MAX_MINOR=20
 
 # Sets version_minor to the minor of a version such as 3.12 or 3.12.4; empty for system or a virtualenv name.

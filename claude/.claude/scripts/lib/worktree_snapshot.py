@@ -58,8 +58,7 @@ def file_hash(root, path):
         return None
 
     try:
-        with target.open("rb") as handle:
-            return hashlib.file_digest(handle, "sha256").hexdigest()
+        return hashlib.sha256(target.read_bytes()).hexdigest()
     except OSError:
         return UNREADABLE
 

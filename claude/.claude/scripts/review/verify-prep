@@ -11,6 +11,7 @@ resolver run from the repo top level.
 """
 import os
 import pathlib
+import shutil
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
@@ -33,12 +34,24 @@ VERIFIER_RUN_RULES = (
     "no process running when you report. A Manual Verification item that needs a process left running (a "
     "server, a watcher) is human-only: do not start it.",
     "Delete, move or kill nothing. Create no file yourself: your only write is a Manual Verification "
-    "checkbox line.",
+    "checkbox line, and command output you redirect to a file, which goes only under {output_dir}. Never write "
+    "it to /tmp or anywhere else.",
     "An `Agent-run` item is yours: run it as its text says and record pass/fail with its output; never mark it "
     "human-only. Start that row's `item` with the plan line's words from the tag on, for example "
     "`**Agent-run**: time the import`.",
 )
 UNTRACKED_LISTED = 20
+VERIFIER_OUTPUT_FOLDER = "verify-output"
+
+
+def fresh_verifier_output_dir(top):
+    """An empty folder in this checkout's git dir for the plan-verifier's command output. The git dir keeps it out
+    of `git status`, the diff and the tree fingerprint; each prep empties it so no run's output outlives the next."""
+    git_dir = vc.run(["git", "rev-parse", "--absolute-git-dir"], cwd=top, check=True).stdout.strip()
+    output_dir = pathlib.Path(git_dir) / VERIFIER_OUTPUT_FOLDER
+    shutil.rmtree(output_dir, ignore_errors=True)
+    output_dir.mkdir(parents=True)
+    return output_dir
 
 
 def parse_args(argv):
@@ -269,7 +282,7 @@ def print_plan(context):
     lines += gate_env_lines
     lines += [f"  {ticket_line}" for ticket_line in criteria["ticketLines"]]
     lines.append("  run rules:")
-    lines += [f"  - {rule}" for rule in VERIFIER_RUN_RULES]
+    lines += [f"  - {rule.format(output_dir=context['verifierOutputDir'])}" for rule in VERIFIER_RUN_RULES]
     lines.append("  ---")
     lines.append("  Then convert its verdict table to rows JSON and run: verify-log --rows <file> "
                  "(see SKILL.md for the row shape).")
@@ -324,6 +337,7 @@ def main(argv):
                "baseRef": base_ref, "mergeBase": merge_base, "diff": diff, "criteria": criteria,
                "excludeRel": exclude_rel, "fingerprint": fingerprint, "review": review,
                "fullCheck": vc.full_check_state(top),
+               "verifierOutputDir": str(fresh_verifier_output_dir(top)),
                "reviewLoggedTree": review_logged_tree, "reviewAsks": earlier_context.get("reviewAsks"),
                "logged": False, "escapes": earlier_escapes}
     vc.save_context(state_path, context)

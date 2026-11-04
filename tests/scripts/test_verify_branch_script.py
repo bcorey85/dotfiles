@@ -793,6 +793,60 @@ class PrepTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 2)
         self.assertIn("pass --base", done.stderr)
 
+    def remote_with_default_branch(self, default_branch):
+        """Rename master to `default_branch` and clone this repo, so the clone has origin/HEAD and no main or
+        master ref; the clone checks out a work branch with one commit. Returns the clone's path."""
+        self.git("branch", "-m", "master", default_branch)
+        self.git("checkout", "-q", default_branch)
+        clone = self.temp_root / "clone"
+        subprocess.run(["git", "clone", "-q", "-b", default_branch, str(self.repo), str(clone)], env=self.env,
+                       check=True, capture_output=True)
+        subprocess.run(["git", "checkout", "-q", "-b", "LED-9-thing"], cwd=clone, env=self.env, check=True)
+        plan_dir = clone / "docs" / "plans" / "LED-9-thing"
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "00-ticket.md").write_text(TICKET)
+        (plan_dir / "spec.md").write_text(SPEC)
+        (plan_dir / "acceptance-criteria.md").write_text(CRITERIA)
+        (clone / "src").mkdir(exist_ok=True)
+        (clone / "src" / "c.py").write_text("print('c')\n")
+        subprocess.run(["git", "add", "."], cwd=clone, env=self.env, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "c"], cwd=clone, env=self.env, check=True)
+        return clone
+
+    def test_a_repo_with_no_main_or_master_falls_back_to_the_remote_default_branch(self):
+        clone = self.remote_with_default_branch("develop")
+
+        done = self.prep(cwd=clone)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("base: origin/develop", done.stdout)
+
+    def test_no_main_master_or_origin_head_exits_2_naming_origin_head_and_the_base_flag(self):
+        clone = self.remote_with_default_branch("develop")
+        subprocess.run(["git", "remote", "set-head", "origin", "-d"], cwd=clone, env=self.env, check=True)
+
+        done = self.prep(cwd=clone)
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("origin/HEAD (not set)", done.stderr)
+        self.assertIn("pass --base <ref>", done.stderr)
+
+    def test_the_verifier_gets_an_empty_output_folder_in_the_git_dir_and_no_tmp_writes(self):
+        self.task_dir()
+        output_dir = self.repo / ".git" / "verify-output"
+        output_dir.mkdir()
+        (output_dir / "old.log").write_text("from an earlier run\n")
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        payload = done.stdout.split("subagent_type=plan-verifier", 1)[1]
+        self.assertIn(f"command output you redirect to a file, which goes only under {output_dir}. Never write "
+                      "it to /tmp or anywhere else.", payload)
+        self.assertEqual([], list(output_dir.iterdir()))
+        self.assertEqual(str(output_dir), self.context()["verifierOutputDir"])
+        self.assertNotIn("verify-output", self.git("status", "--porcelain", "--untracked-files=all"))
+
     def test_runs_from_a_subdirectory_with_paths_relative_to_it(self):
         self.task_dir()
         subdir = self.repo / "src"

@@ -411,7 +411,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         scratch = self.repo / "scratch.txt"
         scratch.write_text("select 1;\n")
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "code-reviewer": [{"result": FIX_REVIEW}] * 2 + [{"result": CLEAN_REVIEW}] * 2,
             "smell-reviewer": [{"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}, "deletes": [str(scratch)]}],
             "closure": [{"result": CLOSED}],
@@ -552,7 +552,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         (self.repo / "tests").mkdir()
         (self.repo / "tests" / "test_app.py").write_text(added)
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "code-reviewer": [{"result": FIX_REVIEW}] * 2 + [{"result": CLEAN_REVIEW}] * 2,
             "coder": [{"result": "Fixed 1.", "edits": {"tests/test_app.py": ""}}],
             "closure": [{"result": CLOSED}],
         })
@@ -803,7 +803,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         fresh_review = FIX_REVIEW.replace("app.py:2", "fresh.py:2")
 
         completed = self.run_script({
-            "code-reviewer": [{"result": fresh_review}, {"result": CLEAN_REVIEW}],
+            "code-reviewer": [{"result": fresh_review}] * 2 + [{"result": CLEAN_REVIEW}] * 2,
             "smell-reviewer": [{"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {str(self.repo / "fresh.py"): APP_FIXED}}],
             "closure": [{"result": CLOSED}],
@@ -847,7 +847,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def test_untracked_binary_file_does_not_stop_a_clean_review(self):
         (self.repo / "logo.png").write_bytes(b"\x89PNG\xff\xfe\x00")
 
-        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}],
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}] * 2,
                                      "smell-reviewer": [{"result": CLEAN_REVIEW}]})
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -1902,9 +1902,43 @@ class ReviewLoopScriptTest(unittest.TestCase):
         for path in uncounted:
             with self.subTest(path=path):
                 files = {"svc/cart.py": [5, "M"], path: [module.LARGE_ADDED_LINES, "M"]}
-                self.assertEqual([agent for agent, _ in module.first_round_plan(files)], ["code-reviewer"])
+                agents = {agent for agent, _ in module.first_round_plan(files)}
+                self.assertEqual(agents, {"code-reviewer"})
 
-    def test_a_split_change_with_no_test_reviewer_gives_every_test_file_a_reviewer(self):
+    def test_a_multi_file_change_sends_two_code_reviewers_each_over_every_file_with_its_own_lens(self):
+        module = self.load_script_module()
+        files = {"a.py": [5, "M"], "b.py": [5, "M"]}
+
+        dispatches = module.first_round_plan(files)
+
+        self.assertEqual([agent for agent, _ in dispatches], ["code-reviewer", "code-reviewer"])
+        self.assertEqual([sorted(owned) for _, owned in dispatches], [["a.py", "b.py"], ["a.py", "b.py"]])
+        self.assertEqual([owned.lens for _, owned in dispatches], [module.LENS_A, module.LENS_B])
+
+    def test_a_one_file_change_sends_one_code_reviewer_with_no_lens(self):
+        module = self.load_script_module()
+
+        dispatches = module.first_round_plan({"a.py": [500, "M"]})
+
+        code_reviewers = [owned for agent, owned in dispatches if agent == "code-reviewer"]
+        self.assertEqual(code_reviewers, [["a.py"]])
+        self.assertEqual(getattr(code_reviewers[0], "lens", ""), "")
+
+    def test_a_lens_reviewer_prompt_ends_with_its_lens_line_and_a_plain_one_carries_none(self):
+        module = self.load_script_module()
+        loop = mock.Mock(repo=self.repo, prior_issues=[], round_two_fix_diff_path="", asks=[], brief="",
+                         test_strategy="", iter_count=1)
+        lensed = ("code-reviewer", module.LensOwned(["a.py", "b.py"], module.LENS_B))
+        plain = ("code-reviewer", ["a.py"])
+
+        _role, _agent, lensed_prompt = module.LoopRun.review_request(loop, lensed)
+        _role, _agent, plain_prompt = module.LoopRun.review_request(loop, plain)
+
+        self.assertTrue(lensed_prompt.endswith("\n" + module.LENS_B))
+        self.assertNotIn(module.LENS_A, plain_prompt)
+        self.assertNotIn(module.LENS_B, plain_prompt)
+
+    def test_a_lens_split_with_no_test_reviewer_gives_every_test_file_a_reviewer(self):
         module = self.load_script_module()
         files = {"a.py": [5, "M"], "b.py": [5, "M"], "c.py": [5, "M"],
                  "tests/test_a.py": [100, "M"], "tests/test_b.py": [100, "M"], "tests/test_c.py": [100, "M"]}
@@ -1912,8 +1946,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         dispatches = module.first_round_plan(files)
 
         self.assertEqual([agent for agent, _ in dispatches], ["code-reviewer", "code-reviewer"])
-        owned = [path for _, paths in dispatches for path in paths]
-        self.assertEqual(sorted(owned), sorted(files))
+        for _agent, owned in dispatches:
+            self.assertEqual(sorted(owned), sorted(files))
 
     def test_the_finding_id_changes_with_the_gate(self):
         loader = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
@@ -2146,7 +2180,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["files_touched"], ["app.py"])
 
     def test_structure_pass_skip_drops_the_first_round_smell_reviewer(self):
-        scenario = {"code-reviewer": [{"result": CLEAN_REVIEW}], "smell-reviewer": [{"result": CLEAN_REVIEW}]}
+        scenario = {"code-reviewer": [{"result": CLEAN_REVIEW}] * 2, "smell-reviewer": [{"result": CLEAN_REVIEW}]}
         (self.repo / "fresh.py").write_text("created = True\n")
 
         self.run_script(scenario, header_extra="structure-pass: skip\n")
@@ -2156,8 +2190,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.run_script(scenario)
         full_keys = sorted(call["key"] for call in self.fake_calls())
 
-        self.assertEqual(skipped_keys, ["code-reviewer"])
-        self.assertEqual(full_keys, ["code-reviewer", "smell-reviewer"])
+        self.assertEqual(skipped_keys, ["code-reviewer", "code-reviewer"])
+        self.assertEqual(full_keys, ["code-reviewer", "code-reviewer", "smell-reviewer"])
 
     def test_real_handoff_is_the_only_handoff_in_each_reviewer_prompt(self):
         self.run_script({
@@ -2610,7 +2644,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
                  "- `app.py:5` should the cap be per tenant? — change: key the cap by tenant\n\n## Nit\nNone\n")
         (self.repo / "fresh.py").write_text("created = True\n")
 
-        completed = self.run_script({"code-reviewer": [{"result": plan_change}],
+        completed = self.run_script({"code-reviewer": [{"result": plan_change}] * 2,
                                      "smell-reviewer": [{"result": later}]})
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -2656,7 +2690,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         impact = f"## Fix\nNone\n\n## Ask\n- {PLAN_CHANGE_STATUS}: the fix needs a new column\n\n## Nit\nNone\n"
         (self.repo / "fresh.py").write_text("created = True\n")
 
-        completed = self.run_script({"code-reviewer": [{"result": impact}], "smell-reviewer": [{"result": impact}]})
+        completed = self.run_script({"code-reviewer": [{"result": impact}] * 2,
+                                     "smell-reviewer": [{"result": impact}]})
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
@@ -2705,7 +2740,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         later = f"## Fix\nNone\n\n## Ask\n{same_ask}{plan_change_ask}\n## Nit\nNone\n"
         (self.repo / "fresh.py").write_text("created = True\n")
 
-        completed = self.run_script({"code-reviewer": [{"result": first}],
+        completed = self.run_script({"code-reviewer": [{"result": first}] * 2,
                                      "smell-reviewer": [{"result": later}]})
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -2932,7 +2967,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         check = "echo 'edited again' >> notes.py; echo '2 passed in 1s'"
         (self.repo / "notes.py").write_text("edited by the coder\n")
 
-        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, quality_check=check)
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}] * 2}, quality_check=check)
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
@@ -3103,13 +3138,13 @@ class ReviewLoopScriptTest(unittest.TestCase):
         (self.repo / "tests/test_app.py").write_text("assert 1 == 2\n")
 
         completed = self.run_script({
-            "code-reviewer": [{"result": fix_in_test}, {"result": CLEAN_REVIEW}],
+            "code-reviewer": [{"result": fix_in_test}] * 2 + [{"result": CLEAN_REVIEW}] * 2,
             "coder": [{"result": "Fixed 1.", "edits": {"tests/test_app.py": "assert 2 == 2\n"}}],
             "closure": [{"result": CLOSED}],
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(self.call_keys().count("code-reviewer"), 2)
+        self.assertEqual(self.call_keys().count("code-reviewer"), 4)
 
     def test_a_correctness_fix_to_a_markdown_file_gets_a_second_review(self):
         completed = self.run_script({
@@ -3180,7 +3215,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
                   "- nit: `util.test.py:1` name the test for the limit\n")
 
         completed = self.run_script({
-            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}] * 2,
             "test-reviewer": [{"result": tagged}],
             "smell-reviewer": [{"result": CLEAN_REVIEW}],
         })
@@ -3200,7 +3235,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         (self.repo / "util.test.py").write_text("assert limit == 20\n")
 
         completed = self.run_script({
-            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}] * 2,
             "test-reviewer": [{"result": CLEAN_REVIEW}],
             "smell-reviewer": [{"result": CLEAN_REVIEW}],
         })
@@ -3219,7 +3254,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         (self.repo / "util.test.py").write_text("assert limit == 20\n")
 
         completed = self.run_script({
-            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}] * 2,
             "test-reviewer": [{"result": CLEAN_REVIEW}],
             "smell-reviewer": [{"result": CLEAN_REVIEW}],
         })
@@ -3239,7 +3274,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         disposition = json.dumps({"fix": [], "ask": ["`util.py:1` add a test for the limit"], "nit": []})
 
         completed = self.run_script({
-            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}] * 2,
             "test-reviewer": [{"result": bold_heads}],
             "smell-reviewer": [{"result": CLEAN_REVIEW}],
             "disposition": [{"result": disposition}],

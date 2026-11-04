@@ -7,7 +7,7 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-106 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+107 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 119 further findings are left out of this page.
 
@@ -58,6 +58,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-04 [Smell-reviewer at every diff size adds nothing on a rig of large changes; the rule went untested](../../../agent-evals/findings/2026-11-04-smell-reviewer-at-every-diff-size-adds-nothing-on.md) - HOLD: Dispatching the smell-reviewer on every change, not only large ones, gained nothing on the narrow-reviewer rig (75 → 71 of 133 known findings) because every phase there is already a large change, so both arms ran the same plan. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-03 [Sonnet main session halves Opus cache reads on an easy bench that cannot read plan quality](../../../agent-evals/findings/2026-11-03-sonnet-main-session-halves-opus-cache-reads-on-an.md) - HOLD: Running the /eng-spec and /code main session on Sonnet cut Opus cache reads 61% (29.96M → 11.63M median) and billed $ 38% over 4 pairs, with ticket scores level (28.5 → 28 of 30). The round was stopped at 4 of 8 pairs: one small, clear ticket with a near-ceiling suite cannot show a planning-quality gap. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-02 [A coder rule to add a failing-first test for each review fix does not clear the bar on Sonnet](../../../agent-evals/findings/2026-11-02-a-coder-rule-to-add-a-failing-first-test-for-each.md) - HOLD: On the Sonnet coder, a coder-core line telling it to add a test that fails on the pre-fix code lifts compliance only from 75% to 100% (12/16 to 16/16), a 25-point gap with overlapping intervals, below the 33-point bar. [watch: no watch]

@@ -5,17 +5,17 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-818 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
+819 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-04, [Commit gate's folder-change refusal names the plain commit for notes-only commits](notes/2026-11-04-commit-gate-s-folder-change-refusal-names-the.md).
+Latest change: 2026-11-04, [Round-one code review splits by lens on every multi-file change](notes/2026-11-04-round-one-code-review-splits-by-lens-on-every.md).
 
 ## Top gains
 
 * [`code-reviewer` now runs on opus and catches defects sonnet missed](notes/2026-08-08-code-reviewer-pinned-to-opus.md): **raises substantive true findings per review by 226% (1.583 → 5.167)** [agent/code-reviewer] - 2026-08-08 [watch: no watch]
 * [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md): **raises of 8 audits kept every distinct-shape test by 167% (3 → 8)** [agent/test-intent-reviewer] ([2026-11-01-a-cull-rule-keeps-tests-with-a-distinct-input](../../../agent-evals/findings/2026-11-01-a-cull-rule-keeps-tests-with-a-distinct-input.md)) - 2026-11-01 [watch: no watch]
+* [Round-one code review splits by lens on every multi-file change](notes/2026-11-04-round-one-code-review-splits-by-lens-on-every.md): **raises of 25 known bugs fixed per pass by 124% (6.25 → 14)** [script/review-loop-script, agent/review-loop] ([2026-11-04-lens-split-in-round-one-code-review-fixes-2-2x-the](../../../agent-evals/findings/2026-11-04-lens-split-in-round-one-code-review-fixes-2-2x-the.md)) - 2026-11-04 [watch: no reading]
 * [`code-reviewer` files taste breaks such as dead code and single-use pass-throughs as `fix`, not `nit`](notes/2026-10-14-code-reviewer-files-taste-breaks-as-fix-not-nit.md): **cuts planted taste defects not filed as fix (of 28) by 100% (14 → 0)** [agent/code-reviewer, skill/fix] ([2026-10-14-catchlist-sealed-4-runs-per-arm](../../../agent-evals/findings/2026-10-14-catchlist-sealed-4-runs-per-arm.md)) - 2026-10-14 [watch: NO DATA YET]
 * [plan-reviewer now flags oversized phases, a skeleton phase with no Phase 0 contract, and criteria files over 8 criteria](notes/2026-10-12-plan-reviewer-a-new-finding-class-phase-shape.md): **cuts planted shape defects missed (of 9) by 100% (9 → 0)** [agent/plan-reviewer] ([2026-10-09-planfmt-sealed-planfmt-md-graded-edit](../../../agent-evals/findings/2026-10-09-planfmt-sealed-planfmt-md-graded-edit.md)) - 2026-10-12 [watch: TOO FEW]
-* [Coder fixes every site of a reviewed defect](notes/2026-11-02-coder-fixes-every-site-of-a-reviewed-defect.md): **cuts % of runs leaving a sibling site unfixed by 94% (100 → 6)** [skill/coder-core] ([2026-11-02-fix-sweep-rule-makes-the-coder-fix-every-site-of-a](../../../agent-evals/findings/2026-11-02-fix-sweep-rule-makes-the-coder-fix-every-site-of-a.md)) - 2026-11-02 [watch: no watch]
 
 ## Total saved
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 3
 * cost: 3
 * wall-clock: 1
-* quality: 13
+* quality: 14
 
 ## Pages
 

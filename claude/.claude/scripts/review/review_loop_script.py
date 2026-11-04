@@ -110,8 +110,12 @@ from review_loop_prompts import coder_prompt, reviewer_prompt
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
 LARGE_ADDED_LINES = source_paths.LARGE_ADDED_LINES
-SPLIT_FILES = 5
-SPLIT_LINES = 300
+LENS_A = ("Own state and lifecycle: UI state while an action is pending, after close or cancel, and on re-open; "
+          "stale async results arriving late; cache invalidation after writes. Trace each changed handler through "
+          "every state it can be entered from.")
+LENS_B = ("Own inputs and surfaces: edge inputs (empty, zero, huge, malformed, duplicate); layout, CSS and "
+          "accessibility of every changed element; contracts with unchanged code the change reuses or sits next to. "
+          "Read the whole enclosing function and every unchanged helper the change calls.")
 DIFF_CONTEXT = 12
 LOG_TIMEOUT_SECONDS = 60
 # Who runs the reviewers (--reviewers): `claude -p` calls of this script, or the main session as its subagents.
@@ -139,6 +143,14 @@ def scope(repo):
     return files
 
 
+class LensOwned(list):
+    """The files a reviewer owns, plus the one lens line its dispatch prompt carries."""
+
+    def __init__(self, paths, lens):
+        super().__init__(paths)
+        self.lens = lens
+
+
 def first_round_plan(files, structure_pass_skipped=False):
     """Which reviewers go out in the first round, and who owns which files."""
     source = [path for path in files if not source_paths.is_test_path(path)]
@@ -155,12 +167,10 @@ def first_round_plan(files, structure_pass_skipped=False):
         dispatches.append(("code-reviewer", list(files)))
     if large and not structure_pass_skipped:
         dispatches.append(("smell-reviewer", list(files)))
-    changed_lines = sum(entry[0] for entry in files.values())
     code_owned = dispatches[0][1]
-    if len(files) > SPLIT_FILES and changed_lines >= SPLIT_LINES and len(code_owned) > 1:
-        half = len(code_owned) // 2
-        dispatches[0] = ("code-reviewer", code_owned[:half])
-        dispatches.insert(1, ("code-reviewer", code_owned[half:]))
+    if len(files) > 1 and len(code_owned) > 1:
+        dispatches[0] = ("code-reviewer", LensOwned(code_owned, LENS_A))
+        dispatches.insert(1, ("code-reviewer", LensOwned(code_owned, LENS_B)))
     return dispatches
 
 
@@ -508,6 +518,9 @@ class LoopRun(full_check_gate.FullCheckSteps):
         agent, owned = dispatch
         prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
                                  tuple(ask.text for ask in self.asks), self.brief, self.test_strategy)
+        lens = getattr(owned, "lens", "")
+        if lens:
+            prompt += "\n" + lens
         return f"review{self.iter_count}-{agent}", agent, prompt
 
     def read_review(self, text):

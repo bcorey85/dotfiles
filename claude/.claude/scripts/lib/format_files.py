@@ -14,6 +14,9 @@ LINT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".vue")
 FORMAT_ONLY_SUFFIXES = (".json", ".css", ".scss", ".md")
 PYTHON_SUFFIX = ".py"
 PLANS_DIR = "docs/plans/"
+PROMPT_MARKDOWN_DIR = ".claude"
+PROMPT_MARKDOWN_PREFIX = ".config/opencode/"
+PROMPT_MARKDOWN_NAMES = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"}
 RUFF_FORMAT_COMMAND = "ruff format"
 # What marks a repo as configuring a web tool: a config file at the repo root, or this key in its package.json.
 WEB_TOOL_CONFIG_FILES = {
@@ -134,8 +137,20 @@ def run_python_formatters(repo, python_files, configured_only=False, check_comma
     run_quiet(["ruff", "check", "--fix", *python_files], repo)
 
 
+def is_prompt_markdown(path):
+    """True for a .md file a model reads as prompt text: under a .claude folder or .config/opencode/, or named
+    CLAUDE.md, CLAUDE.local.md or AGENTS.md at any depth."""
+    if not path.endswith(".md"):
+        return False
+    parts = pathlib.PurePosixPath(path).parts
+    if PROMPT_MARKDOWN_DIR in parts[:-1] or parts[-1] in PROMPT_MARKDOWN_NAMES:
+        return True
+    return f"/{PROMPT_MARKDOWN_PREFIX}" in f"/{path}"
+
+
 def run_formatters(repo, paths, include_python=False, configured_only=False, check_command=""):
-    """Run the autofix formatters on the existing files among `paths` (relative to `repo`), skipping docs/plans/.
+    """Run the autofix formatters on the existing files among `paths` (relative to `repo`), skipping docs/plans/ and
+    prompt markdown (`is_prompt_markdown`): a model reads both literally, so a reflow changes what it does.
     Python files get `ruff format` and `ruff check --fix` only with `include_python`, when ruff is on PATH and the repo
     configures ruff. With
     `configured_only`, a web tool runs only when the repo configures it or holds it in node_modules/.bin, and
@@ -143,7 +158,7 @@ def run_formatters(repo, paths, include_python=False, configured_only=False, che
     A missing tool is skipped silently. Returns the paths whose bytes changed."""
     lint_files, web_files, python_files = [], [], []
     for path in paths:
-        if path.startswith(PLANS_DIR) or not os.path.isfile(os.path.join(repo, path)):
+        if path.startswith(PLANS_DIR) or is_prompt_markdown(path) or not os.path.isfile(os.path.join(repo, path)):
             continue
         if path.endswith(LINT_SUFFIXES):
             lint_files.append(path)

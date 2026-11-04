@@ -19,6 +19,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - Every question about a command (runs tests, runner family, is a check, test filter, cargo test target): `lib/check_scope.py` (`runs_tests`, `runner_family`, `is_check`, `command_check_scope`, `names_test_filter`, `names_cargo_test_target`, `names_test_runner`, `prints_own_runner_summary`). Add no per-gate runner or flag table.
 - Shell command parsing in a gate: `lib/shell_command.py`. Never use a bare `shlex.split`, `str.split` or operator regex on a command.
 - Plan text: `lib/plan_format.py`.
+- TOML files: `lib/toml_file.py` `read_toml`. Never import tomllib elsewhere: the scripts run on Python 3.10.
 - State file paths and writes: `lib/script_utils.py` (`state_file_path`, `write_text_atomically`, `read_jsonl`).
 
 ## Data between steps

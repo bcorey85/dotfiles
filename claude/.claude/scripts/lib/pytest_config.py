@@ -3,7 +3,8 @@ import configparser
 import contextlib
 import pathlib
 import re
-import tomllib
+
+from toml_file import read_toml
 
 DJANGO_SETTINGS = re.compile(r"DJANGO_SETTINGS_MODULE|--ds\b", re.IGNORECASE)
 
@@ -18,14 +19,10 @@ def pytest_options(repo_dir):
     repo_dir = pathlib.Path(repo_dir)
     tables = []
 
-    pyproject = repo_dir / "pyproject.toml"
-    if pyproject.is_file():
-        try:
-            options = tomllib.loads(pyproject.read_text()).get("tool", {}).get("pytest", {}).get("ini_options")
-        except tomllib.TOMLDecodeError:
-            options = None
-        if isinstance(options, dict):
-            tables.append(options)
+    pyproject = read_toml(repo_dir / "pyproject.toml")
+    options = pyproject.get("tool", {}).get("pytest", {}).get("ini_options")
+    if isinstance(options, dict):
+        tables.append(options)
 
     for name, section in INI_SECTIONS:
         config_file = repo_dir / name

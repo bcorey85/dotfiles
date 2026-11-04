@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-809 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
+811 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-03, [review loop numbers repeated reviewer roles in a round](notes/2026-11-03-review-loop-numbers-repeated-reviewer-roles-in-a.md).
+Latest change: 2026-11-03, [shell-write-gate in-place denial names the session temp root](notes/2026-11-03-shell-write-gate-in-place-denial-names-the-session.md).
 
 ## Top gains
 

@@ -671,6 +671,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
         self.assertEqual(2, len(packet["fixed"]))
         self.assertEqual(3, packet["iter"])
+        self.assertEqual(2, packet["review_round"])
         self.assertTrue(row["unreviewed_fix"])
         self.assertIn("STALE app.py:1", json.dumps(self.fake_calls()))
 

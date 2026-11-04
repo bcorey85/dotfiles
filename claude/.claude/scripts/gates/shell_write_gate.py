@@ -56,7 +56,15 @@ from code_text import (
     tuple_fields,
     without_comments,
 )
-from hook_input import JqError, expand_env_names, is_under_claude_temp_root, is_under_temp_dir, jq_get, jq_str
+from hook_input import (
+    JqError,
+    claude_temp_root,
+    expand_env_names,
+    is_under_claude_temp_root,
+    is_under_temp_dir,
+    jq_get,
+    jq_str,
+)
 from hook_input import bash_basename as shell_basename
 from hook_input import bash_dirname as shell_dirname
 from shell_statements import strip_comments, strip_heredocs
@@ -394,8 +402,11 @@ def run(raw):
         resolved = resolve_target(target, folders[-1])
         if resolved is not None and is_under_claude_temp_root(resolved):
             continue
-        raise DenyError(deny_text("in-place editing of " + target + " bypasses the Write/Edit hook pipeline.",
-                                  cannot_skip))
+        subject = "in-place editing of " + target + " bypasses the Write/Edit hook pipeline."
+        # An agent with no Write or Edit can follow this; a tracked file gets no copy route.
+        if resolved is None or not is_git_tracked(resolved):
+            subject += f" An in-place edit of a scratch file under {claude_temp_root()} passes."
+        raise DenyError(deny_text(subject, cannot_skip))
 
     for raw_target, folders, unread_change in targets:
         check_written_target(raw_target, folders, unread_change, cannot_skip, coder)

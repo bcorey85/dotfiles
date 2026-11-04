@@ -107,6 +107,17 @@ class ShellWriteGateTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
         self.assertIn("in-place editing of", self.assert_denied("sed -i s/a/b/ " + str(outside / "probe.txt")))
 
+    def test_in_place_deny_of_an_untracked_file_names_the_session_temp_root(self):
+        outside = pathlib.Path(tempfile.mkdtemp(dir="/tmp", prefix="shell-write-gate-test-"))
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        root = os.path.realpath("/tmp/claude-" + str(os.getuid()))
+        for command in ("sed -i s/a/b/ " + str(outside / "probe.txt"), "sed -i s/a/b/ untracked.txt"):
+            payload = {"tool_input": {"command": command}, "cwd": str(self.repo), "agent_id": "a1",
+                       "agent_type": "backend-architect"}
+            reason = self.denied(self.run_hook(json.dumps(payload)))
+            self.assertIn(root, reason)
+        self.assertNotIn(root, self.assert_denied("sed -i s/a/b/ tracked.txt"))
+
     def test_in_place_edit_escaping_claude_temp_root_denied(self):
         scratch = self.make_claude_scratch_file()
         escape = str(scratch / ".." / ".." / "shell-write-gate-escape.txt")

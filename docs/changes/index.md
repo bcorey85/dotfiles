@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-811 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
+812 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-03, [shell-write-gate in-place denial names the session temp root](notes/2026-11-03-shell-write-gate-in-place-denial-names-the-session.md).
+Latest change: 2026-11-03, [verify-prep gives plan-verifier an output folder and falls back to origin/HEAD for the base](notes/2026-11-03-verify-prep-gives-plan-verifier-an-output-folder.md).
 
 ## Top gains
 

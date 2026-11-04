@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-811 changes
+812 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -29,6 +29,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [verify-prep gives plan-verifier an output folder and falls back to origin/HEAD for the base](notes/2026-11-03-verify-prep-gives-plan-verifier-an-output-folder.md) [agent/plan-verifier, skill/verify-branch] Plan-verifier now has a named folder inside the checkout's git dir for command output, and verify-prep finds the base on a repo whose default branch is not main or master.
 * [shell-write-gate in-place denial names the session temp root](notes/2026-11-03-shell-write-gate-in-place-denial-names-the-session.md) [script/shell-write-gate] An in-place edit of an untracked file outside the session temp root is denied with the temp root named, so an agent with no Write or Edit has a path it can follow.
 * [Ask rows log the last reviewer round, not a repair-pass iter](notes/2026-11-03-ask-rows-log-the-last-reviewer-round-not-a-repair.md) [script/review-loop-script, script/handback, script/review-fix] Ask and ask-outcome rows from /code and /review carry the last round a reviewer ran in, so a closure or stale-prose repair no longer reads as an over-cap round 3.
 * [review loop numbers repeated reviewer roles in a round](notes/2026-11-03-review-loop-numbers-repeated-reviewer-roles-in-a.md) [script/reviewer-dispatch] When a large diff split one reviewer agent over two dispatches in a round, both shared a role and so one report file, and the scripted loop waited out its 1800 s timeout. The round writer now numbers repeated roles (`-2`, `-3`) before any file is written, so each dispatch gets its own prompt and report file.

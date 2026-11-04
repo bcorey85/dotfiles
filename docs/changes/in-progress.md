@@ -9,7 +9,7 @@ description: "The benches that are open now and the question each asks."
 
 10 open benches, by rank. Each line is the question the bench asks.
 
-1 further benches are left out of this page.
+2 further benches are left out of this page.
 
 * Bench: do structure and test defects that per-phase review misses get copied by later phases and later tickets (running): The placement bench scores catches on fixed code. This one lets the coder keep building: does a duplicated helper, a wrong-layer query or a weak assertion left in an early phase get copied by later phases and the next ticket, and how much rework does that add?
 * Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (running): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.

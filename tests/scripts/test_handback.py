@@ -492,6 +492,30 @@ class ClaimLoggedAskIdTest(unittest.TestCase):
                 self.assertIsNone(handback.claim_logged_ask_id({"file_line": file_line}, self.logged_rows()))
 
 
+ASK_ROW_CONTEXT = {"branch": "b", "lane": "code", "scope": "phase", "iter": 3}
+
+
+class AskRowRoundTest(unittest.TestCase):
+    def test_an_ask_row_carries_the_last_reviewer_round_not_a_repair_pass_iter(self):
+        packet = handback.load(json_packet(iter=3, review_round=2))
+        context = {**ASK_ROW_CONTEXT, "review_round": packet["review_round"]}
+
+        fields = handback.ask_row_fields(context, {"file_line": "a.ts:1"})
+
+        self.assertIn("iter=2", fields)
+        self.assertNotIn("iter=3", fields)
+
+    def test_a_packet_without_a_review_round_reads_its_iter_as_the_round(self):
+        packet = handback.load(json_packet(iter=2))
+
+        self.assertEqual(packet["review_round"], 2)
+
+    def test_a_context_from_before_the_field_logs_its_iter(self):
+        fields = handback.ask_row_fields(ASK_ROW_CONTEXT, {"file_line": "a.ts:1"})
+
+        self.assertIn("iter=3", fields)
+
+
 class AskOutcomeFindingIdTest(unittest.TestCase):
     def test_a_valid_id_is_kept_with_no_note(self):
         self.assertEqual(handback.ask_outcome_finding_id({"finding_id": " a1b2c3d4e5f60001 "}),

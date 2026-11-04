@@ -64,6 +64,7 @@ def packet_message(outcome):
     fields = {
         "status": outcome["status"],
         "iter": outcome["iter"],
+        "review_round": outcome["review_round"],
         "fixed": [finding_entry(finding) for finding in outcome["fixed"]],
         "skipped_fp": [{"item": entry["item"].text, "reason": entry["reason"], "file_line": located(entry["item"])}
                        for entry in outcome["skipped_fp"]],
@@ -94,7 +95,7 @@ def packet_message(outcome):
 
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
-    "status": "", "iter": 0, "fixed": [], "skipped_fp": [], "blockers": [], "open_fixes": [],
+    "status": "", "iter": 0, "review_round": 0, "fixed": [], "skipped_fp": [], "blockers": [], "open_fixes": [],
     "asks": [], "ask_gates": {}, "pointer_asks": [], "ask_ids": {}, "ask_rows": [], "class_closure": "",
     "open_classes": [], "full_check": "", "full_check_command": "", "full_check_summaries": [], "check_changed": [],
     "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [], "unreviewed_fix": False,

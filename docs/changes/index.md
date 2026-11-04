@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-817 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
+818 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-03, [Full check runs the repo's own test command before a pytest guess](notes/2026-11-03-full-check-runs-the-repo-s-own-test-command-before.md).
+Latest change: 2026-11-04, [Commit gate's folder-change refusal names the plain commit for notes-only commits](notes/2026-11-04-commit-gate-s-folder-change-refusal-names-the.md).
 
 ## Top gains
 

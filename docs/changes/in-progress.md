@@ -9,7 +9,7 @@ description: "The benches that are open now and the question each asks."
 
 10 open benches, by rank. Each line is the question the bench asks.
 
-2 further benches are left out of this page.
+0 further benches are left out of this page.
 
 * Bench: do structure and test defects that per-phase review misses get copied by later phases and later tickets (running): The placement bench scores catches on fixed code. This one lets the coder keep building: does a duplicated helper, a wrong-layer query or a weak assertion left in an early phase get copied by later phases and the next ticket, and how much rework does that add?
 * Why own-branch /peer-review still finds bugs after the per-phase loops and the branch-exit review (running): Quality: after per-phase review loops and the branch-exit review, the user's /peer-review in a sibling session still finds actionable bugs on their own branches. Rerun that exact sequence on bench branches and sort every bug /peer-review catches by why the earlier reviews missed it, then fix the biggest cause.
@@ -19,5 +19,5 @@ description: "The benches that are open now and the question each asks."
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
 * Run the plan as an Opus-driven loop so a Sonnet main session only hands off (blocked): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
 * Replay reviewers on the 29 sealed phases of TLDR-1 to 3 to find rules that lock in coder and reviewer behavior (running): A fixed bug list per sealed phase shows which coder and reviewer rules catch more of the 68 late bugs, each replay taking minutes, not hours.
-* Coder ranged-read hook for whole-file reads over 4k tokens (queued): A hook that turns the coder's whole-file read of a big file into a ranged read could cut coder cache read per dispatch by 30% or more.
-* Split round one's code review across two reviewers on every multi-file change (queued): Two first-round reviewers each owning half the files could name a third more known bugs in round one, so fewer loops need a second round.
+* Sealed round: lens-split round-one code review (running): Confirms at 8 passes per arm whether splitting round-one code review by failure lens fixes at least a third more known bugs than the size-gated split by file.
+* Smell-reviewer in round one at every diff size (running): Running the smell-reviewer beside every round-one review, not only on large changes, could catch structure findings that today escape to /refactor and /cc.

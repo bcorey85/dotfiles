@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-811 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
+813 changes, 21 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-03, [shell-write-gate in-place denial names the session temp root](notes/2026-11-03-shell-write-gate-in-place-denial-names-the-session.md).
+Latest change: 2026-11-03, [Dotfiles toolkit markdown commits without review](notes/2026-11-03-dotfiles-toolkit-markdown-commits-without-review.md).
 
 ## Top gains
 

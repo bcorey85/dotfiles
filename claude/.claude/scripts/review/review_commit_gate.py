@@ -472,6 +472,21 @@ def ships_only_notes(command, cwd):
             return False
         shipped_paths.append(repo_path(pathspec, prefix) or "")
 
+    return all_notes_paths(cwd, shipped_paths)
+
+
+def staged_files_are_notes(repo):
+    """True when the repo holds staged files and every one is a notes path (all_notes_paths)."""
+    staged_output = script_utils.git_output(repo, "diff", "--cached", "--name-only", "--no-renames", "--no-relative",
+                                            "-z", timeout=GIT_TIMEOUT_SECONDS)
+    if staged_output is None:
+        return False
+    return all_notes_paths(repo, [path for path in staged_output.split("\0") if path])
+
+
+def all_notes_paths(cwd, shipped_paths):
+    """True when shipped_paths is not empty and each is a Markdown file under the top-level docs/ folder or listed in
+    the repo's committed `.claude/notes-paths`."""
     # The list is read only when every path is Markdown and one is outside docs/, so a commit with any
     # non-Markdown path keeps the review deny even when the list is bad.
     all_markdown = all(path.endswith(notes_paths.NOTES_SUFFIX) for path in shipped_paths)
@@ -898,6 +913,14 @@ def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_ag
     if not reviewed_repos:
         return NO_REVIEW_DENIED
     covered = ", ".join(reviewed_repos)
+    notes_only_repos = [repo for repo in reviewed_repos if staged_files_are_notes(repo)]
+    if notes_only_repos:
+        notes_repos = " or ".join(notes_only_repos)
+        return (
+            f"[review-commit-gate] This session's /review covers {covered}, but the gate cannot place this command "
+            f"in a repo, and every staged file in {notes_repos} is a notes path. Do not run /review again: run a plain "
+            "`git commit` from the repo root in its own Bash call, with no `cd`, `env` or `git -C`."
+        )
     suggestions = " or ".join(f"`git -C {shlex.quote(repo)} commit`" for repo in reviewed_repos)
     return (
         f"[review-commit-gate] This session's /review covers {covered}, but the gate cannot place this command "

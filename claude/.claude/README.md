@@ -99,7 +99,7 @@ Commit the plan directory here if you want it on the branch before code starts.
 Each phase runs this sequence:
 
 1. `coder` implements the phase and writes its tests.
-2. `review-loop` runs review → fix until it converges: `code-reviewer`, which
+2. the review loop script runs review → fix until it converges: `code-reviewer`, which
    covers correctness, security, query cost and structure.
 3. Phase gates: drift gate, then `test-intent-reviewer` (when tests changed).
 4. `/stage` stages the mechanical SAFE tier and orders the rest as a read queue.

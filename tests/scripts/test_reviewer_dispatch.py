@@ -103,6 +103,31 @@ class ReviewerDispatchTest(unittest.TestCase):
         self.assertIn("finished", output)
         self.assertIn("packet --skill review", output)
 
+    def test_wait_names_the_model_of_a_round_that_has_one(self):
+        entries = reviewer_dispatch.write_round(self.loop_dir, 1, REQUESTS, model="haiku")
+        (self.loop_dir / reviewer_dispatch.PID_FILE).write_text(f"{os.getpid()}\n")
+        code, output = self.run_wait()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"- agent code-reviewer; prompt {entries[0]['prompt_file']}; "
+                      f"report {entries[0]['report_file']}; model haiku", output.splitlines())
+
+    def test_wait_prints_the_packet_arguments_the_launch_saved(self):
+        self.loop_dir.mkdir(parents=True)
+        launch_record = {"packet_args": ["--skill", "fix", "--scope", "branch-exit", "--lane", "code"]}
+        (self.loop_dir / reviewer_dispatch.LAUNCH_FILE).write_text(json.dumps(launch_record))
+        ended = subprocess.Popen([sys.executable, "-c", "pass"])
+        ended.wait()
+        (self.loop_dir / reviewer_dispatch.PID_FILE).write_text(f"{ended.pid}\n")
+        code, output = self.run_wait()
+        self.assertEqual(code, 0, output)
+        self.assertIn("review_fix.py packet --skill fix --scope branch-exit --lane code`", output)
+
+    def test_a_launch_file_not_in_the_form_stops_loudly(self):
+        self.loop_dir.mkdir(parents=True)
+        (self.loop_dir / reviewer_dispatch.LAUNCH_FILE).write_text(json.dumps({"args": []}))
+        with self.assertRaises(reviewer_dispatch.ManifestError):
+            reviewer_dispatch.packet_command(self.loop_dir)
+
     def test_wait_with_no_pid_file_stops_loudly(self):
         self.loop_dir.mkdir(parents=True)
         code, output = self.run_wait()

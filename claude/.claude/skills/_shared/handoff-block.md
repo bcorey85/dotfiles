@@ -1,6 +1,6 @@
 # Handoff Block (single source of truth)
 
-Upstream→downstream context contract. Producers `/code` + `/fix`; consumer `review-loop`.
+Upstream→downstream context contract. Producers `/code` + `/fix`; consumer `review_fix.py launch --handoff`.
 
 ## Canonical schema
 

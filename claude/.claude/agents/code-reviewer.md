@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: "Reviews code changes for bugs, security, query cost and structure. Dispatched by review-loop, /peer-review and /calibrate."
+description: "Reviews code changes for bugs, security, query cost and structure. Dispatched by the review loop, /peer-review and /calibrate."
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: cyan

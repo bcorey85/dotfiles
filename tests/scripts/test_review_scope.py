@@ -122,16 +122,6 @@ class ReviewScopeRootTest(unittest.TestCase):
         self.assertNotIn("session-change.txt", done.stdout)
         self.assertNotIn("unrelated.txt", done.stdout)
 
-    def test_review_loop_runs_review_scope_with_the_repo_as_root(self):
-        agent_path = toolkit_paths.CLAUDE_DIR / "agents" / "review-loop.md"
-        agent_text = agent_path.read_text()
-
-        scope_command = "~/.claude/skills/review/review-scope"
-        scope_calls = [line for line in agent_text.splitlines() if line.startswith(scope_command)]
-
-        self.assertEqual(len(scope_calls), 1, scope_calls)
-        self.assertIn("root=<repo>", scope_calls[0])
-
 
 if __name__ == "__main__":
     unittest.main()

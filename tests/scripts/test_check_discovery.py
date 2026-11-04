@@ -32,10 +32,30 @@ class CheckDiscoveryTest(unittest.TestCase):
 
         self.assertEqual("make check", self.discovered())
 
-    def test_a_makefile_with_no_check_target_gives_none(self):
-        self.write("Makefile", ".PHONY: check\ntest:\n\t@echo ok\n")
+    def test_a_makefile_with_no_check_or_test_target_gives_none(self):
+        self.write("Makefile", ".PHONY: build\nbuild:\n\t@echo ok\n")
 
         self.assertIsNone(self.discovered())
+
+    def test_a_unittest_repo_with_a_makefile_test_target_runs_make_test_not_a_pytest_guess(self):
+        self.write("Makefile", ".PHONY: test\ntest:\n\tpython3 -m unittest discover -s tests\n")
+        (self.repo / "tests").mkdir()
+        (self.repo / ".venv" / "bin").mkdir(parents=True)
+        (self.repo / ".venv" / "bin" / "python").write_text("")
+
+        self.assertEqual("make test", self.discovered())
+
+    def test_a_makefile_test_target_wins_over_a_package_test_script_and_its_runner_dependency(self):
+        self.write("Makefile", "test:\n\t@echo ok\n")
+        self.write_package(scripts={"lint": "eslint .", "test": "vitest"}, devDependencies={"vitest": "^2"})
+
+        self.assertEqual("npm run lint && make test", self.discovered())
+
+    def test_a_package_test_script_wins_over_a_pytest_guess(self):
+        self.write_package(scripts={"test": "node --test"})
+        (self.repo / "tests").mkdir()
+
+        self.assertEqual("npm test", self.discovered())
 
     def test_a_package_check_script_runs_with_the_package_manager_of_the_lock_file(self):
         self.write_package(scripts={"check": "tsc"})

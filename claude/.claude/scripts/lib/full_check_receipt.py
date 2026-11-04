@@ -63,7 +63,7 @@ def append(repo, row):
     path = receipts_path(repo)
     if path is None:
         return
-    stamp = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+    stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     script_utils.append_jsonl(path, {"ts": stamp, **row})
 
 

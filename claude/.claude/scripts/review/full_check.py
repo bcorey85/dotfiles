@@ -63,7 +63,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 
@@ -84,6 +83,7 @@ from check_output import (
 )
 from linked_installs import VENV_FOLDERS, holds_editable_install, import_path_enters_repo
 from test_run_output import MAX_RUNNER_SUMMARIES, runner_summaries
+from toml_file import read_toml
 from worktree_snapshot import CHANGE_KINDS, changes_since, take
 
 FULL_SUITE_IN_CI = "Full suite: CI"
@@ -254,16 +254,6 @@ def requirements_txt_names(repo_path):
                 continue
             names.add(distribution_name(line))
     return names
-
-
-def read_toml(path):
-    if not path.is_file():
-        return {}
-
-    try:
-        return tomllib.loads(path.read_text(errors="replace"))
-    except tomllib.TOMLDecodeError:
-        return {}
 
 
 def pyproject_names(repo_path):

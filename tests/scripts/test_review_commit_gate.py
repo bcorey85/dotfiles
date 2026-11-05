@@ -834,10 +834,10 @@ class ReviewedWorkCommitTest(GateCase):
     def commit(self, command, cwd=None, **extra):
         return self.bash(command, cwd=str(cwd or self.repo), **extra)
 
-    def record_reviewed_tree(self):
+    def record_reviewed_tree(self, session="s1"):
         """Credit the stored review's tree, as /code's review-loop does when it ends clean."""
         record = ("import handback, sys\n"
-                  "reason, repo = handback.record_clean_review('s1')\n"
+                  f"reason, repo = handback.record_clean_review({session!r})\n"
                   "sys.exit(reason or (0 if repo else 'no repo'))")
         env = {"PATH": os.environ["PATH"], "HOME": str(self.home),
                "PYTHONPATH": f"{self.scripts / 'review'}:{self.scripts / 'lib'}"}
@@ -861,6 +861,30 @@ class ReviewedWorkCommitTest(GateCase):
         reviewed = pathlib.Path(repo or self.repo)
         self.seed_handback("converged", repo=str(reviewed.resolve()))
         self.record_reviewed_tree()
+
+    def review_converged_in_another_session(self, session="fork"):
+        """A converged review of self.repo recorded under another session id: a /code fork, or the session before a
+        /clear or a resume."""
+        self.seed_handback("converged", session=session, repo=str(self.repo.resolve()))
+        self.record_reviewed_tree(session=session)
+
+    def test_a_review_that_converged_in_another_session_credits_a_commit_of_the_same_tree(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged_in_another_session()
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_review_that_converged_in_another_session_does_not_credit_a_tree_edited_after_it(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged_in_another_session()
+        (self.repo / "base.py").write_text("changed again\n")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_review_that_converged_in_another_session_does_not_credit_another_repo(self):
+        repo_b = self.make_repo("repo-b")
+        (self.repo / "base.py").write_text("changed\n")
+        (repo_b / "base.py").write_text("changed\n")
+        self.review_converged_in_another_session()
+        self.assert_commit_denied(self.commit("git commit -a -m x", cwd=repo_b))
 
     def test_a_review_of_repo_b_from_a_session_in_repo_a_credits_b_and_not_a(self):
         repo_b = self.make_repo("repo-b")
@@ -918,6 +942,8 @@ class ReviewedWorkCommitTest(GateCase):
         self.assertEqual(1, len(recorded))
         bare_hex = {top: value.removeprefix("sha256:") for top, value in recorded.items()}
         reviewed_file.write_text(json.dumps(bare_hex) + "\n")
+        shared_file = self.state_dir / "reviewed-trees.json"
+        shared_file.write_text(json.dumps({top: [value] for top, value in bare_hex.items()}) + "\n")
 
         self.assert_commit_denied(self.commit("git commit -a -m x"))
 
@@ -1109,6 +1135,10 @@ class ReviewedWorkCommitTest(GateCase):
     def test_a_task_notification_after_the_order_leaves_it_standing(self):
         notification = self.user_prompt("<task-notification>done</task-notification>")
         transcript = self.write_transcript(self.user_prompt("[no-review] commit this"), notification)
+        self.assert_silent(self.commit("git commit --allow-empty -m x", transcript_path=transcript))
+
+    def test_the_marker_spelled_with_a_space_orders_the_commit_too(self):
+        transcript = self.write_transcript(self.user_prompt("[no review] /commit"))
         self.assert_silent(self.commit("git commit --allow-empty -m x", transcript_path=transcript))
 
     def test_a_later_prompt_without_the_marker_ends_the_order(self):

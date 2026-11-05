@@ -92,6 +92,11 @@ for path, text in edits.items():
     with open(path, "w") as handle:
         handle.write(text)
 
+if reply.get("commit_all"):
+    subprocess.run(["git", "add", "-A"], check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "mid-loop"],
+                   check=True)
+
 usage = {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 3, "cache_read_input_tokens": 2}
 print(json.dumps({"result": reply.get("result", ""), "session_id": "fake-session", "usage": usage}))
 sys.exit(reply.get("exit", 0))
@@ -481,6 +486,20 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(1, keys.count("code-reviewer"))
         self.assertEqual("", packet["scoped_tests"])
         self.assertEqual(packet["files_touched"], ["app.py"])
+
+    def test_a_commit_of_the_change_while_reviewers_run_does_not_read_as_a_fix_that_removed_it(self):
+        added = self.start_with_a_twelve_line_change()
+        fixed = APP_BEFORE + added.replace("mechanism = 0", "mechanism = 100")
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW, "commit_all": True}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": fixed}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(git(self.repo, "log", "-1", "--format=%s"), "mid-loop")
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
 
     def test_a_fix_coder_that_deletes_an_untracked_file_it_did_not_make_finds_it_restored_and_noted(self):
         scratch = self.repo / "scratch.txt"
@@ -1317,6 +1336,23 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["full_check"], "passed")
         self.assertTrue((self.repo / "app.py").read_text().endswith("# formatted\n"))
 
+    def test_a_converged_loop_formats_the_reviewed_files_before_its_full_check_so_a_later_format_changes_nothing(self):
+        self.write_fake_ruff_that_appends_a_formatted_marker()
+        self.commit_files({"ruff.toml": "[format]\n"})
+        check = "grep -q '# formatted' app.py || { echo 'FAIL: unformatted'; exit 1; }; echo '2 passed in 1s'"
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, quality_check=check)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["full_check"]), ("converged", "passed"))
+        self.assertNotIn("coder", self.call_keys())
+        self.assertIn("app.py", packet["files_touched"])
+        self.assertTrue((self.repo / "app.py").read_text().endswith("# formatted\n"))
+
     def test_a_formatter_that_changes_nothing_leaves_the_failure_a_blocker_with_no_third_check_run(self):
         runs = self.scratch / "runs.log"
         check = f"{FAILS_ONLY_WITH_THE_DIFF}echo run >> {runs}; echo 'FAIL: test_x'; exit 1"
@@ -1349,7 +1385,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "critical-blocker")
         # The first check, the recheck after the repair and the recheck after the formatter.
         self.assertEqual(len(runs.read_text().splitlines()), 3)
-        self.assertIn("FAIL: test_x 1", packet["blockers"][0])
+        # One marker from the format before the first check, one from the formatter after the repair.
+        self.assertIn("FAIL: test_x 2", packet["blockers"][0])
 
     def test_every_coder_prompt_tells_the_coder_to_run_only_the_tests_for_its_changed_files(self):
         spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)

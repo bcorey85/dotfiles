@@ -51,9 +51,9 @@ in it.
 The session stays dirty; a later commit that ships code is denied again.
 
 A dirty session still commits in four more cases, each checked against something a subagent cannot write:
-  - the user's latest prompt in the main transcript starts with `[no-review]` (the user ordered this turn's commits
-    without review; a task notification, a peer session's message, a compaction summary, a `!` shell echo and a tool
-    result are not the user's prompt and are skipped)
+  - the user's latest prompt in the main transcript starts with `[no-review]` or `[no review]` (the user ordered this
+    turn's commits without review; a task notification, a peer session's message, a compaction summary, a `!` shell
+    echo and a tool result are not the user's prompt and are skipped)
   - the commit concludes a merge (the repo it commits in has a MERGE_HEAD)
   - the working tree of the repo it commits in is the tree a converged review covered (reviewed_tree.py), notes
     paths (notes_paths.py) left out, so work that converged in /code's review-loop, or in /review, commits after a
@@ -144,7 +144,7 @@ OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 # For a command shlex cannot read: git, then only option-like words with an optional value each, then commit.
 UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_VALUE + r")?)*[ \t]+commit\b(?!-)")
 GIT_TIMEOUT_SECONDS = 3
-NO_REVIEW_MARKER = "[no-review]"
+NO_REVIEW_MARKERS = ("[no-review]", "[no review]")
 # The input key that names the edited file, for each tool a coder edits with.
 EDIT_TOOL_PATH_KEYS = {"Edit": "file_path", "MultiEdit": "file_path", "Write": "file_path",
                        "NotebookEdit": "notebook_path"}
@@ -658,7 +658,7 @@ def user_ordered_no_review(root):
     if not transcript_path:
         return False
     latest_prompt = user_prompts.latest_prompt(transcript_path)
-    return latest_prompt is not None and latest_prompt.lstrip().startswith(NO_REVIEW_MARKER)
+    return latest_prompt is not None and latest_prompt.lstrip().startswith(NO_REVIEW_MARKERS)
 
 
 def readable_command(command):

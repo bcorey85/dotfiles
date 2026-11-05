@@ -165,14 +165,27 @@ class ReviewerRequestTest(unittest.TestCase):
         transcript.write_text("".join(json.dumps(record) + "\n" for record in records))
         transcript.with_suffix(".meta.json").write_text(json.dumps({"finished": True}))
 
-    def test_a_running_loop_that_asks_for_a_reviewer_prints_the_dispatch_and_both_wait_commands(self):
+    def write_reviewer(self, agent_id, records, finished):
+        subagents = self.projects / "proj/session/subagents"
+        subagents.mkdir(parents=True, exist_ok=True)
+        transcript = subagents / f"agent-{agent_id}.jsonl"
+        transcript.write_text("".join(json.dumps(record) + "\n" for record in records))
+        transcript.with_suffix(".meta.json").write_text(json.dumps({"finished": finished}))
+
+    def run_main(self, *words):
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors), \
+                mock.patch.object(code_wait.pathlib.Path, "cwd", return_value=self.repo):
+            code = code_wait.main(["code_wait.py", *words])
+        return code, output.getvalue(), errors.getvalue()
+
+    def test_a_running_loop_that_asks_for_a_reviewer_prints_the_dispatch_and_the_review_wait(self):
         lines = printed(code_wait.wait_review, self.repo).splitlines()
 
         self.assertEqual(lines[0], "ACTION: dispatch-reviewer")
         self.assertIn("agent code-reviewer", lines[1])
         self.assertIn(self.entries[0]["report_file"], lines[1])
-        self.assertIn("code_wait.py agent <agentId> --report-file", lines[-1])
-        self.assertIn("code_wait.py review", lines[-1])
+        self.assertIn("code_wait.py review <agentId> <report file>", lines[-1])
 
     def test_an_answered_request_lets_the_review_wait_go_on(self):
         pathlib.Path(self.entries[0]["report_file"]).write_text("## Fix\nNone\n")
@@ -190,22 +203,76 @@ class ReviewerRequestTest(unittest.TestCase):
                                                                                      "text": review}]}}])
         report_file = self.entries[0]["report_file"]
 
-        output = printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID, "--report-file", report_file])
+        code, output, _ = self.run_main("review", AGENT_ID, report_file)
 
-        self.assertEqual(output.strip(), review.strip())
+        self.assertEqual((code, output.strip()), (0, code_wait.STILL_WORKING))
         self.assertEqual(pathlib.Path(report_file).read_text(), review)
         self.assertEqual(code_wait.open_reviewer_requests(self.repo), [])
+
+    def test_a_named_reviewer_still_at_work_is_no_new_request(self):
+        self.write_reviewer(AGENT_ID, [], finished=False)
+
+        code, output, _ = self.run_main("review", AGENT_ID, self.entries[0]["report_file"])
+
+        self.assertEqual((code, output.strip()), (0, code_wait.STILL_WORKING))
+
+    def test_each_finished_reviewer_writes_its_report_while_a_slow_one_works(self):
+        entries = code_wait.reviewer_dispatch.write_round(
+            self.loop_dir, 2, [("review2-code-reviewer", "code-reviewer", "Review app.py."),
+                               ("review2-test-reviewer", "test-reviewer", "Review the tests.")])
+        slow_id = "a" + "1" * 16
+        self.write_reviewer(AGENT_ID, [{"type": "assistant", "message": {"content": [{"type": "text",
+                                                                                      "text": "fast"}]}}], True)
+        self.write_reviewer(slow_id, [], finished=False)
+        pathlib.Path(self.entries[0]["report_file"]).write_text("round one\n")
+
+        code, output, _ = self.run_main("review", AGENT_ID, entries[0]["report_file"], slow_id,
+                                        entries[1]["report_file"])
+
+        self.assertEqual((code, output.strip()), (0, code_wait.STILL_WORKING))
+        self.assertEqual(pathlib.Path(entries[0]["report_file"]).read_text(), "fast")
+        self.assertFalse(pathlib.Path(entries[1]["report_file"]).exists())
 
     def test_a_reviewer_with_no_report_writes_nothing_and_exits_one(self):
         self.write_finished_reviewer([{"type": "assistant", "message": {"content": []}}])
         report_file = self.entries[0]["report_file"]
 
-        with contextlib.redirect_stdout(io.StringIO()) as output:
-            code = code_wait.main(["code_wait.py", "agent", AGENT_ID, "--report-file", report_file])
+        code, output, _ = self.run_main("review", AGENT_ID, report_file)
 
         self.assertEqual(code, 1)
-        self.assertIn(code_wait.NO_REPORT, output.getvalue())
+        self.assertIn(code_wait.NO_REPORT, output)
+        self.assertIn(AGENT_ID, output)
         self.assertFalse(pathlib.Path(report_file).exists())
+
+    def test_ids_joined_into_one_word_stop_loudly(self):
+        # zsh does not split an unquoted $VAR, so a string of pairs arrives as one argument.
+        joined = f"{AGENT_ID} {self.entries[0]['report_file']}"
+
+        code, _, errors = self.run_main("review", joined, self.entries[0]["report_file"])
+
+        self.assertEqual(code, 2)
+        self.assertIn("is not an agent id", errors)
+
+    def test_an_odd_word_count_stops_loudly(self):
+        code, _, errors = self.run_main("review", AGENT_ID)
+
+        self.assertEqual(code, 2)
+        self.assertIn("pairs", errors)
+
+    def test_a_report_file_no_request_names_stops_loudly(self):
+        code, _, errors = self.run_main("review", AGENT_ID, str(self.loop_dir / "other.report.md"))
+
+        self.assertEqual(code, 2)
+        self.assertIn("no report file", errors)
+
+    def test_a_bad_agent_id_for_agent_stops_loudly(self):
+        code, _, errors = self.run_main("agent", f"{AGENT_ID} --report-file x")
+
+        self.assertEqual(code, 2)
+        self.assertIn("is not an agent id", errors)
+
+    def test_every_wait_ends_before_the_harness_backgrounds_the_call(self):
+        self.assertLess(code_wait.WAIT_SECONDS + code_wait.POLL_SECONDS, 180)
 
 
 if __name__ == "__main__":

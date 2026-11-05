@@ -107,6 +107,35 @@ def package_part_commands(repo_dir, guesses_tests):
     return commands
 
 
+def wrapper_shell(script):
+    """The shell a `#!` line names, for a script whose `#!` line names no Python (`#!/usr/bin/env bash` gives bash),
+    else None."""
+    with script.open(errors="replace") as script_file:
+        first_line = script_file.readline().strip()
+    if not first_line.startswith("#!") or "python" in first_line:
+        return None
+
+    shebang_words = first_line[2:].split()
+    if not shebang_words:
+        return None
+    program = pathlib.PurePosixPath(shebang_words[0]).name
+    if program == "env" and len(shebang_words) > 1:
+        return shebang_words[1]
+    return program
+
+
+def manage_py_words(repo_dir, runner):
+    """The words that run the repo-root manage.py through the project runner: its shell for a shell wrapper (the
+    runner puts its environment's python on PATH for the wrapper), else python."""
+    shell = wrapper_shell(repo_dir / "manage.py")
+    if shell:
+        environment_words = [] if runner[-1:] == ["-m"] else runner
+        return [*environment_words, shell, "manage.py"]
+
+    python_words = runner[:-1] if runner[-1:] == ["-m"] else [*runner, "python"]
+    return [*python_words, "manage.py"]
+
+
 def python_part_commands(repo_dir, guesses_tests):
     """The ruff check and, when `guesses_tests`, the tests of a Python repo: `manage.py test` for a Django repo with
     no pytest-django settings, else pytest."""
@@ -126,8 +155,7 @@ def python_part_commands(repo_dir, guesses_tests):
         return commands
 
     if runs_django:
-        python_words = runner[:-1] if runner[-1:] == ["-m"] else [*runner, "python"]
-        commands.append(shlex.join([*python_words, "manage.py", "test", "--noinput"]))
+        commands.append(shlex.join([*manage_py_words(repo_dir, runner), "test", "--noinput"]))
     else:
         commands.append(shlex.join([*runner, "pytest"]))
     return commands

@@ -112,16 +112,20 @@ def read_manifest(manifest_path):
     return requests
 
 
-def pending_requests(loop_dir):
-    """Every request of every round whose report file holds no text yet."""
+def all_requests(loop_dir):
+    """Every request of every round."""
     folder = requests_dir(loop_dir)
     if not folder.is_dir():
         return []
-    pending = []
+    requests = []
     for manifest_path in sorted(folder.glob("round-*.json")):
-        requests = read_manifest(manifest_path)
-        pending += [entry for entry in requests if not report_text(entry["report_file"]).strip()]
-    return pending
+        requests += read_manifest(manifest_path)
+    return requests
+
+
+def pending_requests(loop_dir):
+    """Every request of every round whose report file holds no text yet."""
+    return [entry for entry in all_requests(loop_dir) if not report_text(entry["report_file"]).strip()]
 
 
 def request_lines(pending):

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-838 changes
+840 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,6 +31,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [a ruled plan-structure ask logs as fixed with who ruled](notes/2026-11-05-a-ruled-plan-structure-ask-logs-as-fixed-with-who.md) [skill/refactor] refactor_flow.py log accepts ruled_by (user or session) on an ask finding, lets a ruled plan-structure ask log as actioned=fixed, and sends ask_decided_by on its finding row.
+* [refactor log escape rows carry the finding's miss reason](notes/2026-11-05-refactor-log-escape-rows-carry-the-finding-s-miss.md) [skill/refactor] refactor_flow.py log requires a miss_reason on each escape finding, checks it through log-escape --check before writing, and sends it on the escape row in place of a hard-coded unknown.
 * [Compacted session is reminded of a review loop waiting on its reviewers](notes/2026-11-05-compacted-session-is-reminded-of-a-review-loop.md) [script/reviewer-dispatch, script/waiting-review-launch] A new SessionStart hook on resume and compact prints the open dispatch-reviewer lines of every launched review loop of the repo that still runs, so a compaction no longer loses the reviewers and lets the loop time out unseen.
 * [Permission-question Stop hook lets asks before irreversible app actions through](notes/2026-11-05-permission-question-stop-hook-lets-asks-before.md) [script/staged-claim-gate] permission_question.OUTWARD_STEP names void, cancel, refund, revoke, submit, approve, archive, remove, overwrite, wipe, purge, truncate and destroy, so the Stop hook no longer sends back an ask before such a step.
 * [Plan-verifier dispatch names the repo and HEAD to verify](notes/2026-11-05-plan-verifier-dispatch-names-the-repo-and-head-to.md) [script/verify-prep, agent/plan-verifier] verify-prep puts repo: and head: lines in the plan-verifier payload, and the verifier runs every command in that repo and stops when its HEAD differs.

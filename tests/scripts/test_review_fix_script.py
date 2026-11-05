@@ -801,7 +801,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["asks-done", "accepted", "rejected"], cwd=other_repo)
 
         self.assertEqual(code, 2, output)
-        self.assertIn(f"no packet was processed in {other_repo}/.git/review-fix", output)
+        resolved_repo = other_repo.resolve()
+        self.assertIn(f"no packet was processed in {resolved_repo}/.git/review-fix", output)
         self.assertIn("run this call there", output)
 
     def test_a_packet_rerun_from_another_repo_does_not_offer_asks_already_logged(self):

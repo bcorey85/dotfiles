@@ -17,14 +17,16 @@ Otherwise read-only except `log`, which appends rows through the existing writer
 resolved --input path, under ~/.claude/state/refactor-flow/ and skips a row already written for that
 file. Use one input file per /refactor invocation and re-run `log` on it.
 The state keeps the newest 50 input paths. The writers own
-the value vocabulary (class, guard, result, ...); this script checks shape only.
+the value vocabulary (class, guard, result, ...); this script checks shape only, and refuses
+`miss_reason=unknown` (a model writes the input).
 
 Input file (JSON; `log` reads all of it, `handoff` reads only `handoff` and `modifier`):
   {"finder": "smell-reviewer", "lane": "code", "result": "NEEDS CHANGES",
    "target": ["src/orders"],   (audit and simplify: dirs; simplify: the files the prep listed)
    "findings": [{"class": "duplication", "disposition": "fix", "actioned": "fixed",
                  "file": "a.py", "line": 3, "desc": "...", "severity": "medium",
-                 "escape": true}],
+                 "escape": true, "miss_reason": "overlooked"}],   (miss_reason: escape findings only)
+   (ruled_by: "user"|"session", disposition=ask only; lets a plan_structure finding be logged actioned=fixed)
    "guards": {"duplication": "convention"},
    "handoff": {"files": [{"path": "a.py", "change": "..."}],   (optional: the printed files are the ones git shows
                 changed against HEAD; a listed path keeps its `change`, any other gets a stock line)
@@ -519,9 +521,17 @@ def validate_finding(finding, index, mode):
     plan_structure = finding.get("plan_structure", False)
     if not isinstance(plan_structure, bool):
         raise RefactorFlowError(f"{where}: `plan_structure` must be true or false (got {plan_structure!r})")
-    if plan_structure and (finding["disposition"] != "ask" or finding["actioned"] == "fixed"):
+    ruled_by = finding.get("ruled_by")
+    if ruled_by is not None and not plan_format.is_ruling_by(ruled_by):
+        raise RefactorFlowError(f"{where}: `ruled_by` must be `user` or `session` (got {ruled_by!r})")
+    if plan_structure and finding["disposition"] != "ask":
         raise RefactorFlowError(f"{where}: a {PLAN_STRUCTURE_TAG} finding is an ask the user answers: "
-                                f"disposition=ask, never actioned=fixed")
+                                f"disposition=ask")
+    if ruled_by is not None and finding["disposition"] != "ask":
+        raise RefactorFlowError(f"{where}: `ruled_by` names who ruled on an ask: disposition=ask")
+    if plan_structure and finding["actioned"] == "fixed" and ruled_by is None:
+        raise RefactorFlowError(f"{where}: a {PLAN_STRUCTURE_TAG} finding is an ask the user answers: "
+                                f"never actioned=fixed without `ruled_by` (`user` or `session`)")
     if not isinstance(finding.get("escape", False), bool):
         raise RefactorFlowError(f"{where}: `escape` must be true or false (got {finding['escape']!r})")
     if not finding.get("escape"):
@@ -532,6 +542,11 @@ def validate_finding(finding, index, mode):
     if mode == "simplify" and finding["class"] != "complexity":
         raise RefactorFlowError(f"{where}: simplify escape rows must be class=complexity")
     require_text(finding, "severity", where)
+    # The writer's --check owns the label list; a model writes this input, so `unknown` is refused here.
+    miss_reason = finding.get("miss_reason")
+    if not isinstance(miss_reason, str) or miss_reason in ("", "unknown"):
+        raise RefactorFlowError(f"{where}: an escape finding needs `miss_reason`, a label from "
+                                f"escape-ratchet.md other than `unknown` (got {miss_reason!r})")
 
 
 def validate_handoff(handoff):
@@ -669,8 +684,8 @@ def build_writes(mode, base, validated_log):
                 continue
             pairs = ["stage_found=refactor", "gate_missed=review", f"class={finding['class']}",
                      f"severity={finding['severity']}", f"lane={validated_log['lane']}",
-                     f"guard={guards[finding['class']]}", "miss_reason=unknown", f"desc={finding['desc']}",
-                     f"file={finding['file']}"]
+                     f"guard={guards[finding['class']]}", f"miss_reason={finding['miss_reason']}",
+                     f"desc={finding['desc']}", f"file={finding['file']}"]
             if finding["line"]:
                 pairs.append(f"line={finding['line']}")
             writes.append((LOG_ESCAPE, pairs))
@@ -682,10 +697,13 @@ def build_writes(mode, base, validated_log):
         writes.append((LOG_FINDING, ["kind=run", *common, f"gate={finder}", f"n_findings={len(findings)}",
                                      f"diff_loc={diff_loc}", f"result={validated_log['verdict']}"]))
         for finding in findings:
-            writes.append((LOG_FINDING, ["kind=finding", *common, f"gate={finder}",
-                                         f"disposition={finding['disposition']}", f"class={finding['class']}",
-                                         f"file={finding['file']}", f"line={finding['line']}",
-                                         f"actioned={finding['actioned']}", f"desc={finding['desc']}"]))
+            pairs = ["kind=finding", *common, f"gate={finder}",
+                     f"disposition={finding['disposition']}", f"class={finding['class']}",
+                     f"file={finding['file']}", f"line={finding['line']}",
+                     f"actioned={finding['actioned']}", f"desc={finding['desc']}"]
+            if finding.get("ruled_by"):
+                pairs.append(f"ask_decided_by={finding['ruled_by']}")
+            writes.append((LOG_FINDING, pairs))
     return writes
 
 
@@ -762,14 +780,16 @@ def write_rows(input_path, pending):
     return refused
 
 
-def check_run_rows(writes):
-    """The writer owns the run row's vocabulary; its --check refuses a bad row before anything is written."""
+def check_writer_rows(writes):
+    """The writer owns the run and escape rows' vocabulary; its --check refuses a bad row before anything is written."""
     for script, pairs in writes:
-        if script != LOG_FINDING or pairs[0] != "kind=run":
+        is_run_row = script == LOG_FINDING and pairs[0] == "kind=run"
+        if script != LOG_ESCAPE and not is_run_row:
             continue
         done = subprocess.run(["bash", script, "--check", *pairs], capture_output=True, text=True)
         if done.returncode != 0:
-            raise RefactorFlowError(f"writer refused the run row, nothing written:\n{done.stderr.strip()}")
+            kind = "escape" if script == LOG_ESCAPE else "run"
+            raise RefactorFlowError(f"writer refused the {kind} row, nothing written:\n{done.stderr.strip()}")
 
 
 def check_targets_match(mode, validated_log):
@@ -807,7 +827,7 @@ def log_verb(opts):
         print(err)
         return 0
 
-    check_run_rows(writes)
+    check_writer_rows(writes)
 
     input_path = str(Path(opts.input).resolve())
     already_written = written_digests(input_path)

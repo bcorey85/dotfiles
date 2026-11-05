@@ -479,7 +479,14 @@ if (runMode) {
     return tier === "SKIM" ? "low blast radius (types, styles, docs)" : "semantic change, no tripwire";
   };
 
+  // The jump queue goes first so a tool output cut at the end still keeps it.
+  const jumpRows = queue
+    .filter(({ entry }) => entry.line)
+    .map(({ tier, entry }) =>
+      JSON.stringify({ tier, path: entry.path, line: entry.line, reason: reasonText(tier, entry) }),
+    );
   const report = ["## Stage", ""];
+  report.push("```jump-queue", ...jumpRows, "```", "");
   report.push(queueCount === 0 ? "Read (0): nothing left to read." : `Read (${queueCount}), in blast-radius order:`);
   for (const [tier, entries] of queueTiers) {
     if (entries.length === 0) continue;
@@ -499,12 +506,6 @@ if (runMode) {
   }
   report.push("");
 
-  const jumpRows = queue
-    .filter(({ entry }) => entry.line)
-    .map(({ tier, entry }) =>
-      JSON.stringify({ tier, path: entry.path, line: entry.line, reason: reasonText(tier, entry) }),
-    );
-  report.push("```jump-queue", ...jumpRows, "```", "");
   report.push(
     "Still yours: write the one-line note for each jump-queue row from the diff, run nvim-jump with the rows in order, and report any disagreement with a tier.",
   );

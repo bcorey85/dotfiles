@@ -14,7 +14,7 @@ Fix the queue items below. Each phase starts with a test that fails on the curre
 
 - [x] Phase 1: refactor_flow log takes the miss reason and a session ruling
 - [x] Phase 2: review_fix decide works from the hand-back when no packet ran
-- [ ] Phase 3: branch-recap reads the jump queue and refreshes the ledger itself (risk: low)
+- [x] Phase 3: branch-recap reads the jump queue and refreshes the ledger itself (risk: low)
 - [ ] Phase 4: refactor_flow log accepts a simplify target the branch deleted (risk: low)
 
 ## Phase 1: refactor_flow log takes the miss reason and a session ruling

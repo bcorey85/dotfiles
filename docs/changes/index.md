@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-841 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+842 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-05, [review_fix decide rules from the hand-back when no packet ran](notes/2026-11-05-review-fix-decide-rules-from-the-hand-back-when-no.md).
+Latest change: 2026-11-05, [branch-recap reads the jump queue and refreshes the ledger itself](notes/2026-11-05-branch-recap-reads-the-jump-queue-and-refreshes.md).
 
 ## Top gains
 

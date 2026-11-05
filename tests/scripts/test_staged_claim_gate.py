@@ -422,6 +422,18 @@ class PermissionQuestionTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_question_about_filing_a_ticket_or_messaging_someone_passes(self):
+        for message in ("The bug sits in the billing service. Want me to file a Jira ticket for it?",
+                        "The branch is pushed. Should I open a pull request?",
+                        "Should I open a PR for it?",
+                        "The team owns that check. Do you want me to tell them on Slack?",
+                        "The reviewer asked twice. Want me to reply on the thread?"):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_question_about_a_local_ticket_note_still_sent_back(self):
+        self.assert_sent_back("The plan cites the old ticket number. Want me to fix the reference?")
+
     def test_a_question_that_asks_for_a_choice_or_sits_early_passes(self):
         long_tail = " The fix keeps every invoice line in the sum, and the test covers two lines." * 8
         for message in ("Which name do you prefer, totals or sums?", "Do you want the short or the long report?",

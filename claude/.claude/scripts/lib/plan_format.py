@@ -1040,6 +1040,65 @@ def ticket_criteria(ticket_text, name="ticket"):
     )
 
 
+# The ticket's comments. A comment can add or change a criterion, so verify-prep lists each one as a label.
+COMMENTS_HEADING = re.compile(r"^(#{2,3})\s+comments\s*:?\s*$", re.I)
+COMMENTS_FIELD = re.compile(r"^[*_]*comments:?[*_]*:?\s*(.*)$", re.I)
+COMMENT_LABEL = "Comment #"
+NO_COMMENTS = re.compile(r"^[*_]*(?:none|no comments)\.?[*_]*$", re.I)
+
+
+def comment_entries(texts):
+    return [{"number": n, "label": f"{COMMENT_LABEL}{n}", "text": text} for n, text in enumerate(texts, 1)]
+
+
+def field_comment_texts(lines):
+    """The values of `Comments: <text>` field lines, leaving out `none`."""
+    texts = []
+    for line in lines:
+        field = COMMENTS_FIELD.match(line.strip())
+        if not field:
+            continue
+        value = field.group(1).strip()
+        if value and not NO_COMMENTS.match(value):
+            texts.append(value)
+    return texts
+
+
+def ticket_comments(ticket_text, name="ticket"):
+    """Comments from a persisted ticket, numbered in order and labelled `Comment #n`. The ticket holds them under a
+    `## Comments` heading, one `###` heading per comment (author and date) with its body below; a section with no
+    sub-heading is one comment. `none` there, or a `Comments: none` field line, means no comments. Text before the
+    first sub-heading raises PlanFormatError: it belongs to no comment."""
+    lines = ticket_text.splitlines()
+    start = next((index for index, line in enumerate(lines) if COMMENTS_HEADING.match(line)), None)
+    if start is None:
+        return comment_entries(field_comment_texts(lines))
+
+    body = section_body(lines, start)
+    words = [line.strip() for line in body if line.strip()]
+    if not words or (len(words) == 1 and NO_COMMENTS.match(words[0])):
+        return []
+
+    sub_level = heading_level(lines[start]) + 1
+    has_sub_headings = any(heading_level(line) == sub_level for line in body)
+    if not has_sub_headings:
+        return comment_entries([" ".join(words)])
+
+    comments = []
+    for offset, line in enumerate(body):
+        if heading_level(line) == sub_level:
+            comments.append([line.lstrip("#").strip()])
+        elif not line.strip():
+            continue
+        elif not comments:
+            raise PlanFormatError(f"{name}:{start + 2 + offset}: text under `{lines[start].strip()}` before the "
+                                  f"first `{'#' * sub_level}` comment heading belongs to no comment: "
+                                  f"{line.strip()[:80]}")
+        else:
+            comments[-1].append(line.strip())
+    return comment_entries([" ".join(parts) for parts in comments])
+
+
 # Ticket-criteria drift. A plan or criteria file never cuts, narrows, splits or rewords a ticket criterion without the
 # user's sign-off, so each ticket criterion's text must be the text of some AC in acceptance-criteria.md.
 SIGN_OFF = re.compile(r"sign-?off", re.I)

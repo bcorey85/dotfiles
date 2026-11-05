@@ -25,3 +25,5 @@ No Jira MCP: **never guess ticket content.** Required callers stop; optional not
 ## Persisting to disk (callers that write the ticket to a file)
 
 Write **raw fields only, verbatim** — a persisted ticket is a source document, not your reading.
+
+Write the comments under `## Comments`, one `### <author> — <date>` heading each with its body verbatim below; write `none` under the heading when there are none.

@@ -158,7 +158,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.store_dir = self.temp_root / "store"
         self.fake_jump = self.fake_command("nvim-jump", f'echo "$@" >> {self.jump_log}\nexit "${{JUMP_EXIT:-0}}"')
         self.fake_gh = self.fake_command(
-            "gh", f'echo "$@" >> {self.gh_log}\ncase "$1 $2" in "repo view") echo acme/web;; "pr view") echo 7;; esac\n'
+            "gh", f'echo "$@" >> {self.gh_log}\ncase "$1 $2" in "repo view") echo acme/web;; '
+                  '"pr view") echo 7; exit "${GH_PR_VIEW_EXIT:-${GH_EXIT:-0}}";; esac\n'
                   'exit "${GH_EXIT:-0}"')
         self.git("init", "-q")
         (self.repo / "README.md").write_text("hi\n")
@@ -1246,6 +1247,22 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("NOT posted", output)
         self.assertIn("Fixed 2, nits 1, skipped 1", output)
+
+    def test_an_explicit_pr_number_posts_the_aikido_replies_where_gh_cannot_name_the_pr(self):
+        code, output = self.packet(CONVERGED, "--aikido", "src/orders.ts:42=111", "--pr", "12", skill="fix",
+                                   GH_PR_VIEW_EXIT="1")
+        self.assertEqual(code, 0, output)
+        calls = self.gh_log.read_text().splitlines()
+        self.assertFalse([call for call in calls if call.startswith("pr view")])
+        posts = [call for call in calls if call.startswith("api")]
+        self.assertEqual(len(posts), 1)
+        self.assertIn("repos/acme/web/pulls/12/comments/111/replies", posts[0])
+        self.assertNotIn("NOT posted", output)
+
+    def test_a_pr_number_that_is_not_a_number_fails_loudly(self):
+        code, output = self.packet(CONVERGED, "--aikido", "src/orders.ts:42=111", "--pr", "#12", skill="fix")
+        self.assertEqual(code, 2)
+        self.assertIn("--pr", output)
 
     def test_aikido_target_without_a_numeric_comment_id_fails_loudly(self):
         code, output = self.packet(CONVERGED, "--aikido", "src/orders.ts:42=abc", skill="fix")

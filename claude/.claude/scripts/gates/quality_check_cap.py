@@ -10,7 +10,9 @@ of 126 or 127 (the shell found no command to run), so the rerun is allowed. Exit
 (git and PHP fatal errors) and are recorded. A check is recorded only when it surely ran: after a failure, a check
 behind `&&` or `||` may never have started, so it is not recorded; after a success, a check behind `||` is not.
 A check whose output redirection the shell could not open (a redirect into a missing folder, `> gone/x.log`)
-never started, so it is not recorded. A run record keeps the run's start in a line, so an edit made while the
+never started, so it is not recorded. Nor is a failed run whose output says it stopped on a path that does not
+exist (check_output.stopped_on_missing_path: a file list passed as one word). A run record keeps the run's start
+in a line, so an edit made while the
 check ran allows the rerun; the record's own time is the run's end. A command with a formatter that rewrites files
 (`cargo fmt`, `prettier --write`, `ruff format`...) or a git call that rewrites the tree (`git merge`, `checkout`,
 `reset`...) is never denied when every check in it runs only after the formatter succeeded (joined to it by `&&`,
@@ -40,6 +42,7 @@ import sys
 import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import check_output
 import check_scope
 import hook_input
 import reviewed_tree
@@ -461,8 +464,11 @@ def run(raw, state):
     if event == "PostToolUseFailure":
         if truthy(jq_get(root_json, "is_interrupt")):
             return
-        exit_code = exit_code_in_error_text(jq_field(root_json, "error"))
+        error_text = jq_field(root_json, "error")
+        exit_code = exit_code_in_error_text(error_text)
         if exit_code in SIGNAL_EXIT_CODES or exit_code in NOT_STARTED_EXIT_CODES:
+            return
+        if check_output.stopped_on_missing_path(error_text):
             return
 
     command = jq_field(root_json, "tool_input", "command")

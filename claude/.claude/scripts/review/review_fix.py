@@ -11,6 +11,7 @@ still judges.
       --source conversation|cc|handoff (fix) where the findings came from; escapes log only for conversation
       --escape "file=<p>|class=<c>|severity=<s>|gate_missed=<g>|guard=<r>|desc=<one line>"   (fix, repeatable)
       --aikido "<path>:<line>=<comment_id>"                                                 (fix, repeatable)
+      --pr <number>  (fix) the PR the Aikido comments are on; without it gh asks the current branch
       With empty stdin, `packet` reads this session's latest review-loop hand-back: the loop script stores it
       itself (write_handback_rows) after `launch`, and handback.py's hook stores it for a dispatched agent. It
       refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
@@ -194,12 +195,15 @@ def packet_arguments(argv):
     parser.add_argument("--source", default="handoff", choices=SOURCES)
     parser.add_argument("--escape", action="append", default=[])
     parser.add_argument("--aikido", action="append", default=[])
+    parser.add_argument("--pr")
     options = parser.parse_args(argv)
+    if options.pr is not None and not options.pr.isdigit():
+        raise UsageError(f"--pr {options.pr!r} is not a PR number")
     options.lane = options.lane or ("code" if options.skill == "fix" else "none")
     options.escapes = [parse_escape(spec) for spec in options.escape]
     options.aikido_targets = [parse_aikido(spec) for spec in options.aikido]
-    if options.skill == "review" and (options.escapes or options.aikido_targets):
-        raise UsageError("--escape and --aikido belong to /fix only")
+    if options.skill == "review" and (options.escapes or options.aikido_targets or options.pr):
+        raise UsageError("--escape, --aikido and --pr belong to /fix only")
     return options
 
 
@@ -484,8 +488,14 @@ def aikido_reply(target, packet):
     return f"Not fixed in this pass: {packet['status']} — no matching entry in the packet"
 
 
-def post_aikido_replies(packet, targets, state):
-    """(reply lines for the user text, failure notes). A comment id that got a reply is never posted to again."""
+def pr_number_from_gh(gh):
+    """(exit code, output) of `gh pr view` for the current branch's PR number."""
+    return run_command([gh, "pr", "view", "--json", "number", "--jq", ".number"])
+
+
+def post_aikido_replies(packet, targets, state, pr_number=None):
+    """(reply lines for the user text, failure notes). A comment id that got a reply is never posted to again.
+    `pr_number` (from --pr) names the PR; without it gh asks the current branch, which fails on a detached HEAD."""
     if not targets:
         return [], []
     posted = state.setdefault("aikido_posted", {})
@@ -497,7 +507,9 @@ def post_aikido_replies(packet, targets, state):
         return lines, []
     gh = os.environ.get("REVIEW_FIX_GH", "gh")
     code_repo, repo_slug = run_command([gh, "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"])
-    code_pr, pr_number = run_command([gh, "pr", "view", "--json", "number", "--jq", ".number"])
+    code_pr = 0
+    if pr_number is None:
+        code_pr, pr_number = pr_number_from_gh(gh)
     if code_repo != 0 or code_pr != 0:
         return lines, [
             "Aikido replies NOT posted: gh could not name the repo or PR "
@@ -647,7 +659,7 @@ def stop_for_status(packet, options, state):
     if packet["ask"]:
         fill_packet_ask_ids(packet, state)
         save_packet_asks(packet, state)
-    replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
+    replies, failures = post_aikido_replies(packet, options.aikido_targets, state, options.pr)
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
     entries = entry_lines(packet)
@@ -697,7 +709,7 @@ def command_packet(argv):
 
     save_fix_state(state)
     notes = log_escapes(state, options.escapes, options.lane)
-    replies, failures = post_aikido_replies(packet, options.aikido_targets, state)
+    replies, failures = post_aikido_replies(packet, options.aikido_targets, state, options.pr)
     notes += failures
     if packet["ask"]:
         fill_packet_ask_ids(packet, state)

@@ -79,7 +79,7 @@ Pull every review comment on the branch PR (inline plus top-level, any author), 
    Best-effort: an unposted reply never blocks the triage or the fix.
 
 5. **If `+fix` modifier is present** and there are valid actionable items:
-   - Format valid findings as review feedback (paths, lines, issues, author). Aikido findings also pass each comment's `id` from the fetch output as `comment_id` for thread replies in the fix skill.
+   - Format valid findings as review feedback (paths, lines, issues, author). Aikido findings also pass each comment's `id` from the fetch output as `comment_id` for thread replies in the fix skill, and the fetch output's `pr` number once.
    - Invoke the fix skill, passing through +fast or +deep; nothing valid means say so.
 6. **If `+fix` is NOT present**, end with:
    > Run `/pr-comments +fix` to auto-fix the valid items, or `/fix` manually after reviewing.

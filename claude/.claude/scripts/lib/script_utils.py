@@ -357,8 +357,8 @@ def attempts_within(wait_seconds, backoff_seconds):
 
 
 # A ledger read whose cache is behind exits 75 at once and starts a worker that catches up. Every caller waits up to
-# LEDGER_WAIT_SECONDS of pauses between tries (each try may also run up to LEDGER_CALL_TIMEOUT_SECONDS), then
-# reports the read as not done; the ledger never blocks the work.
+# wait_seconds of pauses between tries (LEDGER_WAIT_SECONDS by default; each try may also run up to
+# LEDGER_CALL_TIMEOUT_SECONDS), then reports the read as not done; the ledger never blocks the work.
 LEDGER_BUSY_EXIT = 75
 LEDGER_WAIT_SECONDS = 90
 LEDGER_BACKOFF_SECONDS = 3
@@ -417,10 +417,10 @@ def missing_ledger_warning():
             "Install the ledger or put its folder on PATH.")
 
 
-def read_ledger(args):
+def read_ledger(args, wait_seconds=LEDGER_WAIT_SECONDS):
     """Run `ledger <args>` and return its CompletedProcess for any exit but 75. Exit 75 and a call that does not
-    finish in time are tried again, with pauses totalling LEDGER_WAIT_SECONDS (each try may also run up to
-    LEDGER_CALL_TIMEOUT_SECONDS); then LedgerBusyError is raised. Raises
+    finish in time are tried again, with pauses totalling wait_seconds (each try may also run up to
+    LEDGER_CALL_TIMEOUT_SECONDS); 0 means one try. Then LedgerBusyError is raised. Raises
     LedgerNotInstalledError when ledger_bin finds no ledger."""
     ledger = ledger_bin()
     if ledger is None:
@@ -428,7 +428,7 @@ def read_ledger(args):
 
     backoff = float(os.environ.get(LEDGER_BACKOFF_ENV, LEDGER_BACKOFF_SECONDS))
     timeout = float(os.environ.get(LEDGER_CALL_TIMEOUT_ENV, LEDGER_CALL_TIMEOUT_SECONDS))
-    attempts = attempts_within(LEDGER_WAIT_SECONDS, LEDGER_BACKOFF_SECONDS)
+    attempts = attempts_within(wait_seconds, LEDGER_BACKOFF_SECONDS)
     waited = round(backoff * attempts * (attempts - 1) / 2)
     command = " ".join(["ledger", *args])
     try:

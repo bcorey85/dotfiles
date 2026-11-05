@@ -2,12 +2,16 @@
 
 run: python3 tests/scripts/test_ledger_deferred.py
 """
+import contextlib
+import importlib.util
+import io
 import os
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from toolkit_paths import LIB_DIR, TOOLS_DIR
 
@@ -46,15 +50,68 @@ class LedgerDeferredTest(unittest.TestCase):
 
         self.assertEqual((0, "deferred: not tracked (ledger not installed)\n"), (done.returncode, done.stdout))
 
-    def test_a_ledger_that_stays_busy_exits_75_with_the_command_to_run(self):
-        self.plant(f'echo "{BUSY_LINE}" >&2\nexit 75\n')
+    def test_a_busy_ledger_gets_a_worker_run_and_then_the_queue_prints(self):
+        flag = self.folder / "worker-ran"
+        self.plant(
+            f'if [ "$*" = "worker --once" ]; then touch "{flag}"; exit 0; fi\n'
+            f'[ "$*" = "yield --deferred" ] || exit 64\n'
+            f'if [ -e "{flag}" ]; then printf "# deferred\\nrow-1\\trow\\n"; exit 0; fi\n'
+            f'echo "{BUSY_LINE}" >&2\nexit 75\n')
+
+        done = self.run_script()
+
+        self.assertEqual((0, "# deferred\nrow-1\trow\n"), (done.returncode, done.stdout))
+        self.assertTrue(flag.exists())
+
+    def test_a_ledger_that_stays_busy_after_the_worker_exits_75_and_says_it_ran(self):
+        calls = self.folder / "yield-calls"
+        self.plant(f'[ "$*" = "worker --once" ] && exit 0\necho x >> "{calls}"\necho "{BUSY_LINE}" >&2\nexit 75\n')
+
+        done = self.run_script()
+
+        self.assertEqual(75, done.returncode)
+        first = f"ledger yield --deferred: {BUSY_LINE} (0 s of pauses)"
+        self.assertEqual(f"deferred: not read ({first}; {first}; the worker already ran)\n", done.stdout)
+        attempts = script_utils.attempts_within(script_utils.LEDGER_WAIT_SECONDS, script_utils.LEDGER_BACKOFF_SECONDS)
+        self.assertEqual(attempts + 1, len(calls.read_text().splitlines()),
+                         "first read tries every attempt, the read after the worker tries once")
+
+    def test_a_failing_worker_exits_75_and_names_the_worker(self):
+        self.plant(f'if [ "$*" = "worker --once" ]; then echo "worker broke" >&2; exit 2; fi\n'
+                   f'echo "{BUSY_LINE}" >&2\nexit 75\n')
 
         done = self.run_script()
 
         self.assertEqual(75, done.returncode)
         self.assertEqual(
-            f"deferred: not read (ledger yield --deferred: {BUSY_LINE} (0 s of pauses)). "
-            f"Run `ledger worker --once`, then `{SCRIPT.resolve()}` to read the queue.\n", done.stdout)
+            f"deferred: not read (ledger yield --deferred: {BUSY_LINE} (0 s of pauses); the worker ran and failed: "
+            f"ledger worker --once: worker broke)\n",
+            done.stdout)
+
+    def test_a_worker_that_hangs_exits_75_and_names_the_timeout(self):
+        self.plant(f'if [ "$*" = "worker --once" ]; then sleep 5; exit 0; fi\n'
+                   f'echo "{BUSY_LINE}" >&2\nexit 75\n')
+        spec = importlib.util.spec_from_file_location("ledger_deferred", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        output = io.StringIO()
+
+        with mock.patch.dict(os.environ, self.env), \
+                mock.patch.object(module, "WORKER_TIMEOUT_SECONDS", 0.2), \
+                contextlib.redirect_stdout(output):
+            code = module.main()
+
+        self.assertEqual(75, code)
+        self.assertIn("the worker ran and failed: ledger worker --once: no answer within", output.getvalue())
+
+    def test_a_worker_that_prints_bytes_that_are_not_utf8_still_gets_a_line(self):
+        self.plant('if [ "$*" = "worker --once" ]; then printf "\\377\\376" >&2; exit 2; fi\n'
+                   f'echo "{BUSY_LINE}" >&2\nexit 75\n')
+
+        done = self.run_script()
+
+        self.assertEqual(75, done.returncode)
+        self.assertIn("the worker ran and failed: ledger worker --once:", done.stdout)
 
     def test_another_failure_prints_the_ledger_stderr_and_its_exit_code(self):
         self.plant('echo "ledger yield: not inside a git repository" >&2\nexit 3\n')

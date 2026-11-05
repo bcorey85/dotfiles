@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-822 changes
+824 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,6 +31,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [full check runs a shell-wrapper manage.py through its shell](notes/2026-11-04-full-check-runs-a-shell-wrapper-manage-py-through.md) [script/check-discovery, script/full-check] check_discovery.py runs a repo-root manage.py whose `#!` line names a shell (not Python) through that shell under the project runner (`pipenv run bash manage.py test --noinput`), so the wrapper's `python` resolves to the runner's environment and the discovered full check no longer dies on a SyntaxError.
+* [code_wait returns within 150 s and writes each reviewer's report as it lands](notes/2026-11-04-code-wait-returns-within-150-s-and-writes-each.md) [script/code-wait, script/reviewer-dispatch, skill/code] code_wait.py waits at most 150 s per call (under the harness's 180 s auto-background), takes `review [<agent id> <report file>]...` pairs and writes each finished reviewer's report on its own, exits 1 naming an agent that finished with no report, and exits 2 on an argument that is not an agent id or a requested report file.
 * [Every review entry runs the script loop](notes/2026-11-04-every-review-entry-runs-the-script-loop.md) [script/review-fix, script/review-loop-script, script/reviewer-dispatch, skill/review, skill/fix, agent/review-loop] /review and /fix sent a run to the review-loop agent whenever the call carried a handoff block, a base, a file path, a model modifier, an iter count or findings, and to the script loop otherwise, so the main session dispatched reviewers on some runs and an agent drove the loop on others. Every /review and /fix entry now runs `review_fix.py launch`, which takes each of those as a flag, and the review-loop agent is deleted.
 * [Turn-end formatter leaves prompt markdown alone](notes/2026-11-04-turn-end-formatter-leaves-prompt-markdown-alone.md) [script/format-changed, script/format-files] format_files.run_formatters skips .md files a model reads as prompt text (under .claude or .config/opencode/, and CLAUDE.md, CLAUDE.local.md and AGENTS.md at any depth), so the Stop hook no longer reflows agent and skill prompts.
 * [Commit gate's folder-change refusal names the plain commit for notes-only commits](notes/2026-11-04-commit-gate-s-folder-change-refusal-names-the.md) [script/review-commit-gate] A cd commit of staged notes files is told to run a plain commit from the repo root, so one notes commit meets one refusal in place of two.

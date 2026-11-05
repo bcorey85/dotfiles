@@ -147,7 +147,7 @@ class RefactorFlowTest(unittest.TestCase):
 
     def finding(self, **overrides):
         row = {"class": "duplication", "disposition": "fix", "actioned": "fixed", "file": "a.py", "line": 3,
-               "desc": "same parse twice", "severity": "medium", "escape": True}
+               "desc": "same parse twice", "severity": "medium", "escape": True, "miss_reason": "overlooked"}
         return {**row, **overrides}
 
     def last_line(self, done):
@@ -204,9 +204,85 @@ class RefactorFlowTest(unittest.TestCase):
                 done = self.log("branch", {**payload, "findings": [finding]})
                 self.assertEqual(done.returncode, 1, done.stdout)
                 self.assertIn("[plan-structure]", done.stderr)
+        with self.subTest("a fix finding with a valid ruled_by"):
+            ruled = self.finding(disposition="fix", actioned="fixed", plan_structure=True, escape=False,
+                                 ruled_by="user")
+            done = self.log("branch", {**payload, "findings": [ruled]})
+            self.assertEqual(done.returncode, 1, done.stdout)
+            self.assertIn("[plan-structure]", done.stderr)
         asked = self.finding(disposition="ask", actioned="ask", plan_structure=True)
         done = self.log("branch", {**payload, "findings": [asked]}, extra_env=None)
         self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_log_refuses_an_escape_finding_with_a_missing_or_unlisted_miss_reason(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"}}
+        for reason in (None, "unknown", "", "lazy", 3):
+            with self.subTest(reason=reason):
+                finding = self.finding(miss_reason=reason)
+                done = self.log("branch", {**payload, "findings": [finding]})
+                self.assertEqual(done.returncode, 1, done.stdout)
+                self.assertIn("miss_reason", done.stderr)
+        missing = {key: value for key, value in self.finding().items() if key != "miss_reason"}
+        done = self.log("branch", {**payload, "findings": [missing]})
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("`miss_reason`", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        with self.subTest("a valid finding beside a refused escape row"):
+            valid = self.finding(escape=False, file="valid.py")
+            lazy = self.finding(miss_reason="lazy", file="lazy.py")
+            done = self.log("branch", {**payload, "findings": [valid, lazy]})
+            self.assertEqual(done.returncode, 1, done.stdout)
+            self.assertEqual(self.finding_rows(), [])
+            self.assertEqual(self.escape_rows(), [])
+
+    def test_log_escape_row_carries_the_findings_miss_reason(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"},
+                   "findings": [self.finding(miss_reason="plan-gap")]}
+        done = self.log("branch", payload)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual([row["miss_reason"] for row in self.escape_rows()], ["plan-gap"])
+
+    def test_log_writes_nothing_when_the_run_writer_refuses_a_row(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        payload = {"finder": "smell-reviewer", "lane": "code", "guards": {"duplication": "none"},
+                   "result": "MAYBE", "findings": [self.finding()]}
+        done = self.log("branch", payload)
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("writer refused the run row", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        self.assertEqual(self.finding_rows(), [])
+
+    def test_log_writes_a_ruled_plan_structure_finding_as_fixed_with_who_ruled(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        payload = {"finder": "smell-reviewer", "lane": "code"}
+        for ruled_by in ("session", "user"):
+            with self.subTest(ruled_by=ruled_by):
+                finding = self.finding(disposition="ask", actioned="fixed", plan_structure=True, escape=False,
+                                       ruled_by=ruled_by, file=f"{ruled_by}.py")
+                done = self.log("branch", {**payload, "findings": [finding]}, extra_env=None)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                rows = [row for row in self.finding_rows()
+                        if row["kind"] == "finding" and row["path_key"] == f"{ruled_by}.py"]
+                self.assertEqual([row["actioned"] for row in rows], ["fixed"])
+                self.assertEqual([row["ask_decided_by"] for row in rows], [ruled_by])
+        self.assertEqual(self.escape_rows(), [])
+
+    def test_log_refuses_an_unknown_ruled_by_and_still_refuses_fixed_without_one(self):
+        payload = {"finder": "smell-reviewer", "lane": "code"}
+        cases = (("a ruled_by outside user and session", {"ruled_by": "bot"}, "`ruled_by`"),
+                 ("fixed with no ruled_by", {}, "[plan-structure]"),
+                 ("a ruled_by on a fix row", {"ruled_by": "user", "disposition": "fix", "plan_structure": False},
+                  "`ruled_by`"))
+        for label, extra, fragment in cases:
+            with self.subTest(label):
+                fields = {"disposition": "ask", "actioned": "fixed", "plan_structure": True, "escape": False}
+                finding = self.finding(**{**fields, **extra})
+                done = self.log("branch", {**payload, "findings": [finding]})
+                self.assertEqual(done.returncode, 1, done.stdout)
+                self.assertIn(fragment, done.stderr)
+        self.assertEqual(self.finding_rows(), [])
 
     def test_branch_prep_next_names_test_audit_and_the_nothing_found_case(self):
         self.branch_with({"a.py": "x = 1\n"})

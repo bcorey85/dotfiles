@@ -121,6 +121,10 @@ MISSING_PATH_LINES = (
     re.compile(r"^ERROR: file or directory not found: (?P<path>\S+)"),
     re.compile(r"^\S*python[\d.]*: can't open file '(?P<path>[^']+)': \[Errno 2\] No such file or directory"),
 )
+# A lint or type check that stopped on a path it was given that does not exist: ruff's E902 (with the path on the
+# same line or on the `-->` line after it) and mypy's `can't read file`.
+CHECK_MISSING_PATH = re.compile(r"\bE902 No such file or directory|^mypy: can't read file '[^']*': No such file",
+                                re.MULTILINE)
 
 
 def is_repo_module(module_name, repo_root):
@@ -257,6 +261,14 @@ def missing_path(lines):
         if match:
             return line.strip(), match.group("path")
     return None
+
+
+def stopped_on_missing_path(output):
+    """True when a failed check's output says it stopped on a path that does not exist (a file list passed as one
+    word, a typo): the check never ran on the files."""
+    if CHECK_MISSING_PATH.search(output):
+        return True
+    return missing_path(output.splitlines()) is not None
 
 
 def is_setup_fault(code, output, repo_root, include_missing_modules=True):

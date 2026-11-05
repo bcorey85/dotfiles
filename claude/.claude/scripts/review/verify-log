@@ -9,9 +9,11 @@ rows: a JSON list; each row {"item","verdict","file","line","evidence", optional
 Every criterion id verify-prep saved needs a verdict row naming it, `missing` included; any id with no row exits 2 and
 writes nothing. The same holds for each ticket criterion, with or without a criteria file: it needs a row whose `item`
 starts with its label (`Ticket #n`, or the criteria-file id when the ticket has no Acceptance or Requirements
-heading; as verify-prep lists them; leading markdown emphasis or code marks are allowed).
-verdict is done|partial|missing|failed-check|needs-manual|overridden. partial, missing, failed-check and an
-overridden row with no `signoff` are gaps. `line` is an integer or a range like "12-20" (the first number is kept).
+heading; as verify-prep lists them; leading markdown emphasis or code marks are allowed), and so does each ticket
+comment (`Comment #n`).
+verdict is done|partial|missing|failed-check|needs-manual|overridden|no-criterion. partial, missing, failed-check and
+an overridden row with no `signoff` are gaps. no-criterion is only for a `Comment #n` row: the comment adds or changes
+no criterion; any other row with it exits 2. `line` is an integer or a range like "12-20" (the first number is kept).
 A `done` row whose `item` starts with the Agent-run tag and has empty `evidence` exits 2.
 Empty rows are an error unless --result NA, which logs a run row with no result and exits 3.
 --escapes-only logs the escape rows of a run that was already logged in full; an escape logged once is not logged again.
@@ -44,7 +46,9 @@ import plan_format
 import script_utils
 import verify_common as vc
 
-VERDICTS = ("done", "partial", "missing", "failed-check", "needs-manual", "overridden")
+NO_CRITERION = "no-criterion"
+VERDICTS = ("done", "partial", "missing", "failed-check", "needs-manual", "overridden", NO_CRITERION)
+LEADING_MARKS = r"[\s*_`]*"
 REVIEW_RESULTS = ("PASS", "PASS WITH WARNINGS", "NEEDS CHANGES")
 LEADING_INT = re.compile(r"^\s*(\d+)")
 REVIEW_OUTCOMES = ("fixed", "skipped_fp")
@@ -85,7 +89,12 @@ def ticket_labels_without_verdict_row(rows, context):
     is not found inside `Ticket #12` or mid-text."""
     item_texts = [str(row["item"]) for row in rows]
     return [label for label in context["criteria"].get("ticketLabels", [])
-            if not any(re.match(r"[\s*_`]*" + re.escape(label) + r"\b", text) for text in item_texts)]
+            if not any(re.match(LEADING_MARKS + re.escape(label) + r"\b", text) for text in item_texts)]
+
+
+def is_comment_row(row):
+    """True when the row's `item` starts with a ticket comment label (`Comment #2`)."""
+    return re.match(LEADING_MARKS + re.escape(plan_format.COMMENT_LABEL) + r"\d", str(row["item"])) is not None
 
 
 def parse_options(args, valued, flag_names=()):
@@ -136,6 +145,10 @@ def load_rows(source):
     for index, row in enumerate(rows):
         if not isinstance(row, dict) or row.get("verdict") not in VERDICTS or not row.get("item"):
             raise vc.VerifyError(f"row {index} needs `item` and a verdict in {', '.join(VERDICTS)}")
+        if row["verdict"] == NO_CRITERION and not is_comment_row(row):
+            raise vc.VerifyError(f"row {index}: `{NO_CRITERION}` is only for a ticket comment that adds no criterion "
+                                 f"(`item` starting `{plan_format.COMMENT_LABEL}n`); `{log_text(row['item'], 120)}` "
+                                 "needs another verdict")
         if is_done_without_output(row):
             raise vc.VerifyError(f"row {index}: the Agent-run item `{log_text(row['item'], 120)}` is marked done with "
                                  "no command output in `evidence`; run it and paste its output, or use another verdict")

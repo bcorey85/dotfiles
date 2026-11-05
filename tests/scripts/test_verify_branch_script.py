@@ -889,6 +889,84 @@ REQUIREMENTS_TICKET = """# LED-9: Thing
 """
 
 
+COMMENTED_TICKET = TICKET + """
+## Comments
+
+### Ann — 2026-11-01
+
+Also: the export must keep the header row.
+
+### Bo — 2026-11-02
+
+Looks good.
+"""
+
+
+class TicketCommentTest(VerifyBranchBase):
+    """Each ticket comment is a label the verifier verdicts, so a criterion added only in a comment reaches the gate."""
+
+    def test_a_comment_section_parses_one_entry_per_sub_heading_and_none_means_no_comments(self):
+        common = load_common()
+        found = common.branch_ticket_comments(COMMENTED_TICKET)
+        self.assertEqual([entry["label"] for entry in found], ["Comment #1", "Comment #2"])
+        self.assertIn("Ann — 2026-11-01", found[0]["text"])
+        self.assertIn("the export must keep the header row", found[0]["text"])
+        for text in (TICKET, TICKET + "\nComments: none\n", TICKET + "\n**Comments:** none\n",
+                     TICKET + "\n## Comments\n\nnone\n"):
+            with self.subTest(text=text[-30:]):
+                self.assertEqual(common.branch_ticket_comments(text), [])
+
+    def test_text_before_the_first_comment_heading_fails_with_path_and_line(self):
+        common = load_common()
+        text = "# T\n\n## Comments\n\nstray words\n\n### Ann — 2026-11-01\n\nbody\n"
+        with self.assertRaises(common.VerifyError) as caught:
+            common.branch_ticket_comments(text, "ticket.md")
+        self.assertIn("ticket.md:5:", str(caught.exception))
+
+    def test_the_verifier_payload_lists_each_comment_after_the_ticket_criteria(self):
+        self.task_dir(ticket=COMMENTED_TICKET, spec=None, criteria=None)
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        payload = done.stdout.split("subagent_type=plan-verifier", 1)[1]
+        self.assertIn("  Ticket #3: Third thing\n  Comment #1: Ann — 2026-11-01 Also: the export must keep the header "
+                      "row.\n  Comment #2: Bo — 2026-11-02 Looks good.\n", payload)
+
+    def log_ready(self):
+        self.task_dir(ticket=COMMENTED_TICKET, spec=None, criteria=None)
+        self.assertEqual(self.prep().returncode, 0)
+        self.assertEqual(self.log_review().returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+
+    def test_a_comment_with_no_verdict_row_exits_2_and_names_it(self):
+        self.log_ready()
+        rows = [*ticket_rows([]), {"item": "Comment #1: header row kept", "verdict": "done", "file": "src/c.py",
+                                   "line": 1, "evidence": "e"}]
+        done = self.log("--rows", "-", stdin=json.dumps(rows))
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no verdict row for Comment #2", done.stderr)
+
+    def test_a_comment_that_adds_no_criterion_takes_no_criterion_and_is_not_a_gap(self):
+        self.log_ready()
+        rows = [
+            *ticket_rows([]),
+            {"item": "Comment #1: header row kept", "verdict": "done", "file": "src/c.py", "line": 1, "evidence": "e"},
+            {"item": "Comment #2: Looks good.", "verdict": "no-criterion", "file": "", "line": 0, "evidence": "e"}]
+        done = self.log("--rows", "-", stdin=json.dumps(rows))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLEAN", done.stdout)
+
+    def test_no_criterion_on_a_ticket_criterion_exits_2(self):
+        self.log_ready()
+        first_ticket_row = {"item": "Ticket #1: First thing works", "verdict": "no-criterion"}
+        comment_rows = [{"item": f"Comment #{n}: c", "verdict": "no-criterion"} for n in (1, 2)]
+        rows = [first_ticket_row, *ticket_rows([first_ticket_row]), *comment_rows]
+        done = self.log("--rows", "-", stdin=json.dumps(rows))
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("no-criterion", done.stderr)
+
+
 class TicketOnlyLogTest(VerifyBranchBase):
     """A task dir with no criteria file still owes a verdict row for every ticket criterion."""
 

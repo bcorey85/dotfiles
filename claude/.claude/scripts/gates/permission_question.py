@@ -4,8 +4,8 @@ A message ends on a permission question when its last 400 characters hold a ques
 to`, `do you want that|this|it|them|those|these ...`, `shall I`, `should I`, `would you like me to`, `okay to
 proceed`, `go ahead and`, `ready to`, with no sentence end (`.` or `!` before a space) between the phrase and the
 `?`. A question that names a step that leaves the machine or does not undo (commit, push, merge, deploy, publish,
-release, delete, drop, reset, rebase, force, send, email, post, install, upgrade, migrate) is one to ask and does not
-count.
+release, delete, drop, reset, rebase, force, send, email, post, install, upgrade, migrate, void, cancel, refund,
+revoke, submit, approve, archive, remove, overwrite, wipe, purge, truncate, destroy) is one to ask and does not count.
 """
 import re
 
@@ -16,7 +16,7 @@ PERMISSION_QUESTION = re.compile(
     re.IGNORECASE)
 OUTWARD_STEP = re.compile(
     r"\b(?:commit|push|merge|deploy|publish|release|delete|drop|reset|rebase|force|send|e-?mail|post|install|"
-    r"upgrade|migrate)\w*",
+    r"upgrade|migrate|void|cancel|refund|revoke|submit|approve|archive|remove|overwrite|wipe|purge|truncate|destroy)\w*",
     re.IGNORECASE)
 TAIL_CHARACTERS = 400
 REASON = ("Your message ends asking permission to go on. Act on it: take the step yourself. Ask only before a step "

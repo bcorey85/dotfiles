@@ -2,6 +2,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import pathlib
 import subprocess
@@ -50,6 +51,19 @@ class CodeReviewStartTest(unittest.TestCase):
             "phase: 1", "later-phase files: src/two.py"])
         self.assertEqual(handoff.strip(), "Phase 1 is done.")
 
+    def test_a_later_phase_file_this_phase_already_changed_is_not_a_later_phase_file(self):
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "--allow-empty", "-m", "base"], check=True)
+        (self.repo / "src").mkdir()
+        (self.repo / "src/two.py").write_text("# guide lines phase 1 wrote\n")
+
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "1",
+                               "handoff.txt", "--base", "HEAD", "--dry-run"], cwd=self.repo, capture_output=True,
+                              text=True, check=False, env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("later-phase files:", done.stdout)
+
     def load_module(self):
         module_spec = importlib.util.spec_from_file_location("code_review_start", REVIEW_START)
         code_review_start = importlib.util.module_from_spec(module_spec)
@@ -83,8 +97,8 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertEqual(passed, [*SAMPLE_COMMANDS, STALE_PROSE_COMMAND])
         self.assertTrue(code_review_start.coder_gate.is_stale_prose_check(passed[-1]))
 
-    def run_live(self, code_review_start, write_packet):
-        # Runs main with the loop mocked; `write_packet` may put packet.txt beside the prompt file the run produced.
+    def run_live(self, code_review_start, write_packet, packet_text="status: converged\n"):
+        # Runs main with the loop mocked; `write_packet` puts `packet_text` in packet.txt beside the prompt file.
         argv = ["code_review_start.py", "lane-a", "docs/plans/p/spec.md", "1", str(self.repo / "handoff.txt"),
                 "--base", BASE]
         output = io.StringIO()
@@ -102,7 +116,7 @@ class CodeReviewStartTest(unittest.TestCase):
                 prompt_file, log_path = real_write_script_prompt(*args)
                 prompt_folders.append(prompt_file.parent)
                 if write_packet:
-                    (prompt_file.parent / "packet.txt").write_text("status: converged\n")
+                    (prompt_file.parent / "packet.txt").write_text(packet_text)
                 return prompt_file, log_path
 
             with mock.patch.object(code_review_start, "write_script_prompt", write_script_prompt):
@@ -142,6 +156,28 @@ class CodeReviewStartTest(unittest.TestCase):
 
         self.assertIn("status: converged", printed)
         self.assertEqual(loop_folder, prompt_folder, "the loop writes its packet where the run looks for it")
+
+    def test_a_converged_packet_with_a_held_plan_impact_prints_the_defer_action(self):
+        impacts = [{"text": "PLAN-IMPACT: AC2 now names the archived orders too", "gate": "code-reviewer",
+                    "ac_change": True, "cause": "plan", "adopted": False}]
+        packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impacts": impacts})
+
+        printed, _folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=True,
+                                                                 packet_text=packet)
+
+        handoff = self.repo / "handoff.txt"
+        self.assertIn("ACTION: defer-plan-impacts. 1 plan impact(s) wait for a ruling", printed)
+        self.assertIn(f"review_fix.py defer {handoff}", printed)
+
+    def test_a_converged_packet_with_only_an_adopted_plan_impact_prints_no_defer_action(self):
+        impacts = [{"text": "PLAN-IMPACT: the helper lives in lib", "gate": "code-reviewer", "ac_change": False,
+                    "cause": "plan", "adopted": True}]
+        packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impacts": impacts})
+
+        printed, _folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=True,
+                                                                 packet_text=packet)
+
+        self.assertNotIn("defer-plan-impacts", printed)
 
     def test_the_live_run_names_the_log_when_the_loop_wrote_no_packet(self):
         printed, folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=False)

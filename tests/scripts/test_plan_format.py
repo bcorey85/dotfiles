@@ -62,6 +62,18 @@ class PlanChangeMarkTest(unittest.TestCase):
             with self.subTest(text):
                 self.assertIsNone(plan_format.PLAN_CHANGE_MARK.match(text))
 
+    def test_an_ask_tagged_plan_impact_none_is_not_marked(self):
+        texts = ("PLAN-IMPACT: none. The limit check belongs in the helper.", "plan_impact: none",
+                 "**PLAN-IMPACT:** none.", "`app.py:13` [bug] PLAN-IMPACT: none of substance; move the guard",
+                 "PLAN-IMPACT: no", "PLAN-IMPACT: no. Rename the flag.")
+        for text in texts:
+            with self.subTest(text):
+                self.assertIsNone(plan_format.PLAN_CHANGE_MARK.match(text))
+
+    def test_an_ask_whose_plan_impact_opens_with_the_word_no_is_still_marked(self):
+        self.assertIsNotNone(plan_format.PLAN_CHANGE_MARK.match("PLAN-IMPACT: no index on orders exists; the plan "
+                                                                "assumed one. acceptance_criteria: none"))
+
 
 class ReportBlockTest(unittest.TestCase):
     def test_a_plan_impact_block_is_found_in_each_shape_a_report_writes_it(self):

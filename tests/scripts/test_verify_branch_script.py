@@ -344,6 +344,10 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("This is the only review of cross-phase interactions.", out)
         self.assertIn("STEP 2: dispatch Agent subagent_type=plan-verifier", out)
         self.assertIn("scope: branch", out)
+        self.assertIn(f"  repo: {self.context()['top']}\n", out)
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.context()["top"], capture_output=True,
+                              text=True, check=True).stdout.strip()
+        self.assertIn(f"  head: {head}\n", out)
         context = self.context()
         self.assertEqual(context["baseRef"], "master")
         self.assertEqual(context["diff"]["diffLoc"], 5)
@@ -355,7 +359,6 @@ class PrepTest(VerifyBranchBase):
         self.assertEqual(context["escapes"], [])
         self.assertIs(context["logged"], False)
         self.assertNotIn("runId", context)
-        self.assertNotIn("head", context)
         self.assertNotIn("mode", context)
         self.assertNotIn("criteriaFile", context["criteria"])
 

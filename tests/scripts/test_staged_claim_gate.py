@@ -415,6 +415,13 @@ class PermissionQuestionTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_question_about_an_irreversible_step_in_an_external_app_passes(self):
+        for message in ("The duplicate invoice is still open in the billing app. Want me to void it?",
+                        "The order was placed twice. Should I cancel the second one?",
+                        "The form is filled in. Shall I submit it?"):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
     def test_a_question_that_asks_for_a_choice_or_sits_early_passes(self):
         long_tail = " The fix keeps every invoice line in the sum, and the test covers two lines." * 8
         for message in ("Which name do you prefer, totals or sums?", "Do you want the short or the long report?",

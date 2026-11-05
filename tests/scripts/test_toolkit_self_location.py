@@ -58,6 +58,7 @@ ALLOWED_HITS = [
     ("scripts/lib/script_utils.py", "under ~/.claude, where the ledger's readers", PRINTED),
     ("scripts/code/code_review_start.py", "code_review_start.py <lane>", PRINTED),
     ("scripts/code/code_review_start.py", "WAIT_COMMAND = ", PRINTED),
+    ("scripts/code/code_review_start.py", "DEFER_COMMAND = ", PRINTED),
     ("scripts/code/code_wait.py", "code_wait.py agent <agent id>", PRINTED),
     ("scripts/code/code_wait.py", "python3 ~/.claude/scripts/code/code_wait.py review", PRINTED),
     ("scripts/code/code_relay.py", "python3 ~/.claude/scripts/code/code_relay.py", PRINTED),

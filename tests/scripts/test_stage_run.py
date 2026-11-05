@@ -124,6 +124,15 @@ class StageRunTest(unittest.TestCase):
         self.assertEqual((logged["suppressed"], logged["queue"], logged["result"]), ("1", "2", "residue"))
         self.assertIn("Still yours:", result.stdout.strip().splitlines()[-1])
 
+    def test_jump_queue_block_comes_before_the_tier_report(self):
+        self.write("src/service.ts", "export const a = 1;\n")
+        result = self.run_stage("--run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(result.stdout.index("```jump-queue"), result.stdout.index("Read (1)"))
+        self.assertLess(result.stdout.index("```jump-queue"), result.stdout.index("  READ:"))
+        rows = self.jump_rows(result.stdout)
+        self.assertEqual(["src/service.ts"], [row["path"] for row in rows])
+
     def test_classifies_once(self):
         self.add_barrel()
         result = self.run_stage("--run")

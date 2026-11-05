@@ -29,11 +29,11 @@ allowed-tools: [Agent, Bash, Read, Edit, AskUserQuestion]
    ```bash
    <printed packet command> --source <conversation|cc|handoff> \
      [--escape "file=<path>|class=<class>|severity=<high|medium|low>|gate_missed=<review|drift-gate|test-intent|stage|coder|eng-spec>|guard=<type|convention|gotcha|rule|check|none|n-a>|desc=<one line>"]... \
-     [--aikido "<path>:<line>=<comment_id>"]...
+     [--aikido "<path>:<line>=<comment_id>"]... [--pr <number>]
    ```
 
    - `--escape`, one per distinct defect: only when the user reported it in conversation, on code a prior `/review` on this branch already passed, and it is a defect, not a new requirement or a change of direction. Pick `guard` from `~/.claude/skills/_shared/escape-ratchet.md` without pausing. When the user reports the defect after the packet ran, log it later with `python3 ~/.claude/scripts/review/review_fix.py escape --escape "..."`; the script records what it logged, so a repeat logs nothing twice.
-   - `--aikido`, one per finding that is an Aikido PR comment (`author` is `aikido-pr-checks[bot]`, or the body carries `@AikidoSec` / `app.aikido.dev`, and it has a `comment_id`).
+   - `--aikido`, one per finding that is an Aikido PR comment (`author` is `aikido-pr-checks[bot]`, or the body carries `@AikidoSec` / `app.aikido.dev`, and it has a `comment_id`). With them, `--pr` with the PR number the findings came with.
 
 3. **Run the script and do what its `ACTION:` lines say.** Your duties: judge the user's answer to each ask, then run the asks-done line the script printed; on `show-plan-impacts` or `redispatch`, add the printed deviation lines under `## Plan Deviations` in the plan; state a proposed escape guard in your closing line and apply it on approval.
 

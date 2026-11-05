@@ -596,6 +596,15 @@
             "async": true
           }
         ]
+      },
+      {
+        "matcher": "resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/waiting_review_launch.py"
+          }
+        ]
       }
     ],
     "SessionEnd": [

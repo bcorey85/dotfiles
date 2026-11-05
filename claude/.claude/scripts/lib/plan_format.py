@@ -615,6 +615,7 @@ CLOSING_PHASES = [
     (re.compile(r"^Test audit" + CLOSING_TITLE_END, re.I), "/test-audit"),
     (re.compile(r"^Verify pass" + CLOSING_TITLE_END, re.I), "/verify-branch"),
     (re.compile(r"^Recap" + CLOSING_TITLE_END, re.I), "/branch-recap"),
+    (re.compile(r"^Close pass" + CLOSING_TITLE_END, re.I), "/close-branch"),
 ]
 
 

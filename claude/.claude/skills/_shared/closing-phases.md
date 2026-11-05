@@ -1,45 +1,23 @@
-# Mandatory Closing Phases (single source of truth)
+# Mandatory Closing Phase (single source of truth)
 
-Every `/eng-spec` plan ends with these FOUR phases, in order after the last feature phase — **not negotiable, never omitted**. Real `## Phase Status` entries with full sections; `/code` invokes the named skill instead of a coder. Numbered continuing from the last feature phase.
+Every `/eng-spec` plan ends with ONE closing phase after the last feature phase — **not negotiable, never omitted**. A real `## Phase Status` entry; `/code` invokes the named skill instead of a coder. Numbered continuing from the last feature phase.
 
-## The four phases
+## The phase
 
-1. **Refactor pass** (risk: low) — `/refactor +deep` over the **whole branch diff** (backend + frontend, one sweep): DRY duplication, dead scaffolding, names — no behavior change. **Root-cause gate:** a cast/`?? default` papering a fixable wide type or loose structure fails; fix the source.
+**Close pass** (risk: high) — `/close-branch`: scripts first, then four report-only reviewers in parallel on the whole branch diff (correctness, structure, test intent, plan and acceptance-criteria reconciliation), ONE `coder` that fixes every finding and writes every owed test, then a report-only gate on the fix diff alone, then the recap sheet. **Root-cause rule:** a cast/`?? default` papering a fixable wide type or loose structure is a finding; fix the source.
 
-   **Concentration gate.** `python3 ~/.claude/scripts/code/concentration.py <base-sha>` computes the added lines per module of `git diff --numstat <base>...HEAD` (excluding lockfiles, generated and build output (dist/, .min.js, snapshots, migration `meta/` journals and snapshots), test-only files, and anything under a `docs/` folder, plans included; it counts commits only, so commit the last phase first); run `/refactor simplify <one module>` when EITHER: 1. **Concentrated**: largest module **≥100 added lines**. 2. **Distributed**: branch **≥300 added lines** with no module at 100 — dispatch the largest anyway. Else skip, report both counts. Never a second module, never the branch diff (`complexity-reviewer` refuses diff bounds). Cross-module deletability reasons go in the report, not a re-dispatch. Simplify findings are opt-in; accepting one makes this phase `risk: high` — the no-behavior-change contract covers the DRY sweep only.
+Success Criteria: quality checks green; every reviewer finding fixed, shown wrong, or (an ask that changes a ticket AC) put to the user; the fix-diff gate passed; every acceptance criterion mapped to a test or explicitly retired; concentration counts stated; recap and smoke-test checklist delivered.
 
-   Success Criteria: quality checks green, no new cast/fallback dodging a root
-   cause, concentration gate evaluated (module dispatched with the trigger
-   named, or both counts stated).
+A scope box diffs two recorded commit ids, never a branch name (`main...HEAD` is empty once the branch merges), and fails on an empty diff: `test -n "$(git diff --name-only <base-sha>..<head-sha>)"`. `plan check` fails a box that diffs a branch name.
 
-   A scope box diffs two recorded commit ids, never a branch name (`main...HEAD` is empty once the branch merges), and fails on an empty diff: `test -n "$(git diff --name-only <base-sha>..<head-sha>)"`. `plan check` fails a box that diffs a branch name.
+When the skill reports no open finding, a coder writes one line of evidence under each open Success Criteria item.
 
-2. **Test audit** (risk: high) — `/test-audit`: cull spam, sweep weak assertions — the half of test-intent no phase judges. Findings → `/fix`; receipt → Recap. Success Criteria: denominator stated, every finding routed.
-
-3. **Verify pass** (risk: high) — `/verify-branch` runs both checks, in order:
-   - **Branch-wide deep review** — ONE report-only `code-reviewer` over the branch diff, unless one ran since the last change: the only fresh-eyes look at cross-phase interactions. Then ONE `coder` dispatch fixes every finding, nits included (an ask that changes a ticket AC goes to the user), and the review is logged with `scope=branch-exit`.
-   - **Completeness** — reconcile the shipped diff against the ticket/plan
-     (completeness), run the plan's Automated Verification commands (a failing command is a gap), and emit the
-     **human smoke-test checklist** (all human-only Manual Verification items).
-     - **Acceptance-criteria reconciliation** — per id: name the covering test (`file:line`) or MISSING. `## Manual only` items are satisfied via the smoke-test checklist. MISSING fails the phase — a test is owed or the user retires the criterion on record.
-
-       Match on **behavior, not markers** — no ids to grep; read and judged.
-
-   Success Criteria: every deep-review finding fixed, shown wrong, or (an ask that changes a ticket AC) put to the user, reconciliation reports no missing work,
-   every acceptance criterion mapped to a test or explicitly retired,
-   smoke-test checklist delivered.
-
-4. **Recap** (risk: low) — `/branch-recap`: `/stage` triage, deferred queue, recap receipt — from the branch's own process, never the codebase (`/orient` on demand). No gates. Success Criteria: recap produced, residue handed over.
-
-When the skill reports no open finding, a coder writes one line of evidence under each open Success Criteria item. For the Refactor pass, the gate item's evidence is `simplify <module> (<trigger>)` with the module `concentration.py` named, or both counts when the gate does not trigger.
+A plan written with the older four closing phases (Refactor pass, Test audit, Verify pass, Recap) runs them as written.
 
 Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.
 
-## Phase Status lines (copy verbatim, renumbering)
+## Phase Status line (copy verbatim, renumbering)
 
 ```markdown
-- [ ] Phase N: Refactor pass — /refactor +deep whole-branch sweep, root-cause gate (risk: low)
-- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high)
-- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify-branch (plan↔diff + smoke list) (risk: high)
-- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
+- [ ] Phase N: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 ```

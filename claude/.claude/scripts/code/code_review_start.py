@@ -10,7 +10,8 @@ gate commands come from the handoff block's files.
 The loop's state folder is <git dir>/code-step. The pid goes in <git dir>/code-phase/pid, where `code_wait.py review`
 looks, so the session can end its turn while the loop runs. The loop runs with `--reviewers main`: the fork dispatches
 each round's reviewers as its own subagents, and <git dir>/code-phase/loop-dir names the folder that holds the
-requests. Prints the hand-back packet when the loop ends.
+requests. Prints the hand-back packet when the loop ends, then the defer ACTION when the packet holds a plan impact
+that waits for a ruling.
 """
 
 import os
@@ -25,15 +26,18 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review", "code"
 import coder_gate
 import expected_red
 import gate_commands
+import handback
 import handback_hook
 import handoff_files
 import plan_format
+import review_fix
 import script_utils
 from code_wait import LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, phase_dir
 from review_loop_prompt_file import REVIEWERS_MAIN, loop_script_command, write_script_prompt
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
 WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
+DEFER_COMMAND = "python3 ~/.claude/scripts/review/review_fix.py defer"
 AGENT_PREFIX = "loop-script-"
 NO_PLAN = gate_commands.NO_PLAN
 
@@ -92,13 +96,24 @@ def handoff_with_git_files(repo, base, handoff):
     return "\n".join([*lines[:start], *files_lines, *lines[end:]]) + "\n"
 
 
-def review_prompt(repo, lane, plan, phase, handoff):
+def phase_changed_files(repo, base):
+    """The files git shows changed since the phase base; [] when the base is no commit."""
+    base_commit = script_utils.git_output(repo, "rev-parse", "--verify", f"{base}^{{commit}}")
+    if base_commit is None:
+        return []
+    return script_utils.changed_files(repo, base_commit)
+
+
+def review_prompt(repo, lane, plan, phase, handoff, phase_changed=()):
+    """A later phase's file that this phase's diff already changed stays the phase's own, so a fix pass may edit the
+    lines the phase wrote there."""
     header = ["mode: review-first", "caller: code", f"lane: {lane}", f"repo: {repo}"]
 
     if plan != NO_PLAN:
         header += [f"plan: {plan}", f"phase: {phase}"]
         plan_lines = (repo / plan).read_text().splitlines()
-        later_files = expected_red.later_phase_paths(plan_lines, phase)
+        later_paths = expected_red.later_phase_paths(plan_lines, phase)
+        later_files = [path for path in later_paths if path not in set(phase_changed)]
         if later_files:
             header.append(f"later-phase files: {', '.join(later_files)}")
 
@@ -156,7 +171,8 @@ def main(argv):
     repo = pathlib.Path.cwd().resolve()
     coder_handoff = pathlib.Path(handoff_file).read_text()
     handoff = handoff_with_git_files(repo, base, coder_handoff)
-    prompt = review_prompt(repo, lane, plan, phase, handoff)
+    phase_changed = phase_changed_files(repo, base)
+    prompt = review_prompt(repo, lane, plan, phase, handoff, phase_changed)
     if "--dry-run" in argv:
         print(prompt)
         return 0
@@ -186,8 +202,31 @@ def main(argv):
 
     print(f"The review loop script exited {finished.returncode}.")
     packet_file = prompt_file.parent / "packet.txt"
-    print(packet_file.read_text() if packet_file.exists() else f"No packet. Log: {log_path}")
+    if not packet_file.exists():
+        print(f"No packet. Log: {log_path}")
+        return 0
+
+    packet_text = packet_file.read_text()
+    print(packet_text)
+    print("\n".join(held_impact_lines(packet_text, handoff_file)))
     return 0
+
+
+def held_impact_lines(packet_text, handoff_file):
+    """The ACTION lines for the packet's held plan impacts: the commit gate counts the review as dirty until the
+    session defers them, whatever the packet's status says. [] when none is held."""
+    try:
+        packet = handback.load(packet_text)
+    except handback.PacketError as error:
+        return [f"code_review_start: the packet does not parse, so its held plan impacts are unknown: {error}"]
+
+    held = handback.held_plan_impacts(packet)
+    if not held:
+        return []
+    return [f"ACTION: defer-plan-impacts. {len(held)} plan impact(s) wait for a ruling, so the commit gate counts this "
+            f"review as dirty. Before any commit, set `plan_impact` in {handoff_file} to the one line "
+            f"`{review_fix.DEFER_LINE.removeprefix('plan_impact: ')}` and run "
+            f"`{DEFER_COMMAND} {handoff_file}`."]
 
 
 if __name__ == "__main__":

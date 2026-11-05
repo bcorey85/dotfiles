@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-830 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+838 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-04, [The code skill runs the review for a pure move or rename too](notes/2026-11-04-the-code-skill-runs-the-review-for-a-pure-move-or.md).
+Latest change: 2026-11-05, [Compacted session is reminded of a review loop waiting on its reviewers](notes/2026-11-05-compacted-session-is-reminded-of-a-review-loop.md).
 
 ## Top gains
 

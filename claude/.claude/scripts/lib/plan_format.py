@@ -57,10 +57,12 @@ MOVED_TARGET = re.compile(r"(?i:moved to)\s+([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])"
 DEVIATIONS_HEADING = "Plan Deviations"
 SESSION_RULING_OWNER = "the session, not the user"
 # A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its
-# bracketed tags, in either order.
+# bracketed tags, in either order. `PLAN-IMPACT: none`, or a bare `no` ended by punctuation or the line, says the
+# plan holds, so it is no plan change; `PLAN-IMPACT: no index on ...` still is one.
 LINE_RANGE = r"\d+(?:[-\N{EN DASH}]\d+)?(?:,\d+(?:[-\N{EN DASH}]\d+)?)*"
 PLAN_CHANGE_MARK = re.compile(
-    rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*plan[-_ ]?impact", re.I)
+    rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*plan[-_ ]?impact"
+    r"(?![*`_]*:[ \t*`_]*(?:none\b|no(?:[.;,)*`_]|[ \t]*$)))", re.I | re.M)
 PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
 # A PLAN-IMPACT's `acceptance_criteria:` line: `none`, or the criteria the change would alter.
 AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", re.I)

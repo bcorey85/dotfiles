@@ -36,8 +36,12 @@ GIT_TIMEOUT_SECONDS = 10
 DESC_LIMIT = 160
 FALSY_DIRTY = {"", "0", "false", "False"}
 
-CLOSING_LINE = ("Before this push opens a PR, fix each one with /fix, or name it in your report as carried with its "
-                "reason. This check never blocks.")
+# A finding logged on uncommitted code has its first commit as the base, and a fix made before that commit lands in
+# the base, so the hook cannot tell such a fix from open code.
+UNCHANGED_SCOPE = ("No commit after the one that first committed a finding's code touched its lines, but a fix made "
+                   "before that commit does not show here: read each line before you act on it.")
+CLOSING_LINE = ("Before this push opens a PR, fix each one still open with /fix, or name it in your report as carried "
+                "with its reason. This check never blocks.")
 
 
 def is_trigger(command):
@@ -179,8 +183,7 @@ def finding_line(row):
 
 
 def context_text(rows):
-    header = (f"{len(rows)} deferred bug or correctness findings on this branch: "
-              "their code has not changed since review.")
+    header = (f"{len(rows)} deferred bug or correctness findings on this branch. {UNCHANGED_SCOPE}")
     return "\n".join([header, *map(finding_line, rows), CLOSING_LINE])
 
 

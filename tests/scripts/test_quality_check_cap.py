@@ -351,6 +351,15 @@ class QualityCheckCapTest(unittest.TestCase):
                         "'Command timed out after 5s'")
         self.assert_denied(self.pre("pytest"))
 
+    def test_a_command_not_found_records_nothing(self):
+        for code in (126, 127):
+            with self.subTest(code=code):
+                self.fire("PostToolUseFailure", command="ruff check src", is_interrupt=False,
+                          error=f"Exit code {code}\nzsh: command not found: ruff")
+                records = [name for name in self.state_files() if not name.endswith(".start")]
+                self.assertEqual(records, [])
+                self.assert_allowed(self.pre("ruff check src"))
+
     def test_an_interrupted_run_records_nothing(self):
         payload = {"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "session_id": "s1",
                    "cwd": str(self.work), "tool_input": {"command": "pytest"}, "is_interrupt": True,
@@ -378,7 +387,7 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_denied(self.pre("pytest"))
 
     def test_a_plain_nonzero_exit_is_still_recorded(self):
-        for code in (1, 2, 127, 128, 193, 255):
+        for code in (1, 2, 125, 128, 193, 255):
             self.fire("PostToolUseFailure", command="pytest", error=f"Exit code {code}\nFAILED")
             self.assert_denied(self.pre("pytest"))
             self.assert_allowed(self.edit())

@@ -36,7 +36,7 @@ from review_loop_prompt_file import (
     write_script_prompt,
 )
 
-STATE_NAME = "review-script"
+STATE_NAME = reviewer_dispatch.LAUNCH_STATE_NAME
 AGENT_PREFIX = "review-script-"
 DEFAULT_HANDOFF = "Review the working tree against HEAD."
 FAST_REVIEWER_MODEL = "haiku"
@@ -197,7 +197,7 @@ def command_launch(argv, loop_script):
 
     state_dir = script_utils.git_path(repo, STATE_NAME)
     agent_id = f"{AGENT_PREFIX}{script_utils.sortable_unique_id()}"
-    loop_dir = pathlib.Path(state_dir) / "loop-script" / agent_id
+    loop_dir = pathlib.Path(state_dir) / reviewer_dispatch.LOOP_FOLDER / agent_id
     loop_dir.mkdir(parents=True, exist_ok=True)
     findings_file = loop_dir / FINDINGS_JSON if findings else None
     if findings_file:

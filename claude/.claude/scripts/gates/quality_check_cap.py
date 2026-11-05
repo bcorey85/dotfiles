@@ -5,16 +5,17 @@ PostToolUse(Write|Edit|MultiEdit|NotebookEdit) touches `edits`; PreToolUse(Bash)
 newer than `edits`, unless a file in the repo was changed by means the Write/Edit hook never sees (shell
 redirection, a script) more recently than that run, then it allows. PostToolUse(Bash) records the run;
 PostToolUseFailure(Bash) does too, except when the run did not finish: an interrupt (`is_interrupt`) or an exit
-status of 129 to 192 (128 + signal number: ended by a signal, such as a pkill or a timeout kill), so the rerun is
-allowed. Exit 128 and 255 are ordinary failures (git and PHP fatal errors) and are recorded. A check is recorded only
-when it surely ran: after a failure, a check behind `&&` or `||` may never have started, so it is not recorded; after
-a success, a check behind `||` is not. A check whose output redirection the shell could not open (a redirect into a
-missing folder, `> gone/x.log`) never started, so it is not recorded. A run record keeps
-the run's start in a line, so an edit made while the check ran allows the rerun; the record's own time is the run's
-end. A command with a formatter that rewrites files (`cargo fmt`, `prettier --write`, `ruff format`...) or a git
-call that rewrites the tree (`git merge`, `checkout`, `reset`...) is never denied when every check in it runs only
-after the formatter succeeded (joined to it by `&&`, pipes allowed), and resets the cap
-like an edit; its checks are recorded with no start line. Key: normalized command + effective cwd (POSIX cksum) +
+status of 129 to 192 (128 + signal number: ended by a signal, such as a pkill or a timeout kill), or an exit status
+of 126 or 127 (the shell found no command to run), so the rerun is allowed. Exit 128 and 255 are ordinary failures
+(git and PHP fatal errors) and are recorded. A check is recorded only when it surely ran: after a failure, a check
+behind `&&` or `||` may never have started, so it is not recorded; after a success, a check behind `||` is not.
+A check whose output redirection the shell could not open (a redirect into a missing folder, `> gone/x.log`)
+never started, so it is not recorded. A run record keeps the run's start in a line, so an edit made while the
+check ran allows the rerun; the record's own time is the run's end. A command with a formatter that rewrites files
+(`cargo fmt`, `prettier --write`, `ruff format`...) or a git call that rewrites the tree (`git merge`, `checkout`,
+`reset`...) is never denied when every check in it runs only after the formatter succeeded (joined to it by `&&`,
+pipes allowed), and resets the cap like an edit; its checks are recorded with no start line.
+Key: normalized command + effective cwd (POSIX cksum) +
 the agent that ran it: a run is capped only against an earlier run by the same agent, so a subagent's first run of a
 check is always allowed. The agent is the hook input's `agent_id` (set only inside a subagent); the main thread has
 none. Edits are shared by every agent of the session, because they change the tree all of them see. A `cargo test`
@@ -56,6 +57,8 @@ from shell_command import (
 from shell_statements import strip_comments, strip_heredocs
 
 SIGNAL_EXIT_CODES = range(129, 193)
+# 126 (not executable) and 127 (command not found): the shell never started the check.
+NOT_STARTED_EXIT_CODES = (126, 127)
 WS ="[ \t\n\r\f\v]"
 SP = " \t\n\r\f\v"
 FORMATTERS = ("cargo fmt|rustfmt|black|gofmt|go fmt|ruff format|prettier|biome (format|check)|eslint|dotnet format|"
@@ -458,7 +461,8 @@ def run(raw, state):
     if event == "PostToolUseFailure":
         if truthy(jq_get(root_json, "is_interrupt")):
             return
-        if exit_code_in_error_text(jq_field(root_json, "error")) in SIGNAL_EXIT_CODES:
+        exit_code = exit_code_in_error_text(jq_field(root_json, "error"))
+        if exit_code in SIGNAL_EXIT_CODES or exit_code in NOT_STARTED_EXIT_CODES:
             return
 
     command = jq_field(root_json, "tool_input", "command")

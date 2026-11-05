@@ -152,6 +152,54 @@ class RunFormattersTest(unittest.TestCase):
 
                 self.assertEqual(changed, ["app.py"] if formats else [])
 
+    def install_fake_rustfmt(self):
+        """A rustfmt that logs its arguments and appends a line to each .rs file it is given."""
+        calls = self.bin.parent / "rustfmt-calls"
+        rustfmt = self.bin / "rustfmt"
+        rustfmt.write_text(f"""#!/bin/sh
+echo "$@" >> {calls}
+for f in "$@"; do case "$f" in *.rs) echo '// formatted' >> "$f";; esac; done
+""")
+        rustfmt.chmod(0o755)
+        return calls
+
+    def test_the_loop_path_formats_rust_files_in_a_repo_whose_check_runs_cargo_fmt(self):
+        calls = self.install_fake_rustfmt()
+        (self.repo / "Cargo.toml").write_text('[package]\nname = "app"\nedition = "2024"\n')
+        (self.repo / "src").mkdir()
+        (self.repo / "src" / "main.rs").write_text("fn main() {}\n")
+
+        changed = format_files.run_formatters(str(self.repo), ["src/main.rs"], include_python=True,
+                                              configured_only=True, check_command="cargo fmt --check && cargo test")
+
+        self.assertEqual(changed, ["src/main.rs"])
+        self.assertEqual(calls.read_text(), "--edition 2024 src/main.rs\n")
+
+    def test_rust_files_take_the_edition_their_crate_inherits_from_the_workspace(self):
+        calls = self.install_fake_rustfmt()
+        (self.repo / "rustfmt.toml").write_text("")
+        (self.repo / "Cargo.toml").write_text('[workspace]\nmembers = ["app"]\n[workspace.package]\nedition = "2018"\n')
+        (self.repo / "app" / "src").mkdir(parents=True)
+        (self.repo / "app" / "Cargo.toml").write_text('[package]\nname = "app"\nedition.workspace = true\n')
+        (self.repo / "app" / "src" / "lib.rs").write_text("pub fn f() {}\n")
+        (self.repo / "loose.rs").write_text("fn g() {}\n")
+
+        changed = format_files.run_formatters(str(self.repo), ["app/src/lib.rs", "loose.rs"])
+
+        self.assertEqual(sorted(changed), ["app/src/lib.rs", "loose.rs"])
+        self.assertEqual(calls.read_text(), "--edition 2018 app/src/lib.rs loose.rs\n")
+
+    def test_rust_files_are_left_alone_in_a_repo_that_shows_no_rustfmt_use(self):
+        calls = self.install_fake_rustfmt()
+        (self.repo / "Cargo.toml").write_text('[package]\nname = "app"\nedition = "2021"\n')
+        (self.repo / "main.rs").write_text("fn main() {}\n")
+
+        changed = format_files.run_formatters(str(self.repo), ["main.rs"], include_python=True, configured_only=True,
+                                              check_command="cargo test")
+
+        self.assertEqual(changed, [])
+        self.assertFalse(calls.exists())
+
     def test_a_missing_ruff_a_missing_file_and_a_plan_file_are_skipped_silently(self):
         (self.repo / "ruff.toml").write_text("")
         (self.repo / "docs" / "plans").mkdir(parents=True)

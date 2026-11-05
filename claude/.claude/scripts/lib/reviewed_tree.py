@@ -12,7 +12,8 @@ with an optional path left out of both parts. The
 bytes match what verify stored for any tree whose diff is valid UTF-8; a diff with other bytes in a tracked text edit
 hashes differently from before, so verify-prep and the branch review rerun once there.
 
-State: ~/.claude/state/review-gate/<session>.reviewed, one JSON object of repo top level -> fingerprint. A value
+State: ~/.claude/state/review-gate/<session>.reviewed, one JSON object of repo top level -> fingerprint, and
+~/.claude/state/review-gate/reviewed-trees.json, repo top level -> the latest fingerprints any session recorded. A value
 written in an older form never equals a current one, so the tree counts as not reviewed until it is recorded again.
 """
 import hashlib
@@ -26,6 +27,10 @@ import script_utils
 
 GIT_TIMEOUT_SECONDS = 10
 REVIEWED_SUFFIX = ".reviewed"
+# The reviewed trees of every session, so a commit from a fork's parent, a resumed session or a session after /clear
+# earns the credit of a review that converged under another session id. It credits only the exact tree reviewed.
+SHARED_REVIEWED_NAME = "reviewed-trees.json"
+SHARED_LIMIT = 50
 
 
 class TreeFingerprintError(Exception):
@@ -38,6 +43,10 @@ def review_gate_dir():
 
 def reviewed_file(session):
     return review_gate_dir() / (session + REVIEWED_SUFFIX)
+
+
+def shared_reviewed_file():
+    return review_gate_dir() / SHARED_REVIEWED_NAME
 
 
 def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerprintError, timeout=None,
@@ -153,17 +162,28 @@ def reviewed_fingerprint(repo_dir):
     return str(top), tree_hash
 
 
-def read_reviewed(session):
+def read_json_object(file):
+    """The JSON object in `file`, or {} when it is missing, unreadable or holds no object."""
     try:
-        reviewed = json.loads(reviewed_file(session).read_text())
+        found = json.loads(file.read_text())
     except (OSError, ValueError):
         return {}
-    return reviewed if isinstance(reviewed, dict) else {}
+    return found if isinstance(found, dict) else {}
+
+
+def read_reviewed(session):
+    return read_json_object(reviewed_file(session))
+
+
+def read_shared_reviewed():
+    """Every session's reviewed trees: repo top level -> the latest SHARED_LIMIT fingerprints, oldest first."""
+    return read_json_object(shared_reviewed_file())
 
 
 def record_reviewed(session, repo_dir, tree=None):
-    """Store repo_dir's tree as reviewed for the session: `tree`, a stored (top, reviewed_fingerprint) pair, when
-    given, else the tree as it stands. Returns False when the tree cannot be fingerprinted."""
+    """Store repo_dir's tree as reviewed for the session and in the shared record: `tree`, a stored
+    (top, reviewed_fingerprint) pair, when given, else the tree as it stands. Returns False when the tree cannot be
+    fingerprinted."""
     found = tree or reviewed_fingerprint(repo_dir)
     if found is None:
         return False
@@ -172,14 +192,24 @@ def record_reviewed(session, repo_dir, tree=None):
     reviewed[top] = tree_hash
     reviewed_file(session).parent.mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(reviewed_file(session), json.dumps(reviewed) + "\n")
+
+    shared = read_shared_reviewed()
+    stored = shared.get(top)
+    trees = [value for value in stored if value != tree_hash] if isinstance(stored, list) else []
+    shared[top] = [*trees, tree_hash][-SHARED_LIMIT:]
+    script_utils.write_text_atomically(shared_reviewed_file(), json.dumps(shared) + "\n")
     return True
 
 
 def is_reviewed(session, repo_dir):
-    """True when repo_dir's working tree, notes paths left out, is exactly the tree recorded as reviewed for the
-    session."""
+    """True when repo_dir's working tree, notes paths left out, is exactly a tree that a converged review covered:
+    the one recorded for the session, or one in the shared record that any session wrote."""
     found = reviewed_fingerprint(repo_dir)
     if found is None:
         return False
     top, tree_hash = found
-    return read_reviewed(session).get(top) == tree_hash
+    if read_reviewed(session).get(top) == tree_hash:
+        return True
+
+    shared_trees = read_shared_reviewed().get(top)
+    return isinstance(shared_trees, list) and tree_hash in shared_trees

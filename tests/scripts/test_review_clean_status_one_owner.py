@@ -133,6 +133,7 @@ class CleanStatusOneOwnerTest(unittest.TestCase):
             with self.subTest(rows=label):
                 self.store_rows(rows)
                 reviewed_tree.reviewed_file(SESSION).unlink(missing_ok=True)
+                reviewed_tree.shared_reviewed_file().unlink(missing_ok=True)
 
                 handback.record_clean_review(SESSION)
 

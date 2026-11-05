@@ -78,6 +78,10 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("record it as `pending sign-off` with no name or date, leave the change unapplied, and STOP",
                       text)
 
+    def test_code_reviews_every_phase_a_pure_move_too(self):
+        self.assertIn("Run this review for every phase, a pure move or rename too.",
+                      guidance_text("skills/code/SKILL.md"))
+
     def test_pr_comments_hands_the_user_the_aikido_replies_as_one_line(self):
         text = guidance_text("skills/pr-comments/SKILL.md")
         self.assertIn("never run the replies yourself", text)

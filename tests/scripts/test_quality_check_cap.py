@@ -258,6 +258,17 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_allowed(self.pre(ruff + " > /tmp/check.log 2>&1"))
         self.assert_allowed(self.pre(ruff))
 
+    def test_a_check_that_stopped_on_a_missing_path_never_ran_and_is_not_recorded(self):
+        errors = {"ruff check $FILES": "Exit code 1\nE902 No such file or directory (os error 2)\n"
+                                       "--> a.py b.py:1:1\n\nFound 1 error.",
+                  "ruff check $PY_FILES": "Exit code 1\na.py b.py:1:1: E902 No such file or directory (os error 2)",
+                  "pytest $TESTS": "Exit code 4\nERROR: file or directory not found: t1.py t2.py",
+                  "mypy $SRC": "Exit code 2\nmypy: can't read file 'a.py b.py': No such file or directory"}
+        for command, error in errors.items():
+            with self.subTest(command=command):
+                self.fire("PostToolUseFailure", command=command, error=error)
+                self.assert_allowed(self.pre(command))
+
     def test_a_check_whose_redirect_opened_or_cannot_be_resolved_is_recorded(self):
         (self.work / "logs").mkdir()
         (self.work / "logs" / "ruff.log").write_text("")

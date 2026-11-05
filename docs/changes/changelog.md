@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-838 changes
+842 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,6 +31,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Aikido replies take an explicit PR number](notes/2026-11-05-aikido-replies-take-an-explicit-pr-number.md) [script/review-fix, skill/fix, skill/pr-comments] review_fix.py packet takes `--pr <number>` and posts the Aikido replies to that PR without asking gh for the current branch's PR, so the replies post from a detached HEAD.
+* [Ticket comments reach the AC gate as Comment labels](notes/2026-11-05-ticket-comments-reach-the-ac-gate-as-comment.md) [script/verify-prep, script/verify-log, agent/plan-verifier, skill/verify-branch, skill/eng-spec] verify-prep lists each ticket comment as a `Comment #n` label in the plan-verifier dispatch, verify-log requires a row for each, and /verify-branch refreshes the snapshot's comments first, so a criterion added only in a comment is verdicted.
+* [Quality-check cap skips a check that stopped on a missing path](notes/2026-11-05-quality-check-cap-skips-a-check-that-stopped-on-a.md) [script/quality-check-cap, script/check-output] A failed check whose output says it stopped on a path that does not exist (ruff E902, pytest file not found, mypy can't read file) never ran on the files, so the quality-check cap no longer counts it as a failed attempt.
+* [Permission-question gate lets outward ticket, PR and message questions through](notes/2026-11-05-permission-question-gate-lets-outward-ticket-pr.md) [script/permission-question] The Stop gate's permission-question check counts filing a ticket, issue or PR, replying, notifying, messaging, pinging and Slack as outward steps, so a closing question about them is no longer sent back.
 * [Compacted session is reminded of a review loop waiting on its reviewers](notes/2026-11-05-compacted-session-is-reminded-of-a-review-loop.md) [script/reviewer-dispatch, script/waiting-review-launch] A new SessionStart hook on resume and compact prints the open dispatch-reviewer lines of every launched review loop of the repo that still runs, so a compaction no longer loses the reviewers and lets the loop time out unseen.
 * [Permission-question Stop hook lets asks before irreversible app actions through](notes/2026-11-05-permission-question-stop-hook-lets-asks-before.md) [script/staged-claim-gate] permission_question.OUTWARD_STEP names void, cancel, refund, revoke, submit, approve, archive, remove, overwrite, wipe, purge, truncate and destroy, so the Stop hook no longer sends back an ask before such a step.
 * [Plan-verifier dispatch names the repo and HEAD to verify](notes/2026-11-05-plan-verifier-dispatch-names-the-repo-and-head-to.md) [script/verify-prep, agent/plan-verifier] verify-prep puts repo: and head: lines in the plan-verifier payload, and the verifier runs every command in that repo and stops when its HEAD differs.

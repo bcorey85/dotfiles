@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-838 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+842 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-05, [Compacted session is reminded of a review loop waiting on its reviewers](notes/2026-11-05-compacted-session-is-reminded-of-a-review-loop.md).
+Latest change: 2026-11-05, [Aikido replies take an explicit PR number](notes/2026-11-05-aikido-replies-take-an-explicit-pr-number.md).
 
 ## Top gains
 

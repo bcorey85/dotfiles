@@ -895,8 +895,8 @@ def unruled_plan_impact_denial(repo_dirs, session):
             f"[review-commit-gate] The latest /review of {repo_top} handed back {len(unruled)} plan impact(s) that "
             f"await a ruling. Do not run /review again: rule on them first, with `python3 {review_fix} defer "
             f"<handoff file>` to defer them to phase end or `python3 {review_fix} {plan_format.DECIDE_USAGE_STEM}`. "
-            "Only `decide keep` settles them; `decide adopt` re-dispatches the loop. Then commit the tree the review "
-            "covered."
+            "Only `decide keep` settles them; `decide adopt` logs the deviation and re-dispatches the loop (or, with "
+            "no `packet` state, stops for `/code resume`). Then commit the tree the review covered."
         )
     return None
 

@@ -1,4 +1,8 @@
-"""review_loop_plan.py: the files a scripted review loop reviews, and which reviewers go out in each round."""
+"""review_loop_plan.py: the files a scripted review loop reviews, the lines its change adds, and which reviewers go
+out in each round."""
+import pathlib
+
+import change_removal
 import numstat
 import script_utils
 import source_paths
@@ -42,6 +46,50 @@ def base_scope(repo, base):
         if entry[1] == "??":
             files[path] = entry
     return files
+
+
+def lines_added_since(repo, start):
+    """{path: Counter of the source lines the working tree adds to the commit `start`}, for the files that count toward
+    size. A HEAD still at `start`, or a `start` of None, diffs against HEAD with renames followed; a HEAD that moved
+    diffs against `start` itself, so lines committed since then still count as added."""
+    head = script_utils.git_output(repo, "rev-parse", "--verify", "-q", "HEAD")
+    if start is None or head == start:
+        files = scope(repo)
+        origins = worktree_snapshot.status_entries(repo)[1]
+        base = "HEAD"
+    else:
+        files = base_scope(repo, start)
+        origins = {}
+        base = start
+
+    added_by_file = {}
+    for path in files:
+        if not source_paths.counts_toward_size(path):
+            continue
+
+        target = pathlib.Path(repo) / path
+        tree_text = target.read_text(errors="replace") if target.is_file() else ""
+        base_path = origins.get(path, path)
+        base_text = script_utils.git_output(repo, "show", f"{base}:{base_path}") or ""
+        added = change_removal.added_lines(base_text, tree_text)
+        if added:
+            added_by_file[path] = added
+    return added_by_file
+
+
+class ChangeUnderReview:
+    """The lines the working tree adds when the loop starts, measured against the commit HEAD names then. The loop
+    reads `removed` after every coder pass; a commit made while the loop runs leaves that base where it was."""
+
+    def __init__(self, repo):
+        self.repo = repo
+        self.start = script_utils.git_output(repo, "rev-parse", "--verify", "-q", "HEAD")
+        self.added = lines_added_since(repo, self.start)
+
+    def removed(self):
+        """{path: count} of the added lines the tree no longer adds."""
+        now_added = lines_added_since(self.repo, self.start)
+        return change_removal.removed_by_file(self.added, now_added)
 
 
 def review_files(repo, base="", only=()):

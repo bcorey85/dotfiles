@@ -929,7 +929,9 @@ def command_decide(argv):
     options = parser.parse_args(argv)
     state = load_fix_state()
     if state.get("stage") != "plan-impact" and not state.get("plan_impact_held"):
-        raise UsageError("no plan-impact is waiting.")
+        raise UsageError("no plan-impact is waiting in this session's packet, so the commit gate is already clear "
+                         "(a `defer` clears it too). Add the ruling under the plan's decision log (`03-decisions.md` "
+                         "or `## Plan Deviations`) by hand. `decide` reads only the packet this session processed.")
     if options.decision == "discuss":
         return print_action("discuss", "Discuss the plan impact with the user, then run one of these. Do not "
                             "re-dispatch yet.", *discuss_commands(), plan_format.DECIDE_BY_NOTE)

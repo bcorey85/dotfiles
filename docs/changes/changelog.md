@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-830 changes
+838 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,6 +31,14 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Compacted session is reminded of a review loop waiting on its reviewers](notes/2026-11-05-compacted-session-is-reminded-of-a-review-loop.md) [script/reviewer-dispatch, script/waiting-review-launch] A new SessionStart hook on resume and compact prints the open dispatch-reviewer lines of every launched review loop of the repo that still runs, so a compaction no longer loses the reviewers and lets the loop time out unseen.
+* [Permission-question Stop hook lets asks before irreversible app actions through](notes/2026-11-05-permission-question-stop-hook-lets-asks-before.md) [script/staged-claim-gate] permission_question.OUTWARD_STEP names void, cancel, refund, revoke, submit, approve, archive, remove, overwrite, wipe, purge, truncate and destroy, so the Stop hook no longer sends back an ask before such a step.
+* [Plan-verifier dispatch names the repo and HEAD to verify](notes/2026-11-05-plan-verifier-dispatch-names-the-repo-and-head-to.md) [script/verify-prep, agent/plan-verifier] verify-prep puts repo: and head: lines in the plan-verifier payload, and the verifier runs every command in that repo and stops when its HEAD differs.
+* [An ask tagged PLAN-IMPACT none no longer counts as a plan change](notes/2026-11-05-an-ask-tagged-plan-impact-none-no-longer-counts-as.md) [script/plan-format] plan_format.PLAN_CHANGE_MARK skips a PLAN-IMPACT tag whose value is none or no, so the review loop stops holding a plan impact on an ask that changes no plan.
+* [Deferred-findings push notice says fixes before the first commit do not show](notes/2026-11-05-deferred-findings-push-notice-says-fixes-before.md) [script/deferred-push-check] deferred_push_check.py says that a fix made before the branch's first commit does not show in its list, and tells the reader to fix each finding still open.
+* [Review prompt drops later-phase files this phase already changed](notes/2026-11-05-review-prompt-drops-later-phase-files-this-phase.md) [script/code-review-start] code_review_start.py no longer lists a later-phase file that the current phase changed, so reviewers stop skipping the lines the phase wrote in it.
+* [Code review start prints the defer action for held plan impacts](notes/2026-11-05-code-review-start-prints-the-defer-action-for-held.md) [script/code-review-start] code_review_start.py prints an ACTION: defer-plan-impacts line after a packet that holds unruled plan impacts, so /code stops reporting a converged review the commit gate still counts as dirty.
+* [Quality-check cap no longer records a check the shell never found](notes/2026-11-05-quality-check-cap-no-longer-records-a-check-the.md) [script/quality-check-cap] quality_check_cap.py records nothing for a failed Bash run that exited 126 or 127, so a rerun after installing the missing tool or fixing its path is allowed.
 * [The code skill runs the review for a pure move or rename too](notes/2026-11-04-the-code-skill-runs-the-review-for-a-pure-move-or.md) [skill/code] Step 5 of the /code skill says to run the review for every phase, a pure move or rename too, so a fork does not skip its review loop and leave the commit gate blocked.
 * [review_fix decide says the gate is already clear and where the ruling goes](notes/2026-11-04-review-fix-decide-says-the-gate-is-already-clear.md) [script/review-fix] When no plan impact waits in this session's packet, `review_fix.py decide` says the commit gate is already clear (a defer clears it too), that the ruling goes in the plan's decision log by hand, and that decide reads only this session's packet.
 * [The review loop measures removed lines against the commit it started on](notes/2026-11-04-the-review-loop-measures-removed-lines-against-the.md) [script/review-loop-script] The removed-lines guard pins HEAD when the loop starts and diffs against that commit after every coder pass, so a commit of the change while reviewers run no longer reads as a fix pass that removed the change.

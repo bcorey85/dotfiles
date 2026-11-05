@@ -28,6 +28,8 @@ You run at branch end, after `/review` converged every phase — correctness is 
 **A dispatch naming `scope: phase <N>` is stale** — that gate is retired. Say so and stop; do
 not improvise a phase-scoped run.
 
+Run every git, test and check command in the dispatch's `repo:` folder, never in your own cwd. First run `git -C <repo> rev-parse HEAD`. When it differs from the dispatch's `head:`, stop and report both hashes. Name the HEAD you verified in your report.
+
 Read plan + ticket in full — cross-phase reconciliation is your job, so `plan-reading.md`'s phase-scoping does not apply.
 
 ## Job 1 — Reconcile

@@ -29,6 +29,9 @@ WAIT_COMMAND = "python3 ~/.claude/scripts/review/reviewer_dispatch.py wait"
 PACKET_COMMAND = "python3 ~/.claude/scripts/review/review_fix.py packet"
 # The packet arguments of a run `review_fix.py launch` started: {"packet_args": [...]}.
 LAUNCH_FILE = "launch.json"
+# `review_fix.py launch` keeps each run at <git path of LAUNCH_STATE_NAME>/loop-script/<agent id>.
+LAUNCH_STATE_NAME = "review-script"
+LOOP_FOLDER = "loop-script"
 
 
 class ManifestError(Exception):
@@ -163,6 +166,34 @@ def pid_is_running(pid):
     except PermissionError:
         return True
     return True
+
+
+def loop_pid(loop_dir):
+    """The pid in <loop dir>/loop.pid, or None when the file is missing or holds no number."""
+    try:
+        return int((pathlib.Path(loop_dir) / PID_FILE).read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def waiting_launch_lines(repo):
+    """The dispatch lines of every `launch` run of repo whose loop still runs and waits on a reviewer report."""
+    state_dir = script_utils.git_path(repo, LAUNCH_STATE_NAME)
+    if state_dir is None:
+        return []
+    loop_root = state_dir / LOOP_FOLDER
+    if not loop_root.is_dir():
+        return []
+
+    lines = []
+    for loop_dir in sorted(loop_root.iterdir()):
+        pid = loop_pid(loop_dir)
+        if pid is None or not pid_is_running(pid):
+            continue
+        pending = pending_requests(loop_dir)
+        if pending:
+            lines += dispatch_lines(loop_dir, pending)
+    return lines
 
 
 def packet_command(loop_dir):

@@ -95,7 +95,14 @@ class DeferredPushCheckTest(unittest.TestCase):
         self.assertIn("- app.py:30 [code-reviewer, bug] off by one in the total", text)
         self.assertIn("1 deferred bug or correctness findings", text)
         self.assertTrue(text.endswith("This check never blocks."))
-        self.assertIn("fix each one with /fix", text)
+        self.assertIn("fix each one still open with /fix", text)
+
+    def test_the_notice_says_a_fix_made_before_the_first_commit_does_not_show(self):
+        self.commit("2026-01-03T00:00:00Z", edits={30: "total = sum(items)  # fixed before the commit"})
+        self.write_findings(self.finding(dirty="1"))
+        text = self.assert_listed()
+        self.assertNotIn("has not changed since review", text)
+        self.assertIn("a fix made before that commit does not show here", text)
 
     def test_pr_create_and_git_global_option_trigger(self):
         head = self.commit("2026-01-01T00:00:00Z")

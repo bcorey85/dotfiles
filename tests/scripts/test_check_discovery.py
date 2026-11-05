@@ -89,6 +89,17 @@ class CheckDiscoveryTest(unittest.TestCase):
 
         self.assertEqual("uv run ruff check && uv run python manage.py test --noinput", self.discovered())
 
+    def test_a_shell_wrapper_manage_py_runs_through_its_shell_not_python(self):
+        self.write("manage.py", "#!/usr/bin/env bash\ncd backend && python manage.py \"$@\"\n")
+        self.write("Pipfile.lock", "{}")
+
+        self.assertEqual("pipenv run bash manage.py test --noinput", self.discovered())
+
+    def test_a_python_manage_py_with_a_shebang_runs_through_python(self):
+        self.write("manage.py", "#!/usr/bin/env python\nimport sys\n")
+
+        self.assertEqual("python3 manage.py test --noinput", self.discovered())
+
     def test_a_pytest_repo_gets_pytest(self):
         self.write("pytest.ini", "[pytest]\naddopts = -q\n")
 

@@ -71,6 +71,7 @@ import change_removal
 import coder_gate
 import coder_report
 import file_backup
+import format_files
 import full_check
 import full_check_gate
 import handback
@@ -78,8 +79,6 @@ import loop_transcript
 import plan_format
 import reviewer_dispatch
 import script_utils
-import source_paths
-import worktree_snapshot
 from finding_record import parse_finding
 from review_loop_calls import (
     CALL_TIMEOUT_SECONDS,
@@ -107,7 +106,7 @@ from review_loop_findings import (
 )
 from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
-from review_loop_plan import first_round_plan, review_files, scope, second_round_plan
+from review_loop_plan import ChangeUnderReview, first_round_plan, review_files, scope, second_round_plan
 from review_loop_prompt_file import (
     BASE_KEY,
     FILES_KEY,
@@ -161,26 +160,6 @@ def file_texts(repo):
         if target.is_file():
             texts[path] = target.read_text(errors="replace")
     return texts
-
-
-def change_under_review(repo):
-    """{path: Counter of the source lines the working tree adds to HEAD}, for the files that count toward size. The
-    loop reads it at its start, as the change its fix passes must not remove, and after every coder pass, to see what
-    the tree still adds."""
-    added_by_file = {}
-    origins = worktree_snapshot.status_entries(repo)[1]
-    for path in scope(repo):
-        if not source_paths.counts_toward_size(path):
-            continue
-
-        target = pathlib.Path(repo) / path
-        tree_text = target.read_text(errors="replace") if target.is_file() else ""
-        head_path = origins.get(path, path)
-        head_text = script_utils.git_output(repo, "show", f"HEAD:{head_path}") or ""
-        added = change_removal.added_lines(head_text, tree_text)
-        if added:
-            added_by_file[path] = added
-    return added_by_file
 
 
 class LaterPhaseEditError(RuntimeError):
@@ -414,7 +393,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.later_phase_files = set()  # the plan's later-phase files, which no coder pass may edit
         self.guidance = ""
         self.test_strategy = ""  # the plan's test strategy section, which only the test reviewer gets
-        self.change_added = {}  # the lines the change under review adds, which the fix passes must not remove
+        self.change = None  # ChangeUnderReview: the lines the change adds, which the fix passes must not remove
         self.reviewers = REVIEWERS_HEADLESS  # who runs the reviewers: REVIEWERS_HEADLESS or REVIEWERS_MAIN
         self.reviewer_model = ""  # the model every reviewer runs on; "" leaves each agent's own
         self.review_base = ""  # the commit the review diffs against; "" is HEAD
@@ -422,6 +401,15 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def review_scope(self):
         return review_files(self.repo, self.review_base, self.only_files)
+
+    def format_reviewed_files(self, check_command):
+        """Run the formatters the repo configures on the reviewed and touched files, so the tree the hand-back records
+        is already formatted and a formatter run after the loop leaves the reviewed tree as it was. The changed files
+        count as touched."""
+        paths = sorted(set(self.review_scope()) | self.files_touched)
+        changed = format_files.run_formatters(self.repo, paths, include_python=True, configured_only=True,
+                                              check_command=check_command or "")
+        self.files_touched.update(changed)
 
     def next_round(self):
         self.iter_count += 1
@@ -632,10 +620,10 @@ class LoopRun(full_check_gate.FullCheckSteps):
             raise LaterPhaseEditError(f"{call_name} edited files the plan gives to a later phase: "
                                       + ", ".join(later_phase_edits))
 
-        removed = change_removal.removed_by_file(self.change_added, change_under_review(self.repo))
-        if change_removal.is_gutted(self.change_added, removed):
+        removed = self.change.removed()
+        if change_removal.is_gutted(self.change.added, removed):
             self.files_touched.update(changed)
-            raise ChangeRemovedError(change_removal.removal_blocker(self.change_added, removed))
+            raise ChangeRemovedError(change_removal.removal_blocker(self.change.added, removed))
         return report, diffs, changed
 
     def fix_round(self, round_fix, round_nits):
@@ -839,6 +827,7 @@ def walk(loop, check_command, gate_commands):
             break
 
     if loop.status == "converged":
+        loop.format_reviewed_files(check_command)
         loop.full_check_pass(check_command)
     if loop.status == "converged":
         loop.class_closure_pass(check_command)
@@ -875,7 +864,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=(), re
     loop.later_phase_files = set(filter(None, header.get("later-phase files", "").split(", ")))
     loop.guidance = header.get("guidance", "")
     loop.resolved_texts = plan_format.resolved_plan_texts(handoff)
-    loop.change_added = change_under_review(repo)
+    loop.change = ChangeUnderReview(repo)
 
     log_call(repo, [str(SKILLS / "review-scope"), f"caller={caller}"])
     found_command = full_check.configured_check_command(repo)

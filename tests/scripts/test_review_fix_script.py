@@ -590,6 +590,27 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("the commit gate counts the review as clean", output)
         self.assertIsNone(self.false_clean_reason())
 
+    def test_decide_after_a_defer_says_the_gate_is_clear_and_where_the_ruling_goes(self):
+        message = json.dumps({"status": "converged", "iter": 2, "fixed": [], "ask": [],
+                              "class_closure": "n/a - fixed[] empty", "plan_impacts": [HELD_IMPACT]})
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record(SESSION, "dispatch")
+            handback_store.record(SESSION, "handback", status="converged", message=message)
+        self.packet(json.dumps({"status": "converged", "iter": 2, "fixed": [], "ask": [],
+                                "class_closure": "n/a - fixed[] empty"}))
+        deferred_handoff = self.temp_root / "handoff.txt"
+        deferred_handoff.write_text("plan_impact: RESOLVED: deferred to phase end by the session, 2026-10-31: "
+                                    "drop the retry\n", encoding="utf-8")
+        defer_code, defer_output = self.run_script(["defer", str(deferred_handoff)])
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "no, keep the retry"])
+
+        self.assertEqual(defer_code, 0, defer_output)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("the commit gate is already clear", output)
+        self.assertIn("decision log", output)
+        self.assertIn("this session", output)
+
     def test_a_ruling_that_keeps_the_plan_leaves_the_asks_of_the_same_packet_to_asks_done(self):
         self.impacts_packet([HELD_IMPACT], ask=[CAP_ASK])
         code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "no, keep the retry"])

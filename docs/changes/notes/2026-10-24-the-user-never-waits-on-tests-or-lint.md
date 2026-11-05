@@ -33,6 +33,10 @@ None. See `unmeasured`.
 
 Share of user shell commands that run a test or lint: 0 of 216 before, 1 of 111 after. One command in ten days is noise against a zero baseline, and the rule only stops the agent handing the user a check, which cannot raise the share. Kept; the watch stays open.
 
+### Reading 2026-11-05: WORSE, kept
+
+3 of 173 after against 0 of 216 before (W45: 2 of 91). Still a handful of commands against a zero baseline, and the rule only stops the agent handing the user a check, so it cannot raise the share. Kept; the watch stays open.
+
 ## Back-out
 
 Remove the line from `## Quality Checks` in `CLAUDE.md`.

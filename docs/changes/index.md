@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-821 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+822 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-04, [Every review entry runs the script loop](notes/2026-11-04-every-review-entry-runs-the-script-loop.md).
+Latest change: 2026-11-04, [One close pass replaces the four closing phases](notes/2026-11-04-one-close-pass-replaces-the-four-closing-phases.md).
 
 ## Top gains
 

@@ -156,7 +156,7 @@ Omit either plan-change list and the asks list when it is empty.
 **C — Last phase** (decision rule 1): block B's walkthrough and verification lists, with the "Next" block replaced by:
 
 ```
-All phases complete. Next: /verify-branch (completeness + review packet; includes the remaining human-only checks), then you open the PR.
+All phases complete. Next: read the Close pass recap's residue, run its smoke-test checklist, then you open the PR.
 ```
 
 Verification items come from the just-finished phase's `#### Manual Verification:` section, split by the `agent-verified` / `human-only` tags. When that section is empty, omit both lists and replace step 1 with "Read the /stage queue."

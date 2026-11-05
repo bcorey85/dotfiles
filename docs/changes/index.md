@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-842 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+843 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-05, [branch-recap reads the jump queue and refreshes the ledger itself](notes/2026-11-05-branch-recap-reads-the-jump-queue-and-refreshes.md).
+Latest change: 2026-11-05, [refactor log accepts a simplify target the branch deleted](notes/2026-11-05-refactor-log-accepts-a-simplify-target-the-branch.md).
 
 ## Top gains
 

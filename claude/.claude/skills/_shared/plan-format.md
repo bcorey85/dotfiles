@@ -33,10 +33,9 @@ skeleton`, the thinnest end-to-end path (`/code` stops after it for calibration)
   or interaction plus expected result. Items only a human can judge (visual
   polish, UX feel) must say so explicitly so they route to the human-only
   list.
-- Every plan ends with the four mandatory closing phases (Refactor →
-  Test audit → Verify → Recap) from `~/.claude/skills/_shared/closing-phases.md`, appended
-  after the last feature phase and numbered continuously — in `## Phase Status`
-  and as full Phase sections.
+- Every plan ends with the mandatory Close pass phase from
+  `~/.claude/skills/_shared/closing-phases.md`, appended after the last feature
+  phase and numbered continuously — in `## Phase Status` and as a full Phase section.
 
 ## Reading a plan
 
@@ -65,12 +64,9 @@ Header links: whichever upstream artifacts exist. Do not invent links.
 - [ ] Phase 1: Walking skeleton — thinnest path through every Phase 0 contract (risk: low|high)
 - [ ] Phase 2: [name] (risk: low|high)
 
-<!-- Mandatory closing phases (closing-phases.md), renumbered after the last feature phase: -->
+<!-- Mandatory closing phase (closing-phases.md), numbered after the last feature phase: -->
 
-- [ ] Phase N: Refactor pass — /refactor cleanup sweep (risk: low)
-- [ ] Phase N+1: Test audit — /test-audit cross-phase test gate (risk: high)
-- [ ] Phase N+2: Verify pass — branch-wide deep review + /verify-branch (plan↔diff + smoke list) (risk: high)
-- [ ] Phase N+3: Recap — /branch-recap synthesis + residue triage, no gates (risk: low)
+- [ ] Phase N: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Current State Analysis
 
@@ -92,7 +88,7 @@ The criteria live in `docs/plans/<slug>/acceptance-criteria.md` as prose with st
 
 - **Criteria file**: `docs/plans/<slug>/acceptance-criteria.md`
 
-The closing Verify phase reconciles every id against the real suite
+The Close pass reconciles every id against the real suite
 (`_shared/closing-phases.md`), matching behavior, not markers. A covering test
 asserts at the public boundary a user or caller reaches, never an internal
 function. **No mocks inside such a test.**

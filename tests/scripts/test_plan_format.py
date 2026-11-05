@@ -862,7 +862,10 @@ class ClosingPhaseHelpersTest(unittest.TestCase):
         self.assertEqual("/test-audit", plan_format.closing_skill("test audit"))
         self.assertEqual("/verify-branch", plan_format.closing_skill("Verify pass"))
         self.assertEqual("/branch-recap", plan_format.closing_skill("Recap"))
+        self.assertEqual("/close-branch",
+                         plan_format.closing_skill("Close pass — /close-branch parallel review, one fix (risk: high)"))
         self.assertIsNone(plan_format.closing_skill("Verify pass for the orders API"))
+        self.assertIsNone(plan_format.closing_skill("Close pass for the orders API"))
         self.assertIsNone(plan_format.closing_skill("Build it"))
 
     def test_the_closing_phases_are_recognised_and_need_no_section(self):

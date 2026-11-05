@@ -30,7 +30,7 @@ One paragraph on what this accomplishes.
 - [ ] Phase 0: Contracts — frozen at plan approval (risk: high)
 - [ ] Phase 1: Walking skeleton (risk: low|high)
 - [ ] Phase 2: [name] (risk: low|high)
-- [ ] Phase N..N+3: Refactor → Test audit → Verify → Recap (closing-phases.md)
+- [ ] Phase N: Close pass (closing-phases.md)
 
 ## Decisions
 
@@ -64,5 +64,5 @@ Self-sufficient: probe-verified facts an implementation step needs go here with 
 
 ## Implementation Plan
 
-<!-- From here down, plan-format.md IN FULL, with ONE deviation: `## Phase Status` lives at the TOP of this file, not here. Vertical phases with risk tags, Changes Required + Success Criteria (Automated/Manual Verification, real commands), `Acceptance Criteria` naming `acceptance-criteria.md` when behavioral. Ends with the four closing phases (closing-phases.md) — never omitted. -->
+<!-- From here down, plan-format.md IN FULL, with ONE deviation: `## Phase Status` lives at the TOP of this file, not here. Vertical phases with risk tags, Changes Required + Success Criteria (Automated/Manual Verification, real commands), `Acceptance Criteria` naming `acceptance-criteria.md` when behavioral. Ends with the Close pass phase (closing-phases.md) — never omitted. -->
 ```

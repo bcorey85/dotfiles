@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-842 changes
+843 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,6 +31,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [refactor log accepts a simplify target the branch deleted](notes/2026-11-05-refactor-log-accepts-a-simplify-target-the-branch.md) [skill/refactor] refactor_flow.py log accepts an audit or simplify target that is gone from the index but tracked at HEAD, prints it as deleted, and counts its HEAD lines in diff_loc.
 * [branch-recap reads the jump queue and refreshes the ledger itself](notes/2026-11-05-branch-recap-reads-the-jump-queue-and-refreshes.md) [skill/branch-recap, skill/close-branch, script/ledger-deferred] stage prints the jump queue before the tier report, and ledger_deferred runs the ledger worker once on a busy ledger, then reads once, with no command handed to the user.
 * [review_fix decide rules from the hand-back when no packet ran](notes/2026-11-05-review-fix-decide-rules-from-the-hand-back-when-no.md) [skill/review, skill/code] With no review_fix state file, decide reads the held plan impacts from the session's hand-back: keep records the ruling and clears the commit gate, adopt logs the deviation and stops for the caller's own loop.
 * [a ruled plan-structure ask logs as fixed with who ruled](notes/2026-11-05-a-ruled-plan-structure-ask-logs-as-fixed-with-who.md) [skill/refactor] refactor_flow.py log accepts ruled_by (user or session) on an ask finding, lets a ruled plan-structure ask log as actioned=fixed, and sends ask_decided_by on its finding row.

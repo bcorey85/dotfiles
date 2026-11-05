@@ -430,6 +430,21 @@ class RefactorFlowTest(unittest.TestCase):
         finding_rows = self.finding_rows()
         self.assertEqual(finding_rows[0]["diff_loc"], "3")
 
+    def test_log_simplify_accepts_a_target_the_branch_deleted_and_refuses_one_never_tracked(self):
+        self.write("mod/a.py", "x = 1\n")
+        self.write("mod/b.py", "y = 1\n")
+        self.commit_all("add mod")
+        self.git("rm", "-q", "mod/a.py")
+        payload = {"finder": "complexity-reviewer", "lane": "code", "findings": []}
+        deleted = self.log("simplify", {**payload, "target": ["mod/a.py", "mod/b.py"]})
+        self.assertEqual(deleted.returncode, 0, deleted.stderr)
+        self.assertIn("target `mod/a.py` is deleted", deleted.stdout)
+        self.assertNotIn("mod/b.py` is deleted", deleted.stdout)
+        self.assertEqual(self.finding_rows()[0]["diff_loc"], "2")
+        never = self.log("simplify", {**payload, "target": ["mod/ghost.py"]})
+        self.assertEqual(never.returncode, 1, never.stdout)
+        self.assertIn("matches no tracked file", never.stderr)
+
     def test_log_audit_diff_loc_ignores_relative_config(self):
         config = self.temp_root / "gitconfig"
         config.write_text("[diff]\n\trelative = true\n")
@@ -1208,6 +1223,17 @@ class RefactorFlowTest(unittest.TestCase):
         done = self.log("audit", payload, cwd=self.repo / "pkg")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.finding_rows()[0]["diff_loc"], "4")
+
+    def test_log_audit_diff_loc_counts_files_deleted_under_a_live_directory(self):
+        self.write("mod/a.py", "a\n")
+        self.write("mod/b.py", "c\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "add mod")
+        self.git("rm", "-q", "mod/a.py")
+        payload = {"finder": "smell-reviewer", "lane": "code", "target": ["mod"], "findings": []}
+        done = self.log("audit", payload)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.finding_rows()[0]["diff_loc"], "2")
 
     def test_log_simplify_escape_must_be_complexity(self):
         self.write("mod/a.py", "a\n")

@@ -622,8 +622,17 @@ def diff_loc_for(mode, base, targets):
         stat = diff_output(f"{base_ref}...HEAD", "--shortstat")
         return sum(int(count) for count in re.findall(r"(\d+) (?:insertion|deletion)", stat))
 
-    stat = diff_output(empty_tree(), "--shortstat", pathspecs=targets)
-    return sum(int(count) for count in re.findall(r"(\d+) insertion", stat))
+    live = [target for target in targets if tracked_files([target])]
+    # A repo with no commit has nothing deleted from HEAD.
+    deleted_names = ""
+    if ref_exists("HEAD"):
+        deleted_names = diff_output("HEAD", "--name-only", "-z", "--diff-filter=D", pathspecs=targets)
+    deleted = [name for name in deleted_names.split("\0") if name]
+    tree = empty_tree()
+    stat = diff_output(tree, "--shortstat", pathspecs=live) if live else ""
+    # A file deleted in the index adds no lines to the work tree; the finder read it at HEAD.
+    deleted_stat = diff_output(f"{tree}..HEAD", "--shortstat", pathspecs=deleted) if deleted else ""
+    return sum(int(count) for count in re.findall(r"(\d+) insertion", stat + deleted_stat))
 
 
 def render_handoff(root, handoff, modifier):
@@ -792,13 +801,27 @@ def check_writer_rows(writes):
             raise RefactorFlowError(f"writer refused the {kind} row, nothing written:\n{done.stderr.strip()}")
 
 
+def tracked_at_head(target):
+    """True when the target names a file in the HEAD tree."""
+    done = git("--literal-pathspecs", "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", target, check=False)
+    if done.returncode != 0:
+        raise RefactorFlowError(f"git ls-tree failed for {target}: {done.stderr.strip()}")
+    return bool(done.stdout.strip("\0"))
+
+
 def check_targets_match(mode, validated_log):
-    """A target that matches no tracked file would log diff_loc 0 as if the finder had read nothing."""
+    """A target that matches no tracked file would log diff_loc 0 as if the finder had read nothing.
+    A target the branch deleted (tracked at HEAD, gone from the index) is the slice that ran: it is accepted,
+    and diff_loc_for counts its lines from HEAD."""
     if not validated_log["finder"] or mode not in ("audit", "simplify"):
         return
     for target in validated_log["targets"]:
-        if not tracked_files([target]):
-            raise RefactorFlowError(f"target `{target}` matches no tracked file; log the paths the prep listed")
+        if tracked_files([target]):
+            continue
+        if tracked_at_head(target):
+            print(f"target `{target}` is deleted in the index (tracked at HEAD)")
+            continue
+        raise RefactorFlowError(f"target `{target}` matches no tracked file; log the paths the prep listed")
 
 
 def log_next(validated_log, mode):

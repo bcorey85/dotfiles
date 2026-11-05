@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-842 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+847 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-05, [Aikido replies take an explicit PR number](notes/2026-11-05-aikido-replies-take-an-explicit-pr-number.md).
+Latest change: 2026-11-05, [refactor log accepts a simplify target the branch deleted](notes/2026-11-05-refactor-log-accepts-a-simplify-target-the-branch.md).
 
 ## Top gains
 

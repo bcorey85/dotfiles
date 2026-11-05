@@ -41,7 +41,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    b. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model` unless `+fast`) with the prompt the script printed. Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).
 
-   c. **Work list** = finder findings + the sweep matches; present as a statement, not a question. `[design-decision]` and every `### Ask` finding → user, never coder list. Log a `[plan-structure]` ask with `"disposition": "ask"`, `"plan_structure": true`; `log` refuses it as `fixed`. Nothing found → say so, run step 5's `log` (empty-handed), and stop.
+   c. **Work list** = finder findings + the sweep matches; present as a statement, not a question. `[design-decision]` and every `### Ask` finding → user, never coder list. Log a `[plan-structure]` ask with `"disposition": "ask"`, `"plan_structure": true`; `log` refuses it as `fixed` unless it carries `"ruled_by": "user"` or `"session"`. Nothing found → say so, run step 5's `log` (empty-handed), and stop.
 
 4. **Targeted mode** — when `$ARGUMENTS` names specific code or a specific goal:
    - Read the referenced files; name the goal (structure, readability, perf, maintainability, pattern alignment)
@@ -63,7 +63,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    **Log and hand off — one call.** Write the JSON file at the path the prep script's `NEXT:` line named (a fresh path for each invocation), and run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode <branch|targeted|simplify> --input <file> [--base REF]`. Use one input file per /refactor invocation; re-run `log` on that file (the script skips rows already written for it). In branch mode pass `--base` with the base `branch-prep` printed in its `NEXT:` line. It writes the escape rows, the finder rows and prints the `/review` handoff block. You supply:
    - `finder` (the dispatched agent; omit in targeted mode), `lane` (required whenever there is a finder; from conversation/planning artifacts), `result` (optional).
-   - `findings`: one entry per finder finding, each `{class, disposition, actioned, file, line, desc}` (`line` 0 when none; `desc` one line). Add `escape: true` plus `severity` for each distinct smell in branch-loop code (branch-audit: `duplication` for scope-item-1, `smell` otherwise; simplify: `complexity`). One entry per smell, not per file. Never `escape` mechanical-sweep matches or legacy targets — old debt is not an escape.
+   - `findings`: one entry per finder finding, each `{class, disposition, actioned, file, line, desc}` (`line` 0 when none; `desc` one line). Add `escape: true` plus `severity` and `miss_reason` (a label from `escape-ratchet.md`; not `unknown`) for each distinct smell in branch-loop code (branch-audit: `duplication` for scope-item-1, `smell` otherwise; simplify: `complexity`). One entry per smell, not per file. Never `escape` mechanical-sweep matches or legacy targets — old debt is not an escape.
    - `guards`: an object, `{"<class>": "<guard>"}`, one guard per escape `class` group, from the ratchet (`escape-ratchet.md`, read in step 3a; read it now in simplify mode). The script refuses an escape class with no guard.
    - `handoff`: optional `files` (`{path, change}`, one line each: the printed file list is what git shows changed against HEAD, untracked files included, and a path you list keeps its `change`), `tests_run` (exact command + exit code, or `none`), `flagged` (one line, `none` when nothing is flagged), optional `plan_impact` (may span lines). Add `modifier` if one was given.
 
@@ -81,7 +81,8 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
          "line": 3,
          "desc": "the same parse in two handlers",
          "severity": "medium",
-         "escape": true
+         "escape": true,
+         "miss_reason": "overlooked"
        }
      ],
      "guards": { "duplication": "convention" },

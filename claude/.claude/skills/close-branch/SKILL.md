@@ -72,8 +72,13 @@ Run, in one response, from the repo root:
 
 ```bash
 node ~/.claude/skills/stage/scripts/stage.mjs --run
-~/.claude/scripts/tools/ledger_deferred.py
 git diff --stat <base>
+```
+
+Run the deferred queue read in its own Bash call with a `timeout` of `600000` (about 204 s when the ledger answers busy at once, longer when a ledger call hangs):
+
+```bash
+~/.claude/scripts/tools/ledger_deferred.py
 ```
 
 Print one recap, assembled from what you already hold. Never dispatch an agent for it and never re-read code for it:

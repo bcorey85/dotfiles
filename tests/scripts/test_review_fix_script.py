@@ -790,6 +790,104 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("stop-usage", output)
         self.assertNotIn("review-gate-mark", output)
 
+    def plant_held_hand_back(self):
+        message = json.dumps({"status": "converged", "iter": 2, "fixed": [], "ask": [],
+                              "class_closure": "n/a - fixed[] empty", "plan_impacts": [HELD_IMPACT]})
+        self.store_dir.mkdir(exist_ok=True)
+        dispatch = {"kind": "dispatch", "session_id": SESSION, "ts": time.time(), "repo": str(self.repo.resolve())}
+        (self.store_dir / f"{SESSION}.jsonl").write_text(json.dumps(dispatch) + "\n")
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record(SESSION, "handback", status="converged", message=message)
+
+    def test_decide_keep_with_no_state_rules_on_the_held_impact_in_the_hand_back(self):
+        self.plant_held_hand_back()
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n")
+
+        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "keep the retry",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertNotIn("ACTION: redispatch", output)
+        self.assertIsNone(self.false_clean_reason())
+        self.assertIn("The ruling: keep the retry", plan_file.read_text())
+        self.assertIn("the queue is at-most-once", plan_file.read_text())
+
+    def test_decide_adopt_with_no_state_logs_the_deviation_and_stops_for_the_callers_own_loop(self):
+        self.plant_held_hand_back()
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n")
+
+        code, output = self.run_script(["decide", "adopt", "--by", "session", "--ruling", "drop the retry",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("/code resume", output)
+        self.assertNotIn("ACTION: redispatch", output)
+        self.assertIn("The ruling: drop the retry", plan_file.read_text())
+        self.assertIsNotNone(self.false_clean_reason())
+
+    def test_decide_with_no_state_and_no_hand_back_keeps_the_no_packet_error(self):
+        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "x"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("no packet was processed", output)
+
+    def test_decide_with_an_unreadable_state_file_raises_its_own_error_and_ignores_the_hand_back(self):
+        self.plant_held_hand_back()
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text("not json {")
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n")
+
+        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "keep the retry",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("is not readable JSON", output)
+        self.assertEqual(plan_file.read_text(), "# Plan\n")
+
+    def test_decide_keep_with_no_session_id_records_no_ruling_and_says_the_gate_stays_dirty(self):
+        self.plant_held_hand_back()
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n")
+
+        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "x"],
+                                       CLAUDE_CODE_SESSION_ID="")
+        self.assertEqual(code, 2, output)
+        self.assertIn("no packet was processed", output)
+        self.assertIsNotNone(self.false_clean_reason())
+
+    def test_decide_keep_from_saved_state_with_no_session_id_records_no_ruling(self):
+        self.plant_held_hand_back()
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps({"stage": "plan-impact", "plan_impact": "- the queue is at-most-once",
+                                          "plan_impact_held": True, "iter": 2}))
+
+        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "x"],
+                                       CLAUDE_CODE_SESSION_ID="")
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("still counts the review as dirty", output)
+        self.assertIsNotNone(self.false_clean_reason())
+
+    def test_a_repeat_decide_on_an_already_ruled_hand_back_logs_no_second_deviation(self):
+        self.plant_held_hand_back()
+        plan_file = self.temp_root / "plan.md"
+        plan_file.write_text("# Plan\n")
+        arguments = ["decide", "keep", "--by", "session", "--ruling", "keep the retry", "--plan", str(plan_file)]
+
+        first_code, first_output = self.run_script(arguments)
+        second_code, second_output = self.run_script(arguments)
+
+        self.assertEqual(first_code, 0, first_output)
+        self.assertEqual(second_code, 2, second_output)
+        self.assertEqual(plan_file.read_text().count("The ruling: keep the retry"), 1)
+
     # ---------- asks ----------
 
     def test_asks_done_from_another_repo_names_the_directory_it_looked_in(self):
@@ -802,7 +900,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["asks-done", "accepted", "rejected"], cwd=other_repo)
 
         self.assertEqual(code, 2, output)
-        self.assertIn(f"no packet was processed in {other_repo}/.git/review-fix", output)
+        resolved_repo = other_repo.resolve()
+        self.assertIn(f"no packet was processed in {resolved_repo}/.git/review-fix", output)
         self.assertIn("run this call there", output)
 
     def test_a_packet_rerun_from_another_repo_does_not_offer_asks_already_logged(self):

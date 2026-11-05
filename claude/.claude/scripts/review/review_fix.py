@@ -41,6 +41,9 @@ still judges.
                                          --packet <packet_id> names the one the outcomes belong to.
   review_fix.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]
                                          Only --by user is the user's own word.
+                                         With no saved state (no `packet` ran), it reads the held plan impacts from
+                                         this session's hand-back: keep records the ruling; adopt logs the deviation
+                                         and stops, since the caller must rerun its own review loop.
   review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
   review_fix.py defer <handoff file>    /code's phase-end deferral of held plan impacts. The handoff file must hold
                                          `plan_impact: RESOLVED: deferred to phase end by the session, <date>:
@@ -927,11 +930,17 @@ def command_decide(argv):
     parser.add_argument("--plan", default="")
     parser.add_argument("--by", nargs="?", const="", default=None)
     options = parser.parse_args(argv)
-    state = load_fix_state()
-    if state.get("stage") != "plan-impact" and not state.get("plan_impact_held"):
+    state = read_state()
+    held_in_hand_back = []
+    if state is None and not review_fix_state_file().exists():
+        held_in_hand_back = hand_back_plan_impacts()
+    if state is None and not held_in_hand_back:
+        state = load_fix_state()
+    if state is not None and state.get("stage") != "plan-impact" and not state.get("plan_impact_held"):
         raise UsageError("no plan-impact is waiting in this session's packet, so the commit gate is already clear "
                          "(a `defer` clears it too). Add the ruling under the plan's decision log (`03-decisions.md` "
-                         "or `## Plan Deviations`) by hand. `decide` reads only the packet this session processed.")
+                         "or `## Plan Deviations`) by hand. `decide` reads the packet state when `packet` ran, "
+                         "else this session's hand-back.")
     if options.decision == "discuss":
         return print_action("discuss", "Discuss the plan impact with the user, then run one of these. Do not "
                             "re-dispatch yet.", *discuss_commands(), plan_format.DECIDE_BY_NOTE)
@@ -944,37 +953,79 @@ def command_decide(argv):
     if plan_path is not None and not plan_path.exists():
         raise UsageError(f"--plan {options.plan} does not exist")
 
+    if state is None:
+        return decide_from_hand_back(held_in_hand_back, options.decision, options.by, options.ruling, plan_path)
     record_plan_ruling(state, options.decision, options.by, options.ruling, plan_path)
 
 
 NO_PLAN_LINE = "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
 
 
+def ruling_logged_line(plan_path):
+    return f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else NO_PLAN_LINE
+
+
+def hand_back_plan_impacts():
+    """The held plan impacts of this session's latest hand-back for this repo that no ruling settles, read the way the
+    commit gate reads them: [] with no session id, no work tree or nothing held."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    repo = script_utils.work_tree_top(".")
+    if not session_id or not repo:
+        return []
+    return handback.unruled_plan_impacts(handback_store.latest_for_repo(session_id, repo))
+
+
+def write_ruling_entry(decision, by, ruling, plan_path, impact_text):
+    """The `## Plan Deviations` entry lines of a plan-impact ruling, appended to plan_path when there is one."""
+    choice = plan_format.DECISION_WORDS[decision]
+    owner = plan_format.ruling_owner(".", by)
+    ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, impact_text)
+    if plan_path is not None:
+        plan_format.append_deviation(plan_path, entry)
+    return entry
+
+
+def settle_kept_ruling():
+    """Record a `keep` ruling for this session and return the line that says whether the commit gate is clear."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if not session_id:
+        return ("CLAUDE_CODE_SESSION_ID is not set, so the ruling is not recorded and the commit gate still counts the "
+                "review as dirty.")
+    return record_ruling(session_id, "keep", "The ruling settles the plan impact, so the commit gate counts the "
+                         "review as clean.")
+
+
+def decide_from_hand_back(held, decision, by, ruling, plan_path):
+    """`decide` for a run whose packet never went through `packet` (the caller read it through code_wait.py): the
+    held plan impacts come from the hand-back store. `keep` records the ruling. `adopt` has no launch state to
+    re-dispatch from, so it logs the deviation and sends the caller back to its own review loop."""
+    entry = write_ruling_entry(decision, by, ruling, plan_path, handback.held_plan_impact_text(held))
+    logged_line = ruling_logged_line(plan_path)
+    if decision == "keep":
+        return print_action("done", logged_line, *entry,
+                            "The plan stays as written: nothing is re-dispatched.", settle_kept_ruling())
+    return print_action("stop", logged_line, *entry,
+                 "No review-fix launch state exists for this run, so `decide adopt` cannot re-dispatch. Run the review "
+                 "again through your own loop (`/code resume`) now that the plan is changed. The commit gate stays "
+                 "dirty until it hands back.")
+
+
 def record_plan_ruling(state, decision, by, ruling, plan_path):
     """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds) and print the
     re-dispatch."""
     choice = plan_format.DECISION_WORDS[decision]
-    owner = plan_format.ruling_owner(".", by)
-    ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, state["plan_impact"])
-    if plan_path is not None:
-        plan_format.append_deviation(plan_path, entry)
+    entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"])
 
     if decision == "keep" and state.pop("plan_impact_held", False):
         keep_line = (APPLIED_KEEP_LINE if state.pop("plan_impact_applied", False)
                      else "The plan stays as written: the held fix is not applied and nothing is re-dispatched.")
         state["stage"] = "done"
         save_fix_state(state)
-        session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-        if session_id:
-            mark_line = record_ruling(session_id, decision, "The ruling settles the plan impact, so the commit gate "
-                                      "counts the review as clean.")
-        else:
-            mark_line = ("CLAUDE_CODE_SESSION_ID is not set, so the ruling is not recorded and the commit gate still "
-                         "counts the review as dirty.")
+        mark_line = settle_kept_ruling()
         return print_action(
             "done",
-            f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else NO_PLAN_LINE,
+            ruling_logged_line(plan_path),
             *entry,
             keep_line,
             mark_line,
@@ -997,7 +1048,7 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
     save_fix_state(state)
     print_action(
         "redispatch",
-        f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else NO_PLAN_LINE,
+        ruling_logged_line(plan_path),
         *entry,
         f"Write the first run's handoff plus the lines below to a file, then run `launch` in the background with the "
         f"first run's flags plus `--iter {state['iter']}` and `--handoff <that file>`:",

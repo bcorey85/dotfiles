@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-840 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+841 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-05, [a ruled plan-structure ask logs as fixed with who ruled](notes/2026-11-05-a-ruled-plan-structure-ask-logs-as-fixed-with-who.md).
+Latest change: 2026-11-05, [review_fix decide rules from the hand-back when no packet ran](notes/2026-11-05-review-fix-decide-rules-from-the-hand-back-when-no.md).
 
 ## Top gains
 

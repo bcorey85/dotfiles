@@ -150,9 +150,12 @@ def read_criteria(mode, ticket_path, plan_path):
     entries, manual_entries = [], []
     if criteria_path is not None:
         entries, manual_entries = vc.parse_criteria_file(candidate.read_text(), criteria_path)
-    ticket_entries = vc.branch_ticket_criteria(ticket_path.read_text(), str(ticket_path), entries)
-    counts = {"ticket": len(ticket_entries), "ticketLabels": [entry["label"] for entry in ticket_entries],
-              "ticketLines": [f"{entry['label']}: {entry['text']}" for entry in ticket_entries],
+    ticket_text = ticket_path.read_text()
+    ticket_entries = vc.branch_ticket_criteria(ticket_text, str(ticket_path), entries)
+    comment_entries = vc.branch_ticket_comments(ticket_text, str(ticket_path))
+    labelled_entries = [*ticket_entries, *comment_entries]
+    counts = {"ticket": len(ticket_entries), "ticketLabels": [entry["label"] for entry in labelled_entries],
+              "ticketLines": [f"{entry['label']}: {entry['text']}" for entry in labelled_entries],
               "criteriaFileIds": 0, "manualOnly": 0, "manualVerification": 0, "ids": []}
 
     if criteria_path is not None:

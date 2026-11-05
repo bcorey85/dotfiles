@@ -97,6 +97,12 @@ def branch_ticket_criteria(ticket_text, ticket_name="ticket", criteria_entries=N
 
 
 @raising_verify_error
+def branch_ticket_comments(ticket_text, ticket_name="ticket"):
+    """The ticket's comments, labelled `Comment #n`."""
+    return plan_format.ticket_comments(ticket_text, ticket_name)
+
+
+@raising_verify_error
 def manual_items(plan_text, name):
     """Unchecked Manual Verification items in a plan, tagged human-only from the heading or the item.
 

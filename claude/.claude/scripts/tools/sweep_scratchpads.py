@@ -4,9 +4,10 @@
 Claude Code gives each session a folder at <temp>/claude-<uid>/<project>/<session id>/ (its scratchpad and task
 output) and never deletes it, so old ones fill the per-user temp quota. This removes each session folder whose newest
 entry is over MAX_AGE_HOURS old, never the folder of the session in the hook input or of any session still running,
-and nothing whose name is not a session id. A session is running when <config>/sessions/<pid>.json names it and that
-pid is alive; <config> is CLAUDE_CONFIG_DIR when set, else ~/.claude. <temp> is CLAUDE_CODE_TMPDIR when set, else the
-system temp folder. Fails open: an error goes to stderr and the hook exits 0.
+and nothing whose name is not a session id. A session is running when a <pid>.json in the sessions folder names it and
+that pid is alive; the sessions folder is $CLAUDE_CONFIG_DIR/sessions when that is set, else ~/.claude/sessions (one
+file per running session). <temp> is CLAUDE_CODE_TMPDIR when set, else the system temp folder. Fails open: an error
+goes to stderr and the hook exits 0.
 """
 import json
 import os
@@ -54,9 +55,11 @@ def pid_alive(pid):
 
 
 def live_session_ids():
-    """The ids of the sessions whose <config>/sessions/<pid>.json names a live pid. Unreadable files are skipped."""
-    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
-    sessions_dir = os.path.join(config_dir, "sessions")
+    """The ids of the sessions whose <pid>.json in the sessions folder names a live pid. Bad files are skipped."""
+    sessions_dir = os.path.expanduser("~/.claude/sessions")
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        sessions_dir = os.path.join(config_dir, "sessions")
     if not os.path.isdir(sessions_dir):
         return set()
     live = set()

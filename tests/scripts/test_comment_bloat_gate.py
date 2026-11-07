@@ -89,7 +89,7 @@ class CommentBloatGateTest(unittest.TestCase):
     def test_same_text_in_a_repo_file_is_still_flagged(self):
         path = self.source("repo/probe/check.py", MARKER_LINE + "\n")
         stderr = self.assert_blocked(self.edit(path, MARKER_LINE, tool="Write"))
-        self.assertIn("  1:" + MARKER_LINE + "\n", stderr)
+        self.assertIn("  1:" + MARKER_LINE + "  <- marker ", stderr)
 
     def test_a_file_git_ignores_passes_but_a_tracked_file_matching_an_ignore_pattern_is_still_flagged(self):
         self.source(".gitignore", "probe/\n")
@@ -163,7 +163,21 @@ class CommentBloatGateTest(unittest.TestCase):
                 stderr = self.assert_blocked(self.edit(path, sample))
                 self.assertTrue(stderr.startswith(
                     "comment-bloat-gate: private-workflow marker in an added line (a.py). Zero exceptions"), stderr)
-                self.assertIn("  2:" + sample + "\n", stderr)
+                self.assertIn("  2:" + sample + "  <- marker ", stderr)
+
+    def test_the_deny_names_the_bare_marker_text(self):
+        cases = [
+            ("# AC4 covered", "AC4"),
+            ("x = 1 # AC4", "AC4"),
+            ("AC1 holds here", "AC1"),
+            ("x = 1  # (AC2) done", "AC2"),
+            ("# phase 2 docs/plans/x", "docs/plans/"),
+        ]
+        for sample, expected in cases:
+            with self.subTest(sample=sample):
+                path = self.source("a.py", "x = 1\n" + sample + "\n")
+                stderr = self.assert_blocked(self.edit(path, sample))
+                self.assertTrue(stderr.endswith(f'  2:{sample}  <- marker "{expected}"\n'), stderr)
 
     def test_domain_words_in_an_agent_evals_file_pass_but_other_markers_block(self):
         domain_samples = [
@@ -193,7 +207,8 @@ class CommentBloatGateTest(unittest.TestCase):
         content = "# phase 2\nx = 1\n# docs/plans/y\n"
         path = self.source("a.py", content)
         stderr = self.assert_blocked(self.edit(path, content, tool="Write"))
-        self.assertTrue(stderr.endswith("  1:# phase 2\n  3:# docs/plans/y\n"), stderr)
+        self.assertTrue(stderr.endswith('  1:# phase 2  <- marker "phase 2"\n'
+                                        '  3:# docs/plans/y  <- marker "docs/plans/"\n'), stderr)
 
     def test_things_that_are_not_markers_pass(self):
         samples = ["# decode utf-8 phase 2 bytes", "# sha-256 phase 1", "x = f(**AC1_args)", "# ACID rules", "# #AC4",
@@ -349,7 +364,7 @@ class CommentBloatGateTest(unittest.TestCase):
         # and the leak was missed. The port treats it as text.
         path = self.source("q.sql", "select 1;\n-- see docs/plans/x\n")
         stderr = self.assert_blocked(self.edit(path, "select 1;\n-- see docs/plans/x"))
-        self.assertIn("  2:-- see docs/plans/x\n", stderr)
+        self.assertIn("  2:-- see docs/plans/x  <- marker ", stderr)
         path = self.source("q.sql", "-e phase 2\n")
         self.assert_blocked(self.edit(path, "-e phase 2"))
 

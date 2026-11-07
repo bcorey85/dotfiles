@@ -422,6 +422,27 @@ class PermissionQuestionTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_question_about_prefixed_tickets_or_a_named_tracker_passes_but_a_local_step_is_sent_back(self):
+        for message in ("The work splits by domain. Want me to file the per-domain sub-tickets?",
+                        "The work splits by domain. Want me to file them in Jira?",
+                        "The work splits by domain. Want me to create them in Jira?",
+                        "The work splits by domain. Shall I create the subtasks?",
+                        "The work splits by domain. Want me to file this on GitHub?",
+                        "The work splits by domain. Want me to file them in Linear?",
+                        "The work splits by domain. Want me to raise them to Jira?",
+                        "The work splits by domain. Want me to open them into Linear?",
+                        "The work splits by domain. Want me to file the sub-task?",
+                        "The work splits by domain. Want me to file the sub-issue?"):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+        for message in ("Tests fail. Want me to rerun the tests?", "Tests pass. Want me to add the test?",
+                        "Want me to make the lookup linear?", "Want me to open the task file?",
+                        "Want me to look it up on GitHub?", "Want me to switch the interpolation to linear?",
+                        "Want me to create the tasks file?", "Want me to check the GitHub Actions log?",
+                        "Want me to check the file on GitHub?", "Want me to open the docs on GitHub?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
     def test_a_question_about_filing_a_ticket_or_messaging_someone_passes(self):
         for message in ("The bug sits in the billing service. Want me to file a Jira ticket for it?",
                         "The branch is pushed. Should I open a pull request?",

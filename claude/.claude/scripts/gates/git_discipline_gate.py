@@ -2,7 +2,9 @@
 """PreToolUse hook on Bash: enforce git rules the generic bash safety gate does not cover.
 
   1. git stash in every form but list and show, and autostash on pull, rebase or merge (`--autostash`, or the
-     rebase.autoStash / merge.autoStash config turned on through `-c` or `git config`)
+     rebase.autoStash / merge.autoStash config turned on through `-c` or `git config`); the one pass is a
+     `git pull --autostash` joined by `&&` to the next step, which opens with a `git push` in the same directory;
+     the pull carries the literal `--autostash` flag, and neither step holds a `$(...)`, backtick or parenthesis
   2. git commit --amend, unless the user's newest typed prompt orders an amend (a sentence that opens with `amend`
      after an optional assent, with no negation in it and no `?` at its end); a force push in the same command is
      denied even then
@@ -15,6 +17,7 @@ in is documented in git_calls.py.
 
 Denies with PreToolUse decision JSON. Fails closed on internal error.
 """
+import itertools
 import json
 import os
 import re
@@ -23,6 +26,8 @@ import sys
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
 import script_utils
+import shell_command
+import shell_statements
 import user_prompts
 from git_calls import git_calls
 from hook_input import JqError, jq_get, jq_str
@@ -37,6 +42,9 @@ AUTOSTASH_KEYS = {"rebase.autostash", "merge.autostash"}
 MERGE_WITH_WORK_UNCOMMITTED = ("To bring a base into unfinished work, run `git merge <base>` with the work "
                                "uncommitted: git stops and changes nothing when the merge touches an edited file. If "
                                "it stops, commit the work once /review hands back converged or deferred, then merge.")
+REPO_OPTIONS = {"-C", "--git-dir", "--work-tree"}
+REPO_OPTION_PREFIXES = ("--git-dir=", "--work-tree=")
+REPO_ENV_PREFIXES = ("GIT_DIR=", "GIT_WORK_TREE=")
 FALSE_VALUES = {"false", "no", "off", "0"}
 # Code the user quotes, which names a command rather than asking for one.
 QUOTED_CODE = re.compile(r"`[^`]*`")
@@ -74,6 +82,72 @@ def is_autostash(call):
     if flags:
         return flags[-1] == "--autostash"
     return any(call.config[key] not in FALSE_VALUES for key in AUTOSTASH_KEYS if key in call.config)
+
+
+def count_pull_push_pairs(command):
+    """Count the `git pull --autostash` steps that are the one allowed form: the pull is the last git call of its step,
+    the next step is joined by `&&` and opens with a git push in the same directory, neither step holds a `$(...)`,
+    backtick span or parenthesis, and the pull step holds no other autostash call. A `||` or `;` between them lets
+    the push run after a failed pull.
+    Counting per step pair, never by position in the command's git calls, keeps `$(...)` calls (listed last by
+    git_calls) from shifting the result."""
+    normalized = shell_statements.strip_comments(shell_statements.strip_heredocs(command))
+    steps = shell_command.split_command_steps(normalized)
+    allowed = 0
+    for (_before, pull_step), (operator, push_step) in itertools.pairwise(steps):
+        if operator != "&&":
+            continue
+        if shell_statements.code_spans(pull_step) or shell_statements.code_spans(push_step):
+            continue
+        if any(char in step for step in (pull_step, push_step) for char in "()"):
+            continue
+        # A code runner takes its directory or host from text the gate does not read.
+        if shell_command.names_code_runner(pull_step) or shell_command.names_code_runner(push_step):
+            continue
+        pull_calls = git_calls(pull_step)
+        push_calls = git_calls(push_step)[:1]
+        if not (pull_calls and push_calls):
+            continue
+        pull = pull_calls[-1]
+        push = push_calls[0]
+        if pull.subcommand != "pull" or not is_autostash(pull) or "--autostash" not in pull.arguments:
+            continue
+        if push.subcommand != "push":
+            continue
+        if os.path.normpath(push.directory) != os.path.normpath(pull.directory):
+            continue
+        if dir_targets_differ(pull_step, push_step):
+            continue
+        if any(is_autostash(call) for call in pull_calls[:-1]):
+            continue
+        allowed += 1
+    return allowed
+
+
+def literal_dir_targets(step):
+    """The repo-selecting text, as written, of the git call that opens the step: its `-C`, `--git-dir` and
+    `--work-tree` options (spaced or `=` form) and the GIT_DIR and GIT_WORK_TREE assignments before it."""
+    all_words = shell_command.segment_words(step)
+    words = shell_command.command_after_wrappers(all_words)
+    wrapper_words = all_words[:len(all_words) - len(words)]
+    targets = [word for word in wrapper_words if word.startswith(REPO_ENV_PREFIXES)]
+    options, _index = shell_command.git_options(words)
+    for option, value in options:
+        if option in REPO_OPTIONS:
+            targets.append(option + "=" + (value or ""))
+        elif option.startswith(REPO_OPTION_PREFIXES):
+            targets.append(option)
+    return targets
+
+
+def dir_targets_differ(pull_step, push_step):
+    """True when the two calls' repo-selecting text (`-C`, `--git-dir`, `--work-tree`, GIT_DIR, GIT_WORK_TREE)
+    differs. A target with a mark the directory reader skips (`$`, quote, glob)
+    resolves to the caller's cwd, so equal directories prove nothing. Fails closed on harmless spellings like `/r`
+    vs `/r/`."""
+    pull_targets = literal_dir_targets(pull_step)
+    push_targets = literal_dir_targets(push_step)
+    return pull_targets != push_targets
 
 
 def turns_on_autostash_config(arguments):
@@ -165,10 +239,14 @@ def run(raw):
                         f"{MERGE_WITH_WORK_UNCOMMITTED} If stashing is genuinely needed, ask the user — they can run "
                         "it themselves.")
 
-    if any(is_autostash(call) for call in calls):
+    autostash_count = sum(is_autostash(call) for call in calls)
+    if autostash_count and autostash_count != count_pull_push_pairs(command):
         raise DenyError("[git-discipline-gate] git autostash is blocked: it runs a git stash, which every worktree "
                         "shares and which resets staged files. Pass --no-autostash to the command, or do not set the "
-                        f"autostash config. {MERGE_WITH_WORK_UNCOMMITTED}")
+                        "autostash config. The one form that passes is a pull joined by && to the push right after it, "
+                        "in the same directory: "
+                        "`git -C <repo> pull --rebase=merges --autostash && git -C <repo> push`. "
+                        f"{MERGE_WITH_WORK_UNCOMMITTED}")
 
     if any(is_amend(call) for call in calls):
         transcript_path = jq_str(jq_get(payload, "transcript_path"))

@@ -148,6 +148,22 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("eslint config enables `curly`", text)
         self.assertNotIn("will break CI", text)
 
+    def test_a_code_fork_is_cancelled_with_a_stop_message_and_stops_every_agent_it_dispatched(self):
+        skill_text = guidance_text("skills/code/SKILL.md")
+        self.assertIn("To cancel a running /code fork, SendMessage it `stop` and wait for its stop; TaskStop the fork "
+                      "only after that stop names every agent it dispatched as stopped.", skill_text)
+        fork_text = guidance_text("agents/code-fork.md")
+        self.assertIn("When a message the user or the outside session sent says stop or cancel, TaskStop every agent "
+                      "you dispatched that still runs, then end the run with a stop that names each agent id and "
+                      "says it is stopped.", " ".join(fork_text.split()))
+
+    def test_a_queue_item_done_clause_criterion_changes_on_the_orchestrator_s_recorded_ruling(self):
+        text = guidance_text("skills/code/SKILL.md")
+        self.assertIn("covers ticket ACs and eng-spec criteria", text)
+        self.assertIn("a criterion that restates the item's done-clause changes on the orchestrator's ruling when the "
+                      "queue item or the brief records it", text)
+        self.assertIn("logs it under `## Plan Deviations` with who and the date, and the run goes on", text)
+
 
 if __name__ == "__main__":
     unittest.main()

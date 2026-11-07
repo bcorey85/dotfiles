@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-847 changes
+852 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,6 +31,11 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A queue-item done-clause changes on the orchestrator's ruling](notes/2026-11-07-a-queue-item-done-clause-changes-on-the.md) [skill/code] In a /code plan built from a queue item with no ticket, a done-clause criterion changes on the orchestrator's recorded ruling with no typed user sign-off.
+* [/code fork stops the agents it dispatched](notes/2026-11-07-code-fork-stops-the-agents-it-dispatched.md) [skill/code, agent/code-fork] The caller cancels a /code fork with a stop message, and the fork stops every agent it dispatched and names each one before it ends.
+* [git-discipline-gate passes the push rule's pull](notes/2026-11-07-git-discipline-gate-passes-the-push-rule-s-pull.md) [script/git-discipline-gate] `git -C <repo> pull --rebase=merges --autostash && git -C <repo> push`, the form the global push rule names, passes the gate.
+* [Staged-claim Stop gate passes a question that files tickets](notes/2026-11-07-staged-claim-gate-passes-a-question-that-files.md) [script/staged-claim-gate] A closing question that files sub-tickets or subtasks, or files something in Jira, Linear or GitHub, is one to ask and passes.
+* [Comment-bloat deny names the marker](notes/2026-11-07-the-deny-names-the-marker.md) [script/comment-bloat-gate] The comment-bloat-gate marker deny prints the text each line matched, so a coder knows what to drop.
 * [refactor log accepts a simplify target the branch deleted](notes/2026-11-05-refactor-log-accepts-a-simplify-target-the-branch.md) [skill/refactor] refactor_flow.py log accepts an audit or simplify target that is gone from the index but tracked at HEAD, prints it as deleted, and counts its HEAD lines in diff_loc.
 * [branch-recap reads the jump queue and refreshes the ledger itself](notes/2026-11-05-branch-recap-reads-the-jump-queue-and-refreshes.md) [skill/branch-recap, skill/close-branch, script/ledger-deferred] stage prints the jump queue before the tier report, and ledger_deferred runs the ledger worker once on a busy ledger, then reads once, with no command handed to the user.
 * [Aikido replies take an explicit PR number](notes/2026-11-05-aikido-replies-take-an-explicit-pr-number.md) [script/review-fix, skill/fix, skill/pr-comments] review_fix.py packet takes `--pr <number>` and posts the Aikido replies to that PR without asking gh for the current branch's PR, so the replies post from a detached HEAD.

@@ -198,7 +198,8 @@ def work_tree_fingerprint(repo, log=None):
 
 def fingerprint(repo_dir):
     """(repo top level, whole-tree fingerprint of its working tree against HEAD), or None when repo_dir is not in a
-    work tree, has no commit yet, git fails, or an added file name holds a newline."""
+    work tree, has no commit yet, git fails, an added file name holds a newline, or the tree holds an untracked
+    nested repository."""
     top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
     if top is None:
         return None

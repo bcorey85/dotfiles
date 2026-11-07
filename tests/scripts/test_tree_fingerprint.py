@@ -134,7 +134,7 @@ class TreeFingerprint(unittest.TestCase):
             git(self.top, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), "vendored")
         git(self.top, "commit", "-q", "-m", "add submodule")
         first = reviewed_tree.tree_fingerprint(self.top, base)
-        self.assertTrue(first.startswith("sha256:"))
+        self.assertEqual(reviewed_tree.tree_fingerprint(self.top, base), first)
         write(self.top / "vendored", "g.txt", b"y\n")
         git(self.top / "vendored", "add", ".")
         git(self.top / "vendored", "commit", "-q", "-m", "move the submodule")
@@ -179,6 +179,21 @@ class TreeFingerprint(unittest.TestCase):
         os.symlink("b.txt", self.top / "link")
         git(self.top, "add", "link")
         self.assertNotEqual(reviewed_tree.tree_fingerprint(self.top), first)
+
+    def test_a_symlink_committed_on_top_of_base_is_hashed_by_link_text(self):
+        base = head(self.top)
+        write(self.top, "a.txt", b"same\n")
+        git(self.top, "add", "a.txt")
+        os.symlink("a.txt", self.top / "link")
+        untracked = reviewed_tree.tree_fingerprint(self.top, base)
+        git(self.top, "add", "a.txt", "link")
+        git(self.top, "commit", "-q", "-m", "add symlink")
+        self.assertEqual(reviewed_tree.tree_fingerprint(self.top, base), untracked)
+        os.remove(self.top / "link")
+        os.symlink("other-target", self.top / "link")
+        git(self.top, "add", "link")
+        git(self.top, "commit", "-q", "-m", "retarget symlink")
+        self.assertNotEqual(reviewed_tree.tree_fingerprint(self.top, base), untracked)
 
     def test_a_symlink_has_the_same_value_untracked_and_staged(self):
         write(self.top, "a.txt", b"same\n")

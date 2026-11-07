@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-855 changes
+857 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,7 +31,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
-* [Stop gates skip a question or claim the reply only quotes](notes/2026-11-07-stop-gates-skip-a-question-or-claim-the-reply-only.md) [script/staged-claim-gate] The staged-claim Stop gate no longer reads a permission question the reply quotes in backticks or double quotes as the reply asking, and a stray quote mark hides no real question.
+* [Review packet says when the commit gate does not credit a clean review](notes/2026-11-07-review-packet-says-when-the-commit-gate-does-not.md) [skill/review, skill/code] The review packet step prints a COMMIT CREDIT line with the reason when a converged or deferred review earned no commit credit, so the session learns it before review-commit-gate denies the commit.
+* [Staged-claim gate passes a whether-clause that describes staging](notes/2026-11-07-staged-claim-gate-passes-a-whether-clause-that.md) [script/staged-claim-gate] The staged-claim Stop gate reads `whether` as a conditional word, so a reply that describes staging as a mechanism ("the same hash whether it is staged or untracked") no longer blocks the stop.
+* [Staged-claim Stop gate skips a permission question the reply only quotes](notes/2026-11-07-stop-gates-skip-a-question-or-claim-the-reply-only.md) [script/staged-claim-gate] The staged-claim Stop gate no longer reads a permission question the reply quotes in backticks or double quotes as the reply asking, and a stray quote mark hides no real question.
 * [A queue-item done-clause changes on the orchestrator's ruling](notes/2026-11-07-a-queue-item-done-clause-changes-on-the.md) [skill/code] In a /code plan built from a queue item with no ticket, a done-clause criterion changes on the orchestrator's recorded ruling with no typed user sign-off.
 * [/code fork stops the agents it dispatched](notes/2026-11-07-code-fork-stops-the-agents-it-dispatched.md) [skill/code, agent/code-fork] The caller cancels a /code fork with a stop message, and the fork stops every agent it dispatched and names each one before it ends.
 * [git-discipline-gate passes the push rule's pull](notes/2026-11-07-git-discipline-gate-passes-the-push-rule-s-pull.md) [script/git-discipline-gate] `git -C <repo> pull --rebase=merges --autostash && git -C <repo> push`, the form the global push rule names, passes the gate.

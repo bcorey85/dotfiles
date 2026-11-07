@@ -32,7 +32,7 @@ OUTWARD_STEP = re.compile(
     r"|\b(?:file|open|create|raise)\s+(?:them|these|those|this|it|each)\s+(?:in|on|to|into)\s+(?:jira|linear|github)\b",
     re.IGNORECASE)
 # A quoted span counts as a cited question only when its whole inner text is the question.
-OPENING_QUESTION = re.compile(r"\A(?:" + PERMISSION_QUESTION.pattern + r")\s*\Z", re.IGNORECASE)
+OPENING_QUESTION = re.compile(r"\A(?:" + PERMISSION_QUESTION.pattern + r")\Z", re.IGNORECASE)
 TAIL_CHARACTERS = 400
 REASON = ("Your message ends asking permission to go on. Act on it: take the step yourself. Ask only before a step "
           "that cannot be undone or leaves this machine.")

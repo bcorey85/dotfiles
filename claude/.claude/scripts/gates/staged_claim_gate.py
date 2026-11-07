@@ -5,8 +5,8 @@ On Stop only, also block a main-session message that ends on a permission questi
 
 A sentence claims staging when it says `<is|are|were|was|now|all|been|left|remain|remains|stay|stays> staged`,
 `I staged`, `I've staged` or `I have staged`, and holds no `not`, `no`, `nothing`, `none`, `never` or
-`committed`, and no `if`, `once`, `when`, `after`, `before`, `until` or `unless` ahead of the claim in its own
-clause (clauses split at `,`, `;`, `:`, `and`, `but`, `so`), and no `row`, `record`, `diff` or `finding`
+`committed`, and no `if`, `whether`, `once`, `when`, `after`, `before`, `until` or `unless` ahead of the claim in its
+own clause (clauses split at `,`, `;`, `:`, `and`, `but`, `so`), and no `row`, `record`, `diff` or `finding`
 (or plural) as the word just before the claim, in a clause that names no `file`, unless the sentence also names
 `index` or `git`: that is review data, not the index.
 
@@ -47,7 +47,7 @@ STAGED_CLAIM = re.compile(r"\b(?:(?P<first_person>I(?:'ve| have)?\s+staged)"
                           r"|(?P<lasting>remains?|stays?)\s+staged)\b", re.I)
 NEGATION = re.compile(r"\b(?:not|no|nothing|none|never)\b", re.I)
 COMMITTED = re.compile(r"\bcommitted\b", re.I)
-CONDITIONAL = re.compile(r"\b(?:if|once|when|after|before|until|unless)\b", re.I)
+CONDITIONAL = re.compile(r"\b(?:if|whether|once|when|after|before|until|unless)\b", re.I)
 # Where one clause ends and the next begins, so a conditional in an earlier clause does not hide the claim.
 CLAUSE_BREAK = re.compile(r"[,;:]|\s(?:and|but|so)\s", re.I)
 # A claim whose subject is review data ("two rows are staged") speaks of a ledger or a diff folder, not the git index.

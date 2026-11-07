@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "fixed"
-title: "Stop gates skip a question or claim the reply only quotes"
+title: "Staged-claim Stop gate skips a permission question the reply only quotes"
 description: "The staged-claim Stop gate no longer reads a permission question the reply quotes in backticks or double quotes as the reply asking, and a stray quote mark hides no real question."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-07T01:51:19-06:00"}
 seq: 6

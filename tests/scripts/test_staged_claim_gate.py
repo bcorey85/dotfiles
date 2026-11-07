@@ -416,8 +416,40 @@ class PermissionQuestionTest(unittest.TestCase):
     def assert_sent_back(self, message, **options):
         decision = json.loads(self.run_gate(message, **options))
         self.assertEqual(decision["decision"], "block")
-        self.assertIn("take the step yourself", decision["reason"])
+        self.assertIn("without that closing question", decision["reason"])
         return decision["reason"]
+
+    def write_prompts(self, *prompts):
+        transcript = self.tmp / "prompts.jsonl"
+        entries = [{"type": "user", "message": {"role": "user", "content": prompt}} for prompt in prompts]
+        transcript.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+        return transcript
+
+    def test_the_reason_says_to_drop_the_question_not_to_start_the_step(self):
+        reason = self.assert_sent_back("Fixed the invoice total. The report has the same bug. Want me to fix it too?")
+        self.assertNotIn("take the step yourself", reason)
+
+    def test_an_answer_to_the_users_question_passes_even_when_it_ends_on_an_offer(self):
+        offer = "The gate hashed staged files apart from untracked ones. Want me to fix it?"
+        for prompt in ("what is the issue with it", "Why did the gate block the commit?", "how does the driver work",
+                       "is the bench still running", "fix the report\n\nwait, why is the total wrong?"):
+            with self.subTest(prompt=prompt):
+                self.assert_passes(offer, transcript_path=self.write_prompts("fix the invoice", prompt))
+
+    def test_an_offer_after_a_handed_over_task_is_still_sent_back(self):
+        offer = "Fixed the invoice total. The report has the same bug. Want me to fix it too?"
+        for prompt in ("fix the invoice total", "can you fix the invoice total?", "go"):
+            with self.subTest(prompt=prompt):
+                self.assert_sent_back(offer, transcript_path=self.write_prompts("why is the total wrong?", prompt))
+
+    def test_a_question_inside_a_paste_or_a_later_tool_result_is_not_the_users_question(self):
+        offer = "Fixed the invoice total. The report has the same bug. Want me to fix it too?"
+        pasted = "fix this\n<pasted_content>why does it fail?</pasted_content>"
+        transcript = self.write_prompts(pasted)
+        with transcript.open("a") as handle:
+            handle.write(json.dumps({"type": "user", "message": {"role": "user", "content": [
+                {"type": "tool_result", "content": "why?"}]}}) + "\n")
+        self.assert_sent_back(offer, transcript_path=transcript)
 
     def test_a_turn_ending_on_a_permission_question_is_sent_back(self):
         for message in ("Fixed the invoice total. The monthly report has the same bug. Want me to fix it too?",

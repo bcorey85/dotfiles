@@ -47,7 +47,11 @@ diff and what it touches, not a fresh read.
     cross-reference the repair touched — a stale pointer left by a repair returns
     as the next round's finding.
 
-20b. **Log every real BLOCKER and GAP** — one `log-escape` line each (`stage_found=plan-review gate_missed=eng-spec miss_reason=plan-gap`). Not a NIT, not out-of-scope, **never an `ALT`** (counted on the row below).
+20b. **Log every real BLOCKER and GAP** — one line each. Not a NIT, not out-of-scope, **never an `ALT`** (counted on the row below). `guard=` is the rung from `~/.claude/skills/_shared/escape-ratchet.md`: `check` when a finalization command would catch it, else `none`.
+
+    ```bash
+    ~/.claude/scripts/telemetry/log-escape stage_found=plan-review gate_missed=eng-spec miss_reason=plan-gap class=<correctness|test-gap|security|perf|other> severity=<high|medium|low> guard=<check|none> desc="<finding gist>"
+    ```
 
 21. **Log the plan.** One row, once, now that the plan is final:
 

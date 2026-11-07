@@ -10,7 +10,7 @@ Never add a `Claude-Session:` line, a session link, or any other attribution lin
 
 When the user must run git or shell commands, give one `!` line that chains them all with `&&`, never a series of lines to run one by one. Every line that pushes runs `git -C <repo> pull --rebase=merges --autostash` right before `git -C <repo> push`: another machine pushes to the same branch.
 
-Only the main session hands the user a command. A subagent never writes a command for the user to run: it names the step it could not do, and why, in its report to its caller, and the caller runs it or hands it on.
+Only the main session hands the user a command. A subagent never writes a command for the user to run: it names the step it could not do, and why, in its report to its caller, and the caller runs it or hands it on. A lane session that another session started is not the main session: it sends every command for the user, merge lines included, to that session with SendMessage and never shows one in its own pane. Before writing a lane brief, read this session's name from ListAgents and put it in the brief.
 
 In zsh, `path` is tied to `PATH`: never name a shell variable `path`. Assigning it (`path=…` or `for path in …`) replaces the command search path, and later commands fail with "command not found". Name the variable for what it holds, such as `log_file`.
 

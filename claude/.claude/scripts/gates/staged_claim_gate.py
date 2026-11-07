@@ -225,7 +225,10 @@ def main():
     reasons = [staged_claim_reason(hook, message)]
     is_main_session = hook.get("hook_event_name") == "Stop"
     if is_main_session and permission_question.closing_question(message):
-        reasons.append(permission_question.REASON)
+        # Read the transcript only for a message that ends on an offer; an unreadable one judges the message alone.
+        answers_question = permission_question.answers_users_question(hook.get("transcript_path"))
+        if not answers_question:
+            reasons.append(permission_question.REASON)
 
     found_reasons = [reason for reason in reasons if reason]
     if found_reasons:

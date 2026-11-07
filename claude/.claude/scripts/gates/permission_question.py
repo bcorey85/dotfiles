@@ -13,10 +13,15 @@ that files, opens, creates or raises a ticket, sub-ticket, subtask, issue, sub-i
 to ask and does not count. A span in backticks or double quotes (straight or curly) on one line whose
 whole text is one permission question is dropped first (`message_text.without_quoted_spans`): a question cited as
 an example is no question asked.
+
+A reply to a user prompt that asks a question passes (`answers_users_question`): the answer stands, offer and all. The
+prompt asks when the user's own words hold a `?` or open on a question word, and do not open on a request such as `can
+you` or `please`. A transcript that cannot be read gives no prompt, so the message is judged alone.
 """
 import re
 
 from message_text import without_quoted_spans
+from user_prompts import latest_prompt, user_words
 
 PERMISSION_QUESTION = re.compile(
     r"\b(?:(?:do you |would you )?want me to|do you want (?:that|this|it|them|those|these)\b|shall I|"
@@ -34,8 +39,31 @@ OUTWARD_STEP = re.compile(
 # A quoted span counts as a cited question only when its whole inner text is the question.
 OPENING_QUESTION = re.compile(r"\A(?:" + PERMISSION_QUESTION.pattern + r")\Z", re.IGNORECASE)
 TAIL_CHARACTERS = 400
-REASON = ("Your message ends asking permission to go on. Act on it: take the step yourself. Ask only before a step "
-          "that cannot be undone or leaves this machine.")
+REQUEST_OPENING = re.compile(r"\A\W*(?:(?:can|could|would|will) you|please)\b", re.IGNORECASE)
+QUESTION_OPENING = re.compile(
+    r"\A\W*(?:what|why|how|when|where|which|who|whose|is|are|was|were|do|does|did|can|could|will|would|should|"
+    r"has|have|any|whats|hows|isnt|doesnt)\b", re.IGNORECASE)
+REASON = ("Your message ends asking permission to go on. Send it again without that closing question. Do not start "
+          "the step it offers unless the user's request already covers it. Ask only before a step that cannot be "
+          "undone or leaves this machine.")
+
+
+def asks_a_question(prompt):
+    """Whether the user's own words in a prompt ask a question rather than hand over a task."""
+    words = user_words(prompt).strip()
+    if REQUEST_OPENING.match(words):
+        return False
+    return "?" in words or bool(QUESTION_OPENING.match(words))
+
+
+def answers_users_question(transcript_path):
+    """Whether the newest prompt the user typed asks a question; False when the transcript cannot be read."""
+    if not transcript_path:
+        return False
+    prompt = latest_prompt(transcript_path)
+    if prompt is None:
+        return False
+    return asks_a_question(prompt)
 
 
 def closing_question(message):

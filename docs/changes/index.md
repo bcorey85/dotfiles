@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-857 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+858 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-07, [Review packet says when the commit gate does not credit a clean review](notes/2026-11-07-review-packet-says-when-the-commit-gate-does-not.md).
+Latest change: 2026-11-07, [A lane session sends every user command to the session that started it](notes/2026-11-07-a-lane-session-sends-every-user-command-to-the.md).
 
 ## Top gains
 

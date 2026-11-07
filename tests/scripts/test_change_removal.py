@@ -138,12 +138,9 @@ def git(repo, *args):
 class MovedByFixTest(unittest.TestCase):
     def test_lines_the_fix_added_to_a_file_that_already_held_them_are_kept(self):
         finder = ["start = None", "for row in rows:", "    if row:", "        start = row", "return start"]
-        head_text = "\n".join(finder) + "\n"
-        start_text = ""
-        now_text = head_text
         added = {"edit.py": change_removal.added_lines("", "\n".join(finder) + "\n")}
-        current_added = {"dates.py": change_removal.added_lines(head_text, now_text)}
-        fix_added = {"dates.py": change_removal.added_lines(start_text, now_text)}
+        current_added = {}
+        fix_added = {"dates.py": Counter(line.strip() for line in finder)}
 
         removed = change_removal.removed_by_file(added, current_added, fix_added)
 

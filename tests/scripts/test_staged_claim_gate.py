@@ -275,6 +275,15 @@ class StagedClaimGateTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_whether_clause_describes_staging_and_passes_with_an_empty_index(self):
+        for message in ("The fingerprint will hash a new file the same way whether it is staged or untracked.",
+                        "Whether the file is staged or not, the hash stays the same."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_whether_in_an_earlier_clause_does_not_hide_the_claim(self):
+        self.assert_blocked("I checked whether the hash moved, and all files are staged.")
+
     def test_a_conditional_word_after_the_claim_does_not_hide_it(self):
         for message in ("All four files are staged, so review the diff before you commit.",
                         "The edits are staged; commit when ready.", "I staged the fix after the tests passed."):

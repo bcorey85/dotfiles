@@ -995,7 +995,8 @@ class ReviewGateTest(VerifyBranchBase):
     """verify-log refuses to write unless a marked branch review covers the tree prep measured."""
 
     # Pins the value verify-prep saves today for this class's base repo and task dir. The tree adds files since its
-    # base commit, which the fingerprint hashes as whole files.
+    # base commit, which the fingerprint hashes as whole files. test_tree_fingerprint.py GOLDEN_WHOLE_TREE proves an
+    # old stored value is still accepted; do not re-pin this hash casually.
     PREP_FINGERPRINT = "sha256:24a3bff65179cb652be023356ba54cdd4153ef27f45b70183e92fbc1d05e26e6"
 
     def setUp(self):

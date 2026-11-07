@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-`lib/change_removal.py` counts an added line as kept when the fix pass adds it to any file, across files and across a commit made during the loop. `review/review_loop_plan.py` passes the file set after a mid-loop commit. Lines the fix deleted without adding them elsewhere still count as removed.
+`lib/change_removal.py` counts an added line as kept when the fix pass adds it to any file, across files and across a commit made during the loop. `review/review_loop_plan.py` stores the counted texts of the changed files at loop start (`start_texts`); `lines_added_by_fixes` measures what the fix passes added against those texts, and `removed()` passes that map to `removed_by_file` as `fix_added_by_file`. Lines the fix deleted without adding them elsewhere still count as removed.
 
 ## Evidence
 
@@ -33,4 +33,4 @@ judgment: an agent-evals /code run stopped on fix-removed-change twice after its
 
 ## Back-out
 
-Revert the cross-file kept-line count in `lib/change_removal.py`, the file-set change in `review/review_loop_plan.py`, and the new tests.
+Revert the cross-file kept-line count in `lib/change_removal.py`, `lines_added_by_fixes` in `review/review_loop_plan.py`, and the new tests.

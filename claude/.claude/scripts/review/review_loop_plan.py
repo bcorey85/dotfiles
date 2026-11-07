@@ -70,11 +70,11 @@ def counted_texts(repo, paths):
     return texts
 
 
-def lines_added_since(repo, start, changes=None):
-    """{path: Counter of the source lines the working tree adds to the commit `start`}, for the files that count toward
-    size. A HEAD that moved diffs against `start` itself, so lines committed since then still count as added. A caller
-    that already ran `changed_files_since` passes its result as `changes`."""
-    files, origins, base = changes or changed_files_since(repo, start)
+def lines_added_since(repo, changes):
+    """{path: Counter of the source lines the working tree adds to the base of `changes`} (the result of
+    `changed_files_since`), for the files that count toward size. A HEAD that moved diffs against the loop's start
+    commit, so lines committed since then still count as added."""
+    files, origins, base = changes
 
     added_by_file = {}
     for path, tree_text in counted_texts(repo, files).items():
@@ -94,7 +94,7 @@ class ChangeUnderReview:
         self.repo = repo
         self.start = script_utils.git_output(repo, "rev-parse", "--verify", "-q", "HEAD")
         changes = changed_files_since(repo, self.start)
-        self.added = lines_added_since(repo, self.start, changes)
+        self.added = lines_added_since(repo, changes)
         self.start_texts = counted_texts(repo, changes[0])
 
     def lines_added_by_fixes(self, changes):
@@ -115,7 +115,7 @@ class ChangeUnderReview:
         """{path: count} of the added lines the tree no longer adds. A line a fix pass added to any file, even one
         that already held the same line, is kept."""
         changes = changed_files_since(self.repo, self.start)
-        now_added = lines_added_since(self.repo, self.start, changes)
+        now_added = lines_added_since(self.repo, changes)
         return change_removal.removed_by_file(self.added, now_added, self.lines_added_by_fixes(changes))
 
 

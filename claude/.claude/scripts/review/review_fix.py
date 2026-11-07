@@ -682,6 +682,18 @@ def stop_for_status(packet, options, state):
     print_logged(failures)
 
 
+def commit_credit_refusal(packet):
+    """Why the commit gate does not credit a clean packet's review, as a line for the session, or None. The loop
+    records the credit when it hands back, so a refusal there would otherwise surface only as a denied commit."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if not session_id or packet["status"] not in handback.CLEAN_STATUSES:
+        return None
+    reason = handback.false_clean_reason(session_id)
+    if not reason:
+        return None
+    return f"COMMIT CREDIT: the commit gate does not credit this review yet: {reason}."
+
+
 def command_packet(argv):
     options = packet_arguments(argv)
     try:
@@ -723,6 +735,9 @@ def command_packet(argv):
     print_user_block(handback.render(packet, options.skill, sections))
     present_plan_impacts(packet, state)
     print_logged(notes)
+    credit_refusal = commit_credit_refusal(packet)
+    if credit_refusal:
+        print(credit_refusal)
     if options.skill == "review" and not is_outstanding(packet):
         print(f"Nothing is outstanding: say \"{NOTHING_OUTSTANDING}\"")
     print("MODEL STILL DOES: " + model_duties(packet, options))

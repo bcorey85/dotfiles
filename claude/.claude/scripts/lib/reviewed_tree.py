@@ -3,18 +3,24 @@
 A review-loop records its tree when it ends clean: the scripted loop at its hand-back
 (review_loop_packet.write_handback_rows). Then
 review_commit_gate.py reads it back at commit time. A tree is its fingerprint, `tree_fingerprint`: "sha256:" and the
-hash of `git diff --binary <base> -- .` (git's raw output bytes, never decoded) followed by, for each untracked,
-non-ignored file in name order, `\0untracked\0<name>\0<git hash-object>`. The reviewed tree leaves the repo's notes
-paths (notes_paths.py) out of both parts, so an edit of a plan or note after the review keeps the credit and any
-other edit voids it.
+hash of `git diff --binary --no-renames --diff-filter=a <base> -- .` (git's raw output bytes, never decoded)
+followed by, for each file the tree adds against base (committed since base, staged as new, or untracked and
+non-ignored) in name order, `\0untracked\0<name>\0<git hash-object>`. An added submodule stays in the diff part; an
+added symlink, staged, committed or untracked, is hashed as `\0symlink\0<name>\0<link text>`. An untracked
+nested repository raises.
+A `git add` of a new file, a new symlink or a staged move leaves the value as it was; `git rm --cached` changes it.
+The reviewed tree leaves the repo's notes paths (notes_paths.py) out of both parts, so an edit of a plan or note
+after the review keeps the credit and any other edit voids it.
 Verify stores the `tree_fingerprint` whole-tree value (its context and ledger review rows), not the reviewed value,
-with an optional path left out of both parts. The
-bytes match what verify stored for any tree whose diff is valid UTF-8; a diff with other bytes in a tracked text edit
-hashes differently from before, so verify-prep and the branch review rerun once there.
+with an optional path left out of both parts. A
+tree whose added paths are all untracked regular files keeps its old value; a tree that adds a file through the
+index or a commit since base hashes differently, so verify-prep and the branch review rerun once there.
 
 State: ~/.claude/state/review-gate/<session>.reviewed, one JSON object of repo top level -> fingerprint, and
 ~/.claude/state/review-gate/reviewed-trees.json, repo top level -> the latest fingerprints any session recorded. A value
-written in an older form never equals a current one, so the tree counts as not reviewed until it is recorded again.
+written in the older form for a tree that adds a file through the index or a commit since base never equals a current
+one, so that tree counts as not reviewed until it is recorded again; a tree whose added paths are all untracked
+regular files keeps its old value.
 """
 import hashlib
 import json
@@ -31,6 +37,9 @@ REVIEWED_SUFFIX = ".reviewed"
 # earns the credit of a review that converged under another session id. It credits only the exact tree reviewed.
 SHARED_REVIEWED_NAME = "reviewed-trees.json"
 SHARED_LIMIT = 50
+# Added submodules (160000) are not hashed as files; they stay in the patch. Symlinks (120000) are hashed by link text.
+PATCH_MODES = {b"160000"}
+SYMLINK_MODE = b"120000"
 
 
 class TreeFingerprintError(Exception):
@@ -51,26 +60,35 @@ def shared_reviewed_file():
 
 def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerprintError, timeout=None,
                      notes_entries=None):
-    """Content fingerprint of the working tree at `top` as it stands: `git diff <base>` plus the hash of each
-    untracked file, as "sha256:<hex>".
+    """Content fingerprint of the working tree at `top` as it stands: `git diff <base>` without added files, plus the
+    hash of each file the tree adds against `base` (committed since `base`, staged as new, or untracked), as
+    "sha256:<hex>"; an added submodule stays in the diff, an added symlink is hashed by its link text whether staged,
+    committed or untracked, and an untracked nested repository raises.
 
-    Equal fingerprints mean equal content, whatever the commits, mtimes or renames in between. `exclude_rel` (a path
-    relative to the top level) leaves a file or directory out of both parts. `notes_entries`, a list of
-    `.claude/notes-paths` entries, leaves every notes path they and docs/ name out of both parts; None leaves them
-    in. Each git call may run `timeout` seconds (None: no limit). Raises error_type when git fails or runs past it,
-    or an untracked file name holds a newline."""
+    Equal fingerprints mean equal content, whatever the mtimes or renames in between, and a `git add` of a new file,
+    a new symlink or a staged move leaves the value as it was. `git rm --cached` of a tracked file changes it.
+    `exclude_rel` (a path relative to the top level) leaves a file or directory out of both parts. `notes_entries`,
+    a list of `.claude/notes-paths` entries, leaves every notes path they and docs/ name out of both parts; None
+    leaves them in. Each git call may run `timeout` seconds (None: no limit). Raises error_type when git fails or
+    runs past it, or an added file name holds a newline."""
     def git(argv, stdin=None):
         return script_utils.run_or_raise(["git", *argv], error_type, cwd=top, check=True, stdin=stdin,
                                          timeout=timeout, as_bytes=True)
 
     digest = hashlib.sha256()
-    diff_argv = ["diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", base, "--", "."]
+    pathspecs = ["--", "."]
     if exclude_rel:
-        diff_argv.append(f":(exclude,literal){exclude_rel}")
+        pathspecs.append(f":(exclude,literal){exclude_rel}")
     if notes_entries is not None:
-        diff_argv += notes_paths.exclude_pathspecs(notes_entries)
-    digest.update(git(diff_argv).stdout)
+        pathspecs += notes_paths.exclude_pathspecs(notes_entries)
+    # Lowercase `a` leaves added files out of the diff: they are hashed below as whole files, so a staged new file
+    # and an untracked one give the same value. --no-renames makes a staged move read as a delete plus an add.
+    diff_flags = ["--binary", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames"]
+    digest.update(git(["diff", *diff_flags, "--diff-filter=a", base, *pathspecs]).stdout)
 
+    raw = git(["diff", "--raw", "-z", "--no-renames", "--diff-filter=A", base, *pathspecs]).stdout
+    added, added_links, in_patch = added_paths(raw)
+    added = [*added, *added_links]
     listing = git(["ls-files", "--others", "--exclude-standard", "-z"]).stdout
 
     def is_excluded(name):
@@ -79,19 +97,67 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
             return True
         return notes_entries is not None and notes_paths.is_notes_path(path, notes_entries)
 
-    names = sorted(name for name in listing.split(b"\0") if name and not is_excluded(name))
-    if any(b"\n" in name for name in names):
-        raise error_type("an untracked file name holds a newline; rename it so the tree can be fingerprinted")
+    # An added submodule is a directory, so it stays in the patch instead of being hashed as a whole file.
+    kept_in_patch = sorted(name for name in in_patch if not is_excluded(name))
+    if kept_in_patch:
+        patch_specs = ["--", *[":(literal)" + os.fsdecode(name) for name in kept_in_patch]]
+        digest.update(git(["diff", *diff_flags, "--diff-filter=A", base, *patch_specs]).stdout)
 
-    if names:
-        paths_input = b"\n".join(names) + b"\n"
+    untracked = [name for name in listing.split(b"\0") if name]
+    nested = [name for name in untracked if name.endswith(b"/") and not is_excluded(name)]
+    if nested:
+        raise error_type("an untracked nested repository cannot be fingerprinted: " + os.fsdecode(nested[0]))
+
+    def work_path(name):
+        rel = os.fsdecode(name)
+        return os.path.join(top, rel)
+
+    # Every symlink, staged, committed or untracked, is hashed by its link text: hash-object would follow it.
+    link_names = set(added_links)
+    for name in untracked:
+        if os.path.islink(work_path(name)):
+            link_names.add(name)
+    names = sorted(name for name in {*added, *untracked} if not is_excluded(name))
+    if any(b"\n" in name for name in names):
+        raise error_type("an added file name holds a newline; rename it so the tree can be fingerprinted")
+
+    file_names = [name for name in names if name not in link_names]
+    file_entries = {}
+    if file_names:
+        paths_input = b"\n".join(file_names) + b"\n"
         hashed = git(["hash-object", "--stdin-paths"], stdin=paths_input)
         file_hashes = hashed.stdout.split()
-        if len(file_hashes) != len(names):
-            raise error_type(f"git hash-object returned {len(file_hashes)} hashes for {len(names)} untracked files")
-        for name, file_hash in zip(names, file_hashes, strict=True):
-            digest.update(b"\0untracked\0" + name + b"\0" + file_hash)
+        if len(file_hashes) != len(file_names):
+            raise error_type(f"git hash-object returned {len(file_hashes)} hashes for {len(file_names)} added files")
+        # The label stays "untracked" for staged and committed files too: stored values hold these bytes.
+        file_entries = dict(zip(file_names, file_hashes, strict=True))
+    for name in names:
+        if name in link_names:
+            target = os.readlink(work_path(name))
+            digest.update(b"\0symlink\0" + name + b"\0" + os.fsencode(target))
+        else:
+            digest.update(b"\0untracked\0" + name + b"\0" + file_entries[name])
     return "sha256:" + digest.hexdigest()
+
+
+def added_paths(raw):
+    """(files, links, in_patch) from `git diff --raw -z --diff-filter=A` output: the added paths to hash as whole
+    files, the added symlinks, which are hashed by their link text, and the added submodules, which stay in the
+    patch."""
+    raw_fields = [field for field in raw.split(b"\0") if field]
+    files = []
+    links = []
+    in_patch = []
+    # With -z and no renames, each entry is a ":<old mode> <new mode> ..." field and then one path field.
+    for meta, name in zip(raw_fields[0::2], raw_fields[1::2], strict=True):
+        new_mode = meta.split()[1]
+        if new_mode in PATCH_MODES:
+            in_patch.append(name)
+        elif new_mode == SYMLINK_MODE:
+            links.append(name)
+        else:
+            files.append(name)
+    return files, links, in_patch
 
 
 def fingerprint_base(top, timeout=None):
@@ -132,7 +198,8 @@ def work_tree_fingerprint(repo, log=None):
 
 def fingerprint(repo_dir):
     """(repo top level, whole-tree fingerprint of its working tree against HEAD), or None when repo_dir is not in a
-    work tree, has no commit yet, git fails, or an untracked file name holds a newline."""
+    work tree, has no commit yet, git fails, an added file name holds a newline, or the tree holds an untracked
+    nested repository."""
     top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
     if top is None:
         return None

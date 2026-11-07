@@ -56,7 +56,7 @@ CASE_SENSITIVE_MARKERS = [re.compile(pattern) for pattern in (
     r"\(D[0-9]+[):]",
     r"\bD[0-9]+:",
     r"\bPD[0-9]+\b",
-    r"(^|[^#\w])AC[0-9]+\b",
+    r"(?<![#\w])AC[0-9]+\b",
 )]
 NOT_A_MARKER = re.compile(
     r"utf-8|sha-[0-9]|iso-[0-9]|rfc-[0-9]|aes-[0-9]|http-[0-9]|base-[0-9]|dp-[0-9]|hdmi-[0-9]|dvi-[0-9]|usb-[0-9]",
@@ -121,21 +121,31 @@ def comment_numbers_of(file_lines, style):
     return set(source_text.comment_line_numbers(file_lines, style))
 
 
-def has_marker(row, markers):
-    return any(p.search(row) for p in markers) and not NOT_A_MARKER.search(row)
+def first_marker(row, markers):
+    """The text of the first marker the row matches, or None."""
+    if NOT_A_MARKER.search(row):
+        return None
+    for pattern in markers:
+        found = pattern.search(row)
+        if found:
+            return found.group()
+    return None
 
 
 def marker_hit(raw_row, searched_row, eval_domain_counts):
-    """Whether a row carries a marker: the raw-line markers search raw_row, the others searched_row, the row with
-    string text removed. The eval-domain markers count only when eval_domain_counts is true."""
+    """The text of the marker a row carries, or None: the raw-line markers search raw_row, the others searched_row,
+    the row with string text removed. The eval-domain markers count only when eval_domain_counts is true."""
     searched_markers = CASE_INSENSITIVE_MARKERS + CASE_SENSITIVE_MARKERS
     if eval_domain_counts:
         searched_markers = searched_markers + EVAL_DOMAIN_MARKERS
-    return has_marker(raw_row, RAW_LINE_MARKERS) or has_marker(searched_row, searched_markers)
+    raw_marker = first_marker(raw_row, RAW_LINE_MARKERS)
+    if raw_marker:
+        return raw_marker
+    return first_marker(searched_row, searched_markers)
 
 
 def marker_rows(file_lines, comments_only=False, file_path=""):
-    """Numbered non-blank lines carrying a workflow marker, ordered by line number.
+    """(number, line, marker text) of the non-blank lines carrying a workflow marker, ordered by line number.
 
     comments_only limits the scan to comment lines, for formats whose values are data, not prose. Lines inside a
     multi-line string held as data are not searched; on the line that opens one, only the text before the opening
@@ -167,8 +177,9 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
 
         raw_row = f"{number}:{searched}" if in_test_file else f"{number}:{raw}"
         eval_domain_counts = not in_agent_evals and (is_comment or not in_shell_file)
-        if marker_hit(raw_row, f"{number}:{searched}", eval_domain_counts):
-            rows.append((number, line))
+        marker = marker_hit(raw_row, f"{number}:{searched}", eval_domain_counts)
+        if marker:
+            rows.append((number, line, marker))
     return rows
 
 
@@ -211,7 +222,8 @@ def check(raw):
 
     added_lines = set(new_lines)
     data_only = file_path.endswith(".json")
-    leaks = [f"  {number}:{line}\n" for number, line in marker_rows(file_lines, data_only, file_path)
+    leaks = [f'  {number}:{line}  <- marker "{marker}"\n'
+             for number, line, marker in marker_rows(file_lines, data_only, file_path)
              if line in added_lines]
     if leaks:
         return block_inside_repo(

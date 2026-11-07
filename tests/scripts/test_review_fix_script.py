@@ -2067,6 +2067,48 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_kept_plan_impact_credits_the_tree_the_review_covered_and_not_a_later_edit(self):
         self.assert_ruling_credits_the_reviewed_tree(["decide", "keep", "--by", "user", "--ruling", "keep it"])
 
+    def test_a_clean_loop_the_commit_gate_does_not_credit_says_why(self):
+        held = json.dumps({**CONVERGED_FIELDS, "plan_impacts": [HELD_IMPACT]})
+        home = self.temp_root / "home"
+        code, output = self.launch(message=held, HOME=str(home))
+        self.assertEqual(code, 0, output)
+
+        code, output = self.packet(held, HOME=str(home))
+
+        self.assertIn("COMMIT CREDIT: the commit gate does not credit this review yet: the review-loop handed back "
+                      "1 plan impact(s) that await a ruling.", output)
+
+    def test_a_clean_loop_the_commit_gate_credits_prints_no_refusal(self):
+        home = self.temp_root / "home"
+        code, output = self.launch(HOME=str(home))
+        self.assertEqual(code, 0, output)
+
+        code, output = self.packet(CONVERGED, HOME=str(home))
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("COMMIT CREDIT", output)
+
+    def test_a_capped_packet_prints_no_commit_credit_line(self):
+        home = self.temp_root / "home"
+        capped = json.dumps({**CONVERGED_FIELDS, "status": "cap-reached", "iter": "2 of 2",
+                             "blockers": [{"finding": "orders query lacked a tenant filter",
+                                           "file_line": "src/orders.ts:42"}]})
+        code, output = self.launch(message=capped, HOME=str(home))
+        self.assertEqual(code, 0, output)
+
+        code, output = self.packet(capped, HOME=str(home))
+
+        self.assertNotIn("COMMIT CREDIT", output)
+
+    def test_a_converged_packet_without_a_session_id_prints_no_commit_credit_line(self):
+        home = self.temp_root / "home"
+        code, output = self.launch(HOME=str(home))
+        self.assertEqual(code, 0, output)
+
+        code, output = self.packet(CONVERGED, HOME=str(home), CLAUDE_CODE_SESSION_ID="")
+
+        self.assertNotIn("COMMIT CREDIT", output)
+
     def test_a_ruling_on_a_review_that_stays_dirty_says_the_gate_still_counts_it_dirty(self):
         home = self.temp_root / "home"
         capped = json.dumps({**CONVERGED_FIELDS, "status": "cap-reached", "iter": "2 of 2",

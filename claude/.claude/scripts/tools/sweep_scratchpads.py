@@ -3,9 +3,10 @@
 
 Claude Code gives each session a folder at <temp>/claude-<uid>/<project>/<session id>/ (its scratchpad and task
 output) and never deletes it, so old ones fill the per-user temp quota. This removes each session folder whose newest
-entry is over MAX_AGE_HOURS old, never the folder of the session in the hook input, and nothing whose name is not a
-session id. <temp> is CLAUDE_CODE_TMPDIR when set, else the system temp folder. Fails open: an error goes to stderr
-and the hook exits 0.
+entry is over MAX_AGE_HOURS old, never the folder of the session in the hook input or of any session still running,
+and nothing whose name is not a session id. A session is running when <config>/sessions/<pid>.json names it and that
+pid is alive; <config> is CLAUDE_CONFIG_DIR when set, else ~/.claude. <temp> is CLAUDE_CODE_TMPDIR when set, else the
+system temp folder. Fails open: an error goes to stderr and the hook exits 0.
 """
 import json
 import os
@@ -41,6 +42,43 @@ def current_session_id():
     return session_id if isinstance(session_id, str) else ""
 
 
+def pid_alive(pid):
+    """Whether a process with this pid exists. A pid owned by another user counts as alive."""
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
+    except (ProcessLookupError, OverflowError):
+        return False
+    return True
+
+
+def live_session_ids():
+    """The ids of the sessions whose <config>/sessions/<pid>.json names a live pid. Unreadable files are skipped."""
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    sessions_dir = os.path.join(config_dir, "sessions")
+    if not os.path.isdir(sessions_dir):
+        return set()
+    live = set()
+    for entry in os.scandir(sessions_dir):
+        if not entry.name.endswith(".json"):
+            continue
+        try:
+            with open(entry.path, encoding="utf-8") as session_file:
+                record = json.load(session_file)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(record, dict):
+            continue
+        pid = record.get("pid")
+        session_id = record.get("sessionId")
+        if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0 or not isinstance(session_id, str):
+            continue
+        if pid_alive(pid):
+            live.add(session_id)
+    return live
+
+
 def touched_since(folder, cutoff):
     """Whether the folder or anything under it was modified at or after `cutoff`. Links are not followed."""
     if os.lstat(folder).st_mtime >= cutoff:
@@ -52,15 +90,15 @@ def touched_since(folder, cutoff):
     return False
 
 
-def stale_session_folders(root, keep_id, now):
-    """The session folders under `root` untouched for MAX_AGE_HOURS, except `keep_id`'s."""
+def stale_session_folders(root, keep_ids, now):
+    """The session folders under `root` untouched for MAX_AGE_HOURS, except those named in `keep_ids`."""
     cutoff = now - MAX_AGE_HOURS * 3600
     stale = []
     for project in os.scandir(root):
         if not project.is_dir(follow_symlinks=False):
             continue
         for session in os.scandir(project.path):
-            if not SESSION_ID.fullmatch(session.name) or session.name == keep_id:
+            if not SESSION_ID.fullmatch(session.name) or session.name in keep_ids:
                 continue
             if not session.is_dir(follow_symlinks=False):
                 continue
@@ -75,8 +113,9 @@ def main():
         root = temp_root()
         if not os.path.isdir(root):
             return 0
-        keep_id = current_session_id()
-        for folder in stale_session_folders(root, keep_id, time.time()):
+        keep_ids = live_session_ids()
+        keep_ids.add(current_session_id())
+        for folder in stale_session_folders(root, keep_ids, time.time()):
             shutil.rmtree(folder, ignore_errors=True)
     except (OSError, ValueError) as error:
         hook_input.emit_stderr(f"{hook_input.hook_name()}: sweep stopped ({error})\n")

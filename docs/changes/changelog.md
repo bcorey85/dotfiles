@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-859 changes
+860 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The scratchpad sweep spares every running session's folder, not only the starting one](notes/2026-11-07-the-scratchpad-sweep-spares-every-running-session.md) [script/sweep-scratchpads] A session paused for a day or more keeps its scratchpad when another session starts.
 * [Permission-question gate lets an answer to the user's question stand](notes/2026-11-07-permission-question-gate-lets-an-answer-to-the.md) [script/staged-claim-gate] A reply to a user's question now ends the turn even when it closes on an offer, so the user reads the answer instead of watching the session start unasked work.
 * [Review packet says when the commit gate does not credit a clean review](notes/2026-11-07-review-packet-says-when-the-commit-gate-does-not.md) [skill/review, skill/code] The review packet step prints a COMMIT CREDIT line with the reason when a converged or deferred review earned no commit credit, so the session learns it before review-commit-gate denies the commit.
 * [Staged-claim gate passes a whether-clause that describes staging](notes/2026-11-07-staged-claim-gate-passes-a-whether-clause-that.md) [script/staged-claim-gate] The staged-claim Stop gate reads `whether` as a conditional word, so a reply that describes staging as a mechanism ("the same hash whether it is staged or untracked") no longer blocks the stop.

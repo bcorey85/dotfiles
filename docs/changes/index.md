@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-859 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+860 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-07, [Permission-question gate lets an answer to the user's question stand](notes/2026-11-07-permission-question-gate-lets-an-answer-to-the.md).
+Latest change: 2026-11-07, [The scratchpad sweep spares every running session's folder, not only the starting one](notes/2026-11-07-the-scratchpad-sweep-spares-every-running-session.md).
 
 ## Top gains
 

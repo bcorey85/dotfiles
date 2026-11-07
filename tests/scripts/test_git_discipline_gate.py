@@ -102,6 +102,9 @@ class GitDisciplineGateTest(unittest.TestCase):
                 self.assertEqual(reason, "[git-discipline-gate] git autostash is blocked: it runs a git stash, which "
                                          "every worktree shares and which resets staged files. Pass "
                                          "--no-autostash to the command, or do not set the autostash config. "
+                                         "The one form that passes is a pull joined by && to the push right after it, "
+                                         "in the same directory: "
+                                         "`git -C <repo> pull --rebase=merges --autostash && git -C <repo> push`. "
                                          "To bring a base into unfinished work, run `git merge <base>` with the work "
                                          "uncommitted: git stops and changes nothing when the merge touches an "
                                          "edited file. If it stops, commit the work once /review hands back "
@@ -112,6 +115,64 @@ class GitDisciplineGateTest(unittest.TestCase):
                         "git config rebase.autoStash false"):
             with self.subTest(command=command):
                 self.assert_allowed(command)
+
+    def test_autostash_pull_right_before_a_push_in_the_same_directory_passes(self):
+        self.assert_allowed("git -C /r pull --rebase=merges --autostash && git -C /r push")
+        self.assert_allowed("git pull --rebase=merges --autostash && git push")
+        self.assert_allowed("cd /r && git pull --rebase=merges --autostash && git push")
+        self.assert_allowed("x=$(git -C /r rev-parse HEAD) && git -C /r pull --rebase=merges --autostash "
+                            "&& git -C /r push")
+        self.assert_allowed("echo $(git log) $(git status) ; git -C /a pull --autostash && git -C /a push")
+        for command in ("echo $(git log) $(git status) && git -C /b pull && git -C /b push "
+                        "&& git -C /a pull --autostash ; git -C /a push",
+                        "echo $(git log) $(git status) && git -C /b pull && git -C /b push "
+                        "&& git -C /a pull --autostash || git -C /a push",
+                        "echo $(git log) $(git log) && git -C /r pull && git -C /r push "
+                        "&& git -C /r pull --autostash; git -C /r push",
+                        "git -C /a pull --autostash || git -C /a push && git -C /b pull && git -C /b push",
+                        "git -C /a pull --autostash ; git -C /a push ; git pull && git push",
+                        "git -C /a pull --autostash && git -C /a push && git -C /a pull --autostash; git -C /a push",
+                        "git -C /r pull --autostash; git -C /r push && git -C /x pull && git -C /x push",
+                        "git -C /tmp pull --rebase=merges --autostash ; git -C /tmp push && git -C /tmp pull "
+                        "&& git -C /tmp push",
+                        "git -C /tmp pull --autostash || git -C /tmp push && git -C /tmp pull && git -C /tmp push"):
+            with self.subTest(command=command):
+                self.assert_denied(command, "[git-discipline-gate] git autostash is blocked")
+        for command in ("git pull --rebase=merges --autostash", "git -C /a pull --autostash && git -C /b push",
+                        "git -C /r pull --autostash && git -C /r fetch && git -C /r push",
+                        "git -C /r pull --autostash && git -C /r rebase --autostash origin/master",
+                        "git -C /r -c rebase.autoStash=true pull && git -C /r push",
+                        "git config rebase.autoStash true && git -C /r pull --autostash && git -C /r push",
+                        "git -C /r push && git -C /r pull --autostash",
+                        "git -C /r rebase --autostash && git -C /r push",
+                        "git -C /r merge --autostash && git -C /r push",
+                        "git pull --autostash && git -C /r push",
+                        "git -C /r pull --autostash && git push",
+                        "git -C /r pull --autostash || git -C /r push",
+                        "git -C /r pull --autostash; git -C /r push",
+                        "git -C /r pull --autostash\ngit -C /r push",
+                        "cat <<EOF\ngit pull --autostash && git push\nEOF\ngit rebase --autostash",
+                        "git rebase --autostash\n: <<EOF\ngit pull --autostash && git push\nEOF",
+                        "(cd /x && git pull --autostash) && git push",
+                        "bash -c 'cd /x && git pull --autostash' && git push",
+                        "ssh h git pull --autostash && git push",
+                        'git -C "$A" pull --autostash && git -C "$B" push',
+                        "git -C '/a b' pull --rebase=merges --autostash && git -C '/c d' push",
+                        'git -C "/a" pull --autostash && git -C "/b" push',
+                        "git -C /r pull --rebase=merges --autostash && git -C /r/ push",
+                        "git --git-dir=/a pull --autostash && git --git-dir=/b push",
+                        "git --git-dir /a pull --autostash && git --git-dir /b push",
+                        "git --work-tree=/a pull --autostash && git --work-tree=/b push",
+                        "git --work-tree /a pull --autostash && git --work-tree /b push",
+                        "GIT_DIR=/a git pull --autostash && GIT_DIR=/b git push",
+                        "GIT_WORK_TREE=/a git pull --autostash && GIT_WORK_TREE=/b git push",
+                        "env GIT_DIR=/a git pull --autostash && git push",
+                        "git pull --autostash && git --git-dir=/b push",
+                        "git pull --autostash && echo $(git push)",
+                        "echo $(git -C /r pull --autostash) && git -C /r push",
+                        "git -C /r pull --no-autostash $(git -C /r pull --autostash) && git -C /r push"):
+            with self.subTest(command=command):
+                self.assert_denied(command, "[git-discipline-gate] git autostash is blocked")
 
     def test_amend_denied(self):
         for command in ("git commit --amend", "git commit -m x --amend --no-edit", "git commit --amend -m x"):

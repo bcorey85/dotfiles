@@ -1,8 +1,15 @@
 import importlib.util
+import pathlib
+import subprocess
+import sys
+import tempfile
 import unittest
 from collections import Counter
 
 import toolkit_paths
+
+sys.path[:0] = [str(toolkit_paths.REVIEW_DIR), str(toolkit_paths.LIB_DIR)]
+review_loop_plan = importlib.import_module("review_loop_plan")
 
 module_spec = importlib.util.spec_from_file_location("change_removal", toolkit_paths.LIB_DIR / "change_removal.py")
 change_removal = importlib.util.module_from_spec(module_spec)
@@ -122,6 +129,84 @@ class GuttedChangeTest(unittest.TestCase):
         removed, gutted = gutted_after(old_texts, new_texts, current_texts)
 
         self.assertEqual(({"app.py": 12}, True), (removed, gutted))
+
+
+def git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+
+class MovedByFixTest(unittest.TestCase):
+    def test_lines_the_fix_added_to_a_file_that_already_held_them_are_kept(self):
+        finder = ["start = None", "for row in rows:", "    if row:", "        start = row", "return start"]
+        added = {"edit.py": change_removal.added_lines("", "\n".join(finder) + "\n")}
+        current_added = {}
+        fix_added = {"dates.py": Counter(line.strip() for line in finder)}
+
+        removed = change_removal.removed_by_file(added, current_added, fix_added)
+
+        self.assertEqual({}, removed)
+
+    def test_copies_kept_in_different_files_by_the_two_bases_add_up(self):
+        block = numbered(10)
+        added = {"edit.py": change_removal.added_lines("", block), "a.py": change_removal.added_lines("", block)}
+        current_added = {"a.py": change_removal.added_lines("", block)}
+        fix_added = {"dates.py": change_removal.added_lines("", block)}
+
+        removed = change_removal.removed_by_file(added, current_added, fix_added)
+
+        self.assertEqual({}, removed)
+        self.assertFalse(change_removal.is_gutted(added, removed))
+
+    def test_lines_the_fix_deleted_without_adding_them_elsewhere_stay_removed(self):
+        added = {"edit.py": change_removal.added_lines("", numbered(10))}
+        fix_added = {"dates.py": change_removal.added_lines("", numbered(3, "other"))}
+
+        removed = change_removal.removed_by_file(added, {}, fix_added)
+
+        self.assertEqual({"edit.py": 10}, removed)
+
+
+class ChangeUnderReviewTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = pathlib.Path(self.tmp.name)
+        git(self.repo, "init", "-q", "-b", "main")
+        git(self.repo, "config", "user.email", "t@example.com")
+        git(self.repo, "config", "user.name", "T")
+        self.block = numbered(10, "finder")
+        self.write("dates.py", "import datetime\n" + self.block)
+        self.write("edit.py", "import edit_base\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-q", "-m", "base")
+        # The change under review moves the block from dates.py into edit.py.
+        self.write("dates.py", "import datetime\n")
+        self.write("edit.py", "import edit_base\n" + self.block)
+
+    def write(self, name, text):
+        (self.repo / name).write_text(text)
+
+    def test_a_block_a_fix_pass_moves_back_into_the_file_it_left_is_not_removed(self):
+        change = review_loop_plan.ChangeUnderReview(str(self.repo))
+        self.write("dates.py", "import datetime\n" + self.block)
+        self.write("edit.py", "import edit_base\n")
+
+        self.assertEqual({}, change.removed())
+
+    def test_a_block_moved_after_a_commit_made_during_the_loop_is_not_removed(self):
+        change = review_loop_plan.ChangeUnderReview(str(self.repo))
+        git(self.repo, "commit", "-q", "-am", "mid-loop")
+        self.write("dates.py", "import datetime\n" + self.block)
+        self.write("edit.py", "import edit_base\n")
+        git(self.repo, "commit", "-q", "-am", "pass")
+
+        self.assertEqual({}, change.removed())
+
+    def test_a_block_a_fix_pass_deletes_is_removed(self):
+        change = review_loop_plan.ChangeUnderReview(str(self.repo))
+        self.write("edit.py", "import edit_base\n")
+
+        self.assertEqual({"edit.py": 10}, change.removed())
 
 
 class RemovalBlockerTest(unittest.TestCase):

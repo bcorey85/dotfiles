@@ -994,9 +994,10 @@ class TicketOnlyLogTest(VerifyBranchBase):
 class ReviewGateTest(VerifyBranchBase):
     """verify-log refuses to write unless a marked branch review covers the tree prep measured."""
 
-    # What verify-prep saved for this class's base repo and task dir before the tree fingerprint moved to
-    # reviewed_tree: a context written then must still match the unchanged tree.
-    EARLIER_FINGERPRINT = "sha256:a6badc15fc873e85a88eec3363cf8d7e76e146e26e29f2aed7d19f8463914782"
+    # Pins the value verify-prep saves today for this class's base repo and task dir. The tree adds files since its
+    # base commit, which the fingerprint hashes as whole files. test_tree_fingerprint.py GOLDEN_WHOLE_TREE proves an
+    # old stored value is still accepted; do not re-pin this hash casually.
+    PREP_FINGERPRINT = "sha256:24a3bff65179cb652be023356ba54cdd4153ef27f45b70183e92fbc1d05e26e6"
 
     def setUp(self):
         super().setUp()
@@ -1056,8 +1057,8 @@ class ReviewGateTest(VerifyBranchBase):
         self.write("late.txt", "x\n")
         self.assertEqual(self.log("--rows", "-", stdin=self.rows()).returncode, 2)
 
-    def test_prep_of_an_unchanged_tree_stores_the_earlier_fingerprint_and_passes_the_tree_check(self):
-        self.assertEqual(self.EARLIER_FINGERPRINT, self.context()["fingerprint"])
+    def test_prep_of_an_unchanged_tree_stores_the_prep_fingerprint_and_passes_the_tree_check(self):
+        self.assertEqual(self.PREP_FINGERPRINT, self.context()["fingerprint"])
         self.assertEqual(self.log_review().returncode, 0)
 
         done = self.log("--rows", "-", stdin=self.rows())

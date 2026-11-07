@@ -8,6 +8,7 @@ Script location: LOG_ESCAPE_SCRIPT, defaulting to ~/.claude/scripts/telemetry/lo
 import json
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 import unittest
@@ -23,6 +24,11 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COM
 PLANTED_BRANCH = "planted-branch-zq"
 VALID_ARGS = ["gate_missed=review", "stage_found=pr-human", "severity=high", "class=bug", "guard=none",
               "miss_reason=overlooked"]
+PROMPT_DIRS = ("skills", "agents", "commands")
+TEMPLATE_PAIR = re.compile(r'(\w+)=("[^"]*"|<[^>]*>|[^\s`)]+)')
+# A placeholder with no options of its own (`<...>`, `<comment gist>`) takes this value for its key.
+PLACEHOLDER_VALUES = {"stage_found": "cc", "gate_missed": "review", "class": "bug", "severity": "low",
+                      "lane": "code", "guard": "none", "miss_reason": "overlooked", "line": "1"}
 MISS_REASONS = ("out-of-scope", "needs-other-file", "needs-runtime", "plan-gap", "seen-dismissed", "rule-absent",
                 "overlooked", "unknown")
 
@@ -278,6 +284,38 @@ class LogEscapeTest(unittest.TestCase):
                 self.assertEqual((done.returncode, done.stderr), (0, ""))
                 self.assertIn("usage: log-escape [--check] key=value", done.stdout)
                 self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
+    def test_every_prompt_template_passes_check(self):
+        templates = prompt_templates()
+        self.assertTrue(templates)
+        for source, line in templates:
+            with self.subTest(source=source, line=line):
+                done = self.run_escape("--check", *template_args(line))
+                self.assertEqual(done.returncode, 0, done.stderr)
+
+
+def prompt_templates():
+    """Each (file, line) in the prompt files that shows a log-escape call with its fields."""
+    templates = []
+    for prompt_dir in PROMPT_DIRS:
+        for prompt_file in sorted((toolkit_paths.CLAUDE_DIR / prompt_dir).rglob("*.md")):
+            for line in prompt_file.read_text().splitlines():
+                if "log-escape" in line and "stage_found=" in line:
+                    templates.append((prompt_file.name, line))
+    return templates
+
+
+def template_args(line):
+    """The template's key=value pairs, each placeholder filled with its first option or a known valid value."""
+    args = []
+    for key, raw_value in TEMPLATE_PAIR.findall(line):
+        value = raw_value.strip('"')
+        if value.startswith("<") and value.endswith(">"):
+            first_option = value[1:-1].split("|")[0]
+            has_options = "|" in value and first_option != "..."
+            value = first_option if has_options else PLACEHOLDER_VALUES.get(key, "x")
+        args.append(f"{key}={value}")
+    return args
 
 
 if __name__ == "__main__":

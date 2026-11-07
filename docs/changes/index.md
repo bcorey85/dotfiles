@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-847 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+848 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-05, [refactor log accepts a simplify target the branch deleted](notes/2026-11-05-refactor-log-accepts-a-simplify-target-the-branch.md).
+Latest change: 2026-11-07, [fix-removed-change counts a line the fix pass re-adds as kept](notes/2026-11-07-fix-removed-change-counts-a-line-the-fix-pass-re.md).
 
 ## Top gains
 

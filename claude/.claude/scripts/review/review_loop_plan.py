@@ -48,27 +48,36 @@ def base_scope(repo, base):
     return files
 
 
-def lines_added_since(repo, start):
-    """{path: Counter of the source lines the working tree adds to the commit `start`}, for the files that count toward
-    size. A HEAD still at `start`, or a `start` of None, diffs against HEAD with renames followed; a HEAD that moved
-    diffs against `start` itself, so lines committed since then still count as added."""
+def changed_files_since(repo, start):
+    """(files, origins, base) for the working tree against the commit `start`: the changed files, the rename origin of
+    each, and the revision the lines are measured against. A HEAD still at `start`, or a `start` of None, diffs against
+    HEAD with renames followed; a HEAD that moved diffs against `start` itself."""
     head = script_utils.git_output(repo, "rev-parse", "--verify", "-q", "HEAD")
     if start is None or head == start:
-        files = scope(repo)
-        origins = worktree_snapshot.status_entries(repo)[1]
-        base = "HEAD"
-    else:
-        files = base_scope(repo, start)
-        origins = {}
-        base = start
+        return scope(repo), worktree_snapshot.status_entries(repo)[1], "HEAD"
+    return base_scope(repo, start), {}, start
 
-    added_by_file = {}
-    for path in files:
+
+def counted_texts(repo, paths):
+    """{path: text of the file now} for each of `paths` that counts toward size; a missing file reads as empty."""
+    texts = {}
+    for path in paths:
         if not source_paths.counts_toward_size(path):
             continue
 
         target = pathlib.Path(repo) / path
-        tree_text = target.read_text(errors="replace") if target.is_file() else ""
+        texts[path] = target.read_text(errors="replace") if target.is_file() else ""
+    return texts
+
+
+def lines_added_since(repo, start, changes=None):
+    """{path: Counter of the source lines the working tree adds to the commit `start`}, for the files that count toward
+    size. A HEAD that moved diffs against `start` itself, so lines committed since then still count as added. A caller
+    that already ran `changed_files_since` passes its result as `changes`."""
+    files, origins, base = changes or changed_files_since(repo, start)
+
+    added_by_file = {}
+    for path, tree_text in counted_texts(repo, files).items():
         base_path = origins.get(path, path)
         base_text = script_utils.git_output(repo, "show", f"{base}:{base_path}") or ""
         added = change_removal.added_lines(base_text, tree_text)
@@ -84,12 +93,30 @@ class ChangeUnderReview:
     def __init__(self, repo):
         self.repo = repo
         self.start = script_utils.git_output(repo, "rev-parse", "--verify", "-q", "HEAD")
-        self.added = lines_added_since(repo, self.start)
+        changes = changed_files_since(repo, self.start)
+        self.added = lines_added_since(repo, self.start, changes)
+        self.start_texts = counted_texts(repo, changes[0])
+
+    def lines_added_by_fixes(self, changes):
+        """{path: Counter} of the source lines the tree holds now that it did not hold when the loop started."""
+        added_by_file = {}
+        # A file a pass put back to the base drops out of the changed files, so the files of the start count too.
+        files = changes[0].keys() | self.start_texts.keys()
+        for path, now_text in counted_texts(self.repo, sorted(files)).items():
+            before_text = self.start_texts.get(path)
+            if before_text is None:
+                before_text = script_utils.git_output(self.repo, "show", f"{self.start}:{path}") or ""
+            added = change_removal.added_lines(before_text, now_text)
+            if added:
+                added_by_file[path] = added
+        return added_by_file
 
     def removed(self):
-        """{path: count} of the added lines the tree no longer adds."""
-        now_added = lines_added_since(self.repo, self.start)
-        return change_removal.removed_by_file(self.added, now_added)
+        """{path: count} of the added lines the tree no longer adds. A line a fix pass added to any file, even one
+        that already held the same line, is kept."""
+        changes = changed_files_since(self.repo, self.start)
+        now_added = lines_added_since(self.repo, self.start, changes)
+        return change_removal.removed_by_file(self.added, now_added, self.lines_added_by_fixes(changes))
 
 
 def review_files(repo, base="", only=()):

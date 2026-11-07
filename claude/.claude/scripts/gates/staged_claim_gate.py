@@ -40,6 +40,7 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import permission_question
 import script_utils
 from git_calls import git_calls, joined_directory
+from message_text import without_quoted_spans
 
 STAGED_CLAIM = re.compile(r"\b(?:(?P<first_person>I(?:'ve| have)?\s+staged)"
                           r"|(?:is|are|were|was|now|all|been|(?P<left>left))\s+staged"
@@ -67,7 +68,6 @@ BARE_ACTOR = re.compile(r"^\s*(?:(?:the|a)\s+)?(?:peers?|coordinator|workers?)\s
 # A word on its own, so the name `staged-claim` is no report of speech.
 REPORTED_SPEECH = re.compile(r"(?<![\w/-])(?:says?|said|saying|claims?|claimed|claiming)(?![\w/-])", re.I)
 FIRST_PERSON = re.compile(r"\b(?:I|[Ww]e)\b")
-QUOTED_SPAN = re.compile(r'"[^"\n]*"|“[^”\n]*”|`[^`\n]*`')
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
 # A word that looks like a file path: `a.txt`, `docs/x.md`, `/abs/path`, `~/folder`.
 PATH_WORD = re.compile(r"(?<![\w/.~-])(?:~/[\w-]+(?:[./][\w-]+)*|(?:/|\.{1,2}/)?[\w-]+(?:[./][\w-]+)+)")
@@ -94,18 +94,9 @@ def session_staging_trees(transcript_path, cwd):
     return trees
 
 
-def without_quoted_claims(message):
-    """The message with each quoted span removed that holds a whole staged claim."""
-    def drop_claim_span(span):
-        holds_claim = STAGED_CLAIM.search(span.group())
-        return "" if holds_claim else span.group()
-
-    return QUOTED_SPAN.sub(drop_claim_span, message)
-
-
 def claim_sentences(message):
     claims = []
-    unquoted_message = without_quoted_claims(message)
+    unquoted_message = without_quoted_spans(STAGED_CLAIM, message)
     for sentence in SENTENCE_END.split(unquoted_message):
         if NEGATION.search(sentence) or COMMITTED.search(sentence):
             continue

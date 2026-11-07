@@ -16,6 +16,7 @@ Fix the queue items below. Each phase starts with a test that fails on the curre
 
 - [x] Phase 1: gate denies name their cause, and the push rule's pull passes (risk: low)
 - [x] Phase 2: /code fork stop and queue-item done-clauses (risk: low)
+- [x] Phase 3: a quoted question is no closing question (risk: low)
 
 ## Phase 1: gate denies name their cause, and the push rule's pull passes
 
@@ -69,6 +70,24 @@ Prompt edits only; a coder makes them.
 - New guidance tests fail on the current tree and pass after.
 - `python3 tests/parallel_tests.py test_guidance_rules.py` passes; `~/.claude/scripts/tools/rule-anchors.sh check`
   passes from the worktree.
+
+## Phase 3: a quoted question is no closing question
+
+Queue item `permission-question-gate-blocks-a-quoted-question`. The Stop gate blocked a reply whose last sentence cited
+"`Want me to file the three findings in Jira?`" in backticks as an example; the reply asked nothing.
+
+1. `permission_question.closing_question`: drop each one-line backtick or double-quoted span (straight or curly)
+   whose whole text is one permission question from the message, then take the 400-character tail. Reuse
+   `staged_claim_gate.QUOTED_SPAN`'s pattern by moving it to one owner (a lib module) and importing it in both; no
+   second copy of the regex.
+2. Update the module docstring.
+
+#### Automated Verification
+
+- New tests in `test_staged_claim_gate.py` `PermissionQuestionTest`, failing on the current tree: a message ending
+  "The cost: `Want me to file the three findings in Jira?` still blocks." passes; the same with straight and curly
+  double quotes passes; an unquoted "Want me to rerun the tests?" at the end still blocks.
+- `python3 tests/parallel_tests.py test_staged_claim_gate.py` passes; `bash tests/lint.sh` on changed .py passes.
 
 ## Plan Deviations
 

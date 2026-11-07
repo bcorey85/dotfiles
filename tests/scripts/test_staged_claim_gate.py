@@ -221,6 +221,17 @@ class StagedClaimGateTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_quoted_claim_with_its_own_closing_mark_or_a_path_passes(self):
+        for message in ('A reply like "The files are staged." is wrong.', "Cite `I staged the fix.` here.",
+                        'The gate blocks "I staged it!" when the index is empty.',
+                        'The old reply read "All files are staged." and was wrong.',
+                        "The note cites `notes.md is staged` as an example.",
+                        'Use the phrase "the fix in docs/x.md is staged" in the test.',
+                        "The gate flags `Files are staged!` lines.",
+                        'Cite "Are the files staged?" as the example.'):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
     def test_a_claim_beside_a_reporting_word_still_blocks(self):
         for message in ("The staged-claim gate files are staged.",
                         "The tests passed as the plan said, and all files are staged.", "I said I staged the fix.",
@@ -440,6 +451,40 @@ class PermissionQuestionTest(unittest.TestCase):
                         "Want me to look it up on GitHub?", "Want me to switch the interpolation to linear?",
                         "Want me to create the tasks file?", "Want me to check the GitHub Actions log?",
                         "Want me to check the file on GitHub?", "Want me to open the docs on GitHub?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
+    def test_a_quoted_question_is_no_closing_question(self):
+        for quote in ("`{}`", '"{}"', "“{}”"):
+            for question in ("Want me to file the three findings in Jira?", "Want me to rerun the tests?"):
+                message = "The cost: " + quote.format(question) + " still blocks."
+                with self.subTest(message=message):
+                    self.assert_passes(message)
+        self.assert_sent_back("Tests fail. Want me to rerun the tests?")
+
+    def test_inline_code_inside_the_closing_question_stays_in_it(self):
+        self.assert_sent_back("Tests fail. Want me to rerun `make test`?")
+
+    def test_a_long_one_line_message_with_code_spans_still_sends_back_its_closing_question(self):
+        spans = " ".join(f"`Want me to rerun check_{number}?` stays quoted." for number in range(12))
+        message = spans + " The `lint` and `build` steps pass. Want me to rerun `make test`?"
+        self.assertGreater(len(message), 400)
+        self.assert_sent_back(message)
+
+    def test_a_quoted_question_cut_by_the_tail_boundary_is_still_dropped_whole(self):
+        cited = "Want me to rerun the tests?` is the line I cut from the draft. "
+        message = "y " * 30 + "`" + cited + "z" * (400 - len(cited))
+        self.assertEqual(len(message) - message.index("`") - 1, 400)
+        self.assert_passes(message)
+
+    def test_a_stray_quote_before_the_closing_question_does_not_hide_it(self):
+        self.assert_sent_back('It is 3" Want me to rerun the tests? It is "x".')
+
+    def test_a_stray_double_quote_does_not_hide_the_closing_question(self):
+        self.assert_sent_back('The 3" margin is fixed. Want me to rerun the tests? The key is "mode".')
+
+    def test_a_quote_inside_the_closing_question_does_not_hide_it(self):
+        for message in ('Tests pass. Should I run "make test"?', "Tests pass. Should I run “make test”?"):
             with self.subTest(message=message):
                 self.assert_sent_back(message)
 

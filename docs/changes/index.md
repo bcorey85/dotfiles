@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-852 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+853 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-07, [A queue-item done-clause changes on the orchestrator's ruling](notes/2026-11-07-a-queue-item-done-clause-changes-on-the.md).
+Latest change: 2026-11-07, [Stop gates skip a question or claim the reply only quotes](notes/2026-11-07-stop-gates-skip-a-question-or-claim-the-reply-only.md).
 
 ## Top gains
 

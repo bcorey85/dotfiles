@@ -873,6 +873,12 @@ class ReviewedWorkCommitTest(GateCase):
         self.review_converged_in_another_session()
         self.assert_silent(self.commit("git commit -a -m x"))
 
+    def test_a_review_of_a_new_untracked_file_credits_the_commit_after_git_add_of_that_file(self):
+        (self.repo / "added.py").write_text("new file\n")
+        self.review_converged()
+        self.assertEqual(self.git(self.repo, "add", "added.py").returncode, 0)
+        self.assert_silent(self.commit("git commit -m x"))
+
     def test_a_review_that_converged_in_another_session_does_not_credit_a_tree_edited_after_it(self):
         (self.repo / "base.py").write_text("changed\n")
         self.review_converged_in_another_session()

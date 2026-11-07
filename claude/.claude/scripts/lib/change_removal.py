@@ -22,13 +22,21 @@ def added_lines(old_text, new_text):
     return nonblank_lines(new_text) - nonblank_lines(old_text)
 
 
-def removed_by_file(added_by_file, current_added_by_file):
+def removed_by_file(added_by_file, current_added_by_file, fix_added_by_file=None):
     """{path: lines removed} for each file that lost some of its added lines. `added_by_file` is {path: Counter}
     from added_lines; `current_added_by_file` is the same map for the source additions the tree holds over HEAD now,
     and a path it lacks added nothing. A line counts as kept when any file adds it now, so a move into another file
     is not a removal, and a line HEAD already holds is not kept by that copy.
-    Each kept copy is used up, so one surviving copy keeps the line for one file only."""
-    current_lines = sum(current_added_by_file.values(), Counter())
+    `fix_added_by_file` is the same map for what the fix passes added over the tree the loop started from: a line a
+    pass added to any file counts as kept even when HEAD already held a copy there, so a move into a file that
+    holds the same line is not a removal.
+    Each kept copy is used up, so one surviving copy keeps the line for one file only. The two maps measure a file
+    against different bases, so they merge per file (one copy keeps one line per file); copies in different files
+    add up."""
+    fix_by_file = fix_added_by_file or {}
+    current_lines = Counter()
+    for path in current_added_by_file.keys() | fix_by_file.keys():
+        current_lines += current_added_by_file.get(path, Counter()) | fix_by_file.get(path, Counter())
 
     removed = {}
     for path, added in added_by_file.items():

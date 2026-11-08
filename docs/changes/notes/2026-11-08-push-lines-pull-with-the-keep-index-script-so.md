@@ -27,7 +27,7 @@ User rule. Autostash puts the stash back without `--index`, so a file the user s
 
 ## Result
 
-Push lines keep the user's staged files staged.
+Push lines keep the user's staged files staged. The user committed the `CLAUDE.md` wording and its test together, after the gate change.
 
 ## Watch
 

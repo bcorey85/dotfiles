@@ -67,7 +67,6 @@ ALLOWED_HITS = [
     ("scripts/review/reviewer_dispatch.py", "WAIT_COMMAND = ", PRINTED),
     ("scripts/review/reviewer_dispatch.py", "PACKET_COMMAND = ", PRINTED),
     ("scripts/review/review_fix.py", "After the user answers, run once", PRINTED),
-    ("scripts/review/review_loop_gate.py", "handoff-block.md and dispatch again", PRINTED),
     ("scripts/telemetry/log-escape", "Run the ratchet (", PRINTED),
     ("scripts/telemetry/log-escape", "Pick the label from", PRINTED),
     ("scripts/telemetry/log-escape-check", 'mkdir -p "$HOME/.claude"', LEDGER_DIR),

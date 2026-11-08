@@ -207,7 +207,7 @@ class ReviewerRequestTest(unittest.TestCase):
 
         self.assertEqual((code, output.strip()), (0, code_wait.STILL_WORKING))
         self.assertEqual(pathlib.Path(report_file).read_text(), review)
-        self.assertEqual(code_wait.open_reviewer_requests(self.repo), [])
+        self.assertEqual(code_wait.open_reviewer_requests(code_wait.phase_review(self.repo)), [])
 
     def test_a_named_reviewer_still_at_work_is_no_new_request(self):
         self.write_reviewer(AGENT_ID, [], finished=False)
@@ -270,6 +270,51 @@ class ReviewerRequestTest(unittest.TestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("is not an agent id", errors)
+
+    def test_a_launched_loop_that_asks_for_a_reviewer_names_its_folder_in_the_next_wait(self):
+        (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text(f"{os.getpid()}\n")
+
+        code, output, _ = self.run_main("review", "--loop", str(self.loop_dir))
+
+        lines = output.splitlines()
+        self.assertEqual((code, lines[0]), (0, "ACTION: dispatch-reviewer"))
+        self.assertIn(self.entries[0]["report_file"], lines[1])
+        self.assertIn(f"code_wait.py review --loop {self.loop_dir} <agentId> <report file>", lines[-1])
+
+    def test_a_launched_loop_writes_a_finished_reviewer_s_report(self):
+        (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text(f"{os.getpid()}\n")
+        self.write_finished_reviewer([{"type": "assistant", "message": {"content": [{"type": "text",
+                                                                                     "text": "PASS"}]}}])
+        report_file = self.entries[0]["report_file"]
+
+        code, output, _ = self.run_main("review", "--loop", str(self.loop_dir), AGENT_ID, report_file)
+
+        self.assertEqual((code, output.strip()), (0, code_wait.STILL_WORKING))
+        self.assertEqual(pathlib.Path(report_file).read_text(), "PASS")
+
+    def test_an_ended_launched_loop_prints_the_packet_command(self):
+        (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text("999999999\n")
+        (self.loop_dir / code_wait.reviewer_dispatch.LAUNCH_FILE).write_text(
+            json.dumps({"packet_args": ["--skill", "fix", "--lane", "code"]}))
+        pathlib.Path(self.entries[0]["report_file"]).write_text("PASS\n")
+
+        code, output, _ = self.run_main("review", "--loop", str(self.loop_dir))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(output.strip(), "The review loop script finished. Run "
+                         "`python3 ~/.claude/scripts/review/review_fix.py packet --skill fix --lane code` now.")
+
+    def test_a_loop_folder_with_no_pid_stops_loudly(self):
+        code, _, errors = self.run_main("review", "--loop", str(self.loop_dir))
+
+        self.assertEqual(code, 2)
+        self.assertIn("launch --detach", errors)
+
+    def test_a_loop_flag_with_no_folder_stops_loudly(self):
+        code, _, errors = self.run_main("review", "--loop")
+
+        self.assertEqual(code, 2)
+        self.assertIn("--loop needs the loop folder", errors)
 
     def test_every_wait_ends_before_the_harness_backgrounds_the_call(self):
         self.assertLess(code_wait.WAIT_SECONDS + code_wait.POLL_SECONDS, 180)

@@ -10,8 +10,8 @@ components: ["skill/close-branch", "skill/code", "script/plan-format"]
 evidence: ["closing bench", "tests"]
 watches: ["close-pass-escapes"]
 test: "tests/scripts/test_plan_format.py"
-asked: "ship now then watch (2026-11-04)"
-proof: ["2026-11-04-one-merged-close-pass-halves-closing-wall-clock"]
+asked: "ship now then watch (2026-11-04); kept on three branches: \"the savings outweight the quality on this one. 2 defects and 2 tests is fine for 30-60% savings\" (2026-11-07)"
+proof: ["2026-11-07-one-close-pass-cuts-closing-tokens-36-but-fixes"]
 unmeasured: ""
 overlap: "none"
 ---
@@ -26,14 +26,16 @@ title to `/close-branch`; the four old mappings stay, so a plan written with the
 
 ## Evidence
 
-The proof finding: TLDR-1, 8 runs per arm, four closing phases against the close pass, same model and effort.
+The proof finding: three sealed branches, 8 runs per arm each, four closing phases against the close pass, same
+model and effort.
 
 ## Result
 
-Wall-clock 44.8 → 23.5 min. All tokens 10.82M → 9.13M (−16%, short of the 33% bar). Cost $8.13 → $6.42. Key
-defects fixed 5.50 → 5.25. New defects 1.38 → 0.50. Two fixes the close pass found less often: F2, the low-severity
-unguarded broker call in the import task's finally (6/8 → 1/8), and F3, the medium dispatcher reschedule on a DB
-error (3/8 → 0/8). One branch only; the rerun on TLDR-3 and TLDR-4 is queued.
+Pooled over three branches: all tokens 13.20M → 8.51M (−36%), Opus tokens 5.83M → 3.98M, wall-clock 51.1 → 21.3 min,
+new defects 1.42 → 0.96 per run. Key defects fixed 7.25 → 6.50. The cost in quality sits on the largest branch (12
+feature phases): 10.62 → 8.50 fixes per run and 6.88 → 9.25 lost tests. On the TLDR-1 branch the close pass mostly
+missed one low-severity broker-call fix (6/8 → 1/8). The user ruled the token and time savings worth that loss on
+2026-11-07.
 
 ## Watch
 

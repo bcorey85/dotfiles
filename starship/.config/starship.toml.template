@@ -230,6 +230,34 @@ fg = "#000000"
 bg = "#f7f7f7"
 grey = "#696969"
 
+# catppuccin mocha, verbatim.
+[palettes.catppuccin-dark]
+red = "#f38ba8"
+orange = "#fab387"
+yellow = "#f9e2af"
+green = "#a6e3a1"
+blue = "#89b4fa"
+branch = "#89b4fa"
+teal = "#94e2d5"
+purple = "#cba6f7"
+fg = "#cdd6f4"
+bg = "#1e1e2e"
+grey = "#7f849c"
+
+# catppuccin latte, verbatim.
+[palettes.catppuccin-light]
+red = "#d20f39"
+orange = "#fe640b"
+yellow = "#df8e1d"
+green = "#40a02b"
+blue = "#1e66f5"
+branch = "#1e66f5"
+teal = "#179299"
+purple = "#8839ef"
+fg = "#4c4f69"
+bg = "#eff1f5"
+grey = "#8c8fa1"
+
 # tokyonight storm, verbatim.
 [palettes.tokyonight-dark]
 red = "#f7768e"

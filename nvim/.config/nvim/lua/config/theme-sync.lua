@@ -192,6 +192,14 @@ local FAMILIES = {
       light = { heading1 = "#a02f6f", heading = "#205ea6" },
     },
   },
+  ["catppuccin"] = {
+    -- catppuccin/nvim: mocha #1e1e2e / latte #eff1f5.
+    schemes = { dark = "catppuccin-mocha", light = "catppuccin-latte" },
+    accents = {
+      dark = { heading1 = "#f38ba8", heading = "#f9e2af" },
+      light = { heading1 = "#d20f39", heading = "#df8e1d" },
+    },
+  },
 }
 
 local applied ---@type string|nil  last family+mode we set, to skip redundant reloads

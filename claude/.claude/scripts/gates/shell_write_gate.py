@@ -408,11 +408,38 @@ def run(raw):
             subject += f" An in-place edit of a scratch file under {claude_temp_root()} passes."
         raise DenyError(deny_text(subject, cannot_skip))
 
-    for raw_target, folders, unread_change in targets:
-        check_written_target(raw_target, folders, unread_change, cannot_skip, coder)
+    try:
+        for raw_target, folders, unread_change in targets:
+            check_written_target(raw_target, folders, unread_change, cannot_skip, coder)
+        for raw_target in text_targets:
+            check_written_target(raw_target, [cwd], False, cannot_skip, False)
+    except DenyError as denial:
+        if not any(reads_file_from_revision(text) for text in texts):
+            raise
+        raise DenyError(f"{denial} {RESTORE_HINT}") from None
 
-    for raw_target in text_targets:
-        check_written_target(raw_target, [cwd], False, cannot_skip, False)
+
+RESTORE_HINT = "Restore a tracked file from a revision with `git restore --source=<rev> -- <path>`."
+
+
+def reads_file_from_revision(text):
+    """True when a command in the text prints a file from a revision: `git show <rev>:<path>` or `git cat-file`.
+    Text the parser cannot read is False, so the deny keeps its plain wording."""
+    try:
+        commands = shell_command.split_simple_commands(text)
+    except ValueError:
+        return False
+    for words in commands:
+        words = shell_command.command_after_wrappers(words)
+        if not words or not shell_command.is_git_word(words[0]):
+            continue
+        _options, index = shell_command.git_options(words)
+        subcommand = shell_command.git_subcommand(words)
+        if subcommand == "cat-file":
+            return True
+        if subcommand == "show" and any(":" in word for word in words[index + 1:] if not word.startswith("-")):
+            return True
+    return False
 
 
 def in_place_target(segment, editor):

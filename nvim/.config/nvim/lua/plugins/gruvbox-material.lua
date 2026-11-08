@@ -1,5 +1,5 @@
 -- gruvbox-material (sainnhe/gruvbox-material) — theme-mode family, run with
--- `background = "soft"` and `foreground = "material"`.
+-- `background = "hard"` and `foreground = "mix"`.
 --
 -- Loads eagerly (lazy = false, priority = 1000) so it's on the rtp before
 -- config.lazy.lua's theme-sync.start(). The variant globals are set by

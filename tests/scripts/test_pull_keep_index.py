@@ -165,6 +165,49 @@ class PullKeepIndexTest(unittest.TestCase):
         subprocess.run(recovery, check=True, env={**os.environ, **GIT_ENV})
         self.assertEqual(sorted(self.status()), [" M f", " M k", "M  g", "MM m"])
 
+    def commit_local(self, name, text):
+        self.write(self.repo, name, text)
+        self.git(self.repo, "add", name)
+        self.git(self.repo, "commit", "-qm", "local " + name)
+
+    def assert_names_both_ways_out(self, stderr):
+        self.assertIn(f"git -C {self.repo} rebase --continue", stderr)
+        self.assertIn(f"git -C {self.repo} rebase --abort", stderr)
+        self.assertIn("refs/heads/master", stderr)
+
+    def test_a_run_inside_a_stopped_rebase_touches_nothing_and_names_the_way_out(self):
+        self.commit_local("h", "local\n")
+        env = {**os.environ, **GIT_ENV, "GIT_SEQUENCE_EDITOR": "sed -i 1s/^pick/edit/"}
+        subprocess.run(["git", "-C", str(self.repo), "rebase", "-q", "-i", "HEAD~1"], check=True, env=env,
+                       capture_output=True)
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+        self.write(self.repo, "g", "unstaged\n")
+        head = self.git(self.repo, "rev-parse", "HEAD")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertEqual(sorted(self.status()), [" M g", "M  f"])
+        self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
+        self.assertIn("a rebase is stopped", finished.stderr)
+        self.assertIn("no conflicted paths", finished.stderr)
+        self.assert_names_both_ways_out(finished.stderr)
+
+    def test_a_pull_that_stops_mid_rebase_names_the_conflict_and_both_ways_out(self):
+        self.push_from_other_machine("f", "theirs\n")
+        self.commit_local("f", "local\n")
+        self.write(self.repo, "g", "unstaged\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("conflicted paths: f", finished.stderr)
+        self.assert_names_both_ways_out(finished.stderr)
+        self.assertIn("stash apply --index", finished.stderr)
+        saved = finished.stderr.split("stash apply --index ")[1].split()[0]
+        self.assertEqual(self.git(self.repo, "show", saved + ":g"), "unstaged\n")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,11 +25,12 @@ still judges.
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
   review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review]] [--base <ref>] [--file <path>]...
-                       [--handoff <file>] [--fast|--deep] [--iter N] [--lane <lane>]
+                       [--handoff <file>] [--fast|--deep] [--iter N] [--lane <lane>] [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch
                                          --help` lists the flags). It returns when the loop asks for reviewers
                                          (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop
-                                         script exits, and then names the packet command to run. Exits 2 when
+                                         script exits, and then names the packet command to run. --detach returns
+                                         once the loop started and names the code_wait.py wait. Exits 2 when
                                          CLAUDE_CODE_SESSION_ID is not set, on a bad flag or findings file, and on a
                                          review-first run with nothing to review.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)

@@ -2217,6 +2217,20 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(dispatches[0]["repo"], str(second.resolve()))
         self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
 
+    def test_launch_with_detach_returns_at_once_and_the_fork_wait_names_the_packet_command(self):
+        code, output = self.launch("--detach")
+        self.assertEqual(code, 0, output)
+        loop_dir, _prompt, _packet_args = self.launched_run()
+        wait_command = f"python3 ~/.claude/scripts/code/code_wait.py review --loop {loop_dir}"
+        self.assertIn(f"Run `{wait_command}` now", output.splitlines()[-1])
+
+        waited = subprocess.run([sys.executable, str(toolkit_paths.CODE_DIR / "code_wait.py"), "review", "--loop",
+                                 str(loop_dir)], cwd=self.repo, capture_output=True, text=True, check=False)
+
+        self.assertEqual(waited.returncode, 0, waited.stderr)
+        self.assertEqual(waited.stdout.strip(), "The review loop script finished. Run "
+                         "`python3 ~/.claude/scripts/review/review_fix.py packet --skill review --lane none` now.")
+
     def launched_run(self):
         loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"
         loop_dir = next(loop_root.glob("review-script-*"))

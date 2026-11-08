@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-870 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+872 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [delete the unreachable wait-for-loop path in review_fix.py](notes/2026-11-08-delete-the-unreachable-wait-for-loop-path-in.md).
+Latest change: 2026-11-08, [built-page driver rebuilds pages during a stash apply named by BUILT_PAGE_STASH](notes/2026-11-08-built-page-driver-rebuilds-pages-during-a-stash.md).
 
 ## Top gains
 

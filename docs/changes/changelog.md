@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-870 changes
+872 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -40,6 +40,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [built-page driver rebuilds pages during a stash apply named by BUILT_PAGE_STASH](notes/2026-11-08-built-page-driver-rebuilds-pages-during-a-stash.md) [script/merge-built-page] agent-evals `bin/merge_built_page.py` treats the stash commit named in BUILT_PAGE_STASH like an autostash, so the re-apply in pull_keep_index.py rebuilds QUEUE.md in place of a text merge.
+* [pull_keep_index re-apply rebuilds built pages and keeps the staged split on a conflict](notes/2026-11-08-pull-keep-index-re-apply-rebuilds-built-pages-and.md) [script/pull-keep-index] The re-apply names its stash commit to the built-page driver, and a conflicting re-apply gives every other file back its staged or unstaged state and prints the conflicted paths and the command that resolves them.
 * [shell-write-gate deny names git restore for a git show or cat-file redirect](notes/2026-11-08-shell-write-gate-deny-names-git-restore-for-a-git.md) [script/shell-write-gate] A shell-write-gate deny of a redirect fed by `git show <rev>:<path>` or `git cat-file` now names `git restore --source=<rev> -- <path>`.
 * [code_wait waits for a reviewer's hand-back to reach its transcript](notes/2026-11-07-code-wait-waits-for-a-reviewer-s-hand-back-to.md) [script/code-wait] The /code fork's wait now writes a reviewer's report even when the harness marks the reviewer finished before the hand-back's result line is on disk, so the fork no longer re-dispatches reviewers or has coders hand-write report files.
 * [The close-pass recap lists criteria changes from the sign-off lines](notes/2026-11-07-the-close-pass-recap-lists-criteria-changes-from.md) [skill/close-branch] The /close-branch recap gains a Criteria changes section built from an rg of the decisions ledger and the spec for sign-off lines, so the recap and the hand-back can no longer say no criterion was narrowed while a sign-off narrowing one sits in the ledger.

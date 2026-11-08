@@ -7,6 +7,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -48,7 +49,7 @@ def printed(call, *args):
 class WaitAgentTest(unittest.TestCase):
     def setUp(self):
         self.projects = temp_dir(self)
-        for name, value in (("PROJECTS", self.projects), ("WAIT_SECONDS", 0)):
+        for name, value in (("PROJECTS", self.projects), ("WAIT_SECONDS", 0), ("SETTLE_SECONDS", 0)):
             patcher = mock.patch.object(code_wait, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -153,7 +154,7 @@ class ReviewerRequestTest(unittest.TestCase):
         self.entries = code_wait.reviewer_dispatch.write_round(
             self.loop_dir, 1, [("review1-code-reviewer", "code-reviewer", "Review app.py.")])
         self.projects = temp_dir(self)
-        for name, value in (("PROJECTS", self.projects), ("WAIT_SECONDS", 0)):
+        for name, value in (("PROJECTS", self.projects), ("WAIT_SECONDS", 0), ("SETTLE_SECONDS", 0)):
             patcher = mock.patch.object(code_wait, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -243,6 +244,25 @@ class ReviewerRequestTest(unittest.TestCase):
         self.assertIn(code_wait.NO_REPORT, output)
         self.assertIn(AGENT_ID, output)
         self.assertFalse(pathlib.Path(report_file).exists())
+
+    def test_a_hand_back_result_flushed_after_the_finished_meta_still_writes_the_report(self):
+        call_record, result_record = handback_records(REPORT)
+        self.write_finished_reviewer([call_record])
+        transcript = self.projects / f"proj/session/subagents/agent-{AGENT_ID}.jsonl"
+        def append_result():
+            with transcript.open("a") as handle:
+                handle.write(json.dumps(result_record) + "\n")
+
+        flush = threading.Timer(0.3, append_result)
+        flush.start()
+        self.addCleanup(flush.cancel)
+        report_file = self.entries[0]["report_file"]
+
+        with mock.patch.object(code_wait, "SETTLE_SECONDS", 3):
+            code, output, _ = self.run_main("review", AGENT_ID, report_file)
+
+        self.assertEqual((code, output.strip()), (0, code_wait.STILL_WORKING))
+        self.assertEqual(pathlib.Path(report_file).read_text(), REPORT)
 
     def test_ids_joined_into_one_word_stop_loudly(self):
         # zsh does not split an unquoted $VAR, so a string of pairs arrives as one argument.

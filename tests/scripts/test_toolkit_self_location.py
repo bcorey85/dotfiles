@@ -64,6 +64,7 @@ ALLOWED_HITS = [
     ("scripts/code/code_relay.py", "python3 ~/.claude/scripts/code/code_relay.py", PRINTED),
     ("scripts/review/open_child_gate.py", "code_wait.py agent <agentId>", PRINTED),
     ("scripts/review/review_fix.py", "DECIDE_SCRIPT = ", PRINTED),
+    ("scripts/gates/git_discipline_gate.py", "python3 ~/.claude/scripts/tools/pull_keep_index.py <repo>", PRINTED),
     ("scripts/review/reviewer_dispatch.py", "WAIT_COMMAND = ", PRINTED),
     ("scripts/review/reviewer_dispatch.py", "PACKET_COMMAND = ", PRINTED),
     ("scripts/review/review_fix.py", "After the user answers, run once", PRINTED),

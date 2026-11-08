@@ -36,11 +36,6 @@ def session_file(session_id):
 ANY_AGENT = object()
 
 
-def settled_stop(row):
-    """True for a stop row the gate did not block. A blocked stop is not a stop: the loop went on."""
-    return row.get("kind") == "stop" and not row.get("blocked")
-
-
 def session_rows(session_id, kind=None, agent_id=ANY_AGENT):
     """The rows of the session's file in append order, only those of `kind` and of `agent_id` when given. Raises
     ValueError for an empty session id. `agent_id=None` selects the rows that name no agent."""
@@ -138,9 +133,7 @@ def latest(session_id):
     row holds kind, ts, session_id; a dispatch row also no_review, repo (the top level of the
     repo it reviews, or None; a later DISPATCH_REPO_KIND row replaces it) and tool_use_id; a hand-back row also
     agent_id, status, problems, message, no_reviewer, unreviewed_fix, tree (the [top, fingerprint] pair, or None);
-    a stop row also agent_id, open_dispatches (the background agents and shells the loop still waited on when it
-    stopped) and ask_rows. A stop the gate blocked is not a stop: the loop went on, so such a row is skipped. Rows
-    are ordered by append, not by clock."""
+    a stop row also agent_id and ask_rows. Rows are ordered by append, not by clock."""
     stored_rows = stored_session_rows(session_id)
     return standing_of(stored_rows, ran_calls_of(stored_rows))
 
@@ -220,7 +213,7 @@ def standing_of(stored_rows, ran_calls):
                 standing["unanswered"] += 1
         elif row.get("kind") == DISPATCH_REPO_KIND and last_dispatch_ran:
             standing["dispatch"] = {**standing["dispatch"], "repo": row.get("repo")}
-        elif settled_stop(row):
+        elif row.get("kind") == "stop":
             standing["stop"] = row
         elif row.get("kind") == "handback":
             standing["handback"] = row
@@ -232,21 +225,17 @@ def standing_of(stored_rows, ran_calls):
 NO_DISPATCH = "no-dispatch"
 NO_HANDBACK = "no-handback"
 REDISPATCHED = "redispatched"
-LOOP_WAITING = "loop-waiting"
 
 
 def hand_back_gap(seen):
     """Why the session has no current hand-back, from a `latest` result: NO_DISPATCH (the session never dispatched a
-    review-loop), LOOP_WAITING (the loop's latest stop left a background agent or shell running, so it will resume and
-    may still hand back), NO_HANDBACK (dispatched, nothing came back), REDISPATCHED (dispatched again after a
+    review-loop), NO_HANDBACK (dispatched, nothing came back), REDISPATCHED (dispatched again after a
     hand-back), or None when the latest hand-back is current. The one rule that /review, /fix and the commit gate
     share."""
     if seen["dispatch"] is None:
         return NO_DISPATCH
     if seen["handback"] is not None and not seen["pending"]:
         return None
-    if seen["stop"] is not None and seen["stop"].get("open_dispatches", 0) > 0:
-        return LOOP_WAITING
     if seen["handback"] is None:
         return NO_HANDBACK
     return REDISPATCHED

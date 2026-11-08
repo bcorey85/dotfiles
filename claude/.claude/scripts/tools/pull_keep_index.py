@@ -22,12 +22,29 @@ def recovery_text(repo, saved):
     return f"The local changes are saved in {saved}; on a clean tree, run: git -C {repo} stash apply --index {saved}"
 
 
-def rebase_in_progress(repo):
+def stopped_rebase_dir(repo):
+    """The state folder of a rebase stopped in the repo, or None when no rebase is in progress."""
     for name in ("rebase-merge", "rebase-apply"):
         found = script_utils.git_output(repo, "rev-parse", "--git-path", name)
-        if found and os.path.exists(os.path.join(repo, found)):
-            return True
-    return False
+        if not found:
+            continue
+        state_dir = os.path.join(repo, found)
+        if os.path.isdir(state_dir):
+            return state_dir
+    return None
+
+
+def stopped_rebase_text(repo, state_dir):
+    """What a stopped rebase holds and the two ways out of it."""
+    head_name_file = os.path.join(state_dir, "head-name")
+    branch = "an unknown branch"
+    if os.path.exists(head_name_file):
+        with open(head_name_file) as head_name:
+            branch = head_name.read().strip()
+    conflicts = listed_paths(repo, "--diff-filter=U")
+    conflict_text = "conflicted paths: " + " ".join(conflicts) if conflicts else "no conflicted paths"
+    return (f"a rebase is stopped on {branch}, {conflict_text}. Finish it with git -C {repo} rebase --continue "
+            f"after resolving any conflict, or undo it with git -C {repo} rebase --abort.")
 
 
 def set_aside(repo):
@@ -117,11 +134,16 @@ def main(arguments):
         sys.exit(__doc__)
     repo = arguments[0]
 
+    state_dir = stopped_rebase_dir(repo)
+    if state_dir:
+        sys.exit("pull_keep_index: nothing was pulled or set aside: " + stopped_rebase_text(repo, state_dir))
+
     saved = set_aside(repo)
     pulled = subprocess.run(["git", "-C", repo, "pull", "--rebase=merges", "--no-autostash"])
-    if pulled.returncode != 0 and rebase_in_progress(repo):
-        recovery = " " + recovery_text(repo, saved) if saved else ""
-        sys.exit("pull_keep_index: the pull stopped mid-rebase." + recovery)
+    state_dir = stopped_rebase_dir(repo)
+    if pulled.returncode != 0 and state_dir:
+        recovery = " Then put the local changes back. " + recovery_text(repo, saved) if saved else ""
+        sys.exit("pull_keep_index: the pull stopped mid-rebase: " + stopped_rebase_text(repo, state_dir) + recovery)
 
     if saved:
         put_back(repo, saved)

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-865 changes
+867 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [pull_keep_index keeps staged files staged through pull before push](notes/2026-11-08-pull-keep-index-keeps-staged-files-staged-through.md) [script/pull-keep-index] `tools/pull_keep_index.py <repo>` pulls with `--rebase=merges` and puts local changes back with `stash apply --index`, so staged files stay staged.
 * [A session start deletes the temp folders of sessions idle a day or more](notes/2026-11-02-a-session-start-deletes-the-temp-folders-of.md) [script/sweep-scratchpads] Old session scratchpads no longer pile up until the per-user temp quota fills and every shell call fails.
 
 ### Changed
@@ -33,6 +34,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [shell-write-gate deny names git restore for a git show or cat-file redirect](notes/2026-11-08-shell-write-gate-deny-names-git-restore-for-a-git.md) [script/shell-write-gate] A shell-write-gate deny of a redirect fed by `git show <rev>:<path>` or `git cat-file` now names `git restore --source=<rev> -- <path>`.
 * [code_wait waits for a reviewer's hand-back to reach its transcript](notes/2026-11-07-code-wait-waits-for-a-reviewer-s-hand-back-to.md) [script/code-wait] The /code fork's wait now writes a reviewer's report even when the harness marks the reviewer finished before the hand-back's result line is on disk, so the fork no longer re-dispatches reviewers or has coders hand-write report files.
 * [The close-pass recap lists criteria changes from the sign-off lines](notes/2026-11-07-the-close-pass-recap-lists-criteria-changes-from.md) [skill/close-branch] The /close-branch recap gains a Criteria changes section built from an rg of the decisions ledger and the spec for sign-off lines, so the recap and the hand-back can no longer say no criterion was narrowed while a sign-off narrowing one sits in the ledger.
 * [Plan-review escape logging carries class and guard so every row logs](notes/2026-11-07-plan-review-escape-logging-carries-class-and-guard.md) [skill/eng-spec] Each plan-review BLOCKER or GAP now logs on the first call, where before every call was refused.

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-865 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+867 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-07, [code_wait waits for a reviewer's hand-back to reach its transcript](notes/2026-11-07-code-wait-waits-for-a-reviewer-s-hand-back-to.md).
+Latest change: 2026-11-08, [shell-write-gate deny names git restore for a git show or cat-file redirect](notes/2026-11-08-shell-write-gate-deny-names-git-restore-for-a-git.md).
 
 ## Top gains
 

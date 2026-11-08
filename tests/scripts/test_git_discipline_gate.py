@@ -102,9 +102,9 @@ class GitDisciplineGateTest(unittest.TestCase):
                 self.assertEqual(reason, "[git-discipline-gate] git autostash is blocked: it runs a git stash, which "
                                          "every worktree shares and which resets staged files. Pass "
                                          "--no-autostash to the command, or do not set the autostash config. "
-                                         "The one form that passes is a pull joined by && to the push right after it, "
-                                         "in the same directory: "
-                                         "`git -C <repo> pull --rebase=merges --autostash && git -C <repo> push`. "
+                                         "To pull right before a push and keep staged files staged, run "
+                                         "`python3 ~/.claude/scripts/tools/pull_keep_index.py <repo> && "
+                                         "git -C <repo> push`. "
                                          "To bring a base into unfinished work, run `git merge <base>` with the work "
                                          "uncommitted: git stops and changes nothing when the merge touches an "
                                          "edited file. If it stops, commit the work once /review hands back "
@@ -117,6 +117,7 @@ class GitDisciplineGateTest(unittest.TestCase):
                 self.assert_allowed(command)
 
     def test_autostash_pull_right_before_a_push_in_the_same_directory_passes(self):
+        self.assert_allowed("python3 ~/.claude/scripts/tools/pull_keep_index.py /r && git -C /r push")
         self.assert_allowed("git -C /r pull --rebase=merges --autostash && git -C /r push")
         self.assert_allowed("git pull --rebase=merges --autostash && git push")
         self.assert_allowed("cd /r && git pull --rebase=merges --autostash && git push")

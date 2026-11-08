@@ -25,11 +25,9 @@ Importers use, among others, parse, validate, load, render, false_clean_reason, 
 unreviewed_fix_section; the hook (handle_hook, unchecked_code_reason) is in handback_hook.py. They read
 the store (record, latest, hand_back_gap, ended_on_unreviewed_fix, unreviewed_streak) from handback_store and the
 finding-id constants from loop_transcript. The store also holds a `stop` row that review_loop_packet.py writes at each
-scripted-loop hand-back (agent_id, open_dispatches). `latest` keeps the last one after the last dispatch; while it shows
-open_dispatches > 0 and no hand-back is current, hand_back_gap returns LOOP_WAITING,
-and a later stop with none open, a hand-back or a new dispatch ends the wait. A validated packet's fixed,
-skipped_fp, findings_remaining and ask entries are all mappings. The store is keyed by the hook event's session_id,
-which is the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
+scripted-loop hand-back (agent_id, ask_rows); `latest` keeps the last one after the last dispatch. A validated
+packet's fixed, skipped_fp, findings_remaining and ask entries are all mappings. The store is keyed by the hook
+event's session_id, which is the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
 import json
 import pathlib
 import re
@@ -41,15 +39,12 @@ import reviewed_tree
 import script_utils
 from capped_review import CAP_REACHED, DEFERRED, effective_status
 from handback_store import (
-    LOOP_WAITING,
     NO_DISPATCH,
     REDISPATCHED,
     hand_back_gap,
     hand_back_standing,
     latest,
     plan_ruled_since,
-    session_rows,
-    settled_stop,
 )
 from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
 from plan_format import PLAN_CAUSE, PLAN_CHANGE_MARK, TOOLKIT_CAUSE, plan_impact_cause
@@ -603,25 +598,6 @@ def render(packet, skill, sections=()):
 
 # ---------- per-session store ----------
 
-def stop_rows_after(session_id, agent_id, since):
-    """The stop rows of agent_id written at or after `since`, blocked or not, in append order."""
-    if not session_id:
-        return []
-    try:
-        stop_rows = session_rows(session_id, "stop", agent_id)
-    except ValueError:
-        return []
-    return [row for row in stop_rows if row.get("ts", 0) >= since]
-
-
-def settled_stop_row(session_id, agent_id, since):
-    """The newest stop row of agent_id written at or after `since` that the gate did not block, or None. The hand-back
-    row lands before the stop row of the same loop, so a reader of the hand-back looks here for the stop that
-    follows it."""
-    settled = [row for row in stop_rows_after(session_id, agent_id, since) if settled_stop(row)]
-    return settled[-1] if settled else None
-
-
 def stored_effective_status(seen):
     """The effective_status of the hand-back that `latest` returned, read against the work tree now."""
     row = seen["handback"]
@@ -654,8 +630,6 @@ def false_clean_reason(session_id):
 def standing_false_clean_reason(seen):
     """false_clean_reason of a `latest` or `latest_for_repo` result."""
     gap = hand_back_gap(seen)
-    if gap == LOOP_WAITING:
-        return "the review-loop is waiting on a background agent or shell it started and has not handed back"
     if seen["handback"] is None:
         return "no review-loop hand-back is stored for this session"
     if gap == NO_DISPATCH:

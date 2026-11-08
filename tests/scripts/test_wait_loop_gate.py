@@ -138,6 +138,26 @@ class WaitLoopGateTest(unittest.TestCase):
             with self.subTest(stdout=finished.stdout):
                 self.assertEqual(finished.stdout, "")
 
+    def test_subagent_kill_by_pattern_or_job_spec_denied(self):
+        for command in ('pkill -xf "sleep 30"', "killall node", "/usr/bin/pkill -f vite", "kill %1", "kill -9 %+",
+                        "kill $(pgrep -f sleep)", "sudo kill -9 `pgrep node`", "kill -9 $PID", "kill 0",
+                        "kill -TERM -- -4242", "pgrep -f sleep | xargs kill", "make test && pkill -f pytest",
+                        "timeout 5 killall -q node"):
+            with self.subTest(command=command):
+                reason = self.assert_denied(command)
+                self.assertIn("pid you started", reason)
+
+    def test_subagent_kill_by_literal_pid_passes(self):
+        for command in ("kill 4242", "kill -9 4242 4243", "kill -s TERM 4242", "kill -KILL -- 4242", "kill $!",
+                        "kill -l", "pgrep -f sleep", "echo pkill -f sleep", "skill-check run"):
+            with self.subTest(command=command):
+                self.assert_passes(command)
+
+    def test_kill_by_pattern_passes_in_main_session_and_agent_seat(self):
+        self.assert_passes('pkill -xf "sleep 30"', subagent=False)
+        seat = {"agent_type": "claude", "tool_input": {"command": "killall node"}}
+        self.assertEqual(run_hook(json.dumps(seat)).stdout, "")
+
     def test_garbage_stdin_passes(self):
         for stdin in ("", "not json", "[1, 2]", '{"agent_id": "x", "tool_input": null}',
                       '{"agent_id": "x", "tool_input": {"command": 5}}'):

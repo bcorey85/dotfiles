@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # handoff-path — where this checkout + this terminal keeps its handoff file
-# (used by /handoff). Nothing is written inside the repo.
+# (written by /stop, read by /go). Nothing is written inside the repo.
 #
 #   $XDG_STATE_HOME/claude-handoff/<basename>-<sha256(root)[0:12]>/<tty>.md
 #

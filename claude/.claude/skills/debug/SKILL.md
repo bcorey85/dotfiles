@@ -19,7 +19,7 @@ Not this skill:
 
 - You already know the cause and just need the change applied → **/fix**.
 - Hunting for bugs in a diff you just wrote → **/review**.
-- Traced hard and hit a wall (opaque library error, version mismatch, no visible cause in our code) → **/stop-guessing**. IN-code causes are yours; OUTSIDE-knowledge is theirs.
+- Traced hard and hit a wall (opaque library error, version mismatch, no visible cause in our code) → WebSearch the exact error and versions, and cite what the sources say. IN-code causes are yours; OUTSIDE-knowledge comes from sources.
 
 ## Red flags — if you catch yourself here, STOP and return to phase 1
 
@@ -84,4 +84,4 @@ Form ONE hypothesis, prove with evidence not reasoning (failing assertion at ori
 - Never propose a fix you have not traced to an origin AND confirmed. "Probably" = not done.
 - Read-and-trace here; repair goes through the fix path.
 - A truly environmental/external cause is a valid finding. Prove it's external before concluding it.
-- Phase-2 dead-end outside our code → /stop-guessing; 3+ failures → user as architecture question. Neither licenses more guessing.
+- Phase-2 dead-end outside our code → WebSearch the exact error and versions; 3+ failures → user as architecture question. Neither licenses more guessing.

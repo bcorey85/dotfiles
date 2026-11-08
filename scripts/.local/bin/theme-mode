@@ -123,7 +123,7 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
   case "$1:$2" in
     bamboo:light)       echo "bamboo-light" ;;
     bamboo:*)           echo "bamboo-dark" ;;
-    # gruvbox-material runs background=soft, foreground=material. Ghostty's
+    # gruvbox-material runs background=hard, foreground=mix. Ghostty's
     # "Gruvbox Material" builtins are the medium ground — custom files in
     # ghostty/themes/, ANSI from the plugin's terminal map.
     gruvbox-material:light) echo "gruvbox-material-light" ;;
@@ -185,8 +185,8 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
   case "$1:$2" in
     bamboo:light)       echo "gruvbox-light-medium" ;;
     bamboo:*)           echo "gruvbox-dark-medium" ;;
-    gruvbox-material:light) echo "gruvbox-light-soft" ;;
-    gruvbox-material:*)     echo "gruvbox-dark-soft" ;;
+    gruvbox-material:light) echo "gruvbox-light-hard" ;;
+    gruvbox-material:*)     echo "gruvbox-dark-hard" ;;
     # tokyonight: hunk ships only tokyo-night (dark), close to storm; light
     # takes the neutral vitesse base.
     tokyonight:light)       echo "vitesse-light" ;;
@@ -436,40 +436,40 @@ EOF
       kw="#d58888"; str="#8e9cc0"; num="#6e9cb0"; fn="#b58d88"; typ="#6da280"; punct="#949d9f"; op="#aeadaf"
       ;;
     gruvbox-material:light)
-      # gruvbox-material SOFT light (#f2e5bc), foreground=material. Chrome
-      # ladder bg1 #eddeb5 / bg3 #e6d5ae / bg5 #d5c4a1. Diff washes are the
+      # gruvbox-material HARD light (#f9f5d7), foreground=mix. Chrome
+      # ladder bg1 #f5edca / bg3 #f2e5bc / bg5 #ebdbb2. Diff washes are the
       # theme's own bg_diff_green/red. Roles differ too — see below.
-      bg="#f2e5bc"; panel="#eddeb5"; panelAlt="#e6d5ae"; border="#d5c4a1"
-      accent="#c14a4a"; accentMuted="#d5c4a1"; text="#654735"; muted="#928374"
-      addedBg="#dfe1b4"; removedBg="#f7d9b9"; ctxBg="#f2e5bc"
-      sAdd="#6c782e"; sRem="#c14a4a"; lnFg="#a89984"
-      badgeAdd="#6c782e"; badgeRem="#c14a4a"; badgeNeu="#45707a"
-      fRename="#945e80"; fMod="#b47109"; fUntracked="#928374"; note="#eddeb5"
+      bg="#f9f5d7"; panel="#f5edca"; panelAlt="#f2e5bc"; border="#ebdbb2"
+      accent="#af2528"; accentMuted="#ebdbb2"; text="#514036"; muted="#928374"
+      addedBg="#e4edc8"; removedBg="#f8e4c9"; ctxBg="#f9f5d7"
+      sAdd="#72761e"; sRem="#af2528"; lnFg="#a89984"
+      badgeAdd="#72761e"; badgeRem="#af2528"; badgeNeu="#266b79"
+      fRename="#924f79"; fMod="#b4730e"; fUntracked="#928374"; note="#f5edca"
       # gruvbox-material roles (its own highlight table, NOT original gruvbox's):
       # Keyword/Statement red, String/Function green, Number/Boolean purple,
       # Type yellow, Constant/Macro aqua, Operator/StorageClass/Tag orange,
       # Identifier/@variable.member blue, PreProc/Include/@attribute purple,
       # @module yellow, Delimiter fg.
-      kw="#c14a4a"; str="#6c782e"; num="#945e80"; fn="#6c782e"; typ="#b47109"; punct="#654735"; op="#c35e0a"
-      konst="#4c7a5d"; esc="#6c782e"; cmt="#70665c"; mem="#45707a"; param="#654735"
-      attr="#945e80"; tag="#c35e0a"; vbi="#945e80"; imp="#945e80"; pre="#945e80"
-      prim="#b47109"; ns="#b47109"; mac="#4c7a5d"; bfn="#6c782e"
+      kw="#af2528"; str="#72761e"; num="#924f79"; fn="#72761e"; typ="#b4730e"; punct="#514036"; op="#b94c07"
+      konst="#477a5b"; esc="#72761e"; cmt="#70665c"; mem="#266b79"; param="#514036"
+      attr="#924f79"; tag="#b94c07"; vbi="#924f79"; imp="#924f79"; pre="#924f79"
+      prim="#b4730e"; ns="#b4730e"; mac="#477a5b"; bfn="#72761e"
       ;;
     gruvbox-material:*)
-      # gruvbox-material SOFT dark (#32302f), foreground=material. Chrome
-      # ladder bg1 #3c3836 / bg3 #504945 / bg5 #665c54. Diff washes are the
-      # theme's own bg_diff_green #3d4220 / bg_diff_red #472322.
-      bg="#32302f"; panel="#3c3836"; panelAlt="#46413e"; border="#504945"
-      accent="#ea6962"; accentMuted="#665c54"; text="#d4be98"; muted="#928374"
-      addedBg="#3d4220"; removedBg="#472322"; ctxBg="#32302f"
-      sAdd="#a9b665"; sRem="#ea6962"; lnFg="#665c54"
-      badgeAdd="#a9b665"; badgeRem="#ea6962"; badgeNeu="#7daea3"
-      fRename="#d3869b"; fMod="#d8a657"; fUntracked="#928374"; note="#3c3836"
+      # gruvbox-material HARD dark (#1d2021), foreground=mix. Chrome
+      # ladder bg1 #282828 / bg3 #3c3836 / bg5 #504945. Diff washes are the
+      # theme's own bg_diff_green #32361a / bg_diff_red #3c1f1e.
+      bg="#1d2021"; panel="#282828"; panelAlt="#32302f"; border="#3c3836"
+      accent="#f2594b"; accentMuted="#504945"; text="#e2cca9"; muted="#928374"
+      addedBg="#32361a"; removedBg="#3c1f1e"; ctxBg="#1d2021"
+      sAdd="#b0b846"; sRem="#f2594b"; lnFg="#504945"
+      badgeAdd="#b0b846"; badgeRem="#f2594b"; badgeNeu="#80aa9e"
+      fRename="#d3869b"; fMod="#e9b143"; fUntracked="#928374"; note="#282828"
       # Same role table as the light half above.
-      kw="#ea6962"; str="#a9b665"; num="#d3869b"; fn="#a9b665"; typ="#d8a657"; punct="#d4be98"; op="#e78a4e"
-      konst="#89b482"; esc="#a9b665"; cmt="#a89984"; mem="#7daea3"; param="#d4be98"
-      attr="#d3869b"; tag="#e78a4e"; vbi="#d3869b"; imp="#d3869b"; pre="#d3869b"
-      prim="#d8a657"; ns="#d8a657"; mac="#89b482"; bfn="#a9b665"
+      kw="#f2594b"; str="#b0b846"; num="#d3869b"; fn="#b0b846"; typ="#e9b143"; punct="#e2cca9"; op="#f28534"
+      konst="#8bba7f"; esc="#b0b846"; cmt="#a89984"; mem="#80aa9e"; param="#e2cca9"
+      attr="#d3869b"; tag="#f28534"; vbi="#d3869b"; imp="#d3869b"; pre="#d3869b"
+      prim="#e9b143"; ns="#e9b143"; mac="#8bba7f"; bfn="#b0b846"
       ;;
     bamboo:light)
       # bamboo light (warm cream #fafae0). Chrome from the theme's own CursorLine/
@@ -1496,24 +1496,24 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       blue="#6e9cb0" teal="#6da280" peach="#d0913d"
       ;;
     gruvbox-material:light)
-      # gruvbox-material SOFT light (#f2e5bc), foreground=material.
+      # gruvbox-material HARD light (#f9f5d7), foreground=mix.
       base_name="one-light"
-      accent="#c14a4a" panel_bg="#eddeb5" surface_dim="#e6d5ae"
-      surface0="#dac9a5" surface1="#d5c4a1"
+      accent="#af2528" panel_bg="#f5edca" surface_dim="#f2e5bc"
+      surface0="#eee0b7" surface1="#ebdbb2"
       overlay0="#928374" overlay1="#928374"
-      text="#654735" subtext0="#928374"
-      green="#6c782e" yellow="#b47109" red="#c14a4a"
-      blue="#45707a" teal="#4c7a5d" peach="#c35e0a"
+      text="#514036" subtext0="#928374"
+      green="#72761e" yellow="#b4730e" red="#af2528"
+      blue="#266b79" teal="#477a5b" peach="#b94c07"
       ;;
     gruvbox-material:*)
-      # gruvbox-material SOFT dark (#32302f), foreground=material.
+      # gruvbox-material HARD dark (#1d2021), foreground=mix.
       base_name="one-dark"
-      accent="#ea6962" panel_bg="#3c3836" surface_dim="#46413e"
-      surface0="#504945" surface1="#665c54"
+      accent="#f2594b" panel_bg="#282828" surface_dim="#32302f"
+      surface0="#3c3836" surface1="#504945"
       overlay0="#7c6f64" overlay1="#928374"
-      text="#d4be98" subtext0="#928374"
-      green="#a9b665" yellow="#d8a657" red="#ea6962"
-      blue="#7daea3" teal="#89b482" peach="#e78a4e"
+      text="#e2cca9" subtext0="#928374"
+      green="#b0b846" yellow="#e9b143" red="#f2594b"
+      blue="#80aa9e" teal="#8bba7f" peach="#f28534"
       ;;
     bamboo:light)
       # bamboo light (warm cream #fafae0). accent is the theme's purple,

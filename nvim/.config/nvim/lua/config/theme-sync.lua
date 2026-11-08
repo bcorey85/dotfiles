@@ -46,21 +46,21 @@ local FAMILIES = {
     },
   },
   ["gruvbox-material"] = {
-    -- sainnhe/gruvbox-material, SOFT background, foreground = "material" —
-    -- material accents (red #ea6962, fg #d4be98) over soft grounds (#32302f
-    -- dark / #f2e5bc light) and material's own role table (Function green,
+    -- sainnhe/gruvbox-material, HARD background, foreground = "mix" —
+    -- mix accents (red #f2594b, fg #e2cca9) over hard grounds (#1d2021
+    -- dark / #f9f5d7 light) and the plugin's role table (Function green,
     -- Operator orange, Constant aqua, PreProc purple). One colorscheme follows
     -- vim.o.background and sets colors_name "gruvbox-material" in both modes.
     schemes = { dark = "gruvbox-material", light = "gruvbox-material" },
     colors_name = "gruvbox-material",
     -- The variant globals are read at :colorscheme time, hence `pre`.
     pre = function()
-      vim.g.gruvbox_material_background = "soft"
-      vim.g.gruvbox_material_foreground = "material"
+      vim.g.gruvbox_material_background = "hard"
+      vim.g.gruvbox_material_foreground = "mix"
     end,
     accents = {
-      dark = { heading1 = "#ea6962", heading = "#d8a657" }, -- red + yellow
-      light = { heading1 = "#c14a4a", heading = "#b47109" },
+      dark = { heading1 = "#f2594b", heading = "#e9b143" }, -- red + yellow
+      light = { heading1 = "#af2528", heading = "#b4730e" },
     },
   },
   ["edge"] = {

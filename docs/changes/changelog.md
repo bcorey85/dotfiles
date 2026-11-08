@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-873 changes
+874 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -20,6 +20,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Handoff becomes /stop and /go; stop-guessing is removed](notes/2026-11-08-handoff-becomes-stop-and-go-stop-guessing-is.md) [skill/handoff, skill/stop, skill/go, skill/stop-guessing, skill/debug] The handoff skill splits into /stop, which writes the state file, and /go, which reads it back; the stop-guessing skill and its opencode command are gone, and /debug sends an outside dead-end to a web search instead.
 * [Push lines pull with the keep-index script so staged files stay staged](notes/2026-11-08-push-lines-pull-with-the-keep-index-script-so.md) [rule/global-claude-md, script/git-discipline-gate] The global push rule now runs pull_keep_index.py before every push in place of git pull --rebase=merges --autostash, which put the user's staged files back unstaged.
 * [review and fix run in a sonnet fork that dispatches the reviewers](notes/2026-11-07-review-and-fix-run-in-a-sonnet-fork-that.md) [skill/review, skill/fix] /review and /fix run in the Sonnet code-fork, which launches the script loop detached, dispatches the reviewers as its own subagents, runs the packet, and hands back one stop that the Opus main session relays word for word.
 * [A lane session sends every user command to the session that started it](notes/2026-11-07-a-lane-session-sends-every-user-command-to-the.md) [rule/global-claude-md] The global rules now say a lane session started by another session sends every command for the user, merge lines included, to that session, and a lane brief carries the starting session's current name.

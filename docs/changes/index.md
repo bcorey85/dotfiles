@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-873 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+874 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [pull_keep_index stops before touching a tree inside a stopped rebase](notes/2026-11-08-pull-keep-index-stops-before-touching-a-tree.md).
+Latest change: 2026-11-08, [Handoff becomes /stop and /go; stop-guessing is removed](notes/2026-11-08-handoff-becomes-stop-and-go-stop-guessing-is.md).
 
 ## Top gains
 

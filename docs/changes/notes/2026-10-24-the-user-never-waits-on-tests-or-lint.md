@@ -37,6 +37,10 @@ Share of user shell commands that run a test or lint: 0 of 216 before, 1 of 111 
 
 3 of 173 after against 0 of 216 before (W45: 2 of 91). Still a handful of commands against a zero baseline, and the rule only stops the agent handing the user a check, so it cannot raise the share. Kept; the watch stays open.
 
+### Reading 2026-11-07: WORSE, kept, watch closed
+
+3 of 201 after. Three readings in a row show a few commands against a zero baseline. The rule cannot raise the share, so the watch cannot judge it. Kept, and the watch is closed.
+
 ## Back-out
 
 Remove the line from `## Quality Checks` in `CLAUDE.md`.

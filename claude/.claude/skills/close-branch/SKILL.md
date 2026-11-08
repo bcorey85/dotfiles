@@ -73,6 +73,7 @@ Run, in one response, from the repo root:
 ```bash
 node ~/.claude/skills/stage/scripts/stage.mjs --run
 git diff --stat <base>
+rg -n -i 'sign-?off' <the plan's folder>/03-decisions.md <the spec path>
 ```
 
 Run the deferred queue read in its own Bash call with a `timeout` of `600000` (about 204 s when the ledger answers busy at once, longer when a ledger call hangs):
@@ -90,6 +91,7 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 
 ### Change map                    (from git diff --stat)
 ### Close pass                    (findings by reviewer: fixed / shown wrong / ask; gate result and rounds)
+### Criteria changes              (each sign-off line rg printed: the criterion, what changed, who signed, when)
 ### Concentration                 (largest module and branch counts)
 ### Deferred findings             (ledger_deferred.py's line as printed, or each row triaged fixed / stale / carried)
 ### Smoke-test checklist          (verify-log's checklist skeleton, every human-only item with concrete steps)
@@ -98,6 +100,8 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 
 Next: read the residue → run the smoke checklist → /adr → stage → /commit → open the PR.
 ```
+
+Build Criteria changes from the `rg` output only. A sign-off that another session wrote, not the user, is listed as `not the user's sign-off: the criterion stands`. Write `none` only when `rg` printed no line. Any report that says whether a criterion was cut or narrowed, the hand-back included, repeats this section.
 
 ## What NOT to do
 

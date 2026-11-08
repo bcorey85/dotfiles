@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-861 changes
+862 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The close-pass recap lists criteria changes from the sign-off lines](notes/2026-11-07-the-close-pass-recap-lists-criteria-changes-from.md) [skill/close-branch] The /close-branch recap gains a Criteria changes section built from an rg of the decisions ledger and the spec for sign-off lines, so the recap and the hand-back can no longer say no criterion was narrowed while a sign-off narrowing one sits in the ledger.
 * [Plan-review escape logging carries class and guard so every row logs](notes/2026-11-07-plan-review-escape-logging-carries-class-and-guard.md) [skill/eng-spec] Each plan-review BLOCKER or GAP now logs on the first call, where before every call was refused.
 * [The scratchpad sweep spares every running session's folder, not only the starting one](notes/2026-11-07-the-scratchpad-sweep-spares-every-running-session.md) [script/sweep-scratchpads] A session paused for a day or more keeps its scratchpad when another session starts.
 * [Permission-question gate lets an answer to the user's question stand](notes/2026-11-07-permission-question-gate-lets-an-answer-to-the.md) [script/staged-claim-gate] A reply to a user's question now ends the turn even when it closes on an offer, so the user reads the answer instead of watching the session start unasked work.

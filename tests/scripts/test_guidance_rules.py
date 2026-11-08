@@ -67,9 +67,10 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("the assertion (or `absent` when no assertion holds the promise), the wrong value it accepts",
                       text)
 
-    def test_a_push_line_pulls_with_rebase_merges_and_autostash(self):
+    def test_a_push_line_pulls_with_the_keep_index_script(self):
         text = guidance_text("CLAUDE.md")
-        self.assertIn("runs `git -C <repo> pull --rebase=merges --autostash` right before `git -C <repo> push`", text)
+        self.assertIn("runs `python3 ~/.claude/scripts/tools/pull_keep_index.py <repo>` right before "
+                      "`git -C <repo> push`", text)
 
     def test_the_close_pass_recap_lists_criteria_changes_from_the_sign_off_lines(self):
         text = guidance_text("skills/close-branch/SKILL.md")

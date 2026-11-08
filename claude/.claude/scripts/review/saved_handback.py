@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """saved_handback.py: the lookup of this session's saved review-loop hand-back for review_fix.py. It reads the stored
-rows through handback_store.py and decides whether the hand-back is the session's to take, a miss, or a wait."""
+rows through handback_store.py and decides whether the hand-back is the session's to take, or a miss."""
 import hashlib
 import os
 import pathlib
@@ -19,24 +19,14 @@ class NoHandbackError(Exception):
         self.last_hand_back_id = last_hand_back_id
 
 
-class LoopWaitingError(Exception):
-    """The review-loop stopped its turn while an agent or shell it started in the background still runs. `stop_ts` is
-    the time of the stop row that showed it."""
-    def __init__(self, stop_ts):
-        super().__init__(f"waiting since {stop_ts}")
-        self.stop_ts = stop_ts
-
-
 def saved_hand_back(session_id):
     """The latest review-loop hand-back row of this session. Raises NoHandbackError when the loop was dispatched and
-    never handed back, and LoopWaitingError when it stopped to wait on a background agent or shell."""
+    never handed back."""
     if not session_id:
         raise PacketError(["the packet on stdin is empty and CLAUDE_CODE_SESSION_ID is not set, so no saved "
                            "hand-back can be looked up"])
     seen = handback_store.latest(session_id)
     gap = handback_store.hand_back_gap(seen)
-    if gap == handback_store.LOOP_WAITING:
-        raise LoopWaitingError(seen["stop"]["ts"])
     if gap in (handback_store.NO_HANDBACK, handback_store.REDISPATCHED):
         raise NoHandbackError(handback_store.hand_back_id(seen["handback"], session_id))
     if gap == handback_store.NO_DISPATCH:

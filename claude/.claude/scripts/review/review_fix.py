@@ -16,11 +16,7 @@ still judges.
       itself (write_handback_rows) after `launch`, and handback.py's hook stores it for a dispatched agent. It
       refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
       `ACTION: stop-no-handback` and leaves the saved state alone: re-dispatch once, then stop and show the user the
-      loop's final text on a second miss. When the loop's latest stop left a background agent or shell running (the
-      stop row shows open_dispatches above 0), it prints `ACTION: wait-for-loop` and exits 3: do not re-dispatch,
-      end the turn, and run `packet` again when the review-loop's completion notice arrives. That counts no miss. A
-      second `packet` on the same stop row (saved per skill in <git dir>/review-fix/waits.json) prints `ACTION: stop`
-      and exits 2: show the user, do not re-dispatch. A new stop row waits again.
+      loop's final text on a second miss.
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
@@ -62,7 +58,6 @@ import os
 import pathlib
 import shlex
 import sys
-import time
 
 SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
@@ -77,7 +72,7 @@ import script_utils
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, is_plan_impact_ask, item_text
 from review_asks import ASK_OUTCOMES
-from saved_handback import LoopWaitingError, NoHandbackError, dispatched_repo, read_message
+from saved_handback import NoHandbackError, dispatched_repo, read_message
 from script_utils import one_line, run_command, split_location
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
@@ -94,9 +89,6 @@ DEFER_LINE = f"{DEFER_LINE_PREFIX} by the session, <date>: <summary>"
 NEW_FINDING_ID = "new-finding-id"
 LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_LOOP_SCRIPT",
                                           pathlib.Path(__file__).resolve().parent / "review_loop_script.py"))
-# Exit code of `wait-for-loop`: non-zero so no caller reads it as a finished run, and not 2, the code of a real stop.
-WAIT_EXIT_CODE = 3
-
 
 class UsageError(Exception):
     pass
@@ -280,32 +272,6 @@ def stop_for_missing_hand_back(skill, last_hand_back_id):
                  f"The review-loop ended {misses} times in a row without calling SubagentHandback. Nothing was routed, "
                  "logged or posted, and the earlier run's state is untouched.",
                  "Stop. Do not re-dispatch again. Show the user the loop's final text as it returned.")
-
-
-def waited_on_stop(skill, stop_ts):
-    """True when this caller already got `wait-for-loop` for the stop row at `stop_ts`; otherwise records it. A new
-    stop row has a new ts, so it waits again."""
-    return update_skill_file("waits.json", skill, lambda waited_ts: (stop_ts, waited_ts == stop_ts))
-
-
-def wait_for_loop(skill, stop_ts):
-    """The loop stopped while a background agent or shell it started still runs; the harness resumes it when that work
-    reports. No miss is counted and no packet state is saved. A second `packet` on the same stop row stops: the work
-    has not reported, and the wait must not go on unbounded."""
-    if waited_on_stop(skill, stop_ts):
-        print_action("stop",
-                     f"The review-loop has been waiting since {time.strftime('%H:%M:%S', time.localtime(stop_ts))} "
-                     "on an agent or shell it started in the background and has not handed back. Nothing was routed, "
-                     "logged or posted.",
-                     "Show the user this. Do not re-dispatch review-loop: a second loop would edit the same files as "
-                     "the first.")
-        return 2
-    print_action("wait-for-loop",
-                 "The review-loop is waiting on an agent or shell it started in the background. Nothing was routed, "
-                 "logged or posted.",
-                 "Do not re-dispatch review-loop: a second loop would edit the same files as the first.",
-                 "End your turn. Run `packet` again when the review-loop's completion notice arrives.")
-    return WAIT_EXIT_CODE
 
 
 def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
@@ -702,8 +668,6 @@ def command_packet(argv):
     except NoHandbackError as error:
         stop_for_missing_hand_back(options.skill, error.last_hand_back_id)
         return 2
-    except LoopWaitingError as error:
-        return wait_for_loop(options.skill, error.stop_ts)
     packet = handback.load(message)
     handback.print_dropped_asks(packet)
     stored_status = packet["status"]

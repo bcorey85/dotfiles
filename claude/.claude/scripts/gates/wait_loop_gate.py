@@ -11,8 +11,12 @@ five shapes, only when the payload shows a subagent (agent_type or agent_id is s
   4. a standalone sleep longer than 30 seconds
   5. any background job from review-loop (run_in_background, a lone &, nohup, setsid, disown): it ends its turn
      waiting on jobs whose results never come back
+  6. pkill, killall, and kill with any target that is not a literal pid or `$!` (a job spec, a variable, a
+     substitution, a process group, or targets fed by xargs). Only agent_id marks a subagent here: agent_type alone
+     is the main session's `--agent` seat.
 
-Heredoc bodies, quoted strings and comments are ignored. Any error exits 0 with no output.
+Heredoc bodies, quoted strings and comments are ignored. Fail-open: any error exits 0 with no decision and names the
+gate on stderr.
 """
 import json
 import os
@@ -21,6 +25,7 @@ import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
+from shell_command import resolved_command_words
 from shell_statements import clean, statements
 
 MAX_TOTAL_WAIT = 120
@@ -52,6 +57,13 @@ BACKGROUND_AGENT = "review-loop"
 # A lone & that sends a job to the background; &&, |&, 2>&1 and &> are not one.
 SHELL_BACKGROUND = re.compile(r"(?<![&>|<])&(?![&>])")
 DETACH_WORDS = {"nohup", "setsid", "disown"}
+KILL_REASON = ("Other sessions run on this machine, so a kill by name, pattern, job spec or variable can end a "
+               "process you did not start. Kill only a pid you started and recorded, by its number: `kill 4242`.")
+PATTERN_KILLERS = {"pkill", "killall"}
+KILL_VALUE_OPTIONS = {"-s", "-n", "--signal"}
+KILL_LIST_OPTIONS = {"-l", "-L", "--list", "--table"}
+LITERAL_PID = re.compile(r"^[1-9]\d*$")
+LAST_BACKGROUND_PID = "$!"
 
 
 def seconds_of(word):
@@ -188,10 +200,62 @@ def deny_reason(command):
     return None
 
 
+def kill_targets(words):
+    # Returns the target words of a kill command, or None when it only lists signals.
+    targets = []
+    index = 1
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            return targets + words[index + 1:]
+        if word in KILL_LIST_OPTIONS:
+            return None
+        if word in KILL_VALUE_OPTIONS:
+            index += 2
+            continue
+        if not word.startswith("-"):
+            targets.append(word)
+        index += 1
+    return targets
+
+
+def kills_unrecorded_process(words):
+    name = os.path.basename(words[0])
+    if name == "xargs":
+        return any(os.path.basename(word) in PATTERN_KILLERS | {"kill"} for word in words[1:])
+    if name in PATTERN_KILLERS:
+        return True
+    if name != "kill":
+        return False
+    targets = kill_targets(words)
+    if targets is None:
+        return False
+    if not targets:
+        return True
+    return not all(LITERAL_PID.match(target) or target == LAST_BACKGROUND_PID for target in targets)
+
+
+def kill_reason(command):
+    if any(kills_unrecorded_process(words) for words in resolved_command_words(command)):
+        return KILL_REASON
+    return None
+
+
 def starts_detached_job(command):
     if SHELL_BACKGROUND.search(clean(command)):
         return True
     return any(words[0] in DETACH_WORDS for words in statements(command))
+
+
+def subagent_reason(payload, tool_input, command):
+    in_background = tool_input.get("run_in_background") is True or starts_detached_job(command)
+    if in_background and payload.get("agent_type") == BACKGROUND_AGENT:
+        return BACKGROUND_REASON
+    if payload.get("agent_id"):
+        reason = kill_reason(command)
+        if reason:
+            return reason
+    return deny_reason(command)
 
 
 def main():
@@ -201,17 +265,13 @@ def main():
         tool_input = payload.get("tool_input") or {}
         command = tool_input.get("command")
         if not os.environ.get("CLAUDE_SKIP_HOOKS") and is_subagent and isinstance(command, str):
-            in_background = tool_input.get("run_in_background") is True or starts_detached_job(command)
-            if in_background and payload.get("agent_type") == BACKGROUND_AGENT:
-                reason = BACKGROUND_REASON
-            else:
-                reason = deny_reason(command)
+            reason = subagent_reason(payload, tool_input, command)
             if reason:
                 sys.stdout.write(json.dumps({"hookSpecificOutput": {
                     "hookEventName": "PreToolUse", "permissionDecision": "deny",
                     "permissionDecisionReason": reason}}))
-    except Exception:
-        pass
+    except Exception as error:  # fail-open: a gate bug never blocks a Bash call
+        sys.stderr.write(f"wait_loop_gate: {type(error).__name__}: {error}\n")
     sys.exit(0)
 
 

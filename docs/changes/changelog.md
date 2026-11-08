@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-863 changes
+864 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -46,6 +46,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Staged-claim Stop gate passes a question that files tickets](notes/2026-11-07-staged-claim-gate-passes-a-question-that-files.md) [script/staged-claim-gate] A closing question that files sub-tickets or subtasks, or files something in Jira, Linear or GitHub, is one to ask and passes.
 * [Commit gate credits a reviewed new file after git add](notes/2026-11-07-commit-gate-credits-a-reviewed-new-file-after-git.md) [skill/review, skill/code] The reviewed-tree fingerprint no longer changes when git add stages a new file or a move, so a review that converged on a new untracked file credits the commit after git add stages it.
 * [Comment-bloat deny names the marker](notes/2026-11-07-the-deny-names-the-marker.md) [script/comment-bloat-gate] The comment-bloat-gate marker deny prints the text each line matched, so a coder knows what to drop.
+* [subagents cannot kill a process by name, pattern or job spec](notes/2026-11-07-subagents-cannot-kill-a-process-by-name-pattern-or.md) [script/wait-loop-gate] wait_loop_gate denies pkill, killall, and kill with any target that is not a literal pid or $! when the Bash call comes from a subagent.
 * [fix-removed-change counts a line the fix pass re-adds as kept](notes/2026-11-07-fix-removed-change-counts-a-line-the-fix-pass-re.md) [skill/review] The review loop's fix-removed-change check counts a line the fix pass adds to any file as kept, even a file that held the same line at HEAD, so a fix that moves added code into a helper no longer stops the loop.
 * [refactor log accepts a simplify target the branch deleted](notes/2026-11-05-refactor-log-accepts-a-simplify-target-the-branch.md) [skill/refactor] refactor_flow.py log accepts an audit or simplify target that is gone from the index but tracked at HEAD, prints it as deleted, and counts its HEAD lines in diff_loc.
 * [branch-recap reads the jump queue and refreshes the ledger itself](notes/2026-11-05-branch-recap-reads-the-jump-queue-and-refreshes.md) [skill/branch-recap, skill/close-branch, script/ledger-deferred] stage prints the jump queue before the tier report, and ledger_deferred runs the ledger worker once on a busy ledger, then reads once, with no command handed to the user.

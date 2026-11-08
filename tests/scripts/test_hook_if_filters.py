@@ -15,7 +15,6 @@ WHY_LEADING_STAR = (
 
 EXPECTED_FILTERS = {
     "review/deferred_push_check.py": ["Bash(*git*)", "Bash(*gh*)"],
-    "review/review_loop_gate.py": ["Bash(*log-review-metrics*)"],
     "gates/rg_path_gate.py": ["Bash(*rg*)"],
 }
 

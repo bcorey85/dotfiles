@@ -13,4 +13,4 @@ description: "The benches that are open now and the question each asks."
 
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
 * Run the plan as an Opus-driven loop so a Sonnet main session only hands off (blocked): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
-* Lower the main-session compaction window to cut Opus cache read (queued): Compacting the main session near 110k instead of 148k cuts main Opus cache read about 15%, if the extra compactions lose nothing a /code run needs.
+* Lower the main-session compaction window to cut Opus cache read (running): Compacting the main session near 110k instead of 148k cuts main Opus cache read about 15%, if the extra compactions lose nothing a /code run needs.

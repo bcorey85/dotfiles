@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-872 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+873 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [built-page driver rebuilds pages during a stash apply named by BUILT_PAGE_STASH](notes/2026-11-08-built-page-driver-rebuilds-pages-during-a-stash.md).
+Latest change: 2026-11-08, [pull_keep_index stops before touching a tree inside a stopped rebase](notes/2026-11-08-pull-keep-index-stops-before-touching-a-tree.md).
 
 ## Top gains
 

@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles solarized-osaka solarized selenized alabaster flexoki; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles solarized-osaka solarized selenized alabaster flexoki catppuccin; }
 
 # A family that differs from another only in nvim's syntax colours borrows that
 # family's terminal, prompt, herdr, hunk, delta and claude themes.
@@ -167,6 +167,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # flexoki: ghostty BUILTINS, kepano's sixteen.
     flexoki:light)          echo "Flexoki Light" ;;
     flexoki:*)              echo "Flexoki Dark" ;;
+    # catppuccin: ghostty BUILTINS — mocha dark, latte light.
+    catppuccin:light)       echo "Catppuccin Latte" ;;
+    catppuccin:*)           echo "Catppuccin Mocha" ;;
   esac
 }
 
@@ -234,6 +237,9 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # the nearest neutrals (warm grey on near-black, black on white).
     flexoki:light)          echo "light-plus" ;;
     flexoki:*)              echo "vitesse-black" ;;
+    # catppuccin: hunk BUILTINS.
+    catppuccin:light)       echo "catppuccin-latte" ;;
+    catppuccin:*)           echo "catppuccin-mocha" ;;
   esac
 }
 
@@ -1536,6 +1542,26 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#f1e9d2" subtext0="#838781"
       green="#8fb573" yellow="#dbb651" red="#e75a7c"
       blue="#57a5e5" teal="#70c2be" peach="#ff9966"
+      ;;
+    catppuccin:light)
+      # catppuccin latte (#eff1f5, mantle panel).
+      base_name="catppuccin-latte"
+      accent="#8839ef" panel_bg="#e6e9ef" surface_dim="#ccd0da"
+      surface0="#bcc0cc" surface1="#acb0be"
+      overlay0="#7c7f93" overlay1="#8c8fa1"
+      text="#4c4f69" subtext0="#6c6f85"
+      green="#40a02b" yellow="#df8e1d" red="#d20f39"
+      blue="#1e66f5" teal="#179299" peach="#fe640b"
+      ;;
+    catppuccin:*)
+      # catppuccin mocha (#1e1e2e, mantle panel).
+      base_name="catppuccin"
+      accent="#cba6f7" panel_bg="#181825" surface_dim="#313244"
+      surface0="#45475a" surface1="#585b70"
+      overlay0="#9399b2" overlay1="#7f849c"
+      text="#cdd6f4" subtext0="#a6adc8"
+      green="#a6e3a1" yellow="#f9e2af" red="#f38ba8"
+      blue="#89b4fa" teal="#94e2d5" peach="#fab387"
       ;;
     tokyonight:light)
       # tokyonight day (#e1e2e7, bg_dark panel), verbatim.

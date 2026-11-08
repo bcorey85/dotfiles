@@ -155,6 +155,17 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("eslint config enables `curly`", text)
         self.assertNotIn("will break CI", text)
 
+    def test_review_and_fix_run_in_the_code_fork_and_hand_back_through_the_relay(self):
+        for skill in ("review", "fix"):
+            text = guidance_text(f"skills/{skill}/SKILL.md")
+            self.assertIn("context: fork agent: code-fork model: sonnet", text)
+            self.assertIn("python3 ~/.claude/scripts/code/code_relay.py", text)
+            self.assertIn("launch --detach", text)
+        shared_text = " ".join(guidance_text("skills/_shared/review-fork-run.md").split())
+        self.assertIn("<run folder>/review-stop.md", shared_text)
+        self.assertIn("`To go on: /<skill> resume <your feedback>`", shared_text)
+        self.assertIn("Never call AskUserQuestion.", shared_text)
+
     def test_a_code_fork_is_cancelled_with_a_stop_message_and_stops_every_agent_it_dispatched(self):
         skill_text = guidance_text("skills/code/SKILL.md")
         self.assertIn("To cancel a running /code fork, SendMessage it `stop` and wait for its stop; TaskStop the fork "

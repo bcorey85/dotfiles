@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-862 changes
+863 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -19,6 +19,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [review and fix run in a sonnet fork that dispatches the reviewers](notes/2026-11-07-review-and-fix-run-in-a-sonnet-fork-that.md) [skill/review, skill/fix] /review and /fix run in the Sonnet code-fork, which launches the script loop detached, dispatches the reviewers as its own subagents, runs the packet, and hands back one stop that the Opus main session relays word for word.
 * [A lane session sends every user command to the session that started it](notes/2026-11-07-a-lane-session-sends-every-user-command-to-the.md) [rule/global-claude-md] The global rules now say a lane session started by another session sends every command for the user, merge lines included, to that session, and a lane brief carries the starting session's current name.
 * [One close pass replaces the four closing phases](notes/2026-11-04-one-close-pass-replaces-the-four-closing-phases.md) [skill/close-branch, skill/code, script/plan-format] Plans now end with one Close pass phase run by the new /close-branch skill: scripts first, four report-only reviewers in parallel on the whole branch diff, one coder that fixes every finding, a report-only gate on the fix diff, then a script-built recap. On the TLDR-1 bench it cut closing wall-clock from 44.8 to 23.5 minutes and new defects from 1.38 to 0.50 per run.
 * [Round-one code review splits by lens on every multi-file change](notes/2026-11-04-round-one-code-review-splits-by-lens-on-every.md) [script/review-loop-script, agent/review-loop] Round one of the scripted review loop now sends two code reviewers over every file of a multi-file change, one for state and lifecycle and one for inputs, surfaces and contracts, in place of halving the files above 5 files and 300 lines. Known bugs fixed per pass rose from 6.25 to 14.0 of 25, with no fix made worse, for 32% more Opus cache read and 25% more wall-clock. **raises of 25 known bugs fixed per pass by 124% (6.25 → 14)**

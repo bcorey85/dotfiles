@@ -194,6 +194,42 @@ esac""")
         herdr_dev_values = herdr_dev_args.read_text().split("\0")
         self.assertEqual(herdr_dev_values[2:4], ["s1", brief.rstrip("\n")])
 
+    def add_origin_with_default_master(self):
+        """A bare origin whose default branch is master, fetched into the main checkout."""
+        origin = self.root / "origin.git"
+        git(self.root, "init", "-q", "--bare", str(origin))
+        git(self.main_checkout, "remote", "add", "origin", str(origin))
+        git(self.main_checkout, "push", "-q", "origin", "master")
+        git(self.main_checkout, "fetch", "-q", "origin")
+        git(self.main_checkout, "remote", "set-head", "origin", "master")
+
+    def test_a_fork_branches_off_the_branch_checked_out_where_it_runs_not_origins_default(self):
+        self.add_origin_with_default_master()
+        git(self.linked_worktree, "-c", "user.name=t", "-c", "user.email=t@t",
+            "commit", "-q", "--allow-empty", "-m", "unpushed lane work")
+        linked_head = subprocess.run(["git", "-C", str(self.linked_worktree), "rev-parse", "HEAD"],
+                                     check=True, capture_output=True, text=True).stdout.strip()
+        self.stub_fork(CLAUDE_PANE)
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        herdr_args = self.herdr_args.read_text().splitlines()
+        self.assertEqual(herdr_args[herdr_args.index("--base") + 1], linked_head)
+
+    def test_a_run_without_fork_still_branches_off_origins_default(self):
+        self.add_origin_with_default_master()
+        git(self.linked_worktree, "-c", "user.name=t", "-c", "user.email=t@t",
+            "commit", "-q", "--allow-empty", "-m", "linked work")
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        herdr_args = self.herdr_args.read_text().splitlines()
+        master_head = subprocess.run(["git", "-C", str(self.main_checkout), "rev-parse", "origin/master"],
+                                     check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(herdr_args[herdr_args.index("--base") + 1], master_head)
+
     def test_a_fork_whose_pane_never_shows_claude_exits_non_zero_naming_the_pane_and_its_command(self):
         self.stub_fork(SHELL_PANE)
 

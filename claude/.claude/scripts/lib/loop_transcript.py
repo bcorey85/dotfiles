@@ -2,8 +2,7 @@
 code step, whether a valid full-check receipt exists for the tree the loop reviewed (lib/full_check_receipt), the open
 background dispatches, a packet that names the plan file, and a packet that owes ledger rows (per-finding rows and a
 metrics line) the loop did not log; and the repo a loop reviewed, which also reads cwd and the git work tree.
-review_loop_gate.py (the SubagentStop backstop), handback.py (the hand-back hook) and open_child_gate.py read
-transcripts through it. Not a hook itself."""
+handback.py (the hand-back hook) and open_child_gate.py read transcripts through it. Not a hook itself."""
 import json
 import os
 import pathlib

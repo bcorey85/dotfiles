@@ -52,7 +52,17 @@ def import_closure(roots, hooks):
 
 class HookModuleImportTest(unittest.TestCase):
     def test_settings_name_the_review_hooks(self):
-        self.assertLessEqual({"review_loop_gate", "handback", "open_child_gate"}, hook_modules())
+        self.assertLessEqual({"handback", "open_child_gate"}, hook_modules())
+
+    def test_settings_register_no_gate_for_the_deleted_review_loop_agent_and_no_missing_script(self):
+        settings = json.loads((toolkit_paths.CLAUDE_DIR / "settings.json").read_text())
+        commands = [hook.get("command", "") for entries in settings.get("hooks", {}).values()
+                    for entry in entries for hook in entry.get("hooks", [])]
+        scripts = {script for command in commands for script in HOOK_SCRIPT.findall(command)}
+        missing = sorted(script for script in scripts if not (toolkit_paths.CLAUDE_DIR / script).exists())
+
+        self.assertNotIn("review_loop_gate", hook_modules())
+        self.assertEqual(missing, [])
 
     def test_handback_closure_holds_its_review_and_lib_imports(self):
         closure_names = {path.name for path in import_closure([HANDBACK], hook_modules())}

@@ -34,6 +34,9 @@ PROJECTS = pathlib.Path.home() / ".claude" / "projects"
 # The harness moves a Bash call that runs past 180 s to the background, where the fork cannot read its result.
 WAIT_SECONDS = 150
 POLL_SECONDS = 5
+# How long a finished agent's empty report is re-read before it counts as no report.
+SETTLE_SECONDS = 3
+SETTLE_POLL_SECONDS = 0.25
 STILL_WORKING = "Still working. Run the same command again."
 NO_REPORT = "The agent finished with no report."
 AGENT_ID = re.compile(r"a[0-9a-f]{16}")
@@ -67,9 +70,20 @@ def finished_transcript(agent_id):
 
 
 def agent_report(transcript):
-    # The message of the agent's last hand-back call a hook did not deny, else its last text, else "".
-    read = loop_transcript.LoopTranscript(transcript)
-    return read.handback_message or read.last_text or ""
+    """The message of a finished agent's last hand-back call a hook did not deny, else its last text, else "".
+    The harness marks the agent finished before its last transcript line (the hand-back's result) is on disk, so a
+    read with a hand-back call and no result yet, or with no report, is retried for SETTLE_SECONDS."""
+    reads = []
+
+    def settled_read():
+        read = loop_transcript.LoopTranscript(transcript)
+        reads.append(read)
+        report = read.handback_message or read.last_text or ""
+        return not read.handback_pending and bool(report.strip())
+
+    script_utils.wait_for(settled_read, SETTLE_SECONDS, SETTLE_POLL_SECONDS)
+    last_read = reads[-1]
+    return last_read.handback_message or last_read.last_text or ""
 
 
 def checked_agent_id(word):

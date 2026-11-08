@@ -58,6 +58,29 @@ class RelayTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_a_newer_review_stop_relays_in_place_of_the_code_stop(self):
+        self.write_stop(STOP)
+        os.utime(self.run_folder / "stop.md", ns=(1, 1))
+        review_stop = "Review converged.\n\nTo go on: /review resume <your feedback>"
+        (self.run_folder / "review-stop.md").write_text(review_stop)
+
+        result = self.relay()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(review_stop, result.stdout)
+        self.assertNotIn("Phase 2 complete", result.stdout)
+
+    def test_a_finished_stop_says_to_go_on_with_the_invoking_skill(self):
+        self.run_folder.mkdir()
+        (self.run_folder / "review-stop.md").write_text("Review converged. Nothing is outstanding.\n")
+
+        result = self.relay()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rule = result.stdout.split("-----BEGIN USER TEXT-----\n")[0]
+        self.assertIn("go on with that skill's next step", rule)
+        self.assertNotIn("Make no other tool call before", rule)
+
     def test_no_stop_file_exits_1_and_says_to_relay_the_skill_result(self):
         result = self.relay()
 

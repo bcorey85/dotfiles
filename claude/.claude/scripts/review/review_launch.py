@@ -1,7 +1,9 @@
 """review_launch.py: `review_fix.py launch`, the start of every /review and /fix run.
 
 It starts review_loop_script.py --reviewers main as a detached process and returns when the loop asks for reviewers
-(`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop exits. It records the session's dispatch row,
+(`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop exits. With --detach (the /review and /fix
+fork) it returns once the loop has started and names the `code_wait.py review --loop` command that waits on it.
+It records the session's dispatch row,
 writes the prompt file, the loop's pid and <loop dir>/launch.json (the packet arguments the wait prints), and keeps
 its state under <git dir>/review-script.
 
@@ -15,7 +17,8 @@ import pathlib
 import subprocess
 import sys
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
+import code_wait
 import handback_hook
 import reviewer_dispatch
 import script_utils
@@ -68,6 +71,8 @@ def launch_parser():
     models.add_argument("--deep", action="store_true", help="run the reviewers on their agents' own model")
     parser.add_argument("--iter", type=int, default=0, help="review rounds an earlier run of this review used")
     parser.add_argument("--lane", help="lane of the run (default none for review, code for fix)")
+    parser.add_argument("--detach", action="store_true",
+                        help="return once the loop has started and print the code_wait.py command that waits on it")
     return parser
 
 
@@ -216,6 +221,10 @@ def command_launch(argv, loop_script):
         loop = subprocess.Popen(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                 start_new_session=True)
     script_utils.write_text_atomically(loop_dir / reviewer_dispatch.PID_FILE, f"{loop.pid}\n")
+    if options.detach:
+        wait_command = code_wait.launched_review_command(loop_dir)
+        print(f"The review loop started. Run `{wait_command}` now, again while it prints `Still working`.")
+        return 0
 
     dispatch_lines = reviewer_dispatch.wait_for_step(loop_dir, lambda: loop.poll() is None)
     if dispatch_lines is not None:

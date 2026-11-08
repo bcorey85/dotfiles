@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-861 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+862 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-07, [Plan-review escape logging carries class and guard so every row logs](notes/2026-11-07-plan-review-escape-logging-carries-class-and-guard.md).
+Latest change: 2026-11-07, [review and fix run in a sonnet fork that dispatches the reviewers](notes/2026-11-07-review-and-fix-run-in-a-sonnet-fork-that.md).
 
 ## Top gains
 

@@ -3,6 +3,7 @@
 
     python3 ~/.claude/scripts/code/code_wait.py agent <agent id>
     python3 ~/.claude/scripts/code/code_wait.py review [<agent id> <report file>]...
+    python3 ~/.claude/scripts/code/code_wait.py review --loop <loop dir> [<agent id> <report file>]...
 
 Nested Agent calls in a fork return at once, and a fork that ends its turn hands back, so the fork waits here instead.
 `agent` waits for the subagent's transcript to finish and prints its hand-back report.
@@ -11,13 +12,17 @@ Nested Agent calls in a fork return at once, and a fork that ends its turn hands
 writes each one's report to its file as soon as that reviewer finishes, which is how the reports reach the loop (the
 fork has no Write tool). It returns when the loop asks for reviewers no pair answers (`ACTION: dispatch-reviewer`),
 when a named reviewer finished with no report (exit 1), or with the loop's output once it ends.
+`review --loop <loop dir>` waits the same way on a loop that `review_fix.py launch --detach` started for the /review
+or /fix fork: its pid is <loop dir>/loop.pid, and once the loop ends it prints the packet command to run.
 Each call waits at most WAIT_SECONDS, then says to run the same command again.
 """
 
+import dataclasses
 import os
 import pathlib
 import re
 import sys
+from collections.abc import Callable
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review")]
@@ -38,6 +43,7 @@ PID_FILE = "pid"
 REVIEW_OUTPUT = "review.out"
 LOOP_DIR_FILE = "loop-dir"  # holds the path of the running loop's folder, where its reviewer requests go
 REVIEW_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
+LOOP_FLAG = "--loop"
 
 
 class UsageError(Exception):
@@ -98,9 +104,52 @@ def loop_dir(repo):
         return None
 
 
-def open_reviewer_requests(repo):
-    # The running loop's reviewer requests that have no report yet.
-    folder = loop_dir(repo)
+@dataclasses.dataclass(frozen=True)
+class ReviewRun:
+    """The review loop a `review` wait follows: the command that waits on it again, the folder that holds its
+    reviewer requests (None before the loop names it), whether it still runs, and what to print once it ended."""
+    command: str
+    loop_folder: Callable[[], str | None]
+    running: Callable[[], bool]
+    final_output: Callable[[], str]
+
+
+def phase_review_output(repo):
+    review_output = phase_dir(repo) / REVIEW_OUTPUT
+    if not review_output.exists():
+        return "No review output was written."
+    return review_output.read_text()
+
+
+def phase_review(repo):
+    """The review code_review_start.py --detach left for the /code fork."""
+    return ReviewRun(REVIEW_COMMAND, lambda: loop_dir(repo), lambda: review_running(repo),
+                     lambda: phase_review_output(repo))
+
+
+def launched_loop_running(folder):
+    pid = reviewer_dispatch.loop_pid(folder)
+    return pid is not None and reviewer_dispatch.pid_is_running(pid)
+
+
+def launched_review_command(folder):
+    return f"{REVIEW_COMMAND} {LOOP_FLAG} {folder}"
+
+
+def launched_review(folder):
+    """The review `review_fix.py launch --detach` started in `folder` for the /review or /fix fork."""
+    pid_file = pathlib.Path(folder) / reviewer_dispatch.PID_FILE
+    if not pid_file.is_file():
+        raise UsageError(f"{folder} holds no {reviewer_dispatch.PID_FILE}; expected the loop folder that "
+                         "`review_fix.py launch --detach` printed")
+    packet_command = reviewer_dispatch.packet_command(folder)
+    return ReviewRun(launched_review_command(folder), lambda: folder, lambda: launched_loop_running(folder),
+                     lambda: f"The review loop script finished. Run `{packet_command}` now.")
+
+
+def open_reviewer_requests(run):
+    # The loop's reviewer requests that have no report yet.
+    folder = run.loop_folder()
     if folder is None:
         return []
     return reviewer_dispatch.pending_requests(folder)
@@ -120,12 +169,12 @@ def wait_agent(agent_id):
     return 0
 
 
-def reviewer_pairs(repo, words):
+def reviewer_pairs(run, words):
     """The (agent id, report file) pairs of `review`'s arguments. Each report file must be one the loop's requests
     name."""
     if len(words) % 2:
         raise UsageError(f"`review` takes <agent id> <report file> pairs; got {len(words)} word(s): {words}")
-    folder = loop_dir(repo)
+    folder = run.loop_folder()
     requested = set()
     if folder is not None:
         requested = {entry["report_file"] for entry in reviewer_dispatch.all_requests(folder)}
@@ -156,24 +205,25 @@ def write_finished_reports(pairs):
     return empty
 
 
-def unanswered_requests(repo, pairs):
+def unanswered_requests(run, pairs):
     answered = {report_file for _agent_id, report_file in pairs}
-    return [entry for entry in open_reviewer_requests(repo) if entry["report_file"] not in answered]
+    return [entry for entry in open_reviewer_requests(run) if entry["report_file"] not in answered]
 
 
-def reviewer_dispatch_lines(pending):
+def reviewer_dispatch_lines(run, pending):
     return [*reviewer_dispatch.request_lines(pending),
-            f"Then run `{REVIEW_COMMAND} <agentId> <report file>`, with one agentId and its line's report file "
+            f"Then run `{run.command} <agentId> <report file>`, with one agentId and its line's report file "
             "for each agent you dispatched, every one written out as its own word."]
 
 
-def wait_review(repo, words=()):
-    pairs = reviewer_pairs(repo, list(words))
+def wait_review(repo, words=(), launched_folder=None):
+    run = phase_review(repo) if launched_folder is None else launched_review(launched_folder)
+    pairs = reviewer_pairs(run, list(words))
     empty = []
 
     def next_step():
         empty.extend(write_finished_reports(pairs))
-        return bool(empty) or bool(unanswered_requests(repo, pairs)) or not review_running(repo)
+        return bool(empty) or bool(unanswered_requests(run, pairs)) or not run.running()
 
     if not script_utils.wait_for(next_step, WAIT_SECONDS, POLL_SECONDS):
         print(STILL_WORKING)
@@ -181,24 +231,33 @@ def wait_review(repo, words=()):
 
     if empty:
         print("\n".join([NO_REPORT, *empty, "Dispatch each of these agents again with the same prompt, then run "
-                         f"`{REVIEW_COMMAND}` with the new agentId in place of the old one."]))
+                         f"`{run.command}` with the new agentId in place of the old one."]))
         return 1
 
-    pending = unanswered_requests(repo, pairs)
+    pending = unanswered_requests(run, pairs)
     if pending:
-        print("\n".join(reviewer_dispatch_lines(pending)))
+        print("\n".join(reviewer_dispatch_lines(run, pending)))
         return 0
 
-    review_output = phase_dir(repo) / REVIEW_OUTPUT
-    print(review_output.read_text() if review_output.exists() else "No review output was written.")
+    print(run.final_output())
     return 0
+
+
+def review_words(words):
+    """(loop folder or None, the pair words) of `review`'s arguments."""
+    if words[:1] != [LOOP_FLAG]:
+        return None, words
+    if len(words) < 2:
+        raise UsageError(f"{LOOP_FLAG} needs the loop folder that `review_fix.py launch --detach` printed")
+    return words[1], words[2:]
 
 
 def run(argv):
     if len(argv) == 3 and argv[1] == "agent":
         return wait_agent(checked_agent_id(argv[2]))
     if len(argv) >= 2 and argv[1] == "review":
-        return wait_review(pathlib.Path.cwd().resolve(), argv[2:])
+        launched_folder, pair_words = review_words(argv[2:])
+        return wait_review(pathlib.Path.cwd().resolve(), pair_words, launched_folder)
     raise UsageError(f"unknown arguments {argv[1:]}")
 
 

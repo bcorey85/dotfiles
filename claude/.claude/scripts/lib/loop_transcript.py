@@ -145,6 +145,7 @@ class LoopTranscript:
         self.resumes = []  # (transcript line, agent id, SendMessage tool_use_id) of each resume
         self.background_shells = []  # (transcript line, tool_use_id) of the shell calls that run on in the background
         self.handback_ids = set()  # tool_use_ids of the SubagentHandback calls
+        self.handback_results = set()  # tool_use_ids of the SubagentHandback calls whose result is in the transcript
         self.handback_lines = []  # the transcript lines of the SubagentHandback calls a hook did not deny
         self.handback_messages = {}  # SubagentHandback tool_use_id -> the message of the call
         self.handback_message = None  # the message of the last SubagentHandback call a hook did not deny
@@ -201,6 +202,7 @@ class LoopTranscript:
         elif block.get("type") == "tool_use":
             self.read_tool_use(n, block)
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.handback_ids:
+            self.handback_results.add(block["tool_use_id"])
             if not block.get("is_error"):
                 self.handback_lines.append(n)
                 self.handback_message = self.handback_messages[block["tool_use_id"]]
@@ -210,6 +212,11 @@ class LoopTranscript:
             self.read_send_result(block)
         elif block.get("type") == "tool_result":
             self.read_bash_result(block)
+
+    @property
+    def handback_pending(self):
+        """True while a SubagentHandback call has no result in the transcript yet."""
+        return bool(self.handback_ids - self.handback_results)
 
     def read_bash_result(self, block):
         """One Bash call can chain a finding row, a metrics row and a scope call, so each check reads the result."""

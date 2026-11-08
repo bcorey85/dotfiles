@@ -123,10 +123,9 @@ def write_handback_rows(args, message, status, ask_rows, unreviewed_fix):
                                        unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
     except Exception as error:
         report_write_failure("hand-back row", error)
-    # The stop row ends any wait-for-loop and carries the ask rows, so `review_fix.py packet` can give each ask its id.
+    # The stop row carries the ask rows, so `review_fix.py packet` can give each ask its id.
     try:
-        handback_store.record(args.session, "stop", agent_id=args.agent_id or "unknown", open_dispatches=0,
-                              ask_rows=list(ask_rows), blocked=False)
+        handback_store.record(args.session, "stop", agent_id=args.agent_id or "unknown", ask_rows=list(ask_rows))
     except Exception as error:
         report_write_failure("stop row", error)
 

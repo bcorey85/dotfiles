@@ -292,10 +292,11 @@ class ReviewLoopScriptTest(unittest.TestCase):
         kinds = [stored["kind"] for stored in self.store_rows()]
         self.assertEqual(kinds, ["handback", "stop"])
         stop = self.store_rows()[1]
-        self.assertEqual((stop["agent_id"], stop["open_dispatches"], stop["ask_rows"]), (AGENT_ID, 0, []))
+        self.assertEqual((stop["agent_id"], stop["ask_rows"]), (AGENT_ID, []))
+        self.assertNotIn("open_dispatches", stop)
         with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
             latest_stop = handback_store.latest(SESSION)["stop"]
-        self.assertEqual(latest_stop["open_dispatches"], 0)
+        self.assertEqual(latest_stop["ask_rows"], [])
 
         runs = fake_ledger.recorded_rows(self.env, "review_run")
         self.assertEqual([run["scope"] for run in runs], ["phase", "phase"])

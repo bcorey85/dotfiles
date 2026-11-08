@@ -243,9 +243,8 @@ def run(raw):
     if autostash_count and autostash_count != count_pull_push_pairs(command):
         raise DenyError("[git-discipline-gate] git autostash is blocked: it runs a git stash, which every worktree "
                         "shares and which resets staged files. Pass --no-autostash to the command, or do not set the "
-                        "autostash config. The one form that passes is a pull joined by && to the push right after it, "
-                        "in the same directory: "
-                        "`git -C <repo> pull --rebase=merges --autostash && git -C <repo> push`. "
+                        "autostash config. To pull right before a push and keep staged files staged, run "
+                        "`python3 ~/.claude/scripts/tools/pull_keep_index.py <repo> && git -C <repo> push`. "
                         f"{MERGE_WITH_WORK_UNCOMMITTED}")
 
     if any(is_amend(call) for call in calls):

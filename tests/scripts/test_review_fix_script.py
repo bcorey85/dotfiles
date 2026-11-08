@@ -1518,8 +1518,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("review-gate-mark", output)
         self.assertEqual(self.saved_stage(), "asks")
 
-    def stop_row(self, open_dispatches, session=SESSION, ts=1000.5, ask_rows=None):
-        row = {"kind": "stop", "ts": ts, "session_id": session, "agent_id": "a1", "open_dispatches": open_dispatches}
+    def stop_row(self, session=SESSION, ts=1000.5, ask_rows=None, **old_fields):
+        row = {"kind": "stop", "ts": ts, "session_id": session, "agent_id": "a1", **old_fields}
         if ask_rows is not None:
             row["ask_rows"] = ask_rows
         with open(self.store_dir / (session + ".jsonl"), "a", encoding="utf-8") as store:
@@ -1529,47 +1529,19 @@ class ReviewFixScriptTest(unittest.TestCase):
         path = self.repo / ".git" / "review-fix" / "misses.json"
         return json.loads(path.read_text()) if path.exists() else {}
 
-    def test_a_loop_waiting_on_a_background_agent_gets_wait_for_loop_and_no_miss(self):
+    def test_an_old_stop_row_with_open_dispatches_and_no_hand_back_is_a_miss_not_a_wait(self):
         self.dispatch()
-        self.stop_row(1)
-        code, output = self.packet("")
-        self.assertEqual(code, 3, output)
-        self.assertIn("ACTION: wait-for-loop", output)
-        self.assertIn("Do not re-dispatch", output)
-        self.assertNotIn("stop-no-handback", output)
-        self.assertEqual(self.misses(), {})
-
-    def test_a_second_packet_on_the_same_stop_row_stops_and_a_new_stop_row_waits_again(self):
-        self.dispatch()
-        self.stop_row(1)
-        self.packet("")
-        code, output = self.packet("")
-        self.assertEqual(code, 2, output)
-        self.assertIn("ACTION: stop\n", output)
-        clock = time.strftime("%H:%M:%S", time.localtime(1000.5))
-        waited_on = "on an agent or shell it started in the background and has not handed back"
-        self.assertIn(f"waiting since {clock} {waited_on}", output)
-        self.assertNotIn("1000.5", output)
-        self.assertIn("Do not re-dispatch", output)
-        self.assertNotIn("wait-for-loop", output)
-        self.assertEqual(self.misses(), {})
-        self.stop_row(1, ts=2000.5)
-        code, output = self.packet("")
-        self.assertEqual(code, 3, output)
-        self.assertIn("ACTION: wait-for-loop", output)
-
-    def test_a_later_stop_with_nothing_open_and_no_hand_back_is_a_miss_again(self):
-        self.dispatch()
-        self.stop_row(1)
-        self.stop_row(0)
+        self.stop_row(open_dispatches=1)
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-no-handback", output)
+        self.assertNotIn("wait-for-loop", output)
         self.assertIn("Run `launch` once more", output)
+        self.assertEqual(self.misses()["review"]["count"], 1)
 
-    def test_a_hand_back_after_the_wait_is_read_normally(self):
+    def test_a_hand_back_after_a_stop_row_is_read_normally(self):
         self.dispatch()
-        self.stop_row(1)
+        self.stop_row()
         self.hand_back()
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
@@ -1673,7 +1645,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_an_ask_the_loop_logged_without_writing_its_id_gets_its_outcome_under_the_logged_id(self):
         self.seed(self.ASK_WITHOUT_FINDING_ID)
-        self.stop_row(0, ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60010"}])
+        self.stop_row(ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60010"}])
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
         code, output = self.run_script(["asks-done", "accepted"])
@@ -1686,14 +1658,14 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_an_ask_the_loop_logged_under_a_placeholder_id_also_gets_the_logged_id(self):
         text = self.ask_packet_with_finding_id("none logged")
         self.seed(text)
-        self.stop_row(0, ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60011"}])
+        self.stop_row(ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60011"}])
         self.packet("")
         self.run_script(["asks-done", "accepted"])
         self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60011"])
 
     def test_a_valid_id_the_loop_wrote_wins_over_a_logged_row_at_the_same_place(self):
         self.seed(self.ask_packet_with_finding_id("a1b2c3d4e5f60012"))
-        self.stop_row(0, ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60013"}])
+        self.stop_row(ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60013"}])
         self.packet("")
         self.run_script(["asks-done", "accepted"])
         self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60012"])
@@ -1719,7 +1691,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_logged_row_serves_one_ask_and_a_second_ask_at_the_same_place_is_logged_by_packet(self):
         two_asks_at_one_place = [ask_entry("x", "a.ts:1", change="c"), ask_entry("y", "a.ts:1", change="c")]
         self.seed(packet_text(CLEAN_EMPTY_FIELDS, ask=two_asks_at_one_place))
-        self.stop_row(0, ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60014"}])
+        self.stop_row(ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60014"}])
         self.packet("")
         self.run_script(["asks-done", "accepted", "rejected"])
         finding_ids = [row["finding_id"] for row in self.ledger_writes() if "ask_outcome" in row]

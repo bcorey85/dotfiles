@@ -798,47 +798,15 @@ class StoreTest(HandbackTestBase):
         seen = handback_store.latest(SESSION)
         self.assertEqual(handback_store.hand_back_gap(seen), handback_store.REDISPATCHED)
 
-    def test_a_stop_with_an_open_background_agent_is_a_wait_until_a_later_stop_or_a_hand_back(self):
+    def test_an_old_stop_row_with_open_dispatches_is_no_wait_and_its_ask_rows_still_stand(self):
         handback_store.record(SESSION, "dispatch")
-        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
-        self.assertEqual(handback_store.hand_back_gap(handback_store.latest(SESSION)), handback_store.LOOP_WAITING)
-        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0)
-        self.assertEqual(handback_store.hand_back_gap(handback_store.latest(SESSION)), handback_store.NO_HANDBACK)
-        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=2)
-        handback_store.record(SESSION, "handback", status="converged", message="m")
-        self.assertIsNone(handback_store.hand_back_gap(handback_store.latest(SESSION)))
-
-    def test_a_stop_the_gate_blocked_is_not_the_standing_stop(self):
+        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=1, ask_rows=[{"file": "a", "line": 1}])
+        seen = handback_store.latest(SESSION)
+        self.assertEqual(handback_store.hand_back_gap(seen), handback_store.NO_HANDBACK)
+        self.assertEqual(seen["stop"]["ask_rows"], [{"file": "a", "line": 1}])
+        self.assertEqual(handback.false_clean_reason(SESSION), "no review-loop hand-back is stored for this session")
         handback_store.record(SESSION, "dispatch")
-        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[{"file": "a", "line": 1}])
-        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[], blocked=True)
-        self.assertEqual(handback_store.latest(SESSION)["stop"]["ask_rows"], [{"file": "a", "line": 1}])
-
-    def test_the_settled_stop_is_the_awaited_agents_unblocked_stop_at_or_after_the_hand_back(self):
-        before = handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0)["ts"]
-        handback_store.record(SESSION, "stop", agent_id="a2", open_dispatches=0)
-        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0, blocked=True)
-        self.assertIsNone(handback.settled_stop_row(SESSION, "a1", before + 0.0001))
-        settled = handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=0, ask_rows=[])
-        self.assertEqual(handback.settled_stop_row(SESSION, "a1", before + 0.0001), settled)
-
-    def test_a_wait_after_a_redispatch_is_not_redispatched_and_a_new_dispatch_clears_an_old_stop(self):
-        handback_store.record(SESSION, "dispatch")
-        handback_store.record(SESSION, "handback", status="converged", message="m")
-        handback_store.record(SESSION, "dispatch")
-        handback_store.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
-        self.assertEqual(handback_store.hand_back_gap(handback_store.latest(SESSION)), handback_store.LOOP_WAITING)
-        handback_store.record(SESSION, "dispatch")
-        self.assertEqual(handback_store.hand_back_gap(handback_store.latest(SESSION)), handback_store.REDISPATCHED)
-
-    def test_false_clean_reason_refuses_clean_while_the_loop_waits(self):
-        handback_store.record(SESSION, "dispatch")
-        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
-        self.assertIn("waiting on a background agent or shell", handback.false_clean_reason(SESSION))
-        handback_store.record(SESSION, "handback", status="converged", message="m")
-        handback_store.record(SESSION, "dispatch")
-        handback_store.record(SESSION, "stop", agent_id="a2", open_dispatches=1)
-        self.assertIn("waiting on a background agent or shell", handback.false_clean_reason(SESSION))
+        self.assertIsNone(handback_store.latest(SESSION)["stop"])
 
     def test_a_stored_hand_back_with_no_dispatch_row_has_its_own_reason(self):
         handback_store.record(SESSION, "handback", status="converged", message="m")
@@ -1044,7 +1012,7 @@ class HookTest(HandbackTestBase):
         ran = self.loop_dispatch("toolu_ran")
         self.fire(ran)
         self.fire(ran, "ran")
-        handback_store.record(SESSION, "stop", agent_id="a1", open_dispatches=1)
+        handback_store.record(SESSION, "stop", agent_id="a1", ask_rows=[])
 
         self.fire(self.loop_dispatch("toolu_new"))
 

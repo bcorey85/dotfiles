@@ -2,13 +2,20 @@
 
 Run `git pull --rebase=merges` in the repo with its local changes set aside and put back after, staged files still
 staged. `--autostash` puts them back unstaged. The changes are saved as a dangling stash commit, never on the shared
-stash stack. Exit 0 when the pull ran and the changes are back; exit 1 with the recovery command otherwise."""
+stash stack. The re-apply names that commit in BUILT_PAGE_STASH, so the agent-evals built-page merge driver rebuilds a
+generated page in place of a text merge. When the re-apply conflicts, every other file gets back its staged or
+unstaged state and the conflicted paths stay conflicted. Exit 0 when the pull ran and the changes are back; exit 1
+with the recovery command otherwise."""
 import os
 import subprocess
 import sys
+import tempfile
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import script_utils
+
+# The variable ~/agent-evals/bin/merge_built_page.py reads for the stash commit a `git stash apply` is applying.
+BUILT_PAGE_STASH = "BUILT_PAGE_STASH"
 
 
 def recovery_text(repo, saved):
@@ -37,14 +44,72 @@ def set_aside(repo):
     return saved
 
 
+def run_in_repo(repo, *arguments, env=None, stdin=None):
+    return subprocess.run(["git", "-C", repo, *arguments], capture_output=True, env=env, input=stdin)
+
+
+def listed_paths(repo, *diff_arguments):
+    """Paths `git diff --name-only` lists for the arguments, renames split into their two paths."""
+    listed = run_in_repo(repo, "diff", "--name-only", "--no-renames", "-z", *diff_arguments)
+    return [name for name in os.fsdecode(listed.stdout).split("\0") if name]
+
+
+def staged_tree(repo, saved):
+    """The tree the index would hold had the apply gone on cleanly: HEAD with the saved staged changes on it, built in
+    a scratch index. None when git cannot build it."""
+    staged_changes = run_in_repo(repo, "diff", "--binary", f"{saved}^1", f"{saved}^2")
+    if staged_changes.returncode != 0:
+        return None
+    with tempfile.TemporaryDirectory() as scratch:
+        env = {**os.environ, "GIT_INDEX_FILE": os.path.join(scratch, "index")}
+        for arguments, stdin in ((("read-tree", "HEAD"), None), (("apply", "--cached"), staged_changes.stdout)):
+            if run_in_repo(repo, *arguments, env=env, stdin=stdin).returncode != 0:
+                return None
+        written = run_in_repo(repo, "write-tree", env=env)
+    if written.returncode != 0:
+        return None
+    return os.fsdecode(written.stdout).strip()
+
+
+def restore_the_split(repo, saved, conflicts):
+    """After a conflicted apply git stages every file that applied; give each one back the index entry it had.
+    Return the staged tree, or exit 1 naming the recovery command when that fails."""
+    tree = staged_tree(repo, saved)
+    if tree is None:
+        sys.exit("pull_keep_index: the local changes conflict and the staged files could not be told apart. "
+                 + recovery_text(repo, saved))
+    base, index = f"{saved}^1", f"{saved}^2"
+    touched = set()
+    for older, newer in ((base, saved), (index, saved), (base, index)):
+        touched.update(listed_paths(repo, older, newer))
+    applied = sorted(touched - set(conflicts))
+    if not applied:
+        return tree
+    reset = run_in_repo(repo, "--literal-pathspecs", "reset", "-q", tree, "--", *applied)
+    if reset.returncode != 0:
+        problem = os.fsdecode(reset.stderr).strip()
+        sys.exit(f"pull_keep_index: could not restore the staged files: {problem}. " + recovery_text(repo, saved))
+    return tree
+
+
 def put_back(repo, saved):
-    """Apply the saved changes with their index; exit 1 naming the recovery command when that fails."""
-    applied = subprocess.run(["git", "-C", repo, "stash", "apply", "--index", "--quiet", saved],
-                             capture_output=True, text=True)
+    """Apply the saved changes with their index, naming the saved commit to the built-page merge driver of
+    ~/agent-evals so it rebuilds a page it would else merge as text. Exit 1 naming the recovery command when that
+    fails; on a conflict, first put back each applied file's staged or unstaged state."""
+    env = {**os.environ, BUILT_PAGE_STASH: saved}
+    applied = run_in_repo(repo, "stash", "apply", "--index", "--quiet", saved, env=env)
     if applied.returncode == 0:
         return
-    sys.stderr.write(applied.stderr)
-    sys.exit("pull_keep_index: the local changes did not go back on cleanly. " + recovery_text(repo, saved))
+    sys.stderr.write(os.fsdecode(applied.stderr))
+    conflicts = listed_paths(repo, "--diff-filter=U")
+    if not conflicts:
+        sys.exit("pull_keep_index: the local changes did not go back on cleanly. " + recovery_text(repo, saved))
+
+    tree = restore_the_split(repo, saved, conflicts)
+    names = " ".join(conflicts)
+    sys.exit(f"pull_keep_index: the local changes conflict with the pull in: {names}. The other files are back, "
+             f"staged or unstaged as before. Fix the conflict markers, then run: git -C {repo} reset -q {tree} -- "
+             f"{names}\nThat marks them resolved with their staged text. The local changes are saved in {saved}.")
 
 
 def main(arguments):

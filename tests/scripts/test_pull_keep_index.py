@@ -113,6 +113,58 @@ class PullKeepIndexTest(unittest.TestCase):
         saved = finished.stderr.split("stash apply --index ")[1].split()[0]
         self.assertEqual(self.git(self.repo, "show", saved + ":f"), "mine\n")
 
+    def add_files(self, *names):
+        for name in names:
+            self.write(self.repo, name, "1\n")
+        self.git(self.repo, "add", *names)
+        self.git(self.repo, "commit", "-qm", "more files")
+        self.git(self.repo, "push", "-q")
+
+    def test_the_re_apply_names_the_saved_commit_to_the_built_page_driver(self):
+        # The agent-evals built-page driver rebuilds a page during a stash apply only when BUILT_PAGE_STASH names it.
+        recorder = self.tmp / "record_driver.py"
+        recorder.write_text("import os, pathlib, sys\n"
+                            "pathlib.Path(sys.argv[1]).write_text(os.environ.get('BUILT_PAGE_STASH', ''))\n"
+                            "pathlib.Path(sys.argv[3]).write_text(pathlib.Path(sys.argv[4]).read_text())\n")
+        record = self.tmp / "record"
+        self.git(self.repo, "config", "merge.built-page.driver", f"{sys.executable} {recorder} {record} %O %A %B")
+        self.write(self.repo, ".gitattributes", "f merge=built-page\n")
+        self.git(self.repo, "add", ".gitattributes")
+        self.git(self.repo, "commit", "-qm", "attributes")
+        self.git(self.repo, "push", "-q")
+        self.push_from_other_machine("f", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        saved = record.read_text()
+        self.assertEqual(self.git(self.repo, "show", saved + ":f"), "mine\n")
+        self.assertEqual(self.status(), [" M f"])
+
+    def test_a_conflicting_re_apply_keeps_the_staged_and_unstaged_split(self):
+        self.add_files("k", "m")
+        self.push_from_other_machine("f", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+        self.write(self.repo, "g", "staged\n")
+        self.git(self.repo, "add", "g")
+        self.write(self.repo, "m", "staged\n")
+        self.git(self.repo, "add", "m")
+        self.write(self.repo, "m", "staged then edited\n")
+        self.write(self.repo, "k", "unstaged\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertEqual(sorted(self.status()), [" M k", "M  g", "MM m", "UU f"])
+        self.assertEqual(self.git(self.repo, "show", ":m"), "staged\n")
+        self.assertEqual((self.repo / "m").read_text(), "staged then edited\n")
+        self.assertIn("conflict with the pull in: f.", finished.stderr)
+        recovery = finished.stderr.split("then run: ")[1].split("\n")[0].split()
+        self.write(self.repo, "f", "resolved\n")
+        subprocess.run(recovery, check=True, env={**os.environ, **GIT_ENV})
+        self.assertEqual(sorted(self.status()), [" M f", " M k", "M  g", "MM m"])
+
 
 if __name__ == "__main__":
     unittest.main()

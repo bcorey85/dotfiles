@@ -75,8 +75,8 @@ local FAMILIES = {
     },
   },
   ["tokyonight"] = {
-    -- folke/tokyonight.nvim storm #24283b / day #e1e2e7.
-    schemes = { dark = "tokyonight-storm", light = "tokyonight-day" },
+    -- folke/tokyonight.nvim night #1a1b26 / day #e1e2e7.
+    schemes = { dark = "tokyonight-night", light = "tokyonight-day" },
     accents = {
       dark = { heading1 = "#f7768e", heading = "#e0af68" },
       light = { heading1 = "#f52a65", heading = "#8c6c3e" },

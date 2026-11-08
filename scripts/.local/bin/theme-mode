@@ -128,9 +128,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # ghostty/themes/, ANSI from the plugin's terminal map.
     gruvbox-material:light) echo "gruvbox-material-light" ;;
     gruvbox-material:*)     echo "gruvbox-material-dark" ;;
-    # tokyonight: ghostty BUILTINS — storm dark, day light.
+    # tokyonight: ghostty BUILTINS — night dark, day light.
     tokyonight:light)       echo "TokyoNight Day" ;;
-    tokyonight:*)           echo "TokyoNight Storm" ;;
+    tokyonight:*)           echo "TokyoNight Night" ;;
     # onedarkpro: ghostty's Atom One builtins differ from onedarkpro.nvim —
     # custom files in ghostty/themes/.
     onedarkpro:light)       echo "onedarkpro-light" ;;
@@ -190,7 +190,7 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     bamboo:*)           echo "gruvbox-dark-medium" ;;
     gruvbox-material:light) echo "gruvbox-light-hard" ;;
     gruvbox-material:*)     echo "gruvbox-dark-hard" ;;
-    # tokyonight: hunk ships only tokyo-night (dark), close to storm; light
+    # tokyonight: hunk ships only tokyo-night (dark); light
     # takes the neutral vitesse base.
     tokyonight:light)       echo "vitesse-light" ;;
     tokyonight:*)           echo "tokyo-night" ;;
@@ -1574,9 +1574,9 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       blue="#2e7de9" teal="#118c74" peach="#b15c00"
       ;;
     tokyonight:*)
-      # tokyonight storm (#24283b, bg_dark panel) — verbatim.
+      # tokyonight night (#1a1b26, bg_dark panel) — verbatim.
       base_name="one-dark"
-      accent="#bb9af7" panel_bg="#1f2335" surface_dim="#292e42"
+      accent="#bb9af7" panel_bg="#16161e" surface_dim="#292e42"
       surface0="#3b4261" surface1="#545c7e"
       overlay0="#737aa2" overlay1="#565f89"
       text="#c0caf5" subtext0="#a9b1d6"

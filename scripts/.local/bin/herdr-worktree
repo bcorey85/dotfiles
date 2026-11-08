@@ -11,8 +11,10 @@
 #   --prompt-file the file holding the brief the forked session starts working
 #                 on at once. Only with --fork.
 #   --prompt      the brief as text, in place of --prompt-file.
-#   --base        the ref to branch off. Defaults to origin's default branch,
-#                 fetched first, or HEAD when the repo has no origin.
+#   --base        the ref to branch off. With --fork it defaults to HEAD, the
+#                 branch the forked conversation was working on. Otherwise it
+#                 defaults to origin's default branch, fetched first, or HEAD
+#                 when the repo has no origin.
 #
 # The worktree lands beside the main checkout: <repo>-<TICKET-NUM> for a
 # TICKET-NUM-desc branch, otherwise <repo>-<desc> (feature/ and fix/ dropped,
@@ -99,7 +101,9 @@ main_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir
 
 if [ -z "$base" ]; then
     base=HEAD
-    if git remote get-url origin &>/dev/null; then
+    # A fork carries this conversation's work on, so its lane starts from the
+    # branch checked out here, unpushed commits included.
+    if [ -z "$fork" ] && git remote get-url origin &>/dev/null; then
         default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) \
             || default_branch=""
         if [ -n "$default_branch" ]; then

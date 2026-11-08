@@ -1183,6 +1183,17 @@ class ShellWriteGateTest(unittest.TestCase):
         finished = run_in("echo hi > existing.txt", outside, "coder")
         self.assertEqual((finished.returncode, finished.stdout), (0, ""))
 
+    def test_a_denied_git_show_or_cat_file_redirect_names_git_restore(self):
+        for command in ("git show HEAD:tracked.txt > tracked.txt",
+                        "git -C . show HEAD:tracked.txt > tracked.txt",
+                        "git cat-file -p HEAD:tracked.txt > tracked.txt"):
+            reason = self.assert_denied(command, agent="coder")
+            self.assertIn("git restore --source=<rev> -- <path>", reason, command)
+        reason = self.assert_denied("echo hi > tracked.txt", agent="coder")
+        self.assertNotIn("git restore", reason)
+        reason = self.assert_denied("git show HEAD > tracked.txt", agent="coder")
+        self.assertNotIn("git restore", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

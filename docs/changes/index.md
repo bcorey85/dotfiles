@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-864 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+865 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-07, [The close-pass recap lists criteria changes from the sign-off lines](notes/2026-11-07-the-close-pass-recap-lists-criteria-changes-from.md).
+Latest change: 2026-11-07, [code_wait waits for a reviewer's hand-back to reach its transcript](notes/2026-11-07-code-wait-waits-for-a-reviewer-s-hand-back-to.md).
 
 ## Top gains
 

@@ -111,7 +111,7 @@ Singleton {
             orange: "#fe640b", yellow: "#df8e1d", magenta: "#8839ef"
         },
         "tokyonight-dark": {
-            bg: "#24283b", panel: "#1f2335", border: "#3b4261",
+            bg: "#1a1b26", panel: "#16161e", border: "#3b4261",
             fg: "#c0caf5", muted: "#565f89",
             green: "#9ece6a", red: "#f7768e", teal: "#1abc9c",
             orange: "#ff9e64", yellow: "#e0af68", magenta: "#bb9af7"

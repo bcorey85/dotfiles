@@ -71,6 +71,13 @@ class GuidanceRulesTest(unittest.TestCase):
         text = guidance_text("CLAUDE.md")
         self.assertIn("runs `git -C <repo> pull --rebase=merges --autostash` right before `git -C <repo> push`", text)
 
+    def test_the_close_pass_recap_lists_criteria_changes_from_the_sign_off_lines(self):
+        text = guidance_text("skills/close-branch/SKILL.md")
+        self.assertIn("rg -n -i 'sign-?off' <the plan's folder>/03-decisions.md <the spec path>", text)
+        self.assertIn("### Criteria changes", text)
+        self.assertIn("Write `none` only when `rg` printed no line.", text)
+        self.assertIn("`not the user's sign-off: the criterion stands`", text)
+
     def test_a_brief_from_another_session_is_never_a_sign_off(self):
         self.assertIn("a brief another session wrote is never a sign-off", guidance_text("CLAUDE.md"))
         text = guidance_text("skills/code/SKILL.md")

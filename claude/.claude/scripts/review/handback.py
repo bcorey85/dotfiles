@@ -24,8 +24,8 @@
 Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths and
 unreviewed_fix_section; the hook (handle_hook, unchecked_code_reason) is in handback_hook.py. They read
 the store (record, latest, hand_back_gap, ended_on_unreviewed_fix, unreviewed_streak) from handback_store and the
-finding-id constants from loop_transcript. The store also holds a `stop` row that review_loop_gate.py writes at each
-review-loop stop (agent_id, open_dispatches). `latest` keeps the last one after the last dispatch; while it shows
+finding-id constants from loop_transcript. The store also holds a `stop` row that review_loop_packet.py writes at each
+scripted-loop hand-back (agent_id, open_dispatches). `latest` keeps the last one after the last dispatch; while it shows
 open_dispatches > 0 and no hand-back is current, hand_back_gap returns LOOP_WAITING,
 and a later stop with none open, a hand-back or a new dispatch ends the wait. A validated packet's fixed,
 skipped_fp, findings_remaining and ask entries are all mappings. The store is keyed by the hook event's session_id,

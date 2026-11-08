@@ -12,7 +12,6 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import full_check
 import handback
 import handback_store
-import review_loop_gate
 import script_utils
 from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED
 
@@ -124,7 +123,12 @@ def write_handback_rows(args, message, status, ask_rows, unreviewed_fix):
                                        unreviewed_fix=unreviewed_fix and status in handback.CLEAN_STATUSES)
     except Exception as error:
         report_write_failure("hand-back row", error)
-    review_loop_gate.record_stop({"session_id": args.session, "agent_id": args.agent_id}, 0, ask_rows)
+    # The stop row ends any wait-for-loop and carries the ask rows, so `review_fix.py packet` can give each ask its id.
+    try:
+        handback_store.record(args.session, "stop", agent_id=args.agent_id or "unknown", open_dispatches=0,
+                              ask_rows=list(ask_rows), blocked=False)
+    except Exception as error:
+        report_write_failure("stop row", error)
 
     # The /code run that launched this loop can end before the loop hands back, and then nothing records the tree.
     # So the loop records the tree it ended clean on itself, under the commit gate's hand-back rule.

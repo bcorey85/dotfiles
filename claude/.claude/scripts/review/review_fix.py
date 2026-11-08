@@ -17,9 +17,9 @@ still judges.
       refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
       `ACTION: stop-no-handback` and leaves the saved state alone: re-dispatch once, then stop and show the user the
       loop's final text on a second miss. When the loop's latest stop left a background agent or shell running (the
-      stop row review_loop_gate.py stores), it prints `ACTION: wait-for-loop` and exits 3: do not re-dispatch, end the
-      turn, and run `packet` again when the review-loop's completion notice arrives. That counts no miss. A second
-      `packet` on the same stop row (saved per skill in <git dir>/review-fix/waits.json) prints `ACTION: stop`
+      stop row shows open_dispatches above 0), it prints `ACTION: wait-for-loop` and exits 3: do not re-dispatch,
+      end the turn, and run `packet` again when the review-loop's completion notice arrives. That counts no miss. A
+      second `packet` on the same stop row (saved per skill in <git dir>/review-fix/waits.json) prints `ACTION: stop`
       and exits 2: show the user, do not re-dispatch. A new stop row waits again.
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the

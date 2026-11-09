@@ -118,7 +118,7 @@ local FAMILIES = {
     own_comment_contrast = true,
     accents = {
       -- H1 takes the constant magenta; H2-H6 the function violet.
-      dark = { heading1 = "#e34990", heading = "#7980d4", bullet = "#9b9fa6" },
+      dark = { heading1 = "#ee5399", heading = "#8289de", bullet = "#a4a8af" },
       light = { heading1 = "#a80e62", heading = "#4b47b6", bullet = "#4e5158" },
     },
   },
@@ -128,7 +128,7 @@ local FAMILIES = {
     colors_name = "dredge-roles",
     own_comment_contrast = true,
     accents = {
-      dark = { heading1 = "#df4a8f", heading = "#7d83d6", bullet = "#9b9fa6" },
+      dark = { heading1 = "#ea5498", heading = "#868ce0", bullet = "#a4a8af" },
       light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
     },
   },

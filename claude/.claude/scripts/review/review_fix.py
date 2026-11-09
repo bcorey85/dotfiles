@@ -12,6 +12,8 @@ still judges.
       --escape "file=<p>|class=<c>|severity=<s>|gate_missed=<g>|guard=<r>|desc=<one line>"   (fix, repeatable)
       --aikido "<path>:<line>=<comment_id>"                                                 (fix, repeatable)
       --pr <number>  (fix) the PR the Aikido comments are on; without it gh asks the current branch
+      --launch <launch.json>  the run's launch record, which `launch` adds to the packet command it prints; asks-done
+                     reads the fix run's flags from it
       With empty stdin, `packet` reads this session's latest review-loop hand-back: the loop script stores it
       itself (write_handback_rows) after `launch`, and handback.py's hook stores it for a dispatched agent. It
       refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
@@ -32,8 +34,16 @@ still judges.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review_fix.py asks-done [--by <user|session>] [--packet <packet_id>] <outcome>...
                                          one outcome per ask, in order: accepted | rejected | modified, optional
-                                         ":<one line note>" after it, accepted and not stored. Logs one row per ask,
-                                         once. --by session when the session ruled on the asks itself; default user.
+                                         ":<one line note>" after it; modified needs the note, the user's change.
+                                         Logs one row per ask, once. With an ask accepted or modified it writes them
+                                         to <git dir>/review-fix/ask-findings.md and prints `ACTION: redispatch`
+                                         with the fix run's launch line (review_fix_asks.py). `ACTION: done` when
+                                         all are rejected, when only plan-impact asks were accepted (they write no
+                                         findings), and on a retry after the launch line printed (it prints the
+                                         stored launch line again). `ACTION: launch-fix-run` when the run has no
+                                         launch flags on record: the findings file is written and the line is
+                                         `review_fix.py launch --fix <file> --iter <n> --repo <repo> --detach`.
+                                         --by session when the session ruled on the asks itself; default user.
                                          Answers one packet. When a second packet handed back before the first one's
                                          asks were answered, both wait: asks-done then refuses and lists them, and
                                          --packet <packet_id> names the one the outcomes belong to.
@@ -51,8 +61,6 @@ State lives in <git dir>/review-fix/state.json. A packet that does not parse sto
 REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH override the nvim-jump
 and gh commands; REVIEW_FIX_LOOP_SCRIPT overrides the loop script `launch` runs; HANDBACK_STORE_DIR overrides the
 hand-back store; CLAUDE_CODE_SESSION_ID names the session."""
-import argparse
-import datetime
 import json
 import os
 import pathlib
@@ -70,15 +78,29 @@ import review_asks
 import review_launch
 import script_utils
 from capped_review import CAP_REACHED
-from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, is_plan_impact_ask, item_text
-from review_asks import ASK_OUTCOMES
+from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
+from review_fix_asks import command_asks_done
+from review_fix_state import (
+    ADD_DEVIATIONS_LINE,
+    ASK_LOGGER,
+    CLAUDE_DIR,
+    REVIEW_FIX_COMMAND,
+    UsageError,
+    argument_parser,
+    has_unanswered_asks,
+    load_fix_state,
+    print_action,
+    print_user_block,
+    read_state,
+    repo_that_logged_packet_asks,
+    review_fix_dir,
+    review_fix_state_file,
+    save_fix_state,
+)
 from saved_handback import NoHandbackError, dispatched_repo, read_message
 from script_utils import one_line, run_command, split_location
 
-CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
 SOURCES = ["conversation", "cc", "handoff"]
-ASK_LOGGER = CLAUDE_DIR / "skills/review/log-review-finding"
-DECIDE_SCRIPT = "python3 ~/.claude/scripts/review/review_fix.py"
 PLAN_ARG_NOTE = "--plan <the plan path, when the handoff names one>"
 DECIDE_USAGE = f"{plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}"
 NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
@@ -86,70 +108,8 @@ LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
 DEFER_LINE_PREFIX = "plan_impact: RESOLVED: deferred to phase end"
 DEFER_LINE = f"{DEFER_LINE_PREFIX} by the session, <date>: <summary>"
-NEW_FINDING_ID = "new-finding-id"
 LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_LOOP_SCRIPT",
                                           pathlib.Path(__file__).resolve().parent / "review_loop_script.py"))
-
-class UsageError(Exception):
-    pass
-
-
-# ---------- shell helpers ----------
-
-def review_fix_dir():
-    found = script_utils.git_path(".", "review-fix")
-    if found is None:
-        raise UsageError("not inside a git repo")
-    return found
-
-
-def review_fix_state_file():
-    return review_fix_dir() / "state.json"
-
-
-def read_state():
-    """The saved state, or None when there is none or it is unreadable."""
-    path = review_fix_state_file()
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text())
-    except ValueError:
-        return None
-
-
-def load_fix_state():
-    state = read_state()
-    if state is not None:
-        return state
-    path = review_fix_state_file()
-    if path.exists():
-        raise UsageError(f"{path} is not readable JSON")
-    raise UsageError(f"no packet was processed in {path.parent} (the state is kept per repo, and this call ran in "
-                     f"{pathlib.Path.cwd()}). If `packet` ran in another repo, run this call there; if it ran "
-                     "in none, run `packet` first.")
-
-
-def save_fix_state(state):
-    path = review_fix_state_file()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=1))
-
-
-def record_packet_asks_logged(packet_id):
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    if not session_id:
-        return
-    repo = script_utils.work_tree_top(".")
-    handback_store.record_asks_logged(session_id, packet_id, repo)
-
-
-def repo_that_logged_packet_asks(packet_id):
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    if not session_id:
-        return None
-    return handback_store.repo_that_logged_the_asks(session_id, packet_id)
-
 
 # ---------- options ----------
 
@@ -177,12 +137,6 @@ def parse_aikido(spec):
     return {"path": path, "line": line, "comment_id": comment_id.strip()}
 
 
-def argument_parser(name):
-    parser = argparse.ArgumentParser(prog=f"review_fix.py {name}", add_help=False)
-    parser.error = lambda message: (_ for _ in ()).throw(UsageError(message))
-    return parser
-
-
 def packet_arguments(argv):
     parser = argument_parser("packet")
     parser.add_argument("--skill", required=True, choices=["review", "fix"])
@@ -192,7 +146,14 @@ def packet_arguments(argv):
     parser.add_argument("--escape", action="append", default=[])
     parser.add_argument("--aikido", action="append", default=[])
     parser.add_argument("--pr")
+    parser.add_argument("--launch")
     options = parser.parse_args(argv)
+    options.relaunch_args = []
+    if options.launch:
+        try:
+            options.relaunch_args = review_launch.read_relaunch_args(options.launch)
+        except review_launch.LaunchError as error:
+            raise UsageError(str(error)) from error
     if options.pr is not None and not options.pr.isdigit():
         raise UsageError(f"--pr {options.pr!r} is not a PR number")
     options.lane = options.lane or ("code" if options.skill == "fix" else "none")
@@ -208,18 +169,6 @@ def packet_arguments(argv):
 def is_outstanding(packet):
     findings_left = any(packet[key] for key in ("fixed", "ask", "skipped_fp", "nit", "findings_remaining"))
     return findings_left or bool(handback.held_plan_impacts(packet))
-
-
-def print_user_block(text):
-    print("-----BEGIN USER TEXT (paste verbatim)-----")
-    print(text)
-    print("-----END USER TEXT-----")
-
-
-def print_action(action, *lines):
-    print(f"ACTION: {action}")
-    for line in lines:
-        print(line)
 
 
 def stop_for_parse_failure(error, raw_message):
@@ -244,7 +193,7 @@ def update_skill_file(name, skill, update):
     if saved.get(skill) != entry:
         saved[skill] = entry
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(saved))
+        script_utils.write_text_atomically(path, json.dumps(saved))
     return result
 
 
@@ -299,7 +248,7 @@ def plan_impact_question_lines(plan_impact, packet):
         f"Options, in this order: {' / '.join(plan_format.PLAN_IMPACT_OPTIONS)}.",
         "Map the answer, picked or typed, to adopt, keep or discuss. For adopt or keep, put the user's words in "
         "--ruling; for discuss, run `decide discuss`.",
-        f'Then run: {DECIDE_SCRIPT} decide <adopt|keep> --by user --ruling "<the decision in one line>" '
+        f'Then run: {REVIEW_FIX_COMMAND} decide <adopt|keep> --by user --ruling "<the decision in one line>" '
         f"{PLAN_ARG_NOTE}",
         plan_format.DECIDE_BY_NOTE,
         f"Counters held for the re-dispatch: iter={packet['iter']} "
@@ -310,7 +259,7 @@ def plan_impact_question_lines(plan_impact, packet):
 def plan_impact_deviation_lines(adopted):
     """The `## Plan Deviations` lines for the plan impacts adopted by rule, no question asked."""
     owner = plan_format.SESSION_RULING_OWNER
-    ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    ruled_at = plan_format.ruled_at_now()
     choice = plan_format.DECISION_WORDS["adopt"]
     lines = []
     for impact in adopted:
@@ -341,7 +290,7 @@ def present_plan_impacts(packet, state):
     lines = []
     if adopted:
         lines += ["Plan impacts adopted by rule (no acceptance criterion changes, so the code wins; no one was asked). "
-                  "Add these lines under ## Plan Deviations in the plan, and show the user:",
+                  + ADD_DEVIATIONS_LINE,
                   *plan_impact_deviation_lines(adopted)]
     for impact in toolkit:
         lines += [f"Toolkit fault, not a plan change (the {impact['gate']} {plan_format.cause_stop(impact['cause'])}):",
@@ -387,10 +336,10 @@ def asks_done_line(asks, state):
     command runs as printed."""
     packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
     outcome_slots = " ".join(f"<outcome-{number}>" for number in range(1, len(asks) + 1))
-    return (f"After the user answers, run once: python3 ~/.claude/scripts/review/review_fix.py asks-done "
+    return (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
             f"{packet_flag}{outcome_slots}  (one outcome per ask, in order; accepted: make the proposed change | "
-            "rejected: leave the code as it stands | modified: make the user's change instead; optional "
-            "':<one line note>', accepted and not stored)")
+            "rejected: leave the code as it stands | 'modified:<the user's change in one line>', quoted as one shell "
+            "word: make that change instead; an optional ':<one line note>' after accepted or rejected is not stored)")
 
 
 def present_packet_asks(packet, state):
@@ -512,7 +461,10 @@ def new_state(options, packet, packet_id):
     state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
              "review_round": packet["review_round"], "spec_iter": packet["spec_iter"], "status": packet["status"],
              "branch": script_utils.current_branch(".") or "-", "packet_id": packet_id,
-             "source": options.source, "fixed_paths": fixed_paths}
+             "source": options.source, "fixed_paths": fixed_paths,
+             "files_touched": [str(path) for path in packet["files_touched"]]}
+    if options.relaunch_args:
+        state["relaunch_args"] = options.relaunch_args
     if same_run:
         for key in (
             "stage",
@@ -521,23 +473,22 @@ def new_state(options, packet, packet_id):
             "aikido_posted",
             "escapes_logged",
             "asks_logged",
+            "asks_redispatched",
+            "asks_launch_line",
+            "last_asks_launch_line",
+            "asks_deviations_printed",
             "plan_impact",
             "plan_impact_held",
             "plan_impact_applied",
             "carried_findings",
             "waiting_packets",
+            "relaunch_args",
         ):
             if key in previous:
                 state[key] = previous[key]
     if waiting_packets:
         state["waiting_packets"] = waiting_packets
     return state
-
-
-def has_unanswered_asks(packet_state):
-    asks = packet_state.get("asks") or []
-    logged = packet_state.get("asks_logged", [])
-    return any(index not in logged for index in range(len(asks)))
 
 
 def carried_waiting_packets(previous):
@@ -612,7 +563,7 @@ def scoped_rerun_lines(packet):
 
     touched_text = dict.fromkeys(fix_files, "touched by the capped run's fixes")
     file_flags = " ".join(f"--file {shlex.quote(path)}" for path in changed)
-    lines = [f"Launch line: {DECIDE_SCRIPT} launch --repo {shlex.quote(str(repo))} --iter 0 {file_flags}",
+    lines = [f"Launch line: {REVIEW_FIX_COMMAND} launch --repo {shlex.quote(str(repo))} --iter 0 {file_flags}",
              "Handoff lines (write exactly these):", "handoff:", "  files:",
              *handoff_files.file_entry_lines(changed, touched_text, "changed in the working tree against HEAD")]
     lines += ["  tests-run: none", f"  flagged: the open class - {one_line('; '.join(packet['open_classes']))}",
@@ -783,135 +734,13 @@ def fill_packet_ask_ids(packet, state):
     review_asks.supply_finding_ask_ids(packet["ask"], os.environ.get("CLAUDE_CODE_SESSION_ID", ""), ASK_LOGGER, state)
 
 
-def read_outcomes(argv, asks):
-    """The outcome word of each ask. A note after `:` is accepted and dropped."""
-    if len(argv) != len(asks):
-        raise UsageError(f"{len(asks)} ask(s) waiting but {len(argv)} outcome(s) given")
-    outcomes = [word.partition(":")[0] for word in argv]
-    for word, outcome in zip(argv, outcomes, strict=True):
-        if outcome not in ASK_OUTCOMES:
-            raise UsageError(f"outcome {word!r} is not one of {'|'.join(ASK_OUTCOMES)}")
-    return outcomes
-
-
-def log_fix_ask_outcomes(state, asks, outcomes, decided_by="user"):
-    """(ask counts of this call: plan-impact asks skipped, outcomes logged under a new finding_id; failure lines). An
-    ask that is logged or skipped joins asks_logged and is never tried again."""
-    logged = state.setdefault("asks_logged", [])
-    ask_counts = {PLAN_IMPACT_STATUS: 0, NEW_FINDING_ID: 0}
-    failures = []
-    for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True)):
-        if index in logged:
-            continue
-
-        outcome_row = review_asks.log_ask_outcome(ASK_LOGGER, state, item, outcome, decided_by)
-        if outcome_row is None:
-            ask_counts[PLAN_IMPACT_STATUS] += 1
-            logged.append(index)
-            continue
-        if outcome_row.code == 0:
-            logged.append(index)
-            if outcome_row.new_finding_id_note:
-                print(f"review-fix: {outcome_row.new_finding_id_note}", file=sys.stderr)
-                ask_counts[NEW_FINDING_ID] += 1
-            continue
-        path, line = split_location(item.get("file_line") or "-")
-        failures.append(f"{path}:{line}: {one_line(outcome_row.output, 160)}")
-    return ask_counts, failures
-
-
-def waiting_ask_packets(state):
-    """The packets that hold unanswered asks: the current one, then the kept ones, oldest first."""
-    waiting = []
-    # A stage-asks state with every ask already logged is a retry that asks-done must still accept.
-    if has_unanswered_asks(state) or (state.get("stage") == "asks" and state.get("asks")):
-        waiting.append(state)
-    waiting += [kept for kept in state.get("waiting_packets") or [] if has_unanswered_asks(kept)]
-    return waiting
-
-
-def waiting_packet_lines(waiting):
-    lines = []
-    for packet_state in waiting:
-        asks = packet_state["asks"]
-        first = asks[0]
-        lines.append(f"- {packet_state['packet_id']}: {len(asks)} ask(s); first: "
-                     f"{first.get('file_line') or 'no file:line'} {one_line(first['question'], 120)}")
-    return lines
-
-
-def choose_asks_packet(waiting, packet_id):
-    """The one waiting packet the outcomes belong to. Refuses when several wait and none is named."""
-    if packet_id is None and len(waiting) == 1:
-        return waiting[0]
-    if packet_id is None:
-        raise UsageError("more than one packet holds unanswered asks. Rerun asks-done with --packet <packet_id> for "
-                         "the one you answer:\n" + "\n".join(waiting_packet_lines(waiting)))
-    for packet_state in waiting:
-        if packet_state["packet_id"] == packet_id:
-            return packet_state
-    raise UsageError(f"--packet {packet_id!r} is not a packet with unanswered asks. Waiting:\n"
-                     + "\n".join(waiting_packet_lines(waiting)))
-
-
-def asks_done_options(argv):
-    """(outcome words, who decided, the named packet_id or None) of an asks-done call."""
-    outcome_words, decided_by = script_utils.pop_option(argv, "--by")
-    if decided_by is None:
-        decided_by = "user"
-    if not plan_format.is_ruling_by(decided_by):
-        raise UsageError(f"asks-done --by needs user or session, not {decided_by!r}")
-
-    outcome_words, packet_id = script_utils.pop_option(outcome_words, "--packet")
-    if packet_id == "":
-        raise UsageError("asks-done --packet needs a packet_id")
-    return outcome_words, decided_by, packet_id
-
-
-def command_asks_done(argv):
-    state = load_fix_state()
-    waiting = waiting_ask_packets(state)
-    if not waiting:
-        if state.get("stage") == "done" and state.get("asks"):
-            return print_action("done", "The ask outcomes were already logged. Run nothing more.")
-        raise UsageError("no asks are waiting. `asks-done` follows a packet that carried ask[] entries.")
-
-    outcome_words, decided_by, packet_id = asks_done_options(argv)
-    target = choose_asks_packet(waiting, packet_id)
-    asks = target["asks"]
-    outcomes = read_outcomes(outcome_words, asks)
-
-    ask_counts, failures = log_fix_ask_outcomes(target, asks, outcomes, decided_by)
-    if not failures and target is state:
-        state["stage"] = "done"
-    if not failures and target is not state:
-        state["waiting_packets"] = [kept for kept in state["waiting_packets"] if kept is not target]
-    save_fix_state(state)
-    if not failures:
-        record_packet_asks_logged(target["packet_id"])
-
-    rows_logged = sum(1 for index in target["asks_logged"] if not is_plan_impact_ask(asks[index]))
-    summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."
-    if decided_by == "session":
-        summary += " The session ruled, not the user."
-    if ask_counts[PLAN_IMPACT_STATUS]:
-        summary += f" {ask_counts[PLAN_IMPACT_STATUS]} plan-impact ask(s) are not logged as findings."
-    if ask_counts[NEW_FINDING_ID]:
-        summary += (f" {ask_counts[NEW_FINDING_ID]} ask(s) without a valid finding_id are logged under a new "
-                    "finding_id.")
-    if failures:
-        summary += " Failures (mention, never block; run the same asks-done again to retry only these):"
-    print_action("done", summary, *["- " + failure for failure in failures])
-    print("MODEL STILL DOES: act on accepted/modified asks as the user directed (dispatch a coder, or edit in scope).")
-
-
 # ---------- plan-impact ruling ----------
 
 def discuss_commands():
     commands = []
     for by, words in (("user", "the decision in one line"), ("session", "your reason")):
         for decision in ("adopt", "keep"):
-            commands.append(f'{DECIDE_SCRIPT} decide {decision} --by {by} --ruling "<{words}>" {PLAN_ARG_NOTE}')
+            commands.append(f'{REVIEW_FIX_COMMAND} decide {decision} --by {by} --ruling "<{words}>" {PLAN_ARG_NOTE}')
     return commands
 
 
@@ -950,7 +779,7 @@ def command_decide(argv):
     record_plan_ruling(state, options.decision, options.by, options.ruling, plan_path)
 
 
-NO_PLAN_LINE = "No --plan was given: add these lines under ## Plan Deviations in the plan yourself, then continue:"
+NO_PLAN_LINE = f"No --plan was given. {ADD_DEVIATIONS_LINE}"
 
 
 def ruling_logged_line(plan_path):
@@ -971,7 +800,7 @@ def write_ruling_entry(decision, by, ruling, plan_path, impact_text):
     """The `## Plan Deviations` entry lines of a plan-impact ruling, appended to plan_path when there is one."""
     choice = plan_format.DECISION_WORDS[decision]
     owner = plan_format.ruling_owner(".", by)
-    ruled_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    ruled_at = plan_format.ruled_at_now()
     entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, impact_text)
     if plan_path is not None:
         plan_format.append_deviation(plan_path, entry)

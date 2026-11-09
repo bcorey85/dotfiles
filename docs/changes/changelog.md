@@ -7,9 +7,15 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-886 changes
+888 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
+
+## Week of 2026-11-09
+
+### Fixed
+
+* [review loop: an accepted ask relaunches the review as a fix run, so its converged hand-back earns commit credit](notes/2026-11-09-review-loop-an-accepted-ask-relaunches-the-review.md) [script/review-fix, script/review-launch, skill/review-fork-run] When the user accepts or modifies an ask, `review_fix.py asks-done` writes those asks to a findings file and prints `ACTION: redispatch` with a `launch --fix` line that carries the first run's flags. The loop's fix coder applies the asks, a review round covers them, and the converged hand-back earns commit credit. All rejected ends with `ACTION: done`.
 
 ## Week of 2026-11-02
 
@@ -53,6 +59,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [eng-spec plan-review escapes are logged with no miss_reason](notes/2026-11-08-eng-spec-plan-review-escapes-are-logged-with-no.md) [skill/eng-spec, script/log-escape] eng-spec step 20b no longer passes miss_reason=plan-gap, and log-escape takes a gate_missed=eng-spec row without it.
 * [code_wait review says why when the loop process is gone, and a second detach in one repo stops](notes/2026-11-08-code-wait-review-says-why-when-the-loop-process-is.md) [script/code-wait, script/code-review-start, skill/code] A second /code run in the same repo can no longer overwrite the running review loop's pid and output, and the review wait now names the open requests and the restart step, exiting 1, when the loop process is gone or left no output.
 * [Plan check accepts repo links to programs outside the repo](notes/2026-11-08-plan-check-accepts-venv-and-node-modules-links-to.md) [script/plan-verification, script/script-utils] The plan check reads whether a repo path is inside the repo from the path's own text, so any repo link to a program outside the repo, such as `.venv/bin/python` or `node_modules/.bin/<tool>`, counts as a command.
+* [The review loop stays on the run's own files](notes/2026-11-08-the-review-loop-stays-on-the-run-s-own-files.md) [script/review-loop-script, script/handback] In a tree where another session holds uncommitted edits, a review loop given a `files:` list reviews and fixes only those files: every other dirty file is held, kept out of the review and the findings, named never-edit in the fix coder's prompt, and never written back; a held file that changes during a coder call is named in the hand-back's tool fault.
 * [pull_keep_index stops before touching a tree inside a stopped rebase](notes/2026-11-08-pull-keep-index-stops-before-touching-a-tree.md) [script/pull-keep-index] A run that starts inside a stopped rebase now exits 1 with the tree and index untouched, where it used to reset the tree hard and lose the local edits; every stop names the branch, the conflicted paths and both ways out.
 * [built-page driver rebuilds pages during a stash apply named by BUILT_PAGE_STASH](notes/2026-11-08-built-page-driver-rebuilds-pages-during-a-stash.md) [script/merge-built-page] agent-evals `bin/merge_built_page.py` treats the stash commit named in BUILT_PAGE_STASH like an autostash, so the re-apply in pull_keep_index.py rebuilds QUEUE.md in place of a text merge.
 * [pull_keep_index re-apply rebuilds built pages and keeps the staged split on a conflict](notes/2026-11-08-pull-keep-index-re-apply-rebuilds-built-pages-and.md) [script/pull-keep-index] The re-apply names its stash commit to the built-page driver, and a conflicting re-apply gives every other file back its staged or unstaged state and prints the conflicted paths and the command that resolves them.

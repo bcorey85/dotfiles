@@ -34,6 +34,11 @@ LATER_PHASE_RULE = (
     "unapplied and report it as a PLAN-IMPACT: "
 )
 
+HELD_FILES_RULE = (
+    "Never edit these files: another session holds uncommitted edits in them. When an issue needs one of them, skip "
+    "it and say so: "
+)
+
 GUIDANCE_RULE = "Guidance from the main session. Follow it within the issues and the plan; it changes neither: "
 
 CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, right after its file:line, or first when "
@@ -79,7 +84,7 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
     return "\n".join(lines)
 
 
-def coder_prompt(repo, findings, small_items, files, gate_env=(), later_phase_files=(), guidance=""):
+def coder_prompt(repo, findings, small_items, files, gate_env=(), later_phase_files=(), guidance="", held_files=()):
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
     body += [f"{index}. {finding}" for index, finding in enumerate(findings, 1)]
     body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
@@ -90,6 +95,8 @@ def coder_prompt(repo, findings, small_items, files, gate_env=(), later_phase_fi
     body += ["", "Files in scope: " + ", ".join(files)]
     if later_phase_files:
         body += ["", LATER_PHASE_RULE + ", ".join(sorted(later_phase_files))]
+    if held_files:
+        body += ["", HELD_FILES_RULE + ", ".join(sorted(held_files))]
     if guidance:
         body += ["", GUIDANCE_RULE + guidance]
     gate_env_text = plan_format.gate_env_text(list(gate_env))

@@ -4,8 +4,9 @@ It starts review_loop_script.py --reviewers main as a detached process and retur
 (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop exits. With --detach (the /review and /fix
 fork) it returns once the loop has started and names the `code_wait.py review --loop` command that waits on it.
 It records the session's dispatch row,
-writes the prompt file, the loop's pid and <loop dir>/launch.json (the packet arguments the wait prints), and keeps
-its state under <git dir>/review-script.
+writes the prompt file, the loop's pid, <loop dir>/handoff.txt and <loop dir>/launch.json (the packet arguments the
+wait prints, and the flags a later fix run of the same review carries), and keeps its state under
+<git dir>/review-script.
 
 A findings file (`--fix`) holds one finding per item: a line that starts with `- ` at column 0, then any indented
 continuation lines. Blank lines may sit between items. Any other line stops the launch.
@@ -44,6 +45,9 @@ AGENT_PREFIX = "review-script-"
 DEFAULT_HANDOFF = "Review the working tree against HEAD."
 FAST_REVIEWER_MODEL = "haiku"
 FINDINGS_JSON = "findings.json"
+HANDOFF_NAME = "handoff.txt"
+# The launch record's flags for a later fix run of the same review: `packet --launch` stores them for asks-done.
+RELAUNCH_KEY = "relaunch_args"
 FINDING_START = "- "
 FINDINGS_FORM = "expected `- <finding>` at column 0, an indented continuation line, or a blank line"
 
@@ -168,11 +172,52 @@ def handoff_text(options, paths):
     return DEFAULT_HANDOFF
 
 
-def packet_args(options):
+def packet_args(options, launch_file):
     args = ["--skill", options.skill]
     if options.base:
         args += ["--scope", "branch-exit"]
-    return [*args, "--lane", options.lane]
+    return [*args, "--lane", options.lane, "--launch", str(launch_file)]
+
+
+def relaunch_args(options, repo, paths, handoff_file):
+    """The flags a later fix run of this review carries: the same repo, range, files, reviewer model, lane and
+    handoff. `--fix`, `--iter` and `--detach` are the caller's to add."""
+    args = ["--repo", str(repo)]
+    if options.base:
+        args += ["--base", options.base]
+    for path in paths:
+        args += ["--file", path]
+    if options.fast:
+        args.append("--fast")
+    if options.deep:
+        args.append("--deep")
+    return [*args, "--lane", options.lane, "--handoff", str(handoff_file)]
+
+
+def relaunch_args_with_files(args, paths):
+    """The relaunch flags with a `--file` for each of paths not already listed. Flags that scope no files stay
+    as they are: adding a file would narrow a whole-tree run."""
+    if "--file" not in args:
+        return list(args)
+    listed = {args[index + 1] for index, word in enumerate(args[:-1]) if word == "--file"}
+    extra = []
+    for path in paths:
+        if path in listed:
+            continue
+        listed.add(path)
+        extra += ["--file", path]
+    return [*args, *extra]
+
+
+def read_relaunch_args(launch_file):
+    """The relaunch flags a launch record holds."""
+    try:
+        args = reviewer_dispatch.read_launch_record(launch_file, RELAUNCH_KEY)
+    except reviewer_dispatch.ManifestError as error:
+        raise LaunchError(f"--launch {error}") from error
+    if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+        raise LaunchError(f"--launch {launch_file}: {RELAUNCH_KEY} is not a list of strings")
+    return args
 
 
 def command_launch(argv, loop_script):
@@ -209,8 +254,12 @@ def command_launch(argv, loop_script):
         write_findings(findings_file, findings)
     prompt = render_prompt(header_pairs(options, base, paths, findings_file), handoff)
     prompt_file, log_path = write_script_prompt(state_dir, agent_id, prompt)
-    launch_record = json.dumps({"packet_args": packet_args(options)}) + "\n"
-    script_utils.write_text_atomically(loop_dir / reviewer_dispatch.LAUNCH_FILE, launch_record)
+    handoff_file = loop_dir / HANDOFF_NAME
+    script_utils.write_text_atomically(handoff_file, handoff)
+    launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
+    launch_record = {"packet_args": packet_args(options, launch_file),
+                     RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file)}
+    script_utils.write_text_atomically(launch_file, json.dumps(launch_record) + "\n")
     print(f"The review loop runs as a script; its log is {log_path}")
     sys.stdout.flush()
 

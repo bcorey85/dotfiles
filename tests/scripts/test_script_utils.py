@@ -30,6 +30,13 @@ class PathIsUnderTest(unittest.TestCase):
         self.assertFalse(script_utils.path_is_under("tas", "task"))
 
 
+class WithoutPathsTest(unittest.TestCase):
+    def test_a_mapping_and_a_list_each_keep_their_shape_less_the_named_paths(self):
+        self.assertEqual({"b": 2}, script_utils.without_paths({"a": 1, "b": 2}, ["a"]))
+        self.assertEqual(["b", "c"], script_utils.without_paths(["a", "b", "c"], ("a",)))
+        self.assertEqual(["a"], script_utils.without_paths(["a"], []))
+
+
 class StateFilePathTest(unittest.TestCase):
     def test_every_character_outside_the_safe_set_becomes_an_underscore_and_the_suffix_is_added(self):
         cases = [

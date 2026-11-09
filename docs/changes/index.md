@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-880 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+881 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [The readability hand-back check reads Vue script blocks and enforces the four new limits](notes/2026-11-08-the-readability-hand-back-check-reads-vue-script.md).
+Latest change: 2026-11-08, [The coder and code reviewer drop the readability lines that changed nothing](notes/2026-11-08-the-coder-and-code-reviewer-drop-the-readability.md).
 
 ## Top gains
 

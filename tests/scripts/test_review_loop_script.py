@@ -389,6 +389,43 @@ class ReviewLoopScriptTest(unittest.TestCase):
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
 
+    def test_a_round_two_docs_fix_outside_the_fix_diff_is_deferred_not_sent_to_the_coder(self):
+        outside_docs = "`notes.py:1` [docs] the value has no comment"
+        second_review = f"## Fix\n- {outside_docs}\n\n## Ask\nNone\n\n## Nit\nNone\n"
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": second_review}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, {"result": "Fixed 1."}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], handback.DEFERRED)
+        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]], [outside_docs])
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 1)
+        notes_rows = [row for row in self.finding_rows() if row["path_key"] == "notes.py"]
+        self.assertEqual([row["actioned"] for row in notes_rows], ["none"])
+
+    def test_a_round_two_bug_fix_outside_the_fix_diff_still_goes_to_the_coder(self):
+        outside_bug = "`notes.py:1` [bug] the value drops key c"
+        outside_docs = "`notes.py:1` [docs] the value has no comment"
+        second_review = f"## Fix\n- {outside_bug}\n- {outside_docs}\n\n## Ask\nNone\n\n## Nit\nNone\n"
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": second_review}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.", "edits": {"notes.py": "value = {'a': 1, 'b': 2, 'c': 3}\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        coders = [call for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertEqual(len(coders), 2)
+        self.assertIn("the value drops key c", coders[1]["prompt"])
+        self.assertNotIn("the value has no comment", coders[1]["prompt"])
+        _, packet = self.stored_packet()
+        self.assertIn(outside_bug, [entry["finding"] for entry in packet["fixed"]])
+        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]], [outside_docs])
+
     def answer_round(self, round_number, text, process):
         """Plays the main session for one review round: waits for the round's manifest, writes `text` as every
         report. Returns the round's requests."""

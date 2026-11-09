@@ -15,6 +15,7 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import diff_ranges
 import review_loop_fix_induced
+from finding_record import parse_finding
 
 OLD = [f"line {number}" for number in range(1, 41)]
 NEW = list(OLD)
@@ -83,6 +84,51 @@ class FixInducedTagTest(unittest.TestCase):
     def test_a_value_the_reviewer_set_is_kept(self):
         self.assertEqual(self.tag("bug", 2, "src/mod.py", 5), "bug")
         self.assertEqual(self.tag("no", 2, "src/mod.py", 20), "no")
+
+
+class SplitOutsideFixesTest(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.out = pathlib.Path(scratch.name)
+        (self.out / "round1-fix.diff").write_text(fix_diff())
+
+    def split(self, iter_number, *texts):
+        findings = [parse_finding(text) for text in texts]
+        sent, deferred = review_loop_fix_induced.split_outside_fixes(self.out, iter_number, findings)
+        return [finding.text for finding in sent], [finding.text for finding in deferred]
+
+    def test_round_two_defers_an_outside_smell_and_sends_an_inside_one(self):
+        inside, outside = "`src/mod.py:21` [smell] long name", "`src/mod.py:5` [smell] long name"
+
+        self.assertEqual(self.split(2, inside, outside), ([inside], [outside]))
+
+    def test_round_two_sends_an_outside_bug_correctness_or_security_finding(self):
+        texts = [f"`src/other.py:3` [{finding_class}] wrong" for finding_class in ("bug", "correctness", "security")]
+
+        self.assertEqual(self.split(2, *texts), (texts, []))
+
+    def test_round_two_sends_a_finding_with_no_file_line(self):
+        unlocated = "[docs] the plan promise has no test"
+
+        self.assertEqual(self.split(2, unlocated), ([unlocated], []))
+
+    def test_round_one_and_a_round_with_no_fix_diff_defer_nothing(self):
+        outside = "`src/mod.py:5` [docs] stale comment"
+
+        self.assertEqual(self.split(1, outside), ([outside], []))
+        self.assertEqual(self.split(3, outside), ([outside], []))
+
+    def test_a_round_after_a_fix_that_changed_nothing_defers_nothing(self):
+        (self.out / "round1-fix.diff").write_text("")
+        outside = "`src/mod.py:5` [docs] stale comment"
+
+        self.assertEqual(self.split(2, outside), ([outside], []))
+
+    def test_a_tail_path_inside_the_fix_is_sent(self):
+        inside_by_tail = "`mod.py:21` [smell] long name"
+
+        self.assertEqual(self.split(2, inside_by_tail), ([inside_by_tail], []))
 
 
 class TelemetryWiringTest(unittest.TestCase):

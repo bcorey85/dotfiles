@@ -3,16 +3,22 @@
   readability_check.py [--base REV]      (run from inside a git repo; REV defaults to HEAD)
 
 The changed lines are the added lines of `git diff -U0 REV` against the working tree, plus every line of each
-untracked file. Test files are left out. Python is read with `ast`; TS and JS with readability_ts.mjs beside this
-file, using the `typescript` package of the file's project, else the global one. A file with no usable typescript, or
-one that does not parse, is skipped.
+untracked file. Test files are left out. Python is read with `ast`; TS, JS and the <script> blocks of a .vue file with
+readability_ts.mjs beside this file, using the `typescript` package of the file's project, else the global one. A file
+with no usable typescript, one that does not parse, or a .vue file with no <script> block is skipped.
 
 A function breaks a limit when:
   - a control statement on an added line sits more than MAX_NESTING levels deep in it (an else-if stays at its if's
     level; a nested function counts from zero);
   - it spans more than MAX_FUNCTION_LINES lines, and the change wrote at least half of it or took it past the limit;
   - an added line holds a chained ternary;
-  - an added line passes a call result straight into a call that is itself an argument.
+  - an added line passes a call result straight into a call that is itself an argument;
+  - an added line passes a ternary straight as a call argument;
+  - an added line holds a comprehension with two or more `for` clauses, or one inside another (Python only);
+  - an added line returns a tuple literal of MIN_WIDE_TUPLE or more values (TS: an array literal, in a function with a
+    tuple return type or none);
+  - its def line is added and it takes more than MAX_PARAMETERS parameters, self, cls and a TS `this` left out; a
+    function whose name starts with `test` is left out.
 
 Exit 0: no hit. Exit 1: hits, printed up to MAX_HIT_LINES lines with the fix for each. The check fails open: when git
 cannot give the diff it says so on stderr and exits 0, so a broken environment never blocks a hand-back.
@@ -34,22 +40,57 @@ from source_paths import is_test_path
 HELPER = pathlib.Path(__file__).resolve().parent / "readability_ts.mjs"
 MAX_NESTING = 2
 MAX_FUNCTION_LINES = 40
+MAX_PARAMETERS = 5
+MIN_WIDE_TUPLE = 3
 MAX_HIT_LINES = 10
 HELPER_TIMEOUT_SECONDS = 120
 PY_SUFFIXES = (".py",)
-TS_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
+TS_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".vue")
 SKIPPED_SUFFIXES = (".min.js", ".d.ts")
 
 NESTING_FIX = "Return early on the guard case, or move the inner block into a function named for what it does."
 LENGTH_FIX = "Split it into named steps, one function per step."
 TERNARY_FIX = "Write it as an if/else or a lookup table."
 DEEP_CALL_FIX = "Put the inner result in a named variable first."
+ARGUMENT_TERNARY_FIX = "Assign it to a named variable first."
+COMPREHENSION_FIX = "Write the outer loop as a for statement."
+WIDE_TUPLE_FIX = "Return a dataclass, NamedTuple or interface."
+PARAMETERS_FIX = "Pass one named object."
+
+LINE_LIMITS = (
+    ("ternary", "chained ternary", TERNARY_FIX),
+    ("deep", "deep call (a call result passed into a call that is an argument)", DEEP_CALL_FIX),
+    ("argternary", "ternary as a call argument", ARGUMENT_TERNARY_FIX),
+    ("comp", "comprehension with two loops or a nested comprehension", COMPREHENSION_FIX),
+)
 
 PY_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 PY_CONTROL = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.Match)
 if hasattr(ast, "TryStar"):
     PY_CONTROL += (ast.TryStar,)
 PY_TRANSPARENT = (ast.Starred, ast.Await, ast.UnaryOp, ast.JoinedStr, ast.FormattedValue)
+PY_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+PY_RECEIVERS = ("self", "cls")
+
+
+def parameter_entry(node):
+    """[def line, parameter count] of a def, self and cls left out; None for a lambda."""
+    if isinstance(node, ast.Lambda):
+        return None
+    arguments = node.args
+    names = [argument.arg for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]]
+    names += [argument.arg for argument in (arguments.vararg, arguments.kwarg) if argument]
+    if names and names[0] in PY_RECEIVERS:
+        names = names[1:]
+    return [node.lineno, len(names)]
+
+
+def is_wide_comprehension(node):
+    """Whether a comprehension has two or more `for` clauses or holds another comprehension."""
+    if len(node.generators) >= 2:
+        return True
+    inner_nodes = (inner for inner in ast.walk(node) if inner is not node)
+    return any(isinstance(inner, PY_COMPREHENSIONS) for inner in inner_nodes)
 
 
 class PythonFunctions(ast.NodeVisitor):
@@ -65,7 +106,8 @@ class PythonFunctions(ast.NodeVisitor):
     def visit_function(self, node):
         outer = (self.record, self.depth, self.call_level)
         name = getattr(node, "name", "<lambda>")
-        self.record = {"name": name, "s": node.lineno, "e": node.end_lineno, "deep": [], "nest": [], "ternary": []}
+        self.record = {"name": name, "s": node.lineno, "e": node.end_lineno, "deep": [], "nest": [], "ternary": [],
+                       "argternary": [], "comp": [], "wide": [], "params": parameter_entry(node)}
         self.records.append(self.record)
         self.depth = 0
         self.call_level = 0
@@ -85,11 +127,17 @@ class PythonFunctions(ast.NodeVisitor):
             return self.visit_function(node)
         if isinstance(node, ast.ClassDef):
             return self.visit_class(node)
+        if self.record is None:
+            return self.visit_plain(node)
         if isinstance(node, ast.Call):
             return self.visit_call(node)
         if isinstance(node, ast.IfExp):
             return self.visit_ternary(node)
-        if self.record is not None and isinstance(node, PY_CONTROL) and id(node) not in self.else_ifs:
+        if isinstance(node, ast.Return):
+            return self.visit_return(node)
+        if isinstance(node, PY_COMPREHENSIONS):
+            return self.visit_comprehension(node)
+        if isinstance(node, PY_CONTROL) and id(node) not in self.else_ifs:
             return self.visit_control(node)
         return self.visit_plain(node)
 
@@ -112,18 +160,31 @@ class PythonFunctions(ast.NodeVisitor):
 
     def visit_ternary(self, node):
         parts = (node.test, node.body, node.orelse)
-        if self.record is not None and any(isinstance(part, ast.IfExp) for part in parts):
+        if any(isinstance(part, ast.IfExp) for part in parts):
             self.record["ternary"].append(node.lineno)
+        self.visit_plain(node)
+
+    def visit_return(self, node):
+        is_wide = isinstance(node.value, ast.Tuple) and len(node.value.elts) >= MIN_WIDE_TUPLE
+        if is_wide:
+            self.record["wide"].append([node.lineno, len(node.value.elts)])
+        self.visit_plain(node)
+
+    def visit_comprehension(self, node):
+        if is_wide_comprehension(node):
+            self.record["comp"].append(node.lineno)
         self.visit_plain(node)
 
     def visit_call(self, node):
         level = self.call_level
-        if self.record is not None and level >= 2:
+        if level >= 2:
             self.record["deep"].append(node.lineno)
         self.call_level = 0
         self.visit(node.func)
         arguments = [*node.args, *(keyword.value for keyword in node.keywords)]
         for argument in arguments:
+            if isinstance(argument, ast.IfExp):
+                self.record["argternary"].append(argument.lineno)
             self.call_level = level + 1
             self.visit(argument)
         self.call_level = level
@@ -193,7 +254,10 @@ def records_by_file(files):
         typescript_groups.setdefault(tsdir, []).append(file)
 
     for tsdir, group in typescript_groups.items():
-        records.update(typescript_records(group, tsdir) if tsdir else dict.fromkeys(group))
+        if tsdir is None:
+            records.update(dict.fromkeys(group))
+            continue
+        records.update(typescript_records(group, tsdir))
     return records
 
 
@@ -259,6 +323,17 @@ def is_long(own, added):
     return lines_before <= MAX_FUNCTION_LINES or 2 * added_inside >= len(own)
 
 
+def parameter_hits(record, added):
+    """[(line, text)] for a function whose def line the change wrote and that takes more than MAX_PARAMETERS."""
+    entry = record["params"]
+    if entry is None or record["name"].startswith("test"):
+        return []
+    line, count = entry
+    if line not in added or count <= MAX_PARAMETERS:
+        return []
+    return [(line, f"{record['name']} — parameters ({count}, limit {MAX_PARAMETERS}): {PARAMETERS_FIX}")]
+
+
 def function_hits(record, own, added):
     """[(line, text)] for one function record: each limit it breaks on the change's lines."""
     name = record["name"]
@@ -269,14 +344,12 @@ def function_hits(record, own, added):
     for line, depth in record["nest"]:
         if line in added:
             hits.append((line, f"{name} — nesting ({depth} levels, limit {MAX_NESTING}): {NESTING_FIX}"))
-    for line in record["ternary"]:
+    for field, label, fix in LINE_LIMITS:
+        hits += [(line, f"{name} — {label}: {fix}") for line in record[field] if line in added]
+    for line, count in record["wide"]:
         if line in added:
-            hits.append((line, f"{name} — chained ternary: {TERNARY_FIX}"))
-    for line in record["deep"]:
-        if line in added:
-            hits.append((line, f"{name} — deep call (a call result passed into a call that is an argument): "
-                               f"{DEEP_CALL_FIX}"))
-    return hits
+            hits.append((line, f"{name} — tuple return ({count} values): {WIDE_TUPLE_FIX}"))
+    return hits + parameter_hits(record, added)
 
 
 def readability_hits(repo, added_by_file):

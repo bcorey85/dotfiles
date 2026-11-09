@@ -655,17 +655,17 @@ EOF
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
         bg="#061a21"; panel="#01131a"; panelAlt="#13272f"; border="#2a3e47"; note="#01131a"
-        accent="#37aba1"; accentMuted="#2a3e47"; text="#a9b7be"; muted="#a4a8af"; lnFg="#80848b"
+        accent="#46b8ae"; accentMuted="#2a3e47"; text="#b6c3cb"; muted="#b1b5bc"; lnFg="#8c9097"
         # Words must stay >= RGB distance 28 from the line wash, or hunk
         # replaces them with its own blend of the sign colour.
         addWord="#173f3e"; remWord="#461312"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
         addedBg="#142d2e"; removedBg="#2c0e0d"; ctxBg="#061a21"
-        sAdd="#37aba1"; sRem="#e63c37"; badgeNeu="#e1c579"
-        kw="#8e9299"; punct="#858a90"; str="#37aba1"; num="#ee5399"; fn="#8289de"; cmt="#c9a149"
-        type_fg="#8da31a"; builtin_fg="#2b99d5"; param_fg="#e0773b"; attr_fg="#e9594f"
-        bright="#dee5ef"; quote="#b1b7be"; bullet="#a4a8af"
+        sAdd="#46b8ae"; sRem="#f54b43"; badgeNeu="#eed286"
+        kw="#9a9ea5"; punct="#91969c"; str="#46b8ae"; num="#fc61a5"; fn="#8e96ec"; cmt="#d6ae56"
+        type_fg="#99af2e"; builtin_fg="#3ba6e2"; param_fg="#ee8448"; attr_fg="#f7665b"
+        bright="#ebf2fd"; quote="#bec3cb"; bullet="#b1b5bc"
       fi
       op="$punct"; tag="$kw"; imp="$kw"
       konst="$num"; esc="$num"; lang="$num"
@@ -687,8 +687,8 @@ EOF
           bind="#433fa8"; act="#006c66"; exit_fg="#a80e62"; lit="#2a7000"; desc="#07549f"
           kw="#4c5158"; cmt="#6d4a00"
         else
-          bind="#868ce0"; act="#37aba1"; exit_fg="#ea5498"; lit="#8da31a"; desc="#2b99d5"
-          kw="#8e9299"; cmt="#b8923c"
+          bind="#9299ee"; act="#46b8ae"; exit_fg="#f861a4"; lit="#99af2e"; desc="#3ba6e2"
+          kw="#9a9ea5"; cmt="#c59f49"
         fi
         # Binds: names where they are introduced. Acts: calls, decorators, builtins.
         fn="$bind"; cls="$bind"; param="$bind"; var="$bind"
@@ -1722,12 +1722,12 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#37aba1" panel_bg="#01131a" surface_dim="#13272f"
+      accent="#46b8ae" panel_bg="#01131a" surface_dim="#13272f"
       surface0="#1e323a" surface1="#2a3e47"
-      overlay0="#85898f" overlay1="#a4a8af"
-      text="#a9b7be" subtext0="#a4a8af"
-      green="#37aba1" yellow="#e1c579" red="#e63c37"
-      blue="#8289de" teal="#37aba1" peach="#ee5399"
+      overlay0="#91959b" overlay1="#b1b5bc"
+      text="#b6c3cb" subtext0="#b1b5bc"
+      green="#46b8ae" yellow="#eed286" red="#f54b43"
+      blue="#8e96ec" teal="#46b8ae" peach="#fc61a5"
       ;;
     solarized-osaka:light)
       # solarized-osaka light (base3 #fdf6e2 ground, base2 panel). Accents are

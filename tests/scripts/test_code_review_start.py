@@ -154,8 +154,6 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertFalse((phase_dir / "loop-dir").exists())
 
     def test_detach_refuses_while_another_review_loop_of_this_repo_runs(self):
-        # Two /code forks in one repo share <git dir>/code-phase: a second detach overwrote the first loop's pid,
-        # and the first fork then killed the second fork's loop through it.
         code_review_start = self.load_module()
         phase_dir = self.repo / ".git/code-phase"
         phase_dir.mkdir()

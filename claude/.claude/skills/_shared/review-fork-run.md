@@ -2,9 +2,9 @@
 
 **The run folder.** `git rev-parse --path-format=absolute --git-path code-phase`, run in your starting directory, prints it; `<run folder>` below means that path. Create it with `mkdir -p` before the first write. You write only `<run folder>/review-handoff.txt`, `<run folder>/fix-findings.md` and `<run folder>/review-stop.md`, each with a Bash heredoc. A coder makes every other edit.
 
-**Launch.** Run the skill's launch line with `--detach`, in the foreground. Then run the `code_wait.py review --loop <loop dir>` command it prints, again while it prints `Still working`.
+**Launch.** Run the skill's launch line with `--detach`, in the foreground. Then run the `code_wait.py review --loop <loop dir>` command it prints, again while it prints `Still working`. On exit 1 of this call or of any later `code_wait.py review` call, do the step its last line names.
 
-**Reviewers.** On `ACTION: dispatch-reviewer`: in one message, dispatch one `Agent` per listed line, `subagent_type` its agent, `model` only when the line names one, prompt `Read <prompt file> whole and do that task.` Then run `python3 ~/.claude/scripts/code/code_wait.py review --loop <loop dir> <agentId> <report file> ...`, one pair per agent, each id and path written out as its own word (no shell variable, loop or function), again while it prints `Still working`; it writes each report as its agent finishes. On exit 1, do the step its last line names. Handle its output the same way. When it says the loop finished, run the packet command it printed.
+**Reviewers.** On `ACTION: dispatch-reviewer`: in one message, dispatch one `Agent` per listed line, `subagent_type` its agent, `model` only when the line names one, prompt `Read <prompt file> whole and do that task.` Then run `python3 ~/.claude/scripts/code/code_wait.py review --loop <loop dir> <agentId> <report file> ...`, one pair per agent, each id and path written out as its own word (no shell variable, loop or function), again while it prints `Still working`; it writes each report as its agent finishes. Handle its output the same way. When it says the loop finished, run the packet command it printed.
 
 **The packet's ACTION lines.** Do what they say, with these readings:
 

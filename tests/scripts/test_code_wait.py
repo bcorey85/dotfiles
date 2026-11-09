@@ -110,29 +110,63 @@ class WaitReviewTest(unittest.TestCase):
     def test_a_finished_review_prints_its_output(self):
         repo, phase_dir = self.repo_with_pid(999999999)
         (phase_dir / "review.out").write_text("status: converged\n")
+        loop_folder = temp_dir(self)
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
 
     def test_a_finished_review_with_no_output_file_says_so_and_exits_one(self):
-        repo, _ = self.repo_with_pid(999999999)
-        output = io.StringIO()
-
-        with contextlib.redirect_stdout(output):
-            code = code_wait.wait_review(repo)
-
-        self.assertEqual(code, 1)
-        self.assertIn("left no output", output.getvalue())
-
-    def test_a_finished_review_with_an_empty_output_file_says_so_and_exits_one(self):
         repo, phase_dir = self.repo_with_pid(999999999)
-        (phase_dir / "review.out").write_text("")
         output = io.StringIO()
 
         with contextlib.redirect_stdout(output):
             code = code_wait.wait_review(repo)
 
         self.assertEqual(code, 1)
-        self.assertIn(str(phase_dir / "review.out"), output.getvalue())
+        self.assertEqual(output.getvalue().strip(),
+                         f"The review loop ended and left no packet in <loop dir>/packet.txt. "
+                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_RESTART}")
+
+    def test_a_launched_loop_that_ended_with_no_packet_and_no_request_says_so_and_exits_one(self):
+        repo, _ = self.repo_with_pid(os.getpid())
+        loop_folder = temp_dir(self)
+        (loop_folder / code_wait.reviewer_dispatch.PID_FILE).write_text("999999999\n")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo, (), str(loop_folder))
+
+        packet_file = loop_folder / code_wait.reviewer_dispatch.PACKET_FILE
+        self.assertEqual(code, 1)
+        self.assertEqual(output.getvalue().strip(),
+                         f"The review loop ended and left no packet in {packet_file}. {code_wait.LAUNCHED_RESTART}")
+
+    def test_a_finished_review_with_a_named_loop_folder_and_no_packet_names_that_folder(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / "review.out").write_text("No packet. Log: x\n")
+        loop_folder = temp_dir(self)
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        packet_file = loop_folder / code_wait.reviewer_dispatch.PACKET_FILE
+        self.assertEqual(code, 1)
+        self.assertEqual(output.getvalue().strip(),
+                         f"The review loop ended and left no packet in {packet_file}. "
+                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_RESTART}")
+
+    def test_a_loop_folder_named_after_the_run_was_built_is_the_one_the_message_names(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        run = code_wait.phase_review(repo)
+        loop_folder = temp_dir(self)
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+
+        message = run.no_output()
+
+        self.assertIn(str(loop_folder / code_wait.reviewer_dispatch.PACKET_FILE), message)
 
     def test_a_running_review_says_to_run_again(self):
         repo, _ = self.repo_with_pid(os.getpid())
@@ -156,7 +190,7 @@ class WaitReviewTest(unittest.TestCase):
         (phase_dir / "review.out").write_text("linked\n")
 
         self.assertNotEqual(phase_dir, main_repo / ".git" / "code-phase")
-        self.assertTrue(code_wait.review_running(linked))
+        self.assertIsNotNone(code_wait.running_review_pid(linked))
         self.assertFalse((main_repo / ".git" / "code-phase").exists())
 
 
@@ -302,8 +336,6 @@ class ReviewerRequestTest(unittest.TestCase):
         self.assertIn("no report file", errors)
 
     def test_a_loop_process_gone_with_a_named_reviewer_at_work_says_why_and_exits_one(self):
-        # A second /code run in the same repo truncated review.out and the loop process was killed: the wait
-        # found the pid dead within a second, wrote no report and printed only an empty line.
         (self.phase_dir / "pid").write_text("999999999")
         (self.phase_dir / code_wait.REVIEW_OUTPUT).write_text("")
         self.write_reviewer(AGENT_ID, [], finished=False)
@@ -316,6 +348,35 @@ class ReviewerRequestTest(unittest.TestCase):
         self.assertIn(report_file, output)
         self.assertIn("code_review_start.py", output)
         self.assertFalse(pathlib.Path(report_file).exists())
+
+    def test_a_loop_that_ended_with_a_crash_packet_and_an_open_request_prints_the_packet(self):
+        (self.phase_dir / "pid").write_text("999999999")
+        (self.phase_dir / code_wait.REVIEW_OUTPUT).write_text("status: crashed\n")
+        (self.loop_dir / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: crashed\n")
+
+        code, output, _ = self.run_main("review")
+
+        self.assertEqual((code, output.strip()), (0, "status: crashed"))
+
+    def test_a_loop_killed_before_it_wrote_a_packet_says_why_though_review_out_has_text(self):
+        (self.phase_dir / "pid").write_text("999999999")
+        (self.phase_dir / code_wait.REVIEW_OUTPUT).write_text("No packet. Log: x\n")
+
+        code, output, _ = self.run_main("review")
+
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.LOOP_GONE, output)
+        self.assertIn(self.entries[0]["report_file"], output)
+
+    def test_a_launched_loop_that_ended_with_a_packet_and_an_open_request_names_the_packet_command(self):
+        (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text("999999999\n")
+        (self.loop_dir / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: crashed\n")
+        packet_command = code_wait.reviewer_dispatch.packet_command(str(self.loop_dir))
+
+        code, output, _ = self.run_main("review", "--loop", str(self.loop_dir))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(output.strip(), f"The review loop script finished. Run `{packet_command}` now.")
 
     def test_a_loop_process_gone_with_an_unanswered_request_says_why_and_exits_one(self):
         (self.phase_dir / "pid").write_text("999999999")
@@ -366,6 +427,7 @@ class ReviewerRequestTest(unittest.TestCase):
         (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text("999999999\n")
         (self.loop_dir / code_wait.reviewer_dispatch.LAUNCH_FILE).write_text(
             json.dumps({"packet_args": ["--skill", "fix", "--lane", "code"]}))
+        (self.loop_dir / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
         pathlib.Path(self.entries[0]["report_file"]).write_text("PASS\n")
 
         code, output, _ = self.run_main("review", "--loop", str(self.loop_dir))

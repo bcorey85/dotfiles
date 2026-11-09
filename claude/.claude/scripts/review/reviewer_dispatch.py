@@ -23,6 +23,7 @@ import script_utils
 
 REQUESTS_FOLDER = "reviewer-requests"
 PID_FILE = "loop.pid"
+PACKET_FILE = "packet.txt"
 POLL_SECONDS = 2.0
 DISPATCH_ACTION = "dispatch-reviewer"
 WAIT_COMMAND = "python3 ~/.claude/scripts/review/reviewer_dispatch.py wait"

@@ -89,8 +89,9 @@ GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
 # The gate's state file, kept in the repo's git dir.
 CODER_GATE_FILE = "coder-gate.json"
 STALE_PROSE_SCRIPT = "stale_prose.py"
-# The outcome of a stale-prose command that found a hit, and the scoped result of a run that passed.
-STALE_PROSE_HIT_OUTCOME = "exit 1"
+READABILITY_SCRIPT = "readability_check.py"
+# The outcome of a stale-prose or readability command that found a hit, and the scoped result of a run that passed.
+HIT_OUTCOME = "exit 1"
 SCOPED_PASSED = "passed"
 
 WHOLE_PACKAGE_REASON = ("This command runs a whole test suite, lints a whole package or runs a build. Run the "
@@ -414,18 +415,18 @@ def scoped_result(real_failures, command_errors, setup_faults, timed_out, skippe
     return SCOPED_PASSED, []
 
 
-def run_stale_prose_check(repo_root, commands, gate_env, log_path):
-    # (result, hit outputs, script failure tails). A hit is a command that exited 1, its whole output kept: it asks
-    # for a reading, not a code fix. The result and the tails come from every other outcome, as run_scoped_tests
-    # reports them.
+def run_hit_check(repo_root, commands, gate_env, log_path):
+    # (result, hit outputs, script failure tails) of the stale-prose or readability commands. A hit is a command that
+    # exited 1, its whole output kept: it goes to a coder pass, not a stop. The result and the tails come from every
+    # other outcome, as run_scoped_tests reports them.
     gate = {"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_env)}
     failures, skipped, timed_out, _not_started = run_commands(gate)
     if failures or timed_out:
         timed_out_outputs = [(command, "timeout", output) for command, output, _timeout in timed_out]
         script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
-    hit_outputs = [output for _command, outcome, output in failures if outcome == STALE_PROSE_HIT_OUTCOME]
-    other_failures = [failure for failure in failures if failure[1] != STALE_PROSE_HIT_OUTCOME]
+    hit_outputs = [output for _command, outcome, output in failures if outcome == HIT_OUTCOME]
+    other_failures = [failure for failure in failures if failure[1] != HIT_OUTCOME]
     real_failures, setup_faults, command_errors = sort_failures(other_failures, repo_root)
     result, script_failure_tails = scoped_result(real_failures, command_errors, setup_faults, timed_out, skipped,
                                                  commands, log_path)
@@ -448,11 +449,28 @@ def scoped_test_failure(failures, log_path):
     return f"{result}; full output: {log_path}", tails
 
 
-def is_stale_prose_check(command):
-    # The gate command that lists prose naming a changed symbol: a hit asks for a reading, not a code fix. It runs the
-    # script as `python3 <dir>/stale_prose.py --base <sha>`, so a word of the command must be the script's own file.
+def runs_script(command, script_name):
+    # Whether a gate command runs the toolkit script `python3 <dir>/<script_name> --base <sha>`: a word of the command
+    # must be the script's own file.
     simple_commands = shell_command.resolved_command_words(command)
-    return any(pathlib.PurePath(word).name == STALE_PROSE_SCRIPT for words in simple_commands for word in words)
+    return any(pathlib.PurePath(word).name == script_name for words in simple_commands for word in words)
+
+
+def is_stale_prose_check(command):
+    # The gate command that lists prose naming a changed symbol: a hit asks for a reading, not a code fix.
+    return runs_script(command, STALE_PROSE_SCRIPT)
+
+
+def is_readability_check(command):
+    # The gate command that lists the changed functions past the readability limits. At hand-back a hit is a failure
+    # like a red test; in the review loop it goes to a coder pass.
+    return runs_script(command, READABILITY_SCRIPT)
+
+
+def readability_command(base):
+    # The gate command of the readability check against the commit `base`.
+    script = pathlib.Path(__file__).resolve().parent / READABILITY_SCRIPT
+    return f"python3 {script} --base {base}"
 
 
 def denial(failures):

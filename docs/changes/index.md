@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-874 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+875 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [Handoff becomes /stop and /go; stop-guessing is removed](notes/2026-11-08-handoff-becomes-stop-and-go-stop-guessing-is.md).
+Latest change: 2026-11-08, [The coder hand-back refuses code past the readability limits](notes/2026-11-08-the-coder-hand-back-refuses-code-past-the.md).
 
 ## Top gains
 

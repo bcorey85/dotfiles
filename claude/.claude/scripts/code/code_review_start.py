@@ -124,18 +124,20 @@ def review_prompt(repo, lane, plan, phase, handoff, phase_changed=()):
 
 def phase_gate_commands(repo, plan, phase, base, handoff=""):
     # The plan phase names the files and Automated Verification commands; a plan with no entry for the phase gives
-    # the whole plan. The stale-prose pass runs only for a phase the plan has an entry for. With no plan, the files
-    # come from the handoff block.
+    # the whole plan. The stale-prose pass runs only for a phase the plan has an entry for; the readability check runs
+    # for every phase. With no plan, the files come from the handoff block.
+    readability = coder_gate.readability_command(base)
     if plan == NO_PLAN:
         handoff_files = HANDOFF_FILE_PATH.findall(handoff)
-        return gate_commands.derive_gate_commands(repo, "\n".join(f"`{path}`" for path in handoff_files))
+        handoff_text = "\n".join(f"`{path}`" for path in handoff_files)
+        return [*gate_commands.derive_gate_commands(repo, handoff_text), readability]
 
     commands, has_section = gate_commands.plan_gate_commands(repo, plan, phase)
     if not has_section:
-        return commands
+        return [*commands, readability]
 
     stale_prose_script = pathlib.Path(__file__).resolve().parent / coder_gate.STALE_PROSE_SCRIPT
-    return [*commands, f"python3 {stale_prose_script} --base {base}"]
+    return [*commands, f"python3 {stale_prose_script} --base {base}", readability]
 
 
 def detach(repo, argv):

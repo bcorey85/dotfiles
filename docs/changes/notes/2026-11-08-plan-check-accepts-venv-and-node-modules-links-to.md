@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-`script_utils.is_executable_file_inside` checks the path's own text and checks it against the repo root, given or resolved. It no longer resolves symlinks before the check. An absolute path outside the repo still fails. Any path with a `..` segment now fails, including one that stays inside the repo (`bin/../bin/tool`), which the check used to accept.
+`script_utils.is_executable_file_inside` checks the path's own text and checks it against the repo root, given or resolved. It no longer resolves symlinks before the check, so a link in the repo may point anywhere; the comment in `plan_verification.py` says so. An absolute path outside the repo still fails. Any path with a `..` segment now fails, including one that stays inside the repo (`bin/../bin/tool`), which the check used to accept.
 
 ## Evidence
 

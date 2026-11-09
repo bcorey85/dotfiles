@@ -1,3 +1,15 @@
+-- Copy to the "+" register through a system tool AND an OSC 52 escape. The
+-- tool covers the machine nvim runs on; OSC 52 rides the terminal to the
+-- machine the user sits at (herdr --remote, ssh), where the tool cannot reach.
+local function copy_with_osc52(cmd)
+  local osc52_copy = require("vim.ui.clipboard.osc52").copy("+")
+  return function(lines, regtype)
+    local text = table.concat(lines, "\n")
+    vim.system(cmd, { stdin = text })
+    osc52_copy(lines, regtype)
+  end
+end
+
 local function detect_clipboard()
   local uname = vim.uv.os_uname()
   local sysname = uname.sysname
@@ -40,7 +52,7 @@ local function detect_clipboard()
         return {
           name = "wl-clipboard",
           copy = {
-            ["+"] = "wl-copy",
+            ["+"] = copy_with_osc52({ "wl-copy" }),
             ["*"] = "wl-copy --primary",
           },
           paste = {
@@ -52,7 +64,7 @@ local function detect_clipboard()
         return {
           name = "xclip",
           copy = {
-            ["+"] = "xclip -selection clipboard",
+            ["+"] = copy_with_osc52({ "xclip", "-selection", "clipboard" }),
             ["*"] = "xclip -selection primary",
           },
           paste = {

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-877 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+879 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [The code reviewer marks deep nesting, long multi-job functions, chained ternaries and packed one-liners as fix](notes/2026-11-08-the-code-reviewer-marks-deep-nesting-long-multi.md).
+Latest change: 2026-11-08, [The code reviewer marks ternary arguments, two-loop comprehensions, wide tuples and six-parameter functions as fix](notes/2026-11-08-the-code-reviewer-marks-ternary-arguments-two-loop.md).
 
 ## Top gains
 

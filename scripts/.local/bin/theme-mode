@@ -225,8 +225,8 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # VS Code default pair has the nearest passing text (#d4d4d4 / #000000).
     alabaster:light)        echo "light-plus" ;;
     alabaster:*)            echo "dark-plus" ;;
-    # solarized: hunk BUILTINS for syntax, under a diff-only block that sets
-    # the code text to base0 / base01.
+    # solarized: BASE of a full [custom_theme] whose syntax follows
+    # solarized.nvim's autumn variant.
     solarized:light)        echo "solarized-light" ;;
     solarized:*)            echo "solarized-dark" ;;
     # selenized: no hunk builtin. Solarized's builtins are the nearest syntax
@@ -290,17 +290,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   # the base's: panel, panelAlt, accent, accentMuted, muted, modified.
   local diff_colors="" chrome_colors=""
   case "$1:$2" in
-    # solarized.nvim paints diffs fg-only, so rows are the green/red signs 15%
-    # into the ground and words 30%.
-    solarized:light)
-      diff_colors="#ebe8c1 #f8d9c8 #d9da9f #f3bbad #859900 #dc322f #93a1a1 #d9d2bc #586e75"
-      chrome_colors="#eee8d5 #fbf3db #268bd2 #d9d2bc #839496 #b58900"
-      ;;
-    solarized:*)
-      diff_colors="#143c2e #212c35 #284c26 #422d34 #859900 #dc322f #586e75 #073642 #839496"
-      chrome_colors="#073642 #002731 #268bd2 #0d4552 #657b83 #b58900"
-      ;;
-    # selenized: same recipe, from the palette's green and red.
+    # selenized: solarized.nvim paints diffs fg-only, so rows are the green/red
+    # signs 15% into the ground and words 30%; selenized takes the same recipe
+    # from its palette's green and red.
     selenized:light)
       diff_colors="#e0e4ba #f5d3c1 #c5d699 #efb4a7 #489100 #d2212d #909995 #cfcebe #3a4d53"
       chrome_colors="#ece3cc #f5ecd4 #0072d4 #d5cdb6 #909995 #ad8900"
@@ -1037,6 +1029,42 @@ EOF
 "markup.quote"                      = "$text"
 "markup.bold"                       = "$text"
 "markup.italic"                     = "$text"
+EOF
+      )
+      ;;
+    # solarized (maxmx03/solarized.nvim, variant autumn): roles are the resolved
+    # fg of nvim's groups; the comment carries theme-sync's contrast floor and
+    # markdown its heading accents. solarized.nvim paints diffs fg-only, so rows
+    # are the green/red signs 15% into the ground and words 30%.
+    solarized:*)
+      local addWord remWord cls key h1="#dc322f" h2="#b58900"
+      bg="#002b36"; panel="#073642"; panelAlt="#002731"; border="#073642"
+      accent="#268bd2"; accentMuted="#0d4552"; text="#839496"; muted="#657b83"
+      addedBg="#143c2e"; removedBg="#212c35"; ctxBg="#002b36"
+      addWord="#284c26"; remWord="#422d34"; lnFg="#586e75"
+      note="#073642"; konst="#6c71c4"; cmt="#7f9093"
+      if [ "$2" = light ]; then
+        bg="#fdf6e3"; panel="#eee8d5"; panelAlt="#fbf3db"; border="#d9d2bc"
+        accentMuted="#d9d2bc"; text="#657b83"; muted="#839496"
+        addedBg="#ebe8c1"; removedBg="#f8d9c8"; ctxBg="#fdf6e3"
+        addWord="#d9da9f"; remWord="#f3bbad"; lnFg="#93a1a1"
+        note="#eee8d5"; konst="#d33682"; cmt="#657b83"
+      fi
+      sAdd="#859900"; sRem="#dc322f"
+      badgeAdd="$sAdd"; badgeRem="$sRem"; badgeNeu="$accent"
+      fRename="$accent"; fMod="#b58900"; fUntracked="$sAdd"
+      kw="#859900"; str="#2aa198"; num="#d33682"; fn="#268bd2"; typ="#b58900"
+      punct="#cb4b16"; op="$kw"; esc="$kw"; lang="$konst"; vbi="$konst"
+      mem="$fn"; param="$fn"; attr="$kw"; tag="$kw"; imp="$punct"; pre="$punct"
+      mac="$punct"; prim="$kw"; ns="$typ"; cls="$typ"; bfn="$fn"; call="$fn"
+      var="$text"; use="$text"; key="$fn"
+      extra=$(cat <<EOF
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
 EOF
       )
       ;;

@@ -410,10 +410,17 @@ def run_scoped_tests(repo_root, commands, gate_env, log_path):
     # (one-line result, the failing commands' tails). The scoped commands, run as the gate runs them, outside a hook.
     # A failing or timed-out command's whole output goes to log_path, and a failed, setup-fault, command-error or
     # timeout result names it.
-    if not commands:
-        return "not run (no scoped test commands)", []
+    result, tails, _real_failures = run_scoped_tests_with_failures(repo_root, commands, gate_env, log_path)
+    return result, tails
 
-    gate = {"commands": commands, "repoRoot": repo_root,
+
+def run_scoped_tests_with_failures(repo_root, commands, gate_env, log_path):
+    # run_scoped_tests' (result, tails), plus the (command, outcome, output) of each real failure the tails quote:
+    # empty unless the result is a failure.
+    if not commands:
+        return "not run (no scoped test commands)", [], []
+
+    gate ={"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_env)}
     # No hook timeout bounds this run, so it takes no budget and starts every command.
     failures, skipped, timed_out, _not_started = run_commands(gate)
@@ -421,7 +428,9 @@ def run_scoped_tests(repo_root, commands, gate_env, log_path):
         timed_out_outputs = [(command, "timeout", output) for command, output, _timeout in timed_out]
         script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
     sorted_failures = sort_failures(failures, repo_root)
-    return scoped_result(sorted_failures, timed_out, skipped, commands, log_path)
+    result, tails = scoped_result(sorted_failures, timed_out, skipped, commands, log_path)
+    real_failures = sorted_failures.real_failures if tails else []
+    return result, tails, real_failures
 
 
 def scoped_result(sorted_failures, timed_out, skipped, commands, log_path):

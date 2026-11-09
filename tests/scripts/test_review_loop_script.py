@@ -1267,7 +1267,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
     def test_a_red_scoped_test_names_the_failing_test_and_its_panic_text_and_keeps_the_full_output(self):
         fixture = pathlib.Path(__file__).resolve().parent / "fixtures" / "cargo_test_failed_assertion.txt"
-        failing_run = f"echo 'early line' && seq 1 3000 && cat {fixture} && false"
+        # Red only with the diff: the base run on HEAD passes, so the failure is not pre-existing.
+        failing_run = f"git diff --quiet HEAD || {{ echo 'early line' && seq 1 3000 && cat {fixture} && false; }}"
         completed = self.run_with_scoped_tests([failing_run], FIX_THEN_CLEAN)
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -1585,14 +1586,46 @@ class ReviewLoopScriptTest(unittest.TestCase):
         loop_script = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(loop_script)
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"app.py"}})
-        with mock.patch.object(loop_script.coder_gate, "run_scoped_tests", side_effect=scoped_results) as scoped, \
+        with mock.patch.object(loop_script.coder_gate, "run_scoped_tests_with_failures",
+                               side_effect=scoped_results) as scoped, \
                 mock.patch.object(loop, "autofix_touched_files", return_value=True) as autofix:
             passed = loop.run_test_commands(["npm run lint"])
         return loop, passed, scoped.call_count, autofix.call_count
 
+    def run_scoped_tests_red(self, failing_output):
+        """run_test_commands with one red scoped command, `cat failing.txt; exit 1`, whose head output is
+        `failing_output`; the commit holds failing.txt with one old failing test, so the base run is real."""
+        self.commit_files({"failing.txt": "FAIL: test_old (shop.tests.OldTest)\n"})
+        command = "cat failing.txt; exit 1"
+        red = (f"failed: {command}", [f"`{command}` (exit 1):\n{failing_output}"],
+               [(command, "exit 1", failing_output)])
+        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+        loop_script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loop_script)
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"app.py"}})
+        with mock.patch.object(loop_script.coder_gate, "run_scoped_tests_with_failures", return_value=red), \
+                mock.patch.object(loop, "autofix_touched_files", return_value=False):
+            passed = loop.run_test_commands([command])
+        return loop, passed
+
+    def test_a_scoped_failure_that_fails_the_same_way_on_head_without_the_diff_does_not_stop_the_loop(self):
+        loop, passed = self.run_scoped_tests_red("FAIL: test_old (shop.tests.OldTest)\n")
+
+        self.assertTrue(passed)
+        self.assertNotEqual(loop.status, "critical-blocker")
+        self.assertTrue(loop.scoped_tests.startswith("pre-existing failure"), loop.scoped_tests)
+
+    def test_a_scoped_failure_new_to_the_diff_on_top_of_a_pre_existing_one_stops_the_loop(self):
+        loop, passed = self.run_scoped_tests_red("FAIL: test_old (shop.tests.OldTest)\n"
+                                                 "FAIL: test_new (shop.tests.NewTest)\n")
+
+        self.assertFalse(passed)
+        self.assertEqual(loop.status, "critical-blocker")
+        self.assertIn("test_new", loop.remaining[0])
+
     def test_a_scoped_run_red_only_on_format_errors_the_autofix_clears_does_not_stop_the_loop(self):
-        red = ("failed: npm run lint", ["app.ts: Insert `;` prettier/prettier"])
-        loop, passed, scoped_runs, autofix_runs = self.run_scoped_tests_with_autofix([red, ("passed", [])])
+        red = ("failed: npm run lint", ["app.ts: Insert `;` prettier/prettier"], [])
+        loop, passed, scoped_runs, autofix_runs = self.run_scoped_tests_with_autofix([red, ("passed", [], [])])
 
         self.assertTrue(passed)
         self.assertEqual((scoped_runs, autofix_runs), (2, 1))
@@ -1600,7 +1633,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(loop.scoped_tests, "passed")
 
     def test_a_scoped_run_still_red_after_the_autofix_stops_the_loop(self):
-        red = ("failed: npm test", ["FAIL app.test.ts: expected 20, got 99"])
+        red = ("failed: npm test", ["FAIL app.test.ts: expected 20, got 99"], [])
         loop, passed, scoped_runs, autofix_runs = self.run_scoped_tests_with_autofix([red, red])
 
         self.assertFalse(passed)

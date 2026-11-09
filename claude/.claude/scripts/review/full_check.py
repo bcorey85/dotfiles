@@ -144,6 +144,9 @@ BASE_TREE_FOLDER = "full-check-base"
 # The check fails the same way on HEAD without the diff. Not a failure: it starts with neither "failed" nor "not run".
 # A check that stops early on the old failure (lint before test, a collection error, -x) never ran the diff's tests.
 PRE_EXISTING = "pre-existing failure (the check fails the same way without this diff, so it did not verify this diff)"
+# Every red scoped test command fails the same way on HEAD without the diff. The review loop goes on.
+SCOPED_PRE_EXISTING = ("pre-existing failure (the scoped tests fail the same way without this diff, so they did not "
+                       "verify this diff)")
 # A substring that marks a log line as an error; it matches inside words too (`0 errors` counts).
 ERROR_MARKER = re.compile(r"error|fail|exception|traceback|panic", re.IGNORECASE)
 # The check run on HEAD without the diff: its result, failing lines, log lines and the detail lines under each failure.

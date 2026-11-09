@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-888 changes
+889 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A scoped test failure that fails the same way without the diff no longer stops the review loop](notes/2026-11-09-a-scoped-test-failure-that-fails-the-same-way.md) [script/review-loop-script, script/coder-gate, script/full-check] The review loop's scoped-tests gate now reruns each red command on HEAD without the diff, as the full check already does. When every failure is the same there, the packet records the scoped tests as a pre-existing failure and the loop goes on, so /code no longer stops to ask the user to confirm base failures. A failure new to the diff, a new failing test included, still stops as critical-blocker.
 * [review loop: an accepted ask relaunches the review as a fix run, so its converged hand-back earns commit credit](notes/2026-11-09-review-loop-an-accepted-ask-relaunches-the-review.md) [script/review-fix, script/review-launch, skill/review-fork-run] When the user accepts or modifies an ask, `review_fix.py asks-done` writes those asks to a findings file and prints `ACTION: redispatch` with a `launch --fix` line that carries the first run's flags. The loop's fix coder applies the asks, a review round covers them, and the converged hand-back earns commit credit. All rejected ends with `ACTION: done`.
 
 ## Week of 2026-11-02

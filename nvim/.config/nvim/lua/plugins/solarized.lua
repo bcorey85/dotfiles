@@ -6,6 +6,8 @@ return {
   lazy = false,
   priority = 1000,
   opts = {
+    -- autumn: variables in base0 instead of blue; functions blue, types yellow.
+    variant = "autumn",
     -- The theme hardcodes bold on the Keyword group; styles.keywords overrides it.
     styles = { keywords = { bold = false } },
   },

@@ -25,7 +25,7 @@ User rule. Work census, `review-findings.jsonl`, code lane, dotfiles and agent-e
 
 ## Result
 
-Pending.
+Rule-meter, metered together with the four later entries on one planted diff: the reviewer marked deep nesting and a ternary argument as a fix in 8 of 8 runs with the text and in 8 of 8 without it. Finding: `agent-evals/findings/2026-11-08-the-readability-rules-move-the-coder-only-where-a.md`.
 
 ## Watch
 

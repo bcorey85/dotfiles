@@ -25,7 +25,7 @@ User rule; the same toolkit code census as the coder change.
 
 ## Result
 
-Pending.
+Rule-meter, 8 runs with the four entries and 8 without, on a planted diff with deep nesting and a ternary argument: the reviewer marked both as a fix in 8 of 8 runs in both arms. The entries changed nothing on that diff. Finding: `agent-evals/findings/2026-11-08-the-readability-rules-move-the-coder-only-where-a.md`.
 
 ## Watch
 

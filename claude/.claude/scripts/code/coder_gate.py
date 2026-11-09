@@ -52,6 +52,9 @@ import shlex
 import sys
 import time
 
+# collections.namedtuple, not typing.NamedTuple: this hook runs on every Bash call, and typing adds to its start-up.
+from collections import namedtuple
+
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
 import check_output
 import script_utils
@@ -209,7 +212,8 @@ def set_gate(commands, gate_assignments=()):
 def joined_commands(coder, outcome):
     # The coder's commands with this outcome as one comma-separated text, "none" when it has none. A coder stored
     # before the commands map existed has no commands.
-    return ", ".join(script_utils.details_with_outcome(coder.get("commands", {}), outcome)) or "none"
+    details = script_utils.details_with_outcome(coder.get("commands", {}), outcome)
+    return ", ".join(details) or "none"
 
 
 def print_gate_summary():
@@ -272,45 +276,66 @@ def fill_files(command, repo_root):
     return filled_command
 
 
+CommandRun = namedtuple("CommandRun", ["failures", "skipped", "timed_out", "not_started"])
+
+
+def _timeout_within_budget(budget_seconds, started):
+    # The timeout for the next command, or None when too little budget is left for it to start.
+    if budget_seconds is None:
+        return COMMAND_TIMEOUT_SECONDS
+
+    seconds_left = budget_seconds - (time.monotonic() - started)
+    if seconds_left < MIN_COMMAND_SECONDS:
+        return None
+    return min(COMMAND_TIMEOUT_SECONDS, seconds_left)
+
+
+GateFailure = namedtuple("GateFailure", ["command", "outcome", "output"])
+
+
+def _failure_of(command, code, output, verdict):
+    # The failure that a finished command's verdict makes, else None.
+    if verdict == check_output.FAILED:
+        return GateFailure(command, f"exit {code}", output)
+    if verdict == check_output.FAILED_EXIT_ZERO:
+        return GateFailure(command, "exit 0", output + check_output.SUMMARY_FAILURE_NOTE)
+    if verdict == check_output.NO_TESTS_RAN:
+        return GateFailure(command, "exit 0", output + check_output.NO_TEST_MATCHED_NOTE)
+    if names_django_test_run(command) and check_output.NO_TESTS_RAN_OUTPUT.search(output):
+        return GateFailure(command, "exit 0", output)
+    return None
+
+
 def run_commands(gate, budget_seconds=None):
-    # (failures, skipped, timed_out, not_started). A command that hit the timeout gave no test result, so timed_out
-    # holds (command, output so far, the timeout it got), never failures. With a budget, each command gets at most the
-    # budget left, and a command that cannot start with MIN_COMMAND_SECONDS left is in not_started: no command runs
-    # past the budget.
-    failures = []
-    skipped = []
-    timed_out = []
-    not_started = []
+    # A command that hit the timeout gave no test result, so timed_out holds (command, output so far, the timeout it
+    # got), never failures. With a budget, each command gets at most the budget left, and a command that cannot start
+    # with MIN_COMMAND_SECONDS left is in not_started: no command runs past the budget.
+    run = CommandRun([], [], [], [])
     environment = {**os.environ, **gate.get("env", {})}
     started = time.monotonic()
     for command in gate["commands"]:
         filled_command = fill_files(command, gate["repoRoot"])
         if filled_command is None:
-            skipped.append(command)
+            run.skipped.append(command)
             continue
 
-        command_timeout = COMMAND_TIMEOUT_SECONDS
-        if budget_seconds is not None:
-            seconds_left = budget_seconds - (time.monotonic() - started)
-            if seconds_left < MIN_COMMAND_SECONDS:
-                not_started.append(command)
-                continue
-            command_timeout = min(COMMAND_TIMEOUT_SECONDS, seconds_left)
+        command_timeout = _timeout_within_budget(budget_seconds, started)
+        if command_timeout is None:
+            run.not_started.append(command)
+            continue
 
         code, stdout, stderr = script_utils.run_process(filled_command, gate["repoRoot"], env=environment,
                                                         timeout=command_timeout)
-        verdict = check_output.check_verdict(command, code, stdout + stderr)
+        output = stdout + stderr
+        verdict = check_output.check_verdict(command, code, output)
         if verdict == check_output.NOT_RUN:
-            timed_out.append((command, stdout + stderr, command_timeout))
-        elif verdict == check_output.FAILED:
-            failures.append((command, f"exit {code}", stdout + stderr))
-        elif verdict == check_output.FAILED_EXIT_ZERO:
-            failures.append((command, "exit 0", stdout + stderr + check_output.SUMMARY_FAILURE_NOTE))
-        elif verdict == check_output.NO_TESTS_RAN:
-            failures.append((command, "exit 0", stdout + stderr + check_output.NO_TEST_MATCHED_NOTE))
-        elif names_django_test_run(command) and check_output.NO_TESTS_RAN_OUTPUT.search(stdout + stderr):
-            failures.append((command, "exit 0", stdout + stderr))
-    return failures, skipped, timed_out, not_started
+            run.timed_out.append((command, output, command_timeout))
+            continue
+
+        failure = _failure_of(command, code, output, verdict)
+        if failure is not None:
+            run.failures.append(failure)
+    return run
 
 
 def missing_path_line(command, output, repo_root):
@@ -326,9 +351,11 @@ def missing_path_line(command, output, repo_root):
     return line
 
 
+SortedFailures = namedtuple("SortedFailures", ["real_failures", "setup_faults", "command_errors"])
+
+
 def sort_failures(failures, repo_root):
-    # (real failures, setup faults, command errors). A command error names a path that does not exist: the command
-    # is wrong, not the code.
+    # A command error names a path that does not exist: the command is wrong, not the code.
     real_failures = []
     setup_faults = []
     command_errors = []
@@ -342,7 +369,7 @@ def sort_failures(failures, repo_root):
             setup_faults.append((command, output))
         else:
             real_failures.append((command, outcome, output))
-    return real_failures, setup_faults, command_errors
+    return SortedFailures(real_failures, setup_faults, command_errors)
 
 
 def gate_outcome(real_failures, command_errors, setup_faults, timed_out, not_started=()):
@@ -360,17 +387,17 @@ def gate_outcome(real_failures, command_errors, setup_faults, timed_out, not_sta
     return RESULT_PASS
 
 
-def command_outcomes(real_failures, command_errors, setup_faults, timed_out, skipped, not_started=()):
+def command_outcomes(sorted_failures, timed_out, skipped, not_started=()):
     # The coder's {command: {"outcome": ..., "detail": ...}} map for every command that did not pass.
     outcomes = {}
-    for command, _outcome, _output in real_failures:
+    for command, _outcome, _output in sorted_failures.real_failures:
         outcomes[command] = {"outcome": FAILED, "detail": ""}
     for command, output, command_timeout in timed_out:
         outcomes[command] = {"outcome": TIMED_OUT, "detail": output[-TIMEOUT_TAIL_CHARS:],
                              "timeout_seconds": round(command_timeout)}
-    for command, output in setup_faults:
+    for command, output in sorted_failures.setup_faults:
         outcomes[command] = {"outcome": SETUP_FAULT, "detail": output[-TIMEOUT_TAIL_CHARS:]}
-    for command, missing_line in command_errors:
+    for command, missing_line in sorted_failures.command_errors:
         outcomes[command] = {"outcome": COMMAND_ERROR, "detail": missing_line}
     for command in not_started:
         outcomes[command] = {"outcome": NOT_STARTED, "detail": NOT_STARTED_DETAIL}
@@ -393,13 +420,14 @@ def run_scoped_tests(repo_root, commands, gate_env, log_path):
     if failures or timed_out:
         timed_out_outputs = [(command, "timeout", output) for command, output, _timeout in timed_out]
         script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
-    failures, setup_faults, command_errors = sort_failures(failures, repo_root)
-    return scoped_result(failures, command_errors, setup_faults, timed_out, skipped, commands, log_path)
+    sorted_failures = sort_failures(failures, repo_root)
+    return scoped_result(sorted_failures, timed_out, skipped, commands, log_path)
 
 
-def scoped_result(real_failures, command_errors, setup_faults, timed_out, skipped, commands, log_path):
+def scoped_result(sorted_failures, timed_out, skipped, commands, log_path):
     # (one-line result, the real failures' tails) of a sorted scoped run.
     log_note = f"; full output: {log_path}"
+    real_failures, setup_faults, command_errors = sorted_failures
     outcome = gate_outcome(real_failures, command_errors, setup_faults, timed_out)
     if outcome == RESULT_FAILED:
         return scoped_test_failure(real_failures, log_path)
@@ -415,8 +443,11 @@ def scoped_result(real_failures, command_errors, setup_faults, timed_out, skippe
     return SCOPED_PASSED, []
 
 
+HitCheck = namedtuple("HitCheck", ["result", "hit_outputs", "script_failure_tails"])
+
+
 def run_hit_check(repo_root, commands, gate_env, log_path):
-    # (result, hit outputs, script failure tails) of the stale-prose or readability commands. A hit is a command that
+    # The stale-prose or readability commands' result, hit outputs and script failure tails. A hit is a command that
     # exited 1, its whole output kept: it goes to a coder pass, not a stop. The result and the tails come from every
     # other outcome, as run_scoped_tests reports them.
     gate = {"commands": commands, "repoRoot": repo_root,
@@ -427,10 +458,9 @@ def run_hit_check(repo_root, commands, gate_env, log_path):
         script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
     hit_outputs = [output for _command, outcome, output in failures if outcome == HIT_OUTCOME]
     other_failures = [failure for failure in failures if failure[1] != HIT_OUTCOME]
-    real_failures, setup_faults, command_errors = sort_failures(other_failures, repo_root)
-    result, script_failure_tails = scoped_result(real_failures, command_errors, setup_faults, timed_out, skipped,
-                                                 commands, log_path)
-    return result, hit_outputs, script_failure_tails
+    sorted_failures = sort_failures(other_failures, repo_root)
+    result, script_failure_tails = scoped_result(sorted_failures, timed_out, skipped, commands, log_path)
+    return HitCheck(result, hit_outputs, script_failure_tails)
 
 
 def scoped_test_failure(failures, log_path):
@@ -452,8 +482,10 @@ def scoped_test_failure(failures, log_path):
 def runs_script(command, script_name):
     # Whether a gate command runs the toolkit script `python3 <dir>/<script_name> --base <sha>`: a word of the command
     # must be the script's own file.
-    simple_commands = shell_command.resolved_command_words(command)
-    return any(pathlib.PurePath(word).name == script_name for words in simple_commands for word in words)
+    for words in shell_command.resolved_command_words(command):
+        if any(pathlib.PurePath(word).name == script_name for word in words):
+            return True
+    return False
 
 
 def is_stale_prose_check(command):
@@ -514,12 +546,88 @@ def append_gate_log(row):
     script_utils.append_jsonl(GATE_LOG, row)
 
 
-def log_gate_run(gate, coder, seconds, failed_count, timed_out_count, setup_fault_count, not_started_count):
+GateCounts = namedtuple("GateCounts", ["failed", "timed_out", "setup_faults", "not_started"])
+
+
+def log_gate_run(gate, coder, seconds, counts):
     repo_name = pathlib.Path(gate["repoRoot"]).name
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repo_name, "result": coder["result"],
-           "run": coder["runs"], "seconds": seconds, "failed": failed_count, "timed_out": timed_out_count,
-           "setup_faults": setup_fault_count, "not_started": not_started_count}
+           "run": coder["runs"], "seconds": seconds, "failed": counts.failed, "timed_out": counts.timed_out,
+           "setup_faults": counts.setup_faults, "not_started": counts.not_started}
     append_gate_log(row)
+
+
+GateRunReport = namedtuple("GateRunReport", ["gate", "coder", "seconds", "counts", "failures"])
+
+
+def _read_unexpired_gate(gate_file):
+    # The stored gate, or None when it is gone or older than MAX_GATE_AGE_SECONDS.
+    # Fail-open: a gate that does not exist, or that a clear removed since the path was built (clear takes no lock),
+    # leaves nothing to run, so the hand-back goes through.
+    try:
+        checked_gate = json.loads(gate_file.read_text())
+    except FileNotFoundError:
+        return None
+
+    if time.time() - checked_gate["setAt"] > MAX_GATE_AGE_SECONDS:
+        return None
+    return checked_gate
+
+
+def _apply_outcome(coder, outcome):
+    # Sets the coder's result, and counts a denial, from the gate run's outcome.
+    if outcome != RESULT_FAILED:
+        coder["result"] = outcome
+        return
+
+    if coder["denies"] >= MAX_DENIES:
+        coder["result"] = "cap"
+        return
+
+    coder["result"] = "deny"
+    coder["denies"] += 1
+
+
+def _run_stored_gate(gate, event, hook_started):
+    # Runs the gate's commands for the coder of the event, stores the coder's result in the gate and reports the run.
+    budget_seconds = GATE_BUDGET_SECONDS - (time.monotonic() - hook_started)
+    started = time.time()
+    failures, skipped, timed_out, not_started = run_commands(gate, budget_seconds)
+    seconds = round(time.time() - started)
+
+    sorted_failures = sort_failures(failures, gate["repoRoot"])
+    real_failures, setup_faults, command_errors = sorted_failures
+
+    # Only the run and deny counts carry over; a coder stored in an older format loses its old command lists.
+    agent_id = event.get("agent_id") or "unknown"
+    earlier = gate["coders"].get(agent_id, {})
+    coder = {"runs": earlier.get("runs", 0) + 1, "denies": earlier.get("denies", 0), "result": "none",
+             "commands": command_outcomes(sorted_failures, timed_out, skipped, not_started)}
+    outcome = gate_outcome(real_failures, command_errors, setup_faults, timed_out, not_started)
+    _apply_outcome(coder, outcome)
+    gate["coders"][agent_id] = coder
+    counts = GateCounts(len(real_failures), len(timed_out), len(setup_faults), len(not_started))
+    return GateRunReport(gate, coder, seconds, counts, real_failures)
+
+
+def _run_gate_under_lock(gate_file, checked_gate, event, hook_started):
+    # The report of the run, or None when the gate was cleared or set again during the lock wait.
+    lock_path = gate_file.with_suffix(".lock")
+    with lock_path.open("w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+
+        # Fail-open: a gate cleared, or set again (new setAt) during the lock wait, is not the gate
+        # that was checked above, so the hand-back goes through.
+        try:
+            gate = json.loads(gate_file.read_text())
+        except FileNotFoundError:
+            return None
+        if gate["setAt"] != checked_gate["setAt"]:
+            return None
+
+        report = _run_stored_gate(gate, event, hook_started)
+        script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
+        return report
 
 
 def run_hook():
@@ -534,61 +642,23 @@ def run_hook():
 
     # The age check runs before the lock, so a coder that the gate does not cover never waits on the lock. The
     # gate is read again under the lock: a coder that held it may have written its result.
-    # Fail-open: a gate that does not exist, or that a clear removed since the path was built (clear takes no lock),
-    # leaves nothing to run, so the hand-back goes through.
-    try:
-        checked_gate = json.loads(gate_file.read_text())
-    except FileNotFoundError:
+    checked_gate = _read_unexpired_gate(gate_file)
+    if checked_gate is None:
         return
 
-    if time.time() - checked_gate["setAt"] > MAX_GATE_AGE_SECONDS:
+    report = _run_gate_under_lock(gate_file, checked_gate, event, hook_started)
+    if report is None:
         return
 
-    lock_path = gate_file.with_suffix(".lock")
-    with lock_path.open("w") as lock_file:
-        fcntl.flock(lock_file, fcntl.LOCK_EX)
+    log_gate_run(report.gate, report.coder, report.seconds, report.counts)
 
-        # Fail-open: a gate cleared, or set again (new setAt) during the lock wait, is not the gate
-        # that was checked above, so the hand-back goes through.
-        try:
-            gate = json.loads(gate_file.read_text())
-        except FileNotFoundError:
-            return
-        if gate["setAt"] != checked_gate["setAt"]:
-            return
-
-        budget_seconds = GATE_BUDGET_SECONDS - (time.monotonic() - hook_started)
-        started = time.time()
-        failures, skipped, timed_out, not_started = run_commands(gate, budget_seconds)
-        seconds = round(time.time() - started)
-
-        failures, setup_faults, command_errors = sort_failures(failures, gate["repoRoot"])
-
-        # Only the run and deny counts carry over; a coder stored in an older format loses its old command lists.
-        agent_id = event.get("agent_id") or "unknown"
-        earlier = gate["coders"].get(agent_id, {})
-        coder = {"runs": earlier.get("runs", 0) + 1, "denies": earlier.get("denies", 0), "result": "none",
-                 "commands": command_outcomes(failures, command_errors, setup_faults, timed_out, skipped,
-                                              not_started)}
-        outcome = gate_outcome(failures, command_errors, setup_faults, timed_out, not_started)
-        if outcome != RESULT_FAILED:
-            coder["result"] = outcome
-        elif coder["denies"] >= MAX_DENIES:
-            coder["result"] = "cap"
-        else:
-            coder["result"] = "deny"
-            coder["denies"] += 1
-        gate["coders"][agent_id] = coder
-        script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
-
-    log_gate_run(gate, coder, seconds, len(failures), len(timed_out), len(setup_faults), len(not_started))
-
-    if coder["result"] == "deny":
-        script_utils.pre_tool_use_deny(denial(failures))
+    if report.coder["result"] == "deny":
+        script_utils.pre_tool_use_deny(denial(report.failures))
         return
 
     tool_input = event.get("tool_input") or {}
-    print(json.dumps(stamped_handback(tool_input, coder)))
+    stamped = stamped_handback(tool_input, report.coder)
+    print(json.dumps(stamped))
 
 
 def run_bash_hook():
@@ -609,6 +679,17 @@ def run_bash_hook():
     script_utils.pre_tool_use_deny(reason)
 
 
+def _parse_set_arguments(set_arguments):
+    # (the --env assignments, the commands) of the arguments after `set`.
+    env_assignments = []
+    while len(set_arguments) >= 2 and set_arguments[0] == "--env":
+        env_assignments.append(set_arguments[1])
+        set_arguments = set_arguments[2:]
+    if "--env" in set_arguments:
+        sys.exit("coder-gate: --env needs NAME=value, got nothing after it")
+    return env_assignments, set_arguments
+
+
 def main():
     if script_utils.help_requested(sys.argv[1:]):
         print(USAGE)
@@ -616,25 +697,22 @@ def main():
 
     verb = sys.argv[1] if len(sys.argv) > 1 else ""
     if verb == "set":
-        set_arguments = sys.argv[2:]
-        env_assignments = []
-        while len(set_arguments) >= 2 and set_arguments[0] == "--env":
-            env_assignments.append(set_arguments[1])
-            set_arguments = set_arguments[2:]
-        if "--env" in set_arguments:
-            sys.exit("coder-gate: --env needs NAME=value, got nothing after it")
-
-        set_gate(set_arguments, env_assignments)
-    elif verb == "summary":
+        env_assignments, commands = _parse_set_arguments(sys.argv[2:])
+        set_gate(commands, env_assignments)
+        return
+    if verb == "summary":
         print_gate_summary()
-    elif verb == "clear":
+        return
+    if verb == "clear":
         clear_gate()
-    elif verb == "hook":
+        return
+    if verb == "hook":
         run_hook()
-    elif verb == "bash-hook":
+        return
+    if verb == "bash-hook":
         run_bash_hook()
-    else:
-        sys.exit(USAGE)
+        return
+    sys.exit(USAGE)
 
 
 if __name__ == "__main__":

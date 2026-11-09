@@ -8,7 +8,7 @@ seq: 8
 kind: "user-rule"
 components: ["script/coder-gate", "script/review-loop-script", "script/gate-commands", "script/code-review-start"]
 evidence: ["user rule", "stdlib and npm calibration"]
-watches: ["coder-readability-first-findings", "coder-readability-first-coder-cost"]
+watches: ["coder-readability-first-findings", "coder-readability-first-coder-cost", "coder-readability-handback-denials"]
 test: ""
 asked: "2026-11-08: how do i tune my coder rules so that readability and human maintainability are king / #1 priority bar none ... go hard and solve this"
 proof: []
@@ -33,7 +33,7 @@ Median of 11 runs on a 10-file change (7 stdlib .py, 3 npm .js, 8,688 lines): 24
 
 ## Watch
 
-`coder-readability-first-findings`: smell, duplication, complexity and naming findings per review run, good direction down. `coder-readability-first-coder-cost`: Sonnet coder cache read per dispatch, good direction flat; a denied hand-back adds a coder turn. A watch on readability denials per dispatch needs a new entry in the watch registry.
+`coder-readability-first-findings`: smell, duplication, complexity and naming findings per review run, good direction down. `coder-readability-first-coder-cost`: Sonnet coder cache read per dispatch, good direction flat; a denied hand-back adds a coder turn. `coder-readability-handback-denials`: readability denials per gated coder dispatch, good direction down; it reads the gate log's `readability_failed` count, so it starts with the rows written after that field shipped.
 
 ## Back-out
 

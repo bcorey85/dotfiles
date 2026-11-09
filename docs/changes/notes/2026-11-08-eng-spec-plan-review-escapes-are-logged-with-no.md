@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-Step 20b of `eng-spec/phases/6b-review.md` drops `miss_reason=plan-gap` from its log-escape line. log-escape still requires miss_reason on every other row. A `gate_missed=eng-spec` row may leave it out, and is then sent without the field.
+Step 20b of `eng-spec/phases/6b-review.md` drops `miss_reason=plan-gap` from its log-escape line. log-escape still requires miss_reason on every other row. A `gate_missed=eng-spec` row may leave it out, and is then sent without the field. `escape-ratchet.md` stays as it was: a listed miss_reason on an eng-spec row is still accepted.
 
 ## Evidence
 

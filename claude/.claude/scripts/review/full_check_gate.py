@@ -20,6 +20,9 @@ CHECK_TIMEOUT_SECONDS = 900
 # The files in the loop's state folder that hold the whole output of the full check and of its base run.
 FULL_CHECK_LOG = "full-check.log"
 FULL_CHECK_BASE_LOG = "full-check-base.log"
+# The stems of the per-command logs a red scoped test run is compared on: its head output and its base run.
+SCOPED_HEAD_LOG_STEM = "scoped-head"
+SCOPED_BASE_LOG_STEM = "scoped-base"
 # Process-group leaders of the claude calls and checks now running: each starts its own session, so the group kill
 # that stops the loop script does not reach them.
 LIVE_CHILDREN = set()
@@ -68,6 +71,7 @@ class FullCheckSteps:
         self.expected_red = []  # the phase's Expected red entries that the check leaves out
         self.base_checked = False
         self.base_run = None
+        self.scoped_base_runs = {}  # {scoped test command: its base run}, one base run per command per loop
         self.check_details = {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
 
     def full_check_pass(self, check_command):
@@ -138,6 +142,28 @@ class FullCheckSteps:
             self.base_run = run_full_check(self.repo, self.out, check_command, self.gate_env,
                                            runner=base_runner, log_name=FULL_CHECK_BASE_LOG)
         return full_check.is_pre_existing(self.out / FULL_CHECK_LOG, self.full_check, self.base_run)
+
+    def scoped_failures_pre_existing(self, real_failures):
+        """True when every red scoped test command, each a (command, outcome, output) from
+        coder_gate.run_scoped_tests_with_failures, fails as its base run does on HEAD without the working-tree changes,
+        by full_check.is_pre_existing. A new failing test, a new error line or a base run that passes makes it False.
+        Each command's base run happens once per loop."""
+        if not real_failures:
+            return False
+
+        gate_assignments = script_utils.environment_from_assignments(self.gate_env)
+        base_runner = functools.partial(full_check.base_run, live_trees=LIVE_BASE_TREES, gate_env=gate_assignments)
+        for index, (command, outcome, output) in enumerate(real_failures):
+            if command not in self.scoped_base_runs:
+                base_log = f"{SCOPED_BASE_LOG_STEM}-{len(self.scoped_base_runs)}.log"
+                self.scoped_base_runs[command] = run_full_check(self.repo, self.out, command, self.gate_env,
+                                                                runner=base_runner, log_name=base_log)
+            head_log = self.out / f"{SCOPED_HEAD_LOG_STEM}-{index}.log"
+            head_log.write_text(output)
+            head_result = f"failed ({outcome})"
+            if not full_check.is_pre_existing(head_log, head_result, self.scoped_base_runs[command]):
+                return False
+        return True
 
     def autofix_touched_files(self):
         """Run the autofix formatters on the files the loop touched, a web tool only where the repo configures it.

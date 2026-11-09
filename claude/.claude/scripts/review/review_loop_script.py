@@ -861,11 +861,18 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def run_test_commands(self, test_commands):
         """Run the scoped test commands and keep their result. A red run the autofix formatters can fix is fixed and
-        run once more. False, with the loop stopped, when one stays red."""
+        run once more. A red run whose every failure also fails on HEAD without the diff is pre-existing, not red.
+        False, with the loop stopped, when one stays red."""
         log_path = self.out / SCOPED_TESTS_LOG
-        self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, test_commands, self.gate_env, log_path)
+        self.scoped_tests, tails, real_failures = coder_gate.run_scoped_tests_with_failures(
+            self.repo, test_commands, self.gate_env, log_path)
         if tails and self.autofix_touched_files():
-            self.scoped_tests, tails = coder_gate.run_scoped_tests(self.repo, test_commands, self.gate_env, log_path)
+            self.scoped_tests, tails, real_failures = coder_gate.run_scoped_tests_with_failures(
+                self.repo, test_commands, self.gate_env, log_path)
+        if tails and self.scoped_failures_pre_existing(real_failures):
+            self.scoped_tests = f"{full_check.SCOPED_PRE_EXISTING}: {self.scoped_tests}"
+            return True
+
         if tails:
             self.stop("critical-blocker", ["scoped tests failing after the last fix:\n" + "\n\n".join(tails)])
             return False

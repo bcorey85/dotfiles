@@ -89,6 +89,7 @@ from review_loop_calls import (
     LIVE_CHILDREN,
     PARENT_SESSION,
     claude_call,
+    last_session,
     now,
     record_main_dispatch,
 )
@@ -211,9 +212,10 @@ def put_back_untracked(role, backup):
 def coder_call(role, prompt, repo, out, held=()):
     """The fix coder. Returns (report, diffs, changed): the diffs of what it changed feed the round-two brief, and
     one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the class-closure check;
-    changed lists the paths whose text differs. The held files get their bytes back after the call, so they never
-    count as changed. A failed call raises CoderCallError naming the files it changed before it died."""
-    before = file_texts(repo)
+    changed lists the paths whose text differs. The coder's own writes to held files are undone after the call, and
+    a held file never counts as changed. A failed call raises CoderCallError naming the files it changed before it
+    died."""
+    before = review_loop_held.without_held(file_texts(repo), held)
     untracked = [path for path, entry in scope(repo).items() if entry[1] == "??"]
     backup = file_backup.save_files(repo, untracked)
     held_backup = review_loop_held.save(repo, held)
@@ -221,8 +223,8 @@ def coder_call(role, prompt, repo, out, held=()):
         report = claude_call(role, prompt, repo, out, agent="coder")
     except RuntimeError as error:
         put_back_untracked(role, backup)
-        review_loop_held.restore_held(role, held_backup)
-        after = file_texts(repo)
+        review_loop_held.restore_held(role, held_backup, last_session(role))
+        after = review_loop_held.without_held(file_texts(repo), held)
         changed = changed_paths(before, after)
         if not changed:
             raise
@@ -231,8 +233,8 @@ def coder_call(role, prompt, repo, out, held=()):
         raise CoderCallError(message, changed) from error
 
     put_back_untracked(role, backup)
-    review_loop_held.restore_held(role, held_backup)
-    after = file_texts(repo)
+    review_loop_held.restore_held(role, held_backup, last_session(role))
+    after = review_loop_held.without_held(file_texts(repo), held)
     diffs = []
     paths = sorted(set(before) | set(after))
     for path in paths:

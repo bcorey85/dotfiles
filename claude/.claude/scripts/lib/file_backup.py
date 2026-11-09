@@ -57,18 +57,3 @@ def restore_missing(backup):
         restored.append(path)
     lost = [path for path in backup.unsaved if not (backup.root / path).exists()]
     return sorted(restored), sorted(lost)
-
-
-def restore_changed(backup):
-    """Write back every saved file whose bytes differ from the saved bytes, or that is gone. Returns (restored,
-    unguarded): the paths put back, and the unsaved paths, whose bytes could not be checked."""
-    restored = []
-    for path, content in backup.saved.items():
-        target = backup.root / path
-        if target.is_file() and target.read_bytes() == content:
-            continue
-
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
-        restored.append(path)
-    return sorted(restored), sorted(backup.unsaved)

@@ -1,8 +1,9 @@
 """review_loop_held.py: the files another session holds in a shared tree. A held file was dirty when the run started
-and is not one of the run's own files. The loop never reviews one, tells each fix coder never to edit one, and puts
-back the bytes of any held file a fix coder changed anyway."""
+and is not one of the run's own files. The loop never reviews one, tells each fix coder never to edit one, and undoes
+the coder's own writes to one when no other change landed on it during the call."""
 import file_backup
 import review_loop_plan
+import session_edits
 
 # A held file larger than this is not saved, so a coder's edit to it is reported but cannot be undone.
 MAX_HELD_FILE_BYTES = 16 * 1024 * 1024
@@ -33,14 +34,55 @@ def save(repo, held):
     return file_backup.save_files(repo, held, max_file_bytes=MAX_HELD_FILE_BYTES, max_total_bytes=MAX_HELD_TOTAL_BYTES)
 
 
-def restore_held(role, backup):
-    """Write back every held file the call changed or deleted, and note each in HELD_FAULTS. Returns the paths put
+def coder_result(saved, writes):
+    """The bytes a held file holds when only the coder's recorded writes landed on its saved bytes; None when they
+    cannot be replayed."""
+    try:
+        text = saved.decode()
+        return session_edits.replayed_text(text, writes).encode()
+    except (UnicodeDecodeError, session_edits.ReplayError):
+        return None
+
+
+def restore_held(role, backup, session_id):
+    """Undo the coder's own writes to held files. A held file goes back to its bytes from before the call only when
+    it holds exactly the coder's result, so an edit the owning session made during the call is never erased. A held
+    file the coder wrote that holds anything else is left as it is, and noted in HELD_FAULTS. Returns the paths put
     back."""
-    restored, unguarded = file_backup.restore_changed(backup)
+    if backup.unsaved:
+        HELD_FAULTS.append(f"{role} ran beside held files too large to save, so an edit to them was not undone: "
+                           + ", ".join(backup.unsaved))
+    changed = {}
+    for path, saved in backup.saved.items():
+        target = backup.root / path
+        now = target.read_bytes() if target.is_file() else None
+        if now != saved:
+            changed[path] = (saved, now)
+    if not changed:
+        return []
+
+    transcript = session_edits.session_transcript(session_id)
+    if transcript is None:
+        HELD_FAULTS.append(f"{role} ran while held files changed, and its transcript is not there to show whose "
+                           f"change it was, so the loop left them as they are: {', '.join(sorted(changed))}")
+        return []
+
+    writes = session_edits.file_writes(transcript, backup.root)
+    restored = []
+    left = []
+    for path, (saved, now) in sorted(changed.items()):
+        if path not in writes:
+            continue
+        if coder_result(saved, writes[path]) != now:
+            left.append(path)
+            continue
+        (backup.root / path).write_bytes(saved)
+        restored.append(path)
+
     if restored:
         HELD_FAULTS.append(f"{role} edited files another session holds; the loop put back their bytes: "
                            + ", ".join(restored))
-    if unguarded:
-        HELD_FAULTS.append(f"{role} ran beside held files too large to save, so an edit to them was not undone: "
-                           + ", ".join(unguarded))
+    if left:
+        HELD_FAULTS.append(f"{role} edited files another session holds, and they changed again during the call, so "
+                           "the loop left them as they are: " + ", ".join(left))
     return restored

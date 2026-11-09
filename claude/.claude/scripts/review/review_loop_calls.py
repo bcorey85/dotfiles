@@ -50,6 +50,13 @@ def record_call(out, sequence, record):
         script_utils.append_jsonl(out / "calls.jsonl", record)
 
 
+def last_session(role):
+    """The session id of the newest finished call of `role`; "" when none ran or its reply named none."""
+    with CALLS_LOCK:
+        records = [record for record in CALLS if record and record["role"] == role]
+    return records[-1]["session"] if records else ""
+
+
 def record_main_dispatch(out, role, agent, wall):
     """The call log row of a reviewer the main session ran as a subagent."""
     sequence = next_call_number()

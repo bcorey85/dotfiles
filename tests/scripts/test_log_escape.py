@@ -178,6 +178,46 @@ class LogEscapeTest(unittest.TestCase):
         self.assertIn("escape-ratchet.md", done.stderr)
         self.assertEqual(self.escape_rows(), [])
 
+    def test_an_eng_spec_escape_needs_no_miss_reason_and_sends_none(self):
+        args = [argument for argument in VALID_ARGS
+                if not argument.startswith(("miss_reason=", "gate_missed=", "stage_found="))]
+        env = self.environment(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason")
+        done = self.run_escape(*args, "gate_missed=eng-spec", "stage_found=plan-review", env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("does not store miss_reason", done.stderr)
+        (row,) = self.escape_rows()
+        self.assertNotIn("miss_reason", row)
+        self.assertEqual(row["gate_missed"], "eng-spec")
+
+    def test_an_eng_spec_escape_with_an_empty_miss_reason_sends_none(self):
+        args = [argument for argument in VALID_ARGS
+                if not argument.startswith(("miss_reason=", "gate_missed="))]
+        done = self.run_escape(*args, "gate_missed=eng-spec", "miss_reason=")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        (row,) = self.escape_rows()
+        self.assertNotIn("miss_reason", row)
+
+    def test_an_eng_spec_escape_still_validates_a_given_miss_reason(self):
+        args = [argument for argument in VALID_ARGS
+                if not argument.startswith(("miss_reason=", "gate_missed="))]
+        refused = self.run_escape(*args, "gate_missed=eng-spec", "miss_reason=vibes")
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("refusing to log: miss_reason=", refused.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        accepted = self.run_escape(*args, "gate_missed=eng-spec", "miss_reason=plan-gap")
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(self.escape_rows()[-1]["miss_reason"], "plan-gap")
+
+    def test_only_the_eng_spec_gate_may_omit_miss_reason(self):
+        for gate in ("plan", "eng-spec-x"):
+            with self.subTest(gate=gate):
+                args = [argument for argument in VALID_ARGS
+                        if not argument.startswith(("miss_reason=", "gate_missed=", "stage_found="))]
+                done = self.run_escape(*args, f"gate_missed={gate}", "stage_found=plan-review")
+                self.assertEqual(done.returncode, 1)
+                self.assertIn("refusing to log: miss_reason=", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+
     def test_a_miss_reason_outside_the_list_is_refused(self):
         for label in ("vibes", "plan", "plan-gap,unknown", ""):
             with self.subTest(label=label):

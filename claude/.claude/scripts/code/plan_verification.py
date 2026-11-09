@@ -63,7 +63,7 @@ def starts_like_a_program_here(span, repo_dir):
         return False
 
     # A relative path with a slash is looked up from the working directory, not PATH: only the repo-file rule above
-    # may accept it, and that rule keeps it inside the repo.
+    # may accept it, and that rule keeps the path's text inside the repo (a link in the repo may point anywhere).
     if has_slash and not pathlib.PurePath(program).is_absolute():
         return False
 

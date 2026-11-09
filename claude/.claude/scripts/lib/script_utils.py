@@ -951,11 +951,20 @@ def directory_relative_to(root_directory, directory):
 
 
 def is_executable_file_inside(root_directory, relative_path):
-    """True when relative_path, taken from root_directory, names an executable file inside root_directory. A path that
-    leaves root_directory (a `..` segment or a link out) is not one. root_directory is a pathlib.Path or text."""
-    resolved_root = pathlib.Path(root_directory).resolve()
-    candidate = (resolved_root / relative_path).resolve()
-    if not candidate.is_relative_to(resolved_root):
+    """True when relative_path, taken from root_directory, names an executable file inside root_directory. Inside is
+    read from the path's own text, so any link inside root_directory to a target elsewhere (such as
+    `.venv/bin/python` or `node_modules/.bin/<tool>`) counts. A path with a `..` segment does not, because the
+    shell follows a link before it applies `..`; that includes a `..` that stays inside with no link
+    (`bin/../bin/tool`), rejected to keep the check simple. An absolute path does not when its text falls outside
+    the root. root_directory is a pathlib.Path or text."""
+    if ".." in pathlib.PurePath(relative_path).parts:
         return False
 
-    return candidate.is_file() and os.access(candidate, os.X_OK)
+    given_root = pathlib.Path(os.path.abspath(root_directory))
+    resolved_root = given_root.resolve()
+    given = given_root / relative_path
+    inside = given.is_relative_to(given_root) or given.is_relative_to(resolved_root)
+    if not inside:
+        return False
+
+    return given.is_file() and os.access(given, os.X_OK)

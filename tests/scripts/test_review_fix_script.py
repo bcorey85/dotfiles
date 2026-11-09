@@ -1969,7 +1969,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         rows it writes are the ones `packet` reads."""
         stub = self.temp_root / "loop_stub.py"
         stub.write_text(
-            "import json, sys\n"
+            "import json, pathlib, sys\n"
             f"sys.path[:0] = [{str(toolkit_paths.REVIEW_DIR)!r}, {str(toolkit_paths.CODE_DIR)!r}, "
             f"{str(toolkit_paths.LIB_DIR)!r}, {str(toolkit_paths.TELEMETRY_DIR)!r}]\n"
             "import review_loop_packet, review_loop_script\n"
@@ -1977,6 +1977,8 @@ class ReviewFixScriptTest(unittest.TestCase):
             "options = dict(zip(argv[1::2], argv[2::2]))\n"
             "args = review_loop_script.parse_review_loop_arguments(argv)\n"
             "print(json.dumps({'argv': argv, 'repo': argv[0], **options}))\n"
+            "loop_folder = pathlib.Path(args.state_dir) / 'loop-script' / args.agent_id\n"
+            f"(loop_folder / 'packet.txt').write_text({message!r} + '\\n')\n"
             f"review_loop_packet.write_handback_rows(args, {message!r}, 'converged', [], False)\n")
         return stub
 

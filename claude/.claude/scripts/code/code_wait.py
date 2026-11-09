@@ -11,9 +11,10 @@ Nested Agent calls in a fork return at once, and a fork that ends its turn hands
 <report file>` pair names a reviewer the fork dispatched for an open request (see reviewer_dispatch.py): the wait
 writes each one's report to its file as soon as that reviewer finishes, which is how the reports reach the loop (the
 fork has no Write tool). It returns when the loop asks for reviewers no pair answers (`ACTION: dispatch-reviewer`),
-when a named reviewer finished with no report (exit 1), or with the loop's output once it ends.
+when a named reviewer finished with no report (exit 1), or once the loop ends: it prints the loop's output when the
+loop left a packet, and otherwise exits 1 with the reason and the restart step.
 `review --loop <loop dir>` waits the same way on a loop that `review_fix.py launch --detach` started for the /review
-or /fix fork: its pid is <loop dir>/loop.pid, and once the loop ends it prints the packet command to run.
+or /fix fork: its pid is <loop dir>/loop.pid, and once the loop ends with a packet it prints the packet command to run.
 Each call waits at most WAIT_SECONDS, then says to run the same command again.
 """
 
@@ -39,6 +40,11 @@ SETTLE_SECONDS = 3
 SETTLE_POLL_SECONDS = 0.25
 STILL_WORKING = "Still working. Run the same command again."
 NO_REPORT = "The agent finished with no report."
+LOOP_GONE = "The review loop process is not running, but these reviewer requests have no report:"
+PHASE_RESTART = ("Its process was stopped before the loop finished. Run this phase's "
+                 "`code_review_start.py ... --detach` line again, then this wait.")
+LAUNCHED_RESTART = ("Its process was stopped before the loop finished. Run the skill's launch line with --detach "
+                    "again, then the wait it prints.")
 AGENT_ID = re.compile(r"a[0-9a-f]{16}")
 AGENT_ID_FORM = "the agentId an Agent call returned: `a` and 16 hex digits"
 PHASE_DIR_NAME = "code-phase"
@@ -100,13 +106,15 @@ def phase_dir(repo):
     return folder
 
 
-def review_running(repo):
+def running_review_pid(repo):
+    """The pid in <git dir>/code-phase/pid when that process is alive, else None."""
     pid_file = phase_dir(repo) / PID_FILE
     try:
-        os.kill(int(pid_file.read_text().strip()), 0)
+        pid = int(pid_file.read_text().strip())
+        os.kill(pid, 0)
     except (OSError, ValueError):
-        return False
-    return True
+        return None
+    return pid
 
 
 def loop_dir(repo):
@@ -121,24 +129,42 @@ def loop_dir(repo):
 @dataclasses.dataclass(frozen=True)
 class ReviewRun:
     """The review loop a `review` wait follows: the command that waits on it again, the folder that holds its
-    reviewer requests (None before the loop names it), whether it still runs, and what to print once it ended."""
+    reviewer requests (None before the loop names it), whether it still runs, what to print once it ended ("" when
+    it left nothing), the message for an ended loop that left nothing, and how to start it again when its process
+    ended before the loop finished."""
     command: str
     loop_folder: Callable[[], str | None]
     running: Callable[[], bool]
     final_output: Callable[[], str]
+    no_output: Callable[[], str]
+    restart: str
 
 
 def phase_review_output(repo):
+    # review.out holds code_review_start.py's stdout, which is text even when the loop died with no packet, so only
+    # the loop's packet says the loop finished.
+    folder = loop_dir(repo)
+    if folder is None:
+        return ""
+    if not (pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE).is_file():
+        return ""
     review_output = phase_dir(repo) / REVIEW_OUTPUT
     if not review_output.exists():
-        return "No review output was written."
+        return ""
     return review_output.read_text()
 
 
 def phase_review(repo):
     """The review code_review_start.py --detach left for the /code fork."""
-    return ReviewRun(REVIEW_COMMAND, lambda: loop_dir(repo), lambda: review_running(repo),
-                     lambda: phase_review_output(repo))
+
+    def no_output():
+        # The loop names its folder after this run starts, so read it when the message is needed.
+        folder = loop_dir(repo) or "<loop dir>"
+        return (f"The review loop ended and left no packet in {pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE}. "
+                f"Log: {phase_dir(repo) / REVIEW_OUTPUT}.")
+
+    return ReviewRun(REVIEW_COMMAND, lambda: loop_dir(repo), lambda: running_review_pid(repo) is not None,
+                     lambda: phase_review_output(repo), no_output, PHASE_RESTART)
 
 
 def launched_loop_running(folder):
@@ -157,8 +183,16 @@ def launched_review(folder):
         raise UsageError(f"{folder} holds no {reviewer_dispatch.PID_FILE}; expected the loop folder that "
                          "`review_fix.py launch --detach` printed")
     packet_command = reviewer_dispatch.packet_command(folder)
+    packet_file = pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE
+
+    def final_output():
+        if not packet_file.is_file():
+            return ""
+        return f"The review loop script finished. Run `{packet_command}` now."
+
+    no_output = f"The review loop ended and left no packet in {packet_file}."
     return ReviewRun(launched_review_command(folder), lambda: folder, lambda: launched_loop_running(folder),
-                     lambda: f"The review loop script finished. Run `{packet_command}` now.")
+                     final_output, lambda: no_output, LAUNCHED_RESTART)
 
 
 def open_reviewer_requests(run):
@@ -248,13 +282,35 @@ def wait_review(repo, words=(), launched_folder=None):
                          f"`{run.command}` with the new agentId in place of the old one."]))
         return 1
 
+    if not run.running():
+        return print_ended_loop(run)
+
     pending = unanswered_requests(run, pairs)
     if pending:
         print("\n".join(reviewer_dispatch_lines(run, pending)))
         return 0
 
-    print(run.final_output())
+    print(STILL_WORKING)
     return 0
+
+
+def print_ended_loop(run):
+    # The loop's own output comes first: a loop that ended may have written a packet, a crash packet included, which
+    # says more than a missing process does.
+    final_output = run.final_output()
+    if final_output.strip():
+        print(final_output)
+        return 0
+
+    open_requests = open_reviewer_requests(run)
+    if open_requests:
+        folder = run.loop_folder()
+        print("\n".join([LOOP_GONE, *reviewer_dispatch.request_lines(open_requests)[1:], f"Loop folder: {folder}",
+                         run.restart]))
+        return 1
+
+    print(f"{run.no_output()} {run.restart}")
+    return 1
 
 
 def review_words(words):

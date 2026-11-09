@@ -120,12 +120,50 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual("deny", self.stored_gate()["coders"]["a1"]["result"])
         self.assertIn("deny", done.stdout)
 
-    def test_a_readability_hit_denies_the_hand_back_with_the_hit_line(self):
+    def set_gate_with_a_readability_hit(self, *other_commands):
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "base"], cwd=self.repo, check=True, env=self.env)
         base = script_utils.git_output(self.repo, "rev-parse", "HEAD")
         (self.repo / "app.py").write_text("def handle(a, b, c):\n    if a:\n        if b:\n            if c:\n"
                                           "                return 1\n    return 0\n")
-        self.gate_set(f"python3 {GATE_SCRIPT.parent / 'readability_check.py'} --base {base}")
+        self.gate_set(f"python3 {GATE_SCRIPT.parent / 'readability_check.py'} --base {base}", *other_commands)
+
+    def logged_gate_rows(self):
+        return script_utils.read_jsonl(self.home / ".claude/coder-gate.jsonl")
+
+    def test_a_denial_by_a_readability_hit_logs_one_readability_failure(self):
+        self.set_gate_with_a_readability_hit()
+        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
+
+        self.gate_hook()
+
+        row = self.logged_gate_rows()[-1]
+        self.assertEqual("deny", row["result"])
+        self.assertEqual(1, row["failed"])
+        self.assertEqual(1, row["readability_failed"])
+
+    def test_a_readability_hit_and_another_failing_command_log_only_the_hit_as_readability(self):
+        self.set_gate_with_a_readability_hit("exit 3")
+        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
+
+        self.gate_hook()
+
+        row = self.logged_gate_rows()[-1]
+        self.assertEqual(2, row["failed"])
+        self.assertEqual(1, row["readability_failed"])
+
+    def test_a_denial_by_a_failing_other_command_logs_no_readability_failure(self):
+        self.gate_set("exit 3")
+        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
+
+        self.gate_hook()
+
+        row = self.logged_gate_rows()[-1]
+        self.assertEqual("deny", row["result"])
+        self.assertEqual(1, row["failed"])
+        self.assertEqual(0, row["readability_failed"])
+
+    def test_a_readability_hit_denies_the_hand_back_with_the_hit_line(self):
+        self.set_gate_with_a_readability_hit()
 
         done = self.gate_hook()
 

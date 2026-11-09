@@ -28,7 +28,7 @@ User rule. Work census, `review-findings.jsonl`, code lane, dotfiles and agent-e
 
 ## Result
 
-Pending. Two rule-meter scenarios meter the section and the nesting bullet on the coder, rule on against rule off under a competing prompt.
+Rule-meter, 8 runs with the text and 8 without, under a brief that pulls the other way. The whole section raised the runs that kept to the limits from 0 to 3 of 8. The nesting bullet scored 8 of 8 with or without the text. Finding: `agent-evals/findings/2026-11-08-the-readability-rules-move-the-coder-only-where-a.md`.
 
 ## Watch
 

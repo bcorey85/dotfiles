@@ -113,10 +113,26 @@ class WaitReviewTest(unittest.TestCase):
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
 
-    def test_a_finished_review_with_no_output_file_says_so(self):
+    def test_a_finished_review_with_no_output_file_says_so_and_exits_one(self):
         repo, _ = self.repo_with_pid(999999999)
+        output = io.StringIO()
 
-        self.assertEqual(printed(code_wait.wait_review, repo).strip(), "No review output was written.")
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertIn("left no output", output.getvalue())
+
+    def test_a_finished_review_with_an_empty_output_file_says_so_and_exits_one(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / "review.out").write_text("")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertIn(str(phase_dir / "review.out"), output.getvalue())
 
     def test_a_running_review_says_to_run_again(self):
         repo, _ = self.repo_with_pid(os.getpid())
@@ -284,6 +300,40 @@ class ReviewerRequestTest(unittest.TestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("no report file", errors)
+
+    def test_a_loop_process_gone_with_a_named_reviewer_at_work_says_why_and_exits_one(self):
+        # A second /code run in the same repo truncated review.out and the loop process was killed: the wait
+        # found the pid dead within a second, wrote no report and printed only an empty line.
+        (self.phase_dir / "pid").write_text("999999999")
+        (self.phase_dir / code_wait.REVIEW_OUTPUT).write_text("")
+        self.write_reviewer(AGENT_ID, [], finished=False)
+        report_file = self.entries[0]["report_file"]
+
+        code, output, _ = self.run_main("review", AGENT_ID, report_file)
+
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.LOOP_GONE, output)
+        self.assertIn(report_file, output)
+        self.assertIn("code_review_start.py", output)
+        self.assertFalse(pathlib.Path(report_file).exists())
+
+    def test_a_loop_process_gone_with_an_unanswered_request_says_why_and_exits_one(self):
+        (self.phase_dir / "pid").write_text("999999999")
+
+        code, output, _ = self.run_main("review")
+
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.LOOP_GONE, output)
+        self.assertNotIn("ACTION: dispatch-reviewer", output)
+
+    def test_a_launched_loop_gone_with_an_open_request_names_its_launch_line(self):
+        (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text("999999999\n")
+
+        code, output, _ = self.run_main("review", "--loop", str(self.loop_dir))
+
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.LOOP_GONE, output)
+        self.assertIn("launch", output)
 
     def test_a_bad_agent_id_for_agent_stops_loudly(self):
         code, _, errors = self.run_main("agent", f"{AGENT_ID} --report-file x")

@@ -36,7 +36,7 @@ import re
 import shlex
 import subprocess
 import sys
-from collections import Counter
+from collections import Counter, namedtuple
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
@@ -184,6 +184,16 @@ class DenyError(Exception):
     pass
 
 
+# The code an interpreter step runs, the arguments passed to it, and its family name.
+InterpreterCode = namedtuple("InterpreterCode", "code arguments family")
+# What scan_interpreter_arguments found: the code when no script file is run, else the script word and the arguments
+# after it.
+ArgumentScan = namedtuple("ArgumentScan", "code script_word rest")
+# The request of one hook event: the command, the session cwd, whether the agent is barred from the skip comment
+# (a subagent or a coder), and whether it is a coder.
+HookRequest = namedtuple("HookRequest", "command cwd cannot_skip coder")
+
+
 def words_of(text):
     return [w for w in re.split("[ \t\n]+", text) if w]
 
@@ -210,10 +220,9 @@ def find_editor_word(segment):
     invoked = False
     for index, word in enumerate(command_words):
         base = word.rsplit("/", 1)[-1]
-        if base in ("sed", "gsed", "perl", "awk", "gawk"):
-            if index == 0 or invoked:
-                return base
-        elif base in ("xargs", "-exec", "-execdir", "sh", "bash", "zsh", "-c", "parallel"):
+        if base in ("sed", "gsed", "perl", "awk", "gawk") and (index == 0 or invoked):
+            return base
+        if base in ("xargs", "-exec", "-execdir", "sh", "bash", "zsh", "-c", "parallel"):
             invoked = True
     return None
 
@@ -307,21 +316,33 @@ def step_folders(code, cwd):
     folders = [cwd]
     unread_change = False
     for _operator, step in shell_command.split_command_steps(code):
-        for folder in directory_changes(step):
-            if folder is None:
-                unread_change = True
-                continue
-            folder_path = os.path.join(folders[-1], os.path.expanduser(folder))
-            folders = [*folders, os.path.normpath(folder_path)]
+        folders, unread_in_step = folders_after_step(folders, step)
+        unread_change = unread_change or unread_in_step
         steps.append((step, folders, unread_change))
     return steps
+
+
+def folders_after_step(folders, step):
+    """folders extended by each literal folder the step moves to, and whether it moved to a folder that is not a
+    literal."""
+    unread_change = False
+    for folder in directory_changes(step):
+        if folder is None:
+            unread_change = True
+            continue
+        folder_path = os.path.join(folders[-1], os.path.expanduser(folder))
+        folders = [*folders, os.path.normpath(folder_path)]
+    return folders, unread_change
 
 
 def step_targets(code, cwd):
     """(raw target, folders, unread_change) for every redirect and tee target of the command text, in order, with
     the folders step_folders gives its step."""
-    return [(raw, folders, unread_change) for step, folders, unread_change in step_folders(code, cwd)
-            for raw in written_targets(step)]
+    targets = []
+    for step, folders, unread_change in step_folders(code, cwd):
+        for raw in written_targets(step):
+            targets.append((raw, folders, unread_change))
+    return targets
 
 
 def code_texts(code):
@@ -346,9 +367,19 @@ def is_git_tracked(path):
     return git_path_check(path, "ls-files", "--error-unmatch")
 
 
-def run(raw):
-    if raw.strip() == "":
-        return
+def text_segments(text, cwd):
+    """(simple command text, folders) for each simple command of the text, with the folders step_folders gives its
+    step."""
+    segments = []
+    for step, folders, _unread in step_folders(text, cwd):
+        for segment in simple_command_texts(step):
+            segments.append((segment, folders))
+    return segments
+
+
+def read_request(raw):
+    """The HookRequest in the hook input text, or None for a call with no command. Input that does not parse is a
+    deny (fail closed)."""
     try:
         payload = json.loads(raw)
         command = jq_str(jq_get(payload, "tool_input", "command"))
@@ -357,66 +388,94 @@ def run(raw):
             "[shell-write-gate] hook input did not parse — failing closed. Report this to the user."
         ) from None
     agent = jq_str(jq_get(payload, "agent_type"))
-    subagent = bool(jq_str(jq_get(payload, "agent_id")))
+    agent_id = jq_str(jq_get(payload, "agent_id"))
     coder = bool(script_utils.CODERS.match(agent))
     cwd = jq_str(jq_get(payload, "cwd")) or os.getcwd()
     if not command:
+        return None
+    return HookRequest(command, cwd, bool(agent_id) or coder, coder)
+
+
+def run(raw):
+    if raw.strip() == "":
+        return
+    request = read_request(raw)
+    if request is None:
         return
 
+    command = request.command
     code = strip_comments(strip_heredocs(command))
     texts = code_texts(code)
-    segment_folders = [(segment, folders) for text in texts for step, folders, _unread in step_folders(text, cwd)
-                       for segment in simple_command_texts(step)]
-    targets = [target for text in texts for target in step_targets(text, cwd)]
-    text_targets = [target for text in texts if shell_command.names_code_runner(text)
-                    for target in regex_written_targets(text, skip_quoted=False)]
+    segment_folders = []
+    targets = []
+    text_targets = []
+    for text in texts:
+        segment_folders += text_segments(text, request.cwd)
+        targets += step_targets(text, request.cwd)
+        if shell_command.names_code_runner(text):
+            text_targets += regex_written_targets(text, skip_quoted=False)
 
-    cannot_skip = subagent or coder
-    if "#skip-shell-write-gate" in command and not cannot_skip:
+    if "#skip-shell-write-gate" in command and not request.cannot_skip:
         return
 
-    written_paths = {resolve_target(raw_target, cwd) for raw_target, _folders, _unread in targets} - {None}
+    written_paths = {resolve_target(raw_target, request.cwd) for raw_target, _folders, _unread in targets} - {None}
     for segment, folders in segment_folders:
-        written = interpreter_written_target(segment, folders, written_paths, command)
-        if written is None:
-            continue
-
-        raw_target, target = written
-        if len(folders) > 1 and not shell_command.path_word_is_absolute(raw_target):
-            raise DenyError(deny_text("a script run after a cd to " + folders[-1] + " writes the relative path "
-                                      + raw_target + ", which is git-tracked under the session cwd or a cd folder. "
-                                      + DIRECTORY_CHANGE_HINT,
-                                      cannot_skip))
-        raise DenyError(deny_text("a script that writes " + target + " bypasses the Write/Edit hook pipeline. "
-                                  "Keep any scratch script in the scratchpad, never in the repo tree.",
-                                  cannot_skip))
+        check_script_writes(segment, folders, written_paths, request)
 
     if not PRECHECK.search(command):
         return
 
     for segment, folders in segment_folders:
-        word = find_editor_word(segment)
-        if word is None or not is_inplace(word, segment):
-            continue
-        target = in_place_target(segment, word)
-        resolved = resolve_target(target, folders[-1])
-        if resolved is not None and is_under_claude_temp_root(resolved):
-            continue
-        subject = "in-place editing of " + target + " bypasses the Write/Edit hook pipeline."
-        # An agent with no Write or Edit can follow this; a tracked file gets no copy route.
-        if resolved is None or not is_git_tracked(resolved):
-            subject += f" An in-place edit of a scratch file under {claude_temp_root()} passes."
-        raise DenyError(deny_text(subject, cannot_skip))
+        check_in_place_edit(segment, folders, request.cannot_skip)
 
     try:
-        for raw_target, folders, unread_change in targets:
-            check_written_target(raw_target, folders, unread_change, cannot_skip, coder)
-        for raw_target in text_targets:
-            check_written_target(raw_target, [cwd], False, cannot_skip, False)
+        check_redirect_targets(targets, text_targets, request)
     except DenyError as denial:
         if not any(reads_file_from_revision(text) for text in texts):
             raise
         raise DenyError(f"{denial} {RESTORE_HINT}") from None
+
+
+def check_redirect_targets(targets, text_targets, request):
+    """Check each redirect and tee target: step_targets rows, then the targets of text read only by regex."""
+    for raw_target, folders, unread_change in targets:
+        check_written_target(raw_target, folders, unread_change, request.cannot_skip, request.coder)
+    for raw_target in text_targets:
+        check_written_target(raw_target, [request.cwd], False, request.cannot_skip, False)
+
+
+def check_script_writes(segment, folders, written_paths, request):
+    """Deny an interpreter step whose code writes a git-tracked file."""
+    written = interpreter_written_target(segment, folders, written_paths, request.command)
+    if written is None:
+        return
+
+    raw_target, target = written
+    cannot_skip = request.cannot_skip
+    if len(folders) > 1 and not shell_command.path_word_is_absolute(raw_target):
+        raise DenyError(deny_text("a script run after a cd to " + folders[-1] + " writes the relative path "
+                                  + raw_target + ", which is git-tracked under the session cwd or a cd folder. "
+                                  + DIRECTORY_CHANGE_HINT,
+                                  cannot_skip))
+    raise DenyError(deny_text("a script that writes " + target + " bypasses the Write/Edit hook pipeline. "
+                              "Keep any scratch script in the scratchpad, never in the repo tree.",
+                              cannot_skip))
+
+
+def check_in_place_edit(segment, folders, cannot_skip):
+    """Deny an in-place editor step whose target is not a file under the session temp root."""
+    word = find_editor_word(segment)
+    if word is None or not is_inplace(word, segment):
+        return
+    target = in_place_target(segment, word)
+    resolved = resolve_target(target, folders[-1])
+    if resolved is not None and is_under_claude_temp_root(resolved):
+        return
+    subject = "in-place editing of " + target + " bypasses the Write/Edit hook pipeline."
+    # An agent with no Write or Edit can follow this; a tracked file gets no copy route.
+    if resolved is None or not is_git_tracked(resolved):
+        subject += f" An in-place edit of a scratch file under {claude_temp_root()} passes."
+    raise DenyError(deny_text(subject, cannot_skip))
 
 
 RESTORE_HINT = "Restore a tracked file from a revision with `git restore --source=<rev> -- <path>`."
@@ -495,13 +554,43 @@ def interpreter_code(segment, cwd, written_paths, command):
     family = shell_command.INTERPRETER_FAMILIES[family_name]
     arguments = words[1:]
     if program == "deno" and arguments[:1] == ["eval"]:
-        code_arguments = arguments[1:]
-        while code_arguments and code_arguments[0].startswith("-"):
-            code_arguments = code_arguments[1:]
-        return (code_arguments[0], code_arguments[1:], family_name) if code_arguments else None
+        return deno_eval_code(arguments[1:], family_name)
     if program in ("deno", "bun") and arguments[:1] == ["run"]:
         arguments = arguments[1:]
 
+    scan = scan_interpreter_arguments(program, family, family_name, arguments)
+    if scan.script_word is None:
+        return scan.code
+
+    script = resolve_target(scan.script_word, cwd)
+    if script in written_paths:
+        return InterpreterCode(command, scan.rest, family_name)
+    script_text = untracked_script_text(script)
+    if script_text is None:
+        return None
+    return InterpreterCode(script_text, scan.rest, family_name)
+
+
+def deno_eval_code(arguments, family_name):
+    """The code of a `deno eval` call, whose flags come before it; None when it has none."""
+    code_arguments = arguments
+    while code_arguments and code_arguments[0].startswith("-"):
+        code_arguments = code_arguments[1:]
+    if not code_arguments:
+        return None
+    return InterpreterCode(code_arguments[0], code_arguments[1:], family_name)
+
+
+def inline_code_after(arguments, index, family_name):
+    """The inline code at arguments[index], with the arguments after it; None when the flag ends the line."""
+    if index >= len(arguments):
+        return None
+    return InterpreterCode(arguments[index], arguments[index + 1:], family_name)
+
+
+def scan_interpreter_arguments(program, family, family_name, arguments):
+    """Walk an interpreter's arguments to the first thing that settles what code it runs: inline code or a flag that
+    reads none (the `code` field, set with `script_word` None), or the script file word and the arguments after it."""
     value_options = set(family["value_options"])
     if program == "deno":
         value_options.update(DENO_VALUE_FLAGS)
@@ -511,32 +600,32 @@ def interpreter_code(segment, cwd, written_paths, command):
         word = arguments[index]
         index += 1
         if inline_code.fullmatch(word) or word in family["inline_code_flags"]:
-            return (arguments[index], arguments[index + 1:], family_name) if index < len(arguments) else None
+            return ArgumentScan(inline_code_after(arguments, index, family_name), None, None)
         if word in family["no_stdin_code_flags"]:
-            return None
+            return ArgumentScan(None, None, None)
         if word in value_options:
             index += 1
             continue
         if word.startswith("-"):
             continue
-        script = resolve_target(word, cwd)
-        if script in written_paths:
-            return command, arguments[index:], family_name
-        if (
-            script is None
-            or not os.path.isfile(script)
-            or is_git_tracked(script)
-            or script_utils.is_git_ignored(script)
-        ):
+        return ArgumentScan(None, word, arguments[index:])
+    return ArgumentScan(None, None, None)
+
+
+def untracked_script_text(script):
+    """The text of a script file that exists, is no larger than MAX_SCRIPT_BYTES and is neither git-tracked nor
+    git-ignored; None for any other path (None included) or a file that cannot be read."""
+    if script is None or not os.path.isfile(script):
+        return None
+    if is_git_tracked(script) or script_utils.is_git_ignored(script):
+        return None
+    try:
+        if os.path.getsize(script) > MAX_SCRIPT_BYTES:
             return None
-        try:
-            if os.path.getsize(script) > MAX_SCRIPT_BYTES:
-                return None
-            with open(script, encoding="utf-8", errors="replace") as script_file:
-                return script_file.read(), arguments[index:], family_name
-        except OSError:
-            return None
-    return None
+        with open(script, encoding="utf-8", errors="replace") as script_file:
+            return script_file.read()
+    except OSError:
+        return None
 
 
 def write_statements(code, family):
@@ -581,6 +670,15 @@ def runs_editor(call):
     return False
 
 
+def last_argument_target(arguments):
+    """The target text of a write whose path is its last positional argument, plus its keyword arguments' values."""
+    # A trailing comma leaves an empty last part. A keyword argument is an option, but its value still counts.
+    filled_arguments = [argument for argument in arguments if trim(argument)]
+    keyword_arguments = [argument for argument in filled_arguments if KEYWORD_ARGUMENT.match(argument)]
+    positional_arguments = [argument for argument in filled_arguments if argument not in keyword_arguments]
+    return ",".join(positional_arguments[-1:] + keyword_arguments)
+
+
 def write_target_text(statement, write_start, whole_call):
     """The text that names what a write call writes, or None for a call that writes nothing: an `open` with no write
     mode, a `str.replace`, or a child process that runs no editor. The target is the call itself for a child process
@@ -604,11 +702,7 @@ def write_target_text(statement, write_start, whole_call):
         arguments_start = write_start + call_head.end()
     arguments = split_arguments(statement, arguments_start, multiline=call_head is not None)
     if LAST_ARGUMENT_WRITE.match(statement, write_start):
-        # A trailing comma leaves an empty last part. A keyword argument is an option, but its value still counts.
-        filled_arguments = [argument for argument in arguments if trim(argument)]
-        keyword_arguments = [argument for argument in filled_arguments if KEYWORD_ARGUMENT.match(argument)]
-        positional_arguments = [argument for argument in filled_arguments if argument not in keyword_arguments]
-        return ",".join(positional_arguments[-1:] + keyword_arguments)
+        return last_argument_target(arguments)
     if SECOND_ARGUMENT_WRITE.match(statement, write_start):
         return arguments[1] if len(arguments) > 1 else ",".join(arguments)
     if statement.startswith(".", write_start):
@@ -616,53 +710,91 @@ def write_target_text(statement, write_start, whole_call):
             return None
         return receiver_text(statement[:write_start]) + "," + ",".join(arguments)
     if statement.startswith("open", write_start):
-        is_method = statement[write_start - 1:write_start] == "."
-        modes = arguments if is_method else arguments[1:]
-        if not any(WRITE_MODE.search(mode) or (not is_method and NAMED_MODE.match(mode)) for mode in modes):
-            return None
-
-        # `p.open('w')` writes its receiver; `io.open(path, 'w')` and `codecs.open(...)` write their first argument.
-        return receiver_text(statement[:write_start - 1]) + "," + arguments[0] if is_method else arguments[0]
+        return open_target(statement, write_start, arguments)
     if FIRST_ARGUMENT_WRITE.match(statement, write_start):
         return arguments[0]
     return ",".join(arguments)
+
+
+def open_target(statement, write_start, arguments):
+    """The target text of an `open` call, or None when it has no write mode."""
+    is_method = statement[write_start - 1:write_start] == "."
+    modes = arguments if is_method else arguments[1:]
+    if not any(WRITE_MODE.search(mode) or (not is_method and NAMED_MODE.match(mode)) for mode in modes):
+        return None
+
+    # `p.open('w')` writes its receiver; `io.open(path, 'w')` and `codecs.open(...)` write their first argument.
+    return receiver_text(statement[:write_start - 1]) + "," + arguments[0] if is_method else arguments[0]
 
 
 def binding_texts(code, name):
     """The text that binds `name`: an assignment's right side, a for loop's iterable (the element at the name's
     position in a multi-name target), and for a function parameter, the argument at its position in each call."""
     word = re.escape(name.lstrip("$"))
-    parameter = re.compile(rf"(?<![\w$]){word}\b")
     texts = assigned_texts(code, word)
+    texts += loop_binding_texts(code, name, word)
+    texts += parameter_binding_texts(code, word)
+    return texts
+
+
+def loop_binding_texts(code, name, word):
+    """The iterable of each for loop whose target list holds `name` (`word` is its regex-escaped form)."""
     loop = re.compile(rf"\bfor\s*\(?\s*(?:(?:const|let|var|my)\s+)?(?P<targets>{LOOP_TARGETS}\b{word}\b{LOOP_TARGETS})"
                       r"\s(?:in|of)\s")
+    texts = []
     for match in loop.finditer(code):
-        iterable = ",".join(split_arguments(code, match.end()))
-        targets = [target.strip(" \t\n()[]$") for target in match.group("targets").split(",")]
-        position = targets.index(name.lstrip("$")) if name.lstrip("$") in targets else None
-        if len(targets) == 1 or position is None:
-            texts.append(iterable)
-            continue
-        if iterable.lstrip().startswith("zip("):
-            zip_arguments = split_arguments(iterable, iterable.index("(") + 1)
-            texts.append(zip_arguments[position] if position < len(zip_arguments) else iterable)
-            continue
-        iterable_name = trim(iterable).rstrip(":{").strip(SP).removesuffix(".items()")
-        sources = assigned_texts(code, re.escape(iterable_name)) if iterable_name.isidentifier() else []
-        fields = [field for source in sources or [iterable] for field in tuple_fields(source, position)]
-        texts += [field for field in fields if field.strip()] or [iterable]
+        texts += one_loop_texts(code, name, match)
+    return texts
+
+
+def one_loop_texts(code, name, match):
+    """The text a for loop binds to `name`: its whole iterable, or the element at the name's position in a
+    multi-name target."""
+    iterable_start = match.end()
+    iterable = ",".join(split_arguments(code, iterable_start))
+    targets = [target.strip(" \t\n()[]$") for target in match.group("targets").split(",")]
+    bare_name = name.lstrip("$")
+    position = targets.index(bare_name) if bare_name in targets else None
+    if len(targets) == 1 or position is None:
+        return [iterable]
+    if iterable.lstrip().startswith("zip("):
+        zip_arguments = split_arguments(iterable, iterable.index("(") + 1)
+        if position < len(zip_arguments):
+            return [zip_arguments[position]]
+        return [iterable]
+    iterable_name = trim(iterable).rstrip(":{").strip(SP).removesuffix(".items()")
+    sources = assigned_texts(code, re.escape(iterable_name)) if iterable_name.isidentifier() else []
+    fields = []
+    for source in sources or [iterable]:
+        fields += tuple_fields(source, position)
+    return [field for field in fields if field.strip()] or [iterable]
+
+
+def parameter_binding_texts(code, word):
+    """The argument at the parameter's position in each call of each function that has a parameter named `word`
+    (regex-escaped)."""
+    parameter = re.compile(rf"(?<![\w$]){word}\b")
+    texts = []
     for function in FUNCTION_DEFINITION.finditer(code):
         parameters = [part.strip(SP) for part in function.group(2).split(",")]
         positions = [index for index, part in enumerate(parameters) if parameter.match(part)]
         if not positions:
             continue
-        calls = re.finditer(rf"(?<![\w.]){re.escape(function.group(1))}\s*\(", code)
-        for call in calls:
-            if call.start() == function.start(1):
-                continue
-            arguments = split_arguments(code, call.end(), multiline=True)
-            if positions[0] < len(arguments) and trim(arguments[positions[0]]):
-                texts.append(arguments[positions[0]])
+        texts += call_argument_texts(code, function, positions[0])
+    return texts
+
+
+def call_argument_texts(code, function, position):
+    """The argument at `position` in each call of a function the code defines (`function` is its definition match)."""
+    function_name = re.escape(function.group(1))
+    call_pattern = rf"(?<![\w.]){function_name}\s*\("
+    texts = []
+    for call in re.finditer(call_pattern, code):
+        if call.start() == function.start(1):
+            continue
+        arguments = split_arguments(code, call.end(), multiline=True)
+        if position < len(arguments) and trim(arguments[position]):
+            texts.append(arguments[position])
     return texts
 
 
@@ -671,7 +803,11 @@ def assigned_texts(code, word):
     `const [, out] = ...`) included, to the (regex-escaped) name `word`."""
     assignment = re.compile(rf"(?:^|[;{{:])[ \t]*(?:(?:const|let|var|my|our)\s+)?[\[(]?\s*(?:[\w$*.]*\s*,\s*)*"
                             rf"\*?\$?{word}\s*(?::[^=\n]*)?(?:\s*,\s*[\w$*.]*)*\s*[\])]?\s*[-+*/%|&^]*=(?![=>])", re.M)
-    return [",".join(split_arguments(code, match.end())) for match in assignment.finditer(code)]
+    texts = []
+    for match in assignment.finditer(code):
+        right_side = split_arguments(code, match.end())
+        texts.append(",".join(right_side))
+    return texts
 
 
 def named_texts(code, text):
@@ -680,9 +816,14 @@ def named_texts(code, text):
     frontier = [text]
     seen = set()
     for _hop in range(MAX_NAME_HOPS):
-        names = {name for part in frontier for name in CODE_NAME.findall(part)} - seen
+        names = set()
+        for part in frontier:
+            names.update(CODE_NAME.findall(part))
+        names -= seen
         seen |= names
-        frontier = [bound for name in sorted(names) for bound in binding_texts(code, name)]
+        frontier = []
+        for name in sorted(names):
+            frontier += binding_texts(code, name)
         texts += frontier
     return texts
 
@@ -745,9 +886,14 @@ def binding_reaches_argv(code, text, traced, supplied_names):
 
 def path_candidates(text):
     """Each string literal in text, and all of them joined with `/` (`ROOT / "docs" / "a.md"`)."""
-    literals = [match.group(2) for match in STRING_LITERAL.finditer(text)]
+    literals = literals_in(text)
     joined = ["/".join(literals)] if len(literals) > 1 else []
     return literals + joined
+
+
+def literals_in(text):
+    """The contents of each string literal in text."""
+    return [match.group(2) for match in STRING_LITERAL.finditer(text)]
 
 
 def absolute_root(code, target):
@@ -764,17 +910,21 @@ def absolute_root(code, target):
         if not re.match(r"\s*\)?\s*[/+,]", target[match.end():]):
             return None
         bindings = binding_texts(code, match.group())
-        literals = [[literal.group(2) for literal in STRING_LITERAL.finditer(text)] for text in bindings]
+        literals = [literals_in(text) for text in bindings]
         if not literals or any(len(found) != 1 or not found[0].startswith("/") for found in literals):
             return None
         if len({found[0] for found in literals}) != 1:
             return None
-        for text in bindings:
-            rest = STRING_LITERAL.sub("", text)
-            if any(not re.match(r"\s*[(.]", rest[name.end():]) for name in CODE_NAME.finditer(rest)):
-                return None
+        if any(reads_other_name(text) for text in bindings):
+            return None
         return literals[0][0]
     return None
+
+
+def reads_other_name(text):
+    """Whether text, its string literals removed, holds a name that is neither called nor followed by a `.`."""
+    rest = STRING_LITERAL.sub("", text)
+    return any(not re.match(r"\s*[(.]", rest[name.end():]) for name in CODE_NAME.finditer(rest))
 
 
 def joined_off_cwd(code, text):
@@ -878,21 +1028,39 @@ def written_candidates(code, family):
     joined onto that root; other literals of the statement stay relative. A text joined_off_cwd names no candidate."""
     candidates = []
     for statement, target in write_statements(code, family):
-        literals = [match.group(2) for match in STRING_LITERAL.finditer(statement)]
-        own = [match.group(2) for match in STRING_LITERAL.finditer(target)]
         root = absolute_root(code, target)
         if root is None:
-            if joined_off_cwd(code, target):
-                literals = list((Counter(literals) - Counter(own)).elements())
-            named = [candidate for text in named_texts(code, target) if not joined_off_cwd(code, text)
-                     for candidate in path_candidates(text)]
-            candidates += literals + named
-            continue
-        named = [candidate for text in named_texts(code, target) for candidate in path_candidates(text)]
-        other = list((Counter(literals) - Counter(own)).elements())
-        candidates += other + [literal if literal.startswith("/") else root.rstrip("/") + "/" + literal
-                               for literal in own + named]
+            candidates += candidates_off_root(code, statement, target)
+        else:
+            candidates += candidates_on_root(code, statement, target, root)
     return candidates
+
+
+def candidates_off_root(code, statement, target):
+    """The path texts of one write whose target joins onto no absolute root."""
+    literals = literals_in(statement)
+    own = literals_in(target)
+    if joined_off_cwd(code, target):
+        literals = list((Counter(literals) - Counter(own)).elements())
+    named = []
+    for text in named_texts(code, target):
+        if joined_off_cwd(code, text):
+            continue
+        named += path_candidates(text)
+    return literals + named
+
+
+def candidates_on_root(code, statement, target, root):
+    """The path texts of one write whose target joins onto an absolute root: its own literals and the names it reads
+    are joined onto the root; the other literals of the statement stay relative."""
+    literals = literals_in(statement)
+    own = literals_in(target)
+    named = []
+    for text in named_texts(code, target):
+        named += path_candidates(text)
+    other = list((Counter(literals) - Counter(own)).elements())
+    return other + [literal if literal.startswith("/") else root.rstrip("/") + "/" + literal
+                    for literal in own + named]
 
 
 def interpreter_written_target(segment, folders, written_paths, command):
@@ -923,12 +1091,20 @@ def interpreter_written_target(segment, folders, written_paths, command):
     if arguments and any(writes_reach_argv(code, family) for code in codes):
         candidates += arguments
     for candidate in candidates:
-        candidate_folders = [cwd] if shell_command.path_word_is_absolute(candidate) else folders
-        for folder in candidate_folders:
-            path = resolve_target(candidate, folder)
-            path = os.path.normpath(path) if path else path
-            if path and os.path.isfile(path) and is_git_tracked(path):
-                return candidate, path
+        tracked_path = tracked_candidate_path(candidate, folders)
+        if tracked_path:
+            return candidate, tracked_path
+    return None
+
+
+def tracked_candidate_path(candidate, folders):
+    """The git-tracked file a candidate path names under the session cwd (folders[0]) or, when relative, any folder."""
+    candidate_folders = [folders[0]] if shell_command.path_word_is_absolute(candidate) else folders
+    for folder in candidate_folders:
+        path = resolve_target(candidate, folder)
+        path = os.path.normpath(path) if path else path
+        if path and os.path.isfile(path) and is_git_tracked(path):
+            return path
     return None
 
 

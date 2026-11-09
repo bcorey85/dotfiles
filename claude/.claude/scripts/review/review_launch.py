@@ -194,6 +194,21 @@ def relaunch_args(options, repo, paths, handoff_file):
     return [*args, "--lane", options.lane, "--handoff", str(handoff_file)]
 
 
+def relaunch_args_with_files(args, paths):
+    """The relaunch flags with a `--file` for each of paths not already listed. Flags that scope no files stay
+    as they are: adding a file would narrow a whole-tree run."""
+    if "--file" not in args:
+        return list(args)
+    listed = {args[index + 1] for index, word in enumerate(args[:-1]) if word == "--file"}
+    extra = []
+    for path in paths:
+        if path in listed:
+            continue
+        listed.add(path)
+        extra += ["--file", path]
+    return [*args, *extra]
+
+
 def read_relaunch_args(launch_file):
     """The relaunch flags a launch record holds."""
     try:

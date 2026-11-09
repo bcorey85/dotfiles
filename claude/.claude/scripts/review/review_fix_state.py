@@ -65,6 +65,12 @@ def save_fix_state(state):
     script_utils.write_text_atomically(path, json.dumps(state, indent=1))
 
 
+def has_unanswered_asks(packet_state):
+    asks = packet_state.get("asks") or []
+    logged = packet_state.get("asks_logged", [])
+    return any(index not in logged for index in range(len(asks)))
+
+
 def record_packet_asks_logged(packet_id):
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not session_id:

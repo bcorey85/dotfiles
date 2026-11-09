@@ -2,11 +2,13 @@
 modified an ask, it writes those asks to a findings file and prints the fix run that applies them: the first run's
 launch flags plus `--fix`, `--iter` and `--detach`, so the loop's fix coder makes the change, a review round covers
 it, and the converged hand-back earns commit credit."""
+import pathlib
 import shlex
 import sys
 
 import plan_format
 import review_asks
+import review_launch
 import script_utils
 from handback import PLAN_IMPACT_STATUS, is_plan_impact_ask
 from review_asks import ASK_OUTCOMES, MODIFIED, REJECTED
@@ -15,23 +17,21 @@ from review_fix_state import (
     ASK_LOGGER,
     REVIEW_FIX_COMMAND,
     UsageError,
+    has_unanswered_asks,
     load_fix_state,
     print_action,
     record_packet_asks_logged,
     review_fix_dir,
     save_fix_state,
 )
+from saved_handback import dispatched_repo
 from script_utils import one_line, split_location
 
 NEW_FINDING_ID = "new-finding-id"
 ASK_FINDINGS_NAME = "ask-findings.md"
 LAUNCH_COMMAND = f"{REVIEW_FIX_COMMAND} launch"
-
-
-def has_unanswered_asks(packet_state):
-    asks = packet_state.get("asks") or []
-    logged = packet_state.get("asks_logged", [])
-    return any(index not in logged for index in range(len(asks)))
+NO_LAUNCH_RECORD_ACTION = "launch-fix-run"
+PRINTED_RUN_LINE = "The first asks-done printed this fix run; run it now unless it already ran."
 
 
 def read_outcomes(argv, asks):
@@ -181,14 +181,14 @@ def write_findings_file(finding_lines):
 
 
 def print_fix_run(target, findings_file, summary_lines):
-    """Prints the fix run that applies the accepted asks in findings_file. A run that left no launch record stops
-    and names the file."""
-    relaunch_args = target.get("relaunch_args")
-    if not relaunch_args:
+    """Prints the fix run that applies the accepted asks in findings_file. A run that left no launch record prints
+    the stored line from `no_record_launch_line`: `--iter`, the dispatched `--repo` and `--detach` only."""
+    if not target.get("relaunch_args"):
         return print_action(
-            "stop-no-launch-record", *summary_lines,
+            NO_LAUNCH_RECORD_ACTION, *summary_lines,
             f"The accepted asks are in {findings_file}, but `review_fix.py launch` did not start this run, so no "
-            "launch flags are on record. Show the user the file: the run that started this review applies it.")
+            "launch flags are on record. Run this launch line now: its fix coder applies them.",
+            target["asks_launch_line"])
 
     return print_action(
         "redispatch", *summary_lines,
@@ -198,7 +198,18 @@ def print_fix_run(target, findings_file, summary_lines):
 
 
 def fix_launch_line(target, findings_file):
-    launch_args = ["--fix", str(findings_file), "--iter", str(target["iter"]), *target["relaunch_args"], "--detach"]
+    """The launch line of the fix run. The fix run holds every dirty file not listed, and the first run's own
+    edits are dirty, so the files it touched join the scoped files."""
+    touched_paths = target.get("files_touched") or []
+    relaunch_args = review_launch.relaunch_args_with_files(target["relaunch_args"], touched_paths)
+    launch_args = ["--fix", str(findings_file), "--iter", str(target["iter"]), *relaunch_args, "--detach"]
+    return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
+
+
+def no_record_launch_line(target, findings_file):
+    """The launch line of a fix run with no launch record: `--iter`, the dispatched `--repo` and `--detach` only."""
+    repo = dispatched_repo() or pathlib.Path.cwd()
+    launch_args = ["--fix", str(findings_file), "--iter", str(target["iter"]), "--repo", str(repo), "--detach"]
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
 
 
@@ -218,10 +229,22 @@ def write_unprinted_fix_run(target, finding_lines):
     if not finding_lines or target.get("asks_redispatched"):
         return None
     findings_file = write_findings_file(finding_lines)
-    if target.get("relaunch_args"):
-        target["asks_redispatched"] = True
-        target["asks_launch_line"] = fix_launch_line(target, findings_file)
+    target["asks_redispatched"] = True
+    if not target.get("relaunch_args"):
+        target["asks_launch_line"] = no_record_launch_line(target, findings_file)
+        return findings_file
+    target["asks_launch_line"] = fix_launch_line(target, findings_file)
     return findings_file
+
+
+def print_done_again(state):
+    """A repeat asks-done with every ask logged. A stored fix run is printed again: the first call may have been
+    cut off before its launch line was run."""
+    done_line = "The ask outcomes were already logged."
+    launch_line = state.get("last_asks_launch_line")
+    if not launch_line:
+        return print_action("done", done_line, "Run nothing more.")
+    return print_action("done", done_line, PRINTED_RUN_LINE, launch_line)
 
 
 def command_asks_done(argv):
@@ -229,7 +252,7 @@ def command_asks_done(argv):
     waiting = waiting_ask_packets(state)
     if not waiting:
         if state.get("stage") == "done" and state.get("asks"):
-            return print_action("done", "The ask outcomes were already logged. Run nothing more.")
+            return print_done_again(state)
         raise UsageError("no asks are waiting. `asks-done` follows a packet that carried ask[] entries.")
 
     outcome_words, decided_by, packet_id = asks_done_options(argv)
@@ -251,14 +274,15 @@ def command_asks_done(argv):
         state["stage"] = "done"
     if not failures and target is not state:
         state["waiting_packets"] = [kept for kept in state["waiting_packets"] if kept is not target]
+    if not failures:
+        state["last_asks_launch_line"] = target.get("asks_launch_line")
     save_fix_state(state)
 
     if findings_file:
         print_fix_run(target, findings_file, summary_lines)
     elif target.get("asks_launch_line"):
         print_action("done", *summary_lines,
-                     "The first asks-done printed this fix run; run it now unless it already ran.",
-                     target["asks_launch_line"])
+                     PRINTED_RUN_LINE, target["asks_launch_line"])
     else:
         print_action("done", *summary_lines)
     if not failures:

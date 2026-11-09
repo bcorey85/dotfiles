@@ -39,15 +39,23 @@ def names_held_file(path, held_path):
     return path == held_path or held_path.endswith("/" + path)
 
 
-def split_held_findings(items, held, repo):
-    """(the findings or nits that name no held file, the ones that do). Records nothing."""
+def tail_names_held_file(path, held, owned):
+    """True when the tail `path` names exactly one held file and no file the run owns."""
+    held_matches = [held_path for held_path in held if names_held_file(path, held_path)]
+    owned_matches = [owned_path for owned_path in owned if names_held_file(path, owned_path)]
+    return len(held_matches) == 1 and not owned_matches
+
+
+def split_held_findings(items, held, owned, repo):
+    """(the findings or nits that name no held file, the ones that do). `owned` is the run's own files. Records
+    nothing."""
     kept, held_items = [], []
     for item in items:
         # A reviewer may name the file by absolute path or by a tail of it.
         path = held_path_in_repo(item.path, repo)
         # A path that is a file in the repo is exact: only an equal held path holds it, never a longer one.
         exact = bool(path) and (pathlib.Path(repo) / path).is_file()
-        is_held = path in held if exact else any(names_held_file(path, held_path) for held_path in held)
+        is_held = path in held if exact else tail_names_held_file(path, held, owned)
         if is_held:
             held_items.append(item)
         else:
@@ -55,10 +63,10 @@ def split_held_findings(items, held, repo):
     return kept, held_items
 
 
-def skip_held_items(items, held, skipped_fp, repo):
+def skip_held_items(items, held, owned, skipped_fp, repo):
     """(the items that name no held file, the held items, the number of held items newly recorded). Each held item
     goes into `skipped_fp` once with HELD_FILE_REASON, however many callers or rounds meet it."""
-    kept, held_items = split_held_findings(items, held, repo)
+    kept, held_items = split_held_findings(items, held, owned, repo)
     recorded = 0
     for item in held_items:
         if any(entry["item"] == item and entry["reason"] == HELD_FILE_REASON for entry in skipped_fp):

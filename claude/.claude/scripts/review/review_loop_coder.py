@@ -77,7 +77,7 @@ def coder_call(role, prompt, repo, out, held):
     left as it is and noted, and never counts as changed. A failed call raises CoderCallError naming the files it
     changed before it died."""
     before = script_utils.without_paths(file_texts(repo), held)
-    untracked = [path for path, entry in scope(repo).items() if entry[1] == "??"]
+    untracked = [path for path, entry in scope(repo).items() if entry[1] == "??" and path not in held]
     backup = file_backup.save_files(repo, untracked)
     held_before = review_loop_held.digests(repo, held)
     try:

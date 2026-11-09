@@ -19,9 +19,9 @@ unmeasured: ""
 
 - `review/review_launch.py`: `launch` writes `<loop dir>/handoff.txt`, and its `launch.json` now holds `relaunch_args` beside `packet_args`: the repo, `--base`, each `--file`, `--fast` or `--deep`, the lane and the handoff file. The packet command it prints carries `--launch <loop dir>/launch.json`.
 - `review/review_fix.py` `packet --launch` stores those flags in the packet state.
-- `review/review_fix_asks.py` (new, the asks-done verb): for each accepted or modified ask that is not a plan impact, it writes `- <file:line> <question> Proposed change: <change>` to `<git dir>/review-fix/ask-findings.md`. A modified ask needs `modified:<the user's change>`, and that change is appended as the one to make. It then prints `ACTION: redispatch` and `review_fix.py launch --fix <file> --iter <rounds used> <first run's flags> --detach`. A packet with no launch record stops with `ACTION: stop-no-launch-record` and names the file. An accepted or modified plan-impact ask goes to no fix run: its change prints as a `## Plan Deviations` entry under the summary, for the session to add to the plan. With no accepted code ask, asks-done prints `ACTION: done`. The old "dispatch a coder" line is gone.
+- `review/review_fix_asks.py` (new, the asks-done verb): for each accepted or modified ask that is not a plan impact, it writes `- <file:line> <question> Proposed change: <change>` to `<git dir>/review-fix/ask-findings.md`. A modified ask needs `modified:<the user's change>`, and that change is appended as the one to make. It then prints `ACTION: redispatch` and `review_fix.py launch --fix <file> --iter <rounds used> <first run's flags> --detach`. A packet with no launch record prints `ACTION: launch-fix-run` and `review_fix.py launch --fix <file> --iter <rounds used> --repo <repo> --detach`. The first run's `--file` list gains each file that run touched, so the fix run does not hold them. A repeat asks-done prints the stored launch line again. An accepted or modified plan-impact ask goes to no fix run: its change prints as a `## Plan Deviations` entry under the summary, for the session to add to the plan. With no accepted code ask, asks-done prints `ACTION: done`. The old "dispatch a coder" line is gone.
 - `review/review_fix_state.py` (new): the state, usage and print helpers moved out of `review_fix.py` so that script stays under 1000 lines.
-- `skills/_shared/review-fork-run.md`: on resume, a `redispatch` runs its launch line and waits as for any launch.
+- `skills/_shared/review-fork-run.md`: on resume, a `redispatch` or `launch-fix-run` runs its launch line and waits as for any launch, after the deviation-line coder when the output prints deviation lines.
 
 ## Evidence
 
@@ -33,7 +33,7 @@ Against the base script the new test fails: asks-done prints no `redispatch`. Wi
 
 ## Watch
 
-None. A run that `launch` did not start prints `stop-no-launch-record` with the findings file.
+None. A run that `launch` did not start prints `launch-fix-run` with the findings file and a launch line.
 
 ## Back-out
 

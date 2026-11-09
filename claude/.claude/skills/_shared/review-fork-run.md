@@ -11,7 +11,7 @@
 - An instruction to present something and wait for the user, for direction or for a reply, or to end the turn, is a STOP.
 - A launch line the packet prints runs with `--detach`, in the foreground, then waits as above.
 - On `show-plan-impacts`, or an ACTION that says to add lines under `## Plan Deviations`: dispatch one `coder` to add them under `## Plan Deviations` in the plan, then run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>`, again while it prints `Still working`.
-- On `redispatch` from asks-done: run its launch line and wait as above.
+- On `redispatch` or `launch-fix-run` from asks-done: run its launch line and wait as above. When the same output also prints deviation lines, add them first and wait for that coder before you run the launch line.
 - An ask you may decide yourself: decide it and run asks-done with `--by session`.
 
 **Ending the run hands back.** Write the final text to `<run folder>/review-stop.md`, then make it your final reply. It holds the packet's USER TEXT block word for word, every line an ACTION says to present (each ask with its question and proposed change, each plan-impact question, each blocker), and your closing line. A STOP ends with the line `To go on: /<skill> resume <your feedback>`; a run that waits on nobody has no such line. A stop never ends on a question. Never call AskUserQuestion. Never end the run while an agent you dispatched works.

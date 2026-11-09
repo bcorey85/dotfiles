@@ -39,10 +39,11 @@ still judges.
                                          to <git dir>/review-fix/ask-findings.md and prints `ACTION: redispatch`
                                          with the fix run's launch line (review_fix_asks.py). `ACTION: done` when
                                          all are rejected, when only plan-impact asks were accepted (they write no
-                                         findings), and on a retry after the launch line printed. `ACTION:
-                                         stop-no-launch-record` when the run has no launch flags on record: the
-                                         findings file is written and the user is told. --by session when the
-                                         session ruled on the asks itself; default user.
+                                         findings), and on a retry after the launch line printed (it prints the
+                                         stored launch line again). `ACTION: launch-fix-run` when the run has no
+                                         launch flags on record: the findings file is written and the line is
+                                         `review_fix.py launch --fix <file> --iter <n> --repo <repo> --detach`.
+                                         --by session when the session ruled on the asks itself; default user.
                                          Answers one packet. When a second packet handed back before the first one's
                                          asks were answered, both wait: asks-done then refuses and lists them, and
                                          --packet <packet_id> names the one the outcomes belong to.
@@ -78,7 +79,7 @@ import review_launch
 import script_utils
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
-from review_fix_asks import command_asks_done, has_unanswered_asks
+from review_fix_asks import command_asks_done
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_LOGGER,
@@ -86,6 +87,7 @@ from review_fix_state import (
     REVIEW_FIX_COMMAND,
     UsageError,
     argument_parser,
+    has_unanswered_asks,
     load_fix_state,
     print_action,
     print_user_block,
@@ -459,7 +461,8 @@ def new_state(options, packet, packet_id):
     state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
              "review_round": packet["review_round"], "spec_iter": packet["spec_iter"], "status": packet["status"],
              "branch": script_utils.current_branch(".") or "-", "packet_id": packet_id,
-             "source": options.source, "fixed_paths": fixed_paths}
+             "source": options.source, "fixed_paths": fixed_paths,
+             "files_touched": [str(path) for path in packet["files_touched"]]}
     if options.relaunch_args:
         state["relaunch_args"] = options.relaunch_args
     if same_run:
@@ -472,6 +475,7 @@ def new_state(options, packet, packet_id):
             "asks_logged",
             "asks_redispatched",
             "asks_launch_line",
+            "last_asks_launch_line",
             "asks_deviations_printed",
             "plan_impact",
             "plan_impact_held",

@@ -7,7 +7,7 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-107 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+108 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 122 further findings are left out of this page.
 
@@ -58,6 +58,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-08 [Three of seven readability rule texts move the coder; four change nothing at the competing level](../../../agent-evals/findings/2026-11-08-the-readability-rules-move-the-coder-only-where-a.md) - HOLD: On/off rule-meter runs, 8 per arm, against a brief that pulls the other way: the readability section, the one-loop comprehension rule and the five-parameter rule raise compliance (0→3, 0→3, 0→7 of 8); the nesting rule, the ternary-argument rule and the reviewer's readability fix list sit at ceiling with or without the text, and the named-return rule loses to its brief in both arms. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-04 [Smell-reviewer at every diff size adds nothing on a rig of large changes; the rule went untested](../../../agent-evals/findings/2026-11-04-smell-reviewer-at-every-diff-size-adds-nothing-on.md) - HOLD: Dispatching the smell-reviewer on every change, not only large ones, gained nothing on the narrow-reviewer rig (75 → 71 of 133 known findings) because every phase there is already a large change, so both arms ran the same plan. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-03 [Sonnet main session halves Opus cache reads on an easy bench that cannot read plan quality](../../../agent-evals/findings/2026-11-03-sonnet-main-session-halves-opus-cache-reads-on-an.md) - HOLD: Running the /eng-spec and /code main session on Sonnet cut Opus cache reads 61% (29.96M → 11.63M median) and billed $ 38% over 4 pairs, with ticket scores level (28.5 → 28 of 30). The round was stopped at 4 of 8 pairs: one small, clear ticket with a near-ceiling suite cannot show a planning-quality gap. [watch: no watch]

@@ -1,88 +1,84 @@
-"""review_loop_held.py: the files another session holds in a shared tree. A held file was dirty when the run started
-and is not one of the run's own files. The loop never reviews one, tells each fix coder never to edit one, and undoes
-the coder's own writes to one when no other change landed on it during the call."""
-import file_backup
-import review_loop_plan
-import session_edits
+"""review_loop_held.py: the files another session holds in a shared tree. When the caller scopes a run to its own
+files, every other dirty file is held. The loop never reviews a held file, sends no item on one to a coder, and tells
+each fix coder never to edit one. It never writes a held file back: a held file that changed during a coder call is
+left as it is and noted."""
+import pathlib
 
-# A held file larger than this is not saved, so a coder's edit to it is reported but cannot be undone.
-MAX_HELD_FILE_BYTES = 16 * 1024 * 1024
-MAX_HELD_TOTAL_BYTES = 256 * 1024 * 1024
-# One note per fix call that changed a held file, for the packet's tool_fault.
+import review_loop_plan
+import worktree_snapshot
+
+HELD_FILE_REASON = "the file is held by another session"
+# One note per coder call that ran while held files changed, for the packet's tool_fault. An item on a held file is
+# no fault: skip_held_items records it in skipped_fp.
 HELD_FAULTS = []
 
 
-def run_held_files(repo, named_held, only_files):
-    """The held files of a run: the ones the caller names, plus, when the caller scoped the run to `only_files`, every
-    other file dirty now."""
-    held = set(named_held)
-    if only_files:
-        dirty = review_loop_plan.scope(repo)
-        held |= set(dirty) - set(only_files)
-    return held
+def run_held_files(repo, only_files):
+    """The held files of a run: when the caller scoped the run to `only_files`, every other file dirty now."""
+    if not only_files:
+        return set()
+    dirty = review_loop_plan.scope(repo)
+    return set(dirty) - set(only_files)
 
 
-def without_held(files, held):
-    """`files` (a {path: entry} mapping or a list of paths) with the held paths left out, in the same shape."""
-    if isinstance(files, dict):
-        return {path: entry for path, entry in files.items() if path not in held}
-    return [path for path in files if path not in held]
-
-
-def save(repo, held):
-    """The bytes of each held file, to put back after a coder call."""
-    return file_backup.save_files(repo, held, max_file_bytes=MAX_HELD_FILE_BYTES, max_total_bytes=MAX_HELD_TOTAL_BYTES)
-
-
-def coder_result(saved, writes):
-    """The bytes a held file holds when only the coder's recorded writes landed on its saved bytes; None when they
-    cannot be replayed."""
+def held_path_in_repo(path, repo):
+    """`path` relative to `repo` when it is absolute and sits under it, else unchanged."""
+    if not path or not pathlib.PurePath(path).is_absolute():
+        return path
     try:
-        text = saved.decode()
-        return session_edits.replayed_text(text, writes).encode()
-    except (UnicodeDecodeError, session_edits.ReplayError):
-        return None
+        return pathlib.PurePath(path).relative_to(repo).as_posix()
+    except ValueError:
+        return path
 
 
-def restore_held(role, backup, session_id):
-    """Undo the coder's own writes to held files. A held file goes back to its bytes from before the call only when
-    it holds exactly the coder's result, so an edit the owning session made during the call is never erased. A held
-    file the coder wrote that holds anything else is left as it is, and noted in HELD_FAULTS. Returns the paths put
-    back."""
-    if backup.unsaved:
-        HELD_FAULTS.append(f"{role} ran beside held files too large to save, so an edit to them was not undone: "
-                           + ", ".join(backup.unsaved))
-    changed = {}
-    for path, saved in backup.saved.items():
-        target = backup.root / path
-        now = target.read_bytes() if target.is_file() else None
-        if now != saved:
-            changed[path] = (saved, now)
-    if not changed:
-        return []
+def names_held_file(path, held_path):
+    """True when `path` is `held_path` or a tail of it. A held file is never matched by a longer path: a finding at
+    `sub/notes.py` is not on a held root `notes.py`."""
+    if not path:
+        return False
+    return path == held_path or held_path.endswith("/" + path)
 
-    transcript = session_edits.session_transcript(session_id)
-    if transcript is None:
-        HELD_FAULTS.append(f"{role} ran while held files changed, and its transcript is not there to show whose "
-                           f"change it was, so the loop left them as they are: {', '.join(sorted(changed))}")
-        return []
 
-    writes = session_edits.file_writes(transcript, backup.root)
-    restored = []
-    left = []
-    for path, (saved, now) in sorted(changed.items()):
-        if path not in writes:
+def split_held_findings(items, held, repo):
+    """(the findings or nits that name no held file, the ones that do). Records nothing."""
+    kept, held_items = [], []
+    for item in items:
+        # A reviewer may name the file by absolute path or by a tail of it.
+        path = held_path_in_repo(item.path, repo)
+        # A path that is a file in the repo is exact: only an equal held path holds it, never a longer one.
+        exact = bool(path) and (pathlib.Path(repo) / path).is_file()
+        is_held = path in held if exact else any(names_held_file(path, held_path) for held_path in held)
+        if is_held:
+            held_items.append(item)
+        else:
+            kept.append(item)
+    return kept, held_items
+
+
+def skip_held_items(items, held, skipped_fp, repo):
+    """(the items that name no held file, the held items, the number of held items newly recorded). Each held item
+    goes into `skipped_fp` once with HELD_FILE_REASON, however many callers or rounds meet it."""
+    kept, held_items = split_held_findings(items, held, repo)
+    recorded = 0
+    for item in held_items:
+        if any(entry["item"] == item and entry["reason"] == HELD_FILE_REASON for entry in skipped_fp):
             continue
-        if coder_result(saved, writes[path]) != now:
-            left.append(path)
-            continue
-        (backup.root / path).write_bytes(saved)
-        restored.append(path)
+        skipped_fp.append({"item": item, "reason": HELD_FILE_REASON})
+        recorded += 1
+    return kept, held_items, recorded
 
-    if restored:
-        HELD_FAULTS.append(f"{role} edited files another session holds; the loop put back their bytes: "
-                           + ", ".join(restored))
-    if left:
-        HELD_FAULTS.append(f"{role} edited files another session holds, and they changed again during the call, so "
-                           "the loop left them as they are: " + ", ".join(left))
-    return restored
+
+def digests(repo, held):
+    """{path: digest} of each held file, taken before a coder call."""
+    root = pathlib.Path(repo)
+    return {path: worktree_snapshot.file_hash(root, path) for path in held}
+
+
+def note_changed(role, repo, before):
+    """Note in HELD_FAULTS each held file whose bytes differ from `before`. The file is left as it is: its owner may
+    have written it during the call."""
+    root = pathlib.Path(repo)
+    changed = sorted(path for path, digest in before.items() if worktree_snapshot.file_hash(root, path) != digest)
+    if changed:
+        HELD_FAULTS.append(f"held files changed while {role} ran (by the coder or by the session that holds them); "
+                           "the loop left them as they are, so check them: " + ", ".join(changed))

@@ -2,11 +2,11 @@
 type: "Change"
 change_type: "fixed"
 title: "The review loop stays on the run's own files"
-description: "In a tree where another session holds uncommitted edits, the review loop reviews and fixes only the run's own files: a `files:` list holds every other dirty file, `/code` holds the files dirty at the phase start that still hold the same bytes, and a coder's own write to a held file is undone only when no other change landed on it during the call."
+description: "In a tree where another session holds uncommitted edits, a review loop given a `files:` list reviews and fixes only those files: every other dirty file is held, kept out of the review and the findings, named never-edit in the fix coder's prompt, and never written back; a held file that changes during a coder call is named in the hand-back's tool fault."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-08T20:06:04-06:00"}
 seq: 13
 kind: "fix"
-components: ["script/review-loop-script", "script/code-review-start", "skill/code", "skill/handoff"]
+components: ["script/review-loop-script", "script/handback"]
 evidence: ["review-loop-fixes-files-another-session-left-dirty"]
 watches: []
 test: "tests/scripts/test_review_loop_script.py::ReviewLoopScriptTest::test_a_files_line_holds_every_other_dirty_file_from_the_fix_coder"
@@ -17,10 +17,10 @@ unmeasured: ""
 
 ## Change
 
-- `review/review_loop_held.py` (new): the held files of a run are the prompt's `held files:` line, plus, when a `files:` line is given, every dirty file not on it. `review_loop_script.py` leaves them out of the review scope and the finding paths, names them in the fix coder's prompt as never-edit, and saves their bytes before each coder call. After the call it replays the coder's Edit and Write calls (from its session transcript) on the saved bytes; a held file that holds exactly that result goes back to the saved bytes. A held file the coder did not write keeps whatever its owner wrote during the call. One the coder wrote that holds anything else is left as it is. Each put-back or left file, a missing transcript, and a held file too large to save is noted in the packet's `tool_fault`. A held file never counts as changed by the coder.
-- `lib/session_edits.py` (new): the Edit and Write calls of a session transcript that did not fail, and their replay.
-- `code/phase_start.py` (new): `/code` step 3 runs it in place of `git rev-parse HEAD`. It writes `<git dir>/code-phase/start.json` (HEAD and the hash of each dirty file) and prints the phase base. `code_review_start.py` reads it: a file dirty at the start with the same bytes now is held, left out of the handoff files and named on the `held files:` line. A record for another base stops the start; no record gives a stderr note and holds nothing.
-- `skills/code/SKILL.md` step 3 and `skills/_shared/handoff-block.md` say so.
+- `review/review_loop_held.py` (new): when the prompt has a `files:` line, every dirty file not on it is held. `review_loop_script.py` leaves held files out of the review scope and the finding paths, and names them in the fix coder's prompt as never-edit. One helper, `skip_held_items`, records every item on a held file (a reviewer's fix, a caller's fix-first finding, a class-closure member) in the packet's `skipped_fp` once, with the reason "the file is held by another session", and counts it in the skipped tally. A held class member never goes to `open_classes`, so it never gates clean status. A nit on a held file goes to the packet's nits. The fix coder gets none of them.
+- The loop takes a digest of each held file before each coder call. A held file that changed during the call is left as it is, never counts as changed by the coder, and is named in the packet's `tool_fault`. The loop never writes a held file.
+- `review/handback.py` `render` prints the packet's `tool_fault` as a `Tool fault:` line, so the user reads the held-file note.
+- `review/review_loop_coder.py` (new): the fix-coder call and its tree snapshots, moved out of `review_loop_script.py` so that script stays under 1000 lines. `script_utils.without_paths` drops the held paths from a snapshot.
 
 ## Evidence
 
@@ -28,12 +28,12 @@ Queue item `review-loop-fixes-files-another-session-left-dirty`: three runs on 2
 
 ## Result
 
-Against the base scripts both new loop tests fail: the `files:` test leaves the other session's file reflowed, and the `held files:` test runs out of reviewer replies because the held file stays in scope. Two race tests, where the owning session edits the held file during the coder call, fail against the first draft of this change (the put-back erased that edit) and pass now. With the change all pass, with `test_phase_start.py` (4 tests) and `test_session_edits.py` (3). `session_edits.file_writes` parsed 400 of 400 recent real transcripts. Suite: `bash tests/run.sh` passes.
+Only a run with a `files:` line holds files. `/code` runs pass no `files:` line, so they hold nothing: two of the three cited incidents are not covered, and the queue item stays open for `/code`. Against the base script the `files:` test fails: the reviewer's finding on the other session's file reaches the fix coder, which rewrites it. With the change it passes: the file stays byte-equal and the finding is skipped. A finding on an owned nested file that shares a basename with a held root file still reaches the coder. New loop tests for a held-file finding, a fix-first finding, a class member, a nit, and a held file that changes during the coder call (left as it is and named in the rendered hand-back) pass. Suite: `bash tests/run.sh` passes.
 
 ## Watch
 
-None. A held-file put-back shows in the packet's `tool_fault`.
+None. A held file that changed during a coder call shows as a `Tool fault:` line in the hand-back.
 
 ## Back-out
 
-Revert the commit. `/code` step 3 goes back to `git rev-parse HEAD`; a leftover `code-phase/start.json` is then unread.
+Revert the commit.

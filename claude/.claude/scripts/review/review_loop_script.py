@@ -53,7 +53,6 @@ Not covered: the second-order caller supplement and the critical-blocker judgmen
 
 import argparse
 import contextlib
-import difflib
 import hashlib
 import os
 import pathlib
@@ -72,7 +71,6 @@ sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "c
 import change_removal
 import coder_gate
 import coder_report
-import file_backup
 import format_files
 import full_check
 import full_check_gate
@@ -89,11 +87,17 @@ from review_loop_calls import (
     LIVE_CHILDREN,
     PARENT_SESSION,
     claude_call,
-    last_session,
     now,
     record_main_dispatch,
 )
-from review_loop_closure import FIX_DIFF_STATS, NO_CLOSURE, closure_check, receipt_after_class_repair
+from review_loop_closure import (
+    NO_CLOSURE,
+    closure_check,
+    receipt_after_class_repair,
+    receipt_all_held,
+    receipt_still_open,
+)
+from review_loop_coder import CoderCallError, coder_call, coder_fault_notes
 from review_loop_findings import (
     PLAN_CHANGE_YES,
     UNLOCATED,
@@ -110,11 +114,10 @@ from review_loop_findings import (
 )
 from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
-from review_loop_plan import ChangeUnderReview, first_round_plan, review_files, scope, second_round_plan
+from review_loop_plan import ChangeUnderReview, first_round_plan, review_files, second_round_plan
 from review_loop_prompt_file import (
     BASE_KEY,
     FILES_KEY,
-    HELD_FILES_KEY,
     NO_REVIEW_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_HEADLESS,
@@ -130,12 +133,9 @@ from review_loop_prompts import coder_prompt, reviewer_prompt
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
-DIFF_CONTEXT = 12
 LOG_TIMEOUT_SECONDS = 60
 ABSENT_FILE_REASON = "the file is not in the tree"
 NO_CHANGE_REASON = "the coder made no change"
-# One note per fix call that deleted an untracked file it did not make, for the packet's tool_fault.
-UNTRACKED_FAULTS = []
 
 
 def git_lines(repo, *args):
@@ -158,15 +158,6 @@ def disposition_call(text, repo, out):
                             "assessment": ""})
 
 
-def file_texts(repo):
-    texts = {}
-    for path in scope(repo):
-        target = pathlib.Path(repo) / path
-        if target.is_file():
-            texts[path] = target.read_text(errors="replace")
-    return texts
-
-
 class HitCheck(typing.NamedTuple):
     """A gate check whose hits go to a coder pass: its name in messages, the coder call, its log file, its commands."""
 
@@ -182,80 +173,6 @@ class LaterPhaseEditError(RuntimeError):
 
 class ChangeRemovedError(RuntimeError):
     """A coder pass that removed half or more of the lines the change under review adds. The message is the blocker."""
-
-
-class CoderCallError(RuntimeError):
-    """A coder call that failed after it may have edited the tree. `changed` lists the paths whose text differs."""
-
-    def __init__(self, message, changed):
-        super().__init__(message)
-        self.changed = changed
-
-
-def changed_paths(before, after):
-    """The sorted paths whose text differs between two file_texts snapshots; a missing path reads as empty text."""
-    return sorted(path for path in set(before) | set(after) if before.get(path, "") != after.get(path, ""))
-
-
-def put_back_untracked(role, backup):
-    """A fix call may edit an untracked file but never delete one it did not make. Writes back each one that
-    vanished, and notes it in UNTRACKED_FAULTS; a file too large to have been saved is noted as lost."""
-    restored, lost = file_backup.restore_missing(backup)
-    if restored:
-        UNTRACKED_FAULTS.append(f"{role} deleted untracked files it did not make; the loop restored "
-                                + ", ".join(restored))
-    if lost:
-        UNTRACKED_FAULTS.append(f"{role} deleted untracked files too large to save, so they are gone: "
-                                + ", ".join(lost))
-
-
-def coder_call(role, prompt, repo, out, held=()):
-    """The fix coder. Returns (report, diffs, changed): the diffs of what it changed feed the round-two brief, and
-    one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the class-closure check;
-    changed lists the paths whose text differs. The coder's own writes to held files are undone after the call, and
-    a held file never counts as changed. A failed call raises CoderCallError naming the files it changed before it
-    died."""
-    before = review_loop_held.without_held(file_texts(repo), held)
-    untracked = [path for path, entry in scope(repo).items() if entry[1] == "??"]
-    backup = file_backup.save_files(repo, untracked)
-    held_backup = review_loop_held.save(repo, held)
-    try:
-        report = claude_call(role, prompt, repo, out, agent="coder")
-    except RuntimeError as error:
-        put_back_untracked(role, backup)
-        review_loop_held.restore_held(role, held_backup, last_session(role))
-        after = review_loop_held.without_held(file_texts(repo), held)
-        changed = changed_paths(before, after)
-        if not changed:
-            raise
-        message = (f"{error}; it changed {', '.join(changed)} before it died, so the tree holds a partial fix "
-                   "that may fail its checks")
-        raise CoderCallError(message, changed) from error
-
-    put_back_untracked(role, backup)
-    review_loop_held.restore_held(role, held_backup, last_session(role))
-    after = review_loop_held.without_held(file_texts(repo), held)
-    diffs = []
-    paths = sorted(set(before) | set(after))
-    for path in paths:
-        # A file clean before the call diffs against its HEAD text, not against nothing.
-        old_text = before[path] if path in before else script_utils.git_output(repo, "show", f"HEAD:{path}") or ""
-        old_lines = old_text.splitlines()
-        new_lines = after.get(path, "").splitlines()
-        difference = list(difflib.unified_diff(old_lines, new_lines, f"a/{path}", f"b/{path}", n=DIFF_CONTEXT,
-                                               lineterm=""))
-        if not difference:
-            continue
-        diff_text = "\n".join(difference)
-        diffs.append(diff_text)
-        diff_file = out / "fix-diffs" / role / f"{path}.diff"
-        diff_file.parent.mkdir(parents=True, exist_ok=True)
-        diff_file.write_text(diff_text)
-        added = sum(1 for line in difference if line.startswith("+") and not line.startswith("+++"))
-        removed = sum(1 for line in difference if line.startswith("-") and not line.startswith("---"))
-        FIX_DIFF_STATS.append({"path": path, "added": added, "removed": removed, "diff_file": str(diff_file)})
-    changed = changed_paths(before, after)
-    return report, diffs, changed
 
 
 def skipped_issues(report, issue_count):
@@ -403,7 +320,9 @@ class LoopRun(full_check_gate.FullCheckSteps):
         # findings fixed outside a reviewer round (the caller's fix-first findings, the full check, the class
         # closure), which file no finding row
         self.check_fixed = 0
-        self.given_skipped = 0  # the caller's fix-first findings the coder skipped, which file no finding row
+        # the items skipped with no finding row: the caller's fix-first findings the coder skipped, and every item on
+        # a held file
+        self.given_skipped = 0
         self.last_pass = ""
         # a change (a coder pass, or a whole expected-red not-run) that no passed full check ran after
         self.untested_fix = False
@@ -420,7 +339,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def review_scope(self):
         files = review_files(self.repo, self.review_base, self.only_files)
-        return review_loop_held.without_held(files, self.held_files)
+        return script_utils.without_paths(files, self.held_files)
 
     def format_reviewed_files(self, check_command):
         """Run the formatters the repo configures on the reviewed and touched files, so the tree the hand-back records
@@ -532,6 +451,25 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.run_rows.append(row)
         return new_findings
 
+    def sendable(self, items):
+        """(the items that name no held file, the ones that do). Each held one goes to skipped_fp with its reason: no
+        coder gets it."""
+        kept, held_items, recorded = review_loop_held.skip_held_items(items, self.held_files, self.skipped_fp,
+                                                                         self.repo)
+        self.given_skipped += recorded
+        return kept, held_items
+
+    def without_held_findings(self, review):
+        """The review without its fixes and nits on held files. Held fixes go to skipped_fp; held nits go to the
+        packet's nits, which no coder reads."""
+        kept_nits, held_nits = review_loop_held.split_held_findings(review["nit"], self.held_files,
+                                                                          self.repo)
+        new_nits = [nit for nit in held_nits if nit not in self.nits]
+        self.nits += new_nits
+        self.tallies["nit"] += len(new_nits)
+        kept_fixes, _held_fixes = self.sendable(review["fix"])
+        return {**review, "fix": kept_fixes, "nit": kept_nits}
+
     def split_review(self, tree_paths, review):
         """(the review without its absent-file findings, its fixes, its [design-decision] fixes, its absent-file
         findings). The fixes a plan ruling covers move to the review's asks. An ask that only points back to another
@@ -601,14 +539,17 @@ class LoopRun(full_check_gate.FullCheckSteps):
         round_fix, round_nits = [], []
         tree_paths = git_lines(self.repo, "ls-files", "--cached", "--others", "--exclude-standard")
         for (agent, owned), review in zip(self.dispatches, reviews, strict=True):
+            review = self.without_held_findings(review)
             parsed, fixes, design, absent = self.split_review(tree_paths, review)
             self.skipped_fp += [{"item": item, "reason": ABSENT_FILE_REASON} for item in absent]
 
-            plan_items = plan_change_items(parsed["ask"] + design)
-            to_coder, held = self.route_plan_items(agent, plan_items)
-            parsed["ask"] = [item for item in parsed["ask"] if item not in to_coder]
-            design = [item for item in design if item not in to_coder]
-            fixes = fixes + to_coder
+            plan_items, held_plan_items = self.sendable(plan_change_items(parsed["ask"] + design))
+            parsed["ask"] = [item for item in parsed["ask"] if item not in held_plan_items]
+            design = [item for item in design if item not in held_plan_items]
+            routed, held = self.route_plan_items(agent, plan_items)
+            parsed["ask"] = [item for item in parsed["ask"] if item not in routed]
+            design = [item for item in design if item not in routed]
+            fixes = fixes + routed
 
             new_findings = self.record_review(agent, owned, parsed, fixes, design)
             for item in new_findings["ask"]:
@@ -623,8 +564,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         pass edited a later-phase file, and ChangeRemovedError when the passes so far removed half or more of the
         lines the change under review adds."""
         finding_paths = [finding.path for finding in findings if finding.path]
-        own_finding_paths = review_loop_held.without_held(finding_paths, self.held_files)
-        files_in_scope = list(dict.fromkeys([*self.review_scope(), *own_finding_paths]))
+        files_in_scope = list(dict.fromkeys([*self.review_scope(), *finding_paths]))
         prompt = coder_prompt(self.repo, [finding.text for finding in findings], [nit.text for nit in nits],
                               files_in_scope, self.gate_env, self.later_phase_files, self.guidance, self.held_files)
         self.last_pass = "coder"
@@ -704,7 +644,11 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def fix_first(self, texts):
         """The fix coder on the caller's findings, before any reviewer. Their skips and fixes file no finding row."""
-        findings = [parse_finding(text) for text in texts]
+        parsed_findings = [parse_finding(text) for text in texts]
+        findings, _held_findings = self.sendable(parsed_findings)
+        if not findings:
+            return
+
         report, _diffs, changed = self.repair("coder0", findings)
         self.files_touched.update(changed)
         if PLAN_CHANGE_YES.search(report.strip()):
@@ -741,13 +685,22 @@ class LoopRun(full_check_gate.FullCheckSteps):
         if not closure["open"]:
             return
 
-        open_findings = [parse_finding(text) for text in closure["open"]]
+        parsed_open = [parse_finding(text) for text in closure["open"]]
+        # A member in a held file is only skipped: this run can never fix it, so it never gates clean status.
+        open_findings, held_items = self.sendable(parsed_open)
+        held_texts = [item.text for item in held_items]
+        if not open_findings:
+            self.class_closure = receipt_all_held(held_texts)
+            return
+
         _report, _diffs, class_changed = self.repair("coder-class", open_findings)
         self.mark_repaired(open_findings, class_changed)
         if class_changed:
-            self.class_closure = receipt_after_class_repair(closure["open"])
+            sent_texts = [item.text for item in open_findings]
+            self.class_closure = receipt_after_class_repair(sent_texts, held_texts)
         else:
-            self.open_classes = closure["open"]
+            self.open_classes = [item.text for item in open_findings]
+            self.class_closure = receipt_still_open(self.open_classes, held_texts)
 
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")
@@ -843,8 +796,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
             "scoped_tests": self.scoped_tests,
-            "tool_fault": " ".join(filter(None, [full_check.fault_note(self.full_check), *UNTRACKED_FAULTS,
-                                                 *review_loop_held.HELD_FAULTS])),
+            "tool_fault": " ".join(filter(None, [full_check.fault_note(self.full_check), *coder_fault_notes()])),
         }
 
 
@@ -908,7 +860,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=(), re
     loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
     loop.review_base = header.get(BASE_KEY, "")
     loop.only_files = header_list(header, FILES_KEY)
-    loop.held_files = review_loop_held.run_held_files(repo, header_list(header, HELD_FILES_KEY), loop.only_files)
+    loop.held_files = review_loop_held.run_held_files(repo, loop.only_files)
     loop.iter_count = min(header_iter(header), ROUND_BUDGET - 1)
     progress["iter"] = loop.iter_count
     try:

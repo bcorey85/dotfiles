@@ -581,6 +581,8 @@ def render(packet, skill, sections=()):
             lines.append("The class-closure receipt is missing or names no repaired finding. Do not present this "
                          "run as clean.")
     lines += full_check_lines(packet)
+    if packet["tool_fault"]:
+        lines.append("Tool fault: " + packet["tool_fault"])
     load_bearing = packet["load_bearing_clean"]
     if load_bearing and load_bearing.lower() not in ("none", "omitted"):
         lines.append("Load-bearing: " + load_bearing)

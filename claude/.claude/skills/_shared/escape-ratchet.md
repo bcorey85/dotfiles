@@ -26,7 +26,7 @@ Propose the guard; on approval apply it (or ticket it for another repo). Pass th
 
 ## Miss reason
 
-Every `log-escape` call except a `gate_missed=eng-spec` row also carries `miss_reason=`, why the gate missed this defect. First label that fits:
+Every `log-escape` call also carries `miss_reason=`, why the gate missed this defect. First label that fits:
 
 1. **`plan-gap`** — the plan was wrong or silent, and the code matched it.
 2. **`out-of-scope`** — the defect sits in code the reviewed diff did not change.
@@ -40,7 +40,7 @@ Every `log-escape` call except a `gate_missed=eng-spec` row also carries `miss_r
 
 ## Batching
 
-Several escapes one pass → group by `class`, ONE guard per group. Every row still carries its own `guard` and, where Miss reason requires one, its own `miss_reason`.
+Several escapes one pass → group by `class`, ONE guard per group. Every row still carries a `guard` value and its own `miss_reason`.
 
 ## ADR addendum
 

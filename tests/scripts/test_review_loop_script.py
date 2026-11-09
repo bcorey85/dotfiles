@@ -85,10 +85,21 @@ for old_path, new_path in reply.get("renames", {}).items():
 for path in reply.get("deletes", []):
     os.remove(path)
 
+session = f"fake-{key}-{position}"
 edits = dict(reply.get("edits", {}))
 if os.environ.get("CLAUDE_FORMAT_HOOK_OFF") != "1":
     edits.update(reply.get("edits_when_format_hook_on", {}))
-for path, text in edits.items():
+# Each edit is a Write call in the session transcript; an outside edit is another session's, written after it.
+transcript_dir = os.path.join(os.environ["HOME"], ".claude", "projects", "fake")
+os.makedirs(transcript_dir, exist_ok=True)
+with open(os.path.join(transcript_dir, session + ".jsonl"), "w") as transcript:
+    for number, (path, text) in enumerate(edits.items()):
+        with open(path, "w") as handle:
+            handle.write(text)
+        use = {"type": "tool_use", "id": f"use-{number}", "name": "Write",
+               "input": {"file_path": os.path.abspath(path), "content": text}}
+        transcript.write(json.dumps({"type": "assistant", "message": {"content": [use]}}) + "\\n")
+for path, text in reply.get("outside_edits", {}).items():
     with open(path, "w") as handle:
         handle.write(text)
 
@@ -98,7 +109,7 @@ if reply.get("commit_all"):
                    check=True)
 
 usage = {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 3, "cache_read_input_tokens": 2}
-print(json.dumps({"result": reply.get("result", ""), "session_id": "fake-session", "usage": usage}))
+print(json.dumps({"result": reply.get("result", ""), "session_id": session, "usage": usage}))
 sys.exit(reply.get("exit", 0))
 '''
 
@@ -431,6 +442,35 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
     def test_a_files_line_holds_every_other_dirty_file_from_the_fix_coder(self):
         self.assert_the_other_sessions_file_stays_untouched("files: app.py\n")
+
+    def run_beside_a_session_that_edits_its_held_file_mid_call(self, coder_edits):
+        (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
+        later = "value = {'a': 1, 'b': 4}  # the other session's edit made during the coder call\n"
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": coder_edits, "outside_edits": {"notes.py": later}}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra="held files: notes.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual((self.repo / "notes.py").read_text(), later)
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["files_touched"]), ("converged", ["app.py"]))
+        self.assertNotIn("put back their bytes", packet["tool_fault"])
+        return packet
+
+    def test_the_other_sessions_edit_to_its_held_file_during_the_coder_call_is_kept(self):
+        packet = self.run_beside_a_session_that_edits_its_held_file_mid_call({"app.py": APP_FIXED})
+
+        self.assertNotIn("notes.py", packet["tool_fault"])
+
+    def test_a_held_file_both_the_coder_and_its_owner_edit_is_left_as_the_owner_wrote_it(self):
+        packet = self.run_beside_a_session_that_edits_its_held_file_mid_call(
+            {"app.py": APP_FIXED, "notes.py": NOTES_REFLOWED})
+
+        self.assertIn("they changed again during the call, so the loop left them as they are: notes.py",
+                      packet["tool_fault"])
 
     def test_an_iter_line_counts_the_rounds_an_earlier_run_used(self):
         completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},

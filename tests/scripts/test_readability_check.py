@@ -200,6 +200,76 @@ class PythonLimitTest(ReadabilityRepoTestCase):
         self.assertIn("... and 3 more", done.stdout)
 
 
+class PythonNewLimitTest(ReadabilityRepoTestCase):
+    def assert_one_hit(self, text, expected):
+        self.write("app.py", text)
+
+        done = self.run_check()
+
+        self.assertEqual(1, done.returncode, done.stderr)
+        self.assertIn(expected, done.stdout)
+
+    def assert_no_hit(self, text):
+        self.write("app.py", text)
+
+        done = self.run_check()
+
+        self.assertEqual((0, ""), (done.returncode, done.stdout))
+
+    def test_a_ternary_passed_as_a_call_argument_is_a_hit(self):
+        self.assert_one_hit("def show(n):\n    print(1 if n else 2)\n",
+                            f"app.py:2 show — ternary as a call argument: {readability_check.ARGUMENT_TERNARY_FIX}")
+
+    def test_a_ternary_passed_as_a_keyword_argument_is_a_hit(self):
+        self.assert_one_hit("def show(n):\n    print(n, end='' if n else '\\n')\n",
+                            "app.py:2 show — ternary as a call argument")
+
+    def test_a_ternary_assigned_first_is_no_hit(self):
+        self.assert_no_hit("def show(n):\n    value = 1 if n else 2\n    print(value)\n")
+
+    def test_a_comprehension_with_two_loops_is_a_hit(self):
+        self.assert_one_hit("def pairs(rows):\n    return [cell for row in rows for cell in row]\n",
+                            f"app.py:2 pairs — comprehension with two loops or a nested comprehension: "
+                            f"{readability_check.COMPREHENSION_FIX}")
+
+    def test_a_comprehension_inside_another_is_a_hit(self):
+        self.assert_one_hit("def grid(rows):\n    return [[cell for cell in row] for row in rows]\n",
+                            "app.py:2 grid — comprehension with two loops")
+
+    def test_a_one_loop_comprehension_is_no_hit(self):
+        self.assert_no_hit("def names(rows):\n    return {row.name for row in rows if row}\n")
+
+    def test_a_returned_tuple_of_three_values_is_a_hit(self):
+        self.assert_one_hit("def split(text):\n    return text, len(text), text.upper()\n",
+                            f"app.py:2 split — tuple return (3 values): {readability_check.WIDE_TUPLE_FIX}")
+
+    def test_a_returned_pair_is_no_hit(self):
+        self.assert_no_hit("def split(text):\n    return text, len(text)\n")
+
+    def test_a_function_with_six_parameters_is_a_hit_on_its_def_line(self):
+        self.assert_one_hit("def build(a, b, c, d, e, f):\n    return a\n",
+                            f"app.py:1 build — parameters (6, limit 5): {readability_check.PARAMETERS_FIX}")
+
+    def test_star_parameters_count_and_self_does_not(self):
+        self.assert_one_hit("class Shop:\n    def buy(self, a, b, c, d, *rest, **options):\n        return a\n",
+                            "app.py:2 buy — parameters (6, limit 5)")
+
+    def test_a_method_with_five_parameters_besides_self_is_no_hit(self):
+        self.assert_no_hit("class Shop:\n    def buy(self, a, b, c, d, e):\n        return a\n")
+
+    def test_a_function_named_test_is_left_out_of_the_parameter_limit(self):
+        self.assert_no_hit("def test_build(a, b, c, d, e, f):\n    return a\n")
+
+    def test_a_wide_function_whose_def_line_the_change_did_not_write_is_no_hit(self):
+        self.write("app.py", "def build(a, b, c, d, e, f):\n    return a\n")
+        self.commit()
+        self.write("app.py", "def build(a, b, c, d, e, f):\n    return b\n")
+
+        done = self.run_check()
+
+        self.assertEqual((0, ""), (done.returncode, done.stdout))
+
+
 class DiffParsingTest(unittest.TestCase):
     def test_added_lines_come_from_each_hunk_of_each_file(self):
         diff_text = ("diff --git a.py a.py\n--- a.py\n+++ a.py\n@@ -1,0 +2,3 @@\n+x\n+y\n+z\n"
@@ -247,6 +317,61 @@ class TypescriptLimitTest(ReadabilityRepoTestCase):
     def test_a_typescript_test_file_and_a_file_that_does_not_parse_are_skipped(self):
         self.write("src/app.test.ts", "export const sign = (n: number) => n > 0 ? 1 : n < 0 ? -1 : 0;\n")
         self.write("src/broken.ts", "export function (\n")
+
+        done = self.run_check()
+
+        self.assertEqual((0, ""), (done.returncode, done.stdout))
+
+    def test_each_new_limit_is_a_hit_in_typescript(self):
+        self.write("src/app.ts", (
+            "export function show(n: number) {\n  console.log(n ? 1 : 2);\n}\n"
+            "export function split(text: string) {\n  return [text, text.length, text.toUpperCase()];\n}\n"
+            "export function build(a: number, b: number, c: number, d: number, e: number, f: number) {\n"
+            "  return a;\n}\n"))
+
+        done = self.run_check()
+
+        self.assertEqual(1, done.returncode, done.stderr)
+        self.assertIn("src/app.ts:2 show — ternary as a call argument", done.stdout)
+        self.assertIn("src/app.ts:5 split — tuple return (3 values)", done.stdout)
+        self.assertIn("src/app.ts:7 build — parameters (6, limit 5)", done.stdout)
+
+    def test_typescript_near_misses_of_the_new_limits_are_no_hit(self):
+        self.write("src/app.ts", (
+            "export function show(n: number) {\n  const value = n ? 1 : 2;\n  console.log(value);\n}\n"
+            "export function list(text: string): string[] {\n  return [text, text, text];\n}\n"
+            "export function build(this: Window, { a, b, c, d, e, f }: Options, g: number) {\n  return a;\n}\n"
+            "interface Options { a: number; b: number; c: number; d: number; e: number; f: number }\n"))
+
+        done = self.run_check()
+
+        self.assertEqual((0, ""), (done.returncode, done.stdout))
+
+    def test_a_vue_script_block_hit_reports_the_vue_file_line(self):
+        self.write("src/Card.vue", (
+            "<template>\n  <div>{{ a ? b ? 1 : 2 : 3 }}</div>\n</template>\n\n"
+            "<script>\nexport default {\n  methods: {\n    sign(n) {\n      return n > 0 ? 1 : n < 0 ? -1 : 0;\n"
+            "    },\n  },\n};\n</script>\n"))
+
+        done = self.run_check()
+
+        self.assertEqual(1, done.returncode, done.stderr)
+        self.assertIn("src/Card.vue:9 sign — chained ternary", done.stdout)
+        self.assertNotIn("Card.vue:2", done.stdout)
+
+    def test_a_vue_script_setup_lang_ts_block_is_read_as_typescript(self):
+        self.write("src/Card.vue", (
+            "<script setup lang=\"ts\">\nconst props = defineProps<{ n: number }>();\n"
+            "function show(n: number): void {\n  console.log(n ? 1 : 2);\n}\n</script>\n\n"
+            "<template>\n  <div>{{ props.n }}</div>\n</template>\n"))
+
+        done = self.run_check()
+
+        self.assertEqual(1, done.returncode, done.stderr)
+        self.assertIn("src/Card.vue:4 show — ternary as a call argument", done.stdout)
+
+    def test_a_vue_file_with_no_script_block_is_skipped(self):
+        self.write("src/Card.vue", "<template>\n  <div>{{ a ? b ? 1 : 2 : 3 }}</div>\n</template>\n")
 
         done = self.run_check()
 

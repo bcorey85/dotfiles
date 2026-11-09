@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-877 changes
+878 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -22,6 +22,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The readability hand-back check reads Vue script blocks and enforces the four new limits](notes/2026-11-08-the-readability-hand-back-check-reads-vue-script.md) [script/coder-gate, script/review-loop-script] readability_check.py reads the <script> and <script setup> blocks of .vue files at their own line numbers, and refuses a ternary passed as a call argument, a comprehension with two loops or a nested one, a returned tuple of three or more values, and a new def with more than five parameters.
 * [The code reviewer marks deep nesting, long multi-job functions, chained ternaries and packed one-liners as fix](notes/2026-11-08-the-code-reviewer-marks-deep-nesting-long-multi.md) [agent/code-reviewer, agent/smell-reviewer] The code reviewer's list of taste breaks that are a fix, never a nit, now names the coder's readability limits: control flow nested past two levels, a non-test function past 40 lines doing more than one job, a chained ternary, and a one-liner that packs several steps.
 * [Handoff becomes /stop and /go; stop-guessing is removed](notes/2026-11-08-handoff-becomes-stop-and-go-stop-guessing-is.md) [skill/handoff, skill/stop, skill/go, skill/stop-guessing, skill/debug] The handoff skill splits into /stop, which writes the state file, and /go, which reads it back; the stop-guessing skill and its opencode command are gone, and /debug sends an outside dead-end to a web search instead.
 * [Push lines pull with the keep-index script so staged files stay staged](notes/2026-11-08-push-lines-pull-with-the-keep-index-script-so.md) [rule/global-claude-md, script/git-discipline-gate] The global push rule now runs pull_keep_index.py before every push in place of git pull --rebase=merges --autostash, which put the user's staged files back unstaged.

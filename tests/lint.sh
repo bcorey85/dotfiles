@@ -22,7 +22,7 @@ codeFlowFiles=(claude/.claude/scripts/code/plan_check.py claude/.claude/scripts/
     claude/.claude/scripts/code/concentration.py claude/.claude/scripts/code/coder_report.py
     claude/.claude/scripts/code/coder_gate.py claude/.claude/scripts/code/code_wait.py
     claude/.claude/scripts/code/code_review_start.py claude/.claude/scripts/code/gate_commands.py
-    claude/.claude/scripts/lib/plan_format.py)
+    claude/.claude/scripts/code/readability_check.py claude/.claude/scripts/lib/plan_format.py)
 reviewFlowFiles=(claude/.claude/scripts/review/review_fix.py claude/.claude/scripts/review/handback.py
     claude/.claude/scripts/review/review_commit_gate.py
     claude/.claude/scripts/review/review_loop_script.py claude/.claude/scripts/review/review_loop_findings.py

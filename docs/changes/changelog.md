@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-876 changes
+877 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -16,6 +16,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Added
 
 * [The coder ranks readability first: nesting cap, function size, plain code, why-only comments](notes/2026-11-08-the-coder-ranks-readability-first-nesting-cap.md) [skill/coder-core, agent/coder] coder-core gains a hard rule that ranks readability above everything but correctness and the acceptance criteria, with four checkable limits: control flow nested at most two levels, one job and at most 40 lines per function, no chained ternaries or packed one-liners, and comments that say why.
+* [The coder hand-back refuses code past the readability limits](notes/2026-11-08-the-coder-hand-back-refuses-code-past-the.md) [script/coder-gate, script/review-loop-script, script/gate-commands, script/code-review-start] A new gate check, readability_check.py, lists each non-test function a change wrote that nests control flow past two levels, runs past 40 lines, chains a ternary or passes a call result into a call that is an argument. /code sets it for every phase; a hit denies the coder's hand-back, and in the review loop's scoped re-run it goes to a coder pass.
 * [pull_keep_index keeps staged files staged through pull before push](notes/2026-11-08-pull-keep-index-keeps-staged-files-staged-through.md) [script/pull-keep-index] `tools/pull_keep_index.py <repo>` pulls with `--rebase=merges` and puts local changes back with `stash apply --index`, so staged files stay staged.
 * [A session start deletes the temp folders of sessions idle a day or more](notes/2026-11-02-a-session-start-deletes-the-temp-folders-of.md) [script/sweep-scratchpads] Old session scratchpads no longer pile up until the per-user temp quota fills and every shell call fails.
 

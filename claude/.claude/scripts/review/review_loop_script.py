@@ -60,12 +60,14 @@ import pathlib
 import re
 import signal
 import sys
+import typing
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 # The file in the loop's state folder that holds the whole output of a red scoped test run.
 SCOPED_TESTS_LOG = "scoped-tests.log"
 STALE_PROSE_LOG = "stale-prose.log"
+READABILITY_LOG = "readability.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import change_removal
 import coder_gate
@@ -160,6 +162,15 @@ def file_texts(repo):
         if target.is_file():
             texts[path] = target.read_text(errors="replace")
     return texts
+
+
+class HitCheck(typing.NamedTuple):
+    """A gate check whose hits go to a coder pass: its name in messages, the coder call, its log file, its commands."""
+
+    label: str
+    call_name: str
+    log: str
+    commands: list
 
 
 class LaterPhaseEditError(RuntimeError):
@@ -733,13 +744,21 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def scoped_tests_pass(self, check_command, gate_commands):
         """The phase's scoped tests after a fix that no passed full check ran after. A red one stops the loop. The
-        stale-prose check is no test: its hits go to the coder."""
-        test_commands = [command for command in gate_commands if not coder_gate.is_stale_prose_check(command)]
+        readability and stale-prose checks are no tests: their hits go to the coder, readability first, since its
+        repair can change the prose a stale-prose hit names."""
+        readability_commands = [command for command in gate_commands if coder_gate.is_readability_check(command)]
+        prose_commands = [command for command in gate_commands if coder_gate.is_stale_prose_check(command)]
+        test_commands = [command for command in gate_commands
+                         if command not in readability_commands and command not in prose_commands]
         if not self.run_test_commands(test_commands):
             return
 
-        prose_commands = [command for command in gate_commands if coder_gate.is_stale_prose_check(command)]
-        if self.stale_prose_pass(check_command, prose_commands) and self.status == "converged" and self.untested_fix:
+        readability = HitCheck("readability check", "coder-readability", READABILITY_LOG, readability_commands)
+        prose = HitCheck("stale-prose check", "coder-prose", STALE_PROSE_LOG, prose_commands)
+        edited = self.hit_check_pass(check_command, readability)
+        if self.status == "converged":
+            edited = self.hit_check_pass(check_command, prose) or edited
+        if edited and self.status == "converged" and self.untested_fix:
             self.run_test_commands(test_commands)
 
     def run_test_commands(self, test_commands):
@@ -755,36 +774,36 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
         return True
 
-    def stale_prose_pass(self, check_command, prose_commands):
-        """One coder pass on the stale-prose hits of the last fix. Only a real hit (exit 1) goes to the coder, who
-        fixes each claim that no longer holds and leaves the rest; with no edit the last pass stays the one before it,
-        and with one the full check runs again. Any other failure of the check stops as `critical-blocker`, and a
-        result that is neither a pass nor a hit joins `scoped_tests`. True when the coder edited a file."""
-        if not prose_commands:
+    def hit_check_pass(self, check_command, check):
+        """One coder pass on the hits of a readability or stale-prose check after the last fix. Only a real hit (exit
+        1) goes to the coder; with no edit the last pass stays the one before it, and with one the full check runs
+        again. Any other failure of the check stops as `critical-blocker`, and a result that is neither a pass nor a
+        hit joins `scoped_tests`. True when the coder edited a file."""
+        if not check.commands:
             return False
 
-        log_path = self.out / STALE_PROSE_LOG
-        result, hit_outputs, script_failures = coder_gate.run_stale_prose_check(self.repo, prose_commands,
-                                                                                self.gate_env, log_path)
+        log_path = self.out / check.log
+        result, hit_outputs, script_failures = coder_gate.run_hit_check(self.repo, check.commands, self.gate_env,
+                                                                        log_path)
         if script_failures:
-            self.stop("critical-blocker", ["stale-prose check failing:\n" + "\n\n".join(script_failures)])
+            self.stop("critical-blocker", [f"{check.label} failing:\n" + "\n\n".join(script_failures)])
             return False
 
         if not hit_outputs:
             if result != coder_gate.SCOPED_PASSED:
-                self.scoped_tests += f"; stale-prose check {result}"
+                self.scoped_tests += f"; {check.label} {result}"
             return False
 
         hits = [parse_finding("\n\n".join(hit_outputs))]
         pass_before_repair = self.last_pass
-        _report, _diffs, prose_changed = self.repair("coder-prose", hits)
-        self.mark_repaired(hits, prose_changed, records_skip=False)
-        if not prose_changed:
+        _report, _diffs, changed = self.repair(check.call_name, hits)
+        self.mark_repaired(hits, changed, records_skip=False)
+        if not changed:
             self.last_pass = pass_before_repair
             return False
 
         self.next_round()
-        self.recheck_full_check(check_command, "full check failing after the stale-prose repair")
+        self.recheck_full_check(check_command, f"full check failing after the {check.label} repair")
         return True
 
     def outcome(self, ask_ids, ask_rows):

@@ -23,6 +23,7 @@ PLAN = "\n".join([
 BASE = "abc1234"
 SAMPLE_COMMANDS = ["ruff check {files:.py}", "python3 -m pytest {tests:.py}"]
 STALE_PROSE_COMMAND = f"python3 {toolkit_paths.CODE_DIR / 'stale_prose.py'} --base {BASE}"
+READABILITY_COMMAND = f"python3 {toolkit_paths.CODE_DIR / 'readability_check.py'} --base {BASE}"
 
 
 class CodeReviewStartTest(unittest.TestCase):
@@ -76,7 +77,7 @@ class CodeReviewStartTest(unittest.TestCase):
 
         commands = code_review_start.phase_gate_commands(self.repo, "docs/plans/p/spec.md", "2", BASE)
 
-        self.assertEqual(commands, [*SAMPLE_COMMANDS, STALE_PROSE_COMMAND])
+        self.assertEqual(commands, [*SAMPLE_COMMANDS, STALE_PROSE_COMMAND, READABILITY_COMMAND])
 
     def test_a_plan_with_no_entry_for_the_phase_gives_the_gate_commands_of_the_whole_plan(self):
         (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
@@ -84,7 +85,7 @@ class CodeReviewStartTest(unittest.TestCase):
 
         commands = code_review_start.phase_gate_commands(self.repo, "docs/plans/p/spec.md", "9", BASE)
 
-        self.assertEqual(commands, SAMPLE_COMMANDS)
+        self.assertEqual(commands, [*SAMPLE_COMMANDS, READABILITY_COMMAND])
 
     def test_the_live_run_passes_each_gate_command_to_the_loop(self):
         (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
@@ -94,8 +95,9 @@ class CodeReviewStartTest(unittest.TestCase):
 
         self.fake_handback.record_script_dispatch.assert_called_once_with("test-session", self.repo)
         passed = [command[at + 1] for at, word in enumerate(command) if word == "--gate-command"]
-        self.assertEqual(passed, [*SAMPLE_COMMANDS, STALE_PROSE_COMMAND])
-        self.assertTrue(code_review_start.coder_gate.is_stale_prose_check(passed[-1]))
+        self.assertEqual(passed, [*SAMPLE_COMMANDS, STALE_PROSE_COMMAND, READABILITY_COMMAND])
+        self.assertTrue(code_review_start.coder_gate.is_stale_prose_check(passed[-2]))
+        self.assertTrue(code_review_start.coder_gate.is_readability_check(passed[-1]))
 
     def run_live(self, code_review_start, write_packet, packet_text="status: converged\n"):
         # Runs main with the loop mocked; `write_packet` puts `packet_text` in packet.txt beside the prompt file.
@@ -199,7 +201,7 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         header = done.stdout.partition("\n\n")[0].splitlines()
         self.assertEqual(["mode: review-first", "caller: code", "lane: lane-a", f"repo: {self.repo}"], header)
-        self.assertEqual(SAMPLE_COMMANDS, commands)
+        self.assertEqual([*SAMPLE_COMMANDS, READABILITY_COMMAND], commands)
 
     def test_a_handoff_that_names_a_repo_root_file_gets_its_gate(self):
         (self.repo / "pyproject.toml").write_text("[tool.ruff]\n")
@@ -209,7 +211,7 @@ class CodeReviewStartTest(unittest.TestCase):
         commands = code_review_start.phase_gate_commands(self.repo, "-", "1", BASE,
                                                          "handoff:\n  files:\n    - path: app.py\n      change: x\n")
 
-        self.assertEqual(SAMPLE_COMMANDS, commands)
+        self.assertEqual([*SAMPLE_COMMANDS, READABILITY_COMMAND], commands)
 
     def commit_base(self):
         git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com"]

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-889 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+890 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-09, [A scoped test failure that fails the same way without the diff no longer stops the review loop](notes/2026-11-09-a-scoped-test-failure-that-fails-the-same-way.md).
+Latest change: 2026-11-09, [a code phase review holds the files dirty before the run](notes/2026-11-09-a-code-phase-review-holds-the-files-dirty-before.md).
 
 ## Top gains
 

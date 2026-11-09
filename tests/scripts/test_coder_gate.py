@@ -128,8 +128,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.gate_set(f"python3 {GATE_SCRIPT.parent / 'readability_check.py'} --base {base}", *other_commands)
 
     def logged_gate_rows(self):
-        log_text = (self.home / ".claude/coder-gate.jsonl").read_text()
-        return [json.loads(line) for line in log_text.splitlines()]
+        return script_utils.read_jsonl(self.home / ".claude/coder-gate.jsonl")
 
     def test_a_denial_by_a_readability_hit_logs_one_readability_failure(self):
         self.set_gate_with_a_readability_hit()

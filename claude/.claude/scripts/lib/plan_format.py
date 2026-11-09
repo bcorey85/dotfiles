@@ -93,6 +93,28 @@ class NoCriteriaHeadingError(PlanFormatError):
     """A ticket with no `## Acceptance*` or `## Requirements*` heading."""
 
 
+def _duplicate_phase_failure(section_id, first_line, index):
+    """The `duplicate-id` failure for a second section of one phase id."""
+    return {"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {section_id} has two "
+            f"sections, on line {first_line + 1} and line {index + 1}. Give "
+            "each phase its own id."}
+
+
+def _open_phase_section(lines, index, level, phase_heading):
+    """A new phase section that starts at this heading and runs to the end of the plan until a later heading ends it."""
+    title = lines[index][phase_heading.end():].lstrip(" :.—–-")
+    return {"start": index, "level": level, "title": title, "end": len(lines)}
+
+
+def _section_open_at_heading(current, level, line, index):
+    """The open section after this heading: `current` with its end set at `index` and None when the heading ends it,
+    else `current` unchanged."""
+    if current is None or level > current["level"] or SUCCESS_GROUP_HEADING.match(line):
+        return current
+    current["end"] = index
+    return None
+
+
 def phase_spans(lines):
     """Every `Phase <id>` section of the plan in file order, as (id, {"start", "level", "title", "end"}) with 0-based
     line indexes, `end` exclusive, and the failures for ids that have two sections.
@@ -116,10 +138,7 @@ def phase_spans(lines):
             continue
 
         level = len(heading.group(1))
-        if current is not None and level <= current["level"] and not SUCCESS_GROUP_HEADING.match(line):
-            current["end"] = index
-            current = None
-
+        current = _section_open_at_heading(current, level, line, index)
         phase_heading = PHASE_HEADING.match(line)
         if not phase_heading:
             continue
@@ -127,18 +146,14 @@ def phase_spans(lines):
         section_id = phase_heading.group(2)
         if current is not None and level > current["level"] and section_id in first_lines:
             continue
-
         if current is not None:
             current["end"] = index
-        current = {"start": index, "level": level, "title": line[phase_heading.end():].lstrip(" :.—–-"),
-                   "end": len(lines)}
+        current = _open_phase_section(lines, index, level, phase_heading)
         spans.append((section_id, current))
-        if section_id in first_lines:
-            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {section_id} has two "
-                             f"sections, on line {first_lines[section_id] + 1} and line {index + 1}. Give "
-                             "each phase its own id."})
+        if section_id not in first_lines:
+            first_lines[section_id] = index
             continue
-        first_lines[section_id] = index
+        failures.append(_duplicate_phase_failure(section_id, first_lines[section_id], index))
     return spans, failures
 
 
@@ -178,15 +193,23 @@ def file_entry_paths(plan_lines, section):
             in_list = False
             continue
 
-        line_paths = [match.group(1) for match in PATH_IN_BACKTICKS.finditer(line)]
-        if FILE_ENTRY.match(line):
-            paths.update(line_paths)
-            in_list = not line_paths
-        elif in_list and TOP_LEVEL_BULLET.match(line):
-            paths.update(line_paths[:1])
-        elif in_list and line.strip() and not line[:1].isspace():
-            in_list = False
+        in_list = _collect_entry_paths(line, in_list, paths)
     return paths
+
+
+def _collect_entry_paths(line, in_list, paths):
+    """Add the paths this line names to `paths`, and return whether the next line is still in a `**Files**:` list."""
+    line_paths = [match.group(1) for match in PATH_IN_BACKTICKS.finditer(line)]
+    if FILE_ENTRY.match(line):
+        paths.update(line_paths)
+        return not line_paths
+    if not in_list:
+        return False
+    if TOP_LEVEL_BULLET.match(line):
+        paths.update(line_paths[:1])
+        return True
+    ends_list = line.strip() and not line[:1].isspace()
+    return not ends_list
 
 
 def required_structure(plan_lines):
@@ -233,26 +256,40 @@ def phase_status_entries(lines, closing_skill):
 
         number = match.group(2)
         if number in first_lines:
-            failures.append({"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {number} twice, on line "
-                             f"{first_lines[number] + 1} and line {index + 1}. Give each phase its own id."})
+            failures.append(_duplicate_status_failure(number, first_lines[number], index))
             continue
-
         first_lines[number] = index
-        title = match.group(3)
-        risk = RISK_MARK.search(title)
-        closing = closing_skill(title)
-        is_moved = match.group(1) == MOVED_MARK
-        target = MOVED_TARGET.search(title) if is_moved else None
-        if is_moved and not target:
-            failures.append({"line": index + 1, "kind": "moved-without-target", "detail": f"Phase {number} is marked "
-                             "`[-]` (moved to another ticket) but the line does not say `moved to <KEY>`. Add the "
-                             "ticket key, for example `moved to LED-16`."})
-        is_done = match.group(1) in ("x", "X")
-        entries.append({"line": index, "done": is_done, "moved": is_moved, "open": not is_done and not is_moved,
-                        "movedTo": target.group(1) if target else None, "number": number, "title": title,
-                        "risk": risk.group(1).lower() if risk else "high", "closing": closing,
-                        "gate": bool(GATE_CLAUSE.search(title))})
+        entry = _phase_status_entry(index, match, closing_skill)
+        entries.append(entry)
+        if entry["moved"] and entry["movedTo"] is None:
+            failures.append(_moved_without_target_failure(index, number))
     return entries, failures
+
+
+def _duplicate_status_failure(number, first_line, index):
+    """The `duplicate-id` failure for a phase id listed twice in Phase Status."""
+    return {"line": index + 1, "kind": "duplicate-id", "detail": f"Phase {number} twice, on line "
+            f"{first_line + 1} and line {index + 1}. Give each phase its own id."}
+
+
+def _moved_without_target_failure(index, number):
+    """The `moved-without-target` failure for a `[-]` line that names no ticket key."""
+    return {"line": index + 1, "kind": "moved-without-target", "detail": f"Phase {number} is marked "
+            "`[-]` (moved to another ticket) but the line does not say `moved to <KEY>`. Add the "
+            "ticket key, for example `moved to LED-16`."}
+
+
+def _phase_status_entry(index, match, closing_skill):
+    """The entry dict for one parsed Phase Status line."""
+    title = match.group(3)
+    risk = RISK_MARK.search(title)
+    is_moved = match.group(1) == MOVED_MARK
+    target = MOVED_TARGET.search(title) if is_moved else None
+    is_done = match.group(1) in ("x", "X")
+    return {"line": index, "done": is_done, "moved": is_moved, "open": not is_done and not is_moved,
+            "movedTo": target.group(1) if target else None, "number": match.group(2), "title": title,
+            "risk": risk.group(1).lower() if risk else "high", "closing": closing_skill(title),
+            "gate": bool(GATE_CLAUSE.search(title))}
 
 
 def deviation_records_move(lines, number, ticket_key):
@@ -423,10 +460,12 @@ def manual_verification(text, name="plan"):
             scan["in_section"] = False
             scan["last"] = None
         if heading:
-            manual_heading_step(scan, line, len(heading.group(1)), name, number)
+            heading_marks = heading.group(1)
+            manual_heading_step(scan, line, len(heading_marks), name, number)
             continue
         if scan["in_section"]:
-            manual_line_step(scan, line, is_fenced, name, (number, phase_at(spans, index)))
+            phase_id = phase_at(spans, index)
+            manual_line_step(scan, line, is_fenced, name, (number, phase_id))
 
     items = scan["items"]
     for item in items:
@@ -483,6 +522,30 @@ def plain_verification_item_warnings(lines, name="plan", first_line=1):
     ]
 
 
+def _is_automated_heading(line, location, strict):
+    """True for the Automated Verification heading. With `strict`, any other `#### ` heading that names automated
+    verification in other words raises PlanFormatError."""
+    if line.startswith(AUTOMATED_HEADING):
+        return True
+    if strict:
+        _refuse_misworded_heading(line, location)
+    return False
+
+
+def _refuse_misworded_heading(line, location):
+    """Raise PlanFormatError when a `#### ` heading names automated verification in words other than the
+    Automated Verification heading."""
+    lowered = line.lower()
+    misworded = "automated" in lowered and "verif" in lowered and not MANUAL_HEADING.match(line)
+    if not misworded:
+        return
+    raise PlanFormatError(
+        f"{location}: heading `{line.strip()}` is not a verification heading; "
+        f"rename it to `{AUTOMATED_HEADING}` for commands, or `#### Manual Verification:` for human "
+        f"checks, or its items are not read"
+    )
+
+
 def verification_list_items(lines, name="plan", first_line=1, strict=False):
     """(index, line) for each top-level list item under a `#### Automated Verification` heading, checkbox or not, in
     file order. The list ends at the next `#### ` heading, a heading of level 1 to 3, or a `---` rule. A `#### `
@@ -493,15 +556,7 @@ def verification_list_items(lines, name="plan", first_line=1, strict=False):
     inside = False
     for index, line in enumerate(lines):
         if line.startswith("#### "):
-            inside = line.startswith(AUTOMATED_HEADING)
-            lowered = line.lower()
-            misworded = "automated" in lowered and "verif" in lowered and not MANUAL_HEADING.match(line)
-            if strict and not inside and misworded:
-                raise PlanFormatError(
-                    f"{name}:{first_line + index}: heading `{line.strip()}` is not a verification heading; "
-                    f"rename it to `{AUTOMATED_HEADING}` for commands, or `#### Manual Verification:` for human "
-                    f"checks, or its items are not read"
-                )
+            inside = _is_automated_heading(line, f"{name}:{first_line + index}", strict)
             continue
         if re.match(r"#{1,3} ", line) or line.strip() == "---":
             inside = False
@@ -548,7 +603,9 @@ def gate_env(plan_text):
     gives none."""
     verification_items = automated_verification_rows(plan_text.splitlines())
     runnable_items = [line for _, line in verification_items if not runs_no_command(line)]
-    spans = [span for line in runnable_items for span in script_utils.backticked_spans(line)]
+    spans = []
+    for line in runnable_items:
+        spans += script_utils.backticked_spans(line)
     return script_utils.leading_env_assignments(spans)
 
 
@@ -633,15 +690,23 @@ def cited_phases(plan_lines, phase_id, phase_text):
     seen = {phase_id}
     pending = [phase_text]
     while pending:
-        for match in SAME_AS_PHASE.finditer(pending.pop()):
-            cited_id = match.group(1)
-            section = phase_section(plan_lines, cited_id)
-            if section is None or cited_id in seen:
-                continue
-            seen.add(cited_id)
+        for cited_id, section in _unseen_cited_sections(plan_lines, pending.pop(), seen):
             cited.append((cited_id, section["start"] + 1, section["end"]))
             pending.append("\n".join(plan_lines[section["start"]:section["end"]]))
     return cited
+
+
+def _unseen_cited_sections(plan_lines, text, seen):
+    """(id, section) for each phase the text cites that has a section and is not in `seen`, which gains its id."""
+    sections = []
+    for match in SAME_AS_PHASE.finditer(text):
+        cited_id = match.group(1)
+        section = phase_section(plan_lines, cited_id)
+        if section is None or cited_id in seen:
+            continue
+        seen.add(cited_id)
+        sections.append((cited_id, section))
+    return sections
 
 
 def parse_plan_with_closing_phases(plan_lines):
@@ -676,7 +741,8 @@ def changes_acceptance_criteria(impact):
     """False only when each PLAN-IMPACT in impact says `acceptance_criteria: none`. A PLAN-IMPACT with no such line
     counts as an AC change, so the user is asked."""
     answers = [match.group(1).strip(" \t.`*_").lower() for match in AC_CHANGE_LINE.finditer(impact)]
-    impacts = max(1, len(PLAN_IMPACT_OPENING.findall(impact)))
+    openings = PLAN_IMPACT_OPENING.findall(impact)
+    impacts = max(1, len(openings))
     return len(answers) < impacts or any(answer != "none" for answer in answers)
 
 
@@ -703,7 +769,8 @@ def stopping_plan_impact_cause(blocks, cause_required=False):
     reads an empty cause as `plan`."""
     for block in blocks:
         required = cause_required and block_must_name_cause(block)
-        cause = plan_impact_cause(block, missing=NO_CAUSE_LINE if required else PLAN_CAUSE)
+        missing_cause = NO_CAUSE_LINE if required else PLAN_CAUSE
+        cause = plan_impact_cause(block, missing=missing_cause)
         if cause_stop(cause):
             return cause or NO_CAUSE_LINE
     return PLAN_CAUSE
@@ -793,6 +860,14 @@ def ruled_impact_text(lines, index, indent):
     return None
 
 
+def _ruled_impact_texts(lines, index, indent):
+    """The PLAN-IMPACT text under the RESOLVED: line as a one-item list, or [] when the block holds none."""
+    impact_text = ruled_impact_text(lines, index, indent)
+    if impact_text is None:
+        return []
+    return [impact_text]
+
+
 def resolved_plan_texts(handoff):
     """The texts a handoff with a ruling names as settled: the ruling line (the one-line `plan_impact: RESOLVED` form
     or the `RESOLVED:` line of the `plan_impact: |` block), the PLAN-IMPACT block that follows the `RESOLVED:` line,
@@ -807,17 +882,21 @@ def resolved_plan_texts(handoff):
             ruled = True
             texts.append(stripped)
         if RESOLVED_BLOCK_LINE.match(line):
-            impact_text = ruled_impact_text(lines, index, indent)
-            if impact_text is not None:
-                texts.append(impact_text)
+            texts += _ruled_impact_texts(lines, index, indent)
         elif stripped.startswith(CARRIED_FINDINGS_KEY):
-            following = []
-            for later in lines[index + 1:]:
-                if later.strip() and source_text.indent_of(later) <= indent:
-                    break
-                following.append(later.strip())
-            texts += [entry[2:] for entry in following if entry.startswith("- ")]
+            texts += _carried_finding_texts(lines, index, indent)
     return texts if ruled else []
+
+
+def _carried_finding_texts(lines, index, indent):
+    """The `- ` entries under the carried-findings: line at `index`, without the dash. They end at a line indented no
+    deeper than that line."""
+    following = []
+    for later in lines[index + 1:]:
+        if later.strip() and source_text.indent_of(later) <= indent:
+            break
+        following.append(later.strip())
+    return [entry[2:] for entry in following if entry.startswith("- ")]
 
 
 def plan_failure_rows(plan, plan_name):
@@ -868,7 +947,8 @@ def criteria_by_id(criteria_text, name="acceptance-criteria.md"):
 
 
 def content_words(text):
-    return set(CONTENT_WORD.findall(text.lower())) - AC_STOP_WORDS
+    words = CONTENT_WORD.findall(text.lower())
+    return set(words) - AC_STOP_WORDS
 
 
 def missing_criteria_failure(spec_path):
@@ -917,23 +997,46 @@ def ac_reference_failures(spec_text, criteria_text, spec_name="spec.md", criteri
     lines = spec_text.splitlines()
     fenced = script_utils.fenced_line_indexes(lines)
     failures = []
+    for index, criterion_id in _bare_references(lines, fenced):
+        window = " ".join(lines[index:index + 2])
+        nearby = content_words(window)
+        where = f"{spec_name}:{index + 1}:"
+        failure = _ac_reference_failure(criterion_id, where, criteria, criteria_name, nearby)
+        if failure:
+            failures.append(failure)
+    return failures
+
+
+def _bare_references(lines, fenced):
+    """(line index, "AC<n>") for each bare `AC<n>` outside fenced blocks, in file order; `ticket AC<n>` is left out."""
+    references = []
     for index, line in enumerate(lines):
         if index in fenced:
             continue
-        nearby = content_words(" ".join(lines[index:index + 2]))
-        for reference in AC_REFERENCE.finditer(line):
-            if reference.group("ticket"):
-                continue
-            criterion_id = f"AC{reference.group('number')}"
-            where = f"{spec_name}:{index + 1}:"
-            if criterion_id not in criteria:
-                failures.append(f"{where} {criterion_id} is not an id in {criteria_name}; write "
-                                f"`ticket {criterion_id}` for the ticket's number, or cite the criteria file's id")
-            elif len(nearby & content_words(criteria[criterion_id])) < MIN_SHARED_WORDS:
-                failures.append(f"{where} {criterion_id} shares no wording with {criterion_id} in {criteria_name} "
-                                f"({criteria[criterion_id][:60]!r}); it may be the ticket's number. Write "
-                                f"`ticket {criterion_id}`, or name the criterion's behavior beside it")
-    return failures
+        references += [(index, criterion_id) for criterion_id in _bare_ids_in(line)]
+    return references
+
+
+def _bare_ids_in(line):
+    """The "AC<n>" of each bare reference on the line; a `ticket AC<n>` is left out."""
+    ids = []
+    for reference in AC_REFERENCE.finditer(line):
+        if not reference.group("ticket"):
+            ids.append(f"AC{reference.group('number')}")
+    return ids
+
+
+def _ac_reference_failure(criterion_id, where, criteria, criteria_name, nearby):
+    """The failure row for one bare `AC<n>` reference, or None when it names its criterion."""
+    if criterion_id not in criteria:
+        return (f"{where} {criterion_id} is not an id in {criteria_name}; write "
+                f"`ticket {criterion_id}` for the ticket's number, or cite the criteria file's id")
+    criterion_words = content_words(criteria[criterion_id])
+    if len(nearby & criterion_words) >= MIN_SHARED_WORDS:
+        return None
+    return (f"{where} {criterion_id} shares no wording with {criterion_id} in {criteria_name} "
+            f"({criteria[criterion_id][:60]!r}); it may be the ticket's number. Write "
+            f"`ticket {criterion_id}`, or name the criterion's behavior beside it")
 
 
 # The ticket's acceptance criteria. verify-prep, verify-log and the plan check all read them through ticket_criteria.
@@ -1006,13 +1109,20 @@ def top_level_items(body, name="section", first_line=1):
         if is_prose:
             raise PlanFormatError(f"{name}:{first_line + offset}: prose in the criteria section is not a list item, "
                                   f"so it would be skipped: {line.strip()[:80]}")
-        if match and len(match.group(1)) < 2:
-            items.append(match.group(2).strip())
-        elif match and items:
-            items[-1] += " " + match.group(2).strip()
-        elif line.strip() and line.startswith((" ", "\t")) and items:
-            items[-1] += " " + line.strip()
+        _fold_item_line(items, match, line)
     return items
+
+
+def _fold_item_line(items, match, line):
+    """Add the line to `items`: a new item for a top-level list line, else folded into the item above."""
+    if match and len(match.group(1)) < 2:
+        items.append(match.group(2).strip())
+        return
+    if match and items:
+        items[-1] += " " + match.group(2).strip()
+        return
+    if line.strip() and line.startswith((" ", "\t")) and items:
+        items[-1] += " " + line.strip()
 
 
 def ticket_criteria(ticket_text, name="ticket"):
@@ -1088,14 +1198,14 @@ def ticket_comments(ticket_text, name="ticket"):
     for offset, line in enumerate(body):
         if heading_level(line) == sub_level:
             comments.append([line.lstrip("#").strip()])
-        elif not line.strip():
             continue
-        elif not comments:
+        if not line.strip():
+            continue
+        if not comments:
             raise PlanFormatError(f"{name}:{start + 2 + offset}: text under `{lines[start].strip()}` before the "
                                   f"first `{'#' * sub_level}` comment heading belongs to no comment: "
                                   f"{line.strip()[:80]}")
-        else:
-            comments[-1].append(line.strip())
+        comments[-1].append(line.strip())
     return comment_entries([" ".join(parts) for parts in comments])
 
 

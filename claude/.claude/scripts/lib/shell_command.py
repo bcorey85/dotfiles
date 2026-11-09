@@ -177,47 +177,67 @@ def parse_piped_commands(command):
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     lexer.commenters = ""
-    commands = []
-    piped = False
-    next_piped = False
-    words = []
-    redirections = []
-    pending_operator = None
+    reader = _PipedCommandReader()
     for token in lexer:
+        reader.read(token)
+    return reader.finish()
+
+
+class _PipedCommandReader:
+    """The commands read so far from the tokens of parse_piped_commands, and the command being read."""
+
+    def __init__(self):
+        self.commands = []
+        self.piped = False
+        self.next_piped = False
+        self.words = []
+        self.redirections = []
+        self.pending_operator = None
+
+    def read(self, token):
         characters = set(token)
         if token and characters <= SEPARATOR_CHARS:
-            if pending_operator is not None:
-                redirections.append((pending_operator, ""))
-            pending_operator = None
-            if words or redirections:
-                commands.append((words, redirections, piped))
-                piped = False
-                next_piped = False
-            if token.replace("\n", "").replace("(", "") in ("|", "|&"):
-                next_piped = True
-            piped = next_piped
-            words = []
-            redirections = []
-            continue
-        if token and (characters <= REDIRECT_CHARS or token == ">|"):
-            if pending_operator is not None:
-                redirections.append((pending_operator, ""))
-            if words and words[-1].isdigit():
-                words.pop()
-            pending_operator = token
-            continue
-        if token and characters <= SEPARATOR_CHARS | REDIRECT_CHARS:
+            self._end_command(token)
+        elif token and (characters <= REDIRECT_CHARS or token == ">|"):
+            self._start_redirection(token)
+        elif token and characters <= SEPARATOR_CHARS | REDIRECT_CHARS:
             raise ValueError("unsorted operator characters: " + token)
-        if pending_operator is not None:
-            redirections.append((pending_operator, token))
-            pending_operator = None
-            continue
-        words.append(token)
-    if pending_operator is not None:
-        redirections.append((pending_operator, ""))
-    if words or redirections:
-        commands.append((words, redirections, piped))
-    return commands
+        elif self.pending_operator is not None:
+            self.redirections.append((self.pending_operator, token))
+            self.pending_operator = None
+        else:
+            self.words.append(token)
+
+    def finish(self):
+        self._close_pending_operator()
+        self._save_command()
+        return self.commands
+
+    def _close_pending_operator(self):
+        if self.pending_operator is not None:
+            self.redirections.append((self.pending_operator, ""))
+        self.pending_operator = None
+
+    def _save_command(self):
+        if self.words or self.redirections:
+            self.commands.append((self.words, self.redirections, self.piped))
+
+    def _end_command(self, separator):
+        self._close_pending_operator()
+        if self.words or self.redirections:
+            self._save_command()
+            self.next_piped = False
+        if separator.replace("\n", "").replace("(", "") in ("|", "|&"):
+            self.next_piped = True
+        self.piped = self.next_piped
+        self.words = []
+        self.redirections = []
+
+    def _start_redirection(self, operator):
+        self._close_pending_operator()
+        if self.words and self.words[-1].isdigit():
+            self.words.pop()
+        self.pending_operator = operator
 
 
 def unwrap_docker(words):
@@ -275,15 +295,22 @@ def docker_environment_values(words):
         if word in ("-e", "--env"):
             value = words[index] if index < command_start else None
             index += 1
-        elif word.startswith("--env="):
-            value = word[len("--env="):]
-        elif word.startswith("-e") and not word.startswith("--"):
-            value = word[2:]
-        elif word in DOCKER_VALUE_OPTIONS:
+        else:
+            value = _attached_environment_value(word)
+        if value is None and word in DOCKER_VALUE_OPTIONS:
             index += 1
         if value:
             values.append(value)
     return values
+
+
+def _attached_environment_value(word):
+    # The value in `--env=NAME` or `-eNAME`, or None when the word is neither.
+    if word.startswith("--env="):
+        return word[len("--env="):]
+    if word.startswith("-e") and not word.startswith("--"):
+        return word[2:]
+    return None
 
 
 def skip_options(words, index, value_options):
@@ -360,23 +387,43 @@ def command_after_wrappers(words, peel_containers=True):
         if not words:
             return words
 
-        name = os.path.basename(words[0])
-        container_command = unwrap_docker(words) if peel_containers else None
-        if container_command is not None:
-            words = container_command
-        elif words[0] in GROUP_WORDS:
-            words = words[1:]
-        elif name in RUNNER_WRAPPERS:
-            if len(words) < 2 or words[1] != "run":
-                return words
-            words = words[skip_options(words, 2, RUNNER_WRAPPERS[name]):]
-        elif name in WRAPPER_VALUE_OPTIONS:
-            if name == "command" and words[1:2] in (["-v"], ["-V"]):
-                return words
-            rest = words[skip_options(words, 1, WRAPPER_VALUE_OPTIONS[name]):]
-            words = rest[1:] if name in WRAPPERS_WITH_A_LEADING_VALUE else rest
-        else:
+        peeled = _peel_wrapper_once(words, peel_containers)
+        if peeled is None:
             return words
+        words = peeled
+
+
+def _peel_wrapper_once(words, peel_containers):
+    # The words after the one wrapper that words starts with, or None when it starts with no wrapper to peel.
+    name = os.path.basename(words[0])
+    container_command = unwrap_docker(words) if peel_containers else None
+    if container_command is not None:
+        return container_command
+    if words[0] in GROUP_WORDS:
+        return words[1:]
+    if name in RUNNER_WRAPPERS:
+        return _peel_runner_wrapper(words, name)
+    if name in WRAPPER_VALUE_OPTIONS:
+        return _peel_option_wrapper(words, name)
+    return None
+
+
+def _peel_runner_wrapper(words, name):
+    # The words after `uv run`, `poetry run` or `pipenv run` and its options, or None for any other subcommand.
+    if len(words) < 2 or words[1] != "run":
+        return None
+    command_start = skip_options(words, 2, RUNNER_WRAPPERS[name])
+    return words[command_start:]
+
+
+def _peel_option_wrapper(words, name):
+    # The words after a WRAPPER_VALUE_OPTIONS wrapper, its options and its leading value; None for `command -v`.
+    if name == "command" and words[1:2] in (["-v"], ["-V"]):
+        return None
+    rest = words[skip_options(words, 1, WRAPPER_VALUE_OPTIONS[name]):]
+    if name in WRAPPERS_WITH_A_LEADING_VALUE:
+        return rest[1:]
+    return rest
 
 
 def peeled_commands(simple_commands):
@@ -436,15 +483,20 @@ def shell_code_argument(words):
     while index < len(words) and words[index].startswith(("-", "+")):
         word = words[index]
         if word.startswith("-") and not word.startswith("--") and "c" in word[1:]:
-            if index + 1 >= len(words):
-                return None
-            # The shell removes a backslash before `$` or a backtick inside double quotes; shlex keeps it.
-            return re.sub(r"\\([$`])", r"\1", words[index + 1])
+            return _code_after_option(words, index)
         # An option takes the next word as its value: a long option named in SHELL_VALUE_OPTIONS, or a short-option
         # cluster ending in `o` or `O` (`-o`, `+o`, `-euo`).
         takes_value = word in SHELL_VALUE_OPTIONS or (not word.startswith("--") and word[-1] in "oO")
         index += 2 if takes_value else 1
     return None
+
+
+def _code_after_option(words, index):
+    # The `-c` code text in the word after the option at index, or None when the option is last.
+    if index + 1 >= len(words):
+        return None
+    # The shell removes a backslash before `$` or a backtick inside double quotes; shlex keeps it.
+    return re.sub(r"\\([$`])", r"\1", words[index + 1])
 
 
 def split_command_steps(command):
@@ -485,53 +537,87 @@ def quoted_positions(command, unclosed_is_quoted=True):
     # unclosed_is_quoted is False: then the text after it counts as unquoted, as a check that must not be hidden by a
     # stray quote needs. A quote character inside a comment opens no quote. The text of a `$(...)` or backtick span
     # inside double quotes is code the shell runs, so it is not quoted: it is read with its own quote state.
-    positions = set()
-    # One level per open `"$(` or "`" span, after the base level: its quote, how it closes, and its open `(` count.
-    levels = [{"quote": None, "closer": None, "depth": 0}]
-    quote_opened_at = 0
-    index = 0
-    while index < len(command):
-        character = command[index]
-        level = levels[-1]
+    scan = _QuoteScan(command)
+    scan.run()
+    positions = scan.positions
+    if scan.levels[0]["quote"] is not None and not unclosed_is_quoted:
+        positions = {position for position in positions if position < scan.quote_opened_at}
+    return positions
+
+
+class _QuoteScan:
+    """The state of one quoted_positions pass over a command, one character at a time."""
+
+    def __init__(self, command):
+        self.command = command
+        self.positions = set()
+        # One level per open `"$(` or "`" span, after the base level: its quote, how it closes, and its open `(` count.
+        self.levels = [{"quote": None, "closer": None, "depth": 0}]
+        self.quote_opened_at = 0
+        self.index = 0
+
+    def run(self):
+        while self.index < len(self.command):
+            character = self.command[self.index]
+            level = self.levels[-1]
+            if level["quote"] is None:
+                self._read_unquoted(character, level)
+            else:
+                self._read_quoted(character, level)
+            self.index += 1
+
+    def _read_unquoted(self, character, level):
+        if character in "'\"":
+            self._open_quote(character, level)
+        elif character == "\\":
+            self._hide_next_character()
+        elif character == "#" and self._starts_comment():
+            self._hide_comment()
+        else:
+            self._read_span_syntax(character, level)
+
+    def _read_span_syntax(self, character, level):
+        # Track the parentheses of an open `$(` span and the character that closes the span.
+        if character == "(" and level["closer"] == ")":
+            level["depth"] += 1
+        elif character == ")" and level["closer"] == ")" and level["depth"]:
+            level["depth"] -= 1
+        elif character == level["closer"]:
+            self.levels.pop()
+
+    def _read_quoted(self, character, level):
         quote = level["quote"]
-        if quote is None:
-            if character in "'\"":
-                level["quote"] = character
-                if len(levels) == 1:
-                    quote_opened_at = index
-            elif character == "\\":
-                positions.add(index + 1)
-                index += 1
-            elif character == "#" and (index == 0 or command[index - 1] in " \t\r\f\v\n;&|()"):
-                comment_end = command.find("\n", index)
-                if comment_end == -1:
-                    comment_end = len(command)
-                positions.update(range(index + 1, comment_end))
-                index = comment_end
-                continue
-            elif character == "(" and level["closer"] == ")":
-                level["depth"] += 1
-            elif character == ")" and level["closer"] == ")" and level["depth"]:
-                level["depth"] -= 1
-            elif character == level["closer"]:
-                levels.pop()
-        elif character == quote:
+        if character == quote:
             level["quote"] = None
         elif character == "\\" and quote == '"':
-            positions.add(index + 1)
-            index += 1
-        elif quote == '"' and command.startswith("$(", index):
-            levels.append({"quote": None, "closer": ")", "depth": 0})
-            index += 1
+            self._hide_next_character()
+        elif quote == '"' and self.command.startswith("$(", self.index):
+            self.levels.append({"quote": None, "closer": ")", "depth": 0})
+            self.index += 1
         elif quote == '"' and character == "`":
-            levels.append({"quote": None, "closer": "`", "depth": 0})
+            self.levels.append({"quote": None, "closer": "`", "depth": 0})
         else:
-            positions.add(index)
-        index += 1
+            self.positions.add(self.index)
 
-    if levels[0]["quote"] is not None and not unclosed_is_quoted:
-        positions = {position for position in positions if position < quote_opened_at}
-    return positions
+    def _open_quote(self, character, level):
+        level["quote"] = character
+        if len(self.levels) == 1:
+            self.quote_opened_at = self.index
+
+    def _hide_next_character(self):
+        self.positions.add(self.index + 1)
+        self.index += 1
+
+    def _starts_comment(self):
+        return self.index == 0 or self.command[self.index - 1] in " \t\r\f\v\n;&|()"
+
+    def _hide_comment(self):
+        comment_end = self.command.find("\n", self.index)
+        if comment_end == -1:
+            comment_end = len(self.command)
+        self.positions.update(range(self.index + 1, comment_end))
+        # run() adds one after each character, so stop on the newline's predecessor.
+        self.index = comment_end - 1
 
 
 def unquoted_matches(pattern, text, extra_hidden=()):
@@ -554,23 +640,37 @@ def substitution_spans(text):
             continue
 
         if text.startswith("$(", index):
-            depth = 0
-            end = len(text)
-            for position in range(index + 1, len(text)):
-                depth += {"(": 1, ")": -1}.get(text[position], 0) if position not in hidden else 0
-                if depth == 0:
-                    end = position
-                    break
+            end = _parenthesis_span_end(text, index, hidden)
             spans.append(text[index + 2:end])
             index = end
         elif text[index] == "`":
-            end = text.find("`", index + 1)
-            if end == -1:
-                end = len(text)
+            end = _backtick_span_end(text, index)
             spans.append(text[index + 1:end])
             index = end
         index += 1
     return spans
+
+
+PARENTHESIS_DEPTH_CHANGE = {"(": 1, ")": -1}
+
+
+def _parenthesis_span_end(text, start, hidden):
+    # The index of the `)` that closes the `$(` at start, or the end of the text when it never closes.
+    depth = 0
+    for position in range(start + 1, len(text)):
+        change = 0 if position in hidden else PARENTHESIS_DEPTH_CHANGE.get(text[position], 0)
+        depth += change
+        if depth == 0:
+            return position
+    return len(text)
+
+
+def _backtick_span_end(text, start):
+    # The index of the backtick that closes the one at start, or the end of the text when it never closes.
+    end = text.find("`", start + 1)
+    if end == -1:
+        return len(text)
+    return end
 
 
 def path_word(word):
@@ -626,11 +726,13 @@ def step_parts(step):
             continue
         if step[index] == "(":
             depth += 1
-        elif step[index] == ")":
-            if depth:
-                depth -= 1
-            else:
-                closing.append(index)
+            continue
+        if step[index] != ")":
+            continue
+        if depth:
+            depth -= 1
+            continue
+        closing.append(index)
     if not closing:
         return step[start:], ""
     return step[start:closing[0]], step[closing[-1] + 1:]

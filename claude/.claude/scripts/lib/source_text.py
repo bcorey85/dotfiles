@@ -75,7 +75,8 @@ def unquote_c_path(quoted):
             break
 
         code = escape.group(1)
-        decoded.append(int(code, 8) if code[0] in "01234567" else C_ESCAPES[code])
+        byte = int(code, 8) if code[0] in "01234567" else C_ESCAPES[code]
+        decoded.append(byte)
         position = escape.end()
     return decoded.decode("utf-8", errors="replace")
 
@@ -89,12 +90,45 @@ def _header_path(line, marker):
     return None if path == NO_FILE else path
 
 
-def _read_hunk_body(lines, start, hunk, old_number, new_number, old_count, new_count):
+@dataclass
+class _HunkPosition:
+    """Where a hunk body read stands: the next line numbers and the lines each side still owes."""
+    old_number: int
+    new_number: int
+    old_count: int
+    new_count: int
+
+    def has_lines_left(self):
+        return self.old_count > 0 or self.new_count > 0
+
+
+def _take_body_line(hunk, position, line):
+    """Apply one hunk body line to hunk and position; return False when the line is not a body line."""
+    if line.startswith("-"):
+        hunk.removed.append((position.old_number, line[1:]))
+        position.old_number += 1
+        position.old_count -= 1
+        return True
+    if line.startswith("+"):
+        hunk.added.append((position.new_number, line[1:]))
+        position.new_number += 1
+        position.new_count -= 1
+        return True
+    if line.startswith(" "):
+        position.old_number += 1
+        position.new_number += 1
+        position.old_count -= 1
+        position.new_count -= 1
+        return True
+    return False
+
+
+def _read_hunk_body(lines, start, hunk, position):
     """Fill hunk from the lines at `start` and return the index after its last line. A hunk body is exactly as long
     as its header says, so a removed line that reads `-- x` is not taken for a file header. Raises ValueError when the
     input ends inside the body or a body line is not `-`, `+`, ` ` or git's no-newline marker."""
     index = start
-    while old_count > 0 or new_count > 0:
+    while position.has_lines_left():
         if index >= len(lines):
             raise ValueError(f"diff line {index + 1}: the input ends inside a hunk body; expected a line that starts "
                              f"with '-', '+' or ' '")
@@ -103,20 +137,7 @@ def _read_hunk_body(lines, start, hunk, old_number, new_number, old_count, new_c
         index += 1
         if line == NO_NEWLINE_MARKER:
             continue
-        if line.startswith("-"):
-            hunk.removed.append((old_number, line[1:]))
-            old_number += 1
-            old_count -= 1
-        elif line.startswith("+"):
-            hunk.added.append((new_number, line[1:]))
-            new_number += 1
-            new_count -= 1
-        elif line.startswith(" "):
-            old_number += 1
-            new_number += 1
-            old_count -= 1
-            new_count -= 1
-        else:
+        if not _take_body_line(hunk, position, line):
             raise ValueError(f"diff line {index}: expected a hunk body line that starts with '-', '+' or ' ', or "
                              f"{NO_NEWLINE_MARKER!r}; got {line!r}")
     return index
@@ -137,22 +158,35 @@ def parse_unified_diff(text):
         index += 1
         if line.startswith("--- "):
             old_path = _header_path(line, "--- ")
-        elif line.startswith("+++ "):
+            continue
+        if line.startswith("+++ "):
             new_path = _header_path(line, "+++ ")
             current = FileDiff(new_path or old_path)
             files.append(current)
-        else:
-            header = HUNK_HEADER.match(line)
-            if header is None or current is None:
-                continue
+            continue
 
-            old_start, old_count, new_start, new_count, context = header.groups()
-            hunk = Hunk(context)
-            current.hunks.append(hunk)
-            index = _read_hunk_body(lines, index, hunk, int(old_start), int(new_start),
-                                    1 if old_count is None else int(old_count),
-                                    1 if new_count is None else int(new_count))
+        header = HUNK_HEADER.match(line)
+        if header is None or current is None:
+            continue
+
+        index = _read_hunk(lines, index, header, current)
     return files
+
+
+def _count_of(text):
+    """The line count of a hunk header side; git leaves it out when it is 1."""
+    if text is None:
+        return 1
+    return int(text)
+
+
+def _read_hunk(lines, start, header, current_file):
+    """Add the hunk that `header` opens to current_file and return the index after its body."""
+    old_start, old_count, new_start, new_count, context = header.groups()
+    hunk = Hunk(context)
+    current_file.hunks.append(hunk)
+    position = _HunkPosition(int(old_start), int(new_start), _count_of(old_count), _count_of(new_count))
+    return _read_hunk_body(lines, start, hunk, position)
 
 
 def _slash_comment_numbers(lines):
@@ -163,9 +197,11 @@ def _slash_comment_numbers(lines):
         if in_block:
             numbers.add(number)
             in_block = "*/" not in stripped
-        elif stripped.startswith("//"):
+            continue
+        if stripped.startswith("//"):
             numbers.add(number)
-        elif stripped.startswith("/*"):
+            continue
+        if stripped.startswith("/*"):
             numbers.add(number)
             in_block = "*/" not in stripped[2:]
     return numbers
@@ -178,28 +214,38 @@ def _hash_comment_numbers(lines, triple_quotes):
         stripped = line.strip()
         if open_quote:
             numbers.add(number)
-            if line.count(open_quote) % 2 == 1:
-                open_quote = None
-        elif stripped.startswith("#"):
+            open_quote = None if line.count(open_quote) % 2 == 1 else open_quote
+            continue
+        if stripped.startswith("#"):
             numbers.add(number)
-        elif triple_quotes:
-            open_quote, is_text_line, _ = _opened_triple_quote(line, stripped)
-            if is_text_line:
-                numbers.add(number)
+            continue
+        if not triple_quotes:
+            continue
+
+        opened = _opened_triple_quote(line, stripped)
+        open_quote = opened.quote
+        if opened.is_text_line:
+            numbers.add(number)
     return numbers
 
 
+class _OpenedTripleQuote(NamedTuple):
+    quote: object
+    is_text_line: bool
+    index: int
+
+
 def _opened_triple_quote(line, stripped):
-    """(the triple quote that the line leaves open or None, whether the line is docstring text, the index of that
-    opening quote in the line or -1). A line that starts with a triple quote, with an optional string prefix such as
-    `r`, is docstring text; a string assigned on the line opens a region but is not text. A triple quote inside a
-    single-quoted literal or after a `#` does not count."""
+    """An _OpenedTripleQuote: the triple quote that the line leaves open or None, whether the line is docstring text,
+    the index of that opening quote in the line or -1. A line that starts with a triple quote, with an optional string
+    prefix such as `r`, is docstring text; a string assigned on the line opens a region but is not text. A triple
+    quote inside a single-quoted literal or after a `#` does not count."""
     is_text_line = TRIPLE_QUOTE_START.match(stripped) is not None
     position = 0
     while True:
         found = TRIPLE_QUOTE_SCAN.search(line, position)
         if found is None or found.group() == "#":
-            return None, is_text_line, -1
+            return _OpenedTripleQuote(None, is_text_line, -1)
 
         quote = found.group()
         if quote not in ('"""', "'''"):
@@ -208,7 +254,7 @@ def _opened_triple_quote(line, stripped):
 
         closing = line.find(quote, found.end())
         if closing < 0:
-            return quote, is_text_line, found.start()
+            return _OpenedTripleQuote(quote, is_text_line, found.start())
 
         position = closing + len(quote)
 
@@ -300,48 +346,94 @@ def string_data_regions(lines, style):
     opening quote: from the quote on the line is data, only that head is code. For style slash, a line that also
     closes a string is in closing_tails instead; for style hash_triple, such a line counts as inside the string and is
     listed in numbers. Other styles give no lines."""
-    numbers = set()
-    closing_tails = {}
-    openings = {}
     if style == "hash_triple":
-        open_quote = None
-        is_data = False
-        previous = ""
-        for number, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if open_quote:
-                if line.count(open_quote) % 2 == 1:
-                    if is_data:
-                        closing_tails[number] = line[line.index(open_quote) + len(open_quote):]
-                    open_quote = None
-                elif is_data:
-                    numbers.add(number)
-            elif not stripped.startswith("#"):
-                open_quote, is_text_line, quote_index = _opened_triple_quote(line, stripped)
-                is_data = open_quote is not None and (not is_text_line or previous.endswith(STRING_OPENING_ENDINGS))
-                if is_data:
-                    openings[number] = line[:quote_index]
-            if stripped and not stripped.startswith("#"):
-                previous = stripped
-    elif style == "slash":
-        comment_numbers = _slash_comment_numbers(lines)
-        in_template = False
-        for number, line in enumerate(lines, 1):
-            if in_template:
-                closing = _closing_backtick(line)
-                if closing < 0:
-                    numbers.add(number)
-                    continue
+        return _triple_quote_regions(lines)
+    if style == "slash":
+        return _template_literal_regions(lines)
+    return StringDataRegions(set(), {}, {})
 
-                tail = line[closing + 1:]
-                closing_tails[number] = tail
-                open_index = _open_backtick_index(tail)
-                in_template = open_index >= 0
-                if in_template:
-                    closing_tails[number] = tail[:open_index]
-            elif number not in comment_numbers:
-                open_index = _open_backtick_index(line)
-                in_template = open_index >= 0
-                if in_template:
-                    openings[number] = line[:open_index]
-    return StringDataRegions(numbers, closing_tails, openings)
+
+class _TripleQuoteScan:
+    """The state of a line-by-line scan for triple-quoted strings held as data."""
+
+    def __init__(self):
+        self.regions = StringDataRegions(set(), {}, {})
+        self.open_quote = None
+        self.is_data = False
+        self.previous = ""
+
+    def read_line(self, number, line):
+        stripped = line.strip()
+        if self.open_quote:
+            self._read_inside_string(number, line)
+        elif not stripped.startswith("#"):
+            self._read_outside_string(number, line, stripped)
+        if stripped and not stripped.startswith("#"):
+            self.previous = stripped
+
+    def _read_inside_string(self, number, line):
+        if line.count(self.open_quote) % 2 == 0:
+            if self.is_data:
+                self.regions.numbers.add(number)
+            return
+
+        if self.is_data:
+            tail_start = line.index(self.open_quote) + len(self.open_quote)
+            self.regions.closing_tails[number] = line[tail_start:]
+        self.open_quote = None
+
+    def _read_outside_string(self, number, line, stripped):
+        opened = _opened_triple_quote(line, stripped)
+        self.open_quote = opened.quote
+        continues_assignment = self.previous.endswith(STRING_OPENING_ENDINGS)
+        self.is_data = opened.quote is not None and (not opened.is_text_line or continues_assignment)
+        if self.is_data:
+            self.regions.openings[number] = line[:opened.index]
+
+
+def _triple_quote_regions(lines):
+    scan = _TripleQuoteScan()
+    for number, line in enumerate(lines, 1):
+        scan.read_line(number, line)
+    return scan.regions
+
+
+def _continue_template(regions, number, line):
+    """Record a line inside a backtick template; return whether the template is still open after it."""
+    closing = _closing_backtick(line)
+    if closing < 0:
+        regions.numbers.add(number)
+        return True
+
+    tail = line[closing + 1:]
+    open_index = _open_backtick_index(tail)
+    if open_index < 0:
+        regions.closing_tails[number] = tail
+        return False
+
+    regions.closing_tails[number] = tail[:open_index]
+    return True
+
+
+def _start_template(regions, number, line):
+    """Record a line that may open a backtick template; return whether one is open after it."""
+    open_index = _open_backtick_index(line)
+    if open_index < 0:
+        return False
+
+    regions.openings[number] = line[:open_index]
+    return True
+
+
+def _template_literal_regions(lines):
+    regions = StringDataRegions(set(), {}, {})
+    comment_numbers = _slash_comment_numbers(lines)
+    in_template = False
+    for number, line in enumerate(lines, 1):
+        if in_template:
+            in_template = _continue_template(regions, number, line)
+            continue
+        if number in comment_numbers:
+            continue
+        in_template = _start_template(regions, number, line)
+    return regions

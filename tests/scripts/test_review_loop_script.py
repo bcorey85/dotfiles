@@ -401,6 +401,37 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(reviews), 1)
         self.assertIn("owned files:\n    - notes.py\nYour scope", reviews[0]["prompt"])
 
+    def assert_the_other_sessions_file_stays_untouched(self, header_extra):
+        """notes.py holds another session's uncommitted edit before the run; the fix coder rewrites it anyway."""
+        theirs = "value = {'a': 1, 'b': 3}  # another session's edit\n"
+        (self.repo / "notes.py").write_text(theirs)
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "notes.py": NOTES_REFLOWED}}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=header_extra)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual((self.repo / "notes.py").read_bytes(), theirs.encode())
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED)
+        reviews = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
+        self.assertTrue(reviews)
+        for review in reviews:
+            self.assertNotIn("notes.py", review["prompt"])
+        coder = next(call for call in self.fake_calls() if call["key"] == "coder")
+        self.assertIn("another session holds uncommitted edits in them, and the loop puts back any change you make. "
+                      "When an issue needs one of them, skip it and say so: notes.py", coder["prompt"])
+        self.assertNotIn("notes.py", coder["prompt"].partition("Files in scope: ")[2].splitlines()[0])
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["files_touched"]), ("converged", ["app.py"]))
+        self.assertIn("the loop put back their bytes: notes.py", packet["tool_fault"])
+
+    def test_a_held_file_is_never_reviewed_and_a_fix_coders_edit_to_it_is_put_back(self):
+        self.assert_the_other_sessions_file_stays_untouched("held files: notes.py\n")
+
+    def test_a_files_line_holds_every_other_dirty_file_from_the_fix_coder(self):
+        self.assert_the_other_sessions_file_stays_untouched("files: app.py\n")
+
     def test_an_iter_line_counts_the_rounds_an_earlier_run_used(self):
         completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
                                     header_extra="iter: 1\n")

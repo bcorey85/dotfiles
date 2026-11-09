@@ -79,6 +79,7 @@ import full_check_gate
 import handback
 import loop_transcript
 import plan_format
+import review_loop_held
 import reviewer_dispatch
 import script_utils
 from finding_record import parse_finding
@@ -112,6 +113,7 @@ from review_loop_plan import ChangeUnderReview, first_round_plan, review_files, 
 from review_loop_prompt_file import (
     BASE_KEY,
     FILES_KEY,
+    HELD_FILES_KEY,
     NO_REVIEW_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_HEADLESS,
@@ -206,18 +208,20 @@ def put_back_untracked(role, backup):
                                 + ", ".join(lost))
 
 
-def coder_call(role, prompt, repo, out):
+def coder_call(role, prompt, repo, out, held=()):
     """The fix coder. Returns (report, diffs, changed): the diffs of what it changed feed the round-two brief, and
     one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the class-closure check;
-    changed lists the paths whose text differs. A failed call raises CoderCallError naming the files it changed
-    before it died."""
+    changed lists the paths whose text differs. The held files get their bytes back after the call, so they never
+    count as changed. A failed call raises CoderCallError naming the files it changed before it died."""
     before = file_texts(repo)
     untracked = [path for path, entry in scope(repo).items() if entry[1] == "??"]
     backup = file_backup.save_files(repo, untracked)
+    held_backup = review_loop_held.save(repo, held)
     try:
         report = claude_call(role, prompt, repo, out, agent="coder")
     except RuntimeError as error:
         put_back_untracked(role, backup)
+        review_loop_held.restore_held(role, held_backup)
         after = file_texts(repo)
         changed = changed_paths(before, after)
         if not changed:
@@ -227,6 +231,7 @@ def coder_call(role, prompt, repo, out):
         raise CoderCallError(message, changed) from error
 
     put_back_untracked(role, backup)
+    review_loop_held.restore_held(role, held_backup)
     after = file_texts(repo)
     diffs = []
     paths = sorted(set(before) | set(after))
@@ -409,9 +414,11 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.reviewer_model = ""  # the model every reviewer runs on; "" leaves each agent's own
         self.review_base = ""  # the commit the review diffs against; "" is HEAD
         self.only_files = []  # the files the caller scoped the review to; [] is every changed file
+        self.held_files = set()  # files another session holds, which no reviewer reads and no coder pass may edit
 
     def review_scope(self):
-        return review_files(self.repo, self.review_base, self.only_files)
+        files = review_files(self.repo, self.review_base, self.only_files)
+        return review_loop_held.without_held(files, self.held_files)
 
     def format_reviewed_files(self, check_command):
         """Run the formatters the repo configures on the reviewed and touched files, so the tree the hand-back records
@@ -614,13 +621,14 @@ class LoopRun(full_check_gate.FullCheckSteps):
         pass edited a later-phase file, and ChangeRemovedError when the passes so far removed half or more of the
         lines the change under review adds."""
         finding_paths = [finding.path for finding in findings if finding.path]
-        files_in_scope = list(dict.fromkeys([*self.review_scope(), *finding_paths]))
+        own_finding_paths = review_loop_held.without_held(finding_paths, self.held_files)
+        files_in_scope = list(dict.fromkeys([*self.review_scope(), *own_finding_paths]))
         prompt = coder_prompt(self.repo, [finding.text for finding in findings], [nit.text for nit in nits],
-                              files_in_scope, self.gate_env, self.later_phase_files, self.guidance)
+                              files_in_scope, self.gate_env, self.later_phase_files, self.guidance, self.held_files)
         self.last_pass = "coder"
         self.untested_fix = True
         try:
-            report, diffs, changed = coder_call(call_name, prompt, self.repo, self.out)
+            report, diffs, changed = coder_call(call_name, prompt, self.repo, self.out, self.held_files)
         except CoderCallError as error:
             self.files_touched.update(error.changed)
             raise
@@ -833,7 +841,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
             "scoped_tests": self.scoped_tests,
-            "tool_fault": " ".join(filter(None, [full_check.fault_note(self.full_check), *UNTRACKED_FAULTS])),
+            "tool_fault": " ".join(filter(None, [full_check.fault_note(self.full_check), *UNTRACKED_FAULTS,
+                                                 *review_loop_held.HELD_FAULTS])),
         }
 
 
@@ -897,6 +906,7 @@ def run_loop(repo, out, session, header, handoff, progress, gate_commands=(), re
     loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
     loop.review_base = header.get(BASE_KEY, "")
     loop.only_files = header_list(header, FILES_KEY)
+    loop.held_files = review_loop_held.run_held_files(repo, header_list(header, HELD_FILES_KEY), loop.only_files)
     loop.iter_count = min(header_iter(header), ROUND_BUDGET - 1)
     progress["iter"] = loop.iter_count
     try:

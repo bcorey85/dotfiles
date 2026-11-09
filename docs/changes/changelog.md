@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-879 changes
+880 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -22,6 +22,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The readability hand-back check reads Vue script blocks and enforces the four new limits](notes/2026-11-08-the-readability-hand-back-check-reads-vue-script.md) [script/coder-gate, script/review-loop-script] readability_check.py reads the <script> and <script setup> blocks of .vue files at their own line numbers, and refuses a ternary passed as a call argument, a comprehension with two loops or a nested one, a returned tuple of three or more values, and a new def with more than five parameters.
 * [The code reviewer marks ternary arguments, two-loop comprehensions, wide tuples and six-parameter functions as fix](notes/2026-11-08-the-code-reviewer-marks-ternary-arguments-two-loop.md) [agent/code-reviewer, agent/smell-reviewer] The code reviewer's taste-break fix list gains the coder's four new readability limits: a ternary passed as a call argument, a comprehension with two loops, a returned tuple of three or more values, and a non-test function with more than five parameters.
 * [The coder returns named types, takes at most five parameters, keeps ternaries out of call arguments and comprehensions to one loop](notes/2026-11-08-the-coder-returns-named-types-takes-at-most-five.md) [skill/coder-core, agent/coder] coder-core's readability section gains four limits: a ternary is a whole assignment's value, never a call argument; a comprehension has one loop; a named type replaces a returned tuple of three or more values; past five parameters a function takes one named object.
 * [The code reviewer marks deep nesting, long multi-job functions, chained ternaries and packed one-liners as fix](notes/2026-11-08-the-code-reviewer-marks-deep-nesting-long-multi.md) [agent/code-reviewer, agent/smell-reviewer] The code reviewer's list of taste breaks that are a fix, never a nit, now names the coder's readability limits: control flow nested past two levels, a non-test function past 40 lines doing more than one job, a chained ternary, and a one-liner that packs several steps.

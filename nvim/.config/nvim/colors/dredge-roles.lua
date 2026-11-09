@@ -10,8 +10,8 @@ vim.g.colors_name = "dredge-roles"
 
 local roles = {
   dark = {
-    bind = "#7d83d6", read = "#a0adb4", act = "#29a298", write = "#d66e31",
-    exit = "#df4a8f", lit = "#849900", kw = "#858990", desc = "#1c90cb", remark = "#af8931",
+    bind = "#868ce0", read = "#a9b7be", act = "#37aba1", write = "#e0773b",
+    exit = "#ea5498", lit = "#8da31a", kw = "#8e9299", desc = "#2b99d5", remark = "#b8923c",
   },
   -- Orange, green and blue sit at the hues where a dark shade keeps the most chroma.
   -- Teal and green sit lighter, at full chroma for their lightness.

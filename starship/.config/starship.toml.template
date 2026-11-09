@@ -429,17 +429,17 @@ grey = "#9893a5"
 
 # dredge (nvim colors/dredge.lua).
 [palettes.dredge-dark]
-red = "#de4f46"
-orange = "#d66e31"
-yellow = "#bf983f"
-green = "#849900"
-blue = "#1c90cb"
-branch = "#7980d4"
-teal = "#29a298"
-purple = "#e34990"
-fg = "#a0adb4"
+red = "#e9594f"
+orange = "#e0773b"
+yellow = "#c9a149"
+green = "#8da31a"
+blue = "#2b99d5"
+branch = "#8289de"
+teal = "#37aba1"
+purple = "#ee5399"
+fg = "#a9b7be"
 bg = "#061a21"
-grey = "#9b9fa6"
+grey = "#a4a8af"
 
 [palettes.dredge-light]
 red = "#a32822"

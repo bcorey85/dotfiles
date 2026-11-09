@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-886 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+888 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [The coder gate log counts readability failures](notes/2026-11-08-the-coder-gate-log-counts-readability-failures.md).
+Latest change: 2026-11-09, [review loop: an accepted ask relaunches the review as a fix run, so its converged hand-back earns commit credit](notes/2026-11-09-review-loop-an-accepted-ask-relaunches-the-review.md).
 
 ## Top gains
 

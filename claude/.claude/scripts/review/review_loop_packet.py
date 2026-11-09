@@ -12,6 +12,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import full_check
 import handback
 import handback_store
+import review_loop_coder
 import script_utils
 from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED
 
@@ -107,7 +108,8 @@ def crash_outcome(progress, reason):
     fixed = [item for item in progress["fixed"] if item.text.strip()]
     return {**copy.deepcopy(EMPTY_OUTCOME), "status": "critical-blocker", "iter": progress["iter"], "fixed": fixed,
             "blockers": [reason], "class_closure": "none - the run ended in an error",
-            "files_touched": sorted(progress["files_touched"]), "tool_fault": reason}
+            "files_touched": sorted(progress["files_touched"]),
+            "tool_fault": " ".join([reason, *review_loop_coder.coder_fault_notes()])}
 
 
 def report_write_failure(what, error):

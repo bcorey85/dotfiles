@@ -23,6 +23,7 @@ holds a line that names the phase (`Phase <id>` or `P<id>`) and the ticket key. 
 never who signed it. A moved phase is neither done nor open, and it needs no `## Phase <id>` section: a move may take
 the section to the new ticket.
 """
+import datetime
 import pathlib
 import re
 
@@ -818,6 +819,11 @@ DECIDE_USAGE_STEM = 'decide <adopt|keep> --by <user|session> --ruling "<the deci
 def is_ruling_by(by):
     """True when a `--by` value names who ruled: the user or the session."""
     return by in ("user", "session")
+
+
+def ruled_at_now():
+    """The current time in the "YYYY-MM-DD HH:MM" form `ruling_deviation` takes."""
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
 def ruling_deviation(phase, decision, owner, ruled_at, ruling_words, disagreement):

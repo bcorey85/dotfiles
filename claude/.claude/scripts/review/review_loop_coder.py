@@ -1,0 +1,114 @@
+"""review_loop_coder.py: the review loop's fix-coder call. It snapshots the tree around the call, puts back the
+untracked files the coder deleted, notes the held files that changed, and returns the diffs of what it changed."""
+import difflib
+import pathlib
+
+import file_backup
+import review_loop_held
+import script_utils
+from review_loop_calls import claude_call
+from review_loop_closure import FIX_DIFF_STATS
+from review_loop_plan import scope
+
+DIFF_CONTEXT = 12
+# One note per fix call that deleted an untracked file it did not make, for the packet's tool_fault.
+UNTRACKED_FAULTS = []
+
+
+def coder_fault_notes():
+    """The notes the coder calls left for the packet's tool_fault: untracked files lost, held files changed."""
+    return [*UNTRACKED_FAULTS, *review_loop_held.HELD_FAULTS]
+
+
+def file_texts(repo):
+    texts = {}
+    for path in scope(repo):
+        target = pathlib.Path(repo) / path
+        if target.is_file():
+            texts[path] = target.read_text(errors="replace")
+    return texts
+
+
+class CoderCallError(RuntimeError):
+    """A coder call that failed after it may have edited the tree. `changed` lists the paths whose text differs."""
+
+    def __init__(self, message, changed):
+        super().__init__(message)
+        self.changed = changed
+
+
+def changed_paths(before, after):
+    """The sorted paths whose text differs between two file_texts snapshots; a missing path reads as empty text."""
+    return sorted(path for path in set(before) | set(after) if before.get(path, "") != after.get(path, ""))
+
+
+def put_back_untracked(role, backup):
+    """A fix call may edit an untracked file but never delete one it did not make. Writes back each one that
+    vanished, and notes it in UNTRACKED_FAULTS; a file too large to have been saved is noted as lost."""
+    restored, lost = file_backup.restore_missing(backup)
+    if restored:
+        UNTRACKED_FAULTS.append(f"{role} deleted untracked files it did not make; the loop restored "
+                                + ", ".join(restored))
+    if lost:
+        UNTRACKED_FAULTS.append(f"{role} deleted untracked files too large to save, so they are gone: "
+                                + ", ".join(lost))
+
+
+def coder_call(role, prompt, repo, out, held):
+    """The fix coder. Returns (report, diffs, changed): the diffs of what it changed feed the round-two brief, and
+    one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the class-closure check;
+    changed lists the paths whose text differs. A held file that changed during the call is left as it is and noted,
+    and never counts as changed. A failed call raises CoderCallError naming the files it changed before it died."""
+    before = script_utils.without_paths(file_texts(repo), held)
+    untracked = [path for path, entry in scope(repo).items() if entry[1] == "??"]
+    backup = file_backup.save_files(repo, untracked)
+    held_before = review_loop_held.digests(repo, held)
+    try:
+        report = claude_call(role, prompt, repo, out, agent="coder")
+    except RuntimeError as error:
+        after = after_call(role, repo, held, backup, held_before)
+        changed = changed_paths(before, after)
+        if not changed:
+            raise
+        message = (f"{error}; it changed {', '.join(changed)} before it died, so the tree holds a partial fix "
+                   "that may fail its checks")
+        raise CoderCallError(message, changed) from error
+
+    after = after_call(role, repo, held, backup, held_before)
+    diffs = write_fix_diffs(repo, out, role, before, after)
+    return report, diffs, changed_paths(before, after)
+
+
+def after_call(role, repo, held, backup, held_before):
+    """Puts back the untracked files the coder deleted, notes the held files that changed, and returns the snapshot
+    of the tree without the held files."""
+    put_back_untracked(role, backup)
+    review_loop_held.note_changed(role, repo, held_before)
+    return script_utils.without_paths(file_texts(repo), held)
+
+
+def write_fix_diffs(repo, out, role, before, after):
+    """One diff file per changed path under `out`, listed in FIX_DIFF_STATS. Returns the diff texts."""
+    diffs = []
+    for path in sorted(set(before) | set(after)):
+        # A file clean before the call diffs against its HEAD text, not against nothing.
+        if path in before:
+            old_text = before[path]
+        else:
+            head_text = script_utils.git_output(repo, "show", f"HEAD:{path}")
+            old_text = head_text or ""
+        old_lines = old_text.splitlines()
+        new_lines = after.get(path, "").splitlines()
+        difference = list(difflib.unified_diff(old_lines, new_lines, f"a/{path}", f"b/{path}", n=DIFF_CONTEXT,
+                                               lineterm=""))
+        if not difference:
+            continue
+        diff_text = "\n".join(difference)
+        diffs.append(diff_text)
+        diff_file = out / "fix-diffs" / role / f"{path}.diff"
+        diff_file.parent.mkdir(parents=True, exist_ok=True)
+        diff_file.write_text(diff_text)
+        added = sum(1 for line in difference if line.startswith("+") and not line.startswith("+++"))
+        removed = sum(1 for line in difference if line.startswith("-") and not line.startswith("---"))
+        FIX_DIFF_STATS.append({"path": path, "added": added, "removed": removed, "diff_file": str(diff_file)})
+    return diffs

@@ -624,6 +624,14 @@ def ends_on_api_error(transcript_path):
     return isinstance(record, dict) and record.get("isApiErrorMessage") is True
 
 
+def without_paths(files, paths):
+    """`files` (a {path: entry} mapping or a list of paths) with the paths in `paths` left out, in the same shape."""
+    left_out = set(paths)
+    if isinstance(files, dict):
+        return {path: entry for path, entry in files.items() if path not in left_out}
+    return [path for path in files if path not in left_out]
+
+
 def tool_use_calls(line):
     """The (tool name, input dict) of each tool call one transcript line makes, in order; empty when the line is
     not JSON or makes none."""

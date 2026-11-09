@@ -12,6 +12,8 @@ import toolkit_paths
 sys.path[:0] = [str(toolkit_paths.SCRIPTS_DIR), *(str(folder) for folder in (
     toolkit_paths.CODE_DIR, toolkit_paths.REVIEW_DIR, toolkit_paths.LIB_DIR, toolkit_paths.TELEMETRY_DIR))]
 
+import review_loop_plan
+
 REVIEW_LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_LOOP_SCRIPT")
                                   or toolkit_paths.REVIEW_DIR / "review_loop_script.py")
 
@@ -42,7 +44,7 @@ class ChangeSizeBarTest(unittest.TestCase):
         self.review_loop = load_review_loop()
 
     def review_loop_finds_it_small(self):
-        dispatches = self.review_loop.first_round_plan(self.review_loop.scope(self.repo))
+        dispatches = self.review_loop.first_round_plan(review_loop_plan.scope(self.repo))
         return "smell-reviewer" not in [agent for agent, _ in dispatches]
 
     def test_a_change_that_adds_forty_lines_of_docs_is_small(self):
@@ -54,7 +56,7 @@ class ChangeSizeBarTest(unittest.TestCase):
         # Forty new lines replace the one committed line: git counts +40 -1.
         (self.repo / "app.py").write_text("".join(f"value_{number} = {number}\n" for number in range(40)))
 
-        self.assertEqual(40, self.review_loop.scope(self.repo)["app.py"][0])
+        self.assertEqual(40, review_loop_plan.scope(self.repo)["app.py"][0])
         self.assertFalse(self.review_loop_finds_it_small())
 
     def test_a_change_that_adds_thirty_nine_lines_of_source_is_small(self):
@@ -85,13 +87,13 @@ class ChangeSizeBarTest(unittest.TestCase):
         git(self.repo, "commit", "-q", "-m", "long file")
         git(self.repo, "mv", "long.py", "renamed.py")
 
-        self.assertEqual(0, self.review_loop.scope(self.repo)["renamed.py"][0])
+        self.assertEqual(0, review_loop_plan.scope(self.repo)["renamed.py"][0])
         self.assertTrue(self.review_loop_finds_it_small())
 
     def test_an_untracked_file_without_a_final_newline_counts_every_line(self):
         (self.repo / "tail.txt").write_text("one\ntwo\nthree")
 
-        self.assertEqual(3, self.review_loop.scope(self.repo)["tail.txt"][0])
+        self.assertEqual(3, review_loop_plan.scope(self.repo)["tail.txt"][0])
 
 
 if __name__ == "__main__":

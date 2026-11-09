@@ -35,11 +35,11 @@ LATER_PHASE_RULE = (
 )
 
 HELD_FILES_RULE = (
-    "Never edit these files: another session holds uncommitted edits in them, and the loop puts back any change you "
-    "make. When an issue needs one of them, skip it and say so: "
+    "Never edit these files: another session holds uncommitted edits in them. When an issue needs one of them, skip "
+    "it and say so: "
 )
 
-GUIDANCE_RULE ="Guidance from the main session. Follow it within the issues and the plan; it changes neither: "
+GUIDANCE_RULE = "Guidance from the main session. Follow it within the issues and the plan; it changes neither: "
 
 CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, right after its file:line, or first when "
                   "it names none. One of: " + " ".join(f"[{name}]" for name in handback.CLASSES) + ".")

@@ -49,11 +49,32 @@ def diff_stat_lines(stats):
     return lines
 
 
-def receipt_after_class_repair(closed_members):
-    """The closure receipt once the class-fix coder fixed every member the closure check named open. It replaces the
-    check's receipt, whose prose still calls those members open."""
-    return ("every class member the closure check found open was fixed by the class repair: "
-            + "; ".join(closed_members))
+def held_clause(held_texts):
+    """The receipt's tail naming the class members skipped because another session holds their file; empty when none."""
+    if not held_texts:
+        return ""
+    return "; skipped, held by another session: " + "; ".join(held_texts)
+
+
+def receipt_after_class_repair(closed_members, held_texts):
+    """The closure receipt once the class-fix coder changed a file. It names only the members sent to the coder, so
+    members skipped as held are not claimed fixed. It replaces the check's receipt, whose prose still calls the sent
+    members open."""
+    return ("the class repair fixed these class members the closure check found open: " + "; ".join(closed_members)
+            + held_clause(held_texts))
+
+
+def receipt_all_held(held_texts):
+    """The closure receipt when every open class member is in a held file, so no coder ran."""
+    return ("every open class member is in a file another session holds, so none went to a coder"
+            + held_clause(held_texts))
+
+
+def receipt_still_open(open_texts, held_texts):
+    """The closure receipt when the class repair changed nothing. The check's receipt names the held members as open,
+    so it is rebuilt from the members that stay open."""
+    return ("class members still open, the class repair changed nothing: " + "; ".join(open_texts)
+            + held_clause(held_texts))
 
 
 def closure_check(repo, out, fixed, claude_call):

@@ -546,14 +546,15 @@ def append_gate_log(row):
     script_utils.append_jsonl(GATE_LOG, row)
 
 
-GateCounts = namedtuple("GateCounts", ["failed", "timed_out", "setup_faults", "not_started"])
+GateCounts = namedtuple("GateCounts", ["failed", "timed_out", "setup_faults", "not_started", "readability_failed"])
 
 
 def log_gate_run(gate, coder, seconds, counts):
     repo_name = pathlib.Path(gate["repoRoot"]).name
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repo_name, "result": coder["result"],
            "run": coder["runs"], "seconds": seconds, "failed": counts.failed, "timed_out": counts.timed_out,
-           "setup_faults": counts.setup_faults, "not_started": counts.not_started}
+           "setup_faults": counts.setup_faults, "not_started": counts.not_started,
+           "readability_failed": counts.readability_failed}
     append_gate_log(row)
 
 
@@ -606,7 +607,8 @@ def _run_stored_gate(gate, event, hook_started):
     outcome = gate_outcome(real_failures, command_errors, setup_faults, timed_out, not_started)
     _apply_outcome(coder, outcome)
     gate["coders"][agent_id] = coder
-    counts = GateCounts(len(real_failures), len(timed_out), len(setup_faults), len(not_started))
+    readability_failed = sum(1 for command, _outcome, _output in real_failures if is_readability_check(command))
+    counts = GateCounts(len(real_failures), len(timed_out), len(setup_faults), len(not_started), readability_failed)
     return GateRunReport(gate, coder, seconds, counts, real_failures)
 
 

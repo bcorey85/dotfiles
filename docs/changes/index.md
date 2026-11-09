@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-882 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+883 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [Ten toolkit scripts meet the readability limits](notes/2026-11-08-ten-toolkit-scripts-meet-the-readability-limits.md).
+Latest change: 2026-11-08, [The coder gate log counts readability failures](notes/2026-11-08-the-coder-gate-log-counts-readability-failures.md).
 
 ## Top gains
 

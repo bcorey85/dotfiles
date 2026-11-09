@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-874 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+876 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [Handoff becomes /stop and /go; stop-guessing is removed](notes/2026-11-08-handoff-becomes-stop-and-go-stop-guessing-is.md).
+Latest change: 2026-11-08, [The code reviewer marks deep nesting, long multi-job functions, chained ternaries and packed one-liners as fix](notes/2026-11-08-the-code-reviewer-marks-deep-nesting-long-multi.md).
 
 ## Top gains
 

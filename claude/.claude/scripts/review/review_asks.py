@@ -11,7 +11,10 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import handback
 from script_utils import ask_text, hanging_indent_lines, one_line, run_command
 
-ASK_OUTCOMES = ("accepted", "rejected", "modified")
+ACCEPTED = "accepted"
+REJECTED = "rejected"
+MODIFIED = "modified"
+ASK_OUTCOMES = (ACCEPTED, REJECTED, MODIFIED)
 JUMP_NOTE_LIMIT = 160
 # One path with a line or line range and nothing else: a list of locations or a bare path has no one place to jump to.
 JUMP_ANCHOR = re.compile(r"^[^\s,;]+:\d+(-\d+)?$")

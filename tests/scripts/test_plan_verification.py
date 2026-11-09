@@ -61,6 +61,18 @@ class VerificationItemTest(unittest.TestCase):
 
         self.assertEqual((None, "scripts/check-orders --all"), (not_executable, executable))
 
+    def test_a_venv_python_linked_to_an_interpreter_outside_the_repo_is_a_command(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        interpreter = pathlib.Path(outside.name) / "python3.12"
+        interpreter.write_text("#!/bin/sh\n")
+        interpreter.chmod(0o755)
+        (self.repo / ".venv/bin").mkdir(parents=True)
+        (self.repo / ".venv/bin/python").symlink_to(interpreter)
+        item = "- [ ] **Check**: the tests pass - `.venv/bin/python -m pytest tests`"
+
+        self.assertEqual(".venv/bin/python -m pytest tests", plan_verification.verification_command(item, self.repo))
+
     def test_a_relative_path_with_a_slash_is_never_looked_up_on_path(self):
         with mock.patch.object(plan_verification.shutil, "which", return_value="/anywhere/tool"):
             self.assertFalse(plan_verification.starts_like_a_program_here("../tool --x", self.repo))

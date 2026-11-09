@@ -624,9 +624,18 @@ class IsExecutableFileInsideTest(unittest.TestCase):
     def test_an_executable_file_under_the_root_is_one_by_a_relative_or_absolute_path(self):
         tool = self.make_file(self.root / "bin" / "tool", 0o755)
 
-        for path in ("bin/tool", "./bin/tool", "bin/../bin/tool", str(tool)):
+        for path in ("bin/tool", "./bin/tool", str(tool)):
             with self.subTest(path=path):
                 self.assertTrue(script_utils.is_executable_file_inside(self.root, path))
+
+    def test_a_root_reached_through_a_symlink_accepts_relative_and_resolved_absolute_paths(self):
+        tool = self.make_file(self.root / "bin" / "tool", 0o755)
+        alias = self.root.parent / "alias"
+        alias.symlink_to(self.root)
+
+        for path in ("bin/tool", str(tool)):
+            with self.subTest(path=path):
+                self.assertTrue(script_utils.is_executable_file_inside(alias, path))
 
     def test_the_root_may_be_given_as_text(self):
         self.make_file(self.root / "bin" / "tool", 0o755)
@@ -640,13 +649,45 @@ class IsExecutableFileInsideTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertFalse(script_utils.is_executable_file_inside(self.root, path))
 
-    def test_a_path_that_leaves_the_root_by_dots_by_a_link_or_by_an_absolute_path_is_not_one(self):
+    def test_a_path_that_leaves_the_root_by_dots_or_by_an_absolute_path_is_not_one(self):
         outside = self.make_file(self.root.parent / "outside-tool", 0o755)
-        (self.root / "bin" / "link").symlink_to(outside)
 
-        for path in ("../outside-tool", "bin/link", str(outside)):
+        self.make_file(self.root / "bin" / "tool", 0o755)
+        far = self.root.parent / "far" / "deep"
+        far.mkdir(parents=True)
+        self.make_file(self.root.parent / "far" / "tool", 0o755)
+        (self.root / "bin" / "link").symlink_to(far)
+
+        for path in (
+            "../outside-tool",
+            "bin/../../outside-tool",
+            str(outside),
+            "bin/../bin/tool",
+            "bin/link/../tool",
+            "bin/link/../../tool",
+        ):
             with self.subTest(path=path):
                 self.assertFalse(script_utils.is_executable_file_inside(self.root, path))
+
+    def test_a_dangling_link_and_a_link_to_a_non_executable_target_are_not_one(self):
+        plain = self.make_file(self.root.parent / "plain", 0o644)
+        (self.root / "bin" / "dangling").symlink_to(self.root.parent / "missing")
+        (self.root / "bin" / "to-plain").symlink_to(plain)
+
+        for path in ("bin/dangling", "bin/to-plain"):
+            with self.subTest(path=path):
+                self.assertFalse(script_utils.is_executable_file_inside(self.root, path))
+
+    def test_a_venv_or_node_modules_link_to_a_target_outside_the_root_is_one(self):
+        outside = self.make_file(self.root.parent / "python3.12", 0o755)
+        (self.root / ".venv" / "bin").mkdir(parents=True)
+        (self.root / ".venv" / "bin" / "python").symlink_to(outside)
+        (self.root / "node_modules" / ".bin").mkdir(parents=True)
+        (self.root / "node_modules" / ".bin" / "vitest").symlink_to(outside)
+
+        for path in (".venv/bin/python", "node_modules/.bin/vitest", str(self.root / ".venv" / "bin" / "python")):
+            with self.subTest(path=path):
+                self.assertTrue(script_utils.is_executable_file_inside(self.root, path))
 
 
 class InsideGitWorkTreeTest(unittest.TestCase):

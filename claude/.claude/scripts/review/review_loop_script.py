@@ -118,6 +118,7 @@ from review_loop_plan import ChangeUnderReview, first_round_plan, review_files, 
 from review_loop_prompt_file import (
     BASE_KEY,
     FILES_KEY,
+    HELD_FILES_KEY,
     NO_REVIEW_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_HEADLESS,
@@ -1025,7 +1026,8 @@ def build_loop(request):
     loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
     loop.review_base = header.get(BASE_KEY, "")
     loop.only_files = header_list(header, FILES_KEY)
-    loop.held_files = review_loop_held.run_held_files(repo, loop.only_files)
+    caller_held = header_list(header, HELD_FILES_KEY)
+    loop.held_files = review_loop_held.run_held_files(repo, caller_held, loop.only_files)
     loop.iter_count = min(header_iter(header), ROUND_BUDGET - 1)
     request.progress["iter"] = loop.iter_count
     return loop, check_command

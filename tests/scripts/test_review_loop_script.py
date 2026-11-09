@@ -510,6 +510,28 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([entry["file_line"] for entry in packet["skipped_fp"]], ["notes.py:1"])
         self.assertEqual(packet["tool_fault"], "")
 
+    def test_a_held_files_line_with_no_files_line_keeps_that_file_out_of_the_review_and_the_fix(self):
+        """A /code phase passes no files line: it names the files dirty before the phase as held."""
+        theirs = "value = {'a': 1, 'b': 3}  # another session's edit\n"
+        (self.repo / "notes.py").write_text(theirs)
+        review = FIX_REVIEW.replace("## Ask", "- `notes.py:1` the keys are out of order\n\n## Ask", 1)
+        completed = self.run_script({
+            "code-reviewer": [{"result": review}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits_when_named": {"app.py": APP_FIXED, "notes.py": NOTES_REFLOWED}}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra="held files: notes.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual((self.repo / "notes.py").read_bytes(), theirs.encode())
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED)
+        reviews = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
+        self.assertTrue(reviews)
+        for review_call in reviews:
+            self.assertNotIn("notes.py", review_call["prompt"])
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["files_touched"]), ("converged", ["app.py"]))
+        self.assertEqual([entry["file_line"] for entry in packet["skipped_fp"]], ["notes.py:1"])
+
     def test_a_held_file_that_changes_during_the_coder_call_is_left_and_named_in_the_hand_back(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
         later = "value = {'a': 1, 'b': 4}  # the other session's edit made during the coder call\n"

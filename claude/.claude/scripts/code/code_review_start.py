@@ -4,7 +4,8 @@
     python3 ~/.claude/scripts/code/code_review_start.py <lane> <plan> <phase> <handoff file>
         --base <phase start sha> [--dry-run | --detach]
 
-The prompt header is: lane, repo, plan, phase and later-phase files, then the handoff block and the repo's gate env.
+The prompt header is: lane, repo, plan, phase, later-phase files and held files (dirty at the run start per
+phase_start.py's record, same bytes now), then the handoff block and the repo's gate env.
 A <plan> of `-` means the run has no plan file: the header leaves out the plan, phase and later-phase lines, and the
 gate commands come from the handoff block's files.
 The loop's state folder is <git dir>/code-step. The pid goes in <git dir>/code-phase/pid, where `code_wait.py review`
@@ -29,13 +30,20 @@ import gate_commands
 import handback
 import handback_hook
 import handoff_files
+import phase_start
 import plan_format
 import review_fix
 import reviewer_dispatch
 import script_utils
 from code_wait import LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, loop_dir, phase_dir, running_review_pid
 from review_fix_state import REVIEW_FIX_COMMAND
-from review_loop_prompt_file import REVIEWERS_MAIN, loop_script_command, write_script_prompt
+from review_loop_prompt_file import (
+    HELD_FILES_KEY,
+    LIST_SEPARATOR,
+    REVIEWERS_MAIN,
+    loop_script_command,
+    write_script_prompt,
+)
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
 WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
@@ -69,9 +77,9 @@ def coder_why_blocks(entry_lines):
     return why_by_path
 
 
-def handoff_with_git_files(repo, base, handoff):
-    # The handoff's `files:` list is the files git shows changed since base (tracked changes plus untracked files).
-    # The coder's own list is dropped; only its `why:` lines are kept, under the matching path.
+def handoff_with_git_files(repo, base_commit, handoff, held=()):
+    # The handoff's `files:` list is the files git shows changed since base (tracked changes plus untracked files),
+    # less the held files. The coder's own list is dropped; only its `why:` lines are kept, under the matching path.
     lines = handoff.splitlines()
     starts = [at for at, line in enumerate(lines) if line.rstrip() == HANDOFF_FILES_LINE]
     if not starts:
@@ -84,12 +92,8 @@ def handoff_with_git_files(repo, base, handoff):
             end = at
             break
 
-    base_commit = script_utils.git_output(repo, "rev-parse", "--verify", f"{base}^{{commit}}")
-    if base_commit is None:
-        sys.exit(f"code_review_start: --base {base} is not a commit in {repo}; the handoff's files come from git")
-
     why_by_path = coder_why_blocks(lines[start + 1:end])
-    changed = coder_gate.changed_files(repo, base_commit)
+    changed = script_utils.without_paths(coder_gate.changed_files(repo, base_commit), held)
     if not changed:
         return "\n".join([*lines[:start], f"{HANDOFF_FILES_LINE} []", *lines[end:]]) + "\n"
 
@@ -98,26 +102,55 @@ def handoff_with_git_files(repo, base, handoff):
     return "\n".join([*lines[:start], *files_lines, *lines[end:]]) + "\n"
 
 
-def phase_changed_files(repo, base):
-    """The files git shows changed since the phase base; [] when the base is no commit."""
+def phase_changed_files(repo, base_commit, held=()):
+    """The files git shows changed since the phase base, less the held files."""
+    return script_utils.without_paths(script_utils.changed_files(repo, base_commit), held)
+
+
+def phase_held_files(repo, base_commit):
+    """The files another session holds: dirty at the run start (phase_start.py's record) with the same bytes now.
+    No record holds none; the missing record is noted on stderr."""
+    try:
+        held = phase_start.unchanged_dirty_files(repo, base_commit)
+    except phase_start.StartRecordError as error:
+        sys.exit(f"code_review_start: {error}")
+    if held is None:
+        print("code_review_start: no phase start record, so files another session left dirty are reviewed as this "
+              f"phase's own. Run `{phase_start.COMMAND}` before each phase's coder dispatch.",
+              file=sys.stderr)
+        return []
+    return held
+
+
+def review_scope(repo, base, coder_handoff):
+    """(held files, the handoff with its files from git, the files changed since the phase base). A base that is no
+    commit holds nothing and keeps the coder's handoff, unless the handoff has a files list, which only git fills."""
     base_commit = script_utils.git_output(repo, "rev-parse", "--verify", f"{base}^{{commit}}")
     if base_commit is None:
-        return []
-    return script_utils.changed_files(repo, base_commit)
+        if any(line.rstrip() == HANDOFF_FILES_LINE for line in coder_handoff.splitlines()):
+            sys.exit(f"code_review_start: --base {base} is not a commit in {repo}; the handoff's files come from git")
+        return [], coder_handoff, []
+
+    held = phase_held_files(repo, base_commit)
+    handoff = handoff_with_git_files(repo, base_commit, coder_handoff, held)
+    phase_changed = phase_changed_files(repo, base_commit, held)
+    return held, handoff, phase_changed
 
 
-def review_prompt(repo, lane, plan, phase, handoff, phase_changed=()):
+def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), held=()):
     """A later phase's file that this phase's diff already changed stays the phase's own, so a fix pass may edit the
-    lines the phase wrote there."""
+    lines the phase wrote there. A held file is another session's, so the loop neither reviews nor edits it."""
     header = ["mode: review-first", "caller: code", f"lane: {lane}", f"repo: {repo}"]
 
     if plan != NO_PLAN:
         header += [f"plan: {plan}", f"phase: {phase}"]
         plan_lines = (repo / plan).read_text().splitlines()
         later_paths = expected_red.later_phase_paths(plan_lines, phase)
-        later_files = [path for path in later_paths if path not in set(phase_changed)]
+        later_files = script_utils.without_paths(later_paths, phase_changed)
         if later_files:
             header.append(f"later-phase files: {', '.join(later_files)}")
+    if held:
+        header.append(f"{HELD_FILES_KEY}: {LIST_SEPARATOR.join(held)}")
 
     prompt = "\n".join(header) + "\n\n" + handoff.strip()
     gate_env_text = plan_format.gate_env_text(plan_format.repo_gate_env(repo, None if plan == NO_PLAN else plan))
@@ -179,9 +212,8 @@ def main(argv):
     base = base_option(argv)
     repo = pathlib.Path.cwd().resolve()
     coder_handoff = pathlib.Path(handoff_file).read_text()
-    handoff = handoff_with_git_files(repo, base, coder_handoff)
-    phase_changed = phase_changed_files(repo, base)
-    prompt = review_prompt(repo, lane, plan, phase, handoff, phase_changed)
+    held, handoff, phase_changed = review_scope(repo, base, coder_handoff)
+    prompt = review_prompt(repo, lane, plan, phase, handoff, phase_changed, held)
     if "--dry-run" in argv:
         print(prompt)
         return 0

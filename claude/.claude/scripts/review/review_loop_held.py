@@ -13,12 +13,14 @@ HELD_FILE_REASON = "the file is held by another session"
 HELD_FAULTS = []
 
 
-def run_held_files(repo, only_files):
-    """The held files of a run: when the caller scoped the run to `only_files`, every other file dirty now."""
+def run_held_files(repo, caller_held, only_files):
+    """The held files of a run: the files the caller names as held, plus, when the caller scoped the run to
+    `only_files`, every other file dirty now."""
+    held = set(caller_held)
     if not only_files:
-        return set()
+        return held
     dirty = review_loop_plan.scope(repo)
-    return set(dirty) - set(only_files)
+    return held | (set(dirty) - set(only_files))
 
 
 def held_path_in_repo(path, repo):

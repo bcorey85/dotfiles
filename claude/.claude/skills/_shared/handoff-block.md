@@ -25,7 +25,7 @@ handoff:
 
 ## Who writes `files` for `/code`
 
-`/code` writes only the `why` entries; `code_review_start.py` replaces `files` with the paths git shows changed since the phase base (tracked changes plus untracked files), keeping each entry's `why`. Never list a changed file, an export or a line number from memory.
+`/code` writes only the `why` entries; `code_review_start.py` replaces `files` with the paths git shows changed since the phase base (tracked changes plus untracked files), less the held files (dirty at the run start per `phase_start.py`'s start record, same bytes now), keeping each entry's `why`. Never list a changed file, an export or a line number from memory.
 
 ## Who writes `files` for `/fix` and `/refactor`
 

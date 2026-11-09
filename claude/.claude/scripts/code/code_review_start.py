@@ -31,8 +31,9 @@ import handback_hook
 import handoff_files
 import plan_format
 import review_fix
+import reviewer_dispatch
 import script_utils
-from code_wait import LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, phase_dir
+from code_wait import LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, loop_dir, phase_dir, running_review_pid
 from review_loop_prompt_file import REVIEWERS_MAIN, loop_script_command, write_script_prompt
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
@@ -146,6 +147,11 @@ def detach(repo, argv):
     folder = phase_dir(repo)
     folder.mkdir(exist_ok=True)
     pid_file = folder / PID_FILE
+    # Fail closed: a second loop would overwrite the running loop's pid and output, which both runs then misread.
+    running_pid = running_review_pid(repo)
+    if running_pid is not None:
+        sys.exit(f"code_review_start: another review loop of this repo still runs (pid {running_pid}, loop folder "
+                 f"{loop_dir(repo)}). Wait for it with `{WAIT_COMMAND}`, or run this phase in its own worktree.")
     review_output = folder / REVIEW_OUTPUT
     # A folder left by an earlier phase's loop would show its unanswered requests as this loop's.
     (folder / LOOP_DIR_FILE).unlink(missing_ok=True)
@@ -203,7 +209,7 @@ def main(argv):
         finished = subprocess.run(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
 
     print(f"The review loop script exited {finished.returncode}.")
-    packet_file = prompt_file.parent / "packet.txt"
+    packet_file = prompt_file.parent / reviewer_dispatch.PACKET_FILE
     if not packet_file.exists():
         print(f"No packet. Log: {log_path}")
         return 0

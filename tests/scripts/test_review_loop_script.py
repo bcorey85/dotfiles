@@ -160,9 +160,9 @@ class SkipHeldItemsTest(unittest.TestCase):
 
         repo = pathlib.Path("/work/repo")
         first_kept, first_held, first_recorded = review_loop_held.skip_held_items([held_item, real_item], {"notes.py"},
-                                                                                  skipped_fp, repo)
+                                                                                  {"app.py"}, skipped_fp, repo)
         second_kept, second_held, second_recorded = review_loop_held.skip_held_items([held_item], {"notes.py"},
-                                                                                     skipped_fp, repo)
+                                                                                     {"app.py"}, skipped_fp, repo)
 
         self.assertEqual((first_kept, first_held, first_recorded), ([real_item], [held_item], 1))
         self.assertEqual((second_kept, second_held, second_recorded), ([], [held_item], 0))
@@ -181,7 +181,20 @@ class SplitHeldFindingsTest(unittest.TestCase):
         for path, is_held, message in cases:
             with self.subTest(message):
                 item = finding_record.parse_finding(f"`{path}:1` the keys are out of order")
-                kept, held_items = review_loop_held.split_held_findings([item], {"notes.py"}, repo)
+                kept, held_items = review_loop_held.split_held_findings([item], {"notes.py"}, set(), repo)
+                self.assertEqual((kept, held_items), ([], [item]) if is_held else ([item], []))
+
+    def test_a_tail_only_path_is_held_only_when_it_names_one_held_file_and_no_owned_file(self):
+        repo = pathlib.Path("/work/repo")
+        cases = [
+            ("notes.py", {"a/notes.py"}, set(), True, "one held file, no owned file"),
+            ("notes.py", {"a/notes.py"}, {"b/notes.py"}, False, "an owned file has the same tail"),
+            ("notes.py", {"a/notes.py", "c/notes.py"}, set(), False, "two held files have the same tail"),
+        ]
+        for path, held, owned, is_held, message in cases:
+            with self.subTest(message):
+                item = finding_record.parse_finding(f"`{path}:1` the keys are out of order")
+                kept, held_items = review_loop_held.split_held_findings([item], held, owned, repo)
                 self.assertEqual((kept, held_items), ([], [item]) if is_held else ([item], []))
 
 
@@ -190,7 +203,7 @@ class SplitHeldFindingsTest(unittest.TestCase):
             (pathlib.Path(directory) / "notes.py").write_text("a = 1\n")
             item = finding_record.parse_finding("`notes.py:1` the keys are out of order")
 
-            kept, held_items = review_loop_held.split_held_findings([item], {"sub/notes.py"}, directory)
+            kept, held_items = review_loop_held.split_held_findings([item], {"sub/notes.py"}, {"notes.py"}, directory)
 
             self.assertEqual((kept, held_items), ([item], []))
 
@@ -606,6 +619,62 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([entry["reason"] for entry in packet["skipped_fp"]], [HELD_FILE_REASON])
         self.assertEqual(packet["plan_impacts"], [])
 
+    def test_a_tail_path_that_an_owned_file_and_a_held_file_share_reaches_the_coder(self):
+        (self.repo / "pkg/deep").mkdir(parents=True)
+        (self.repo / "sub/deep").mkdir(parents=True)
+        self.commit_files({"pkg/deep/lib.py": "a = 1\n", "sub/deep/lib.py": "b = 1\n"})
+        (self.repo / "pkg/deep/lib.py").write_text("a = 2\n")
+        (self.repo / "sub/deep/lib.py").write_text("b = 2  # another session's edit\n")
+        tail_review = "## Fix\n- `deep/lib.py:1` the value is wrong\n\n## Ask\nNone\n\n## Nit\nNone\n"
+        completed = self.run_script({
+            "code-reviewer": [{"result": tail_review}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra="files: app.py, pkg/deep/lib.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        coder = next(call for call in self.fake_calls() if call["key"] == "coder")
+        self.assertIn("the value is wrong", coder["prompt"])
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["skipped_fp"], [])
+
+    def test_a_tail_path_of_a_file_the_coder_created_and_a_held_file_reaches_the_coder_in_a_later_round(self):
+        (self.repo / "pkg/deep").mkdir(parents=True)
+        (self.repo / "sub/deep").mkdir(parents=True)
+        self.commit_files({"sub/deep/lib.py": "b = 1\n"})
+        (self.repo / "sub/deep/lib.py").write_text("b = 2  # another session's edit\n")
+        app_review = "## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\nNone\n\n## Nit\nNone\n"
+        tail_review = "## Fix\n- `deep/lib.py:1` the value is wrong\n\n## Ask\nNone\n\n## Nit\nNone\n"
+        completed = self.run_script({
+            "code-reviewer": [{"result": app_review}, {"result": tail_review}, {"result": CLEAN_REVIEW},
+                              {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "pkg/deep/lib.py": "a = 1\n"}},
+                      {"result": "Fixed 1.", "edits": {"pkg/deep/lib.py": "a = 2\n"}}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra="files: app.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        coders = [call for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertEqual(len(coders), 2)
+        self.assertIn("the value is wrong", coders[1]["prompt"])
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["skipped_fp"], [])
+
+    def test_a_design_ask_on_a_held_file_is_skipped_and_never_reaches_the_packet_asks(self):
+        (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
+        held_ask = ("## Fix\nNone\n\n## Ask\n- `notes.py:1` [design] should the keys be sorted? "
+                    "Proposed change: sort them\n\n## Nit\nNone\n")
+        completed = self.run_script({
+            "code-reviewer": [{"result": held_ask}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra="files: app.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([call for call in self.fake_calls() if call["key"] == "coder"], [])
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual([entry["reason"] for entry in packet["skipped_fp"]], [HELD_FILE_REASON])
+
     def test_a_given_finding_on_a_held_file_is_skipped_and_no_coder_runs(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
         completed = self.run_script({
@@ -830,6 +899,21 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertIn("scratch.txt", packet["tool_fault"])
         self.assertIn("restored", packet["tool_fault"])
+
+    def test_a_held_untracked_file_the_coder_deletes_is_never_put_back(self):
+        held_file = self.repo / "held_scratch.txt"
+        held_file.write_text("select 1;\n")
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}, "deletes": [str(held_file)]}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra="files: app.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(held_file.exists())
+        _row, packet = self.stored_packet()
+        self.assertIn("held_scratch.txt", packet["tool_fault"])
+        self.assertNotIn("restored", packet["tool_fault"])
 
     def test_a_fix_that_moves_the_added_lines_into_a_new_file_converges(self):
         added = self.start_with_a_twelve_line_change()

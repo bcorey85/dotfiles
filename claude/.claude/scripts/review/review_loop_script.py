@@ -559,24 +559,31 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.run_rows.append(row)
         return new_findings
 
+    def owned_files(self):
+        """The files the run owns, for telling a held file's tail from an owned file's tail. It needs no git call,
+        and it is empty when no file is held."""
+        if not self.held_files:
+            return set()
+        return set(self.only_files) | self.files_touched
+
     def sendable(self, items):
         """(the items that name no held file, the ones that do). Each held one goes to skipped_fp with its reason: no
         coder gets it."""
-        kept, held_items, recorded = review_loop_held.skip_held_items(items, self.held_files, self.skipped_fp,
-                                                                         self.repo)
+        kept, held_items, recorded = review_loop_held.skip_held_items(items, self.held_files, self.owned_files(),
+                                                                         self.skipped_fp, self.repo)
         self.given_skipped += recorded
         return kept, held_items
 
     def without_held_findings(self, review):
-        """The review without its fixes and nits on held files. Held fixes go to skipped_fp; held nits go to the
-        packet's nits, which no coder reads."""
+        """The review without its fixes, asks and nits on held files: fixes and asks go to skipped_fp, nits to nits."""
         kept_nits, held_nits = review_loop_held.split_held_findings(review["nit"], self.held_files,
-                                                                          self.repo)
+                                                                          self.owned_files(), self.repo)
         new_nits = [nit for nit in held_nits if nit not in self.nits]
         self.nits += new_nits
         self.tallies["nit"] += len(new_nits)
         kept_fixes, _held_fixes = self.sendable(review["fix"])
-        return {**review, "fix": kept_fixes, "nit": kept_nits}
+        kept_asks, _held_asks = self.sendable(review["ask"])
+        return {**review, "fix": kept_fixes, "ask": kept_asks, "nit": kept_nits}
 
     def split_review(self, tree_paths, review):
         """A ReviewSplit: the review without its absent-file findings, its fixes, its [design-decision] fixes, its
@@ -601,11 +608,11 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.plan_impacts.append(impact)
 
     def route_plan_items(self, agent, items):
-        """(the items the coder fixes this round, the items held). A plan impact that changes no acceptance criterion
-        is adopted by rule and fixed like any finding; one that changes a criterion, or says nothing, is held for the
-        end. Once the caller ruled on the plan impacts, a plan-marked item the ruling or a carried finding names is a
-        plain fix; a new one takes the path above."""
-        to_coder, held = [], []
+        """(the items the coder fixes this round, the items held for a ruling). A plan impact that changes no
+        acceptance criterion is adopted by rule and fixed like any finding; one that changes a criterion, or says
+        nothing, is held for the end. Once the caller ruled on the plan impacts, a plan-marked item the ruling or a
+        carried finding names is a plain fix; a new one takes the path above."""
+        to_coder, ruling_held = [], []
         for item in items:
             if any(near_title(known, item.text) for known in self.resolved_texts):
                 to_coder.append(item)
@@ -614,8 +621,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
             ac_change = plan_format.changes_acceptance_criteria(item.text)
             self.record_plan_impact({"text": item.text, "gate": agent, "ac_change": ac_change,
                                      "cause": plan_format.PLAN_CAUSE, "adopted": not ac_change, "applied": False})
-            (held if ac_change else to_coder).append(item)
-        return to_coder, held
+            (ruling_held if ac_change else to_coder).append(item)
+        return to_coder, ruling_held
 
     def record_coder_plan_impact(self, report, changed):
         """A coder's PLAN-IMPACT report joins the plan impacts. Its edits stay and the loop goes on. A toolkit cause,
@@ -654,24 +661,22 @@ class LoopRun(full_check_gate.FullCheckSteps):
             parsed, design = split.parsed, split.design
             self.skipped_fp += [{"item": item, "reason": ABSENT_FILE_REASON} for item in split.absent]
 
-            plan_items, held_plan_items = self.sendable(plan_change_items(parsed["ask"] + design))
-            parsed["ask"] = [item for item in parsed["ask"] if item not in held_plan_items]
-            design = [item for item in design if item not in held_plan_items]
-            routed, held = self.route_plan_items(agent, plan_items)
+            plan_items = plan_change_items(parsed["ask"] + design)
+            routed, ruling_held = self.route_plan_items(agent, plan_items)
             parsed["ask"] = [item for item in parsed["ask"] if item not in routed]
             design = [item for item in design if item not in routed]
             fixes = split.fixes + routed
 
             new_findings = self.record_review(agent, owned, parsed, fixes, design)
-            self.add_unheld_asks(agent, new_findings["ask"], held)
+            self.add_asks_without_ruling(agent, new_findings["ask"], ruling_held)
             round_nits += parsed["nit"]
             round_fix.append((agent, owned, fixes))
         return round_fix, round_nits
 
-    def add_unheld_asks(self, agent, asks, held):
-        """Adds each ask of a review that no plan impact holds for the end."""
+    def add_asks_without_ruling(self, agent, asks, ruling_held):
+        """Adds each ask of a review that no plan impact holds for a ruling at the end."""
         for item in asks:
-            if item not in held:
+            if item not in ruling_held:
                 self.add_ask(agent, item)
 
     def repair(self, call_name, findings, nits=()):

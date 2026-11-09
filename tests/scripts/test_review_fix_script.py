@@ -2339,6 +2339,37 @@ class ReviewFixScriptTest(unittest.TestCase):
                          first_launch_lines)
         self.assertEqual(findings_file.read_text(), findings_before)
 
+    def test_a_repeat_asks_done_after_a_clean_first_call_prints_the_stored_launch_line_again(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")
+        first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(first_launch_lines), 1, output)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertIn("The first asks-done printed this fix run; run it now unless it already ran.", output)
+        self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
+                         first_launch_lines)
+
+    def test_the_fix_run_lists_each_file_the_first_run_touched_beside_the_files_it_was_scoped_to(self):
+        home = str(self.temp_root / "home")
+        handoff = self.temp_root / "handoff.md"
+        handoff.write_text("Review the greeting change.\n")
+        message = packet_text(WITH_ASK_FIELDS, files_touched=["README.md", "src/fixed_by_coder.ts"])
+        code, output = self.launch("--file", "README.md", "--handoff", str(handoff), message=message, HOME=home)
+        self.assertEqual(code, 0, output)
+        packet_args = shlex.split(output.splitlines()[-1].split("`")[1])[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+
+        launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        words = shlex.split(launch_lines[0])
+        file_flags = [words[index + 1] for index, word in enumerate(words) if word == "--file"]
+        self.assertEqual(file_flags, ["README.md", "src/fixed_by_coder.ts"])
+
     def test_a_packet_run_again_after_a_logging_failure_keeps_the_fix_run_printed_once(self):
         home = str(self.temp_root / "home")
         packet_args = self.launched_review_with_asks(home)
@@ -2365,7 +2396,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
-        self.assertNotIn("stop-no-launch-record", output)
+        self.assertNotIn("ACTION: launch-fix-run", output)
         self.assertTrue([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)])
 
     def test_a_different_packet_run_with_no_launch_drops_the_earlier_runs_launch_record(self):
@@ -2378,7 +2409,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         code, output = self.run_script(["asks-done", "--packet", new_id, "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
-        self.assertIn("ACTION: stop-no-launch-record", output)
+        self.assertIn("ACTION: launch-fix-run", output)
 
     def test_a_different_packet_run_with_its_own_launch_uses_that_launches_relaunch_args(self):
         home = str(self.temp_root / "home")
@@ -2495,24 +2526,87 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("outcome 2 is modified with no note", output)
         self.assertEqual(len(self.ledger_writes()), writes_before)
 
-    def test_an_accepted_ask_of_a_run_launch_did_not_start_stops_naming_the_findings_file(self):
-        self.packet(WITH_ASK)
+    def test_an_accepted_ask_of_a_run_launch_did_not_start_prints_a_launch_line_for_the_findings_file(self):
+        self.packet(packet_text(WITH_ASK_FIELDS, iter=3))
         code, output = self.run_script(["asks-done", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
-        self.assertIn("ACTION: stop-no-launch-record", output)
+        self.assertIn("ACTION: launch-fix-run", output)
         self.assertIn(str(findings_file), output)
+        launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(launch_lines), 1, output)
+        launch_words = shlex.split(launch_lines[0])
+        self.assertEqual(launch_words[launch_words.index("--fix") + 1], str(findings_file))
+        self.assertEqual(launch_words[launch_words.index("--repo") + 1], str(self.repo))
+        self.assertEqual(launch_words[launch_words.index("--iter") + 1], "3")
+        self.assertIn("--detach", launch_words)
         self.assertTrue(findings_file.read_text().startswith("- src/retry.ts:10 "))
+
+    def test_a_repeat_asks_done_with_no_launch_record_prints_the_same_launch_line(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+        first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(first_launch_lines), 1, output)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
+                         first_launch_lines)
+
+    def test_a_whole_tree_launch_gives_the_fix_run_no_file_flag(self):
+        home = str(self.temp_root / "home")
+        handoff = self.temp_root / "handoff.md"
+        handoff.write_text("Review the greeting change.\n")
+        message = packet_text(WITH_ASK_FIELDS, files_touched=["src/fixed_by_coder.ts"])
+        code, output = self.launch("--handoff", str(handoff), message=message, HOME=home)
+        self.assertEqual(code, 0, output)
+        packet_args = shlex.split(output.splitlines()[-1].split("`")[1])[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+
+        launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(launch_lines), 1, output)
+        self.assertNotIn("--file", shlex.split(launch_lines[0]))
 
     def test_asks_done_retried_after_a_logging_failure_with_no_launch_record_stops_again(self):
         self.packet(WITH_ASK)
         code, output = self.run_script(["asks-done", "accepted", "rejected"], FAKE_LEDGER_WRITE_EXIT="2")
-        self.assertIn("ACTION: stop-no-launch-record", output)
+        self.assertIn("ACTION: launch-fix-run", output)
+
+        first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(first_launch_lines), 1, output)
 
         code, output = self.run_script(["asks-done", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
-        self.assertIn("ACTION: stop-no-launch-record", output)
-        self.assertNotIn("ACTION: done", output)
+        self.assertIn("ACTION: done", output)
+        self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
+                         first_launch_lines)
+
+    def test_a_repeat_asks_done_after_the_kept_packet_was_answered_last_prints_the_kept_packets_line(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        older_id = self.stored_state()["packet_id"]
+        code, output = self.packet(self.ONE_ASK, HOME=home)
+        self.assertEqual(code, 0, output)
+
+        current_id = self.stored_state()["packet_id"]
+        code, output = self.run_script(["asks-done", "--packet", current_id, "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        current_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        code, output = self.run_script(["asks-done", "--packet", older_id, "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        kept_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(kept_launch_lines), 1, output)
+        self.assertNotEqual(kept_launch_lines, current_launch_lines)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
+                         kept_launch_lines)
 
     def test_the_kept_packet_answered_by_id_keeps_its_launch_record_and_prints_the_fix_run_once(self):
         home = str(self.temp_root / "home")

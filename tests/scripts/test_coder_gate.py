@@ -120,6 +120,20 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual("deny", self.stored_gate()["coders"]["a1"]["result"])
         self.assertIn("deny", done.stdout)
 
+    def test_a_readability_hit_denies_the_hand_back_with_the_hit_line(self):
+        subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "base"], cwd=self.repo, check=True, env=self.env)
+        base = script_utils.git_output(self.repo, "rev-parse", "HEAD")
+        (self.repo / "app.py").write_text("def handle(a, b, c):\n    if a:\n        if b:\n            if c:\n"
+                                          "                return 1\n    return 0\n")
+        self.gate_set(f"python3 {GATE_SCRIPT.parent / 'readability_check.py'} --base {base}")
+
+        done = self.gate_hook()
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual("deny", self.stored_gate()["coders"]["a1"]["result"])
+        reason = json.loads(done.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("app.py:4 handle — nesting (3 levels, limit 2)", reason)
+
     def test_a_failing_command_that_prints_a_byte_that_is_not_utf_8_denies_with_its_output(self):
         self.gate_set(r"printf 'bad \377 byte\n'; exit 1")
 
@@ -1122,7 +1136,18 @@ class StaleProseCheckTests(unittest.TestCase):
             with self.subTest(message):
                 self.assertEqual(expected, gate.is_stale_prose_check(command))
 
-    def test_run_stale_prose_check_sorts_each_outcome_of_the_command(self):
+    def test_only_the_readability_script_command_is_the_readability_check(self):
+        gate = load_gate_module()
+        cases = [
+            ("the gate's own command", gate.readability_command("abc123"), True),
+            ("the stale-prose check", "python3 /home/u/.claude/scripts/code/stale_prose.py --base abc123", False),
+            ("a test of the script", "python3 tests/parallel_tests.py test_readability_check.py", False),
+        ]
+        for message, command, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, gate.is_readability_check(command))
+
+    def test_run_hit_check_sorts_each_outcome_of_the_command(self):
         gate = load_gate_module()
         command = "python3 stale_prose.py --base abc123"
         missing_path_output = "ERROR: file or directory not found: nope.py\n"
@@ -1140,7 +1165,7 @@ class StaleProseCheckTests(unittest.TestCase):
                 log_path = pathlib.Path(scratch) / "logs" / "stale-prose.log"
 
                 with mock.patch.object(gate, "run_commands", return_value=run_result):
-                    result, hits, _tails = gate.run_stale_prose_check(scratch, [command], [], log_path)
+                    result, hits, _tails = gate.run_hit_check(scratch, [command], [], log_path)
 
                 self.assertTrue(result.startswith(result_start), result)
                 self.assertEqual(hit_outputs, hits)

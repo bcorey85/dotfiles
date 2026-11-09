@@ -347,6 +347,20 @@ class GateCommandsCliTest(GateCommandsTestCase):
         self.assertNotIn("tests/test_two.py", first.stdout)
         self.assertIn("python3 -m pytest tests/test_two.py", second.stdout.splitlines())
 
+    def test_a_repo_with_a_commit_gets_the_readability_check_against_head(self):
+        repo = self.new_repo({"pyproject.toml": RUFF_CONFIG})
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q",
+                        "--allow-empty", "-m", "base"], cwd=repo, check=True)
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+        done = self.run_cli(repo, "-", "1")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        expected = f"python3 {toolkit_paths.CODE_DIR / 'readability_check.py'} --base {head}"
+        self.assertEqual([expected], done.stdout.splitlines())
+
     def test_a_dash_for_the_plan_prints_no_command(self):
         repo = self.new_repo({"pyproject.toml": RUFF_CONFIG})
 

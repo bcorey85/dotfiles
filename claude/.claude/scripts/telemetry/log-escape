@@ -72,8 +72,9 @@
 #       considered and rejected. `n-a` = this row
 #       is not review-flywheel data.)
 #     miss_reason=out-of-scope|needs-other-file|needs-runtime|plan-gap|seen-dismissed
-#                 |rule-absent|overlooked|unknown   (REQUIRED — why the gate missed
-#       it; see ~/.claude/skills/_shared/escape-ratchet.md. Stored as plain text like
+#                 |rule-absent|overlooked|unknown   (REQUIRED unless
+#       gate_missed=eng-spec — why the gate missed it; see
+#       ~/.claude/skills/_shared/escape-ratchet.md. Stored as plain text like
 #       class. A value outside the list is refused. `unknown` = a script with no
 #       judgment; a model caller picks a real label.)
 #     desc="one line"   accepted for the caller's own record; never stored
@@ -164,7 +165,11 @@ fi
 
 miss_reasons="out-of-scope needs-other-file needs-runtime plan-gap seen-dismissed rule-absent overlooked unknown"
 miss_reason=$(jq -r '.miss_reason // ""' <<< "$json")
-if [[ " $miss_reasons " != *" $miss_reason "* || -z "$miss_reason" ]]; then
+gate_missed=$(jq -r '.gate_missed' <<< "$json")
+# gate_missed=eng-spec already means plan-gap, so an eng-spec row may leave out miss_reason and is sent without it.
+if [ "$gate_missed" = eng-spec ] && [ -z "$miss_reason" ]; then
+  json=$(jq -c 'del(.miss_reason)' <<< "$json")
+elif [[ " $miss_reasons " != *" $miss_reason "* || -z "$miss_reason" ]]; then
   echo "refusing to log: miss_reason='$miss_reason' is not one of: $miss_reasons." >&2
   echo "Pick the label from ~/.claude/skills/_shared/escape-ratchet.md." >&2
   exit 1

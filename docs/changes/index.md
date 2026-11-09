@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-882 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+883 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [Plan check accepts repo links to programs outside the repo](notes/2026-11-08-plan-check-accepts-venv-and-node-modules-links-to.md).
+Latest change: 2026-11-08, [eng-spec plan-review escapes are logged with no miss_reason](notes/2026-11-08-eng-spec-plan-review-escapes-are-logged-with-no.md).
 
 ## Top gains
 

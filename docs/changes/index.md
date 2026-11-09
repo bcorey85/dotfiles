@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-884 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+885 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [eng-spec plan-review escapes are logged with no miss_reason](notes/2026-11-08-eng-spec-plan-review-escapes-are-logged-with-no.md).
+Latest change: 2026-11-08, [The coder gate log counts readability failures](notes/2026-11-08-the-coder-gate-log-counts-readability-failures.md).
 
 ## Top gains
 

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-884 changes
+885 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -22,6 +22,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The coder gate log counts readability failures](notes/2026-11-08-the-coder-gate-log-counts-readability-failures.md) [script/coder-gate] Each coder-gate.jsonl row the hand-back gate writes carries readability_failed, the number of failing readability-check commands in that run, so the intake can count readability denials per coder dispatch from metadata alone.
 * [Ten toolkit scripts meet the readability limits](notes/2026-11-08-ten-toolkit-scripts-meet-the-readability-limits.md) [script/shell-write-gate, script/script-utils, script/check-scope, script/refactor-flow, skill/refactor, script/shell-command, script/source-text, script/coder-gate, script/stale-prose, script/review-loop-script, script/plan-format] The ten scripts with the most readability hits are split into named steps with named return types; hits fall from 178 to 5, behavior and hook speed stay the same.
 * [The readability hand-back check reads Vue script blocks and enforces the four new limits](notes/2026-11-08-the-readability-hand-back-check-reads-vue-script.md) [script/coder-gate, script/review-loop-script] readability_check.py reads the <script> and <script setup> blocks of .vue files at their own line numbers, and refuses a ternary passed as a call argument, a comprehension with two loops or a nested one, a returned tuple of three or more values, and a new def with more than five parameters.
 * [The code reviewer marks ternary arguments, two-loop comprehensions, wide tuples and six-parameter functions as fix](notes/2026-11-08-the-code-reviewer-marks-ternary-arguments-two-loop.md) [agent/code-reviewer, agent/smell-reviewer] The code reviewer's taste-break fix list gains the coder's four new readability limits: a ternary passed as a call argument, a comprehension with two loops, a returned tuple of three or more values, and a non-test function with more than five parameters.

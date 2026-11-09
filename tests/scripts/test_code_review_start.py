@@ -153,6 +153,26 @@ class CodeReviewStartTest(unittest.TestCase):
 
         self.assertFalse((phase_dir / "loop-dir").exists())
 
+    def test_detach_refuses_while_another_review_loop_of_this_repo_runs(self):
+        # Two /code forks in one repo share <git dir>/code-phase: a second detach overwrote the first loop's pid,
+        # and the first fork then killed the second fork's loop through it.
+        code_review_start = self.load_module()
+        phase_dir = self.repo / ".git/code-phase"
+        phase_dir.mkdir()
+        (phase_dir / "pid").write_text(str(os.getpid()))
+        (phase_dir / "loop-dir").write_text("/running/loop\n")
+        (phase_dir / "review.out").write_text("running loop output\n")
+
+        with mock.patch.object(code_review_start, "subprocess") as fake_subprocess, \
+                self.assertRaises(SystemExit) as stop:
+            code_review_start.detach(self.repo, ["code_review_start.py", "lane-a", "--detach"])
+
+        self.assertIn(str(os.getpid()), str(stop.exception.code))
+        self.assertIn("/running/loop", str(stop.exception.code))
+        fake_subprocess.Popen.assert_not_called()
+        self.assertEqual((phase_dir / "pid").read_text(), str(os.getpid()))
+        self.assertEqual((phase_dir / "review.out").read_text(), "running loop output\n")
+
     def test_the_live_run_prints_the_packet_the_loop_wrote_beside_the_prompt(self):
         printed, prompt_folder, loop_folder, _command = self.run_live(self.load_module(), write_packet=True)
 

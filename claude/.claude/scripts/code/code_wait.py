@@ -39,6 +39,11 @@ SETTLE_SECONDS = 3
 SETTLE_POLL_SECONDS = 0.25
 STILL_WORKING = "Still working. Run the same command again."
 NO_REPORT = "The agent finished with no report."
+LOOP_GONE = "The review loop process is not running, but these reviewer requests have no report:"
+PHASE_RESTART = ("Its process was stopped before the loop finished. Run this phase's "
+                 "`code_review_start.py ... --detach` line again, then this wait.")
+LAUNCHED_RESTART = ("Its process was stopped before the loop finished. Run the skill's launch line with --detach "
+                    "again, then the wait it prints.")
 AGENT_ID = re.compile(r"a[0-9a-f]{16}")
 AGENT_ID_FORM = "the agentId an Agent call returned: `a` and 16 hex digits"
 PHASE_DIR_NAME = "code-phase"
@@ -121,24 +126,26 @@ def loop_dir(repo):
 @dataclasses.dataclass(frozen=True)
 class ReviewRun:
     """The review loop a `review` wait follows: the command that waits on it again, the folder that holds its
-    reviewer requests (None before the loop names it), whether it still runs, and what to print once it ended."""
+    reviewer requests (None before the loop names it), whether it still runs, what to print once it ended ("" when
+    it left nothing), and how to start it again when its process ended before the loop finished."""
     command: str
     loop_folder: Callable[[], str | None]
     running: Callable[[], bool]
     final_output: Callable[[], str]
+    restart: str
 
 
 def phase_review_output(repo):
     review_output = phase_dir(repo) / REVIEW_OUTPUT
     if not review_output.exists():
-        return "No review output was written."
+        return ""
     return review_output.read_text()
 
 
 def phase_review(repo):
     """The review code_review_start.py --detach left for the /code fork."""
     return ReviewRun(REVIEW_COMMAND, lambda: loop_dir(repo), lambda: review_running(repo),
-                     lambda: phase_review_output(repo))
+                     lambda: phase_review_output(repo), PHASE_RESTART)
 
 
 def launched_loop_running(folder):
@@ -158,7 +165,7 @@ def launched_review(folder):
                          "`review_fix.py launch --detach` printed")
     packet_command = reviewer_dispatch.packet_command(folder)
     return ReviewRun(launched_review_command(folder), lambda: folder, lambda: launched_loop_running(folder),
-                     lambda: f"The review loop script finished. Run `{packet_command}` now.")
+                     lambda: f"The review loop script finished. Run `{packet_command}` now.", LAUNCHED_RESTART)
 
 
 def open_reviewer_requests(run):
@@ -248,12 +255,24 @@ def wait_review(repo, words=(), launched_folder=None):
                          f"`{run.command}` with the new agentId in place of the old one."]))
         return 1
 
+    running = run.running()
+    open_requests = open_reviewer_requests(run)
+    if open_requests and not running:
+        folder = run.loop_folder()
+        print("\n".join([LOOP_GONE, *reviewer_dispatch.request_lines(open_requests)[1:], f"Loop folder: {folder}",
+                         run.restart]))
+        return 1
+
     pending = unanswered_requests(run, pairs)
     if pending:
         print("\n".join(reviewer_dispatch_lines(run, pending)))
         return 0
 
-    print(run.final_output())
+    final_output = run.final_output()
+    if not final_output.strip():
+        print(f"The review loop ended and left no output in {phase_dir(repo) / REVIEW_OUTPUT}. {run.restart}")
+        return 1
+    print(final_output)
     return 0
 
 

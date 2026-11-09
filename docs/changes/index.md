@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-882 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+883 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [Ten toolkit scripts meet the readability limits](notes/2026-11-08-ten-toolkit-scripts-meet-the-readability-limits.md).
+Latest change: 2026-11-08, [code_wait review says why when the loop process is gone, and a second detach in one repo stops](notes/2026-11-08-code-wait-review-says-why-when-the-loop-process-is.md).
 
 ## Top gains
 

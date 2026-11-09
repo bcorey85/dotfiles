@@ -26,7 +26,7 @@ User rule. A scan of the toolkit's own 106 non-test Python scripts (1,482 functi
 
 ## Result
 
-Pending. A headless on-off check of the first readability section showed the prompt text alone did not stop a 43-line function in one pair; the hand-back check carries the enforcement.
+Rule-meter, 8 runs with the text and 8 without, under a brief that pulls the other way. Runs that kept to the rule: five parameters, 0 → 7 of 8; one-loop comprehension, 0 → 3 of 8; ternary argument, 8 of 8 in both; named return type, 0 of 8 in both, because the brief asked for values destructured in order. Finding: `agent-evals/findings/2026-11-08-the-readability-rules-move-the-coder-only-where-a.md`.
 
 ## Watch
 

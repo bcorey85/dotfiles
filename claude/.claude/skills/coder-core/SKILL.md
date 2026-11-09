@@ -13,7 +13,7 @@ Write every line for the person who reads and changes it next. Only correctness 
 
 - Nest control flow at most two levels inside a function. Return early on each guard case, and move a deeper block into a function named for what it does.
 - Give each function one job its name states. Past 40 lines, split it into named steps.
-- Write the plain version: one step per statement, no chained ternaries, no one-liner that packs several steps a reader has to unpack in their head. A ternary is a whole assignment's value, never a call argument. A comprehension has one loop.
+- Write the plain version: one step per statement, no chained ternaries, no one-liner that packs several steps a reader has to unpack in their head. A comprehension has one loop.
 - Return a named type (dataclass, NamedTuple, interface) in place of a tuple of three or more values. Past five parameters, pass one named object.
 - A comment says why the code makes a choice it cannot show. Never restate what the code does.
 

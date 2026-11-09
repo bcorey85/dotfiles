@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections import namedtuple
 
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -84,17 +85,31 @@ def fenced_line_indexes(lines):
     fenced = set()
     opener = None
     for index, line in enumerate(lines):
+        is_opening = opener is None
+        if is_opening:
+            opener = _fence_opener(line)
         if opener is None:
-            match = FENCE_OPEN.match(line)
-            if match:
-                opener = match.group(1)
-                fenced.add(index)
             continue
         fenced.add(index)
-        stripped = line.strip()
-        if stripped and stripped[0] == opener[0] and set(stripped) == {opener[0]} and len(stripped) >= len(opener):
+        if not is_opening and _closes_fence(line, opener):
             opener = None
     return fenced
+
+
+def _fence_opener(line):
+    """The fence text that opens a fenced block on this line, or None."""
+    match = FENCE_OPEN.match(line)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _closes_fence(line, opener):
+    """Whether the line closes a fence opened with `opener`: the same character, at least as long."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    return stripped[0] == opener[0] and set(stripped) == {opener[0]} and len(stripped) >= len(opener)
 
 
 JSON_TYPE_NAMES = ((str, "a string"), (bool, "a boolean"), (int, "a number"), (float, "a number"), (list, "a list"),
@@ -149,9 +164,10 @@ def heading_section_indexes(lines, heading_text):
     open_level = None
     for index, line in enumerate(lines):
         heading = None if index in fenced else MARKDOWN_HEADING.match(line)
+        if heading is None and open_level is not None:
+            indexes.append(index)
+            continue
         if heading is None:
-            if open_level is not None:
-                indexes.append(index)
             continue
 
         level = len(heading.group(1))
@@ -190,13 +206,19 @@ def wait_for(check, timeout_seconds, interval_seconds):
         time.sleep(min(interval_seconds, remaining))
 
 
+# What run_process returns; it unpacks as (exit code, stdout, stderr). collections.namedtuple, not typing.NamedTuple:
+# hooks import this module, and typing adds to every hook's start-up.
+ProcessResult = namedtuple("ProcessResult", ["code", "stdout", "stderr"])
+
+
 def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None):
     """Run a command (a list, or a string for the shell) in cwd and return (exit code, stdout, stderr), both as text.
     A byte that is not UTF-8 decodes as U+FFFD. `env`, when given, is the command's whole environment. When the
     command does not finish in `timeout` seconds, kill its whole process group, so a shell command that started a
     server cannot keep the pipes open, and return (None, stdout, stderr) with what it printed. `on_start`, when
     given, is called with the process pid once it runs, so a caller can track the process group it leads."""
-    process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE if stdin is not None else None,
+    stdin_pipe = subprocess.PIPE if stdin is not None else None
+    process = subprocess.Popen(command, cwd=cwd, env=env, stdin=stdin_pipe,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                errors="replace", shell=isinstance(command, str), start_new_session=True)
     if on_start:
@@ -206,8 +228,8 @@ def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None)
     except subprocess.TimeoutExpired:
         os.killpg(process.pid, signal.SIGKILL)
         stdout, stderr = process.communicate()
-        return None, stdout, stderr
-    return process.returncode, stdout, stderr
+        return ProcessResult(None, stdout, stderr)
+    return ProcessResult(process.returncode, stdout, stderr)
 
 
 def git_output(cwd, *args, timeout=None):
@@ -333,16 +355,22 @@ def run_retrying(argv, retry_exit_codes, attempts, backoff_seconds, timeout_seco
     retry_exit_codes or it does not finish in timeout_seconds. Any other exit code is returned at once. When the last
     run times out, subprocess.TimeoutExpired is raised; when it exits with a retry code, that result is returned."""
     for attempt in range(1, attempts + 1):
-        try:
-            done = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=timeout_seconds,
-                                  **run_kwargs)
-        except subprocess.TimeoutExpired:
-            if attempt == attempts:
-                raise
-        else:
-            if done.returncode not in retry_exit_codes or attempt == attempts:
-                return done
+        is_last = attempt == attempts
+        done = _run_text_or_none_on_timeout(argv, timeout_seconds, is_last, run_kwargs)
+        if done is not None and (done.returncode not in retry_exit_codes or is_last):
+            return done
         sleep(backoff_seconds * attempt)
+
+
+def _run_text_or_none_on_timeout(argv, timeout_seconds, is_last, run_kwargs):
+    """One captured text run of argv: its CompletedProcess, or None on a timeout, which is raised on the last try."""
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=timeout_seconds,
+                              **run_kwargs)
+    except subprocess.TimeoutExpired:
+        if is_last:
+            raise
+    return None
 
 
 def attempts_within(wait_seconds, backoff_seconds):
@@ -477,11 +505,10 @@ def visible_text(line, in_comment):
     text = ""
     rest = line
     while rest:
+        if in_comment and "-->" not in rest:
+            return text, True
         if in_comment:
-            end = rest.find("-->")
-            if end < 0:
-                return text, True
-            rest = rest[end + 3:]
+            rest = rest[rest.find("-->") + 3:]
             in_comment = False
             continue
         match = INLINE_CODE_OR_COMMENT_OPEN.search(rest)
@@ -601,6 +628,15 @@ def transcript_tail_lines(transcript_path, tail_bytes):
     return tail_lines
 
 
+def _last_nonblank_line(lines):
+    """The last line with text in it, or "" when there is none."""
+    last_line = ""
+    for line in lines:
+        if line.strip():
+            last_line = line
+    return last_line
+
+
 def ends_on_api_error(transcript_path):
     """True when the last record of a transcript is an API error message: the agent may never report.
     False for a transcript that is missing, unreadable, empty, or whose last record is anything else, so a later
@@ -608,9 +644,7 @@ def ends_on_api_error(transcript_path):
     last_line = ""
     try:
         tail_lines = transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
-        for line in tail_lines:
-            if line.strip():
-                last_line = line
+        last_line = _last_nonblank_line(tail_lines)
     except FileNotFoundError:
         return False
     except OSError as error:
@@ -689,14 +723,19 @@ def frontmatter_skills(agent_text):
         if inline_value:
             raise ValueError(f"`skills:` frontmatter has the inline value {inline_value!r}; expected a block list "
                              "of `  - name` lines")
-        names = []
-        for item_line in lines[index + 1:]:
-            item = FRONTMATTER_LIST_ITEM.match(item_line)
-            if not item:
-                break
-            names.append(item.group(1).strip("'\""))
-        return names
+        return _block_list_items(lines[index + 1:])
     return []
+
+
+def _block_list_items(lines):
+    """The names of the leading `- name` lines, up to the first line that is not one."""
+    names = []
+    for item_line in lines:
+        item = FRONTMATTER_LIST_ITEM.match(item_line)
+        if not item:
+            break
+        names.append(item.group(1).strip("'\""))
+    return names
 
 
 def preloaded_skills_prompt(agent, claude_home=None):
@@ -789,17 +828,24 @@ def split_location(text):
 def paths_named(*texts):
     """Every normalized path that the texts name, each once, in order: a text that starts with a file name, then
     every `path:line` token inside it."""
-    paths = []
+    candidates = []
     for text in texts:
-        text = str(text or "")
-        candidates = [normalize_path(hit) for hit in PATH_LINE.findall(text)]
-        first_token = re.split(r"[\s,;|]", text.strip().strip("`'\""), maxsplit=1)[0]
-        if FILE_NAME.match(first_token):
-            candidates.insert(0, normalize_path(first_token))
-        for path in candidates:
-            if path and path not in paths:
-                paths.append(path)
+        text_as_string = str(text or "")
+        candidates.extend(_path_candidates(text_as_string))
+    paths = []
+    for path in candidates:
+        if path and path not in paths:
+            paths.append(path)
     return paths
+
+
+def _path_candidates(text):
+    """The normalized paths one text names, a leading file name first, repeats kept."""
+    candidates = [normalize_path(hit) for hit in PATH_LINE.findall(text)]
+    first_token = re.split(r"[\s,;|]", text.strip().strip("`'\""), maxsplit=1)[0]
+    if FILE_NAME.match(first_token):
+        candidates.insert(0, normalize_path(first_token))
+    return candidates
 
 
 URL_TOKEN = re.compile(r"[A-Za-z][\w+.-]*://\S*")

@@ -50,6 +50,7 @@ import tempfile
 import uuid
 from pathlib import Path, PurePosixPath
 from stat import S_ISREG
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
 import handoff_files
@@ -181,11 +182,18 @@ def sweep_matches(diff_text):
     matches = []
     for diff_file in diff_files:
         for hunk in diff_file.hunks:
-            for line, text in hunk.added:
-                if SWEEP_MARKERS.search(text):
-                    matches.append((diff_file.path, line, "marker", text.strip()))
-                if SWEEP_COMMENTED_CODE.search(text):
-                    matches.append((diff_file.path, line, "commented-out code", text.strip()))
+            matches += _sweep_added_lines(diff_file.path, hunk.added)
+    return matches
+
+
+def _sweep_added_lines(path, added_lines):
+    """The sweep matches among one file's added (line, text) pairs."""
+    matches = []
+    for line, text in added_lines:
+        if SWEEP_MARKERS.search(text):
+            matches.append((path, line, "marker", text.strip()))
+        if SWEEP_COMMENTED_CODE.search(text):
+            matches.append((path, line, "commented-out code", text.strip()))
     return matches
 
 
@@ -202,16 +210,14 @@ def labelled_span_files(span):
     index = 0
     while index < len(tokens) and tokens[index]:
         code = tokens[index][0]
-        labels = []
         if code in "RC":
             old_path, path = tokens[index + 1], tokens[index + 2]
-            labels.append(("renamed" if code == "R" else "copied") + f" from {old_path}")
+            labels = [("renamed" if code == "R" else "copied") + f" from {old_path}"]
             index += 3
         else:
             path = tokens[index + 1]
+            labels = ["deleted"] if code == "D" else []
             index += 2
-            if code == "D":
-                labels.append("deleted")
         if path in binary:
             labels.append("binary")
         entries.append((path, ", ".join(labels)))
@@ -277,6 +283,27 @@ def print_plan_structure(plan_paths, head):
     print(PLAN_STRUCTURE_RULE)
 
 
+def _sweep_text(matches):
+    lines = [f"## Mechanical sweep ({len(matches)} match(es)) — straight onto the work list"]
+    for path, line, kind, text in matches:
+        lines.append(f"- {path}:{line} [{kind}] {text[:120]}")
+    if not matches:
+        lines.append("- none")
+    return "\n".join(lines)
+
+
+def _print_smell_prompt(files, base, head):
+    print("## smell-reviewer dispatch prompt (pinned; omit `model` unless +fast)")
+    print("Changed files:")
+    for path, label in files:
+        print(file_line(path, label))
+    print(SMELL_BOUND.format(base=base, head=head))
+    print(SMELL_PRIORITY)
+    plan_paths = span_plans(files)
+    if plan_paths:
+        print_plan_structure(plan_paths, head)
+
+
 def branch_prep(opts):
     require_repo()
     head = opts.head or "HEAD"
@@ -312,31 +339,21 @@ def branch_prep(opts):
 
     print(f"## Branch audit scope (base `{base}` from {base_source}, head `{head}`)")
     print(f"Changed files ({len(files)}); {shortstat}")
+    print(f"\n{_sweep_text(matches)}\n")
+    _print_smell_prompt(files, base, head)
     print()
-    print(f"## Mechanical sweep ({len(matches)} match(es)) — straight onto the work list")
-    for path, line, kind, text in matches:
-        print(f"- {path}:{line} [{kind}] {text[:120]}")
-    if not matches:
-        print("- none")
-    print()
-    print("## smell-reviewer dispatch prompt (pinned; omit `model` unless +fast)")
-    print("Changed files:")
-    for path, label in files:
-        print(file_line(path, label))
-    print(SMELL_BOUND.format(base=base, head=head))
-    print(SMELL_PRIORITY)
-    plan_paths = span_plans(files)
-    if plan_paths:
-        print_plan_structure(plan_paths, head)
-    print()
-    print(next_line("dispatch ONE smell-reviewer with the prompt above; make the work list = findings + sweep "
-                    f"matches (`[design-decision]` and every `### Ask` finding go to the user; log a "
-                    f"`{PLAN_STRUCTURE_TAG}` finding with `plan_structure: true`); then dispatch the coder, "
-                    "run the step-5 test audit when the refactor could change test guarantees, run the ratchet "
-                    f"for each distinct class, write the log input to {log_input}, and call "
-                    f"`log --mode branch --base {base} --input {log_input}`. Nothing found: call the same "
-                    "`log` empty-handed and stop."))
+    print(_branch_next(base, log_input))
     return 0
+
+
+def _branch_next(base, log_input):
+    return next_line("dispatch ONE smell-reviewer with the prompt above; make the work list = findings + sweep "
+                     f"matches (`[design-decision]` and every `### Ask` finding go to the user; log a "
+                     f"`{PLAN_STRUCTURE_TAG}` finding with `plan_structure: true`); then dispatch the coder, "
+                     "run the step-5 test audit when the refactor could change test guarantees, run the ratchet "
+                     f"for each distinct class, write the log input to {log_input}, and call "
+                     f"`log --mode branch --base {base} --input {log_input}`. Nothing found: call the same "
+                     "`log` empty-handed and stop.")
 
 
 def run_jscpd(target, timeout):
@@ -388,6 +405,15 @@ def tracked_files(target):
     return [name for name in done.stdout.split("\0") if name]
 
 
+def _print_candidate_pairs(listed_pairs, unlisted_count):
+    print("Candidate clone pairs (jscpd):")
+    for pair in listed_pairs:
+        print("\n".join(pair))
+    if unlisted_count:
+        print(f"{unlisted_count} more pair(s) not listed")
+    print(AUDIT_CANDIDATES)
+
+
 def audit_prep(opts):
     require_repo()
     target = opts.target
@@ -413,13 +439,7 @@ def audit_prep(opts):
     print("## smell-reviewer dispatch prompt (omit `model` unless +fast)")
     print(AUDIT_BOUND.format(target=target))
     if listed_pairs:
-        print("Candidate clone pairs (jscpd):")
-        for pair in listed_pairs:
-            for line in pair:
-                print(line)
-        if unlisted_count:
-            print(f"{unlisted_count} more pair(s) not listed")
-        print(AUDIT_CANDIDATES)
+        _print_candidate_pairs(listed_pairs, unlisted_count)
     print(AUDIT_ASK)
     print()
     print(next_line("dispatch ONE smell-reviewer with the prompt above; report the work list with each "
@@ -429,20 +449,28 @@ def audit_prep(opts):
     return 0
 
 
+def _print_complexity_prompt(chosen, label):
+    print("## complexity-reviewer dispatch prompt (pinned; omit `model`; never +fast)")
+    print("Files:")
+    for name in chosen:
+        print(f"- {name}")
+    print(SIMPLIFY_BOUND.format(target=label))
+    print(SIMPLIFY_ASK)
+    print("Add any project constraint you know that makes a shape mandatory (a required layer, a framework "
+          "seam, a public contract).")
+
+
 def simplify_prep(opts):
     require_repo()
     targets = opts.target
     files = []
-    seen = set()
     for target in targets:
         found = tracked_files([target])
         if not found:
             print(f"STOP: `git ls-files {target}` is empty; ask the user for a tracked dir or module.")
             return 0
-        for name in found:
-            if name not in seen:
-                seen.add(name)
-                files.append(name)
+        files += found
+    files = list(dict.fromkeys(files))
 
     slices = [files[i:i + MAX_SIMPLIFY_FILES] for i in range(0, len(files), MAX_SIMPLIFY_FILES)]
     if not 1 <= opts.slice <= len(slices):
@@ -457,14 +485,7 @@ def simplify_prep(opts):
               f"{opts.slice} of {len(slices)} ({len(chosen)} files); tell the user which slice runs, "
               f"re-run with `--slice N` for the others.")
     print()
-    print("## complexity-reviewer dispatch prompt (pinned; omit `model`; never +fast)")
-    print("Files:")
-    for name in chosen:
-        print(f"- {name}")
-    print(SIMPLIFY_BOUND.format(target=label))
-    print(SIMPLIFY_ASK)
-    print("Add any project constraint you know that makes a shape mandatory (a required layer, a framework "
-          "seam, a public contract).")
+    _print_complexity_prompt(chosen, label)
     print()
     print(next_line("do NOT read the files; dispatch ONE complexity-reviewer with the prompt above; triage "
                     "(drop oracle-failures, under-floor, irreducible; `[design-decision]` to the user); present "
@@ -534,9 +555,12 @@ def validate_finding(finding, index, mode):
                                 f"never actioned=fixed without `ruled_by` (`user` or `session`)")
     if not isinstance(finding.get("escape", False), bool):
         raise RefactorFlowError(f"{where}: `escape` must be true or false (got {finding['escape']!r})")
-    if not finding.get("escape"):
-        return
+    if finding.get("escape"):
+        validate_escape_finding(finding, where, mode)
 
+
+def validate_escape_finding(finding, where, mode):
+    """The extra checks for a finding marked as an escape."""
     if mode in ("audit", "targeted"):
         raise RefactorFlowError(f"{where}: escape rows are not logged in {mode} mode")
     if mode == "simplify" and finding["class"] != "complexity":
@@ -569,6 +593,22 @@ def validate_handoff(handoff):
         raise RefactorFlowError("handoff.plan_impact must be a non-empty string (`none` when there is none)")
 
 
+def require_escape_guards(findings, guards):
+    escape_classes = sorted({finding["class"] for finding in findings if finding.get("escape")})
+    for escape_class in escape_classes:
+        if not isinstance(guards.get(escape_class), str) or not guards[escape_class]:
+            raise RefactorFlowError(f"escape class `{escape_class}` needs guards[\"{escape_class}\"] (run the ratchet)")
+
+
+def validated_targets(refactor_log, finder, mode):
+    targets = refactor_log.get("target") or []
+    if not isinstance(targets, list) or not all(isinstance(item, str) and item for item in targets):
+        raise RefactorFlowError("`target` must be a list of paths")
+    if finder and mode in ("audit", "simplify") and not targets:
+        raise RefactorFlowError("`target` (list of dirs or files) is required in audit and simplify mode")
+    return targets
+
+
 def validate_log(mode, refactor_log):
     finder = refactor_log.get("finder") or None
     if mode == "targeted":
@@ -590,20 +630,13 @@ def validate_log(mode, refactor_log):
     guards = refactor_log.get("guards", {})
     if not isinstance(guards, dict):
         raise RefactorFlowError("`guards` must be an object")
-    escape_classes = sorted({finding["class"] for finding in findings if finding.get("escape")})
-    for escape_class in escape_classes:
-        if not isinstance(guards.get(escape_class), str) or not guards[escape_class]:
-            raise RefactorFlowError(f"escape class `{escape_class}` needs guards[\"{escape_class}\"] (run the ratchet)")
+    require_escape_guards(findings, guards)
 
     verdict = refactor_log.get("result") or ("NEEDS CHANGES" if findings else "PASS")
     if not isinstance(verdict, str):
         raise RefactorFlowError("`result` must be a string")
 
-    targets = refactor_log.get("target") or []
-    if not isinstance(targets, list) or not all(isinstance(item, str) and item for item in targets):
-        raise RefactorFlowError("`target` must be a list of paths")
-    if finder and mode in ("audit", "simplify") and not targets:
-        raise RefactorFlowError("`target` (list of dirs or files) is required in audit and simplify mode")
+    targets = validated_targets(refactor_log, finder, mode)
 
     handoff = refactor_log.get("handoff")
     if mode == "audit" and handoff:
@@ -682,37 +715,48 @@ def read_modifier(refactor_log):
 
 def build_writes(mode, base, validated_log):
     """Every row this log call writes, as (writer script, key=value pairs)."""
-    findings, guards, finder = validated_log["findings"], validated_log["guards"], validated_log["finder"]
-    scope = "branch-exit" if mode == "branch" else "standalone"
     writes = []
-
     # Escape rows: one per distinct smell the model marked; the guard is per class group.
     if mode in ("branch", "simplify"):
-        for finding in findings:
-            if not finding.get("escape"):
-                continue
-            pairs = ["stage_found=refactor", "gate_missed=review", f"class={finding['class']}",
-                     f"severity={finding['severity']}", f"lane={validated_log['lane']}",
-                     f"guard={guards[finding['class']]}", f"miss_reason={finding['miss_reason']}",
-                     f"desc={finding['desc']}", f"file={finding['file']}"]
-            if finding["line"]:
-                pairs.append(f"line={finding['line']}")
-            writes.append((LOG_ESCAPE, pairs))
+        writes += escape_row_writes(validated_log)
 
     # Finder rows: every mode with a dispatched finder, even empty-handed.
-    if finder:
-        diff_loc = diff_loc_for(mode, base, validated_log["targets"])
-        common = [f"lane={validated_log['lane']}", f"scope={scope}", "phase=-", "iter=0"]
-        writes.append((LOG_FINDING, ["kind=run", *common, f"gate={finder}", f"n_findings={len(findings)}",
-                                     f"diff_loc={diff_loc}", f"result={validated_log['verdict']}"]))
-        for finding in findings:
-            pairs = ["kind=finding", *common, f"gate={finder}",
-                     f"disposition={finding['disposition']}", f"class={finding['class']}",
-                     f"file={finding['file']}", f"line={finding['line']}",
-                     f"actioned={finding['actioned']}", f"desc={finding['desc']}"]
-            if finding.get("ruled_by"):
-                pairs.append(f"ask_decided_by={finding['ruled_by']}")
-            writes.append((LOG_FINDING, pairs))
+    if validated_log["finder"]:
+        writes += finder_row_writes(mode, base, validated_log)
+    return writes
+
+
+def escape_row_writes(validated_log):
+    escape_findings = [finding for finding in validated_log["findings"] if finding.get("escape")]
+    return [(LOG_ESCAPE, escape_row_pairs(finding, validated_log)) for finding in escape_findings]
+
+
+def escape_row_pairs(finding, validated_log):
+    pairs = ["stage_found=refactor", "gate_missed=review", f"class={finding['class']}",
+             f"severity={finding['severity']}", f"lane={validated_log['lane']}",
+             f"guard={validated_log['guards'][finding['class']]}", f"miss_reason={finding['miss_reason']}",
+             f"desc={finding['desc']}", f"file={finding['file']}"]
+    if finding["line"]:
+        pairs.append(f"line={finding['line']}")
+    return pairs
+
+
+def finder_row_writes(mode, base, validated_log):
+    """The finder's run row, then one row per finding."""
+    findings, finder = validated_log["findings"], validated_log["finder"]
+    scope = "branch-exit" if mode == "branch" else "standalone"
+    diff_loc = diff_loc_for(mode, base, validated_log["targets"])
+    common = [f"lane={validated_log['lane']}", f"scope={scope}", "phase=-", "iter=0"]
+    writes = [(LOG_FINDING, ["kind=run", *common, f"gate={finder}", f"n_findings={len(findings)}",
+                             f"diff_loc={diff_loc}", f"result={validated_log['verdict']}"])]
+    for finding in findings:
+        pairs = ["kind=finding", *common, f"gate={finder}",
+                 f"disposition={finding['disposition']}", f"class={finding['class']}",
+                 f"file={finding['file']}", f"line={finding['line']}",
+                 f"actioned={finding['actioned']}", f"desc={finding['desc']}"]
+        if finding.get("ruled_by"):
+            pairs.append(f"ask_decided_by={finding['ruled_by']}")
+        writes.append((LOG_FINDING, pairs))
     return writes
 
 
@@ -770,11 +814,17 @@ def record_written(input_path, digest):
         os.replace(staged.name, path)
 
 
+class RowCounts(NamedTuple):
+    escapes: int
+    runs: int
+    findings: int
+
+
 def count_rows(writes):
     escapes = sum(1 for script, _ in writes if script == LOG_ESCAPE)
     runs = sum(1 for script, pairs in writes if script == LOG_FINDING and pairs[0] == "kind=run")
     findings = sum(1 for script, pairs in writes if script == LOG_FINDING and pairs[0] == "kind=finding")
-    return escapes, runs, findings
+    return RowCounts(escapes, runs, findings)
 
 
 def write_rows(input_path, pending):
@@ -833,6 +883,17 @@ def log_next(validated_log, mode):
                      "added, else done.")
 
 
+def pending_rows(root, input_path, writes):
+    """The (script, pairs, digest) of each row not yet written for this input file."""
+    already_written = written_digests(input_path)
+    pending = []
+    for script, pairs in writes:
+        digest = row_hash(root, input_path, script, pairs)
+        if digest not in already_written:
+            pending.append((script, pairs, digest))
+    return pending
+
+
 def log_verb(opts):
     root = require_repo()
     refactor_log = read_refactor_log(opts.input)
@@ -853,17 +914,12 @@ def log_verb(opts):
     check_writer_rows(writes)
 
     input_path = str(Path(opts.input).resolve())
-    already_written = written_digests(input_path)
-    pending = []
-    for script, pairs in writes:
-        digest = row_hash(root, input_path, script, pairs)
-        if digest not in already_written:
-            pending.append((script, pairs, digest))
+    pending = pending_rows(root, input_path, writes)
     skipped = len(writes) - len(pending)
 
-    escapes, runs, findings = count_rows([(script, pairs) for script, pairs, _ in pending])
-    print(f"## Logging ({opts.mode}): {escapes} escape row(s), {runs} finder run row, {findings} finding "
-          f"row(s); {skipped} already logged, skipped.")
+    counts = count_rows([(script, pairs) for script, pairs, _ in pending])
+    print(f"## Logging ({opts.mode}): {counts.escapes} escape row(s), {counts.runs} finder run row, "
+          f"{counts.findings} finding row(s); {skipped} already logged, skipped.")
 
     if validated_log["handoff"]:
         print()

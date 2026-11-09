@@ -1,5 +1,6 @@
 """Checks for the scripted fix_induced tag: lib/diff_ranges.py reads the lines a diff changes, and
-review/review_loop_fix_induced.py plus review_loop_script.telemetry tag a round-two finding from the fix before it."""
+review/review_loop_fix_induced.py plus review_loop_script.write_telemetry tag a round-two finding
+from the fix before it."""
 import difflib
 import importlib.util
 import pathlib
@@ -110,7 +111,8 @@ class TelemetryWiringTest(unittest.TestCase):
             return 0, ""
 
         with mock.patch.object(self.loop_script, "log_call", side_effect=record):
-            self.loop_script.telemetry("/repo", "sess", "lane", [], iter_number, tallies, [row], self.out)
+            run = self.loop_script.TelemetryRun("sess", "lane", [], iter_number, tallies, [row], self.out)
+            self.loop_script.write_telemetry("/repo", run)
         return [cmd for cmd in calls if "kind=finding" in cmd]
 
     def test_a_round_two_finding_in_the_fix_gets_yes_and_one_outside_gets_no(self):

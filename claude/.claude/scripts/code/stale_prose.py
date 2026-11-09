@@ -24,6 +24,7 @@ import json
 import pathlib
 import re
 import sys
+from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
 import script_utils
@@ -88,6 +89,12 @@ class GitError(Exception):
     pass
 
 
+class Report(NamedTuple):
+    printed: list
+    shown_rows: list
+    left_out: int
+
+
 def git_stdout(root, *args, ok_codes=(0,)):
     """The standard output of `git -c core.quotepath=off <args>` run in root, decoded as UTF-8 with no newline
     translation. Raises GitError on any other exit."""
@@ -115,12 +122,18 @@ def declared_in(hunks, side, suffix, comment_numbers):
     """{name: [declaration lines]} for the names declared on the `removed` or `added` lines of a file's hunks. A
     comment line of its file, or a string line of a Python file (its number is in comment_numbers), declares
     nothing."""
-    lines = [text for hunk in hunks for number, text in getattr(hunk, side) if number not in comment_numbers]
     declarations = {}
-    for text in lines:
-        for name in declared_names(text, suffix):
-            declarations.setdefault(name, []).append(text)
+    for hunk in hunks:
+        code_lines = [text for number, text in getattr(hunk, side) if number not in comment_numbers]
+        for text in code_lines:
+            add_declared(declarations, text, suffix)
     return declarations
+
+
+def add_declared(declarations, text, suffix):
+    """Add the line to the declaration lines of each name it declares."""
+    for name in declared_names(text, suffix):
+        declarations.setdefault(name, []).append(text)
 
 
 def merge_declarations(pooled, declarations):
@@ -137,8 +150,12 @@ def old_literals_of_value_only_change(removed_lines, added_lines):
     if masked_removed != masked_added:
         return []
 
-    removed_literals = {literal for text in removed_lines for literal in source_text.literals_of(text) if literal}
-    added_literals = {literal for text in added_lines for literal in source_text.literals_of(text)}
+    removed_literals = set()
+    for text in removed_lines:
+        removed_literals.update(literal for literal in source_text.literals_of(text) if literal)
+    added_literals = set()
+    for text in added_lines:
+        added_literals.update(source_text.literals_of(text))
     return sorted(removed_literals - added_literals)
 
 
@@ -151,7 +168,10 @@ def stripped_run(side_lines):
 
 def side_runs(diff_files, side):
     """The stripped run of every hunk's `removed` or `added` side in the diff."""
-    return [stripped_run(getattr(hunk, side)) for file_diff in diff_files for hunk in file_diff.hunks]
+    runs = []
+    for file_diff in diff_files:
+        runs.extend(stripped_run(getattr(hunk, side)) for hunk in file_diff.hunks)
+    return runs
 
 
 def only_moved(side_lines, suffix, other_side_runs):
@@ -168,11 +188,19 @@ def only_moved(side_lines, suffix, other_side_runs):
     return any(run in other_run for other_run in other_side_runs)
 
 
+def side_names(side_lines, suffix):
+    """The names declared on the lines of one hunk side."""
+    names = set()
+    for _, text in side_lines:
+        names.update(declared_names(text, suffix))
+    return names
+
+
 def renames_in_place(hunk, suffix):
     """True when both sides of a hunk declare and the names differ: two functions that swap names over their bodies
     show as such hunks, whose lines each reappear in the other."""
-    removed_names = {name for _, text in hunk.removed for name in declared_names(text, suffix)}
-    added_names = {name for _, text in hunk.added for name in declared_names(text, suffix)}
+    removed_names = side_names(hunk.removed, suffix)
+    added_names = side_names(hunk.added, suffix)
     return bool(removed_names and added_names and removed_names != added_names)
 
 
@@ -272,14 +300,22 @@ def changed_symbols(diff_files, root, base):
         labels.update(dict.fromkeys(names, label))
 
     kept = {name: label for name, label in labels.items() if len(name) >= MIN_NAME_LENGTH}
-    symbols = dict(sorted(kept.items(), key=lambda pair: (SYMBOL_ORDER.index(pair[1]), pair[0])))
+    ordered = sorted(kept.items(), key=lambda pair: (SYMBOL_ORDER.index(pair[1]), pair[0]))
+    symbols = dict(ordered)
+    return symbols, value_only_literals(symbols, removed, added)
+
+
+def value_only_literals(symbols, removed, added):
+    """{name: old literals} for each `changed` symbol whose declaration lines differ only in literal values."""
     old_literals = {}
     for name, label in symbols.items():
-        if label == "changed":
-            literals = old_literals_of_value_only_change(removed[name], added[name])
-            if literals:
-                old_literals[name] = literals
-    return symbols, old_literals
+        if label != "changed":
+            continue
+
+        literals = old_literals_of_value_only_change(removed[name], added[name])
+        if literals:
+            old_literals[name] = literals
+    return old_literals
 
 
 def name_pattern(name):
@@ -296,14 +332,25 @@ def grep_lines(root, names):
     found = {}
     pathspecs = [f"*{suffix}" for suffix in SEARCHED_SUFFIXES]
     for start in range(0, len(names), NAMES_PER_GREP):
-        patterns = [argument for name in names[start:start + NAMES_PER_GREP] for argument in ("-e", name)]
+        patterns = []
+        for name in names[start:start + NAMES_PER_GREP]:
+            patterns.extend(("-e", name))
         output = git_stdout(root, "grep", "-n", "-w", "-I", "-F", "--null", "--no-color", *patterns, "--", *pathspecs,
                             *PLAN_EXCLUDES, ok_codes=(0, 1))
-        for row in output.split("\n"):
-            path, _, rest = row.partition("\0")
-            number, _, text = rest.partition("\0")
-            if number.isdigit():
-                found[(path, int(number))] = text
+        found.update(parse_grep_rows(output))
+    return found
+
+
+def parse_grep_rows(output):
+    """{(path, line number): text} for the `--null` rows of `git grep -n` output."""
+    found = {}
+    for row in output.split("\n"):
+        path, _, rest = row.partition("\0")
+        number, _, text = rest.partition("\0")
+        if not number.isdigit():
+            continue
+
+        found[(path, int(number))] = text
     return found
 
 
@@ -329,8 +376,10 @@ def holds_old_literal(text, literals):
 def prose_hits(root, symbols, diff_files, old_literals):
     """{name: [(path, line number, text)]} for the prose lines that name each symbol. A symbol in old_literals
     changed only in a literal value: only its lines that also hold one of those literals count."""
-    added_lines = {(file_diff.path, number) for file_diff in diff_files for hunk in file_diff.hunks
-                   for number, _ in hunk.added}
+    added_lines = set()
+    for file_diff in diff_files:
+        for hunk in file_diff.hunks:
+            added_lines.update((file_diff.path, number) for number, _ in hunk.added)
     candidates = grep_lines(root, list(symbols))
     patterns = {name: name_pattern(name) for name in symbols}
     comment_cache = {}
@@ -343,13 +392,18 @@ def prose_hits(root, symbols, diff_files, old_literals):
             continue
 
         declared = declared_names(text, suffix_of(path))
-        for name in matched:
-            if name in declared:
-                continue
-
-            if name not in old_literals or holds_old_literal(text, old_literals[name]):
-                hits.setdefault(name, []).append((path, number, text.strip()))
+        counted = [name for name in matched if name not in declared and counts_for(name, text, old_literals)]
+        for name in counted:
+            hits.setdefault(name, []).append((path, number, text.strip()))
     return hits
+
+
+def counts_for(name, text, old_literals):
+    """False when the symbol changed only in a literal value and the line holds none of the old literals."""
+    if name not in old_literals:
+        return True
+
+    return holds_old_literal(text, old_literals[name])
 
 
 def hit_key(path, text):
@@ -382,11 +436,14 @@ def ordered_hits(symbols, hits, shown):
         symbol_rows.sort(key=lambda row: not row[4])
         rows.append(symbol_rows)
     rows.sort(key=lambda symbol_rows: not any(row[4] for row in symbol_rows))
-    return [row for symbol_rows in rows for row in symbol_rows]
+    ordered = []
+    for symbol_rows in rows:
+        ordered.extend(symbol_rows)
+    return ordered
 
 
 def report_lines(symbols, rows):
-    """(the printed lines, the rows printed, the number of rows left out). A symbol heading counts as a line."""
+    """A Report: the printed lines, the rows printed, the number of rows left out. A symbol heading counts as a line."""
     printed = []
     shown_rows = []
     heading_of = None
@@ -402,7 +459,7 @@ def report_lines(symbols, rows):
         marker = "[new] " if is_new else ""
         printed.append(f"{marker}{path}:{number}: {script_utils.one_line(text, TEXT_LIMIT)}")
         shown_rows.append(row)
-    return printed, shown_rows, len(rows) - len(shown_rows)
+    return Report(printed, shown_rows, len(rows) - len(shown_rows))
 
 
 def run(base):
@@ -428,12 +485,12 @@ def run(base):
         print(NOTHING_NEW)
         return 0
 
-    printed, shown_rows, left_out = report_lines(symbols, rows)
+    report = report_lines(symbols, rows)
     print(HEADER)
-    print("\n".join(printed))
-    if left_out:
-        print(f"{left_out} more hit(s) not shown.")
-    shown_now = shown | {hit_key(path, text) for _, path, _, text, _ in shown_rows}
+    print("\n".join(report.printed))
+    if report.left_out:
+        print(f"{report.left_out} more hit(s) not shown.")
+    shown_now = shown | {hit_key(path, text) for _, path, _, text, _ in report.shown_rows}
     script_utils.write_text_atomically(state_path, json.dumps({"base": base_sha, "shown": sorted(shown_now)}, indent=1))
     return 1
 

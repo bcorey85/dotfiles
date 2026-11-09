@@ -33,11 +33,12 @@ import plan_format
 import review_fix
 import script_utils
 from code_wait import LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, phase_dir
+from review_fix_state import REVIEW_FIX_COMMAND
 from review_loop_prompt_file import REVIEWERS_MAIN, loop_script_command, write_script_prompt
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
 WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
-DEFER_COMMAND = "python3 ~/.claude/scripts/review/review_fix.py defer"
+DEFER_COMMAND = f"{REVIEW_FIX_COMMAND} defer"
 AGENT_PREFIX = "loop-script-"
 NO_PLAN = gate_commands.NO_PLAN
 

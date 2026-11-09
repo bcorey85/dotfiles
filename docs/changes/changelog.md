@@ -7,9 +7,15 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-881 changes
+882 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
+
+## Week of 2026-11-09
+
+### Fixed
+
+* [review loop: an accepted ask relaunches the review as a fix run, so its converged hand-back earns commit credit](notes/2026-11-09-review-loop-an-accepted-ask-relaunches-the-review.md) [script/review-fix, script/review-launch, skill/review-fork-run] When the user accepts or modifies an ask, `review_fix.py asks-done` writes those asks to a findings file and prints `ACTION: redispatch` with a `launch --fix` line that carries the first run's flags. The loop's fix coder applies the asks, a review round covers them, and the converged hand-back earns commit credit. All rejected ends with `ACTION: done`.
 
 ## Week of 2026-11-02
 

@@ -15,19 +15,23 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import sys
 import time
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
+SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
+sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "review")]
 import script_utils
+from review_fix_state import REVIEW_FIX_COMMAND
 
 REQUESTS_FOLDER = "reviewer-requests"
 PID_FILE = "loop.pid"
 POLL_SECONDS = 2.0
 DISPATCH_ACTION = "dispatch-reviewer"
 WAIT_COMMAND = "python3 ~/.claude/scripts/review/reviewer_dispatch.py wait"
-PACKET_COMMAND = "python3 ~/.claude/scripts/review/review_fix.py packet"
-# The packet arguments of a run `review_fix.py launch` started: {"packet_args": [...]}.
+PACKET_COMMAND = f"{REVIEW_FIX_COMMAND} packet"
+# The packet arguments and the relaunch flags of a run `review_fix.py launch` started:
+# {"packet_args": [...], "relaunch_args": [...]}.
 LAUNCH_FILE = "launch.json"
 # `review_fix.py launch` keeps each run at <git path of LAUNCH_STATE_NAME>/loop-script/<agent id>.
 LAUNCH_STATE_NAME = "review-script"
@@ -196,17 +200,23 @@ def waiting_launch_lines(repo):
     return lines
 
 
+def read_launch_record(launch_file, key):
+    """The value of `key` in a launch record. Raises ManifestError naming the file when it is unreadable or lacks
+    the key."""
+    try:
+        return json.loads(pathlib.Path(launch_file).read_text())[key]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ManifestError(f"{launch_file}: {error!r}; expected a launch record with {key}") from error
+
+
 def packet_command(loop_dir):
     """The packet command of the run: `packet` plus the arguments `launch` saved in <loop dir>/launch.json, or
     `--skill review` for a run with no such file (one /code started)."""
     launch_file = pathlib.Path(loop_dir) / LAUNCH_FILE
     if not launch_file.is_file():
         return f"{PACKET_COMMAND} --skill review"
-    try:
-        packet_args = json.loads(launch_file.read_text())["packet_args"]
-    except (json.JSONDecodeError, KeyError, TypeError) as error:
-        raise ManifestError(f"{launch_file}: {error!r}; expected {{\"packet_args\": [...]}}") from error
-    return " ".join([PACKET_COMMAND, *packet_args])
+    packet_args = read_launch_record(launch_file, "packet_args")
+    return " ".join([PACKET_COMMAND, shlex.join(packet_args)])
 
 
 def command_wait(loop_dir):

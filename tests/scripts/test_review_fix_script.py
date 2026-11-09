@@ -2,6 +2,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,7 @@ import handback_store
 import review_loop_script
 import reviewed_tree
 import script_utils
+from review_fix_asks import LAUNCH_COMMAND
 
 LOGGED_MARK = "LOGGED / POSTED"
 
@@ -1132,6 +1134,24 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("accepted|rejected|modified", output)
         self.assertEqual(self.ledger_writes(), [])
 
+    def test_an_accepted_plan_impact_ask_prints_its_change_as_a_deviation_line_with_no_fix_run(self):
+        plan_ask = {**RETRY_ASK, "question": "PLAN-IMPACT: the retry cap contradicts the plan?",
+                    "change": "move the retry cap into the config"}
+        self.packet(packet_text(WITH_ASK_FIELDS, ask=[plan_ask]))
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertIn("## Plan Deviations", output)
+        self.assertIn("  move the retry cap into the config", output)
+        self.assertIn("Ruled by the session, not the user", output)
+
+    def test_a_rejected_plan_impact_ask_prints_no_deviation_line(self):
+        plan_ask = {**RETRY_ASK, "question": "PLAN-IMPACT: the retry cap contradicts the plan?"}
+        self.packet(packet_text(WITH_ASK_FIELDS, ask=[plan_ask]))
+        code, output = self.run_script(["asks-done", "rejected"])
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("## Plan Deviations", output)
+
     def test_asks_done_by_session_logs_who_ruled_and_says_so(self):
         self.packet(WITH_ASK)
         code, output = self.run_script(["asks-done", "--by", "session", "accepted", "rejected"])
@@ -2152,7 +2172,40 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         self.assertEqual(waited.returncode, 0, waited.stderr)
         self.assertEqual(waited.stdout.strip(), "The review loop script finished. Run "
-                         "`python3 ~/.claude/scripts/review/review_fix.py packet --skill review --lane none` now.")
+                         "`python3 ~/.claude/scripts/review/review_fix.py packet --skill review --lane none "
+                         f"--launch {loop_dir / 'launch.json'}` now.")
+
+    def test_the_packet_command_keeps_a_repo_path_with_a_space_as_one_argument(self):
+        self.use_repo_with_a_space()
+        code, output = self.launch("--detach")
+        self.assertEqual(code, 0, output)
+        loop_dir, _prompt, _packet_args = self.launched_run()
+        self.assertIn(" ", str(loop_dir))
+
+        waited = subprocess.run([sys.executable, str(toolkit_paths.CODE_DIR / "code_wait.py"), "review", "--loop",
+                                 str(loop_dir)], cwd=self.repo, capture_output=True, text=True, check=False)
+
+        self.assertEqual(waited.returncode, 0, waited.stderr)
+        packet_command = waited.stdout.split("`")[1]
+        self.assertEqual(shlex.split(packet_command)[2:],
+                         ["packet", "--skill", "review", "--lane", "none", "--launch",
+                          str(loop_dir / "launch.json")])
+
+    def use_repo_with_a_space(self):
+        self.repo = self.temp_root / "my repo"
+        self.repo.mkdir()
+        self.git("init", "-q")
+        (self.repo / "README.md").write_text("hi\n")
+        self.git("add", "README.md")
+        self.git("commit", "-q", "-m", "init")
+
+    def test_the_asks_done_launch_line_keeps_a_repo_path_with_a_space_as_one_argument(self):
+        self.use_repo_with_a_space()
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")
+        self.assertEqual(code, 0, output)
+        launch_args = shlex.split(output.splitlines()[-1])[2:]
+        self.assertEqual(launch_args[launch_args.index("--repo") + 1], str(self.repo.resolve()))
 
     def launched_run(self):
         loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"
@@ -2169,7 +2222,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("packet --skill fix --lane code", output.splitlines()[-1])
 
         loop_dir, prompt, packet_args = self.launched_run()
-        self.assertEqual(packet_args, ["--skill", "fix", "--lane", "code"])
+        self.assertEqual(packet_args, ["--skill", "fix", "--lane", "code", "--launch", str(loop_dir / "launch.json")])
         findings_json = loop_dir / "findings.json"
         self.assertIn("mode: fix-first\ncaller: fix\nlane: code\n", prompt)
         self.assertIn(f"findings: {findings_json}\nno-review: yes\n", prompt)
@@ -2198,10 +2251,349 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("packet --skill review --scope branch-exit --lane none", output.splitlines()[-1])
 
-        _loop_dir, prompt, packet_args = self.launched_run()
-        self.assertEqual(packet_args, ["--skill", "review", "--scope", "branch-exit", "--lane", "none"])
+        loop_dir, prompt, packet_args = self.launched_run()
+        self.assertEqual(packet_args, ["--skill", "review", "--scope", "branch-exit", "--lane", "none", "--launch",
+                                       str(loop_dir / "launch.json")])
         self.assertIn(f"base: {base}\nfiles: README.md\nreviewer-model: haiku\niter: 1\n", prompt)
         self.assertIn("Review only these files: README.md.", prompt)
+        relaunch_args = json.loads((loop_dir / "launch.json").read_text())["relaunch_args"]
+        self.assertEqual(relaunch_args, ["--repo", str(self.repo.resolve()), "--base", "HEAD", "--file", "README.md",
+                                         "--fast", "--lane", "none", "--handoff", str(loop_dir / "handoff.txt")])
+
+    def test_launch_with_deep_records_it_in_the_relaunch_args(self):
+        code, output = self.launch("--deep")
+        self.assertEqual(code, 0, output)
+        loop_dir, _prompt, _packet_args = self.launched_run()
+        relaunch_args = json.loads((loop_dir / "launch.json").read_text())["relaunch_args"]
+        self.assertEqual(relaunch_args, ["--repo", str(self.repo.resolve()), "--deep", "--lane", "none", "--handoff",
+                                         str(loop_dir / "handoff.txt")])
+
+    def test_launch_with_two_files_records_each_in_the_relaunch_args_in_order(self):
+        (self.repo / "second.txt").write_text("second\n")
+        subprocess.run(["git", "add", "second.txt"], cwd=self.repo, check=True)
+        code, output = self.launch("--file", "README.md", "--file", "second.txt")
+        self.assertEqual(code, 0, output)
+        loop_dir, _prompt, _packet_args = self.launched_run()
+        relaunch_args = json.loads((loop_dir / "launch.json").read_text())["relaunch_args"]
+        self.assertEqual(relaunch_args, ["--repo", str(self.repo.resolve()), "--file", "README.md", "--file",
+                                         "second.txt", "--lane", "none", "--handoff",
+                                         str(loop_dir / "handoff.txt")])
+
+    def test_packet_with_a_launch_file_that_holds_no_relaunch_args_stops(self):
+        bad_files = {
+            "missing": None,
+            "no key": json.dumps({"packet_args": []}),
+            "not a list": json.dumps({"relaunch_args": "--fast"}),
+            "not strings": json.dumps({"relaunch_args": ["--fast", 3]}),
+        }
+        for label, content in bad_files.items():
+            with self.subTest(label):
+                launch_file = self.temp_root / f"{label.replace(' ', '-')}.json"
+                if content is not None:
+                    launch_file.write_text(content)
+                code, output = self.run_script(["packet", "--skill", "review", "--launch", str(launch_file)],
+                                               CLEAN_EMPTY)
+                self.assertEqual(code, 2, output)
+                self.assertIn(str(launch_file), output)
+                self.assertIn("relaunch_args", output)
+
+    def loop_dirs(self):
+        """The launched runs' loop dirs, oldest first: their ids sort by time."""
+        loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"
+        return sorted(loop_root.glob("review-script-*"))
+
+    def launched_review_with_asks(self, home):
+        """Launches a review that hands back WITH_ASK and runs its packet. Returns the packet arguments."""
+        handoff = self.temp_root / "handoff.md"
+        handoff.write_text("Review the greeting change.\n")
+        code, output = self.launch("--file", "README.md", "--handoff", str(handoff), message=WITH_ASK, HOME=home)
+        self.assertEqual(code, 0, output)
+        packet_command = output.splitlines()[-1].split("`")[1]
+        packet_args = shlex.split(packet_command)[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: present-asks", output)
+        return packet_args
+
+    def answer_asks_of_a_launched_review(self, home, *outcomes, **extra):
+        """Launches a review that hands back WITH_ASK, runs its packet, and answers the asks. Returns asks-done's
+        (exit code, output)."""
+        self.launched_review_with_asks(home)
+        return self.run_script(["asks-done", *outcomes], HOME=home, **extra)
+
+    def test_asks_done_retried_after_a_logging_failure_prints_done_and_no_second_fix_run(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected", FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertIn("ACTION: redispatch", output)
+        self.assertIn("Failures", output)
+        first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(first_launch_lines), 1, output)
+        findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+        findings_before = findings_file.read_text()
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertIn("The first asks-done printed this fix run; run it now unless it already ran.", output)
+        self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
+                         first_launch_lines)
+        self.assertEqual(findings_file.read_text(), findings_before)
+
+    def test_a_packet_run_again_after_a_logging_failure_keeps_the_fix_run_printed_once(self):
+        home = str(self.temp_root / "home")
+        packet_args = self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home, FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertIn("ACTION: redispatch", output)
+        first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(first_launch_lines), 1, output)
+
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
+                         first_launch_lines)
+
+    def test_a_packet_run_again_without_launch_keeps_the_launch_record_for_asks_done(self):
+        home = str(self.temp_root / "home")
+        packet_args = self.launched_review_with_asks(home)
+        launch_index = packet_args.index("--launch")
+        args_without_launch = packet_args[:launch_index] + packet_args[launch_index + 2:]
+
+        code, output = self.run_script(args_without_launch, HOME=home)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("stop-no-launch-record", output)
+        self.assertTrue([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)])
+
+    def test_a_different_packet_run_with_no_launch_drops_the_earlier_runs_launch_record(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        code, output = self.packet(self.ONE_ASK, HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("relaunch_args", self.stored_state())
+        new_id = self.stored_state()["packet_id"]
+
+        code, output = self.run_script(["asks-done", "--packet", new_id, "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop-no-launch-record", output)
+
+    def test_a_different_packet_run_with_its_own_launch_uses_that_launches_relaunch_args(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        code, output = self.launch("--file", "README.md", message=self.ONE_ASK, HOME=home)
+        self.assertEqual(code, 0, output)
+        second_loop = self.loop_dirs()[-1]
+        packet_args = shlex.split(output.splitlines()[-1].split("`")[1])[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+        new_id = self.stored_state()["packet_id"]
+
+        code, output = self.run_script(["asks-done", "--packet", new_id, "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(launch_lines), 1, output)
+        self.assertIn(str(second_loop / "handoff.txt"), launch_lines[0])
+
+    def test_a_plan_impact_ask_accepted_alone_writes_no_findings_and_ends_with_done(self):
+        impact_ask = ask_entry("PLAN-IMPACT: queue is at-most-once", "a.ts:1", question="adopt?", change="adopt it",
+                               ask_class="plan-drift")
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[impact_ask]))
+        code, output = self.run_script(["asks-done", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertFalse((script_utils.git_path(self.repo, "review-fix") / "ask-findings.md").exists())
+
+    def test_a_plan_impact_ask_is_left_out_of_the_findings_beside_an_accepted_ask(self):
+        impact_ask = ask_entry("PLAN-IMPACT: queue is at-most-once", "a.ts:1", question="adopt?", change="adopt it",
+                               ask_class="plan-drift")
+        real_ask = ask_entry("real ask", "b.ts:2", finding_id="a1b2c3d4e5f60004")
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[impact_ask, real_ask]))
+        self.run_script(["asks-done", "accepted", "accepted"])
+        findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+        self.assertEqual(findings_file.read_text(), "- b.ts:2 cap? Proposed change: cap at 3\n")
+
+    def test_a_long_question_and_a_multi_line_note_reach_the_findings_file_whole_on_one_item(self):
+        long_question = "why " * 100 + "end"
+        long_ask = ask_entry("long", "b.ts:2", finding_id="a1b2c3d4e5f60004", question=long_question,
+                             change="change " * 60 + "done")
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[long_ask]))
+        self.run_script(["asks-done", "modified:first line\n  second line"])
+        findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+        findings = findings_file.read_text()
+        self.assertEqual(len(findings.splitlines()), 1, findings)
+        self.assertIn(long_question.strip(), findings)
+        self.assertIn("done The user changed it", findings)
+        self.assertTrue(findings.endswith("make this change in its place: first line second line\n"), findings)
+
+    def test_an_accepted_ask_relaunches_the_review_as_a_fix_run_whose_converged_hand_back_earns_commit_credit(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: redispatch", output)
+        self.assertNotIn("dispatch a coder", output)
+        first_loop = self.loop_dirs()[0]
+        findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+        self.assertEqual(findings_file.read_text(), "- src/retry.ts:10 Should retries be capped at 3 or configurable? "
+                         "Proposed change: cap retries at 3\n")
+        launch_line = output.splitlines()[-1]
+        self.assertEqual(shlex.split(launch_line)[2:], [
+            "launch", "--fix", str(findings_file), "--iter", "1", "--repo", str(self.repo.resolve()), "--file",
+            "README.md", "--lane", "none", "--handoff", str(first_loop / "handoff.txt"), "--detach"])
+
+        code, output = self.run_script(shlex.split(launch_line)[2:], HOME=home,
+                                       REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertEqual(code, 0, output)
+        fix_loop = self.loop_dirs()[-1]
+        waited = subprocess.run([sys.executable, str(toolkit_paths.CODE_DIR / "code_wait.py"), "review", "--loop",
+                                 str(fix_loop)], cwd=self.repo, capture_output=True, text=True, check=False)
+        self.assertEqual(waited.returncode, 0, waited.stderr)
+        prompt = (fix_loop / "prompt.txt").read_text()
+        self.assertIn("mode: fix-first\ncaller: fix\nlane: none\n", prompt)
+        self.assertIn("files: README.md\n", prompt)
+        self.assertIn("iter: 1\n", prompt)
+        self.assertIn("Review the greeting change.", prompt)
+        self.assertEqual(json.loads((fix_loop / "findings.json").read_text()),
+                         ["src/retry.ts:10 Should retries be capped at 3 or configurable? Proposed change: cap "
+                          "retries at 3"])
+
+        packet_command = waited.stdout.split("`")[1]
+        packet_args = shlex.split(packet_command)[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("COMMIT CREDIT", output)
+        self.assertIn("ACTION: render-and-finish", output)
+        self.assertIsNone(self.false_clean_reason())
+        with unittest.mock.patch.object(pathlib.Path, "home", return_value=pathlib.Path(home)):
+            self.assertTrue(reviewed_tree.is_reviewed(SESSION, self.repo))
+
+    def test_a_modified_ask_carries_the_users_change_into_the_findings_file(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "rejected", "modified:index tenant_id and region")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: redispatch", output)
+        findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+        self.assertEqual(findings_file.read_text(), "- src/db.ts:5 Add an index on tenant_id? Proposed change: add an "
+                         "index on tenant_id The user changed it; make this change in its place: index tenant_id "
+                         "and region\n")
+
+    def test_all_rejected_asks_end_the_run_with_no_fix_run(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "rejected", "rejected")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertFalse([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)])
+        self.assertFalse((script_utils.git_path(self.repo, "review-fix") / "ask-findings.md").exists())
+
+    def test_a_modified_ask_with_no_note_stops_and_logs_nothing(self):
+        self.packet(WITH_ASK)
+        writes_before = len(self.ledger_writes())
+        code, output = self.run_script(["asks-done", "accepted", "modified"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("outcome 2 is modified with no note", output)
+        self.assertEqual(len(self.ledger_writes()), writes_before)
+
+    def test_an_accepted_ask_of_a_run_launch_did_not_start_stops_naming_the_findings_file(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+        findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+        self.assertIn("ACTION: stop-no-launch-record", output)
+        self.assertIn(str(findings_file), output)
+        self.assertTrue(findings_file.read_text().startswith("- src/retry.ts:10 "))
+
+    def test_asks_done_retried_after_a_logging_failure_with_no_launch_record_stops_again(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertIn("ACTION: stop-no-launch-record", output)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop-no-launch-record", output)
+        self.assertNotIn("ACTION: done", output)
+
+    def test_the_kept_packet_answered_by_id_keeps_its_launch_record_and_prints_the_fix_run_once(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        older_id = self.stored_state()["packet_id"]
+        code, output = self.packet(self.ONE_ASK, HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual([kept["packet_id"] for kept in self.stored_state()["waiting_packets"]], [older_id])
+
+        code, output = self.run_script(["asks-done", "--packet", older_id, "accepted", "rejected"], HOME=home,
+                                       FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: redispatch", output)
+        first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        self.assertEqual(len(first_launch_lines), 1, output)
+
+        code, output = self.run_script(["asks-done", "--packet", older_id, "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
+                         first_launch_lines)
+
+    def plan_impact_beside_a_real_ask(self, change):
+        impact_ask = ask_entry("PLAN-IMPACT: queue is at-most-once", "a.ts:1", question="adopt?", change=change,
+                               ask_class="plan-drift")
+        real_ask = ask_entry("real ask", "b.ts:2", finding_id="a1b2c3d4e5f60004")
+        return packet_text(CLEAN_EMPTY_FIELDS, ask=[impact_ask, real_ask])
+
+    def test_asks_done_retried_after_a_logging_failure_prints_the_plan_deviation_lines_once(self):
+        self.packet(self.plan_impact_beside_a_real_ask("adopt it"))
+        code, output = self.run_script(["asks-done", "accepted", "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertEqual(code, 0, output)
+        self.assertIn("## Plan Deviations", output)
+        self.assertIn("Failures", output)
+
+        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("## Plan Deviations", output)
+        self.assertNotIn("  adopt it", output)
+
+    def test_a_packet_run_again_after_a_logging_failure_prints_the_plan_deviation_lines_once(self):
+        packet_text_with_impact = self.plan_impact_beside_a_real_ask("adopt it")
+        self.packet(packet_text_with_impact)
+        code, output = self.run_script(["asks-done", "accepted", "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertIn("## Plan Deviations", output)
+
+        code, output = self.packet(packet_text_with_impact)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("## Plan Deviations", output)
+
+    def test_a_failed_findings_write_leaves_the_fix_run_unlatched_for_the_retry(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+        findings_file.mkdir(parents=True)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn(str(findings_file), output)
+        self.assertNotIn("asks_redispatched", self.stored_state())
+        self.assertEqual(self.ledger_writes(), [])
+
+        findings_file.rmdir()
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: redispatch", output)
+        self.assertTrue([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)])
+
+    def test_a_modified_plan_impact_ask_records_the_users_note_as_the_ruling(self):
+        self.packet(self.plan_impact_beside_a_real_ask("adopt it"))
+        code, output = self.run_script(["asks-done", "modified", "rejected"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("outcome 1 is modified with no note", output)
+
+        code, output = self.run_script(["asks-done", "modified:keep the queue but add a retry", "rejected"])
+        self.assertEqual(code, 0, output)
+        self.assertIn("keep the queue but add a retry", output)
+        self.assertNotIn("Adopted the proposed plan change.", output)
+        self.assertIn("  adopt it", output)
 
     def test_each_launch_reviews_the_working_tree_and_has_its_own_ids(self):
         loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"

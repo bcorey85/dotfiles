@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-881 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+882 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-08, [The review loop stays on the run's own files](notes/2026-11-08-the-review-loop-stays-on-the-run-s-own-files.md).
+Latest change: 2026-11-09, [review loop: an accepted ask relaunches the review as a fix run, so its converged hand-back earns commit credit](notes/2026-11-09-review-loop-an-accepted-ask-relaunches-the-review.md).
 
 ## Top gains
 

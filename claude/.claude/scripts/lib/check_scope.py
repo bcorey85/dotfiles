@@ -12,6 +12,7 @@ import os
 import pathlib
 import re
 import shlex
+from collections import namedtuple
 
 from shell_command import (
     and_steps_or_whole,
@@ -263,25 +264,29 @@ def direct_check_scope(words, cwd=None):
         return "targeted" if labels or leave_out_words else "whole"
 
     for prefix in CHECK_RUN_PREFIXES:
-        if not matches_prefix(words, prefix):
-            continue
-        leave_out_flags = LEAVES_OUT_FLAGS["ruff"] if prefix == ["ruff", "check"] else CHECK_RUN_LEAVES_OUT_FLAGS
-        roots = test_root_directories(cwd) if cwd is not None and prefix in PYTEST_RUN_PREFIXES else frozenset()
-        named_roots = {os.path.normpath(word) for word in words[len(prefix):]} & roots
-        # Naming one root of several leaves the others out, so the roots are no scope only when all are named.
-        roots = roots if named_roots == roots else frozenset()
-        # A word that starts with a selection flag has its value attached (`-kfoo`, `--testNamePattern=foo`); the
-        # space form already reads its value as a scope word.
-        selection_flags = () if prefix == ["ruff", "check"] else SELECTION_VALUE_FLAGS
-        scope_words = [word for word in words[len(prefix):]
-                      if word.startswith(CHANGED_FILES_FLAGS) or word.startswith(selection_flags)
-                      or word.split("=", 1)[0] in leave_out_flags
-                      or not (word.startswith("-") or word == "run" or word in WHOLE_PACKAGE_PATHS
-                              or os.path.normpath(word) in roots)]
-        return "targeted" if scope_words else "whole"
+        if matches_prefix(words, prefix):
+            return check_run_scope(words, prefix, cwd)
     if names_unittest_module(words):
         return "targeted"
     return "targeted" if runner_names_part_of_suite(words) else "none"
+
+
+def check_run_scope(words, prefix, cwd):
+    # "targeted" or "whole" for a command that starts with one of CHECK_RUN_PREFIXES, as direct_check_scope reads it.
+    leave_out_flags = LEAVES_OUT_FLAGS["ruff"] if prefix == ["ruff", "check"] else CHECK_RUN_LEAVES_OUT_FLAGS
+    roots = test_root_directories(cwd) if cwd is not None and prefix in PYTEST_RUN_PREFIXES else frozenset()
+    named_roots = {os.path.normpath(word) for word in words[len(prefix):]} & roots
+    # Naming one root of several leaves the others out, so the roots are no scope only when all are named.
+    roots = roots if named_roots == roots else frozenset()
+    # A word that starts with a selection flag has its value attached (`-kfoo`, `--testNamePattern=foo`); the
+    # space form already reads its value as a scope word.
+    selection_flags = () if prefix == ["ruff", "check"] else SELECTION_VALUE_FLAGS
+    scope_words = [word for word in words[len(prefix):]
+                  if word.startswith(CHANGED_FILES_FLAGS) or word.startswith(selection_flags)
+                  or word.split("=", 1)[0] in leave_out_flags
+                  or not (word.startswith("-") or word == "run" or word in WHOLE_PACKAGE_PATHS
+                          or os.path.normpath(word) in roots)]
+    return "targeted" if scope_words else "whole"
 
 
 def names_unittest_module(words):
@@ -376,6 +381,16 @@ class CheckScan:
         return self.scope == "whole"
 
 
+# One simple command being scanned. written_command is the command as written, with its NAME=value words and any
+# docker call; words are the same command with the NAME=value words dropped, which is what gets judged.
+# recipe is (the make call, the target) while the command is a line of a make recipe.
+# A namedtuple, not a dataclass: dataclasses loads inspect, which slows every hook that imports this module.
+SimpleCommand = namedtuple("SimpleCommand", ["words", "written_command", "cwd", "depth", "recipe"])
+
+# The Makefile a target is read from, and what the scan of its targets shares.
+MakeTargetScan = namedtuple("MakeTargetScan", ["makefile", "makefile_key", "scan", "make_call"])
+
+
 def scan_command(command, cwd, scan, depth=0, recipe=None):
     # recipe is (the make call, the target) while the command is a line of a make recipe.
     try:
@@ -394,7 +409,8 @@ def scan_command(command, cwd, scan, depth=0, recipe=None):
         if moved_cwd is not None:
             cwd = moved_cwd
             continue
-        scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names)
+        simple_command = SimpleCommand(words, written_command, cwd, depth, recipe)
+        scan_words(simple_command, scan, assigned_names)
 
 
 def cwd_after_cd(words, cwd):
@@ -425,10 +441,9 @@ def dropped_assignment_names(words, peeled_words):
     return {word.split("=", 1)[0] for word in dropped_words if "=" in word and not word.startswith("-")}
 
 
-def scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names=frozenset()):
-    # written_command is the simple command as written, with its NAME=value words and any docker call; words are
-    # the same command with the NAME=value words dropped, which is what gets judged. assigned_names holds the names
-    # of the NAME=value words that came before the command.
+def scan_words(simple_command, scan, assigned_names=frozenset()):
+    # assigned_names holds the names of the NAME=value words that came before the command.
+    words = simple_command.words
     peeled_words = command_after_wrappers(words, peel_containers=False)
     assigned_names = assigned_names | dropped_assignment_names(words, peeled_words)
     words = peeled_words
@@ -451,19 +466,19 @@ def scan_words(words, written_command, cwd, scan, depth, recipe, assigned_names=
         if reaches_make:
             scan.note("unresolved")
             return
-        scan_make(words, written_command, cwd, scan, depth, recipe)
+        scan_make(simple_command._replace(words=words), scan)
         return
 
-    scope = direct_check_scope(words, cwd)
+    scope = direct_check_scope(words, simple_command.cwd)
     scan.note(scope)
-    if scope == "whole" and recipe:
-        scan.whole_recipes.append((*recipe, written_command))
+    if scope == "whole" and simple_command.recipe:
+        scan.whole_recipes.append((*simple_command.recipe, simple_command.written_command))
 
 
-def scan_make(words, written_command, cwd, scan, depth, recipe):
+def scan_make(simple_command, scan):
     from makefile_text import load_makefile, parse_make_arguments  # Loaded here: the hooks must start fast.
 
-    arguments = parse_make_arguments(words[1:])
+    arguments = parse_make_arguments(simple_command.words[1:])
     # Printing the commands (-n), answering a question (-q), touching the targets (-t) or printing help (-h) runs no
     # recipe line except one marked `+` or one that names `$(MAKE)`, which is not judged.
     if arguments.runs_no_recipe:
@@ -471,26 +486,31 @@ def scan_make(words, written_command, cwd, scan, depth, recipe):
 
     # A NAME=value argument can narrow the target, so the coder gate and a full-check receipt both let the call
     # through.
-    if arguments.has_variable_assignment or depth >= MAX_MAKE_DEPTH:
+    if arguments.has_variable_assignment or simple_command.depth >= MAX_MAKE_DEPTH:
         scan.note("unresolved")
         return
 
-    directory = pathlib.Path(cwd) / arguments.directory
+    directory = pathlib.Path(simple_command.cwd) / arguments.directory
     makefile = load_makefile(directory, arguments.files)
     if makefile is None:
         scan.note("unresolved")
         return
 
-    make_call = recipe[0] if recipe else written_command
+    recipe = simple_command.recipe
+    make_call = recipe[0] if recipe else simple_command.written_command
+    target_scan = MakeTargetScan(makefile, (directory, tuple(arguments.files)), scan, make_call)
     targets = arguments.targets or [makefile.default_goal]
     for target in targets:
         if target is None or not makefile.has_rule(target):
             scan.note("unresolved")
             continue
-        scan_target(makefile, (directory, tuple(arguments.files)), target, scan, depth + 1, make_call)
+        scan_target(target_scan, target, simple_command.depth + 1)
 
 
-def scan_target(makefile, makefile_key, target, scan, depth, make_call):
+def scan_target(target_scan, target, depth):
+    makefile = target_scan.makefile
+    makefile_key = target_scan.makefile_key
+    scan = target_scan.scan
     visit_key = (*makefile_key, target)
     # A target scanned at a shallower depth has had all of its prerequisites and recipe read.
     scanned_depth = scan.visited_depths.get(visit_key)
@@ -505,11 +525,11 @@ def scan_target(makefile, makefile_key, target, scan, depth, make_call):
     # A prerequisite with no rule is a file, not a target.
     for prerequisite in makefile.all_prerequisites(target):
         if makefile.has_rule(prerequisite):
-            scan_target(makefile, makefile_key, prerequisite, scan, depth + 1, make_call)
+            scan_target(target_scan, prerequisite, depth + 1)
 
     directory = makefile_key[0]
     for recipe_command in makefile.recipe_commands(target):
-        scan_command(recipe_command, directory, scan, depth, (make_call, target))
+        scan_command(recipe_command, directory, scan, depth, (target_scan.make_call, target))
 
 
 def scanned_command(command, cwd):

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-880 changes
+881 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -47,6 +47,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The review loop stays on the run's own files](notes/2026-11-08-the-review-loop-stays-on-the-run-s-own-files.md) [script/review-loop-script, script/code-review-start, skill/code, skill/handoff] In a tree where another session holds uncommitted edits, the review loop reviews and fixes only the run's own files: a `files:` list holds every other dirty file, `/code` holds the files dirty at the phase start that still hold the same bytes, and any coder edit to a held file is put back.
 * [pull_keep_index stops before touching a tree inside a stopped rebase](notes/2026-11-08-pull-keep-index-stops-before-touching-a-tree.md) [script/pull-keep-index] A run that starts inside a stopped rebase now exits 1 with the tree and index untouched, where it used to reset the tree hard and lose the local edits; every stop names the branch, the conflicted paths and both ways out.
 * [built-page driver rebuilds pages during a stash apply named by BUILT_PAGE_STASH](notes/2026-11-08-built-page-driver-rebuilds-pages-during-a-stash.md) [script/merge-built-page] agent-evals `bin/merge_built_page.py` treats the stash commit named in BUILT_PAGE_STASH like an autostash, so the re-apply in pull_keep_index.py rebuilds QUEUE.md in place of a text merge.
 * [pull_keep_index re-apply rebuilds built pages and keeps the staged split on a conflict](notes/2026-11-08-pull-keep-index-re-apply-rebuilds-built-pages-and.md) [script/pull-keep-index] The re-apply names its stash commit to the built-page driver, and a conflicting re-apply gives every other file back its staged or unstaged state and prints the conflicted paths and the command that resolves them.

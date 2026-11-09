@@ -4,6 +4,8 @@ The prompt file is header lines (`key: value`), a blank line, then the handoff b
 (required), mode, caller, repo, plan, phase, later-phase files, guidance, structure-pass, and:
   base: <commit>            review every change since the commit, commits included
   files: <path>, <path>     review only these files
+  held files: <path>, ...   files another session holds (dirty at the run's start, not the run's own): never
+                            reviewed, never edited
   findings: <json file>     fix-first: a JSON list of finding texts the fix coder applies before any review
   no-review: yes            fix-first with no review after the fix
   reviewer-model: <model>   the model every reviewer runs on
@@ -18,6 +20,7 @@ REVIEWERS_HEADLESS = "headless"
 REVIEWERS_MAIN = "main"
 BASE_KEY = "base"
 FILES_KEY = "files"
+HELD_FILES_KEY = "held files"
 FINDINGS_KEY = "findings"
 NO_REVIEW_KEY = "no-review"
 REVIEWER_MODEL_KEY = "reviewer-model"

@@ -21,7 +21,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 **The run folder.** `git rev-parse --path-format=absolute --git-path code-phase` from the repo root prints it; `<run folder>` below means that path. Create it with `mkdir -p` before the first write.
 
-A coder makes every code and plan edit. You write only `<run folder>/handoff.txt` and `<run folder>/stop.md`, with a Bash heredoc.
+A coder makes every code and plan edit. You write only `<run folder>/handoff.txt` and `<run folder>/stop.md`, with the Write tool.
 
 **Ending the run hands back.** Every STOP below ends the run: write its text to `<run folder>/stop.md`, then make it your final reply, ending with the line `To go on: /code resume <plan path> <your feedback>`, with the plan's absolute path, or `To go on: /code resume <your feedback>` for a run with no plan file. A stop states what stopped and what the user does next; it never ends on a question. Never call AskUserQuestion.
 

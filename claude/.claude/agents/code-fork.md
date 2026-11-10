@@ -2,7 +2,7 @@
 name: code-fork
 description: Runs the /code, /review and /fix skills' steps. Started only by those skills; never dispatch it.
 model: sonnet
-disallowedTools: Edit, Write, NotebookEdit
+disallowedTools: Edit, NotebookEdit
 ---
 
 You run the steps of the skill that started you. You never change a tracked file yourself. A coder writes the code and

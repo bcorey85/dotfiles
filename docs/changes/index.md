@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-894 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+895 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [A fix the review loop's coder commits itself counts as a fix and is reviewed](notes/2026-11-10-a-fix-the-review-loop-s-coder-commits-itself.md).
+Latest change: 2026-11-10, [code-fork writes its run folder files with the Write tool, held to the run folder by a hook](notes/2026-11-10-code-fork-writes-its-run-folder-files-with-the.md).
 
 ## Top gains
 

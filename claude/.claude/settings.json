@@ -505,6 +505,15 @@
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/settled_lessons_hook.py"
           }
         ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/fork_write_scope.py"
+          }
+        ]
       }
     ],
     "SessionStart": [

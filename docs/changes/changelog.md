@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-898 changes
+899 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -23,6 +23,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [pull_keep_index lets a branch's first push run](notes/2026-11-10-pull-keep-index-lets-a-branch-s-first-push-run.md) [script/pull-keep-index] On a branch with no upstream, pull_keep_index pulls origin/<branch> when it exists and otherwise exits 0 with nothing set aside, so the chained first `git push -u` runs instead of stopping on a failed pull.
 * [pipe-shell check reads || as an OR, not a pipe](notes/2026-11-10-pipe-shell-check-reads-as-an-or-not-a-pipe.md) [script/pipe-shell-check] The pipe-shell check script no longer reads the second bar of an unescaped `||` as a pipe into a shell, so `a || bash <script> list` passes; a real `| sh` and a backslash-escaped bar still deny.
 * [code-fork writes its run folder files with the Write tool, held to the run folder by a hook](notes/2026-11-10-code-fork-writes-its-run-folder-files-with-the.md) [agent/code-fork, skill/code, shared/review-fork-run] The /code, /review and /fix fork writes stop.md, handoff and findings files with the Write tool, which a new Write hook holds to the run folder, so a stop whose text names an interpreter flag no longer loses its stop file.
 * [A fix the review loop's coder commits itself counts as a fix and is reviewed](notes/2026-11-10-a-fix-the-review-loop-s-coder-commits-itself.md) [script/review-loop-script, agent/review-loop] When the review loop's fix coder commits its own fix, the loop now reads the change against the commit HEAD named before the call and reviews against the loop's start commit, so the fix counts as fixed and the next round reviews its diff instead of reporting "the coder made no change".

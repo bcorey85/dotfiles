@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-898 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+899 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [pipe-shell check reads || as an OR, not a pipe](notes/2026-11-10-pipe-shell-check-reads-as-an-or-not-a-pipe.md).
+Latest change: 2026-11-10, [pull_keep_index lets a branch's first push run](notes/2026-11-10-pull-keep-index-lets-a-branch-s-first-push-run.md).
 
 ## Top gains
 

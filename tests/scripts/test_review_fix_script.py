@@ -2502,6 +2502,48 @@ class ReviewFixScriptTest(unittest.TestCase):
         with unittest.mock.patch.object(pathlib.Path, "home", return_value=pathlib.Path(home)):
             self.assertTrue(reviewed_tree.is_reviewed(SESSION, self.repo))
 
+    def test_adopting_a_held_plan_impact_of_a_launched_review_prints_a_ready_launch_line_that_reaches_converged(self):
+        home = str(self.temp_root / "home")
+        handoff = self.temp_root / "handoff.md"
+        handoff.write_text("Review the greeting change.\n")
+        held = json.dumps({**CONVERGED_FIELDS, "files_touched": ["README.md"], "plan_impacts": [HELD_IMPACT]})
+        code, output = self.launch("--base", "HEAD", "--file", "README.md", "--deep", "--handoff", str(handoff),
+                                   message=held, HOME=home)
+        self.assertEqual(code, 0, output)
+        first_loop = self.loop_dirs()[0]
+        packet_args = shlex.split(output.splitlines()[-1].split("`")[1])[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, drop the retry"],
+                                       HOME=home)
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: redispatch", output)
+        adopt_handoff = script_utils.git_path(self.repo, "review-fix") / "adopt-handoff.md"
+        launch_line = output.splitlines()[-1]
+        self.assertEqual(shlex.split(launch_line)[2:], [
+            "launch", "--iter", "1", "--repo", str(self.repo.resolve()), "--base", "HEAD", "--file", "README.md",
+            "--deep", "--lane", "none", "--handoff", str(adopt_handoff), "--detach"])
+        handoff_text = adopt_handoff.read_text()
+        self.assertTrue(handoff_text.startswith((first_loop / "handoff.txt").read_text().rstrip() + "\n"),
+                        handoff_text)
+        self.assertIn("plan_impact: RESOLVED - Adopt plan change. Ruling: yes, drop the retry\niter=1\n",
+                      handoff_text)
+
+        code, output = self.run_script(shlex.split(launch_line)[2:], HOME=home,
+                                       REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertEqual(code, 0, output)
+        second_loop = self.loop_dirs()[-1]
+        waited = subprocess.run([sys.executable, str(toolkit_paths.CODE_DIR / "code_wait.py"), "review", "--loop",
+                                 str(second_loop)], cwd=self.repo, capture_output=True, text=True, check=False)
+        self.assertEqual(waited.returncode, 0, waited.stderr)
+        self.assertIn("plan_impact: RESOLVED - Adopt plan change.", (second_loop / "prompt.txt").read_text())
+        packet_args = shlex.split(waited.stdout.split("`")[1])[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: render-and-finish", output)
+
     def test_a_modified_ask_carries_the_users_change_into_the_findings_file(self):
         home = str(self.temp_root / "home")
         code, output = self.answer_asks_of_a_launched_review(home, "rejected", "modified:index tenant_id and region")

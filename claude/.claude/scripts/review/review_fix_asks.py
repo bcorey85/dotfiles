@@ -198,11 +198,19 @@ def print_fix_run(target, findings_file, summary_lines):
 
 
 def fix_launch_line(target, findings_file):
-    """The launch line of the fix run. The fix run holds every dirty file not listed, and the first run's own
-    edits are dirty, so the files it touched join the scoped files."""
+    """The launch line of the fix run that applies the asks in findings_file."""
+    return relaunch_line(target, ["--fix", str(findings_file)])
+
+
+def relaunch_line(target, lead_args, handoff_file=None):
+    """The launch line of a later run of the review in target: lead_args, `--iter`, the first run's relaunch flags
+    (with `--handoff` pointed at handoff_file when given) and `--detach`. The later run holds every dirty file not
+    listed, and the first run's own edits are dirty, so the files it touched join the scoped files."""
     touched_paths = target.get("files_touched") or []
     relaunch_args = review_launch.relaunch_args_with_files(target["relaunch_args"], touched_paths)
-    launch_args = ["--fix", str(findings_file), "--iter", str(target["iter"]), *relaunch_args, "--detach"]
+    if handoff_file is not None:
+        relaunch_args = review_launch.relaunch_args_with_handoff(relaunch_args, handoff_file)
+    launch_args = [*lead_args, "--iter", str(target["iter"]), *relaunch_args, "--detach"]
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
 
 

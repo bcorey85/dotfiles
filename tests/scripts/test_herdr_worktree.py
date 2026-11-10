@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 from stubs import write_stub
@@ -17,6 +18,7 @@ from stubs import write_stub
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_WORKTREE = BIN_DIR / "herdr-worktree"
 HERDR_DEV = BIN_DIR / "herdr-dev"
+DETACH = BIN_DIR / "detach"
 CREATED_WORKSPACE = '{"result":{"workspace":{"workspace_id":"w1"}}}'
 CLAUDE_PANE = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"s1"}}}}'
 SHELL_PANE = '{"result":{"pane":{"agent":null}}}'
@@ -44,6 +46,7 @@ class HerdrWorktreeTest(unittest.TestCase):
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
         shutil.copy(HERDR_WORKTREE, self.bin_dir / "herdr-worktree")
+        shutil.copy(DETACH, self.bin_dir / "detach")
         self.herdr_args = self.root / "herdr-args"
         write_stub(self.bin_dir / "herdr", f"""printf "%s\\n" "$@" > {self.herdr_args}
 while [ $# -gt 0 ]; do
@@ -59,11 +62,12 @@ echo '{CREATED_WORKSPACE}'""")
         write_stub(self.bin_dir / "herdr-api", "exit 0")
         write_stub(self.bin_dir / "herdr-dev", "exit 0")
 
-    def run_herdr_worktree(self, cwd, *args, fork_start_timeout="30"):
-        env = {key: value for key, value in os.environ.items() if key != "TUIOS_SOCKET"}
+    def run_herdr_worktree(self, cwd, *args, fork_start_timeout="30", base_path=None):
+        env = {key: value for key, value in os.environ.items()
+               if key not in ("TUIOS_SOCKET", "HERDR_WORKTREE_WATCH_SECONDS")}
         env["HOME"] = str(self.root)
         env["HERDR_WORKTREE_FORK_TIMEOUT"] = fork_start_timeout
-        env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
+        env["PATH"] = f"{self.bin_dir}:{base_path or env['PATH']}"
         return subprocess.run([str(self.bin_dir / "herdr-worktree"), *args], cwd=cwd, env=env,
                               capture_output=True, text=True)
 
@@ -142,7 +146,27 @@ echo '{CREATED_WORKSPACE}'""")
         worktree = self.root / "repo-new-thing"
         install_log = self.main_checkout / ".git" / "worktrees" / "repo-new-thing" / "herdr-worktree-install.log"
         self.assertIn(f"dependency install failed (output in {install_log}); "
-                      f"run in {worktree}: npm ci --no-audit --no-fund", finished.stderr)
+                      f"run: cd {worktree} && npm ci --no-audit --no-fund", finished.stderr)
+
+    def test_a_failed_push_warns_with_the_command_and_the_run_goes_on(self):
+        git(self.main_checkout, "remote", "add", "origin", str(self.root / "no-such-remote"))
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("push failed; run git push -u origin fix/new-thing", finished.stderr)
+
+    def test_a_branch_with_a_shell_character_is_quoted_in_the_push_and_install_hints(self):
+        self.stub_installers(npm_status=1)
+        self.commit_lockfiles("package-lock.json")
+        git(self.main_checkout, "remote", "add", "origin", str(self.root / "no-such-remote"))
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new$thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("push failed; run git push -u origin fix/new\\$thing", finished.stderr)
+        self.assertIn("run: cd " + str(self.root / "repo-new$thing").replace("$", "\\$") + " && npm ci",
+                      finished.stderr)
 
     def test_install_output_goes_to_the_log_and_a_clean_install_prints_no_log_path(self):
         write_stub(self.bin_dir / "npm", 'echo "npm says added 3 packages"\necho "npm warns deprecated" >&2')
@@ -169,6 +193,20 @@ echo '{CREATED_WORKSPACE}'""")
             f"herdr-worktree: installing dependencies in {worktree}",
             f"herdr-worktree: installing dependencies in {worktree}/frontend",
         ])
+
+    def stub_watcher(self):
+        """A herdr-worktree-watch that records its arguments, one per line."""
+        watch_args = self.root / "watch-args"
+        write_stub(self.bin_dir / "herdr-worktree-watch", f'printf "%s\\n" "$@" > {watch_args}')
+        return watch_args
+
+    def wait_for_file(self, file_path):
+        """The watcher runs detached, so its record appears after herdr-worktree exits."""
+        for _ in range(50):
+            if file_path.exists() and file_path.read_text():
+                return
+            time.sleep(0.1)
+        self.fail(f"{file_path} was never written")
 
     def stub_fork(self, fork_pane):
         """The current pane runs claude; the new workspace's claude pane w1:p1 answers `pane get` with fork_pane."""
@@ -232,6 +270,7 @@ esac""")
 
     def test_a_fork_whose_pane_never_shows_claude_exits_non_zero_naming_the_pane_and_its_command(self):
         self.stub_fork(SHELL_PANE)
+        watch_args = self.stub_watcher()
 
         finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Fix it.", "fix/new-thing",
                                            fork_start_timeout="1")
@@ -239,6 +278,87 @@ esac""")
         self.assertNotEqual(finished.returncode, 0)
         self.assertIn("w1:p1", finished.stderr)
         self.assertIn(FORK_COMMAND, finished.stderr)
+        time.sleep(0.5)
+        self.assertFalse(watch_args.exists())
+
+    def test_a_fork_whose_pane_shows_claude_starts_the_watcher_on_the_new_workspace(self):
+        self.stub_fork(CLAUDE_PANE)
+        watch_args = self.stub_watcher()
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.wait_for_file(watch_args)
+        worktree = self.root / "repo-new-thing"
+        self.assertEqual(watch_args.read_text().splitlines(),
+                         ["w1", str(worktree), str(self.main_checkout), "w1:p1"])
+        self.assertIn("herdr-worktree: watching workspace w1 for 120s; recovery steps go to", finished.stderr)
+
+    def stub_launcher(self, name):
+        """A launcher that records its argv, one per line, then runs the command it was given."""
+        launcher_args = self.root / f"{name}-args"
+        write_stub(self.bin_dir / name, f'printf "%s\\n" "$@" > {launcher_args}\nexec "$@"')
+        return launcher_args
+
+    def path_without_setsid(self):
+        """A folder of links to every command on PATH except setsid."""
+        links = self.root / "path-without-setsid"
+        links.mkdir()
+        for path_dir in os.environ["PATH"].split(os.pathsep):
+            if not os.path.isdir(path_dir):
+                continue
+            for name in os.listdir(path_dir):
+                if name != "setsid" and not os.path.lexists(links / name):
+                    os.symlink(os.path.join(path_dir, name), links / name)
+        return str(links)
+
+    def test_the_watcher_is_launched_through_setsid(self):
+        self.stub_fork(CLAUDE_PANE)
+        watch_args = self.stub_watcher()
+        setsid_args = self.stub_launcher("setsid")
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.wait_for_file(setsid_args)
+        self.assertEqual(setsid_args.read_text().splitlines()[0], str(self.bin_dir / "herdr-worktree-watch"))
+        self.wait_for_file(watch_args)
+
+    def test_the_watcher_falls_back_to_a_perl_setsid_when_setsid_is_missing(self):
+        self.stub_fork(CLAUDE_PANE)
+        watch_args = self.stub_watcher()
+        perl_args = self.root / "perl-args"
+        real_perl = shutil.which("perl")
+        write_stub(self.bin_dir / "perl", f'printf "%s\\n" "$@" > {perl_args}\nexec {real_perl} "$@"')
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing",
+                                           base_path=self.path_without_setsid())
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.wait_for_file(perl_args)
+        perl_lines = perl_args.read_text().splitlines()
+        self.assertEqual(perl_lines[0], "-MPOSIX")
+        self.assertIn("POSIX::setsid()", perl_lines[2])
+        self.assertEqual(perl_lines[3:5], ["--", str(self.bin_dir / "herdr-worktree-watch")])
+        self.wait_for_file(watch_args)
+
+    def test_a_run_without_fork_starts_no_watcher(self):
+        watch_args = self.stub_watcher()
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        time.sleep(0.5)
+        self.assertFalse(watch_args.exists())
+        self.assertNotIn("watching workspace", finished.stderr)
+
+    def test_help_names_the_recovery_steps(self):
+        finished = self.run_herdr_worktree(self.linked_worktree, "--help")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("herdr worktree open --cwd", finished.stdout)
+        self.assertIn("herdr-api workspace create --cwd <worktree>", finished.stdout)
+        self.assertIn("herdr-dev <worktree> <new workspace id> <fork session id>", finished.stdout)
 
 
 class HerdrDevTest(unittest.TestCase):

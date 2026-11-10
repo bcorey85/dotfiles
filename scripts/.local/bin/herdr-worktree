@@ -28,7 +28,15 @@
 #
 # With --fork, the run fails when the new claude pane shows no claude agent
 # within HERDR_WORKTREE_FORK_TIMEOUT seconds (default 30). The error names the
-# pane and the command to run there.
+# pane and the command to run there. Once the fork starts, herdr-worktree-watch
+# checks the workspace HERDR_WORKTREE_WATCH_SECONDS later (default 120). If the
+# workspace is gone it writes the recovery steps to herdr-worktree-watch.log in
+# the worktree's git dir and shows a herdr notification that points at that log
+# (none under tuios):
+# first `herdr worktree open --cwd <main checkout> --path <worktree> --focus`
+# (under tuios `herdr-api workspace create --cwd <worktree> --label <worktree
+# folder name> --focus`), then `herdr-dev <worktree> <new workspace id> <fork session id> "<prompt>"`
+# (`claude --resume` in the worktree when the session id is unknown).
 #
 # Every pane in the new workspace starts in the worktree, so popups that
 # inherit the pane cwd (prefix+d, prefix+g, prefix+space, ...) see it too.
@@ -179,7 +187,7 @@ while IFS= read -r lockfile; do
     fi
     echo "herdr-worktree: installing dependencies in $package_dir" >&2
     (cd "$package_dir" && "${install_cmd[@]}") </dev/null >>"$install_log" 2>&1 \
-        || echo "herdr-worktree: dependency install failed (output in $install_log); run in $package_dir: ${install_cmd[*]}" >&2
+        || echo "herdr-worktree: dependency install failed (output in $install_log); run: cd $(printf '%q' "$package_dir") && $(printf '%q ' "${install_cmd[@]}")" >&2
 done <<<"$lockfiles"
 
 # tuios ignores create's --focus, and herdr-dev's layout calls need the client
@@ -193,7 +201,7 @@ claude_cmd=$(sed -n 2p <<<"$layout")
 
 if git -C "$worktree" remote get-url origin &>/dev/null; then
     git -C "$worktree" push -u origin "$branch" \
-        || echo "herdr-worktree: push failed; run git push -u origin $branch" >&2
+        || echo "herdr-worktree: push failed; run git push -u origin $(printf '%q' "$branch")" >&2
 fi
 
 [ -n "$fork" ] || exit 0
@@ -202,7 +210,16 @@ fi
 fork_timeout="${HERDR_WORKTREE_FORK_TIMEOUT:-30}"
 for _ in $(seq "$fork_timeout"); do
     pane_agent=$(herdr-api pane get "$claude_pane" 2>/dev/null | jq -r '.result.pane.agent // empty') || pane_agent=""
-    [ "$pane_agent" != "claude" ] || exit 0
+    if [ "$pane_agent" = "claude" ]; then
+        watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
+        watch_log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
+        # The caller's process group can be torn down, so the watcher runs in its own session.
+        "$bin_dir/detach" "$bin_dir/herdr-worktree-watch" "$ws" "$worktree" "$main_checkout" "$claude_pane" \
+            </dev/null >/dev/null 2>&1 &
+        disown
+        echo "herdr-worktree: watching workspace $ws for ${watch_seconds}s; recovery steps go to $watch_log if it closes" >&2
+        exit 0
+    fi
     sleep 1
 done
 echo "herdr-worktree: the fork did not start: pane $claude_pane shows no claude agent after ${fork_timeout}s. Run this in that pane: $claude_cmd" >&2

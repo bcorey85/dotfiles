@@ -1,0 +1,88 @@
+#!/bin/bash
+# Check that a forked herdr workspace is still open, and name the recovery
+# steps when it is gone. Started detached by herdr-worktree --fork.
+#
+# Usage: herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane>
+#
+# Reads the fork's session id from the claude pane, waits
+# HERDR_WORKTREE_WATCH_SECONDS (default 120), then asks herdr for the
+# workspace. A workspace that is gone gets its recovery steps written to
+# herdr-worktree-watch.log in the worktree's git dir, and a herdr notification
+# names that log (none under tuios, which has no notification command). Step 1
+# is `herdr worktree open --cwd <main checkout> --path <worktree> --focus`;
+# under tuios it is `herdr-api workspace create --cwd <worktree> --label
+# <worktree folder name> --focus`. Any other failure of the workspace check is
+# logged as "could not check workspace" and exits 1. It never reopens the
+# workspace: the user may have closed it on purpose.
+
+set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+
+[ $# -eq 4 ] || { echo "usage: herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane>" >&2; exit 1; }
+workspace="$1"
+worktree="$2"
+main_checkout="$3"
+claude_pane="$4"
+
+log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
+
+watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
+
+# The session hook can report the fork's id after the agent shows up, so poll
+# until it is non-empty, bounded by the wait. The pane may already be gone; an
+# empty session id is reported in the steps.
+read_session() {
+    herdr-api pane get "$claude_pane" 2>/dev/null | jq -r '.result.pane.agent_session.value // empty' \
+        || echo ""
+}
+
+waited=0
+session=$(read_session)
+while [ -z "$session" ] && [ "$waited" -lt "$watch_seconds" ]; do
+    sleep 1
+    waited=$((waited + 1))
+    session=$(read_session)
+done
+
+remaining=$((watch_seconds - waited))
+if [ "$remaining" -gt 0 ]; then
+    sleep "$remaining"
+fi
+
+if workspace_error=$(herdr-api workspace get "$workspace" 2>&1 >/dev/null); then
+    echo "workspace $workspace still open" >>"$log"
+    exit 0
+fi
+
+# herdr writes its error JSON to stderr. A restarting server or a shim that
+# does not answer also exits non-zero, so only a workspace_not_found reply
+# means the workspace is closed.
+error_code=$(jq -r '.error.code // empty' <<<"$workspace_error" 2>/dev/null) || error_code=""
+if [ "$error_code" != "workspace_not_found" ]; then
+    echo "could not check workspace $workspace: ${workspace_error:-no reply from herdr-api}" | tee -a "$log" >&2
+    exit 1
+fi
+
+# %q quotes each value so the logged lines paste into a shell as written.
+# tuios answers no worktree.create, so there the workspace opens on the
+# existing worktree through herdr-api.
+label=$(basename "$worktree")
+if [ -n "${TUIOS_SOCKET:-}" ]; then
+    reopen="herdr-api workspace create --cwd $(printf %q "$worktree") --label $(printf %q "$label") --focus"
+else
+    reopen="herdr worktree open --cwd $(printf %q "$main_checkout") --path $(printf %q "$worktree") --focus"
+fi
+{
+    echo "workspace $workspace closed. Recovery steps:"
+    echo "1. $reopen"
+    if [ -n "$session" ]; then
+        echo "2. herdr-dev $(printf %q "$worktree") <new workspace id> $(printf %q "$session") \"<prompt>\""
+        echo "   (<new workspace id> is the id step 1 prints)"
+    else
+        echo "2. the fork's session id could not be read; run claude --resume in $(printf %q "$worktree")"
+    fi
+}>>"$log"
+
+[ -z "${TUIOS_SOCKET:-}" ] || exit 0
+herdr notification show "herdr-worktree: workspace closed" \
+    --body "workspace $workspace for $worktree closed; recovery steps are in $log" --sound request

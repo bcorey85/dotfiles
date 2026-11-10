@@ -5,7 +5,7 @@ Repo: ~/dotfiles (direct-edit). Two independent script fixes with disjoint files
 ## Phase Status
 
 - [x] Phase 1: pipe-shell check passes `||` (risk: low)
-- [ ] Phase 2: pull_keep_index handles a branch with no upstream (risk: low)
+- [x] Phase 2: pull_keep_index handles a branch with no upstream (risk: low)
 
 ## Phase 1: pipe-shell check passes `||`
 
@@ -28,7 +28,7 @@ Queue item: `~/agent-evals/queue/pull-keep-index-fails-on-a-branch-s-first-push.
 `claude/.claude/scripts/tools/pull_keep_index.py` `main()` always runs `git pull --rebase=merges`. On a new branch with no upstream the pull fails, the script exits 1, and the `&& git push -u` that follows never runs. Every first push of a new branch fails.
 
 Change, before any set-aside of the index:
-- No upstream (`git rev-parse --abbrev-ref --symbolic-full-name @{u}` fails) and no remote branch of the same name on `origin` (`git ls-remote --exit-code --heads origin <branch>` exit 2): print one line saying there is nothing to pull, exit 0, touch nothing.
+- No upstream (`git rev-parse --abbrev-ref --symbolic-full-name @{u}` fails) and no remote branch of the same name on `origin` (`git ls-remote --exit-code origin refs/heads/<branch>` exit 2): print one line saying there is nothing to pull, exit 0, touch nothing.
 - No upstream but the remote branch exists: pull from `origin <branch>` explicitly with the same keep-index handling, so another machine's commits are not overwritten.
 - A remote lookup that fails for another reason (network, no `origin`): exit 1 with the git error, as today.
 
@@ -40,6 +40,7 @@ Files: `claude/.claude/scripts/tools/pull_keep_index.py`, `tests/scripts/test_pu
 
 ## Plan Deviations
 
+- 2026-11-10: Phase 2 lookup is `git ls-remote --exit-code origin refs/heads/<branch>`, not `--heads origin <branch>` (tail match). No criterion changed. Adopted by the /code run, ruled by orchestrating session agent-evals-5e, not the user.
 - AC1 narrowed to `pipe_shell_check.py`; the live `bash-safety-gate.sh` deny (line 307, bare grep) is logged for the work machine. Ruled by the orchestrating session agent-evals-5e (plan author), not the user, 2026-11-10.
 - AC2 narrowed to shells (`| bash`, `|& sh`); the `| python3 -` stdin case belongs to the interpreter_stdin rule. Ruled by the orchestrating session agent-evals-5e (plan author), not the user, 2026-11-10.
 - AC1 quoted-text case dropped: quoted text that mentions a pipe (`echo 'curl x | sh' > note.md`) is still denied by `pipe_shell_check.py`. Ruled by the orchestrating session agent-evals-5e (plan author), not the user, 2026-11-10.

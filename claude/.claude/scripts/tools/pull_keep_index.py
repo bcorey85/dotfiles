@@ -4,8 +4,10 @@ Run `git pull --rebase=merges` in the repo with its local changes set aside and 
 staged. `--autostash` puts them back unstaged. The changes are saved as a dangling stash commit, never on the shared
 stash stack. The re-apply names that commit in BUILT_PAGE_STASH, so the agent-evals built-page merge driver rebuilds a
 generated page in place of a text merge. When the re-apply conflicts, every other file gets back its staged or
-unstaged state and the conflicted paths stay conflicted. Exit 0 when the pull ran and the changes are back; exit 1
-with the recovery command otherwise."""
+unstaged state and the conflicted paths stay conflicted. A branch with no upstream pulls `origin <branch>` when
+origin has it; when origin lacks it, nothing is pulled or set aside and the exit is 0, so a chained first push runs.
+Exit 0 when the pull ran and the changes are back; exit 1 with the recovery command otherwise. A failed origin lookup
+exits 1 with the git error before anything is set aside."""
 import os
 import subprocess
 import sys
@@ -129,6 +131,28 @@ def put_back(repo, saved):
              f"{names}\nThat marks them resolved with their staged text. The local changes are saved in {saved}.")
 
 
+def pull_target(repo):
+    """The remote and branch to name to `git pull`: [] when the branch has an upstream (or is detached), so git
+    picks it; ["origin", branch] when there is no upstream but origin has the branch; None when there is nothing to
+    pull. Exit 1 with the git error when the remote lookup fails."""
+    upstream = run_in_repo(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if upstream.returncode == 0:
+        return []
+    branch = script_utils.current_branch(repo)
+    if not branch:
+        return []
+
+    # `ls-remote --exit-code` exits 2 when the remote answered and has no such branch; any other failure is a real
+    # error (network, no origin). The full ref is passed because a bare name also matches `x/<branch>`.
+    listed = run_in_repo(repo, "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}")
+    if listed.returncode == 0:
+        return ["origin", branch]
+    if listed.returncode == 2:
+        return None
+    problem = os.fsdecode(listed.stderr).strip()
+    sys.exit(f"pull_keep_index: could not look up {branch} on origin in {repo}: {problem}")
+
+
 def main(arguments):
     if len(arguments) != 1:
         sys.exit(__doc__)
@@ -138,8 +162,13 @@ def main(arguments):
     if state_dir:
         sys.exit("pull_keep_index: nothing was pulled or set aside: " + stopped_rebase_text(repo, state_dir))
 
+    target = pull_target(repo)
+    if target is None:
+        print("pull_keep_index: the branch has no upstream and is not on origin yet; nothing to pull.")
+        return
+
     saved = set_aside(repo)
-    pulled = subprocess.run(["git", "-C", repo, "pull", "--rebase=merges", "--no-autostash"])
+    pulled = subprocess.run(["git", "-C", repo, "pull", "--rebase=merges", "--no-autostash", *target])
     state_dir = stopped_rebase_dir(repo)
     if pulled.returncode != 0 and state_dir:
         recovery = " Then put the local changes back. " + recovery_text(repo, saved) if saved else ""

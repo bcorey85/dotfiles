@@ -165,6 +165,56 @@ class PullKeepIndexTest(unittest.TestCase):
         subprocess.run(recovery, check=True, env={**os.environ, **GIT_ENV})
         self.assertEqual(sorted(self.status()), [" M f", " M k", "M  g", "MM m"])
 
+    def test_a_new_branch_with_no_upstream_and_no_remote_branch_exits_0_and_keeps_staged_files(self):
+        self.git(self.repo, "checkout", "-q", "-b", "fresh")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("nothing to pull", finished.stdout)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_remote_branch_whose_name_ends_in_the_local_name_does_not_count_as_the_same_branch(self):
+        self.git(self.repo, "push", "-q", "origin", "HEAD:refs/heads/feature/fresh")
+        self.git(self.repo, "checkout", "-q", "-b", "fresh")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("nothing to pull", finished.stdout)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_branch_with_no_upstream_pulls_the_remote_branch_of_the_same_name(self):
+        self.git(self.repo, "checkout", "-q", "-b", "shared")
+        self.git(self.repo, "push", "-q", "origin", "shared")
+        other = self.clone("other-shared")
+        self.git(other, "checkout", "-q", "shared")
+        self.write(other, "h", "2\n")
+        self.git(other, "add", "h")
+        self.git(other, "commit", "-qm", "other h")
+        self.git(other, "push", "-q", "origin", "shared")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual((self.repo / "h").read_text(), "2\n")
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_branch_with_no_upstream_and_no_origin_exits_1_with_the_git_error(self):
+        self.git(self.repo, "checkout", "-q", "-b", "fresh")
+        self.git(self.repo, "remote", "remove", "origin")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("could not look up fresh on origin", finished.stderr)
+
     def commit_local(self, name, text):
         self.write(self.repo, name, text)
         self.git(self.repo, "add", name)

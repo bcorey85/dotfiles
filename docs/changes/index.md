@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-895 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+896 changes, 22 with a measured gain, 262 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [code-fork writes its run folder files with the Write tool, held to the run folder by a hook](notes/2026-11-10-code-fork-writes-its-run-folder-files-with-the.md).
+Latest change: 2026-11-10, [The coder validates handler input, keeps caught errors, uses the repo error type, sorts lists and writes the failing test first](notes/2026-11-10-the-coder-validates-handler-input-keeps-caught.md).
 
 ## Top gains
 

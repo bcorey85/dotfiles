@@ -117,7 +117,7 @@ from review_loop_findings import (
 )
 from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges, split_outside_fixes
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
-from review_loop_plan import ChangeUnderReview, first_round_plan, review_files, second_round_plan
+from review_loop_plan import ChangeUnderReview, first_round_plan, head_commit, review_files, second_round_plan
 from review_loop_prompt_file import (
     BASE_KEY,
     FILES_KEY,
@@ -697,7 +697,9 @@ class LoopRun(full_check_gate.FullCheckSteps):
             result = coder_call(call_name, prompt, self.repo, self.out, self.held_files)
         except CoderCallError as error:
             self.files_touched.update(error.changed)
+            self.keep_coder_commit_in_scope()
             raise
+        self.keep_coder_commit_in_scope()
 
         later_phase_edits = sorted(set(result.changed) & self.later_phase_files)
         if later_phase_edits:
@@ -710,6 +712,16 @@ class LoopRun(full_check_gate.FullCheckSteps):
             self.files_touched.update(result.changed)
             raise ChangeRemovedError(change_removal.removal_blocker(self.change.added, removed))
         return result
+
+    def keep_coder_commit_in_scope(self):
+        """When a coder pass committed and the review diffs against HEAD, the review diffs against the commit HEAD
+        named when the loop started from then on, so the committed fix and the change stay under review."""
+        if self.review_base:
+            return
+        start = self.change.start
+        if start is None or head_commit(self.repo) == start:
+            return
+        self.review_base = start
 
     def defer_outside_fixes(self, round_fix):
         """Takes out of the round each fix that split_outside_fixes defers, keeps it open and sets its finding row to

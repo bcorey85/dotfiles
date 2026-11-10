@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-893 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
+894 changes, 22 with a measured gain, 261 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-09, [The /code ask-outcome call passes its free text to log-review-finding on stdin](notes/2026-11-09-the-code-ask-outcome-call-passes-its-free-text-to.md).
+Latest change: 2026-11-10, [A fix the review loop's coder commits itself counts as a fix and is reviewed](notes/2026-11-10-a-fix-the-review-loop-s-coder-commits-itself.md).
 
 ## Top gains
 

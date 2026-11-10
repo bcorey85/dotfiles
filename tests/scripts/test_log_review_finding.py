@@ -12,6 +12,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 import fake_ledger
@@ -324,6 +325,39 @@ class TestAuditRowTest(LoggerRepoCase):
         self.assertEqual((done.returncode, done.stderr), (0, ""))
         (finding_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
         self.assertEqual(finding_row["path_key"], bracketed_path)
+
+    def test_the_code_skill_ask_outcome_call_logs_text_with_quotes_and_backticks_under_zsh(self):
+        snippet = ask_outcome_snippet()
+        placeholders = {"<lane>": "code", "<N>": "1", "<returned iter>": "2", "<entry gate>": "code-reviewer",
+                        "<entry finding_id>": "planted0id", "<entry class>": "bug", "<path>": "app/x.py", "<n>": "3",
+                        "<accepted|rejected>": "accepted",
+                        "<one line>": """don't run "make test" twice; use `make check` instead"""}
+        for placeholder, value in placeholders.items():
+            snippet = snippet.replace(placeholder, value)
+        logger_command = f"bash {shlex.quote(str(LOG_REVIEW_FINDING))}"
+        logger_call = re.sub(r"^(?:bash )?\S*log-review-finding\"?", lambda _: logger_command, snippet)
+
+        done = subprocess.run(["zsh", "-f", "-c", logger_call], cwd=self.repo, env=self.logger_env(),
+                              capture_output=True, text=True)
+
+        self.assertEqual((done.returncode, done.stderr), (0, ""))
+        (outcome_row,) = fake_ledger.recorded_rows(self.ledger_env, "review_finding")
+        self.assertEqual((outcome_row["finding_id"], outcome_row["ask_outcome"]), ("planted0id", "accepted"))
+
+    def test_desc_dash_with_empty_stdin_is_refused_and_no_row_is_sent(self):
+        command = ["bash", str(LOG_REVIEW_FINDING), *FINDING_ARGS, "desc=-"]
+        done = subprocess.run(command, cwd=self.repo, env=self.logger_env(), input="", capture_output=True, text=True)
+
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("desc=- read nothing from stdin", done.stderr)
+        self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
+
+
+def ask_outcome_snippet():
+    """The /code skill's ask-outcome logger call, its indent removed."""
+    code_skill_text = CODE_SKILL.read_text()
+    (block,) = re.findall(r"log one row per ask:\n\n +```bash\n(.*?)\n +```", code_skill_text, re.DOTALL)
+    return textwrap.dedent(block)
 
 
 class PathQuotingTest(unittest.TestCase):

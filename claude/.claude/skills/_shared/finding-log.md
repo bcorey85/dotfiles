@@ -46,7 +46,8 @@ Run after dispositions are known (`actioned` real, not predicted). Telemetry nev
 - **`other` is a last resort.** Reach for `docs` when the prose is wrong about the code (stale comment, wrong quantity, contradicting doc, over-cap volume).
 - **`result=` is the gate's verdict, one of the four tokens above, with underscores.** The tool refuses any other value. Gates with no pass/fail vocabulary still owe one (`PASS` clean/intent-aligned, `NEEDS_CHANGES` gaps/residue, `NOT_DISPATCHED` surface-unmatched). Omit only with genuinely no verdict.
 
-- **`desc=` is accepted and never stored.** The ledger keeps no free text. Leave it off new calls.
+- **`desc=` is accepted and never stored.** The ledger keeps no free text. Leave it off new calls. A call that
+  carries text passes `desc=-` and the text in a quoted heredoc (`<<'DESC'`), never inside the argument.
 - **Asks:** log an `actioned=ask` finding row with the same `file=` and `line=` as the ask's `file_line`. The caller reads the printed `finding_id=<id>` from the transcript and logs the outcome under it with `ask_outcome=`, which supersedes the ask row. The writer refuses an ask outcome with no `finding_id`.
 
 Full field reference lives in the script's header.

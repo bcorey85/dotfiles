@@ -92,11 +92,12 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
    - `converged` → put any plan impacts the packet lists on the phase-end list. When one of them is held (not `adopted`, `cause` not `toolkit`), set `plan_impact` in `<run folder>/handoff.txt` to the one line `RESOLVED: deferred to phase end by the session, <date>: <one-line impact summary>` and run `python3 ~/.claude/scripts/review/review_fix.py defer <run folder>/handoff.txt`, so the commit gate clears. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Decide each `ask[]` entry yourself; never stop on one. Accept it when its change fixes a defect inside the phase's scope and changes no acceptance criterion. An ask whose change alters a criterion goes on the phase-end list as a plan change awaiting sign-off. Reject the rest. Dispatch one `coder` for the accepted asks and wait for it, then log one row per ask:
 
      ```bash
-     bash "$HOME/.claude/skills/review/log-review-finding" kind=finding \
-       repo="$(basename "$(git rev-parse --show-toplevel)")" branch="$(git branch --show-current)" \
+     ~/.claude/skills/review/log-review-finding kind=finding \
        lane=<lane> scope=phase phase=<N> iter=<returned iter> \
        gate=<entry gate> finding_id=<entry finding_id> disposition=ask class=<entry class> 'file=<path>' line=<n> \
-       actioned=ask ask_outcome=<accepted|rejected> ask_decided_by=session desc="ask resolved: <one line>"
+       actioned=ask ask_outcome=<accepted|rejected> ask_decided_by=session desc=- <<'DESC'
+     ask resolved: <one line>
+     DESC
      ```
 
      List each ruling (the question, accepted or rejected, one-line reason) under `Asks decided` in the phase-complete block. Then proceed to the phase gates.

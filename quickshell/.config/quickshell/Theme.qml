@@ -86,11 +86,35 @@ Singleton {
             green: "#66800b", red: "#af3029", teal: "#24837b",
             orange: "#bc5215", yellow: "#ad8301", magenta: "#a02f6f"
         },
+        "token-flint-dark": {
+            bg: "#272c33", panel: "#1c2127", border: "#373e47",
+            fg: "#c3c8cc", muted: "#858f9b",
+            green: "#a9b98c", red: "#e3888c", teal: "#98bbd4",
+            orange: "#eb9e83", yellow: "#f8d28a", magenta: "#c59ab2"
+        },
+        "token-flint-light": {
+            bg: "#f5f7f8", panel: "#e7ebef", border: "#d9dee3",
+            fg: "#283039", muted: "#5a6571",
+            green: "#3d5902", red: "#bf3f50", teal: "#09567b",
+            orange: "#902a03", yellow: "#996914", magenta: "#7c4c5f"
+        },
+        "jellybeans-dark": {
+            bg: "#151515", panel: "#1c1c1c", border: "#404040",
+            fg: "#e8e8d3", muted: "#888888",
+            green: "#99ad6a", red: "#d74545", teal: "#8fbfdc",
+            orange: "#d98870", yellow: "#fad07a", magenta: "#c6b6ee"
+        },
+        "jellybeans-light": {
+            bg: "#f5e6d3", panel: "#e8d5c0", border: "#d8c8b8",
+            fg: "#252525", muted: "#686868",
+            green: "#386014", red: "#a02020", teal: "#2b5b77",
+            orange: "#954d3b", yellow: "#876820", magenta: "#5f43aa"
+        },
         "catppuccin-dark": {
-            bg: "#1e1e2e", panel: "#181825", border: "#313244",
-            fg: "#cdd6f4", muted: "#7f849c",
-            green: "#a6e3a1", red: "#f38ba8", teal: "#94e2d5",
-            orange: "#fab387", yellow: "#f9e2af", magenta: "#cba6f7"
+            bg: "#303446", panel: "#292c3c", border: "#414559",
+            fg: "#c6d0f5", muted: "#838ba7",
+            green: "#a6d189", red: "#e78284", teal: "#81c8be",
+            orange: "#ef9f76", yellow: "#e5c890", magenta: "#ca9ee6"
         },
         "catppuccin-light": {
             bg: "#eff1f5", panel: "#e6e9ef", border: "#ccd0da",

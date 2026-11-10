@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles solarized-osaka solarized selenized flexoki catppuccin; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles solarized-osaka solarized selenized flexoki token-flint jellybeans catppuccin; }
 
 # A family that differs from another only in nvim's syntax colours borrows that
 # family's terminal, prompt, herdr, hunk, delta and claude themes.
@@ -163,9 +163,17 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # flexoki: ghostty BUILTINS, kepano's sixteen.
     flexoki:light)          echo "Flexoki Light" ;;
     flexoki:*)              echo "Flexoki Dark" ;;
-    # catppuccin: ghostty BUILTINS — mocha dark, latte light.
+    # token-flint: custom files in ghostty/themes/, copied from the plugin's
+    # contrib/ghostty.
+    token-flint:light)      echo "token-flint-light" ;;
+    token-flint:*)          echo "token-flint-dark" ;;
+    # jellybeans: custom files in ghostty/themes/, from the plugin's
+    # extras/ghostty (ghostty's "Jellybeans" builtin is the older vim palette).
+    jellybeans:light)       echo "jellybeans-light" ;;
+    jellybeans:*)           echo "jellybeans-dark" ;;
+    # catppuccin: ghostty BUILTINS — frappé dark, latte light.
     catppuccin:light)       echo "Catppuccin Latte" ;;
-    catppuccin:*)           echo "Catppuccin Mocha" ;;
+    catppuccin:*)           echo "Catppuccin Frappe" ;;
   esac
 }
 
@@ -229,9 +237,18 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # the nearest neutrals (warm grey on near-black, black on white).
     flexoki:light)          echo "light-plus" ;;
     flexoki:*)              echo "vitesse-black" ;;
+    # token-flint: BASE of a full [custom_theme]. one-dark-pro is #abb2bf on
+    # #282c34 (flint is #c3c8cc on #272c33); github-light is the cool-grey
+    # light with the fewest leaks.
+    token-flint:light)      echo "github-light" ;;
+    token-flint:*)          echo "one-dark-pro" ;;
+    # jellybeans: BASE of a full [custom_theme]. Warm cream on near-black, and
+    # near-black on a warm ground.
+    jellybeans:light)       echo "vitesse-light" ;;
+    jellybeans:*)           echo "vitesse-black" ;;
     # catppuccin: hunk BUILTINS.
     catppuccin:light)       echo "catppuccin-latte" ;;
-    catppuccin:*)           echo "catppuccin-mocha" ;;
+    catppuccin:*)           echo "catppuccin-frappe" ;;
   esac
 }
 
@@ -1052,6 +1069,105 @@ EOF
       lang="$esc"; attr="$esc"; pre="$esc"; mac="$esc"; tag="$str"
       mem="$var"; param="$var"; use="$var"; call="$fn"
       ;;
+    # token-flint (ThorstenRhau/token): roles are the resolved fg of nvim's
+    # groups, chrome and diff washes the plugin's own palette. Gold control
+    # flow, salmon definitions and calls, olive literals, mauve properties;
+    # types, builtins, operators and parameters stay grey.
+    token-flint:*)
+      local addWord remWord cls key h1 h2 exc link grey
+      bg="#272c33"; panel="#1c2127"; panelAlt="#30363e"; border="#373e47"
+      accent="#eb9e83"; accentMuted="#3a414a"; text="#c3c8cc"; muted="#9aa4ae"
+      addedBg="#2b332b"; removedBg="#39282c"; ctxBg="#272c33"
+      addWord="#364338"; remWord="#4a3035"
+      sAdd="#95a578"; sRem="#d2787d"; lnFg="#67717d"
+      link="#88acc4"; fMod="#c5a15a"; note="#1c2127"
+      kw="#f8d28a"; str="#a9b98c"; fn="#eb9e83"; punct="#9aa4ae"; grey="#afb6bc"
+      mem="#c59ab2"; exc="#e3888c"; cmt="#9aa4ae"
+      if [ "$2" = light ]; then
+        bg="#f5f7f8"; panel="#e7ebef"; panelAlt="#ebeff2"; border="#d9dee3"
+        accent="#902a03"; accentMuted="#dce2e7"; text="#283039"; muted="#5a6571"
+        addedBg="#e1e9d9"; removedBg="#f2dee1"; ctxBg="#f5f7f8"
+        addWord="#ccdabf"; remWord="#e7c8cd"
+        sAdd="#537b2b"; sRem="#b83a4b"; lnFg="#818c94"
+        link="#035378"; fMod="#996914"; note="#e7ebef"
+        kw="#6b4600"; str="#3d5902"; fn="#902a03"; punct="#5a6571"; grey="#46515d"
+        mem="#7c4c5f"; exc="#bf3f50"; cmt="#5a6571"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      badgeNeu="$link"; fRename="$link"; h1="$fn"; h2="$kw"
+      num="$str"; konst="$str"; esc="$str"; lang="$str"
+      typ="$grey"; cls="$grey"; ns="$grey"; prim="$grey"; op="$grey"; vbi="$grey"
+      bfn="$grey"; param="$grey"; attr="$grey"; tag="$grey"
+      imp="$kw"; pre="$kw"; mac="$kw"; call="$fn"
+      var="$text"; use="$text"; key="$mem"
+      extra=$(cat <<EOF
+"keyword.operator.word"             = "$op"
+"keyword.operator.new"              = "$op"
+"keyword.operator.expression"       = "$op"
+"keyword.control.exception"         = "$exc"
+"keyword.control.trycatch"          = "$exc"
+"markup.underline.link"             = "$link"
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
+    # jellybeans (WTFox/jellybeans.nvim): roles are the resolved fg of nvim's
+    # groups. The plugin paints diffs fg-only, so rows are the green/red 15%
+    # into the ground and words 30% (theme-sync sets the same in nvim); the
+    # comment is theme-sync's contrast floor over those rows.
+    jellybeans:*)
+      local addWord remWord cls key h1 h2 exc link ctl tagd
+      bg="#151515"; panel="#1c1c1c"; panelAlt="#333333"; border="#404040"
+      accent="#8197bf"; accentMuted="#384048"; text="#e8e8d3"; muted="#888888"
+      addedBg="#232e1e"; removedBg="#321c1c"; ctxBg="#151515"
+      addWord="#304627"; remWord="#4f2323"
+      sAdd="#70b950"; sRem="#d74545"; lnFg="#605958"
+      fMod="#e6a75a"; note="#1c1c1c"; link="#d2ebbe"
+      kw="#c6b6ee"; ctl="#8fbfdc"; exc="#cc88a3"; op="#b0d0f0"
+      str="#99ad6a"; num="#d98870"; fn="#fbd587"; typ="#e6a75a"; prim="#7299b0"
+      mac="#8197bf"; mem="#dddddd"; param="#ccc5c4"; tagd="#668799"; cmt="#929290"
+      if [ "$2" = light ]; then
+        bg="#f5e6d3"; panel="#e8d5c0"; panelAlt="#d8c8b8"; border="#d7af87"
+        accent="#2952a3"; accentMuted="#e7cfb7"; text="#252525"; muted="#686868"
+        addedBg="#d9d2b6"; removedBg="#e8c8b8"; ctxBg="#f5e6d3"
+        addWord="#bcbe9a"; remWord="#dcab9d"
+        sAdd="#386014"; sRem="#a02020"; lnFg="#605958"
+        fMod="#b87520"; note="#e8d5c0"; link="#457039"
+        kw="#5f43aa"; ctl="#2b5b77"; exc="#904070"; op="#234291"
+        str="#658349"; num="#954d3b"; fn="#916625"; typ="#b87520"; prim="#22495f"
+        mac="#2952a3"; mem="#444444"; param="#555150"; tagd="#3a596a"; cmt="#585858"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      badgeNeu="$accent"; fRename="$accent"; h1="$op"; h2="$ctl"
+      konst="$num"; lang="$num"; esc="$kw"; vbi="$kw"; bfn="$kw"
+      cls="$typ"; ns="$op"; imp="$op"; attr="$mac"; pre="$mac"
+      tag="$ctl"; punct="$ctl"; call="$fn"
+      var="$text"; use="$text"; key="$text"
+      extra=$(cat <<EOF
+"keyword.control"                   = "$ctl"
+"keyword.control.exception"         = "$exc"
+"keyword.control.trycatch"          = "$exc"
+"keyword.operator.word"             = "$op"
+"keyword.operator.new"              = "$op"
+"keyword.operator.expression"       = "$op"
+"string.regexp"                     = "$ctl"
+"entity.other.attribute-name"       = "$text"
+"punctuation.definition.tag"        = "$tagd"
+"markup.underline.link"             = "$link"
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
     *) return 0 ;;
   esac
   # Roles the retired families never set; default them so their (inert) branches
@@ -1538,14 +1654,15 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       blue="#1e66f5" teal="#179299" peach="#fe640b"
       ;;
     catppuccin:*)
-      # catppuccin mocha (#1e1e2e, mantle panel).
+      # catppuccin frappé (#303446, mantle panel). herdr ships no frappé
+      # base, so the mocha base carries any token not listed here.
       base_name="catppuccin"
-      accent="#cba6f7" panel_bg="#181825" surface_dim="#313244"
-      surface0="#45475a" surface1="#585b70"
-      overlay0="#9399b2" overlay1="#7f849c"
-      text="#cdd6f4" subtext0="#a6adc8"
-      green="#a6e3a1" yellow="#f9e2af" red="#f38ba8"
-      blue="#89b4fa" teal="#94e2d5" peach="#fab387"
+      accent="#ca9ee6" panel_bg="#292c3c" surface_dim="#414559"
+      surface0="#51576d" surface1="#626880"
+      overlay0="#949cbb" overlay1="#838ba7"
+      text="#c6d0f5" subtext0="#a5adce"
+      green="#a6d189" yellow="#e5c890" red="#e78284"
+      blue="#8caaee" teal="#81c8be" peach="#ef9f76"
       ;;
     tokyonight:light)
       # tokyonight day (#e1e2e7, bg_dark panel), verbatim.
@@ -1765,6 +1882,46 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#cecdc3" subtext0="#878580"
       green="#879a39" yellow="#d0a215" red="#d14d41"
       blue="#4385be" teal="#3aa99f" peach="#da702c"
+      ;;
+    token-flint:light)
+      # token flint light (#f5f7f8 ground, bg1 panel).
+      base_name="one-light"
+      accent="#902a03" panel_bg="#e7ebef" surface_dim="#d9dee3"
+      surface0="#b8c0c6" surface1="#9ba4ac"
+      overlay0="#5a6571" overlay1="#46515d"
+      text="#283039" subtext0="#46515d"
+      green="#3d5902" yellow="#996914" red="#bf3f50"
+      blue="#035378" teal="#09567b" peach="#6b4600"
+      ;;
+    token-flint:*)
+      # token flint dark (#272c33 ground, bg1 panel).
+      base_name="one-dark"
+      accent="#eb9e83" panel_bg="#1c2127" surface_dim="#30363e"
+      surface0="#3a414a" surface1="#48505a"
+      overlay0="#858f9b" overlay1="#9aa4ae"
+      text="#c3c8cc" subtext0="#9aa4ae"
+      green="#a9b98c" yellow="#c5a15a" red="#e3888c"
+      blue="#88acc4" teal="#98bbd4" peach="#f8d28a"
+      ;;
+    jellybeans:light)
+      # jellybeans light (sepia #f5e6d3 ground, grey_one panel).
+      base_name="one-light"
+      accent="#2952a3" panel_bg="#e8d5c0" surface_dim="#d8c8b8"
+      surface0="#cbb9a6" surface1="#b9a691"
+      overlay0="#686868" overlay1="#605958"
+      text="#252525" subtext0="#686868"
+      green="#386014" yellow="#876820" red="#a02020"
+      blue="#2952a3" teal="#2b5b77" peach="#954d3b"
+      ;;
+    jellybeans:*)
+      # jellybeans dark (#151515 ground, grey_one panel).
+      base_name="one-dark"
+      accent="#8197bf" panel_bg="#1c1c1c" surface_dim="#333333"
+      surface0="#404040" surface1="#606060"
+      overlay0="#888888" overlay1="#9098a0"
+      text="#e8e8d3" subtext0="#888888"
+      green="#99ad6a" yellow="#fad07a" red="#d74545"
+      blue="#8197bf" teal="#8fbfdc" peach="#d98870"
       ;;
   esac
 

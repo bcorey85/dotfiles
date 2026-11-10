@@ -202,19 +202,75 @@ fg = "#100f0f"
 bg = "#fffcf0"
 grey = "#6f6e69"
 
-# catppuccin mocha, verbatim.
+# token flint dark (cool grey #272c33; gold is the one bright note).
+[palettes.token-flint-dark]
+red = "#e3888c"
+orange = "#eb9e83"
+yellow = "#f8d28a"
+green = "#a9b98c"
+blue = "#88acc4"
+branch = "#88acc4"
+teal = "#98bbd4"
+purple = "#c59ab2"
+fg = "#c3c8cc"
+bg = "#272c33"
+grey = "#858f9b"
+
+# token flint light (#f5f7f8).
+[palettes.token-flint-light]
+red = "#bf3f50"
+orange = "#902a03"
+yellow = "#996914"
+green = "#3d5902"
+blue = "#035378"
+branch = "#035378"
+teal = "#09567b"
+purple = "#7c4c5f"
+fg = "#283039"
+bg = "#f5f7f8"
+grey = "#5a6571"
+
+# jellybeans dark (#151515).
+[palettes.jellybeans-dark]
+red = "#d74545"
+orange = "#d98870"
+yellow = "#fad07a"
+green = "#99ad6a"
+blue = "#8197bf"
+branch = "#8197bf"
+teal = "#8fbfdc"
+purple = "#c6b6ee"
+fg = "#e8e8d3"
+bg = "#151515"
+grey = "#888888"
+
+# jellybeans light (sepia #f5e6d3).
+[palettes.jellybeans-light]
+red = "#a02020"
+orange = "#954d3b"
+yellow = "#876820"
+green = "#386014"
+blue = "#2952a3"
+branch = "#2952a3"
+teal = "#2b5b77"
+purple = "#5f43aa"
+fg = "#252525"
+bg = "#f5e6d3"
+grey = "#686868"
+
+# catppuccin frappé, verbatim.
 [palettes.catppuccin-dark]
-red = "#f38ba8"
-orange = "#fab387"
-yellow = "#f9e2af"
-green = "#a6e3a1"
-blue = "#89b4fa"
-branch = "#89b4fa"
-teal = "#94e2d5"
-purple = "#cba6f7"
-fg = "#cdd6f4"
-bg = "#1e1e2e"
-grey = "#7f849c"
+red = "#e78284"
+orange = "#ef9f76"
+yellow = "#e5c890"
+green = "#a6d189"
+blue = "#8caaee"
+branch = "#8caaee"
+teal = "#81c8be"
+purple = "#ca9ee6"
+fg = "#c6d0f5"
+bg = "#303446"
+grey = "#838ba7"
 
 # catppuccin latte, verbatim.
 [palettes.catppuccin-light]

@@ -1,6 +1,6 @@
 # The /review and /fix fork run
 
-**The run folder.** `git rev-parse --path-format=absolute --git-path code-phase`, run in your starting directory, prints it; `<run folder>` below means that path. Create it with `mkdir -p` before the first write. You write only `<run folder>/review-handoff.txt`, `<run folder>/fix-findings.md` and `<run folder>/review-stop.md`, each with a Bash heredoc. A coder makes every other edit.
+**The run folder.** `git rev-parse --path-format=absolute --git-path code-phase`, run in your starting directory, prints it; `<run folder>` below means that path. Create it with `mkdir -p` before the first write. You write only `<run folder>/review-handoff.txt`, `<run folder>/fix-findings.md` and `<run folder>/review-stop.md`, each with the Write tool. A coder makes every other edit.
 
 **Launch.** Run the skill's launch line with `--detach`, in the foreground. Then run the `code_wait.py review --loop <loop dir>` command it prints, again while it prints `Still working`. On exit 1 of this call or of any later `code_wait.py review` call, do the step its last line names.
 

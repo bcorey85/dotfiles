@@ -7,11 +7,15 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-895 changes
+896 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
 ## Week of 2026-11-09
+
+### Added
+
+* [The coder validates handler input, keeps caught errors, uses the repo error type, sorts lists and writes the failing test first](notes/2026-11-10-the-coder-validates-handler-input-keeps-caught.md) [skill/coder-core, rule/backend] Five one-line rules reach the coder: two in its core skill (never drop a caught error; for a bug fix, no source edit until a new test has run and failed) and three in a new path-scoped rules/backend.md (validate handler fields, repo error type, explicit sort).
 
 ### Fixed
 
@@ -1057,6 +1061,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [The coder validates handler input, keeps caught errors, uses the repo error type, sorts lists and writes the failing test first](notes/2026-11-10-the-coder-validates-handler-input-keeps-caught.md) - No intake number reads these behaviors: work escape descriptions are hashed, so no class count maps to a rule. Stacks with no run: Vue (all rules); React for the three backend rules; Django and React for the new test-first wording (the old wording ran there); Django with the three backend rules in the path-scoped file has no same-batch arm without the file. The live globs (`**/*.py`, `**/backend/**`, `**/server/**`, `**/api/**`) are a judgment; the run used `backend/src/**/*.ts`.
 * [Coder fixes every site of a reviewed defect](notes/2026-11-02-coder-fixes-every-site-of-a-reviewed-defect.md) - Finding text in the work logs is hashed, so no intake number can tell an unswept sibling from any other round-two finding.
 * [Coder decides each control's state during an async action](notes/2026-11-02-coder-decides-each-control-s-state-during-an-async.md) - Finding text in the work logs is hashed, so no intake number can tell an in-flight bug from any other bug.
 * [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md) - The work logs carry no row for a culled test's input shape, so no intake number can read this edit.

@@ -16,6 +16,7 @@ Write every line for the person who reads and changes it next. Only correctness 
 - Write the plain version: one step per statement, no chained ternaries, no one-liner that packs several steps a reader has to unpack in their head. A comprehension has one loop.
 - Return a named type (dataclass, NamedTuple, interface) in place of a tuple of three or more values. Past five parameters, pass one named object.
 - A comment says why the code makes a choice it cannot show. Never restate what the code does.
+- Never write a catch block that drops the error: rethrow it, return it as a typed failure, or log it with the input that caused it.
 
 ## You are the terminal implementer (HARD RULE)
 
@@ -65,6 +66,7 @@ Write the tests for the behavior you implement, in the project's test layout. As
 Before you write a test, search the suite for tests that call the same function, at every layer. Before you keep a test, name the bug that it alone would catch. If another test in the suite already catches that bug, delete your test. Also delete it if it only checks a mock, the framework, a restated implementation, or a value copied from a registry or a constant that no acceptance criterion names.
 
 When a rule's cases are already tested at one layer, test each other entry point that applies the rule with one wiring test. Put inputs that take the same code branch in one table-driven test, with a message for each case.
+- For a bug fix, do not edit the source file until a new test has run and failed. Write the test, run it, quote the failing line, then fix.
 
 The plan's acceptance criteria (`docs/plans/<slug>/acceptance-criteria.md`) are the requirements list — read them as spec. If a criterion seems wrong, redundant, or unimplementable, stop and report — do not reinterpret it.
 

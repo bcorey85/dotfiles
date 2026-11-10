@@ -159,15 +159,6 @@ local FAMILIES = {
       light = { heading1 = "#d2212d", heading = "#ad8900" },
     },
   },
-  ["alabaster"] = {
-    -- p00f/alabaster.nvim: one colorscheme that follows vim.o.background.
-    schemes = { dark = "alabaster", light = "alabaster" },
-    colors_name = "alabaster",
-    accents = {
-      dark = { heading1 = "#cc8bc9", heading = "#71ade7" },
-      light = { heading1 = "#7a3e9d", heading = "#325cc0" },
-    },
-  },
   ["flexoki"] = {
     -- kepano/flexoki-neovim: flexoki-dark / flexoki-light both set colors_name "flexoki".
     schemes = { dark = "flexoki-dark", light = "flexoki-light" },
@@ -431,7 +422,10 @@ local function apply_overrides()
   set_org_agenda()
   set_dashboard()
   set_prose()
-  set_transparent()
+  -- An audition keeps its own ground: the terminal's belongs to the active family.
+  if own_scheme then
+    set_transparent()
+  end
 end
 
 -- Apply family+mode by setting background and re-running :colorscheme. Skips

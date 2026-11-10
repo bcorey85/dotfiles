@@ -510,6 +510,48 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn(f"Review every change since {base}", reviews[0]["prompt"])
         self.assertIn("app.py", reviews[0]["prompt"])
 
+    def test_a_fix_the_coder_commits_on_a_clean_tree_counts_as_fixed_and_is_reviewed(self):
+        base = git(self.repo, "rev-parse", "HEAD")
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}, "commit_all": True}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=f"base: {base}\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(git(self.repo, "log", "-1", "--format=%s"), "mid-loop")
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["iter"]), ("converged", 2))
+        self.assertEqual([entry["file_line"] for entry in packet["fixed"]], ["app.py:2"])
+        self.assertEqual(packet["skipped_fp"], [])
+        reviews = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
+        self.assertEqual(len(reviews), 2)
+        self.assertIn("+limit = 20", reviews[1]["prompt"] + self.round_fix_diff_text())
+
+    def test_a_fix_the_coder_commits_on_a_dirty_tree_is_reviewed_as_its_own_diff(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}, "commit_all": True}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["iter"]), ("converged", 2))
+        self.assertEqual([entry["file_line"] for entry in packet["fixed"]], ["app.py:2"])
+        reviews = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
+        self.assertEqual(len(reviews), 2)
+        self.assertIn("app.py", reviews[1]["prompt"])
+        fix_diff = self.round_fix_diff_text()
+        self.assertIn("+limit = 20", fix_diff)
+        self.assertNotIn("-limit = 1\n", fix_diff)
+
+    def round_fix_diff_text(self):
+        """The text of every round fix diff the loop wrote under its run folder."""
+        diffs = sorted(self.state_dir.rglob("round*-fix.diff"))
+        return "\n".join(diff.read_text() for diff in diffs)
+
     def test_a_files_line_scopes_the_review_to_those_files(self):
         completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
                                     header_extra="files: notes.py\n")

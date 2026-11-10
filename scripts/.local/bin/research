@@ -59,12 +59,13 @@ Use WebSearch/WebFetch only when the answer benefits from sources or current inf
 
 # Same launch discipline as `bookmark`: prompt via stdin (the variadic
 # --allowedTools flag swallows a positional prompt), per-run scoped
-# permissions, and setsid so the run outlives the popup's process group.
+# permissions, and its own session (setsid, or perl's POSIX::setsid on macOS) so
+# the run outlives the popup's process group.
 log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-research.log"
 pf="$(mktemp "${TMPDIR:-/tmp}/research-prompt.XXXXXX")"
 printf '%s' "$prompt" >"$pf"
 runner="cd $(printf %q "$VAULT") && $(printf %q "$(command -v claude)") -p --model sonnet --allowedTools WebFetch WebSearch $(printf %q 'Write(notes/**)') <$(printf %q "$pf") >$(printf %q "$log") 2>&1; rm -f $(printf %q "$pf")"
-setsid sh -c "$runner" >/dev/null 2>&1 &
+"$(dirname "$0")/detach" sh -c "$runner" >/dev/null 2>&1 &
 disown
 printf '✓ logged — answer stub landing in notes/ (log: %s)\n' "${log/#$HOME/\~}"
 sleep 1

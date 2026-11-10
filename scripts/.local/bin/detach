@@ -1,0 +1,10 @@
+#!/bin/bash
+# Run a command in its own session, so it outlives the caller's process group.
+#
+# Usage: detach <command> [args...]
+#
+# Uses setsid. macOS has no setsid by default, so there perl (shipped with
+# macOS) makes the new session through POSIX::setsid().
+
+command -v setsid &>/dev/null && exec setsid "$@"
+exec perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- "$@"

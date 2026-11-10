@@ -48,7 +48,11 @@ still judges.
                                          asks were answered, both wait: asks-done then refuses and lists them, and
                                          --packet <packet_id> names the one the outcomes belong to.
   review_fix.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]
-                                         Only --by user is the user's own word.
+                                         Only --by user is the user's own word. adopt prints `ACTION: redispatch`;
+                                         when the run has launch flags on record, it writes the first handoff plus
+                                         the RESOLVED lines to <git dir>/review-fix/adopt-handoff.md and prints the
+                                         ready launch line (`launch --iter <n> <the first run's flags> --handoff
+                                         <that file> --detach`); otherwise it prints the lines to build it by hand.
                                          With no saved state (no `packet` ran), it reads the held plan impacts from
                                          this session's hand-back: keep records the ruling; adopt logs the deviation
                                          and stops, since the caller must rerun its own review loop.
@@ -79,7 +83,7 @@ import review_launch
 import script_utils
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
-from review_fix_asks import command_asks_done
+from review_fix_asks import command_asks_done, relaunch_line
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_LOGGER,
@@ -106,6 +110,7 @@ DECIDE_USAGE = f"{plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}"
 NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
 LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
+ADOPT_HANDOFF_NAME = "adopt-handoff.md"
 DEFER_LINE_PREFIX = "plan_impact: RESOLVED: deferred to phase end"
 DEFER_LINE = f"{DEFER_LINE_PREFIX} by the session, <date>: <summary>"
 LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_LOOP_SCRIPT",
@@ -867,14 +872,32 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
 
     state["stage"] = "redispatch"
     save_fix_state(state)
-    print_action(
-        "redispatch",
-        ruling_logged_line(plan_path),
-        *entry,
-        f"Write the first run's handoff plus the lines below to a file, then run `launch` in the background with the "
-        f"first run's flags plus `--iter {state['iter']}` and `--handoff <that file>`:",
-        *lines,
-    )
+    print_action("redispatch", ruling_logged_line(plan_path), *entry, *redispatch_lines(state, lines))
+
+
+def redispatch_lines(state, resolved_lines):
+    """The re-dispatch after an adopt ruling. With the first run's launch flags on record, the script writes the
+    first handoff plus resolved_lines to a file and prints the ready launch line; without them, the session builds
+    both by hand."""
+    if not state.get("relaunch_args"):
+        return [f"Write the first run's handoff plus the lines below to a file, then run `launch` in the background "
+                f"with the first run's flags plus `--iter {state['iter']}` and `--handoff <that file>`:",
+                *resolved_lines]
+
+    first_handoff_file = review_launch.relaunch_handoff(state["relaunch_args"])
+    try:
+        first_handoff = first_handoff_file.read_text(encoding="utf-8")
+    except OSError as error:
+        raise UsageError(f"decide adopt: the first run's handoff {first_handoff_file} cannot be read ({error}). The "
+                         "ruling is logged. Write that handoff plus the RESOLVED lines to a file and run `launch` "
+                         "with the first run's flags, `--iter` and `--handoff <that file>`") from error
+
+    handoff_file = review_fix_dir() / ADOPT_HANDOFF_NAME
+    resolved_text = "\n".join(resolved_lines)
+    script_utils.write_text_atomically(handoff_file, f"{first_handoff.rstrip()}\n{resolved_text}\n")
+    launch_line = relaunch_line(state, [], handoff_file)
+    return [f"The first run's handoff plus the RESOLVED lines are in {handoff_file}. Run this launch line now, in "
+            "the background:", launch_line]
 
 
 def command_defer(argv):

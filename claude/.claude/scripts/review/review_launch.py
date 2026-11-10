@@ -209,6 +209,17 @@ def relaunch_args_with_files(args, paths):
     return [*args, *extra]
 
 
+def relaunch_handoff(args):
+    """The handoff file the relaunch flags name: `relaunch_args` always ends with `--handoff <file>`."""
+    return pathlib.Path(args[args.index("--handoff") + 1])
+
+
+def relaunch_args_with_handoff(args, handoff_file):
+    """The relaunch flags with their `--handoff` pointed at handoff_file."""
+    handoff_index = args.index("--handoff")
+    return [*args[:handoff_index + 1], str(handoff_file), *args[handoff_index + 2:]]
+
+
 def read_relaunch_args(launch_file):
     """The relaunch flags a launch record holds."""
     try:

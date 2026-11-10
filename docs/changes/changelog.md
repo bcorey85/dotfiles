@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-897 changes
+898 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -19,6 +19,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Code stops at every phase end and hands the user the commit line](notes/2026-11-10-code-stops-at-every-phase-end-and-hands-the-user.md) [skill/code] /code no longer goes on to the next phase by itself: every phase end stops for the user's read, and the stop names the commit line to run after reading and staging, so phases no longer pile up uncommitted.
 * [The coder logs or returns every caught error, also when the task asks for a fallback](notes/2026-11-10-the-coder-logs-or-returns-every-caught-error-also.md) [skill/coder-core] The coder's swallowed-error line now says to bind the error in every catch block and use it, and names a catch that only returns a fallback as a swallowed error.
 
 ### Fixed

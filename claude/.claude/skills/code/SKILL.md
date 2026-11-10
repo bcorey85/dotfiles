@@ -17,7 +17,7 @@ Dispatch coder subagent(s) to implement code directly without architectural plan
 
 ## Instructions
 
-**End the run only at a STOP below.** Everywhere else, take the next reversible step that follows from the task (a dispatch, a re-run, a read, a coder edit in scope) and report it afterward. Never end the run to ask leave for such a step or only to report progress: the next phase, a coder dispatch, a commit, a write and a confirmation are all reversible. Before a step that cannot be undone or that leaves this machine, STOP: name the step and say that `/code resume` runs it. When two paths are both defensible, take the one closer to the plan and name it in the report.
+**End the run only at a STOP below.** Everywhere else, take the next reversible step that follows from the task (a dispatch, a re-run, a read, a coder edit in scope) and report it afterward. Never end the run to ask leave for such a step or only to report progress: a coder dispatch, a re-run, a write and a confirmation are all reversible. Before a step that cannot be undone or that leaves this machine, STOP: name the step and say that `/code resume` runs it. When two paths are both defensible, take the one closer to the plan and name it in the report.
 
 **The run folder.** `git rev-parse --path-format=absolute --git-path code-phase` from the repo root prints it; `<run folder>` below means that path. Create it with `mkdir -p` before the first write.
 
@@ -69,7 +69,9 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
      3. A gate needed an exception, a `/fix` loop hit its cap, the coder flagged an ambiguity, or a plan change awaits sign-off → STOP, block B.
      4. `(risk: high)`, or no risk tag → STOP, block B.
      5. The next phase's Phase Status line carries `— gate:` → STOP, block B, naming the condition. A resume re-enters step 2 and reaches its gate bullet.
-     6. `(risk: low)` with all machine gates green → AUTO-ADVANCE, block A, then re-enter step 2 for the next phase in-session.
+     6. `(risk: low)` with all machine gates green → STOP, block B.
+
+   **The run never commits and never starts the next phase by itself.** Every phase end stops for the user's read. Blocks B and C print the commit line the user runs after reading and staging: `! git commit -m "<subject>"`. The subject is the phase's `Commit` line in the plan when it has one, else `<ticket id>: Phase <N>: <phase title>`, with no prefix when there is no ticket id.
 
 3. **Dispatch the coder**: one `coder` subagent for the whole phase, whatever layers it touches. Two coders in parallel only for two deliverables that share no contract, type, or file, split by deliverable. Name the phase ("implement Phase N of `<plan-path>`") and tell the coder to read it phase-scoped. The coder writes the phase's tests. If the task turns out architectural, have the coder report back and recommend `/eng-spec`.
 
@@ -108,17 +110,10 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
 
 Deliver every block through the `brief` skill's shape (`~/.claude/skills/brief/SKILL.md`).
 
-**A — Auto-advance** (decision rule 6):
+**B — Stop for sign-off** (decision rules 2–6):
 
 ```
-Phase <N> complete — machine gates green (review ✓, execution ✓, automated-verification ✓). Risk: low. Manual verification: <n> agent-verified, <m> human-only deferred to the /verify-branch packet.
-→ Auto-advancing to Phase <N+1> in-session (no /clear; interrupt anytime).
-```
-
-**B — Stop for sign-off** (decision rules 2–5):
-
-```
-Phase <N> complete. Risk: <high | low — Phase 1 calibration | low — exception>. Stopped for your review.
+Phase <N> complete. Risk: <high | low | low — Phase 1 calibration | low — exception>. Stopped for your review.
 
 Behavior delta (observable change + its proof, max 3 — no internals, no paths):
 - <before → after, user-visible>. See it: <test name / command / UI flow>.
@@ -147,7 +142,8 @@ Human-only verification remaining:
 
 Next:
   1. Read the queue (`]k`/`[k` in nvim); spot-check the evidence lines; run the human-only items.
-  2. Stage what you've read, then run /clear and /code to start Phase <N+1> fresh, or `/code resume <plan path>` to go on in this context.
+  2. Stage what you've read, then commit it: `! git commit -m "<subject>"`.
+  3. Run /clear and /code to start Phase <N+1> fresh, or `/code resume <plan path>` to go on in this context.
 
 Revisions to Phase <N>: `/code resume <plan path> <your feedback>`.
 ```
@@ -157,7 +153,7 @@ Omit either plan-change list and the asks list when it is empty.
 **C — Last phase** (decision rule 1): block B's walkthrough and verification lists, with the "Next" block replaced by:
 
 ```
-All phases complete. Next: read the Close pass recap's residue, run its smoke-test checklist, then you open the PR.
+All phases complete. Next: read the queue, stage what you've read, then commit it: `! git commit -m "<subject>"`. Then read the Close pass recap's residue, run its smoke-test checklist, then you open the PR.
 ```
 
 Verification items come from the just-finished phase's `#### Manual Verification:` section, split by the `agent-verified` / `human-only` tags. When that section is empty, omit both lists and replace step 1 with "Read the /stage queue."

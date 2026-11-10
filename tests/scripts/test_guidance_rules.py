@@ -183,6 +183,16 @@ class GuidanceRulesTest(unittest.TestCase):
                       "queue item or the brief records it", text)
         self.assertIn("logs it under `## Plan Deviations` with who and the date, and the run goes on", text)
 
+    def test_code_stops_at_every_phase_end_and_hands_the_user_the_commit_line(self):
+        text = guidance_text("skills/code/SKILL.md")
+        self.assertIn("6. `(risk: low)` with all machine gates green → STOP, block B.", text)
+        self.assertIn("The run never commits and never starts the next phase by itself.", text)
+        self.assertIn('2. Stage what you\'ve read, then commit it: `! git commit -m "<subject>"`.', text)
+        self.assertIn('All phases complete. Next: read the queue, stage what you\'ve read, then commit it: '
+                      '`! git commit -m "<subject>"`.', text)
+        self.assertNotIn("AUTO-ADVANCE", text)
+        self.assertNotIn("a commit, a write and a confirmation are all reversible", text)
+
 
 if __name__ == "__main__":
     unittest.main()

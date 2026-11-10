@@ -32,13 +32,13 @@ palettes.dark = {
   fg = "#b6c3cb",
   fg_bright = "#ebf2fd",
 
-  red = "#ffa29a",
-  amber = "#ffbf97",
-  yellow = "#eed286",
-  warn = "#fbb86d",
-  green = "#a3e7b1",
+  red = "#f76c66",
+  amber = "#f79732",
+  yellow = "#ccb03f",
+  warn = "#e29a30",
+  green = "#5cbd6e",
   teal = "#46b8ae",
-  blue = "#9bd5ff",
+  blue = "#36aff6",
   magenta = "#fc61a5",
 
   kw = "#9a9ea5",
@@ -63,7 +63,7 @@ palettes.dark = {
   search = "#5b4032",
 
   term = {
-    "#01131a", "#ffa29a", "#a3e7b1", "#eed286", "#9bd5ff", "#fc61a5", "#46b8ae", "#d7dfe9",
+    "#01131a", "#f76c66", "#5cbd6e", "#ccb03f", "#36aff6", "#fc61a5", "#46b8ae", "#d7dfe9",
     "#8c9096", "#ffc4bd", "#c5fbcf", "#ffe9ad", "#bdeaff", "#ff95c4", "#b0efe8", "#ebf2fd",
   },
 }
@@ -125,7 +125,9 @@ palettes.light = {
 }
 
 local mode = vim.o.background == "light" and "light" or "dark"
-local c = palettes[mode]
+-- A variant (colors/dredge-roles-warm.lua) swaps palette values through vim.g.dredge_overrides.
+local overrides = vim.g.dredge_overrides or {}
+local c = vim.tbl_extend("force", palettes[mode], overrides[mode] or {})
 
 vim.cmd("highlight clear")
 if vim.fn.exists("syntax_on") == 1 then

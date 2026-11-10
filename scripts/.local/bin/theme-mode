@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles solarized-osaka solarized selenized alabaster flexoki catppuccin; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles solarized-osaka solarized selenized flexoki catppuccin; }
 
 # A family that differs from another only in nvim's syntax colours borrows that
 # family's terminal, prompt, herdr, hunk, delta and claude themes.
@@ -153,10 +153,6 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # plugin's extras/ghostty.
     solarized-osaka:light)  echo "solarized-osaka-light" ;;
     solarized-osaka:*)      echo "solarized-osaka-dark" ;;
-    # alabaster: the light half is a ghostty BUILTIN; the dark half is a custom
-    # file from the plugin's terminal colours.
-    alabaster:light)        echo "Alabaster" ;;
-    alabaster:*)            echo "alabaster-dark" ;;
     # solarized: ghostty BUILTINS, Schoonover's sixteen with the base tones on
     # the bright slots.
     solarized:light)        echo "iTerm2 Solarized Light" ;;
@@ -221,10 +217,6 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # own panel), so the bases are the nearest greys that pass.
     solarized-osaka:light)  echo "ayu-light" ;;
     solarized-osaka:*)      echo "one-dark-pro" ;;
-    # alabaster: BASE of a full [custom_theme]. hunk has no alabaster; the
-    # VS Code default pair has the nearest passing text (#d4d4d4 / #000000).
-    alabaster:light)        echo "light-plus" ;;
-    alabaster:*)            echo "dark-plus" ;;
     # solarized: BASE of a full [custom_theme] whose syntax follows
     # solarized.nvim's autumn variant.
     solarized:light)        echo "solarized-light" ;;
@@ -277,8 +269,47 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
     tokyonight:*)                   cmt="#9098bd" ;;
     dracula:*)                      cmt="#b0b8cd" ;;
   esac
+  # Docstrings take the yellow tokyonight.nvim gives @string.documentation.
+  local docstr=""
+  case "$1:$2" in
+    tokyonight:light) docstr="#8c6c3e" ;;
+    tokyonight:*)     docstr="#e0af68" ;;
+  esac
+  # Every comment selector the builtin paints dim, doc comments included: a
+  # more specific base selector beats a plain "comment".
+  local cmt_scopes=(
+    "comment"
+    "punctuation.definition.comment"
+    "comment.block.documentation"
+    "comment.block.documentation punctuation"
+    "comment.block.documentation variable"
+    "comment.block.documentation storage"
+    "comment.block.documentation storage.type"
+    "comment.block.documentation keyword"
+    "comment.block.documentation support"
+    "comment.block.documentation markup"
+    "comment.block.documentation markup.inline.raw.string.markdown"
+    "comment.block.documentation entity.name.type.instance"
+    "comment.block.documentation punctuation.definition.block.tag"
+    "keyword.operator.assignment.jsdoc"
+  )
+  local docstr_scopes=(
+    "string.quoted.docstring.multi"
+    "string.quoted.docstring.multi.python punctuation.definition.string.begin"
+    "string.quoted.docstring.multi.python punctuation.definition.string.end"
+    "string.quoted.docstring.multi.python constant.character.escape"
+  )
   if [ -n "$cmt" ]; then
-    printf '[custom_theme]\nbase = "%s"\n\n[custom_theme.syntax_scopes]\n"comment" = "%s"\n"punctuation.definition.comment" = "%s"\n' "$3" "$cmt" "$cmt"
+    printf '[custom_theme]\nbase = "%s"\n\n[custom_theme.syntax_scopes]\n' "$3"
+    local scope
+    for scope in "${cmt_scopes[@]}"; do
+      printf '"%s" = "%s"\n' "$scope" "$cmt"
+    done
+    if [ -n "$docstr" ]; then
+      for scope in "${docstr_scopes[@]}"; do
+        printf '"%s" = "%s"\n' "$scope" "$docstr"
+      done
+    fi
     return 0
   fi
   # A diff-only block: syntax stays the builtin's, the diff colours follow nvim,
@@ -954,81 +985,6 @@ EOF
 "markup.bold"                       = "$text"
 "markup.italic"                     = "$text"
 "markup.quote"                      = "$text"
-EOF
-      )
-      ;;
-    # alabaster (p00f/alabaster.nvim): colour marks strings, constants,
-    # comments and definitions; keywords, types, calls and members are plain
-    # text. Roles are the resolved fg of nvim's groups; the comment carries
-    # theme-sync's contrast floor, markdown its set_prose and heading accents.
-    # Diff washes are DiffAdd/DiffDelete (rows) and those rows toward the sign.
-    alabaster:*)
-      local def="#71ade7" special="#cd974b" brk="#bababa" word_op="#708b8d"
-      local addWord remWord cls key
-      bg="#0e1415"; panel="#162022"; panelAlt="#182325"; border="#2b3d40"
-      accent="#71aed7"; accentMuted="#354c50"; text="#cecece"; muted="#7d7d7d"
-      addedBg="#244032"; removedBg="#462c32"; ctxBg="#0e1415"
-      addWord="#2e5334"; remWord="#5b2d31"
-      sAdd="#6abf40"; sRem="#d2322d"; lnFg="#5c5c5c"
-      badgeAdd="#6abf40"; badgeRem="#d2322d"; badgeNeu="#71aed7"
-      fRename="#71aed7"; fMod="#ec8013"; fUntracked="#6abf40"; note="#162022"
-      str="#95cb82"; num="#cc8bc9"; punct="#708b8d"; esc="#cc8bc9"; cmt="#dfdf8e"
-      if [ "$2" = light ]; then
-        def="#325cc0"; special="#cb9000"; brk="#777777"; word_op="#000000"
-        bg="#f7f7f7"; panel="#ececec"; panelAlt="#e7e7e7"; border="#c9c9c9"
-        accent="#007acc"; accentMuted="#bfdbfe"; text="#000000"; muted="#696969"
-        addedBg="#adffb7"; removedBg="#f8b28f"; ctxBg="#f7f7f7"
-        addWord="#92db97"; remWord="#ea9072"
-        sAdd="#284918"; sRem="#b40600"; lnFg="#7d7c7c"
-        badgeAdd="#284918"; badgeRem="#b40600"; badgeNeu="#007acc"
-        fRename="#007acc"; fMod="#9a5c00"; fUntracked="#284918"; note="#ececec"
-        str="#448c27"; num="#7a3e9d"; punct="#777777"; esc="#777777"; cmt="#8f2e29"
-      fi
-      kw="$text"; fn="$def"; typ="$text"; op="$punct"; konst="$num"; lang="$num"
-      mem="$text"; param="$text"; attr="$text"; tag="$text"; vbi="$text"; imp="$text"
-      pre="$text"; prim="$text"; ns="$text"; mac="$text"; bfn="$text"; var="$text"
-      cls="$def"; use="$text"; call="$text"; key="$text"
-      extra=$(cat <<EOF
-"keyword.operator.word"             = "$word_op"
-"keyword.operator.new"              = "$word_op"
-"keyword.operator.expression"       = "$word_op"
-"keyword.operator.logical.python"   = "$word_op"
-"string.regexp"                     = "$special"
-"support.constant"                  = "$konst"
-"meta.function-call entity.name.function" = "$text"
-"new.expr entity.name.function"     = "$text"
-"new.expr entity.name.type"         = "$text"
-"entity.name.type.class"            = "$def"
-"entity.name.type.interface"        = "$def"
-"entity.name.type.alias"            = "$def"
-"entity.name.type.enum"             = "$def"
-"meta.brace"                        = "$brk"
-"meta.brace.round"                  = "$brk"
-"meta.brace.square"                 = "$brk"
-"meta.brace.curly"                  = "$brk"
-"punctuation.section"               = "$brk"
-"punctuation.parenthesis"           = "$brk"
-"punctuation.definition.block"      = "$brk"
-"punctuation.definition.parameters" = "$brk"
-"punctuation.definition.arguments"  = "$brk"
-"markup.heading"                    = "$def"
-"entity.name.section"               = "$def"
-"entity.name.section.markdown"      = "$def"
-"punctuation.definition.heading.markdown" = "$def"
-"heading.1.markdown entity.name.section.markdown" = "$num"
-"heading.1.markdown punctuation.definition.heading.markdown" = "$num"
-"markup.list"                       = "$text"
-"punctuation.definition.list.begin.markdown" = "$cmt"
-"beginning.punctuation.definition.list.markdown" = "$cmt"
-"markup.underline.link"             = "$cmt"
-"markup.underline.link.markdown"    = "$cmt"
-"string.other.link.title.markdown"  = "$text"
-"string.other.link.description.markdown" = "$text"
-"markup.inline.raw"                 = "$text"
-"markup.fenced_code"                = "$special"
-"markup.quote"                      = "$text"
-"markup.bold"                       = "$text"
-"markup.italic"                     = "$text"
 EOF
       )
       ;;
@@ -1789,26 +1745,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#adbcbc" subtext0="#8a9ea3"
       green="#75b938" yellow="#dbb32d" red="#fa5750"
       blue="#4695f7" teal="#41c7b9" peach="#ed8649"
-      ;;
-    alabaster:light)
-      # alabaster light (#f7f7f7 ground, pmenu grey panel).
-      base_name="one-light"
-      accent="#007acc" panel_bg="#e7e7e7" surface_dim="#d4d4d4"
-      surface0="#c9c9c9" surface1="#b7b7b7"
-      overlay0="#696969" overlay1="#555555"
-      text="#000000" subtext0="#555555"
-      green="#448c27" yellow="#876004" red="#aa3731"
-      blue="#325cc0" teal="#0083b2" peach="#9a5c00"
-      ;;
-    alabaster:*)
-      # alabaster dark (#0e1415 ground, panel a step darker).
-      base_name="one-dark"
-      accent="#71aed7" panel_bg="#0a0f10" surface_dim="#1d2a2c"
-      surface0="#293a3d" surface1="#354c50"
-      overlay0="#7d7d7d" overlay1="#9f9f9f"
-      text="#cecece" subtext0="#9f9f9f"
-      green="#95cb82" yellow="#cd974b" red="#d2322d"
-      blue="#71aed7" teal="#47bea9" peach="#ec8013"
       ;;
     flexoki:light)
       # flexoki light (paper #fffcf0 ground, bg-2 panel).

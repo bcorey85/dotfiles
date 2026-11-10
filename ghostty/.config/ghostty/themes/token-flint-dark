@@ -1,0 +1,23 @@
+# token flint dark (ThorstenRhau/token contrib/ghostty), verbatim.
+palette = 0=#1c2127
+palette = 1=#e3888c
+palette = 2=#a9b98c
+palette = 3=#c5a15a
+palette = 4=#88acc4
+palette = 5=#e09478
+palette = 6=#98bbd4
+palette = 7=#afb6bc
+palette = 8=#858f9b
+palette = 9=#eb9e83
+palette = 10=#bccaa1
+palette = 11=#f8d28a
+palette = 12=#97b8cd
+palette = 13=#e29a80
+palette = 14=#adcde3
+palette = 15=#c3c8cc
+background = #272c33
+foreground = #c3c8cc
+cursor-color = #eb9e83
+cursor-text = #272c33
+selection-background = #3a414a
+selection-foreground = #c3c8cc

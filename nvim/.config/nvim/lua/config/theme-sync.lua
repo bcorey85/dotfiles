@@ -183,11 +183,47 @@ local FAMILIES = {
       light = { heading1 = "#a02f6f", heading = "#205ea6" },
     },
   },
-  ["catppuccin"] = {
-    -- catppuccin/nvim: mocha #1e1e2e / latte #eff1f5.
-    schemes = { dark = "catppuccin-mocha", light = "catppuccin-latte" },
+  ["token-flint"] = {
+    -- ThorstenRhau/token: one colorscheme "token-flint" follows vim.o.background
+    -- (cool grey #272c33 dark / #f5f7f8 light).
+    schemes = { dark = "token-flint", light = "token-flint" },
+    colors_name = "token-flint",
     accents = {
-      dark = { heading1 = "#f38ba8", heading = "#f9e2af" },
+      dark = { heading1 = "#eb9e83", heading = "#f8d28a" },
+      light = { heading1 = "#902a03", heading = "#6b4600" },
+    },
+  },
+  ["jellybeans"] = {
+    -- WTFox/jellybeans.nvim: one colorscheme "jellybeans" follows vim.o.background
+    -- (#151515 dark / sepia #f5e6d3 light).
+    schemes = { dark = "jellybeans", light = "jellybeans" },
+    colors_name = "jellybeans",
+    -- Stock diffs are fg-only, which recolours the code; rows take the
+    -- green/red/blue 15% into the ground and words the blue 30%, so syntax
+    -- stays readable.
+    pre = function(mode)
+      local bg = mode == "light" and "#f5e6d3" or "#151515"
+      local hues = mode == "light" and { gr = "#386014", re = "#a02020", ch = "#1670af", bl = "#2952a3" }
+        or { gr = "#70b950", re = "#d74545", ch = "#5f9ecf", bl = "#8197bf" }
+      require("jellybeans").setup({
+        on_highlights = function(highlights)
+          highlights.DiffAdd = { bg = blend(hues.gr, bg, 0.15) }
+          highlights.DiffDelete = { bg = blend(hues.re, bg, 0.15) }
+          highlights.DiffChange = { bg = blend(hues.ch, bg, 0.12) }
+          highlights.DiffText = { bg = blend(hues.bl, bg, 0.30) }
+        end,
+      })
+    end,
+    accents = {
+      dark = { heading1 = "#b0d0f0", heading = "#8fbfdc" },
+      light = { heading1 = "#234291", heading = "#5f43aa" },
+    },
+  },
+  ["catppuccin"] = {
+    -- catppuccin/nvim: frappé #303446 / latte #eff1f5.
+    schemes = { dark = "catppuccin-frappe", light = "catppuccin-latte" },
+    accents = {
+      dark = { heading1 = "#e78284", heading = "#e5c890" },
       light = { heading1 = "#d20f39", heading = "#df8e1d" },
     },
   },

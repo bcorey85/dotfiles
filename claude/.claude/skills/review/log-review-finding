@@ -90,7 +90,8 @@
 #       deferred   real, moved to the branch-exit triage queue
 #       ask        needs a human decision
 #       none       not yet dispositioned
-#     desc="one line"
+#     desc="one line"             desc=- reads the text from stdin (a quoted heredoc), so quotes,
+#       backticks and semicolons in it reach the script as written; empty stdin is refused
 #     fix_induced=yes|no|bug      (optional) the finding names code a previous
 #       fix in this loop introduced, not code the coder originally wrote.
 #       `bug` sets blocker=yes.
@@ -193,6 +194,7 @@ measure_diff_loc() {
 swallowed_pair=$'[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*='
 
 # kv_fold sends every value as a string; this hook handles these values itself.
+# desc=-: the text is read from stdin.
 # file=<path>: a path may hold spaces, so kv_fold's space refusal is off for it. It is
 #   refused here when it holds a line break, or whitespace followed by name= (the shape
 #   of a swallowed pair). A clean path is left to the default string fold.
@@ -201,6 +203,13 @@ swallowed_pair=$'[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*='
 # phase=- or an empty phase: no phase; the key is dropped, since phase is a token in
 #   the registry and "-" or empty would be refused.
 fold_writer_special_values() {
+  if [ "$1" = desc ] && [ "$2" = - ]; then
+    local desc_text
+    desc_text=$(cat)
+    [ -n "$desc_text" ] || { echo "refusing to log: desc=- read nothing from stdin." >&2; exit 1; }
+    json=$(jq -c --arg v "$desc_text" '.desc = $v' <<< "$json")
+    return 0
+  fi
   if [ "$1" = file ]; then
     if [[ $2 == *$'\n'* || $2 == *$'\r'* || $2 =~ $swallowed_pair ]]; then
       echo "refusing to log: file= holds a line break or whitespace then a name=: '$2'" >&2

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-892 changes
+893 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The /code ask-outcome call passes its free text to log-review-finding on stdin](notes/2026-11-09-the-code-ask-outcome-call-passes-its-free-text-to.md) [skill/code, shared/finding-log] `log-review-finding desc=-` reads the text from stdin, and the /code ask-outcome call passes its one-line ruling in a quoted heredoc, so quotes, backticks and semicolons in it no longer split or run as shell and the outcome row is logged.
 * [decide adopt prints a ready launch line from the first run's flags](notes/2026-11-09-decide-adopt-prints-a-ready-launch-line-from-the.md) [script/review-fix, skill/review, skill/fix] When the run has launch flags on record, `review_fix.py decide adopt` writes the first handoff plus the RESOLVED lines to a file and prints the ready launch line, so the follow-up run keeps the first run's repo, range, files and reviewer model.
 * [Review loop defers a round-two fix outside the fix diff](notes/2026-11-09-review-loop-defers-a-round-two-fix-outside-the-fix.md) [script/review-loop, script/review-loop-fix-induced] From round two on, `review_loop_script.py` sends a `fix` finding to the fix coder only when it touches the previous fix diff or its class is bug, correctness or security. Every other fix goes to the packet's `findings_remaining`, logged `actioned=none`. Those fixes alone start no further round, and a converged run that still holds one ends `deferred`. Round one is unchanged.
 * [a code phase review holds the files dirty before the run](notes/2026-11-09-a-code-phase-review-holds-the-files-dirty-before.md) [skill/code, script/code-review-start, script/review-loop-script] A /code phase review holds every file that was dirty before the run started and still holds the same bytes: the file stays out of the review scope and the findings, and fix coders are told never to edit it.

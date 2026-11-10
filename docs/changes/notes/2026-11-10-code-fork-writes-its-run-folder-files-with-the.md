@@ -32,7 +32,7 @@ Hook time, median of 15 through `hook-python`: 22 ms on a non-fork Write, 36 ms 
 
 ## Result
 
-`test_fork_write_scope.py`: 8 tests. Before the change the frontmatter and registration tests fail; after, all pass.
+`test_fork_write_scope.py`: 8 tests. Before the change the frontmatter and registration tests fail; after, all pass. `tests/duplicate_code.py` passes: the gate's reason function is `out_of_folder_reason`, since `deny_reason` already names a function in `wait_loop_gate.py`.
 
 ## Watch
 

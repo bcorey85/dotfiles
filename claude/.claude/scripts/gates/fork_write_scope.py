@@ -41,7 +41,7 @@ def load_hook_input():
     return hook_input
 
 
-def deny_reason(payload, hook_input):
+def out_of_folder_reason(payload, hook_input):
     """The deny text for a code-fork Write outside a run folder, else None."""
     tool_input = hook_input.tool_input_of(payload) or {}
     file_path = hook_input.edited_file_path(tool_input)
@@ -60,7 +60,7 @@ def main():
 
     hook_input = load_hook_input()
     try:
-        reason = deny_reason(payload, hook_input)
+        reason = out_of_folder_reason(payload, hook_input)
     except Exception as error:
         reason = ERROR_TEXT.format(error=error)
     if reason:

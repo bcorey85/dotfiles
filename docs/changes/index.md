@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-899 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+900 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [The removed-change guard ignores formatting-only hunks](notes/2026-11-10-the-removed-change-guard-ignores-formatting-only.md).
+Latest change: 2026-11-10, [Scoped test and full-check runs take env from a personal per-repo file](notes/2026-11-10-scoped-test-and-full-check-runs-take-env-from-a.md).
 
 ## Top gains
 

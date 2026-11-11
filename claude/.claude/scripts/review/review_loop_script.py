@@ -906,7 +906,10 @@ class LoopRun(full_check_gate.FullCheckSteps):
             return True
 
         if tails:
-            self.stop("critical-blocker", ["scoped tests failing after the last fix:\n" + "\n\n".join(tails)])
+            env_hint = ("a test that needs an env var the repo's CI sets: add it under "
+                        f"{plan_format.gate_env_repo_name(self.repo)!r} in {plan_format.personal_gate_env_file()}")
+            self.stop("critical-blocker",
+                      ["scoped tests failing after the last fix:\n" + "\n\n".join(tails) + "\n" + env_hint])
             return False
 
         return True

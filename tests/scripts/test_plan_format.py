@@ -1,10 +1,12 @@
 import glob
+import json
 import os
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -770,6 +772,85 @@ class RepoGateEnvTest(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = pathlib.Path(directory.name)
+        self.gate_env_file = self.root.parent / f"{self.root.name}-gate-env.json"
+        self.addCleanup(self.gate_env_file.unlink, missing_ok=True)
+        environment = mock.patch.dict(os.environ, {"CLAUDE_GATE_ENV_FILE": str(self.gate_env_file)})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def init_repo_with_origin(self, origin_url):
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        subprocess.run(["git", "-C", str(self.root), "remote", "add", "origin", origin_url], check=True)
+
+    def test_the_personal_file_gives_the_assignments_listed_under_the_repo_name(self):
+        self.init_repo_with_origin("git@x:org/app.git")
+        self.gate_env_file.write_text(json.dumps({"app": ["PLUGINS=1"], "other": ["NOPE=1"]}))
+
+        self.assertEqual(["PLUGINS=1"], plan_format.repo_gate_env(self.root))
+
+    def test_a_plan_assignment_wins_over_the_personal_file_for_the_same_name(self):
+        self.init_repo_with_origin("git@x:org/app.git")
+        self.gate_env_file.write_text(json.dumps({"app": ["PLUGINS=1", "KEEP=1"]}))
+        own_plan = self.write_plan("one", "PLUGINS=0 cargo test")
+
+        self.assertEqual(["KEEP=1", "PLUGINS=0"], sorted(plan_format.repo_gate_env(self.root, own_plan)))
+
+    def test_an_agreed_plan_assignment_wins_over_the_personal_file_when_the_run_has_no_plan(self):
+        self.init_repo_with_origin("git@x:org/app.git")
+        self.gate_env_file.write_text(json.dumps({"app": ["PLUGINS=1", "KEEP=1"]}))
+        self.write_plan("one", "PLUGINS=0 cargo test")
+
+        self.assertEqual(["KEEP=1", "PLUGINS=0"], sorted(plan_format.repo_gate_env(self.root, None)))
+
+    def test_a_repo_with_no_origin_is_named_by_its_folder(self):
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        self.gate_env_file.write_text(json.dumps({self.root.name: ["PLUGINS=1"]}))
+
+        self.assertEqual(["PLUGINS=1"], plan_format.repo_gate_env(self.root))
+
+    def test_a_folder_that_is_not_a_git_repo_is_named_by_its_folder(self):
+        self.gate_env_file.write_text(json.dumps({self.root.name: ["PLUGINS=1"]}))
+
+        self.assertEqual(["PLUGINS=1"], plan_format.repo_gate_env(self.root))
+
+    def test_a_linked_worktree_with_no_origin_is_named_by_the_main_checkout_folder(self):
+        main_checkout = self.root / "main-checkout"
+        linked = self.root / "linked"
+        subprocess.run(["git", "init", "-q", str(main_checkout)], check=True)
+        subprocess.run(["git", "-C", str(main_checkout), "-c", "user.name=t", "-c", "user.email=t@t", "commit",
+                        "-q", "--allow-empty", "-m", "base"], check=True)
+        subprocess.run(["git", "-C", str(main_checkout), "worktree", "add", "-q", str(linked)], check=True)
+        self.gate_env_file.write_text(json.dumps({"main-checkout": ["PLUGINS=1"], "linked": ["NOPE=1"]}))
+
+        self.assertEqual(["PLUGINS=1"], plan_format.repo_gate_env(linked))
+
+    def test_a_missing_personal_file_adds_nothing(self):
+        self.init_repo_with_origin("git@x:org/app.git")
+
+        self.assertEqual([], plan_format.repo_gate_env(self.root))
+
+    def test_a_malformed_personal_file_raises_naming_the_file_and_the_entry(self):
+        self.init_repo_with_origin("git@x:org/app.git")
+        bad_files = {
+            "not json": "{nope",
+            "not a mapping": json.dumps(["PLUGINS=1"]),
+            "not a list": json.dumps({"app": "PLUGINS=1"}),
+            "not an assignment": json.dumps({"app": ["PLUGINS"]}),
+            "a value the loop cannot read back": json.dumps({"app": ["A=$HOME/x"]}),
+            "a word with a command separator": json.dumps({"app": ["A=a;b"]}),
+            "a quoted word": json.dumps({"app": ["'A=1'"]}),
+            "a quoted value with a newline": json.dumps({"app": ['A="a\nb"']}),
+        }
+        for label, text in bad_files.items():
+            with self.subTest(label):
+                self.gate_env_file.write_text(text)
+
+                with self.assertRaises(ValueError) as caught:
+                    plan_format.repo_gate_env(self.root)
+
+                self.assertIn(str(self.gate_env_file), str(caught.exception))
+                if label not in ("not json", "not a mapping"):
+                    self.assertIn("'app'", str(caught.exception))
 
     def write_plan(self, folder, command):
         plan_dir = self.root / "docs/plans" / folder

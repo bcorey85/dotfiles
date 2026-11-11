@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-900 changes
+901 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -24,6 +24,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [pull_keep_index pull_target docstring names every exit](notes/2026-11-10-pull-keep-index-pull-target-docstring-names-every.md) [script/pull-keep-index] The pull_target docstring again names the exit 1 with the git error when the origin lookup fails on a branch with no upstream.
 * [pull_keep_index lets a branch's first push run](notes/2026-11-10-pull-keep-index-lets-a-branch-s-first-push-run.md) [script/pull-keep-index] On a branch with no upstream, pull_keep_index pulls origin/<branch> when it exists and otherwise exits 0 with nothing set aside, so the chained first `git push -u` runs instead of stopping on a failed pull.
 * [pipe-shell check reads || as an OR, not a pipe](notes/2026-11-10-pipe-shell-check-reads-as-an-or-not-a-pipe.md) [script/pipe-shell-check] The pipe-shell check script and its gate-replay reference no longer read the second bar of `||` as a pipe into a shell, so `a || bash <script> list` passes there; the live generated bash-safety-gate.sh grep still denies it. A real `| sh` and a bar behind an odd run of backslashes still deny.
 * [code-fork writes its run folder files with the Write tool, held to the run folder by a hook](notes/2026-11-10-code-fork-writes-its-run-folder-files-with-the.md) [agent/code-fork, skill/code, shared/review-fork-run] The /code, /review and /fix fork writes stop.md, handoff and findings files with the Write tool, which a new Write hook holds to the run folder, so a stop whose text names an interpreter flag no longer loses its stop file.

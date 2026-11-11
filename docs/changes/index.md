@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-900 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+901 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [Push lines push with -u origin HEAD so a first push works](notes/2026-11-10-push-lines-push-with-u-origin-head-so-a-first.md).
+Latest change: 2026-11-10, [pull_keep_index pull_target docstring names every exit](notes/2026-11-10-pull-keep-index-pull-target-docstring-names-every.md).
 
 ## Top gains
 

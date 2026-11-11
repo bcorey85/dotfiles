@@ -185,8 +185,8 @@ def pull_target(repo):
     """The remote and branch to name to `git pull`: [] when the upstream resolves or the remote still has the set
     upstream (or the head is detached), so git picks it; ["origin", branch] when no upstream is set but origin has the
     branch; None when no upstream is set and origin lacks the branch, so there is nothing to pull. Exit 1 as
-    `configured_upstream_target` does when `@{u}` does not resolve, and naming the failed command when the branch name
-    lookup fails."""
+    `configured_upstream_target` does when `@{u}` does not resolve, naming the failed command when the branch name
+    lookup fails, and with the git error when the origin lookup fails (no upstream set)."""
     upstream = run_in_repo(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
     if upstream.returncode == 0:
         return []

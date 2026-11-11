@@ -18,9 +18,14 @@ unmeasured: ""
 ## Change
 
 `scripts/tools/pull_keep_index.py` looks up the upstream before it sets anything aside. With an upstream, it pulls as
-before. With none, it asks origin for `refs/heads/<branch>` (the full ref, so `feature/<branch>` does not count): when
-origin has it, it pulls `origin <branch>` with the same keep-index handling; when origin answers that it lacks it, the
-script prints one line and exits 0. Any other lookup failure exits 1 with the git error.
+before. "No upstream" means no upstream config (`branch.<branch>.merge` unset): a branch whose upstream is set but
+deleted on origin still goes to `git pull`, which fails, so a chained push does not recreate it. With no upstream
+config, it asks origin for `refs/heads/<branch>` (the full ref, so `feature/<branch>` does not count): when origin has
+it, it pulls `origin <branch>` with the same keep-index handling, then sets `origin/<branch>` as the upstream so a
+later bare `git push` works (written as `branch.<branch>.remote` and `.merge` config, so a single-branch clone with no
+`origin/<branch>` ref works too); when origin answers that it lacks it, the script prints one line and exits 0. Any
+other origin lookup failure or a failed upstream set exits 1 with the git error; a failed branch-name lookup exits 1
+naming the failed command.
 
 ## Evidence
 
@@ -30,7 +35,9 @@ non-zero and the `&&` chain stopped before `git push -u`.
 ## Result
 
 The new tests cover no upstream and no remote branch (exit 0, staged files stay staged), a remote branch whose name
-only ends in the local name, a remote branch of the same name (pulled), and no origin (exit 1).
+only ends in the local name, a remote branch of the same name (pulled, and `@{u}` then resolves to it), a set upstream
+deleted on origin and pruned (exit 1), a single-branch clone with no `origin/<branch>` ref (pulled, exit 0,
+upstream config, remote and merge, written), a folder where the branch lookup fails (exit 1), and no origin (exit 1).
 
 ## Watch
 

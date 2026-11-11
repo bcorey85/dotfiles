@@ -31,9 +31,9 @@ change.
 The new allowed cases pass and every denied case still denies. The script's median time on four matched commands is
 22.0 ms, next to 11.6 ms for a bare `python3 -c pass`.
 
-No live hook calls this script: the generated `bash-safety-gate.sh` runs its own grep for `pipe_shell`, which still
-denies `||`. That rule is owned by the work machine and is logged in `~/agent-evals/WORK-SECURITY-HOOKS.md`. This
-script stays the gate replay's reference.
+No live hook calls this script: the generated `bash-safety-gate.sh` runs its own grep for `pipe_shell` (its grep at
+line 307; the block call is at 308), which still denies `||`. That rule is owned by the work machine and is logged in
+`~/agent-evals/WORK-SECURITY-HOOKS.md`. This script stays the gate replay's reference.
 
 ## Watch
 

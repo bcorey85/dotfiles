@@ -4,10 +4,13 @@ Run `git pull --rebase=merges` in the repo with its local changes set aside and 
 staged. `--autostash` puts them back unstaged. The changes are saved as a dangling stash commit, never on the shared
 stash stack. The re-apply names that commit in BUILT_PAGE_STASH, so the agent-evals built-page merge driver rebuilds a
 generated page in place of a text merge. When the re-apply conflicts, every other file gets back its staged or
-unstaged state and the conflicted paths stay conflicted. A branch with no upstream pulls `origin <branch>` when
-origin has it; when origin lacks it, nothing is pulled or set aside and the exit is 0, so a chained first push runs.
-Exit 0 when the pull ran and the changes are back; exit 1 with the recovery command otherwise. A failed origin lookup
-exits 1 with the git error before anything is set aside."""
+unstaged state and the conflicted paths stay conflicted. A branch with no upstream setting pulls `origin <branch>`
+when origin has it, then sets that as its upstream; when origin lacks it, nothing is pulled or set aside and the exit
+is 0, so a chained first push runs. A branch whose upstream is set but gone from origin goes to `git pull`, which
+fails, so the chained push does not run.
+Exit 0 when the pull ran and the changes are back; exit 1 with the recovery command otherwise. A failed branch-name
+lookup exits 1 naming the failed command, and a failed origin lookup exits 1 with the git error, before anything is
+set aside."""
 import os
 import subprocess
 import sys
@@ -132,14 +135,24 @@ def put_back(repo, saved):
 
 
 def pull_target(repo):
-    """The remote and branch to name to `git pull`: [] when the branch has an upstream (or is detached), so git
-    picks it; ["origin", branch] when there is no upstream but origin has the branch; None when there is nothing to
-    pull. Exit 1 with the git error when the remote lookup fails."""
+    """The remote and branch to name to `git pull`: [] when the branch has an upstream setting (or is detached), so
+    git picks it, and fails loudly when that upstream is gone from origin; ["origin", branch] when no upstream is set
+    but origin has the branch; None when no upstream is set and origin lacks the branch, so there is nothing to
+    pull. Exit 1 naming the failed command when the branch name lookup fails, and with the git error when the remote
+    lookup fails."""
     upstream = run_in_repo(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
     if upstream.returncode == 0:
         return []
     branch = script_utils.current_branch(repo)
+    if branch is None:
+        sys.exit(f"pull_keep_index: git branch --show-current failed in {repo}")
     if not branch:
+        return []
+
+    # `@{u}` also fails when an upstream is set but its origin branch was deleted and pruned. That case must reach
+    # `git pull` and fail, or a chained `git push` would recreate the deleted branch.
+    configured = run_in_repo(repo, "config", "--get", f"branch.{branch}.merge")
+    if configured.returncode == 0:
         return []
 
     # `ls-remote --exit-code` exits 2 when the remote answered and has no such branch; any other failure is a real
@@ -178,6 +191,22 @@ def main(arguments):
         put_back(repo, saved)
     if pulled.returncode != 0:
         sys.exit(f"pull_keep_index: git pull failed in {repo}; the local changes are back in place.")
+    if target:
+        set_upstream(repo, target[1])
+
+
+def set_upstream(repo, branch):
+    """Track origin/<branch> after a targeted pull, so a later bare `git push` and `git pull` work. The config is
+    written directly because `--set-upstream-to` needs a remote-tracking ref, which a single-branch clone never has.
+    Exit 1 with the git error and the command to run when that fails."""
+    settings = (("remote", "origin"), ("merge", f"refs/heads/{branch}"))
+    for key, value in settings:
+        written = run_in_repo(repo, "config", f"branch.{branch}.{key}", value)
+        if written.returncode == 0:
+            continue
+        problem = os.fsdecode(written.stderr).strip()
+        sys.exit(f"pull_keep_index: the pull worked but setting the upstream of {branch} failed in {repo}: {problem}. "
+                 f"To set it, run: git -C {repo} config branch.{branch}.{key} {value}")
 
 
 if __name__ == "__main__":

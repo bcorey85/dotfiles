@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -476,6 +477,238 @@ class BelowCriteriaDeviationTest(unittest.TestCase):
         self.assertEqual("assumed: a header row found: none", plan_format.below_criteria_summary(bold))
         self.assertEqual(f"{plan_format.BELOW_CRITERIA_RULING} assumed: a header row found: none",
                          plan_format.below_criteria_ruling(bold))
+
+
+CRITERION_TEXT = "The cache reuses the stored value"
+CRITERIA_WITH_TICKET_NOT_CARRIED = "# Acceptance Criteria\n\n- **AC1** — The cache may reuse a stored value\n"
+SPEC_WITH_RULING = (f'# Plan\n\n## Plan Deviations\n\n- 2026-11-10: Ticket #1 "{CRITERION_TEXT}" reworded. '
+                    "The session ruled it.\n")
+
+
+class CriteriaOwnerTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        self.queue_dir = self.folder / "home" / "agent-evals" / "queue"
+        self.queue_dir.mkdir(parents=True)
+        home_patch = mock.patch.dict(os.environ, {"HOME": str(self.folder / "home")})
+        home_patch.start()
+        self.addCleanup(home_patch.stop)
+
+    def queue_item(self, frontmatter_body, slug="item"):
+        (self.queue_dir / f"{slug}.md").write_text(f"---\ntype: \"QueueItem\"\n{frontmatter_body}---\n\nbody\n")
+
+    def ticket(self, source_line, criteria=True):
+        text = f"# T-1: Thing\n\n{source_line}\n\n"
+        if criteria:
+            text += f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n"
+        path = self.folder / "00-ticket.md"
+        path.write_text(text)
+        return path
+
+    def test_a_ticket_copied_from_a_queue_item_a_session_wrote_is_session_owned(self):
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n')
+        owner = plan_format.criteria_owner(self.ticket("Source: ~/agent-evals/queue/item.md"))
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
+        self.assertEqual(owner["rule"], plan_format.CRITERIA_OWNER_RULES[plan_format.CRITERIA_OWNER_SESSION])
+        self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_markdown_marks_and_trailing_text_on_the_source_line_are_allowed(self):
+        self.queue_item('generated: {"by": "process:nightly", "at": "2026-11-01"}\n')
+        owner = plan_format.criteria_owner(self.ticket("**Source:** `~/agent-evals/queue/item.md` (copied)"))
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
+
+    def test_a_queue_item_a_human_wrote_is_user_owned(self):
+        self.queue_item('generated: {"by": "human:x", "at": "2026-11-01"}\n')
+        owner = plan_format.criteria_owner(self.ticket("Source: ~/agent-evals/queue/item.md"))
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_USER)
+
+    def test_a_missing_queue_file_raises_and_names_it(self):
+        ticket = self.ticket("Source: ~/agent-evals/queue/missing.md")
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            plan_format.criteria_owner(ticket)
+        self.assertIn(f"{ticket}:3:", str(raised.exception))
+        self.assertIn("queue/missing.md", str(raised.exception))
+
+    def test_a_queue_file_with_no_generated_key_raises_and_names_it(self):
+        self.queue_item('kind: "chore"\n')
+        ticket = self.ticket("Source: ~/agent-evals/queue/item.md")
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            plan_format.criteria_owner(ticket)
+        self.assertIn("queue/item.md", str(raised.exception))
+        self.assertIn("generated:", str(raised.exception))
+
+    def test_a_queue_file_whose_generated_value_has_no_readable_by_raises_and_names_it(self):
+        cases = {
+            "no frontmatter": None,
+            "generated is not JSON": 'generated: not json\n',
+            "generated is not an object": 'generated: ["claude-code/x"]\n',
+            "by missing": 'generated: {"at": "2026-11-01"}\n',
+            "by empty": 'generated: {"by": "  ", "at": "2026-11-01"}\n',
+            "by not a string": 'generated: {"by": 7}\n',
+        }
+        for label, frontmatter_body in cases.items():
+            with self.subTest(label):
+                if frontmatter_body is None:
+                    (self.queue_dir / "item.md").write_text("body only\n")
+                else:
+                    self.queue_item(frontmatter_body)
+                ticket = self.ticket("Source: ~/agent-evals/queue/item.md")
+
+                with self.assertRaises(plan_format.PlanFormatError) as raised:
+                    plan_format.criteria_owner(ticket)
+                self.assertIn("queue/item.md", str(raised.exception))
+                self.assertIn(f"{ticket}:3:", str(raised.exception))
+
+    def test_a_queue_source_that_is_not_the_queue_form_raises(self):
+        for source in ("~/agent-evals/queue/Bad_Slug.md", "~/agent-evals/queue/sub/x.md"):
+            with self.subTest(source):
+                ticket = self.ticket(f"Source: {source}")
+
+                with self.assertRaises(plan_format.PlanFormatError) as raised:
+                    plan_format.criteria_owner(ticket)
+                self.assertIn("not the queue form", str(raised.exception))
+
+    def test_the_human_check_is_the_exact_prefix_of_the_stripped_author(self):
+        cases = {"humanoid": plan_format.CRITERIA_OWNER_SESSION, " human:x": plan_format.CRITERIA_OWNER_USER}
+        for author, expected in cases.items():
+            with self.subTest(author):
+                self.queue_item(f'generated: {{"by": "{author}", "at": "2026-11-01"}}\n')
+                owner = plan_format.criteria_owner(self.ticket("Source: ~/agent-evals/queue/item.md"))
+
+                self.assertEqual(owner["owner"], expected)
+
+    def test_a_non_queue_source_line_before_the_queue_one_is_skipped(self):
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n')
+        owner = plan_format.criteria_owner(
+            self.ticket("Source: user\nSource: ~/agent-evals/queue/item.md"))
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
+        self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_a_source_outside_the_queue_folder_never_changes_the_owner(self):
+        owner = plan_format.criteria_owner(self.ticket("Source: product-specs/a.md"))
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_USER)
+
+    def test_a_ticket_with_no_criteria_heading_is_plan_owned(self):
+        owner = plan_format.criteria_owner(self.ticket("Source: user, 2026-11-01", criteria=False))
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_PLAN)
+
+    def test_a_ticket_with_a_misnamed_criteria_heading_still_raises(self):
+        ticket = self.folder / "00-ticket.md"
+        ticket.write_text("# T-1\n\n## Acceptance notes\n\n- x\n")
+
+        with self.assertRaises(plan_format.PlanFormatError):
+            plan_format.criteria_owner(ticket)
+
+    def test_no_ticket_beside_the_plan_gives_user_with_no_ticket(self):
+        owner = plan_format.plan_criteria_owner(self.folder / "spec.md")
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_USER)
+        self.assertIsNone(owner["ticket"])
+
+    def test_several_tickets_beside_the_plan_raise_naming_the_folder_and_the_files(self):
+        (self.folder / "A-00-ticket.md").write_text("# T-1\n")
+        (self.folder / "B-00-ticket.md").write_text("# T-2\n")
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            plan_format.ticket_beside(self.folder / "spec.md")
+
+        message = str(raised.exception)
+        self.assertIn(str(self.folder), message)
+        self.assertIn("A-00-ticket.md", message)
+        self.assertIn("B-00-ticket.md", message)
+
+    def test_the_exact_ticket_wins_over_a_prefixed_one_beside_the_plan(self):
+        (self.folder / "00-ticket.md").write_text("# T-1\n")
+        (self.folder / "A-00-ticket.md").write_text("# T-2\n")
+
+        self.assertEqual(plan_format.ticket_beside(self.folder / "spec.md"), self.folder / "00-ticket.md")
+
+    def test_no_ticket_beside_the_plan_still_gives_none(self):
+        self.assertIsNone(plan_format.ticket_beside(self.folder / "spec.md"))
+
+    def test_spec_ac_failures_gives_an_error_row_when_several_tickets_sit_beside_the_spec(self):
+        (self.folder / "A-00-ticket.md").write_text("# T-1\n")
+        (self.folder / "B-00-ticket.md").write_text("# T-2\n")
+        spec = self.folder / "spec.md"
+        spec.write_text("# Plan\n")
+
+        failures = plan_format.spec_ac_failures(spec)
+
+        self.assertEqual(len(failures), 1)
+        self.assertIn("B-00-ticket.md", failures[0])
+
+    def test_a_session_owned_reworded_criterion_with_a_ruling_line_passes_drift(self):
+        failures = plan_format.ac_drift_failures(
+            f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n", CRITERIA_WITH_TICKET_NOT_CARRIED, SPEC_WITH_RULING,
+            owner=plan_format.CRITERIA_OWNER_SESSION)
+
+        self.assertEqual(failures, [])
+
+    def test_a_ruling_line_naming_the_criterion_one_way_passes_drift(self):
+        by_ticket_number = "# Plan\n\n## Plan Deviations\n\n- 2026-11-10: Ticket #1 reworded. The session ruled it.\n"
+        by_quoted_text = (
+            f'# Plan\n\n## Plan Deviations\n\n- 2026-11-10: "{CRITERION_TEXT}" reworded. The session ruled it.\n')
+        for label, spec in (("ticket number", by_ticket_number), ("quoted text", by_quoted_text)):
+            with self.subTest(label):
+                failures = plan_format.ac_drift_failures(
+                    f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n", CRITERIA_WITH_TICKET_NOT_CARRIED, spec,
+                    owner=plan_format.CRITERIA_OWNER_SESSION)
+
+                self.assertEqual(failures, [])
+
+    def test_the_same_ruling_line_on_a_user_owned_ticket_still_fails(self):
+        failures = plan_format.ac_drift_failures(
+            f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n", CRITERIA_WITH_TICKET_NOT_CARRIED, SPEC_WITH_RULING,
+            owner=plan_format.CRITERIA_OWNER_USER)
+
+        self.assertEqual(len(failures), 1)
+        self.assertIn("no AC in the criteria file carries this wording and no sign-off names it. Copy it verbatim "
+                      "into one AC, or record the user's sign-off (who and when) naming it", failures[0])
+        self.assertNotIn("ruling", failures[0])
+
+    def test_a_session_owned_reworded_criterion_without_a_ruling_asks_for_the_sessions_ruling(self):
+        failures = plan_format.ac_drift_failures(
+            f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n", CRITERIA_WITH_TICKET_NOT_CARRIED, "# Plan\n",
+            owner=plan_format.CRITERIA_OWNER_SESSION)
+
+        self.assertEqual(len(failures), 1)
+        self.assertIn("add a line under `## Plan Deviations` that holds `ruling` and names `Ticket #1`", failures[0])
+        self.assertNotIn("--by session", failures[0])
+
+    def test_a_sign_off_line_naming_the_criterion_still_passes_on_a_session_owned_ticket(self):
+        spec = f'# Plan\n\n## Plan Deviations\n\n- 2026-11-10: Ticket #1 "{CRITERION_TEXT}" reworded; sign-off by x.\n'
+        failures = plan_format.ac_drift_failures(
+            f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n", CRITERIA_WITH_TICKET_NOT_CARRIED, spec,
+            owner=plan_format.CRITERIA_OWNER_SESSION)
+
+        self.assertEqual(failures, [])
+
+    def test_a_ruled_line_that_names_no_criterion_does_not_clear_session_owned_drift(self):
+        spec = "# Plan\n\n## Plan Deviations\n\n- 2026-11-10: Something else was ruled on.\n"
+        failures = plan_format.ac_drift_failures(
+            f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n", CRITERIA_WITH_TICKET_NOT_CARRIED, spec,
+            owner=plan_format.CRITERIA_OWNER_SESSION)
+
+        self.assertEqual(len(failures), 1)
+
+    def test_spec_ac_failures_reads_the_owner_of_the_ticket_beside_the_spec(self):
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n')
+        self.ticket("Source: ~/agent-evals/queue/item.md")
+        (self.folder / "acceptance-criteria.md").write_text(CRITERIA_WITH_TICKET_NOT_CARRIED)
+        spec = self.folder / "spec.md"
+        spec.write_text(SPEC_WITH_RULING)
+
+        self.assertEqual(plan_format.spec_ac_failures(spec), [])
 
 
 class LoudFailureTest(unittest.TestCase):

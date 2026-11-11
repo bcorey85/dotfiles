@@ -130,7 +130,10 @@ def resolve_inputs(target, ticket_file, top):
         return "flat", flat, flat, "legacy flat plan: it is both ticket and plan"
 
     task_dir = top / output
-    ticket = find_in_dir(task_dir, "00-ticket.md", "*-00-ticket.md")
+    try:
+        ticket = plan_format.ticket_beside(task_dir / "spec.md")
+    except plan_format.PlanFormatError as error:
+        raise vc.VerifyError(str(error)) from error
     if ticket is None:
         raise vc.VerifyError(f"{task_dir}: no 00-ticket.md or *-00-ticket.md")
     spec = find_in_dir(task_dir, "spec.md", "*-05-plan.md")
@@ -154,7 +157,8 @@ def read_criteria(mode, ticket_path, plan_path):
     ticket_entries = vc.branch_ticket_criteria(ticket_text, str(ticket_path), entries)
     comment_entries = vc.branch_ticket_comments(ticket_text, str(ticket_path))
     labelled_entries = [*ticket_entries, *comment_entries]
-    counts = {"ticket": len(ticket_entries), "ticketLabels": [entry["label"] for entry in labelled_entries],
+    counts = {"criteriaOwner": vc.branch_criteria_owner(ticket_path),
+              "ticket": len(ticket_entries), "ticketLabels": [entry["label"] for entry in labelled_entries],
               "ticketLines": [f"{entry['label']}: {entry['text']}" for entry in labelled_entries],
               "criteriaFileIds": 0, "manualOnly": 0, "manualVerification": 0, "ids": []}
 
@@ -286,6 +290,8 @@ def print_plan(context):
                      "own record of the logged review stood in. Name this skipped input in your report.")
     lines += gate_env_lines
     lines += [f"  {ticket_line}" for ticket_line in criteria["ticketLines"]]
+    criteria_owner = criteria["criteriaOwner"]
+    lines.append(f"  criteria owner: {criteria_owner['owner']} — {criteria_owner['rule']}")
     lines.append("  run rules:")
     lines += [f"  - {rule.format(output_dir=context['verifierOutputDir'])}" for rule in VERIFIER_RUN_RULES]
     lines.append("  ---")

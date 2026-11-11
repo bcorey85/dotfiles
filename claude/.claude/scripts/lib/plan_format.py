@@ -24,6 +24,7 @@ never who signed it. A moved phase is neither done nor open, and it needs no `##
 the section to the new ticket.
 """
 import datetime
+import json
 import pathlib
 import re
 
@@ -811,8 +812,11 @@ def ruling_owner(repo_dir, by):
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
+PLAN_CHECK_OWNER_COMMAND = "python3 ~/.claude/scripts/code/plan_check.py owner <plan>"
 DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
-                  "place of `--by user`. A session ruling never changes the acceptance criteria.")
+                  "place of `--by user`. A session ruling changes an acceptance criterion only when "
+                  f"`{PLAN_CHECK_OWNER_COMMAND}` names `session` or `plan`, and for `plan` only while the ticket's own "
+                  "words stay met.")
 DECIDE_USAGE_STEM = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
 
 
@@ -983,12 +987,13 @@ def spec_ac_failures(spec_path):
     failures = []
     criteria_path = spec_path.with_name("acceptance-criteria.md")
     criteria_text = criteria_path.read_text() if criteria_path.is_file() else None
-    ticket_paths = sorted(spec_path.parent.glob("*00-ticket.md"))
     try:
+        ticket_path = ticket_beside(spec_path)
         failures += ac_reference_failures(spec_text, criteria_text, str(spec_path), str(criteria_path))
-        if criteria_text is not None and len(ticket_paths) == 1:
-            failures += ac_drift_failures(ticket_paths[0].read_text(), criteria_text, spec_text, str(ticket_paths[0]),
-                                          str(criteria_path))
+        if criteria_text is not None and ticket_path is not None:
+            owner = criteria_owner(ticket_path)["owner"]
+            failures += ac_drift_failures(ticket_path.read_text(), criteria_text, spec_text, str(ticket_path),
+                                          str(criteria_path), owner)
     except PlanFormatError as error:
         failures.append(str(error))
     return failures
@@ -1215,9 +1220,123 @@ def ticket_comments(ticket_text, name="ticket"):
     return comment_entries([" ".join(parts) for parts in comments])
 
 
+# Who owns a ticket's criteria, and so who may cut or reword one. A ticket copied from a queue item names the item in a
+# `Source:` line; the item's `generated.by` says whether a person or a session wrote the criteria.
+CRITERIA_OWNER_USER = "user"
+CRITERIA_OWNER_PLAN = "plan"
+CRITERIA_OWNER_SESSION = "session"
+CRITERIA_OWNER_RULES = {
+    CRITERIA_OWNER_USER: "only the user's recorded sign-off (who and when) cuts, narrows or rewords a criterion",
+    CRITERIA_OWNER_PLAN: "the ticket has no criteria heading, so the criteria restate it: the session may cut or "
+                         "reword one while the ticket's own words stay met, and asks the user otherwise",
+    CRITERIA_OWNER_SESSION: "a session wrote this ticket's criteria: the session may rule on a change to one and "
+                            "records the ruling; no user sign-off is needed",
+}
+QUEUE_SOURCE_PREFIX = "~/agent-evals/queue/"
+QUEUE_SOURCE_FORM = re.compile(r"^~/agent-evals/queue/[a-z0-9-]+\.md(?: .*)?$")
+SOURCE_LINE = re.compile(r"^(?:-\s+)?source:\s*(.*)$", re.I)
+GENERATED_FORM = 'generated: {"by": "<author>", ...}'
+HUMAN_AUTHOR_PREFIX = "human:"
+
+
+def queue_source_line(ticket_lines):
+    """(line number, value) of the ticket's first `Source:` line whose value starts with the queue folder, with
+    markdown marks stripped; None when no line does."""
+    for number, line in enumerate(ticket_lines, 1):
+        match = SOURCE_LINE.match(MARKDOWN_MARKS.sub("", line).strip())
+        if match and match.group(1).startswith(QUEUE_SOURCE_PREFIX):
+            return number, match.group(1)
+    return None
+
+
+def queue_item_author(ticket_name, number, source_value):
+    """The `generated.by` author of the queue item a `Source:` line names. Raises PlanFormatError
+    (`ticket_name:line:`) naming the queue file and the expected form when the line, the file or its frontmatter
+    breaks the form."""
+    where = f"{ticket_name}:{number}:"
+    if not QUEUE_SOURCE_FORM.match(source_value):
+        raise PlanFormatError(f"{where} Source line `{source_value}` is not the queue form; expected "
+                              f"`Source: {QUEUE_SOURCE_PREFIX}<slug>.md`, optionally followed by a space and text")
+
+    queue_file = pathlib.Path(source_value.split(" ")[0]).expanduser()
+    if not queue_file.is_file():
+        raise PlanFormatError(f"{where} queue file {queue_file} does not exist; the Source line must name an "
+                              "existing queue item (pull ~/agent-evals if the item was queued on another machine)")
+
+    generated_value = script_utils.frontmatter_value(queue_file.read_text(), "generated")
+    if generated_value is None:
+        raise PlanFormatError(f"{where} queue file {queue_file} has no `generated:` frontmatter key; expected "
+                              f"`{GENERATED_FORM}`")
+
+    try:
+        generated_object = json.loads(generated_value)
+    except json.JSONDecodeError as error:
+        raise PlanFormatError(f"{where} queue file {queue_file} `generated:` is not a JSON object ({error}); "
+                              f"expected `{GENERATED_FORM}`") from error
+    author = generated_object.get("by") if isinstance(generated_object, dict) else None
+    if not isinstance(author, str) or not author.strip():
+        raise PlanFormatError(f"{where} queue file {queue_file} `generated:` has no non-empty `by`; expected "
+                              f"`{GENERATED_FORM}`")
+    return author.strip()
+
+
+def owner_record(ticket_path, owner, source):
+    return {"owner": owner, "ticket": str(ticket_path) if ticket_path is not None else None, "source": source,
+            "rule": CRITERIA_OWNER_RULES[owner]}
+
+
+def criteria_owner(ticket_path):
+    """{"owner", "ticket", "source", "rule"} for the ticket's criteria. A ticket whose first queue `Source:` line names
+    a queue item is `session` when the item's `generated.by` is not a `human:` author, else `user`. Without one, a
+    ticket with no criteria heading is `plan`, and any other ticket is `user`. A `Source:` line outside the queue
+    folder never changes the owner. Raises PlanFormatError on a queue line the item cannot back, and on a ticket the
+    criteria reader cannot parse."""
+    ticket_name = str(ticket_path)
+    ticket_text = pathlib.Path(ticket_path).read_text()
+    queue_source = queue_source_line(ticket_text.splitlines())
+    if queue_source is not None:
+        number, source_value = queue_source
+        author = queue_item_author(ticket_name, number, source_value)
+        owner = CRITERIA_OWNER_USER if author.startswith(HUMAN_AUTHOR_PREFIX) else CRITERIA_OWNER_SESSION
+        return owner_record(ticket_path, owner, source_value)
+
+    try:
+        ticket_criteria(ticket_text, ticket_name)
+    except NoCriteriaHeadingError:
+        return owner_record(ticket_path, CRITERIA_OWNER_PLAN, None)
+    return owner_record(ticket_path, CRITERIA_OWNER_USER, None)
+
+
+def ticket_beside(plan_path):
+    """The plan folder's `00-ticket.md`, else its single `*-00-ticket.md`; None when there is none. Raises
+    PlanFormatError naming the folder and the files when there are several `*-00-ticket.md` and no exact one, because
+    no one of them can be picked."""
+    folder = pathlib.Path(plan_path).parent
+    exact_ticket = folder / "00-ticket.md"
+    if exact_ticket.is_file():
+        return exact_ticket
+    ticket_paths = sorted(folder.glob("*-00-ticket.md"))
+    if not ticket_paths:
+        return None
+    if len(ticket_paths) > 1:
+        names = ", ".join(ticket.name for ticket in ticket_paths)
+        raise PlanFormatError(f"{folder}: several tickets ({names}); keep one `*-00-ticket.md` in the plan folder")
+    return ticket_paths[0]
+
+
+def plan_criteria_owner(plan_path):
+    """`criteria_owner` of the ticket beside the plan; `user` with `ticket: None` when no ticket is beside it."""
+    ticket_path = ticket_beside(plan_path)
+    if ticket_path is None:
+        return owner_record(None, CRITERIA_OWNER_USER, None)
+    return criteria_owner(ticket_path)
+
+
 # Ticket-criteria drift. A plan or criteria file never cuts, narrows, splits or rewords a ticket criterion without the
-# user's sign-off, so each ticket criterion's text must be the text of some AC in acceptance-criteria.md.
+# user's sign-off (or, for a ticket whose criteria a session owns, the session's ruling), so each ticket criterion's
+# text must be the text of some AC in acceptance-criteria.md.
 SIGN_OFF = re.compile(r"sign-?off", re.I)
+SESSION_RULING = re.compile(rf"{SIGN_OFF.pattern}|\bruled\b|\bruling\b", re.I)
 MARKDOWN_MARKS = re.compile(r"[*_`]")
 
 
@@ -1226,22 +1345,23 @@ def normalized_words(text):
     return " ".join(MARKDOWN_MARKS.sub("", text).split())
 
 
-def sign_off_names(lines, entry):
-    """True when a line holds a sign-off and names the ticket criterion: it quotes the criterion's text or says
-    `Ticket #<n>`."""
+def sign_off_names(lines, entry, mark=SIGN_OFF):
+    """True when a line holds the `mark` (a sign-off by default) and names the ticket criterion: it quotes the
+    criterion's text or says `Ticket #<n>`."""
     label = re.compile(rf"ticket\s*#{entry['number']}(?!\d)", re.I)
     for line in lines:
-        if SIGN_OFF.search(line) and (normalized_words(entry["text"]) in normalized_words(line) or label.search(line)):
+        if mark.search(line) and (normalized_words(entry["text"]) in normalized_words(line) or label.search(line)):
             return True
     return False
 
 
 def ac_drift_failures(ticket_text, criteria_text, spec_text, ticket_name="00-ticket.md",
-                      criteria_name="acceptance-criteria.md"):
+                      criteria_name="acceptance-criteria.md", owner=CRITERIA_OWNER_USER):
     """One message for each ticket criterion whose text (compared after markdown marks and whitespace are normalised)
     is the text of no AC in the criteria file, unless a line of the criteria file or of the spec's `## Plan Deviations`
-    section holds a sign-off that names it. A ticket with no criteria heading has nothing to drift from and gives [];
-    any other ticket the reader cannot parse raises PlanFormatError (`ticket_name:line:`)."""
+    section holds a sign-off that names it. For a `session` owner, a line holding a ruling (`ruled`, `ruling`) counts
+    too. A ticket with no criteria heading has nothing to drift from and gives []; any other ticket the reader cannot
+    parse raises PlanFormatError (`ticket_name:line:`)."""
     try:
         ticket_entries = ticket_criteria(ticket_text, ticket_name)
     except NoCriteriaHeadingError:
@@ -1251,9 +1371,18 @@ def ac_drift_failures(ticket_text, criteria_text, spec_text, ticket_name="00-tic
     deviation_lines = [spec_lines[index]
                        for index in script_utils.heading_section_indexes(spec_lines, DEVIATIONS_HEADING)]
     sign_off_lines = criteria_text.splitlines() + deviation_lines
+    session_owned = owner == CRITERIA_OWNER_SESSION
+    mark = SESSION_RULING if session_owned else SIGN_OFF
     failures = []
     for entry in ticket_entries:
-        if normalized_words(entry["text"]) in criteria_texts or sign_off_names(sign_off_lines, entry):
+        if normalized_words(entry["text"]) in criteria_texts or sign_off_names(sign_off_lines, entry, mark):
+            continue
+        if session_owned:
+            failures.append(f"{criteria_name}: ticket criterion {entry['number']} reads {entry['text'][:100]!r}: no AC "
+                            "in the criteria file carries this wording and no sign-off or ruling names it. Copy it "
+                            "verbatim into one AC, or add a line under `## Plan Deviations` that holds `ruling` and "
+                            f"names `Ticket #{entry['number']}`, with who and when (in `decide`, put "
+                            f"`Ticket #{entry['number']}` in `--ruling`)")
             continue
         failures.append(f"{criteria_name}: ticket criterion {entry['number']} reads {entry['text'][:100]!r}: no AC in "
                         f"the criteria file carries this wording and no sign-off names it. Copy it verbatim into one "

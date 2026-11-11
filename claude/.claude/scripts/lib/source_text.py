@@ -1,8 +1,10 @@
 """source_text.py: plain-text readers for source files and their diffs, with no rule of any one script.
 
 Toolkit scripts import it after putting scripts/lib on sys.path."""
+import difflib
 import os
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -33,6 +35,41 @@ COMMENT_STYLE_OF_SUFFIX = {
         ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".swift", ".php", ".c", ".h",
         ".cc", ".cpp", ".hpp"), "slash"),
 }
+
+
+class FormattingOnlyLines(NamedTuple):
+    old: Counter
+    new: Counter
+
+
+def stripped_lines(text):
+    """The nonblank lines of the text, each with surrounding whitespace dropped."""
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def normalized_block(lines):
+    """A block of lines reduced to what a formatter leaves alone: no whitespace, one quote style, and no comma
+    right before a closing bracket."""
+    squeezed = "".join("".join(lines).split()).replace("'", '"')
+    return re.sub(r",(?=[)\]}])", "", squeezed)
+
+
+def formatting_only_lines(old_text, new_text):
+    """The lines of old_text and of new_text, as Counters, that sit in a replaced hunk whose two sides differ only
+    in formatting."""
+    old_lines = stripped_lines(old_text)
+    new_lines = stripped_lines(new_text)
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
+    reformatted = FormattingOnlyLines(Counter(), Counter())
+    for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes():
+        if tag != "replace":
+            continue
+        old_block = old_lines[old_start:old_end]
+        new_block = new_lines[new_start:new_end]
+        if normalized_block(old_block) == normalized_block(new_block):
+            reformatted.old.update(old_block)
+            reformatted.new.update(new_block)
+    return reformatted
 
 
 def indent_of(line):

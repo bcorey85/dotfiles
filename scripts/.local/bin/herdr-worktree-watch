@@ -19,7 +19,7 @@
 # workspace. An open workspace logs `still open`. A workspace that is gone gets
 # its recovery steps written to herdr-worktree-watch.log in the worktree's git
 # dir, and a herdr notification names that log (none under tuios, which has no
-# notification command). The recovery line's format is in
+# notification command). The recovery steps' format is in
 # `herdr-worktree --help`. Any other failure of the workspace check is
 # reported on stderr as "could not check workspace" (the log under the launcher)
 # and exits 1. It never reopens the workspace: the user may have closed it on
@@ -38,8 +38,8 @@ parent_session="$5"
 log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
 
 watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
-# The herdr-dev part of the recovery line resumes a fork that already holds
-# its brief, so it never retypes it.
+# Step 2's herdr-dev call resumes a fork that already holds its brief, so it
+# never retypes it.
 # Keep the text free of single quotes: the log wraps it in them.
 RESUME_PROMPT="Go on with the work in this worktree; your brief is already in context."
 
@@ -94,7 +94,9 @@ if [ "$error_code" != "workspace_not_found" ]; then
     exit 1
 fi
 
-# %q quotes each value so the logged lines paste into a shell as written.
+# %q quotes each value so, after its number, step 1 pastes into a shell as
+# written and the herdr-dev step 2 does once `<ws>` is replaced. The fallback
+# step 2 is prose; only its worktree path pastes, as a cd target.
 # tuios answers no worktree.create, so there the workspace opens on the
 # existing worktree through herdr-api.
 label=$(basename "$worktree")
@@ -106,17 +108,15 @@ fi
 focus_step=""
 # tuios ignores create's --focus, and herdr-dev's layout calls need the client
 # on this workspace.
-[ -z "${TUIOS_SOCKET:-}" ] || focus_step=" && herdr-api workspace focus \"\$ws\" >/dev/null"
+[ -z "${TUIOS_SOCKET:-}" ] || focus_step="herdr-api workspace focus <ws> >/dev/null && "
 {
     echo "workspace $workspace closed. Recovery steps:"
+    echo "1. $reopen"
     if [ -n "$session" ]; then
-        # Same jq path herdr-worktree uses on its own create call. "// empty"
-        # turns a reply without an id into an empty string, so the -n check
-        # stops herdr-dev for both an empty and an id-less reopen. The line
-        # has no number prefix so it pastes into a shell as written.
-        echo "ws=\$($reopen | jq -r '.result.workspace.workspace_id // empty') && [ -n \"\$ws\" ]$focus_step && herdr-dev $(printf %q "$worktree") \"\$ws\" $(printf %q "$session") '$RESUME_PROMPT'"
+        # <ws> stays a placeholder: the user reads the id off step 1's reply.
+        echo "2. ${focus_step}herdr-dev $(printf %q "$worktree") <ws> $(printf %q "$session") '$RESUME_PROMPT'"
+        echo "<ws> is the workspace id that step 1 prints (.result.workspace.workspace_id)"
     else
-        echo "1. $reopen"
         echo "2. the fork's session id could not be read; run claude --resume in $(printf %q "$worktree")"
     fi
 }>>"$log"

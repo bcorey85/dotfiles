@@ -17,10 +17,8 @@ PANE_WITH_SESSION = '{"result":{"pane":{"agent":"claude","agent_session":{"value
 PARENT_PANE = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"parent1"}}}}'
 PANE_WITHOUT_SESSION = '{"result":{"pane":null}}'
 RESUME_PROMPT = "Go on with the work in this worktree; your brief is already in context."
-WORKSPACE_ID_FIELD = "jq -r '.result.workspace.workspace_id // empty')"
-RESUME_STEP = ("ws=$({reopen} | " + WORKSPACE_ID_FIELD
-               + " && [ -n \"$ws\" ]{focus} && herdr-dev {worktree} \"$ws\" s1 '" + RESUME_PROMPT + "'")
-OPEN_OUTPUT = '{"result":{"workspace":{"workspace_id":"w9"}}}'
+WORKSPACE_ID_NOTE = "<ws> is the workspace id that step 1 prints (.result.workspace.workspace_id)"
+TUIOS_FOCUS = "herdr-api workspace focus <ws> >/dev/null && "
 WORKSPACE_NOT_FOUND_COMMAND = 'echo \'{"error":{"code":"workspace_not_found"}}\' >&2; exit 1'
 
 
@@ -47,14 +45,21 @@ class HerdrWorktreeWatchTest(unittest.TestCase):
         self.bin_dir.mkdir()
         self.herdr_calls = self.root / "herdr-calls"
         write_stub(self.bin_dir / "herdr", f"""printf "%s\\n" "$*" >> {self.herdr_calls}
-[ "$1 $2" = "worktree open" ] && echo '{OPEN_OUTPUT}'
 exit 0""")
-        self.herdr_dev_calls = self.root / "herdr-dev-calls"
-        write_stub(self.bin_dir / "herdr-dev", f'printf "%s\\n" "$*" >> {self.herdr_dev_calls}')
 
-    def resume_step(self, reopen=None, focus=""):
+    def recovery_lines(self, reopen=None, focus=""):
+        """The numbered steps and the note on <ws> that the log holds for a fork session id of s1."""
         reopen = reopen or f"herdr worktree open --cwd {self.main_checkout} --path {self.worktree} --focus"
-        return RESUME_STEP.format(reopen=reopen, focus=focus, worktree=self.worktree)
+        return [f"1. {reopen}",
+                f"2. {focus}herdr-dev {self.worktree} <ws> s1 '{RESUME_PROMPT}'",
+                WORKSPACE_ID_NOTE]
+
+    def assert_recovery_steps(self, log_text, reopen=None, focus=""):
+        log_lines = log_text.splitlines()
+        for expected in self.recovery_lines(reopen, focus):
+            self.assertIn(expected, log_lines)
+        self.assertNotIn("ws=$(", log_text)
+        self.assertNotIn("| jq", log_text)
 
     def stub_herdr_api(self, workspace_open, pane):
         workspace_command = "exit 0" if workspace_open else WORKSPACE_NOT_FOUND_COMMAND
@@ -77,9 +82,6 @@ esac""")
                                parent_session],
                               env=env, capture_output=True, text=True)
 
-    def resume_step_line(self):
-        return self.log.read_text().splitlines()[1]
-
     def herdr_calls_text(self):
         return self.herdr_calls.read_text() if self.herdr_calls.exists() else ""
 
@@ -92,56 +94,18 @@ esac""")
         self.assertEqual(self.log.read_text(), "workspace w1 still open\n")
         self.assertNotIn("notification", self.herdr_calls_text())
 
-    def test_a_gone_workspace_logs_one_line_with_literal_values_that_captures_the_new_workspace_id(self):
+    def test_a_gone_workspace_logs_two_numbered_steps_with_literal_values_and_no_shell_capture(self):
         self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
 
         finished = self.run_watch()
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        log_lines = self.log.read_text().splitlines()
-        self.assertIn(self.resume_step(), log_lines)
-        self.assertEqual(len(log_lines), 2)
+        log_text = self.log.read_text()
+        self.assert_recovery_steps(log_text)
+        self.assertEqual(len(log_text.splitlines()), 4)
         notification = self.herdr_calls_text()
         self.assertIn("notification show herdr-worktree: workspace closed", notification)
         self.assertIn(str(self.log), notification)
-
-    def test_the_logged_line_passes_the_workspace_id_that_the_reopen_prints_to_herdr_dev(self):
-        self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
-        self.run_watch()
-        logged_line = self.resume_step_line()
-        env = {**os.environ, "PATH": f"{self.bin_dir}:{os.environ['PATH']}"}
-
-        pasted = subprocess.run(["bash", "-c", logged_line], env=env,
-                                capture_output=True, text=True)
-
-        self.assertEqual(pasted.returncode, 0, pasted.stderr)
-        self.assertEqual(self.herdr_dev_calls.read_text().strip(), f"{self.worktree} w9 s1 {RESUME_PROMPT}")
-
-    def test_the_logged_line_does_not_run_herdr_dev_when_the_reopen_prints_no_workspace_id(self):
-        self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
-        self.run_watch()
-        logged_line = self.resume_step_line()
-        write_stub(self.bin_dir / "herdr", "exit 1")
-        env = {**os.environ, "PATH": f"{self.bin_dir}:{os.environ['PATH']}"}
-
-        pasted = subprocess.run(["bash", "-c", logged_line], env=env,
-                                capture_output=True, text=True)
-
-        self.assertNotEqual(pasted.returncode, 0)
-        self.assertFalse(self.herdr_dev_calls.exists())
-
-    def test_the_logged_line_does_not_run_herdr_dev_when_the_reopen_prints_json_without_a_workspace_id(self):
-        self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
-        self.run_watch()
-        logged_line = self.resume_step_line()
-        write_stub(self.bin_dir / "herdr", "echo '{\"result\":{}}'")
-        env = {**os.environ, "PATH": f"{self.bin_dir}:{os.environ['PATH']}"}
-
-        pasted = subprocess.run(["bash", "-c", logged_line], env=env,
-                                capture_output=True, text=True)
-
-        self.assertNotEqual(pasted.returncode, 0)
-        self.assertFalse(self.herdr_dev_calls.exists())
 
     def test_a_gone_workspace_with_no_session_id_logs_the_claude_resume_step(self):
         self.stub_herdr_api(workspace_open=False, pane=PANE_WITHOUT_SESSION)
@@ -188,7 +152,7 @@ esac""")
         finished = self.run_watch(watch_seconds="5")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertIn(self.resume_step(), self.log.read_text())
+        self.assert_recovery_steps(self.log.read_text())
 
     def test_the_parent_session_id_reported_first_is_polled_past_and_the_fork_id_is_logged(self):
         pane_calls = self.root / "pane-calls"
@@ -208,7 +172,7 @@ esac""")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         log_text = self.log.read_text()
-        self.assertIn(self.resume_step(), log_text)
+        self.assert_recovery_steps(log_text)
         self.assertNotIn("parent1", log_text)
 
     def test_a_pane_that_only_ever_reports_the_parent_session_logs_the_claude_resume_step(self):
@@ -293,7 +257,7 @@ esac""")
         finished = self.run_watch()
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertIn(f"ws=$(herdr worktree open --cwd {str(spaced).replace(' ', chr(92) + ' ')} --path",
+        self.assertIn(f"1. herdr worktree open --cwd {str(spaced).replace(' ', chr(92) + ' ')} --path",
                       self.log.read_text().splitlines()[1])
 
     def test_under_tuios_no_notification_is_shown_and_step_one_creates_the_workspace_through_herdr_api(self):
@@ -304,8 +268,7 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         log_text = self.log.read_text()
         reopen = f"herdr-api workspace create --cwd {self.worktree} --label repo-fork --focus"
-        focus = ' && herdr-api workspace focus "$ws" >/dev/null'
-        self.assertIn(self.resume_step(reopen, focus), log_text.splitlines())
+        self.assert_recovery_steps(log_text, reopen, TUIOS_FOCUS)
         self.assertNotIn("herdr worktree open", log_text)
         self.assertNotIn("notification", self.herdr_calls_text())
 

@@ -428,12 +428,12 @@ esac""")
         finished = self.run_herdr_worktree(self.linked_worktree, "--help")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertIn("herdr worktree open --cwd", finished.stdout)
-        self.assertIn("herdr-api workspace create --cwd <worktree>", finished.stdout)
-        self.assertIn("jq -r '.result.workspace.workspace_id // empty') && [ -n \"$ws\" ]", finished.stdout)
-        self.assertIn("&& herdr-dev", finished.stdout)
-        self.assertIn('&& herdr-api workspace focus "$ws" >/dev/null', finished.stdout)
-        self.assertIn('<worktree> "$ws" <fork session id>', finished.stdout)
+        self.assertIn("1. herdr worktree open --cwd", finished.stdout)
+        self.assertIn("1. herdr-api workspace create --cwd <worktree>", finished.stdout)
+        self.assertIn("2. herdr-dev <worktree> <ws> <fork session id>", finished.stdout)
+        self.assertIn("herdr-api workspace focus <ws> >/dev/null && ", finished.stdout)
+        self.assertIn("claude --resume", finished.stdout)
+        self.assertNotIn("ws=$(", finished.stdout)
 
 
 class HerdrDevTest(unittest.TestCase):

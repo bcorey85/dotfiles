@@ -808,6 +808,53 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("notes.py:1", packet["class_closure"])
         self.assertNotIn("one member still open", packet["class_closure"])
 
+    def assert_receipt_names_the_member_left_alone(self, closure, class_coder, branch_text=None):
+        left_alone = "`log.py:2` prints the limit, not a bound"
+        closure_reply = json.dumps({**closure, "left_alone": [left_alone]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, *class_coder],
+            "closure": [{"result": closure_reply}],
+        }, header_extra="files: app.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertIn("; left alone, read for another purpose: " + left_alone, packet["class_closure"])
+        if branch_text:
+            self.assertIn(branch_text, packet["class_closure"])
+
+    def test_a_closed_class_receipt_names_the_members_left_alone(self):
+        self.assert_receipt_names_the_member_left_alone({"receipt": "all readers re-read", "open": []}, [])
+
+    def test_a_closed_class_without_left_alone_leaves_no_left_alone_text(self):
+        closure_reply = json.dumps({"receipt": "all readers re-read", "open": []})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": closure_reply}],
+        }, header_extra="files: app.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertNotIn("left alone", packet["class_closure"])
+
+    def test_a_still_open_class_receipt_names_the_members_left_alone(self):
+        still_open = {"receipt": "one member still open", "open": ["`app.py:4` the same limit is wrong here too"]}
+        class_coder = [{"result": "Nothing to change."}]
+        self.assert_receipt_names_the_member_left_alone(
+            still_open, class_coder, "class members still open, the class repair changed nothing")
+
+    def test_a_held_class_receipt_names_the_members_left_alone(self):
+        (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
+        held = {"receipt": "one member still open", "open": ["`notes.py:1` the same limit is wrong here too"]}
+        self.assert_receipt_names_the_member_left_alone(held, [], "none went to a coder")
+
+    def test_a_repaired_class_receipt_names_the_members_left_alone(self):
+        repaired = {"receipt": "one member still open", "open": ["`app.py:4` the same limit is wrong here too"]}
+        class_coder = [{"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT}}]
+        self.assert_receipt_names_the_member_left_alone(
+            repaired, class_coder, "the class repair fixed these class members")
+
     def test_a_held_class_member_beside_a_sendable_one_is_named_apart_from_the_fixed_one(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
         held_member = "`notes.py:1` the same limit is wrong here too"

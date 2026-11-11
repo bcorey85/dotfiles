@@ -96,6 +96,7 @@ from review_loop_calls import (
 from review_loop_closure import (
     NO_CLOSURE,
     closure_check,
+    left_alone_clause,
     receipt_after_class_repair,
     receipt_all_held,
     receipt_still_open,
@@ -846,9 +847,11 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open. When
-        that pass changes a file, the receipt names the members it fixed, so no member shows as both fixed and open."""
+        that pass changes a file, the receipt names the members it fixed, so no member shows as both fixed and open.
+        Every receipt ends with the members the check left alone because they read the value for another purpose."""
         closure = closure_check(self.repo, self.out, [finding.text for finding in self.fixed], claude_call)
-        self.class_closure = closure["receipt"]
+        left_alone_tail = left_alone_clause(closure["left_alone"])
+        self.class_closure = closure["receipt"] + left_alone_tail
         if not closure["open"]:
             return
 
@@ -857,17 +860,17 @@ class LoopRun(full_check_gate.FullCheckSteps):
         open_findings, held_items = self.sendable(parsed_open)
         held_texts = [item.text for item in held_items]
         if not open_findings:
-            self.class_closure = receipt_all_held(held_texts)
+            self.class_closure = receipt_all_held(held_texts) + left_alone_tail
             return
 
         _report, _diffs, class_changed = self.repair("coder-class", open_findings)
         self.mark_repaired(open_findings, class_changed)
         if class_changed:
             sent_texts = [item.text for item in open_findings]
-            self.class_closure = receipt_after_class_repair(sent_texts, held_texts)
+            self.class_closure = receipt_after_class_repair(sent_texts, held_texts) + left_alone_tail
         else:
             self.open_classes = [item.text for item in open_findings]
-            self.class_closure = receipt_still_open(self.open_classes, held_texts)
+            self.class_closure = receipt_still_open(self.open_classes, held_texts) + left_alone_tail
 
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")

@@ -17,9 +17,9 @@ Fix four queue items: `forked-worktree-workspace-closes-about-a-minute`,
 ## Phase Status
 
 - [x] Phase 1: herdr-worktree watches the forked workspace and names the recovery steps (risk: medium)
-- [ ] Phase 2: coder scripts go to the scratchpad; a coder never deletes an untracked file it did not create (risk: low)
-- [ ] Phase 3: class closure checks what each member reads the value for (risk: low)
-- [ ] Phase 4: the worktree bullet opens with "only when the user asks" (risk: low)
+- [x] Phase 2: coder scripts go to the scratchpad; a coder never deletes an untracked file it did not create (risk: low)
+- [x] Phase 3: class closure checks what each member reads the value for (risk: low)
+- [x] Phase 4: the worktree bullet opens with "only when the user asks" (risk: low)
 
 ## Phase 1: herdr-worktree watches the forked workspace and names the recovery steps
 
@@ -87,11 +87,12 @@ Prompt edits only.
 ## Phase 3: class closure checks what each member reads the value for
 
 1. `review_loop_closure.py` `CLOSURE_RULES`: add, after the two shapes: before you call a member open, say what it
-   reads the value for. A member that reads the value for a different purpose than the fixed one is not in the
-   class: leave it, and name it in the receipt with that purpose. Never list it as open.
-2. The closure prompt's reply line: the receipt names each member left alone and why, next to the enumeration.
+   reads the value for, next to what the fixed line reads it for. A member that reads the value for a different
+   purpose than the fixed line is not in the class: leave it, and list it under `left_alone` with that purpose. Never
+   list it as open.
+2. The closure prompt's reply line: the `left_alone` list names each member left alone and why, next to the enumeration.
 3. Test in `tests/scripts/` (the existing closure test file, or `test_review_loop_closure.py` when none exists): the
-   prompt that `closure_check` sends holds the purpose check and asks the receipt to name the members left alone.
+   prompt that `closure_check` sends holds the purpose check and asks for the members left alone in the `left_alone` list.
 
 #### Automated Verification
 
@@ -122,3 +123,9 @@ Prompt edits only.
   All three launchers call one stowed command, `scripts/.local/bin/detach`, in place of copying the fallback.
 - Phase 1: the dependency-install and push failure messages in `herdr-worktree` quote the folder, branch and
   install command with `printf %q`, so the printed hints paste into a shell as written.
+- Phase 3 step 1: the rule reads "say what it reads the value for, next to what the fixed line reads it for" (review
+  round 1), so `the value` has a referent. Step 1 above quotes the shipped wording.
+- Phase 3 step 2: the closure reply JSON carries the members left alone in a `left_alone` list, not in the receipt
+  prose, because `review_loop_script.py` rebuilds the receipt from open and held members when any member is open and
+  would drop that prose. `class_closure_pass` appends `left_alone_clause` to every receipt it writes, so AC7 holds on
+  every path. This widens scope to `review_loop_script.py` (`class_closure_pass` only) and its tests.

@@ -23,6 +23,7 @@ import script_utils
 
 # The variable ~/agent-evals/bin/merge_built_page.py reads for the stash commit a `git stash apply` is applying.
 BUILT_PAGE_STASH = "BUILT_PAGE_STASH"
+FALLBACK_REMOTE = "origin"
 
 
 def recovery_text(repo, saved):
@@ -162,7 +163,13 @@ def remote_has_ref(repo, remote, ref):
 
 
 def configured_remote(repo, branch):
-    return script_utils.git_output(repo, "config", "--get", f"branch.{branch}.remote") or "origin"
+    """The remote set for the branch, or FALLBACK_REMOTE when none is set."""
+    return script_utils.git_output(repo, "config", "--get", f"branch.{branch}.remote") or FALLBACK_REMOTE
+
+
+def configured_merge_ref(repo, branch):
+    """The upstream ref set for the branch, or None when none is set."""
+    return script_utils.git_output(repo, "config", "--get", f"branch.{branch}.merge")
 
 
 def configured_upstream_target(repo, branch, merge_ref):
@@ -198,13 +205,13 @@ def pull_target(repo):
 
     # `@{u}` also fails when an upstream is set but not fetched (a single-branch clone) or deleted and pruned. The
     # remote decides: a deleted one stops here, before anything is set aside, or a chained `git push` would recreate it.
-    configured = script_utils.git_output(repo, "config", "--get", f"branch.{branch}.merge")
+    configured = configured_merge_ref(repo, branch)
     if configured is not None:
         return configured_upstream_target(repo, branch, configured)
 
     # The full ref is passed because a bare name also matches `x/<branch>`.
-    if remote_has_ref(repo, "origin", f"refs/heads/{branch}"):
-        return ["origin", branch]
+    if remote_has_ref(repo, FALLBACK_REMOTE, f"refs/heads/{branch}"):
+        return [FALLBACK_REMOTE, branch]
     return None
 
 
@@ -215,7 +222,7 @@ def exit_if_upstream_gone(repo):
     branch = script_utils.current_branch(repo)
     if not branch:
         return
-    configured = script_utils.git_output(repo, "config", "--get", f"branch.{branch}.merge")
+    configured = configured_merge_ref(repo, branch)
     if configured is None:
         return
     remote = configured_remote(repo, branch)
@@ -224,11 +231,11 @@ def exit_if_upstream_gone(repo):
         exit_upstream_gone(repo, branch, configured, remote)
 
 
-def set_upstream(repo, branch):
-    """Track origin/<branch> after a targeted pull, so a later bare `git push` and `git pull` work. The config is
+def set_upstream(repo, remote, branch):
+    """Track <remote>/<branch> after a targeted pull, so a later bare `git push` and `git pull` work. The config is
     written directly because `--set-upstream-to` needs a remote-tracking ref, which a single-branch clone never has.
     Exit 1 with the git error and the command to run when that fails."""
-    settings = (("remote", "origin"), ("merge", f"refs/heads/{branch}"))
+    settings = (("remote", remote), ("merge", f"refs/heads/{branch}"))
     for key, value in settings:
         written = run_in_repo(repo, "config", f"branch.{branch}.{key}", value)
         if written.returncode == 0:
@@ -249,7 +256,7 @@ def main(arguments):
 
     target = pull_target(repo)
     if target is None:
-        print("pull_keep_index: the branch has no upstream and is not on origin yet; nothing to pull.")
+        print(f"pull_keep_index: the branch has no upstream and is not on {FALLBACK_REMOTE} yet; nothing to pull.")
         return
 
     saved = set_aside(repo)
@@ -265,7 +272,7 @@ def main(arguments):
         exit_if_upstream_gone(repo)
         sys.exit(f"pull_keep_index: git pull failed in {repo}; the local changes are back in place.")
     if target:
-        set_upstream(repo, target[1])
+        set_upstream(repo, *target)
 
 
 if __name__ == "__main__":

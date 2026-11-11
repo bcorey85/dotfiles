@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-901 changes
+902 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -19,6 +19,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [pull_keep_index records the upstream on the remote it pulled from](notes/2026-11-10-pull-keep-index-records-the-upstream-on-the-remote.md) [script/pull-keep-index] set_upstream takes the remote from the pull target instead of naming origin a second time, and one helper reads the branch's upstream ref.
 * [Push lines push with -u origin HEAD so a first push works](notes/2026-11-10-push-lines-push-with-u-origin-head-so-a-first.md) [rule/global-claude-md] The global push rule now ends every push line with git -C <repo> push -u origin HEAD in place of a bare git push, which fails on a brand-new branch with no upstream.
 * [The coder logs or returns every caught error, also when the task asks for a fallback](notes/2026-11-10-the-coder-logs-or-returns-every-caught-error-also.md) [skill/coder-core] The coder's swallowed-error line now says to bind the error in every catch block and use it, and names a catch that only returns a fallback as a swallowed error.
 

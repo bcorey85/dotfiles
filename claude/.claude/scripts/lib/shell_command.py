@@ -379,17 +379,18 @@ def contains_word_run(words, run):
 
 def command_after_wrappers(words, peel_containers=True):
     """The words of the command that a simple command finally runs, with the wrapper words, their flags and their
-    values dropped: env (flags, NAME=value), sudo, doas, timeout (flags, duration), taskset (flags, CPU list), nice,
-    nohup, time, command, exec, builtin, uv/poetry/pipenv run, a leading group word (GROUP_WORDS) and, unless
-    peel_containers is False, a docker exec or run call. Words that name no wrapper come back as they are; an empty
-    list when the wrappers name no command."""
+    values dropped: each WRAPPER_VALUE_OPTIONS word (env, sudo, timeout, setsid, detach, ...) with its flags and
+    values (but not `command -v`/`-V`, which is the command itself), NAME=value assignments, uv/poetry/pipenv run,
+    a leading group word (GROUP_WORDS) and, unless peel_containers is False, a docker exec or run call. Words that
+    name no wrapper come back as they are; an empty list when the wrappers name no command."""
     word_lists = list(_peeled_word_lists(words, peel_containers))
     return word_lists[-1]
 
 
 def wrapper_chain(words):
     """The basename of each wrapper word that command_after_wrappers drops, in order, then the basename of the final
-    command word. Empty when the words name no command."""
+    command word. Empty only when the words are empty or only NAME=value assignments; words that are only wrappers
+    give just the wrapper names."""
     return [os.path.basename(step[0]) for step in _peeled_word_lists(words) if step]
 
 

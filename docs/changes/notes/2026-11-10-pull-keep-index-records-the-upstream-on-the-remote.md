@@ -19,7 +19,7 @@ unmeasured: ""
 
 `scripts/tools/pull_keep_index.py`: the `FALLBACK_REMOTE` constant names `origin` once for `pull_target`'s lookup and pull target, `configured_remote`'s default and the no-upstream message, and
 `set_upstream(repo, remote, branch)` writes the remote it is given, so the pull and the recorded upstream cannot name
-different remotes. `configured_merge_ref` replaces two copies of the `branch.<branch>.merge` read. No behavior change.
+different remotes. `script_utils.branch_merge_ref` replaces two copies of the `branch.<branch>.merge` read. No behavior change.
 
 ## Evidence
 

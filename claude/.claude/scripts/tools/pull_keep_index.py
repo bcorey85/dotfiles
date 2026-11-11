@@ -138,21 +138,9 @@ def put_back(repo, saved):
              f"{names}\nThat marks them resolved with their staged text. The local changes are saved in {saved}.")
 
 
-def lookup_remote_ref(repo, remote, ref):
-    """(has_ref, git_error): has_ref is True when the remote has the full ref, False when it answered that it has none,
-    None when the lookup fails (network, no such remote), with the git error as the second value. `ls-remote
-    --exit-code` exits 2 for an answered "no such ref"."""
-    listed = run_in_repo(repo, "ls-remote", "--exit-code", remote, ref)
-    if listed.returncode == 0:
-        return True, ""
-    if listed.returncode == 2:
-        return False, ""
-    return None, script_utils.process_stderr_text(listed)
-
-
 def remote_has_ref(repo, remote, ref):
-    """`lookup_remote_ref`, but exit 1 with the git error when the lookup fails."""
-    has_ref, problem = lookup_remote_ref(repo, remote, ref)
+    """`script_utils.remote_ref_state`, but exit 1 with the git error when the lookup fails."""
+    has_ref, problem = script_utils.remote_ref_state(repo, remote, ref)
     if has_ref is None:
         sys.exit(f"pull_keep_index: could not look up {ref} on {remote} in {repo}: {problem}")
     return has_ref
@@ -160,12 +148,7 @@ def remote_has_ref(repo, remote, ref):
 
 def configured_remote(repo, branch):
     """The remote set for the branch, or FALLBACK_REMOTE when none is set."""
-    return script_utils.git_output(repo, "config", "--get", f"branch.{branch}.remote") or FALLBACK_REMOTE
-
-
-def configured_merge_ref(repo, branch):
-    """The upstream ref set for the branch, or None when none is set."""
-    return script_utils.git_output(repo, "config", "--get", f"branch.{branch}.merge")
+    return script_utils.branch_remote(repo, branch) or FALLBACK_REMOTE
 
 
 def exit_upstream_gone(repo, branch, merge_ref, remote):
@@ -193,7 +176,7 @@ def pull_target(repo):
 
     # `@{u}` also fails when an upstream is set but not fetched (a single-branch clone) or deleted and pruned. The
     # remote decides: a deleted one stops here, before anything is set aside, or a chained `git push` would recreate it.
-    configured = configured_merge_ref(repo, branch)
+    configured = script_utils.branch_merge_ref(repo, branch)
     if configured is not None:
         remote = configured_remote(repo, branch)
         if not remote_has_ref(repo, remote, configured):
@@ -213,11 +196,11 @@ def exit_if_upstream_gone(repo):
     branch = script_utils.current_branch(repo)
     if not branch:
         return
-    configured = configured_merge_ref(repo, branch)
+    configured = script_utils.branch_merge_ref(repo, branch)
     if configured is None:
         return
     remote = configured_remote(repo, branch)
-    has_ref, _problem = lookup_remote_ref(repo, remote, configured)
+    has_ref, _problem = script_utils.remote_ref_state(repo, remote, configured)
     if has_ref is False:
         exit_upstream_gone(repo, branch, configured, remote)
 

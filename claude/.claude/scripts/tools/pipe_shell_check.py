@@ -1,6 +1,7 @@
-"""Exit 1 when the shell command on stdin pipes into a shell interpreter. A `||` is no pipe unless a
-backslash escapes its first bar. Inside a quoted string of a command that names a code runner, every `||` before a
-shell name counts as a pipe. A `|` inside closed quotes counts only when the text holds a shell or code-runner word."""
+"""Exit 1 when the shell command on stdin pipes into a shell interpreter. A `||` is no pipe unless an odd
+run of backslashes escapes its first bar. Inside a quoted string of a command that names a code runner, every `||`
+before a shell name counts as a pipe. A `|` inside closed quotes counts only when the text holds a shell or code-runner
+word."""
 import os
 import re
 import sys
@@ -11,8 +12,9 @@ import shell_statements
 
 SHELL_NAME_AFTER_BAR = r"&?\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba|z|da|k)?sh(?![\w.-])"
 
-# A `|` not right after another `|` is a pipe. In shell text an odd run of backslashes before a `|` escapes it, so
-# a pipe follows; an even run is escaped backslashes, so the bars after it are a real `||`.
+# A `|` followed by a shell name is a pipe unless it is the second bar of `||`. In shell text an odd run of
+# backslashes before a `|` escapes it, so a pipe follows; an even run is escaped backslashes, so the bars after it
+# are a real `||`.
 UNPARSED_PIPE_SHELL = re.compile(
     rf"(?:(?<!\|)|(?<!\\)(?:\\\\)*\\\|)\|{SHELL_NAME_AFTER_BAR}", re.IGNORECASE
 )

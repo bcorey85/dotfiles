@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-904 changes
+905 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -25,6 +25,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [pull_keep_index moves its git questions to script_utils](notes/2026-11-11-pull-keep-index-moves-its-git-questions-to-script.md) [script/pull-keep-index, script/script-utils, script/pipe-shell-check] The remote-ref lookup and the branch merge-ref and remote reads move to script_utils, and the pipe check's comments say when a bar is a pipe.
 * [pull_keep_index inlines the upstream check and shares the stderr decode](notes/2026-11-10-pull-keep-index-inlines-the-upstream-check-and.md) [script/pull-keep-index, script/script-utils] pull_target checks a gone configured upstream itself and returns explicitly after the exit, and the stderr decode moves to script_utils.
 * [pull_keep_index docstrings match the exits; replay case cites its queue item](notes/2026-11-10-pull-keep-index-docstrings-match-the-exits-replay.md) [script/pull-keep-index, script/pipe-shell-check] The module docstring limits the branch-lookup exit to before the pull, exit_upstream_gone gets a docstring, and the gate-replay OR case names the queue item it came from.
 * [pull_keep_index pull_target docstring names every exit](notes/2026-11-10-pull-keep-index-pull-target-docstring-names-every.md) [script/pull-keep-index] The pull_target docstring again names the exit 1 with the git error when the origin lookup fails on a branch with no upstream.

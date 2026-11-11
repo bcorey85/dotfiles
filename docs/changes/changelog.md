@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-897 changes
+898 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -23,6 +23,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The review loop's full check stops on lint left in any changed file](notes/2026-11-10-the-review-loop-s-full-check-stops-on-lint-left-in.md) [skill/review] Before the review loop's full check and each recheck, it runs the repo's configured ruff, oxlint or eslint in check mode on every reviewed or touched file, test files included; lint left after one coder repair stops the loop as critical-blocker with the linter output.
 * [code-fork writes its run folder files with the Write tool, held to the run folder by a hook](notes/2026-11-10-code-fork-writes-its-run-folder-files-with-the.md) [agent/code-fork, skill/code, shared/review-fork-run] The /code, /review and /fix fork writes stop.md, handoff and findings files with the Write tool, which a new Write hook holds to the run folder, so a stop whose text names an interpreter flag no longer loses its stop file.
 * [A fix the review loop's coder commits itself counts as a fix and is reviewed](notes/2026-11-10-a-fix-the-review-loop-s-coder-commits-itself.md) [script/review-loop-script, agent/review-loop] When the review loop's fix coder commits its own fix, the loop now reads the change against the commit HEAD named before the call and reviews against the loop's start commit, so the fix counts as fixed and the next round reviews its diff instead of reporting "the coder made no change".
 * [The /code ask-outcome call passes its free text to log-review-finding on stdin](notes/2026-11-09-the-code-ask-outcome-call-passes-its-free-text-to.md) [skill/code, shared/finding-log] `log-review-finding desc=-` reads the text from stdin, and the /code ask-outcome call passes its one-line ruling in a quoted heredoc, so quotes, backticks and semicolons in it no longer split or run as shell and the outcome row is logged.

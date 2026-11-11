@@ -3,6 +3,7 @@
 Formatters are fake executables on PATH; the hook's own tests cover the web tool choice."""
 import os
 import pathlib
+import shutil
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import format_files
+import script_utils
 
 FAKE_RUFF = """#!/bin/sh
 [ "$1" = format ] || exit 0
@@ -59,15 +61,21 @@ class RunFormattersTest(unittest.TestCase):
         self.assertEqual(changed, ["src/a.ts"])
         self.assertEqual((self.repo / "src" / "a.ts").read_text(), "const a = 1\n// formatted\n")
 
-    def install_recording_npx(self):
-        calls = self.bin.parent / "npx-calls.txt"
+    def install_recording_web_formatters(self, linters=()):
+        """Put a recording npx (the formatters' launcher) and the named linters on PATH. Each logs its arguments to
+        the returned file; a linter's line starts with its name."""
+        calls = self.bin.parent / "formatter-calls.txt"
         npx = self.bin / "npx"
         npx.write_text(f"#!/bin/sh\necho \"$@\" >> {calls}\n")
         npx.chmod(0o755)
+        for name in linters:
+            linter = self.bin / name
+            linter.write_text(f"#!/bin/sh\necho \"{name} $@\" >> {calls}\n")
+            linter.chmod(0o755)
         return calls
 
     def test_the_loop_path_runs_no_web_formatter_in_a_repo_that_configures_none_and_holds_none(self):
-        calls = self.install_recording_npx()
+        calls = self.install_recording_web_formatters()
         (self.repo / "a.ts").write_text("const a = 1\n")
         (self.repo / "package.json").write_text('{"name": "shop"}\n')
 
@@ -85,7 +93,8 @@ class RunFormattersTest(unittest.TestCase):
         (self.repo / "a.ts").write_text("const a = 1\n")
         for name, (file_name, text, expected) in configured.items():
             with self.subTest(name):
-                calls = self.install_recording_npx()
+                # A configured web linter runs only when it can run.
+                calls = self.install_recording_web_formatters(("eslint",))
                 calls.unlink(missing_ok=True)
                 for stale in ("package.json", ".prettierrc", ".oxfmtrc.json"):
                     (self.repo / stale).unlink(missing_ok=True)
@@ -94,6 +103,19 @@ class RunFormattersTest(unittest.TestCase):
                 format_files.run_formatters(str(self.repo), ["a.ts"], configured_only=True)
 
                 self.assertIn(expected, calls.read_text())
+
+    def test_a_configured_but_missing_oxlint_does_not_displace_a_configured_eslint(self):
+        calls = self.install_recording_web_formatters(("eslint",))
+        calls.unlink(missing_ok=True)
+        (self.repo / "a.ts").write_text("const a = 1\n")
+        (self.repo / ".oxlintrc.json").write_text("{}")
+        (self.repo / "eslint.config.js").write_text("export default []\n")
+
+        format_files.run_formatters(str(self.repo), ["a.ts"], configured_only=True)
+
+        recorded = calls.read_text()
+        self.assertIn("eslint --fix", recorded)
+        self.assertNotIn("oxlint", recorded)
 
     def test_ruff_runs_only_in_a_repo_that_configures_it(self):
         self.install_fake_ruff()
@@ -215,7 +237,7 @@ for f in "$@"; do case "$f" in *.rs) echo '// formatted' >> "$f";; esac; done
         self.assertEqual((self.repo / "app.py").read_text(), "x = 1\n")
 
     def test_prompt_markdown_is_never_formatted_but_other_files_beside_it_are(self):
-        calls = self.install_recording_npx()
+        calls = self.install_recording_web_formatters()
         prompt_files = ["claude/.claude/agents/x.md", "opencode/.config/opencode/agents/x.md", "sub/CLAUDE.md",
                         "AGENTS.md", "sub/CLAUDE.local.md"]
         for name in [*prompt_files, "claude/.claude/settings.json", "docs/readme.md"]:
@@ -227,6 +249,204 @@ for f in "$@"; do case "$f" in *.rs) echo '// formatted' >> "$f";; esac; done
 
         format_files.run_formatters(str(self.repo), [*prompt_files, "claude/.claude/settings.json", "docs/readme.md"])
         self.assertIn("prettier --write claude/.claude/settings.json docs/readme.md\n", calls.read_text())
+
+
+@unittest.skipUnless(shutil.which("ruff"), "ruff is not on PATH")
+class LintProblemsTest(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name)
+        (self.repo / "tests").mkdir()
+
+    def write_test_file(self, text):
+        (self.repo / "tests" / "test_x.py").write_text(text)
+
+    def configure_ruff(self):
+        (self.repo / "ruff.toml").write_text('[lint]\nselect = ["N802"]\n')
+
+    def test_an_unfixable_violation_in_a_test_file_comes_back_with_the_linter_output(self):
+        self.configure_ruff()
+        self.write_test_file("def testCamel():\n    pass\n")
+
+        problems = format_files.lint_problems(str(self.repo), ["tests/test_x.py"])
+
+        self.assertEqual(len(problems), 1, problems)
+        command, output = problems[0]
+        self.assertTrue(command.startswith("ruff check"), command)
+        self.assertIn("tests/test_x.py", output)
+
+    def test_a_repo_with_no_ruff_config_has_no_problems(self):
+        self.write_test_file("def testCamel():\n    pass\n")
+
+        problems = format_files.lint_problems(str(self.repo), ["tests/test_x.py"])
+
+        self.assertEqual(problems, [])
+
+    def test_a_clean_file_has_no_problems(self):
+        self.configure_ruff()
+        self.write_test_file("def test_snake():\n    pass\n")
+
+        problems = format_files.lint_problems(str(self.repo), ["tests/test_x.py"])
+
+        self.assertEqual(problems, [])
+
+    def test_a_file_the_ruff_config_excludes_is_not_linted_when_named(self):
+        (self.repo / "ruff.toml").write_text('extend-exclude = ["gen"]\n[lint]\nselect = ["N802"]\n')
+        (self.repo / "gen").mkdir()
+        (self.repo / "gen" / "x.py").write_text("def testCamel():\n    pass\n")
+
+        problems = format_files.lint_problems(str(self.repo), ["gen/x.py"])
+
+        self.assertEqual(problems, [])
+
+
+class RuffMissingFromPathTest(unittest.TestCase):
+    def test_a_configured_ruff_that_is_not_on_path_is_never_run(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            repo = pathlib.Path(scratch) / "repo"
+            empty_bin = pathlib.Path(scratch) / "bin"
+            repo.mkdir()
+            empty_bin.mkdir()
+            (repo / "ruff.toml").write_text('[lint]\nselect = ["N802"]\n')
+            (repo / "x.py").write_text("def testCamel():\n    pass\n")
+
+            with mock.patch.dict(os.environ, {"PATH": str(empty_bin)}), \
+                    mock.patch.object(script_utils, "run_command") as run_command:
+                problems = format_files.lint_problems(str(repo), ["x.py"])
+
+        self.assertEqual(problems, [])
+        run_command.assert_not_called()
+
+
+class WebLintProblemsTest(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name) / "repo"
+        self.repo.mkdir()
+        self.bin = pathlib.Path(scratch.name) / "bin"
+        self.bin.mkdir()
+        # Only the fake bin: a real oxlint or eslint on the machine's PATH would change the outcome.
+        patcher = mock.patch.dict(os.environ, {"PATH": str(self.bin)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        (self.repo / "a.ts").write_text("const a = 1\n")
+
+    def install_fake_npx(self, exit_code):
+        npx = self.bin / "npx"
+        npx.write_text(f"#!/bin/sh\necho \"npx $*\"\nexit {exit_code}\n")
+        npx.chmod(0o755)
+
+    def install_linter(self, directory, name, exit_code):
+        directory.mkdir(parents=True, exist_ok=True)
+        linter = directory / name
+        linter.write_text(f"#!/bin/sh\necho \"{name} from {directory.name} $*\"\nexit {exit_code}\n")
+        linter.chmod(0o755)
+
+    def install_local_linter(self, name, exit_code):
+        self.install_linter(self.repo / "node_modules" / ".bin", name, exit_code)
+
+    def test_a_failing_installed_oxlint_comes_back_as_a_problem_without_fix(self):
+        (self.repo / ".oxlintrc.json").write_text("{}")
+        self.install_local_linter("oxlint", 1)
+
+        problems = format_files.lint_problems(str(self.repo), ["a.ts"])
+
+        self.assertEqual(len(problems), 1, problems)
+        command, output = problems[0]
+        self.assertIn("oxlint", command)
+        self.assertNotIn("--fix", command)
+        self.assertIn("oxlint from .bin", output)
+
+    def test_a_failing_installed_eslint_comes_back_as_a_problem_with_the_check_flags(self):
+        (self.repo / "eslint.config.js").write_text("export default []\n")
+        self.install_local_linter("eslint", 1)
+
+        problems = format_files.lint_problems(str(self.repo), ["a.ts"])
+
+        self.assertEqual(len(problems), 1, problems)
+        command, output = problems[0]
+        self.assertNotIn("--fix", command)
+        self.assertIn("--no-warn-ignored --max-warnings=0", output)
+
+    def test_a_passing_oxlint_has_no_problems(self):
+        (self.repo / ".oxlintrc.json").write_text("{}")
+        self.install_local_linter("oxlint", 0)
+
+        self.assertEqual(format_files.lint_problems(str(self.repo), ["a.ts"]), [])
+
+    def test_a_linter_installed_but_not_configured_is_not_run(self):
+        self.install_local_linter("oxlint", 1)
+        self.install_local_linter("eslint", 2)
+
+        self.assertEqual(format_files.lint_problems(str(self.repo), ["a.ts"]), [])
+
+    def test_a_path_installed_oxlint_runs_from_path_not_through_npx(self):
+        (self.repo / ".oxlintrc.json").write_text("{}")
+        self.install_linter(self.bin, "oxlint", 1)
+        self.install_fake_npx(1)
+
+        problems = format_files.lint_problems(str(self.repo), ["a.ts"])
+
+        self.assertEqual(len(problems), 1, problems)
+        command, output = problems[0]
+        self.assertNotIn("npx", command)
+        self.assertIn("oxlint from bin", output)
+        self.assertNotIn("npx", output)
+
+    def test_a_path_installed_oxlint_is_fixed_from_path_without_npx(self):
+        (self.repo / ".oxlintrc.json").write_text("{}")
+        npx_calls = self.bin.parent / "npx-calls.txt"
+        npx = self.bin / "npx"
+        npx.write_text(f"#!/bin/sh\necho \"$@\" >> {npx_calls}\n")
+        npx.chmod(0o755)
+        oxlint_calls = self.bin.parent / "oxlint-calls.txt"
+        oxlint = self.bin / "oxlint"
+        oxlint.write_text(f"#!/bin/sh\necho \"$@\" >> {oxlint_calls}\n")
+        oxlint.chmod(0o755)
+
+        format_files.run_formatters(str(self.repo), ["a.ts"], configured_only=True)
+
+        self.assertIn("--fix a.ts", oxlint_calls.read_text())
+        self.assertFalse(npx_calls.exists())
+
+    def test_an_installed_eslint_runs_when_oxlint_is_configured_but_missing(self):
+        (self.repo / ".oxlintrc.json").write_text("{}")
+        (self.repo / "eslint.config.js").write_text("export default []\n")
+        self.install_local_linter("eslint", 1)
+
+        problems = format_files.lint_problems(str(self.repo), ["a.ts"])
+
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("eslint", problems[0][0])
+
+    def test_a_configured_but_not_installed_oxlint_is_not_run(self):
+        (self.repo / ".oxlintrc.json").write_text("{}")
+        self.install_fake_npx(1)
+
+        self.assertEqual(format_files.lint_problems(str(self.repo), ["a.ts"]), [])
+
+    def test_a_missing_or_plan_file_is_never_linted(self):
+        (self.repo / ".oxlintrc.json").write_text("{}")
+        self.install_local_linter("oxlint", 1)
+        (self.repo / "docs" / "plans").mkdir(parents=True)
+        (self.repo / "docs" / "plans" / "p.ts").write_text("const p = 1\n")
+
+        problems = format_files.lint_problems(str(self.repo), ["gone.ts", "docs/plans/p.ts"])
+
+        self.assertEqual(problems, [])
+
+    def test_a_missing_program_is_no_lint_problem(self):
+        self.assertEqual(format_files.lint_command_problem(["no-such-binary"], str(self.repo)), [])
+
+    def test_a_timed_out_linter_is_a_lint_problem(self):
+        timed_out = (script_utils.TIMEOUT_EXIT_CODE, "x")
+        with mock.patch.object(script_utils, "run_command", return_value=timed_out) as run_command:
+            self.assertEqual(format_files.lint_command_problem(["ruff", "check"], str(self.repo)),
+                             [("ruff check", "x")])
+        run_command.assert_called_once_with(["ruff", "check"], str(self.repo),
+                                            timeout=format_files.LINT_TIMEOUT_SECONDS)
 
 
 if __name__ == "__main__":

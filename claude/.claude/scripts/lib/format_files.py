@@ -1,15 +1,19 @@
 """The repo's autofix formatters, run on a list of files: oxlint or eslint --fix and oxfmt or prettier for web and
-document files, and (when asked) ruff for Python files. Any repo, any file list."""
+document files, and (when asked) ruff for Python files. Also `lint_problems`, a check-mode lint that fixes nothing:
+ruff, oxlint or eslint, returning (command, output) per failing linter. Any repo, any file list."""
 import contextlib
 import json
 import os
 import pathlib
 import shutil
 import subprocess
+from collections import namedtuple
 
+import script_utils
 from toml_file import read_toml
 from worktree_snapshot import UNREADABLE, file_hash
 
+LINT_TIMEOUT_SECONDS = 300
 LINT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".vue")
 FORMAT_ONLY_SUFFIXES = (".json", ".css", ".scss", ".md")
 PYTHON_SUFFIX = ".py"
@@ -75,18 +79,40 @@ def web_tool_enabled(repo, name):
     return locally_installed(repo, name) or tool_configured(repo, name)
 
 
+def web_lint_tool(repo, configured_only=False):
+    """"oxlint", "eslint" or None: the web linter that runs on the repo's script files. With `configured_only`, the
+    first of oxlint then eslint that the repo configures and that can run."""
+    if configured_only:
+        use_oxlint = tool_configured(repo, "oxlint") and tool_available(repo, "oxlint")
+        use_eslint = tool_configured(repo, "eslint") and tool_available(repo, "eslint")
+    else:
+        use_oxlint = tool_available(repo, "oxlint")
+        use_eslint = locally_installed(repo, "eslint")
+    if use_oxlint:
+        return "oxlint"
+    if use_eslint:
+        return "eslint"
+    return None
+
+
+def web_tool_launcher(repo, tool):
+    """The repo's local binary, else the bare tool name for PATH. Never npx, which does not search PATH."""
+    local_binary = os.path.join(repo, "node_modules", ".bin", tool)
+    return [local_binary] if locally_installed(repo, tool) else [tool]
+
+
+def web_lint_command(repo, tool, lint_files, fix):
+    launcher = web_tool_launcher(repo, tool)
+    fix_flags = ["--fix"] if fix else []
+    if tool == "oxlint":
+        return [*launcher, *fix_flags, *lint_files]
+    return [*launcher, *fix_flags, "--no-warn-ignored", "--max-warnings=0", *lint_files]
+
+
 def run_web_formatters(repo, lint_files, paths_to_format, configured_only=False):
-    if lint_files:
-        if configured_only:
-            use_oxlint = web_tool_enabled(repo, "oxlint")
-            use_eslint = web_tool_enabled(repo, "eslint")
-        else:
-            use_oxlint = tool_available(repo, "oxlint")
-            use_eslint = locally_installed(repo, "eslint")
-        if use_oxlint:
-            run_quiet(["npx", "oxlint", "--fix", *lint_files], repo)
-        elif use_eslint:
-            run_quiet(["npx", "eslint", "--fix", "--no-warn-ignored", "--max-warnings=0", *lint_files], repo)
+    lint_tool = web_lint_tool(repo, configured_only) if lint_files else None
+    if lint_tool:
+        run_quiet(web_lint_command(repo, lint_tool, lint_files, fix=True), repo)
 
     if not paths_to_format:
         return
@@ -113,6 +139,11 @@ def repo_configures_ruff(repo):
     return "ruff" in pyproject.get("tool", {})
 
 
+def ruff_enabled(repo):
+    """True when ruff is on PATH and the repo configures it."""
+    return bool(shutil.which("ruff")) and repo_configures_ruff(repo)
+
+
 def repo_formats_with_ruff(repo, check_command=""):
     """True when the repo shows it formats with ruff: a [tool.ruff.format] table in pyproject.toml, a [format] table in
     ruff.toml or .ruff.toml, or `ruff format` named in .pre-commit-config.yaml or the check command."""
@@ -134,12 +165,12 @@ def repo_formats_with_ruff(repo, check_command=""):
 
 
 def run_python_formatters(repo, python_files, configured_only=False, check_command=""):
-    if not python_files or not shutil.which("ruff") or not repo_configures_ruff(repo):
+    if not python_files or not ruff_enabled(repo):
         return
 
     if not configured_only or repo_formats_with_ruff(repo, check_command):
-        run_quiet(["ruff", "format", *python_files], repo)
-    run_quiet(["ruff", "check", "--fix", *python_files], repo)
+        run_quiet(["ruff", "format", "--force-exclude", *python_files], repo)
+    run_quiet(["ruff", "check", "--fix", "--force-exclude", *python_files], repo)
 
 
 def repo_formats_with_rustfmt(repo, check_command=""):
@@ -205,36 +236,78 @@ def is_prompt_markdown(path):
     return f"/{PROMPT_MARKDOWN_PREFIX}" in f"/{path}"
 
 
+# collections.namedtuple, not typing.NamedTuple: the Stop hook imports this module, and typing adds to its start-up.
+SortedFiles = namedtuple("SortedFiles", ["lint", "web", "python", "rust"])
+
+
+def sort_files(repo, paths, include_python):
+    """The existing files among `paths`, grouped by the tools that handle them. Leaves out docs/plans/ and prompt
+    markdown, which a model reads literally."""
+    sorted_files = SortedFiles([], [], [], [])
+    for path in paths:
+        if path.startswith(PLANS_DIR) or is_prompt_markdown(path) or not os.path.isfile(os.path.join(repo, path)):
+            continue
+        add_to_groups(sorted_files, path, include_python)
+    return sorted_files
+
+
+def add_to_groups(sorted_files, path, include_python):
+    if path.endswith(LINT_SUFFIXES):
+        sorted_files.lint.append(path)
+        sorted_files.web.append(path)
+    elif path.endswith(FORMAT_ONLY_SUFFIXES):
+        sorted_files.web.append(path)
+    elif include_python and path.endswith(PYTHON_SUFFIX):
+        sorted_files.python.append(path)
+    elif path.endswith(RUST_SUFFIX):
+        sorted_files.rust.append(path)
+
+
+def lint_command_problem(command, repo):
+    """[(command text, output)] when the command ran and exited non-zero or timed out, else []. Only a linter that
+    cannot start (command not found) is exempt."""
+    code, output = script_utils.run_command(command, repo, timeout=LINT_TIMEOUT_SECONDS)
+    # Fail-open on purpose for a missing program only: nothing ran, so there is nothing to report. A timeout
+    # is fail-closed: an unfinished lint is no proof the files are clean.
+    if code in (0, script_utils.COMMAND_NOT_FOUND_EXIT_CODE):
+        return []
+    return [(" ".join(command), output)]
+
+
+def lint_problems(repo, paths):
+    """The lint violations the repo's configured linters report on the existing files among `paths`, as a list of
+    (command text, output), one per linter that exited non-zero. Nothing is fixed. Python files go to
+    `ruff check` when ruff is on PATH and the repo configures it; web files go to the oxlint or eslint the repo
+    configures and has installed. [] when every linter passes or none applies."""
+    files = sort_files(repo, paths, include_python=True)
+    problems = []
+    if files.python and ruff_enabled(repo):
+        ruff_command = ["ruff", "check", "--force-exclude", "--output-format", "concise", *files.python]
+        problems += lint_command_problem(ruff_command, repo)
+    web_tool = web_lint_tool(repo, configured_only=True) if files.lint else None
+    if web_tool:
+        problems += lint_command_problem(web_lint_command(repo, web_tool, files.lint, fix=False), repo)
+    return problems
+
+
 def run_formatters(repo, paths, include_python=False, configured_only=False, check_command=""):
     """Run the autofix formatters on the existing files among `paths` (relative to `repo`), skipping docs/plans/ and
     prompt markdown (`is_prompt_markdown`): a model reads both literally, so a reflow changes what it does.
     Python files get `ruff format` and `ruff check --fix` only with `include_python`, when ruff is on PATH and the repo
     configures ruff. With
-    `configured_only`, a web tool runs only when the repo configures it or holds it in node_modules/.bin, and
+    `configured_only`, a web linter runs only when the repo configures it and it can run, a web formatter only when
+    the repo configures it or holds it in node_modules/.bin, and
     `ruff format` runs only when the repo shows it formats with ruff (`check_command` is the repo's check command).
     Rust files get `rustfmt` with their crate's edition when rustfmt is on PATH and the repo shows it formats with
     rustfmt (`repo_formats_with_rustfmt`).
     A missing tool is skipped silently. Returns the paths whose bytes changed."""
-    lint_files, web_files, python_files, rust_files = [], [], [], []
-    for path in paths:
-        if path.startswith(PLANS_DIR) or is_prompt_markdown(path) or not os.path.isfile(os.path.join(repo, path)):
-            continue
-        if path.endswith(LINT_SUFFIXES):
-            lint_files.append(path)
-            web_files.append(path)
-        elif path.endswith(FORMAT_ONLY_SUFFIXES):
-            web_files.append(path)
-        elif include_python and path.endswith(PYTHON_SUFFIX):
-            python_files.append(path)
-        elif path.endswith(RUST_SUFFIX):
-            rust_files.append(path)
-
-    candidates = web_files + python_files + rust_files
+    files = sort_files(repo, paths, include_python)
+    candidates = files.web + files.python + files.rust
     root = pathlib.Path(repo)
     before = {path: file_hash(root, path) for path in candidates}
 
-    run_web_formatters(repo, lint_files, web_files, configured_only)
-    run_python_formatters(repo, python_files, configured_only, check_command)
-    run_rust_formatters(repo, rust_files, check_command)
+    run_web_formatters(repo, files.lint, files.web, configured_only)
+    run_python_formatters(repo, files.python, configured_only, check_command)
+    run_rust_formatters(repo, files.rust, check_command)
 
     return [path for path in candidates if file_hash(root, path) not in (before[path], UNREADABLE)]

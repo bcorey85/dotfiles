@@ -147,6 +147,9 @@ PRE_EXISTING = "pre-existing failure (the check fails the same way without this 
 # Every red scoped test command fails the same way on HEAD without the diff. The review loop goes on.
 SCOPED_PRE_EXISTING = ("pre-existing failure (the scoped tests fail the same way without this diff, so they did not "
                        "verify this diff)")
+# Why the scoped tests of a run that carried `--test` did not run. The packet shows these after its own label.
+SCOPED_NOT_RUN_NO_FIX = "not run: no fix after the last review"
+SCOPED_NOT_RUN_STOPPED = "not run: loop stopped as {status} before the scoped tests"
 # A substring that marks a log line as an error; it matches inside words too (`0 errors` counts).
 ERROR_MARKER = re.compile(r"error|fail|exception|traceback|panic", re.IGNORECASE)
 # The check run on HEAD without the diff: its result, failing lines, log lines and the detail lines under each failure.

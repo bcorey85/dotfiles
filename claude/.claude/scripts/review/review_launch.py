@@ -20,6 +20,8 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 import code_wait
+import full_check
+import handback
 import handback_hook
 import review_fix_state
 import reviewer_dispatch
@@ -71,6 +73,8 @@ def launch_parser():
     parser.add_argument("--file", action="append", default=[], dest="files",
                         help="review only this file (repeatable): absolute, or relative to the repo root")
     parser.add_argument("--handoff", metavar="FILE", help="the handoff block the reviewers and coder read")
+    parser.add_argument("--test", action="append", default=[], dest="tests", metavar="CMD",
+                        help="a test command the loop runs after the last fix (repeatable)")
     models = parser.add_mutually_exclusive_group()
     models.add_argument("--fast", action="store_true", help=f"run the reviewers on {FAST_REVIEWER_MODEL}")
     models.add_argument("--deep", action="store_true", help="run the reviewers on their agents' own model")
@@ -87,9 +91,22 @@ def launch_arguments(argv):
         raise LaunchError("--no-review needs --fix: a review-first run with no review does nothing")
     if options.iter < 0:
         raise LaunchError(f"--iter {options.iter} is negative; expected the rounds an earlier run used")
+    if any(not command.strip() for command in options.tests):
+        raise LaunchError("--test needs a command; got an empty one")
+    options.tests = list(dict.fromkeys(options.tests))
     options.skill = "fix" if options.fix else "review"
     options.lane = options.lane or ("code" if options.fix else "none")
     return options
+
+
+def unrun_scoped_tests_note(relaunch_args, status, scoped_tests):
+    """The packet's scoped-tests text: `scoped_tests` itself when the loop ran the tests, else why they did not run
+    when the launch carried `--test`, else empty."""
+    if scoped_tests or "--test" not in relaunch_args:
+        return scoped_tests
+    if status in handback.CLEAN_STATUSES:
+        return full_check.SCOPED_NOT_RUN_NO_FIX
+    return full_check.SCOPED_NOT_RUN_STOPPED.format(status=status)
 
 
 def read_findings_file(findings_file):
@@ -181,8 +198,8 @@ def packet_args(options, launch_file):
 
 
 def relaunch_args(options, repo, paths, handoff_file):
-    """The flags a later fix run of this review carries: the same repo, range, files, reviewer model, lane and
-    handoff. `--fix`, `--iter` and `--detach` are the caller's to add."""
+    """The flags a later fix run of this review carries: the same repo, range, files, reviewer model, lane,
+    handoff and test commands. `--fix`, `--iter` and `--detach` are the caller's to add."""
     args = ["--repo", str(repo)]
     if options.base:
         args += ["--base", options.base]
@@ -192,6 +209,8 @@ def relaunch_args(options, repo, paths, handoff_file):
         args.append("--fast")
     if options.deep:
         args.append("--deep")
+    for test_command in options.tests:
+        args += ["--test", test_command]
     return [*args, "--lane", options.lane, "--handoff", str(handoff_file)]
 
 
@@ -281,7 +300,7 @@ def command_launch(argv, loop_script):
 
     handback_hook.record_script_dispatch(session_id, repo, no_review=options.no_review)
     command = loop_script_command(loop_script, repo, state_dir, session_id, agent_id, prompt_file,
-                                  reviewers=REVIEWERS_MAIN)
+                                  gate_commands=options.tests, reviewers=REVIEWERS_MAIN)
     with log_path.open("w") as log:
         loop = subprocess.Popen(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                 start_new_session=True)

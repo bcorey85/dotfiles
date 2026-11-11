@@ -16,7 +16,7 @@ Scripts live in `claude/.claude/scripts/`; tests in `tests/scripts/`, paths from
 ## Phase Status
 
 - [x] Phase 1: a resumed review cannot stop before the fix run asks-done printed (risk: medium)
-- [ ] Phase 2: test commands named in a resume reply run in the fix run (risk: low)
+- [x] Phase 2: test commands named in a resume reply run in the fix run (risk: low)
 - [ ] Phase 3: asks-done refuses a conditional proposed change and corrects a logged outcome (risk: medium)
 - [ ] Phase 4: a user-accepted ask the fix coder skips comes back as an ask (risk: medium)
 - [ ] Phase 5: asks-done needs --by; no default records a user sign-off (risk: low)

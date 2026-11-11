@@ -631,6 +631,8 @@ def command_packet(argv):
     packet = handback.load(message)
     handback.print_dropped_asks(packet)
     stored_status = packet["status"]
+    packet["scoped_tests"] = review_launch.unrun_scoped_tests_note(
+        options.relaunch_args, stored_status, packet["scoped_tests"])
     packet["status"] = capped_review.effective_status(packet, dispatched_repo())
     capped_defer = packet["status"] != stored_status
     if unreviewed_in_a_row:

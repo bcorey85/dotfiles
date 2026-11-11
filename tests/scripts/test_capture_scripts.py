@@ -2,10 +2,11 @@
 import os
 import pathlib
 import shutil
-import stat
 import subprocess
 import tempfile
 import unittest
+
+from stubs import write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 RUN_TIMEOUT_SECONDS = 20
@@ -28,8 +29,8 @@ class CaptureWithoutDetachTest(unittest.TestCase):
         self.stub_dir = self.root / "stubs"
         self.stub_dir.mkdir()
         self.claude_ran = self.root / "claude-ran"
-        self.write_stub("claude", f"echo ran >> {self.claude_ran}")
-        self.write_stub("sleep", "exit 0")
+        write_stub(self.stub_dir / "claude", f"echo ran >> {self.claude_ran}")
+        write_stub(self.stub_dir / "sleep", "exit 0")
         self.vault = self.root / "vault"
         # The scripts list notes/ under pipefail, so the folder has to exist.
         (self.vault / "notes").mkdir(parents=True)
@@ -40,11 +41,6 @@ class CaptureWithoutDetachTest(unittest.TestCase):
             "HOME": str(self.root),
             "XDG_STATE_HOME": str(self.root / "state"),
         }
-
-    def write_stub(self, name, body):
-        stub = self.stub_dir / name
-        stub.write_text(f"#!/bin/sh\n{body}\n")
-        stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
 
     def test_a_missing_detach_fails_naming_the_kept_capture_and_starts_no_runner(self):
         for name, args, org_file, message in CASES:

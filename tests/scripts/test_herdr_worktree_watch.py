@@ -15,6 +15,8 @@ BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "
 HERDR_WORKTREE_WATCH = pathlib.Path(os.environ.get("HERDR_WORKTREE_WATCH", BIN_DIR / "herdr-worktree-watch"))
 PANE_WITH_SESSION = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"s1"}}}}'
 PANE_WITHOUT_SESSION = '{"result":{"pane":null}}'
+RESUME_PROMPT = "Go on with the work in this worktree; your brief is already in context."
+RESUME_STEP = "2. herdr-dev {worktree} <new workspace id> s1 '" + RESUME_PROMPT + "'"
 WORKSPACE_NOT_FOUND_COMMAND = 'echo \'{"error":{"code":"workspace_not_found"}}\' >&2; exit 1'
 
 
@@ -82,7 +84,7 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         log_lines = self.log.read_text().splitlines()
         self.assertIn(f"1. herdr worktree open --cwd {self.main_checkout} --path {self.worktree} --focus", log_lines)
-        self.assertIn(f'2. herdr-dev {self.worktree} <new workspace id> s1 "<prompt>"', log_lines)
+        self.assertIn(RESUME_STEP.format(worktree=self.worktree), log_lines)
         notification = self.herdr_calls_text()
         self.assertIn("notification show herdr-worktree: workspace closed", notification)
         self.assertIn(str(self.log), notification)
@@ -132,7 +134,7 @@ esac""")
         finished = self.run_watch(watch_seconds="5")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertIn(f'2. herdr-dev {self.worktree} <new workspace id> s1 "<prompt>"', self.log.read_text())
+        self.assertIn(RESUME_STEP.format(worktree=self.worktree), self.log.read_text())
 
     def test_a_session_id_that_never_appears_is_polled_for_the_wait_by_wall_time_and_no_longer(self):
         self.stub_herdr_api(workspace_open=False, pane=PANE_WITHOUT_SESSION)

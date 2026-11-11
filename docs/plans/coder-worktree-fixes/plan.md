@@ -41,7 +41,7 @@ the recovery. It never reopens the workspace by itself: the user may have closed
    - On a non-zero exit whose stderr holds `.error.code == "workspace_not_found"`, the workspace is gone. Any other
      failure logs `could not check workspace <id>: <error>` and exits 1. Log the recovery steps with literal values:
      `herdr worktree open --cwd <main checkout> --path <worktree> --focus` (without `--cwd`, open fails with
-     `linked_worktree_source`), then `herdr-dev <worktree> <new workspace id> <fork session id> "<prompt>"`, where
+     `linked_worktree_source`), then `herdr-dev <worktree> <new workspace id> <fork session id> '<resume prompt>'`, where
      the new workspace id is the one `open` prints. When the session id is empty, the log says so and gives
      `claude --resume` in the worktree in place of the herdr-dev line. Under `TUIOS_SOCKET` step 1 is
      `herdr-api workspace create --cwd <worktree> --label <worktree folder name> --focus`, because tuios answers no
@@ -127,6 +127,9 @@ Prompt edits only.
   worktree bullet, removed from this plan): reverted before merge on the orchestrator's ruling (agent-evals-5e, 2026-11-10). The
   rule meter's off arm already held 8 of 8 for both lines (CD01, WT01), so they cost tokens and change nothing.
   The phase 2 scratchpad line ships.
+- Phase 1 step 2: the herdr-dev recovery step passes a fixed resume prompt ("Go on with the work in this worktree;
+  your brief is already in context.") in place of `"<prompt>"`, so the fork does not restart its brief. The
+  orchestrator (agent-evals-5e, 2026-11-10) ruled it; AC2 still holds.
 - Phase 3: the user ruled "ship" on the class-closure edit (44bab1ba), 2026-11-10, in session agent-evals-5e.
 - Phase 3 step 2: the orchestrator (agent-evals-5e, 2026-11-10) ruled that the members left alone get their own
   packet field, which the hand-back shows even when the closure receipt is missing. This is not a user sign-off.

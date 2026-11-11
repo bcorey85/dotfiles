@@ -36,7 +36,8 @@
 # first `herdr worktree open --cwd <main checkout> --path <worktree> --focus`
 # (under tuios `herdr-api workspace create --cwd <worktree> --label <worktree
 # folder name> --focus`), then
-# `herdr-dev <worktree> <new workspace id> <fork session id> "<prompt>"`
+# `herdr-dev <worktree> <new workspace id> <fork session id> '<resume prompt>'`,
+# a short "go on" prompt, not the original brief
 # (`claude --resume` in the worktree when the session id is unknown).
 #
 # Every pane in the new workspace starts in the worktree, so popups that

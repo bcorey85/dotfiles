@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "herdr-worktree watches a forked workspace and logs the recovery steps when it closes"
-description: "After `herdr-worktree --fork` starts the forked claude, a detached watcher checks the new workspace once the session id shows; when the workspace is gone it writes the reopen and resume commands with literal paths to a log in the worktree's git dir and shows a herdr notification."
+description: "After `herdr-worktree --fork` starts the forked claude, a detached watcher checks the new workspace HERDR_WORKTREE_WATCH_SECONDS (default 120) after the fork starts; when the workspace is gone it writes the reopen and session-fork commands with literal paths to a log in the worktree's git dir and shows a herdr notification."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-10T18:24:23-06:00"}
 seq: 4
 kind: "fix"
@@ -23,7 +23,7 @@ unmeasured: ""
 
 ## Evidence
 
-Queue item: a forked worktree workspace closed about a minute after `herdr-worktree --fork` with no trace, and the user had to rebuild the reopen and resume commands by hand. The cause is unknown, so the change makes a close visible and names the recovery.
+Queue item: a forked worktree workspace closed about a minute after `herdr-worktree --fork` with no trace, and the user had to rebuild the reopen and session-fork commands by hand. The cause is unknown, so the change makes a close visible and names the recovery.
 
 ## Result
 

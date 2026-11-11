@@ -40,7 +40,7 @@ class ClosureCheckRetryTest(unittest.TestCase):
         self.assertIn(error[: review_loop_findings.RETRY_ERROR_CHARS], retry_prompt)
         self.assertNotIn(error[: review_loop_findings.RETRY_ERROR_CHARS + 1], retry_prompt)
 
-    def test_the_prompt_checks_each_members_purpose_and_asks_the_receipt_to_name_members_left_alone(self):
+    def test_the_prompt_checks_each_members_purpose_and_asks_the_reply_for_a_left_alone_list(self):
         _, calls = self.check([JSON_REPLY])
         prompt = calls[0][1]
 
@@ -68,11 +68,48 @@ class ClosureCheckRetryTest(unittest.TestCase):
         self.assertEqual(["a.py:3 - defect - fix"], result["open"])
         self.assertEqual(1, len(calls))
 
+    def test_a_raw_quote_receipt_with_left_alone_before_open_keeps_the_receipt_clean(self):
+        reply = ('{"receipt": "the "limit" readers", "left_alone": ["log.py:9 - prints the limit"], '
+                 '"open": ["a.py:3 - defect - fix"]}')
+        result, _ = self.check([reply])
+
+        self.assertEqual('the "limit" readers', result["receipt"])
+        self.assertNotIn("left_alone", result["receipt"])
+        self.assertEqual(["log.py:9 - prints the limit"], result["left_alone"])
+        self.assertEqual(["a.py:3 - defect - fix"], result["open"])
+
+    def test_a_raw_quote_receipt_between_left_alone_and_open_keeps_the_receipt(self):
+        reply = ('{"left_alone": ["log.py:9 - prints the limit"], "receipt": "the "limit" readers", '
+                 '"open": ["a.py:3 - defect - fix"]}')
+        result, _ = self.check([reply])
+
+        self.assertEqual('the "limit" readers', result["receipt"])
+        self.assertEqual(["log.py:9 - prints the limit"], result["left_alone"])
+        self.assertEqual(["a.py:3 - defect - fix"], result["open"])
+
     def test_a_raw_quote_receipt_without_left_alone_gives_an_empty_list(self):
         reply = '{"receipt": "the "limit" readers", "open": ["a.py:3 - defect - fix"]}'
         result, _ = self.check([reply])
 
         self.assertEqual([], result["left_alone"])
+
+    def test_a_raw_quote_reply_with_a_malformed_left_alone_list_retries(self):
+        malformed = ('{"receipt": "the "limit" readers", "open": ["a.py:3 - defect - fix"], '
+                     '"left_alone": ["log.py:9 - prints the limit" "x"]}')
+        result, calls = self.check([malformed, JSON_REPLY])
+
+        self.assertEqual(2, len(calls))
+        self.assertEqual("all exits re-read", result["receipt"])
+
+    def test_a_raw_quote_reply_with_open_before_receipt_keeps_both_lists_without_a_retry(self):
+        reply = ('{"open": ["a.py:3 - defect - fix"], "receipt": "the "limit" readers", '
+                 '"left_alone": ["log.py:9 - prints the limit"]}')
+        result, calls = self.check([reply])
+
+        self.assertEqual(1, len(calls))
+        self.assertEqual("", result["receipt"])
+        self.assertEqual(["a.py:3 - defect - fix"], result["open"])
+        self.assertEqual(["log.py:9 - prints the limit"], result["left_alone"])
 
     def test_a_truncated_left_alone_list_retries_in_place_of_dropping_the_members(self):
         truncated = ('{"receipt": "the "limit" readers", "open": ["a.py:3 - defect - fix"], '

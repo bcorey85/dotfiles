@@ -6,10 +6,15 @@ Fix four queue items: `forked-worktree-workspace-closes-about-a-minute`,
 
 ## Scope
 
-- In: `scripts/.local/bin/herdr-worktree`, a new `scripts/.local/bin/herdr-worktree-watch`,
+- In: `scripts/.local/bin/herdr-worktree`, a new `scripts/.local/bin/herdr-worktree-watch`, a new
+  `scripts/.local/bin/detach` (and the `bookmark` and `research` launchers that use it),
   `claude/.claude/skills/coder-core/SKILL.md`, `claude/.claude/scripts/review/review_loop_closure.py`
-  (`CLOSURE_RULES` and the closure prompt only), `claude/.claude/orchestration.md` (the worktree bullet only),
-  `docs/rule-anchors.md`, and their tests in `tests/scripts/`.
+  (`CLOSURE_RULES`, the closure prompt and the recovery parser `closure_from_open_list`),
+  `claude/.claude/scripts/review/review_loop_script.py` (`class_closure_pass`),
+  `claude/.claude/scripts/review/review_loop_packet.py` (`packet_message`, `EMPTY_OUTCOME`),
+  `claude/.claude/scripts/review/handback.py` (the `left_alone` field), `claude/.claude/scripts/lib/script_utils.py` (`nonblank_strings`),
+  `docs/rule-anchors.md`, and their tests in `tests/scripts/`. `claude/.claude/orchestration.md` (the worktree
+  bullet) was in scope and is not shipped: reverted, see Plan Deviations.
 - Out: `review_loop_coder.py` (its untracked-file restore already exists and stays as is), `review_fix.py`,
   `review_fix_asks.py`, `skills/review/`, `skills/fix/`, `review-fork-run.md`, lint, format, gate-env and
   removed-change code, `settings.json`, any `~/agent-evals/` file.
@@ -17,9 +22,9 @@ Fix four queue items: `forked-worktree-workspace-closes-about-a-minute`,
 ## Phase Status
 
 - [x] Phase 1: herdr-worktree watches the forked workspace and names the recovery steps (risk: medium)
-- [x] Phase 2: coder scripts go to the scratchpad; a coder never deletes an untracked file it did not create (risk: low)
+- [x] Phase 2: coder scripts go to the scratchpad (risk: low). The no-delete-untracked-file half was reverted, see Plan Deviations
 - [x] Phase 3: class closure checks what each member reads the value for (risk: low)
-- [x] Phase 4: the worktree bullet opens with "only when the user asks" (risk: low)
+- [ ] Phase 4: the worktree bullet opens with "only when the user asks" (risk: low) (reverted, see Plan Deviations)
 
 ## Phase 1: herdr-worktree watches the forked workspace and names the recovery steps
 
@@ -116,6 +121,8 @@ Prompt edits only.
 ## Plan Deviations
 
 - Phase 1 step 2: the watcher starts under `setsid`, with perl `POSIX::setsid()` as the fallback where `setsid` is missing (macOS; perl ships with it).
+  The perl fallback forks first when the process is a process-group leader (setsid fails for a leader) and exits
+  non-zero when fork, setsid or exec fails.
   The caller's process group can be torn down, so the watcher needs its own session.
 - Phase 1 step 1: the user directed that the watcher poll `pane get` once a second for the session id, bounded by
   `HERDR_WORKTREE_WATCH_SECONDS`, and sleep the rest, in place of one read at start.
@@ -127,9 +134,15 @@ Prompt edits only.
   round 1), so `the value` has a referent. Step 1 above quotes the shipped wording.
 - Phase 3 step 2: the closure reply JSON carries the members left alone in a `left_alone` list, not in the receipt
   prose, because `review_loop_script.py` rebuilds the receipt from open and held members when any member is open and
-  would drop that prose. `class_closure_pass` appends `left_alone_clause` to every receipt it writes, so AC7 holds on
-  every path. This widens scope to `review_loop_script.py` (`class_closure_pass` only) and its tests.
+  would drop that prose. `class_closure_pass` stores the list in its own `left_alone` packet field, which the
+  hand-back renders as its own line, so the hand-back names every member left alone on every path, including a
+  missing receipt. This
+  widens scope to `review_loop_script.py`, `review_loop_packet.py`, `handback.py` and their tests.
 - Phase 2 step 2 and Phase 4: reverted before merge on the orchestrator's ruling (agent-evals-5e, 2026-11-10). The
   rule meter's off arm already held 8 of 8 for both lines (CD01, WT01), so they cost tokens and change nothing.
   The phase 2 scratchpad line ships.
 - Phase 3: the user ruled "ship" on the class-closure edit (44bab1ba), 2026-11-10, in session agent-evals-5e.
+- Phase 3 step 2: the orchestrator (agent-evals-5e, 2026-11-10) ruled that the members left alone get their own
+  packet field, which the hand-back shows even when the closure receipt is missing. This is not a user sign-off.
+- AC5 and AC8 cut, AC7 reworded from "receipt" to "hand-back": user sign-off, Brandon Corey, 2026-11-10, written
+  by the user's own command.

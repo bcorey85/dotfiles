@@ -12,7 +12,7 @@ watches: []
 test: "tests/scripts/test_review_loop_script.py::ReviewLoopScriptTest::test_a_repaired_class_receipt_names_the_members_left_alone"
 asked: ""
 proof: []
-unmeasured: ""
+unmeasured: "No meter run; the user ruled ship on 2026-11-10 in session agent-evals-5e."
 ---
 
 ## Change

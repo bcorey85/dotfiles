@@ -20,7 +20,10 @@ local roles = {
     exit = "#a80e62", lit = "#2a7000", kw = "#4c5158", desc = "#07549f", remark = "#6d4a00",
   },
 }
-local role = roles[vim.o.background == "light" and "light" or "dark"]
+local mode = vim.o.background == "light" and "light" or "dark"
+-- A variant (colors/dredge-roles-warm.lua) swaps role colours through vim.g.dredge_role_overrides.
+local role_overrides = vim.g.dredge_role_overrides or {}
+local role = vim.tbl_extend("force", roles[mode], role_overrides[mode] or {})
 
 local by_role = {
   bind = {

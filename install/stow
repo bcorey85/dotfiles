@@ -44,9 +44,10 @@ fi
 
 # Zed writes settings.json/keymap.json itself on first launch, so back up only
 # those two files — the rest of ~/.config/zed (themes, extensions, db) is Zed's
-# own state and must survive.
+# own state and must survive. When stow linked ~/.config/zed itself, those files
+# live in this repo: leave them.
 for f in settings.json keymap.json; do
-    if [ -f ~/.config/zed/$f ] && [ ! -L ~/.config/zed/$f ]; then
+    if [ ! -L ~/.config/zed ] && [ -f ~/.config/zed/$f ] && [ ! -L ~/.config/zed/$f ]; then
         print_info "Backing up existing zed $f..."
         mv ~/.config/zed/$f ~/.config/zed/$f.backup.$(date +%Y%m%d_%H%M%S)
     fi

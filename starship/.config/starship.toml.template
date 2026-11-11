@@ -230,6 +230,34 @@ fg = "#283039"
 bg = "#f5f7f8"
 grey = "#5a6571"
 
+# token dark (warm graphite #262624; salmon and peach accents).
+[palettes.token-dark]
+red = "#d68585"
+orange = "#f4906f"
+yellow = "#f7c699"
+green = "#8fb78c"
+blue = "#81a5c4"
+branch = "#81a5c4"
+teal = "#7dbbba"
+purple = "#b195ca"
+fg = "#c3c0b8"
+bg = "#262624"
+grey = "#8a8884"
+
+# token light (#faf9f5).
+[palettes.token-light]
+red = "#ad5253"
+orange = "#863716"
+yellow = "#857238"
+green = "#365a33"
+blue = "#315270"
+branch = "#315270"
+teal = "#185b5b"
+purple = "#61457c"
+fg = "#323128"
+bg = "#faf9f5"
+grey = "#6a655d"
+
 # jellybeans dark (#151515).
 [palettes.jellybeans-dark]
 red = "#d74545"

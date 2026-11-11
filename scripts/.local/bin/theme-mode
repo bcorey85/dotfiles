@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles dredge-roles-warm solarized-osaka solarized selenized flexoki token-flint jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles dredge-roles-warm solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox; }
 
 # A family that differs from another only in nvim's syntax colours borrows that
 # family's terminal, prompt, herdr, delta and claude themes. dredge-warm exists
@@ -171,6 +171,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # contrib/ghostty.
     token-flint:light)      echo "token-flint-light" ;;
     token-flint:*)          echo "token-flint-dark" ;;
+    # token: the same plugin's default variant, same source.
+    token:light)            echo "token-light" ;;
+    token:*)                echo "token-dark" ;;
     # jellybeans: custom files in ghostty/themes/, from the plugin's
     # extras/ghostty (ghostty's "Jellybeans" builtin is the older vim palette).
     jellybeans:light)       echo "jellybeans-light" ;;
@@ -263,6 +266,10 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # light with the fewest leaks.
     token-flint:light)      echo "github-light" ;;
     token-flint:*)          echo "one-dark-pro" ;;
+    # token: BASE of a full [custom_theme]. The vitesse pair is the warm-grey
+    # match (token is #c3c0b8 on #262624 and #323128 on #faf9f5).
+    token:light)            echo "vitesse-light" ;;
+    token:*)                echo "vitesse-dark" ;;
     # jellybeans: BASE of a full [custom_theme]. Warm cream on near-black, and
     # near-black on a warm ground.
     jellybeans:light)       echo "vitesse-light" ;;
@@ -1157,6 +1164,56 @@ EOF
 "keyword.operator.expression"       = "$op"
 "keyword.control.exception"         = "$exc"
 "keyword.control.trycatch"          = "$exc"
+"markup.underline.link"             = "$link"
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
+    # token (ThorstenRhau/token, default variant): roles are the resolved fg of
+    # nvim's groups, chrome and diff washes the plugin's own palette. Peach
+    # keywords, salmon definitions and calls, blue types, teal numbers, purple
+    # constants and imports, mauve properties; operators and parameters grey.
+    token:*)
+      local addWord remWord cls key h1 h2 exc link
+      bg="#262624"; panel="#1d1d1c"; panelAlt="#2f2f2d"; border="#383835"
+      accent="#f4906f"; accentMuted="#3a3a37"; text="#c3c0b8"; muted="#a19c94"
+      addedBg="#1e3524"; removedBg="#3c2024"; ctxBg="#262624"
+      addWord="#2e5232"; remWord="#5a2529"
+      sAdd="#7ca379"; sRem="#c57677"; lnFg="#6b6b69"
+      link="#81a5c4"; fMod="#b99d4a"; note="#1d1d1c"
+      kw="#f7c699"; str="#8fb78c"; fn="#f4906f"; punct="#a19c94"; op="#b3aea5"
+      typ="#81a5c4"; num="#70aead"; konst="#b195ca"
+      mem="#c293a4"; exc="#d68585"; cmt="#a19c94"
+      if [ "$2" = light ]; then
+        bg="#faf9f5"; panel="#ecebe7"; panelAlt="#f0efeb"; border="#e6e5e1"
+        accent="#863716"; accentMuted="#dddcd6"; text="#323128"; muted="#6a655d"
+        addedBg="#daf6d5"; removedBg="#ffdada"; ctxBg="#faf9f5"
+        addWord="#c0d8bc"; remWord="#e8c4c4"
+        sAdd="#23831e"; sRem="#c82a2a"; lnFg="#8e8c86"
+        link="#315270"; fMod="#857238"; note="#ecebe7"
+        kw="#6d4717"; str="#365a33"; fn="#863716"; punct="#6a655d"; op="#565141"
+        typ="#315270"; num="#1d5f5e"; konst="#61457c"
+        mem="#794f5f"; exc="#ad5253"; cmt="#69645c"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      badgeNeu="$link"; fRename="$link"; h1="$fn"; h2="$kw"
+      lang="$num"; cls="$typ"; ns="$typ"; prim="$typ"; param="$op"
+      esc="$konst"; imp="$konst"; pre="$konst"; mac="$konst"; vbi="$konst"
+      attr="$konst"; tag="$konst"
+      bfn="$fn"; call="$fn"
+      var="$text"; use="$text"; key="$mem"
+      extra=$(cat <<EOF
+"keyword.operator.word"             = "$op"
+"keyword.operator.new"              = "$op"
+"keyword.operator.expression"       = "$op"
+"keyword.control.exception"         = "$exc"
+"keyword.control.trycatch"          = "$exc"
+"entity.other.attribute-name"       = "$kw"
 "markup.underline.link"             = "$link"
 "markup.heading"                    = "$h2"
 "entity.name.section"               = "$h2"
@@ -2130,6 +2187,26 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#c3c8cc" subtext0="#9aa4ae"
       green="#a9b98c" yellow="#c5a15a" red="#e3888c"
       blue="#88acc4" teal="#98bbd4" peach="#f8d28a"
+      ;;
+    token:light)
+      # token light (#faf9f5 ground, bg1 panel).
+      base_name="one-light"
+      accent="#863716" panel_bg="#ecebe7" surface_dim="#e6e5e1"
+      surface0="#c4c0ba" surface1="#a8a49c"
+      overlay0="#6a655d" overlay1="#565141"
+      text="#323128" subtext0="#565141"
+      green="#365a33" yellow="#857238" red="#ad5253"
+      blue="#315270" teal="#185b5b" peach="#6d4717"
+      ;;
+    token:*)
+      # token dark (warm graphite #262624 ground, bg1 panel).
+      base_name="one-dark"
+      accent="#f4906f" panel_bg="#1d1d1c" surface_dim="#2f2f2d"
+      surface0="#3a3a37" surface1="#4a4a48"
+      overlay0="#8a8884" overlay1="#a19c94"
+      text="#c3c0b8" subtext0="#a19c94"
+      green="#8fb78c" yellow="#b99d4a" red="#d68585"
+      blue="#81a5c4" teal="#7dbbba" peach="#f7c699"
       ;;
     jellybeans:light)
       # jellybeans light (sepia #f5e6d3 ground, grey_one panel).

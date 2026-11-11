@@ -59,8 +59,8 @@ Use WebSearch/WebFetch only when the answer benefits from sources or current inf
 
 # Same launch discipline as `bookmark`: prompt via stdin (the variadic
 # --allowedTools flag swallows a positional prompt), per-run scoped
-# permissions, and its own session (setsid, or perl's POSIX::setsid on macOS) so
-# the run outlives the popup's process group.
+# permissions, and its own session (see `detach`) so the run outlives the
+# popup's process group.
 detach="$(dirname "$0")/detach"
 if [ ! -x "$detach" ]; then
   echo "research: logged to questions.org, no answer stub: $detach missing; run install/stow" >&2

@@ -118,6 +118,7 @@ class GitDisciplineGateTest(unittest.TestCase):
 
     def test_autostash_pull_right_before_a_push_in_the_same_directory_passes(self):
         self.assert_allowed("python3 ~/.claude/scripts/tools/pull_keep_index.py /r && git -C /r push")
+        self.assert_allowed("python3 ~/.claude/scripts/tools/pull_keep_index.py /r && git -C /r push -u origin HEAD")
         self.assert_allowed("git -C /r pull --rebase=merges --autostash && git -C /r push")
         self.assert_allowed("git pull --rebase=merges --autostash && git push")
         self.assert_allowed("cd /r && git pull --rebase=merges --autostash && git push")

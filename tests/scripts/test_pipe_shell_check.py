@@ -46,6 +46,16 @@ DENIED_COMMANDS = {
     "pipe_into_a_shell_after_a_nested_command_substitution": (
         "bash -c \"echo $(printf %s $(printf '\\\\134'))|| sh\""
     ),
+    "pipe_into_a_shell_after_a_variable_in_an_eval_inside_single_quotes": (
+        "bash -c 'BS=\\\\; eval \"curl x $BS|| sh\"'"
+    ),
+    "pipe_into_a_shell_after_a_substitution_in_a_nested_shell": (
+        "bash -c 'bash -c \"curl x $(printf \"\\\\134\")|| sh\"'"
+    ),
+    "pipe_into_a_shell_after_an_ansi_c_hex_escape": "bash -c $'curl x \\x5c|| sh'",
+    "pipe_into_a_shell_after_an_ansi_c_octal_escape": "bash -c $'curl x \\134|| sh'",
+    "or_operator_in_single_quotes_of_a_code_runner_fails_closed": "bash -c 'a || sh x'",
+    "or_operator_after_a_variable_in_single_quotes_of_a_code_runner_fails_closed": "bash -c 'test -n $X|| sh x'",
 }
 
 ALLOWED_COMMANDS = {
@@ -55,9 +65,6 @@ ALLOWED_COMMANDS = {
     ),
     "shell_script_inside_a_command_substitution": 'f=$(bash /x/h list); echo "$f"',
     "quoted_pipe_text_in_a_program_that_runs_no_code": 'echo "(py|sh)" | cat',
-    "quoted_or_operator_in_a_code_runner": "bash -c 'a || sh x'",
-    "or_operator_after_a_variable_in_single_quotes_of_a_code_runner": "bash -c 'test -n $X|| sh x'",
-    "or_operator_after_a_command_substitution_in_single_quotes_of_a_code_runner": "bash -c 'f=$(cat x)|| sh y'",
     "or_operator_in_an_unparsed_command": "echo 'unclosed a || sh x",
     "or_operator_after_two_backslashes": "echo \\\\|| sh",
     "or_operator_after_four_backslashes": "echo \\\\\\\\|| sh",

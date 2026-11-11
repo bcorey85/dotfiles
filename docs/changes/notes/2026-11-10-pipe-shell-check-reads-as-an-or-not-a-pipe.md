@@ -19,13 +19,10 @@ unmeasured: ""
 
 `scripts/tools/pipe_shell_check.py`: the text fallback's regex skips a `|` that follows another `|`, unless an odd run
 of backslashes comes before the first bar (then it still denies, fail closed). An even run is escaped backslashes, so
-the bars after it are a real `||` and pass. Any quoted text in a command that names a code runner keeps the stricter
-reading: any backslash run before the bars denies (fail closed), also with quotes between the run and the bars. An
-expansion ending right before the bars (`$VAR`, `$@`, `$*`, or a closing `)`, `}` or backtick), also with quotes
-between it and the bars, denies too when it does not start inside single quotes, without balancing nested
-expansions. Single quotes expand nothing, so an expansion there passes. Quote state comes from
-`shell_command.double_quoted_positions`, which reads a quote inside a `$(...)` span as that span's own. The module docstring no longer claims that a
-quoted pipe passes.
+the bars after it are a real `||` and pass. In a command that names a code runner, a `||` before a quoted shell name
+always denies (fail closed): the runner reads the quoted code again, and a backslash, an expansion, an ANSI-C escape
+or a nested shell can each turn the bars into an escaped bar and a pipe. So `bash -c 'a || sh x'` denies, as it did
+before this change. The module docstring no longer claims that a quoted pipe passes.
 
 ## Evidence
 

@@ -1,7 +1,6 @@
 """Exit 1 when the shell command on stdin pipes into a shell interpreter. A `||` is no pipe unless a
-backslash escapes its first bar. Inside a quoted string of a command that names a code runner, any backslash before
-the bars counts as escaping it, and outside single quotes so does an expansion ending right before the bars. A `|`
-inside closed quotes counts only when the text holds a shell or code-runner word."""
+backslash escapes its first bar. Inside a quoted string of a command that names a code runner, every `||` before a
+shell name counts as a pipe. A `|` inside closed quotes counts only when the text holds a shell or code-runner word."""
 import os
 import re
 import sys
@@ -10,44 +9,27 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import shell_command
 import shell_statements
 
+SHELL_NAME_AFTER_BAR = r"&?\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba|z|da|k)?sh(?![\w.-])"
 
-def pipe_shell_pattern(escaped_pipe):
-    """A pipe into a shell: a `|` not right after another `|` (the second half of `||`), or a `|` right after a
-    match of the escaped_pipe pattern, which matches what may escape the first bar (a backslash run, or for
-    double-quoted text an expansion) plus that bar."""
-    return re.compile(
-        rf"(?:(?<!\|)|{escaped_pipe})\|&?\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba|z|da|k)?sh(?![\w.-])",
-        re.IGNORECASE)
-
-
-# In shell text an odd run of backslashes before a `|` escapes it, so a pipe follows; an even run is escaped
-# backslashes, so the bars after it are a real `||`.
-UNPARSED_PIPE_SHELL = pipe_shell_pattern(r"(?<!\\)(?:\\\\)*\\\|")
-# Inside a quoted string the layer of quoting is unknown (`bash -c "echo \\|| sh"` hands the shell `echo \|| sh`),
-# so any backslash run may escape that pipe.
-QUOTED_PIPE_SHELL = pipe_shell_pattern(r"(?<!\\)\\+[\"']*\|")
-# An expansion that ends right before the bars, or before quotes that reopen on them, may expand to a backslash
-# (`BS='\'; bash -c "echo $BS|| sh"`). Nested expansions are not balanced: the last character (`)`, `}`, a backtick)
-# decides, which also denies a harmless `(a)|| sh` (fail closed). Single quotes expand nothing, so they are not covered.
-EXPANSION_PIPE_SHELL = pipe_shell_pattern(r"(?:\$(?:\w+|[@*])|[)}`])[\"']*\|")
+# A `|` not right after another `|` is a pipe. In shell text an odd run of backslashes before a `|` escapes it, so
+# a pipe follows; an even run is escaped backslashes, so the bars after it are a real `||`.
+UNPARSED_PIPE_SHELL = re.compile(
+    rf"(?:(?<!\|)|(?<!\\)(?:\\\\)*\\\|)\|{SHELL_NAME_AFTER_BAR}", re.IGNORECASE
+)
+# Fail closed: quoted code is read again by the code runner, and a backslash, an expansion, an ANSI-C escape or a
+# nested shell can each turn the first bar of a quoted `||` into an escaped bar and the second into a pipe.
+# A quoted `|| sh` therefore always counts as a pipe into a shell.
+QUOTED_PIPE_SHELL = re.compile(rf"\|{SHELL_NAME_AFTER_BAR}", re.IGNORECASE)
 
 
 def text_pipes_into_shell(command):
-    """Search the whole text of a command that names a code runner: a pipe into a shell anywhere, a quoted
-    backslash run before the bars, or an expansion before the bars that is not inside single quotes."""
+    """Search the whole text of a command that names a code runner: a pipe into a shell anywhere, or any bars
+    before a quoted shell name."""
     if UNPARSED_PIPE_SHELL.search(command):
         return True
     quoted = shell_command.quoted_positions(command, unclosed_is_quoted=False)
-    # The last character of the shell name is tested: a backslash run is not reliably marked by its own position.
-    if any(match.end() - 1 in quoted for match in QUOTED_PIPE_SHELL.finditer(command)):
-        return True
-    double_quoted = shell_command.double_quoted_positions(command, unclosed_is_quoted=False)
-    for match in EXPANSION_PIPE_SHELL.finditer(command):
-        in_single_quotes = match.start() in quoted and match.start() not in double_quoted
-        shell_name_is_quoted = match.end() - 1 in quoted
-        if shell_name_is_quoted and not in_single_quotes:
-            return True
-    return False
+    # A match counts when its shell name sits inside closed quotes.
+    return any(match.end() - 1 in quoted for match in QUOTED_PIPE_SHELL.finditer(command))
 
 
 def pipes_into_shell(command):

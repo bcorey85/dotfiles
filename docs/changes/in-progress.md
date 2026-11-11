@@ -7,11 +7,10 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-4 open benches, by rank. Each line is the question the bench asks.
+3 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
 * Build an ambiguous multi-ticket fixture that can read plan quality across main-session models (running): A fixture hard enough to show a build gap would settle whether a Sonnet main session can orchestrate /code from a frozen Opus plan, and take part of the 66% of weekly Opus cache read the main session holds.
 * Run the plan as an Opus-driven loop so a Sonnet main session only hands off (blocked): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
-* Write each plan test as real code at planning time and keep only tests that fail (running): A planning stage that writes each phase test as code and runs it on the untouched tree could remove about a third of plan-review findings and the second plan-review round.

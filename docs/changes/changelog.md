@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-901 changes
+902 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -23,6 +23,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [asks-done needs --by; no default records a user sign-off](notes/2026-11-11-asks-done-needs-by-no-default-records-a-user-sign.md) [skill/review, skill/fix] review_fix.py asks-done refuses a call with no --by and logs nothing, so an ask outcome is recorded as the user's only when the caller says the user gave it.
 * [A user-accepted ask the fix coder skips comes back as an ask](notes/2026-11-11-a-user-accepted-ask-the-fix-coder-skips-comes-back.md) [skill/review, skill/fix] asks-done --by user launches the fix run with --user-ruled, and that run's packet turns each fix-first skip into an ask carrying the coder's reason, so a change the user accepted is applied or put back to the user, never dropped into skipped.
 * [Test commands named in a review resume reply run in the fix run](notes/2026-11-10-test-commands-named-in-a-review-resume-reply-run.md) [skill/review, skill/fix, shared/review-fork-run] review_fix.py launch takes a repeatable --test that the loop runs as a gate command and the relaunch keeps, the resume step puts each test the reply names on the launch line, and the packet says why named tests did not run.
 * [code-fork writes its run folder files with the Write tool, held to the run folder by a hook](notes/2026-11-10-code-fork-writes-its-run-folder-files-with-the.md) [agent/code-fork, skill/code, shared/review-fork-run] The /code, /review and /fix fork writes stop.md, handoff and findings files with the Write tool, which a new Write hook holds to the run folder, so a stop whose text names an interpreter flag no longer loses its stop file.

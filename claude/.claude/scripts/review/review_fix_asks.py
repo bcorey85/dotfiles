@@ -64,7 +64,7 @@ def outcome_failure_line(item, outcome_row):
     return f"{path}:{line}: {one_line(outcome_row.output, 160)}"
 
 
-def log_fix_ask_outcomes(state, asks, outcomes, decided_by=plan_format.USER_RULING):
+def log_fix_ask_outcomes(state, asks, outcomes, decided_by):
     """(ask counts of this call: plan-impact asks skipped, outcomes logged under a new finding_id; failure lines). An
     ask that is logged or skipped joins asks_logged and is never tried again."""
     logged = state.setdefault("asks_logged", [])
@@ -137,7 +137,8 @@ def asks_done_options(argv):
     """The AsksDoneOptions of an asks-done call."""
     outcome_words, decided_by = script_utils.pop_option(argv, "--by")
     if decided_by is None:
-        decided_by = plan_format.USER_RULING
+        raise UsageError("asks-done needs --by: `--by user` when the user gave the answer, `--by session` when "
+                         "the session ruled on the asks itself.")
     if not plan_format.is_ruling_by(decided_by):
         raise UsageError(f"asks-done --by needs user or session, not {decided_by!r}")
 

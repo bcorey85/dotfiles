@@ -622,7 +622,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "no, keep the retry"])
         self.assertEqual(code, 0, output)
 
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
 
         self.assertEqual(code, 0, output)
         self.assertNotIn("no asks are waiting", output)
@@ -635,7 +635,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: redispatch", output)
 
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
 
         self.assertEqual(code, 0, output)
         self.assertNotIn("no asks are waiting", output)
@@ -902,7 +902,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                        capture_output=True)
         self.packet(WITH_ASK)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], cwd=other_repo)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], cwd=other_repo)
 
         self.assertEqual(code, 2, output)
         resolved_repo = other_repo.resolve()
@@ -915,7 +915,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=other_repo, env={**os.environ, **GIT_ENV}, check=True,
                        capture_output=True)
         self.packet(WITH_ASK)
-        self.run_script(["asks-done", "accepted", "rejected"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         logged_before = len(self.ledger_writes())
 
         code, output = self.run_script(["packet", "--skill", "review"], WITH_ASK, cwd=other_repo)
@@ -936,7 +936,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("--note Should retries be capped at 3 or configurable? src/retry.ts:10", jump)
         self.assertIn("src/db.ts:5", jump)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected:not worth it"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected:not worth it"])
         self.assertEqual(code, 0, output)
         finding_rows = self.ledger_writes()
         self.assertEqual([row["_type"] for row in finding_rows], ["review_finding"] * 2)
@@ -968,10 +968,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("1. src/retry.ts:10  [code-reviewer/smell]", output)
         self.assertIn("2. src/db.ts:5  [perf-reviewer/perf]", output)
         self.assertIn("Accept = make this change: add the index. Reject = leave the code as it is.", output)
-        self.assertIn("asks-done <outcome-1> <outcome-2>", output)
+        self.assertIn("asks-done --by user <outcome-1> <outcome-2>", output)
         self.assertNotIn("review-gate-mark", output)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
         rows = self.ledger_writes()
         self.assertEqual([row["ask_outcome"] for row in rows], ["accepted", "rejected"])
@@ -996,12 +996,12 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(WITH_ASK)
         second_id = self.stored_state()["packet_id"]
         self.assertNotEqual(first_id, second_id)
-        self.assertIn(f"asks-done --packet {second_id} <outcome-1> <outcome-2>", output)
+        self.assertIn(f"asks-done --by user --packet {second_id} <outcome-1> <outcome-2>", output)
         code, output = self.packet(WITH_ASK)
-        self.assertIn(f"asks-done --packet {second_id} <outcome-1> <outcome-2>", output)
+        self.assertIn(f"asks-done --by user --packet {second_id} <outcome-1> <outcome-2>", output)
         self.assertEqual([waiting["packet_id"] for waiting in self.stored_state()["waiting_packets"]], [first_id])
 
-        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.assertEqual(code, 2, output)
         self.assertIn(first_id, output)
         self.assertIn(second_id, output)
@@ -1009,19 +1009,19 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("src/retry.ts:10", output)
         self.assertEqual(self.ledger_writes(), [])
 
-        code, output = self.run_script(["asks-done", "--packet", first_id, "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", first_id, "accepted"])
         self.assertEqual(code, 0, output)
         self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60031"])
         self.assertEqual(self.stored_state()["waiting_packets"], [])
 
-        code, output = self.run_script(["asks-done", "--packet", second_id, "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", second_id, "accepted", "rejected"])
         self.assertEqual(code, 0, output)
         rows = self.ledger_writes()
         self.assertEqual([row["finding_id"] for row in rows],
                          ["a1b2c3d4e5f60031", "a1b2c3d4e5f60001", "a1b2c3d4e5f60002"])
         self.assertEqual(self.stored_stage(), "done")
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         self.assertIn("already logged", output)
 
     def ask_packet_numbered(self, number):
@@ -1036,7 +1036,7 @@ class ReviewFixScriptTest(unittest.TestCase):
             packet_ids.append(self.stored_state()["packet_id"])
         self.assertEqual(3, len(set(packet_ids)))
 
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 2, output)
         for packet_id in packet_ids:
             self.assertIn(packet_id, output)
@@ -1044,7 +1044,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_asks_done_refuses_a_packet_id_that_is_not_waiting_and_logs_nothing(self):
         self.packet(self.ONE_ASK)
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "--packet", "no-such-packet", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", "no-such-packet", "accepted"])
         self.assertEqual(code, 2, output)
         self.assertIn("is not a packet with unanswered asks", output)
         self.assertEqual(self.ledger_writes(), [])
@@ -1054,7 +1054,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         first_id = self.stored_state()["packet_id"]
         self.packet(WITH_ASK)
 
-        _code, output = self.run_script(["asks-done", "--packet", first_id, "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+        _code, output = self.run_script(["asks-done", "--by", "user", "--packet", first_id, "accepted"],
+                                    FAKE_LEDGER_WRITE_EXIT="2")
         self.assertIn("Failures", output)
         held_ids = [kept["packet_id"] for kept in self.stored_state()["waiting_packets"]]
         self.assertEqual([first_id], held_ids)
@@ -1066,7 +1067,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertEqual(first_id, self.stored_state()["packet_id"])
 
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60031"])
 
@@ -1093,7 +1094,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_asks_done_with_the_wrong_number_of_outcomes_fails_loudly_and_logs_nothing(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 2)
         self.assertIn("2 ask(s) waiting but 1 outcome(s) given", output)
         self.assertEqual(self.ledger_writes(), [])
@@ -1101,7 +1102,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_asks_done_logs_the_outcome_of_an_ask_that_names_no_file(self):
         unlocated_ask = packet_text(WITH_ASK_FIELDS, ask=[{**RETRY_ASK, "file_line": "unlocated"}])
         self.packet(unlocated_ask)
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertNotIn("Failures", output)
         self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()], ["accepted"])
@@ -1113,8 +1114,8 @@ class ReviewFixScriptTest(unittest.TestCase):
                               "class_closure": "n/a - fixed[] empty"})
         code, output = self.packet(message)
         self.assertEqual(code, 0, output)
-        self.assertIn("asks-done <outcome-1> <outcome-2> <outcome-3> <outcome-4>", output)
-        code, output = self.run_script(["asks-done", "accepted", "accepted", "rejected", "accepted"])
+        self.assertIn("asks-done --by user <outcome-1> <outcome-2> <outcome-3> <outcome-4>", output)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted", "rejected", "accepted"])
         self.assertEqual(code, 0, output)
         outcome_rows = [row for row in self.ledger_writes() if "ask_outcome" in row]
         self.assertEqual([row["ask_outcome"] for row in outcome_rows], ["accepted", "accepted", "rejected", "accepted"])
@@ -1133,7 +1134,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_asks_done_with_an_unknown_outcome_fails_loudly(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted", "maybe"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "maybe"])
         self.assertEqual(code, 2)
         self.assertIn("accepted|rejected|modified", output)
         self.assertEqual(self.ledger_writes(), [])
@@ -1152,7 +1153,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_rejected_plan_impact_ask_prints_no_deviation_line(self):
         plan_ask = {**RETRY_ASK, "question": "PLAN-IMPACT: the retry cap contradicts the plan?"}
         self.packet(packet_text(WITH_ASK_FIELDS, ask=[plan_ask]))
-        code, output = self.run_script(["asks-done", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "rejected"])
         self.assertEqual(code, 0, output)
         self.assertNotIn("## Plan Deviations", output)
 
@@ -1163,12 +1164,20 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("The session ruled, not the user.", output)
         self.assertEqual([row["ask_decided_by"] for row in self.ledger_writes()], ["session"] * 2)
 
-    def test_asks_done_without_by_logs_the_user_as_the_one_who_ruled(self):
+    def test_asks_done_by_user_logs_the_user_as_the_one_who_ruled(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
         self.assertNotIn("The session ruled", output)
         self.assertEqual([row["ask_decided_by"] for row in self.ledger_writes()], ["user"] * 2)
+
+    def test_asks_done_without_by_exits_2_logs_nothing_and_names_both_values(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("--by user", output)
+        self.assertIn("--by session", output)
+        self.assertEqual(self.ledger_writes(), [])
 
     def test_asks_done_with_a_bad_by_value_fails_loudly_and_logs_nothing(self):
         self.packet(WITH_ASK)
@@ -1187,7 +1196,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_asks_done_without_waiting_asks_fails(self):
         self.packet(CONVERGED)
-        code, _output = self.run_script(["asks-done", "accepted"])
+        code, _output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 2)
 
     # ---------- /fix extras ----------
@@ -1601,20 +1610,20 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_two_dispatches_returning_the_same_text_are_two_runs(self):
         self.seed(WITH_ASK)
         self.packet("")
-        self.run_script(["asks-done", "accepted", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.dispatch()
         self.hand_back(WITH_ASK, agent_id="a2")
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: present-asks", output)
         self.assertEqual(len(self.jump_log.read_text().splitlines()), 2)
-        self.run_script(["asks-done", "accepted", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.assertEqual(len(self.ledger_writes()), 4)
 
     def test_re_running_packet_on_the_same_stored_hand_back_is_one_run(self):
         self.seed(WITH_ASK)
         self.packet("")
-        self.run_script(["asks-done", "accepted", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         _code, output = self.packet("")
         self.assertIn("ACTION: done", output)
         self.assertEqual(len(self.ledger_writes()), 2)
@@ -1646,7 +1655,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         ops_ask = ask_entry("x", "a.ts:1, b.ts:2", finding_id="a1b2c3d4e5f60003", question="why?", change="c",
                             gate="code-reviewer / robustness", ask_class="ops")
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[ops_ask]))
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 0, output)
         row = self.ledger_writes()[0]
         self.assertEqual(
@@ -1661,7 +1670,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         real_ask = ask_entry("real ask", "b.ts:2", finding_id="a1b2c3d4e5f60004")
         code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[impact_ask, real_ask]))
         self.assertIn("adopt?", output)
-        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertEqual([row["path_key"] for row in self.ledger_writes()], ["b.ts"])
 
@@ -1674,7 +1683,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.stop_row(ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60010"}])
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertIn("Logged 1 of 1 ask outcome row(s).", output)
         self.assertNotIn("without a valid finding_id", output)
@@ -1686,14 +1695,14 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.seed(text)
         self.stop_row(ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60011"}])
         self.packet("")
-        self.run_script(["asks-done", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60011"])
 
     def test_a_valid_id_the_loop_wrote_wins_over_a_logged_row_at_the_same_place(self):
         self.seed(self.ask_packet_with_finding_id("a1b2c3d4e5f60012"))
         self.stop_row(ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60013"}])
         self.packet("")
-        self.run_script(["asks-done", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60012"])
 
     def test_an_ask_the_loop_never_logged_gets_its_ask_row_from_packet_and_one_outcome_under_the_same_id(self):
@@ -1707,7 +1716,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet(self.ASK_WITHOUT_FINDING_ID)
         self.assertEqual(len(self.ledger_writes()), 1)
 
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertNotIn("without a valid finding_id", output)
         outcome_row = self.ledger_writes()[1]
@@ -1719,7 +1728,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.seed(packet_text(CLEAN_EMPTY_FIELDS, ask=two_asks_at_one_place))
         self.stop_row(ask_rows=[{"file": "a.ts", "line": 1, "finding_id": "a1b2c3d4e5f60014"}])
         self.packet("")
-        self.run_script(["asks-done", "accepted", "rejected"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         finding_ids = [row["finding_id"] for row in self.ledger_writes() if "ask_outcome" in row]
         self.assertEqual(len(set(finding_ids)), 2)
         self.assertEqual(finding_ids[0], "a1b2c3d4e5f60014")
@@ -1734,7 +1743,7 @@ class ReviewFixScriptTest(unittest.TestCase):
             with self.subTest(finding_id=finding_id_text):
                 writes_before = len(self.ledger_writes())
                 self.packet(self.ask_packet_with_finding_id(finding_id_text))
-                code, output = self.run_script(["asks-done", "modified:tighten the cap"])
+                code, output = self.run_script(["asks-done", "--by", "user", "modified:tighten the cap"])
                 self.assertEqual(code, 0, output)
                 self.assertIn("Logged 1 of 1 ask outcome row(s).", output)
                 self.assertNotIn("without a valid finding_id", output)
@@ -1742,14 +1751,14 @@ class ReviewFixScriptTest(unittest.TestCase):
                 self.assertRegex(outcome_row["finding_id"], r"^[0-9a-f]{16}$")
                 self.assertEqual(ask_row["finding_id"], outcome_row["finding_id"])
                 self.assertEqual(outcome_row["ask_outcome"], "modified")
-                code, output = self.run_script(["asks-done", "modified:tighten the cap"])
+                code, output = self.run_script(["asks-done", "--by", "user", "modified:tighten the cap"])
                 self.assertEqual(code, 0, output)
                 self.assertIn("The ask outcomes were already logged.", output)
                 self.assertEqual(len(self.ledger_writes()), writes_before + 2)
 
     def test_an_ask_row_the_ledger_refuses_leaves_the_outcome_under_a_new_finding_id_and_says_so(self):
         self.packet(self.ASK_WITHOUT_FINDING_ID, FAKE_LEDGER_WRITE_EXIT="1")
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertEqual(len(self.ledger_writes()), 1)
         self.assertIn("1 ask(s) without a valid finding_id are logged under a new finding_id.", output)
@@ -1758,7 +1767,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         placeholder_id_ask = ask_entry("x", "a.ts:1", finding_id="none logged")
         kept_id_ask = ask_entry("y", "b.ts:2", finding_id="a1b2c3d4e5f60005")
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[placeholder_id_ask, kept_id_ask]))
-        code, output = self.run_script(["asks-done", "modified:tighten the cap", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "modified:tighten the cap", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertIn("Logged 2 of 2 ask outcome row(s).", output)
         self.assertNotIn("without a valid finding_id", output)
@@ -1770,7 +1779,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_a_valid_finding_id_with_surrounding_spaces_is_logged_without_them(self):
         self.packet(self.ask_packet_with_finding_id(" a1b2c3d4e5f60006 "))
-        code, output = self.run_script(["asks-done", "modified:tighten the cap"])
+        code, output = self.run_script(["asks-done", "--by", "user", "modified:tighten the cap"])
         self.assertEqual(code, 0, output)
         self.assertEqual([row["finding_id"] for row in self.ledger_writes()], ["a1b2c3d4e5f60006"])
 
@@ -1847,7 +1856,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_packet_after_asks_done_logs_nothing_more_and_keeps_the_stage(self):
         self.packet(WITH_ASK)
-        self.run_script(["asks-done", "accepted", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         code, output = self.packet(WITH_ASK)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
@@ -1855,15 +1864,15 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_asks_done_twice_is_a_no_op(self):
         self.packet(WITH_ASK)
-        self.run_script(["asks-done", "accepted", "accepted"])
-        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertIn("already logged", output)
         self.assertEqual(len(self.ledger_writes()), 2)
 
     def test_packet_from_another_repo_stops_when_the_asks_were_logged_in_the_first(self):
         self.packet(WITH_ASK)
-        self.run_script(["asks-done", "accepted", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         second = self.temp_root / "second"
         second.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=second, env={**os.environ, **GIT_ENV}, check=True,
@@ -1880,9 +1889,10 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_asks_done_after_a_failed_row_retries_only_the_unlogged_ones(self):
         self.packet(WITH_ASK)
-        self.run_script(["asks-done", "accepted", "accepted"], REVIEW_FIX_CLAUDE_DIR=str(self.temp_root / "nowhere"))
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"],
+                        REVIEW_FIX_CLAUDE_DIR=str(self.temp_root / "nowhere"))
         self.assertEqual(self.ledger_writes(), [])
-        _code, _output = self.run_script(["asks-done", "accepted", "accepted"])
+        _code, _output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.assertEqual(len(self.ledger_writes()), 2)
 
     def test_escape_verb_logs_from_the_saved_packet_once(self):
@@ -1935,7 +1945,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         states = {"none": None, "asks": WITH_ASK, "plan-impact": PLAN_IMPACT, "render": CONVERGED, "blocker": BLOCKER,
                   "parse-failed": "status: bogus"}
         verbs = {"packet": ["packet", "--skill", "review"], "escape": ["escape", "--escape", self.escape_spec()],
-                 "asks-done": ["asks-done", "accepted", "accepted"], "decide": ["decide", "keep"]}
+                 "asks-done": ["asks-done", "--by", "user", "accepted", "accepted"], "decide": ["decide", "keep"]}
         for state_name, text in states.items():
             for verb_name, arguments in verbs.items():
                 with self.subTest(state=state_name, verb=verb_name):
@@ -1957,7 +1967,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep it"])
         for arguments in (
             ["decide", "keep", "--by", "user", "--ruling", "keep it"],
-            ["asks-done", "accepted"],
+            ["asks-done", "--by", "user", "accepted"],
             ["escape", "--escape", self.escape_spec()],
         ):
             _, output = self.run_script(arguments)
@@ -2276,10 +2286,11 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("Apply it anyway?", output)
         self.assertIn("1. b.ts:2", output)
         self.assertIn("2. README.md:1", output)
-        code, output = self.run_script(["asks-done", "accepted"], HOME=str(self.temp_root / "home"))
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"], HOME=str(self.temp_root / "home"))
         self.assertNotEqual(code, 0, output)
         self.assertIn("2 ask(s) waiting but 1 outcome(s) given", output)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=str(self.temp_root / "home"))
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"],
+                                          HOME=str(self.temp_root / "home"))
         self.assertEqual(code, 0, output)
         outcomes = [row["ask_outcome"] for row in self.ledger_writes() if "ask_outcome" in row]
         self.assertEqual(outcomes, ["accepted", "rejected"])
@@ -2564,7 +2575,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         """Launches a review that hands back WITH_ASK, runs its packet, and answers the asks. Returns asks-done's
         (exit code, output)."""
         self.launched_review_with_asks(home)
-        return self.run_script(["asks-done", *outcomes], HOME=home, **extra)
+        return self.run_script(["asks-done", "--by", "user", *outcomes], HOME=home, **extra)
 
     def test_asks_done_retried_after_a_logging_failure_prints_done_and_no_second_fix_run(self):
         home = str(self.temp_root / "home")
@@ -2576,7 +2587,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
         findings_before = findings_file.read_text()
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
         self.assertIn("The first asks-done printed this fix run; run it now unless it already ran.", output)
@@ -2679,7 +2690,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_different_packet_run_before_the_launch_keeps_the_pending_flag(self):
         home = str(self.temp_root / "home")
         self.launched_review_with_asks(home)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         launch_line = output.splitlines()[-1]
         old_id = self.stored_state()["packet_id"]
         code, output = self.packet(self.ONE_ASK, HOME=home)
@@ -2690,7 +2701,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_packet_run_again_before_the_launch_keeps_the_pending_flag(self):
         home = str(self.temp_root / "home")
         packet_args = self.launched_review_with_asks(home)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         launch_line = output.splitlines()[-1]
         code, output = self.run_script(packet_args, HOME=home)
         self.assertEqual(code, 0, output)
@@ -2702,7 +2713,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         launch_args = shlex.split(output.splitlines()[-1])[2:]
         code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
         self.assertEqual(code, 0, output)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertNotIn("asks_launch_pending", self.stored_state())
 
@@ -2743,7 +2754,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         launch_line = next(line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND))
         self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)], [launch_line])
         self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
@@ -2754,7 +2765,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(first_launch_lines), 1, output)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
         self.assertIn("The first asks-done printed this fix run; run it now unless it already ran.", output)
@@ -2772,7 +2783,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(packet_args, HOME=home)
         self.assertEqual(code, 0, output)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
 
         launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         words = shlex.split(launch_lines[0])
@@ -2782,14 +2793,15 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_packet_run_again_after_a_logging_failure_keeps_the_fix_run_printed_once(self):
         home = str(self.temp_root / "home")
         packet_args = self.launched_review_with_asks(home)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home, FAKE_LEDGER_WRITE_EXIT="2")
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"],
+                                          HOME=home, FAKE_LEDGER_WRITE_EXIT="2")
         self.assertIn("ACTION: redispatch", output)
         first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(first_launch_lines), 1, output)
 
         code, output = self.run_script(packet_args, HOME=home)
         self.assertEqual(code, 0, output)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
         self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
@@ -2803,7 +2815,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         code, output = self.run_script(args_without_launch, HOME=home)
         self.assertEqual(code, 0, output)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertNotIn("ACTION: launch-fix-run", output)
         self.assertTrue([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)])
@@ -2816,7 +2828,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("relaunch_args", self.stored_state())
         new_id = self.stored_state()["packet_id"]
 
-        code, output = self.run_script(["asks-done", "--packet", new_id, "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", new_id, "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: launch-fix-run", output)
 
@@ -2831,7 +2843,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         new_id = self.stored_state()["packet_id"]
 
-        code, output = self.run_script(["asks-done", "--packet", new_id, "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", new_id, "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
         launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(launch_lines), 1, output)
@@ -2841,7 +2853,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         impact_ask = ask_entry("PLAN-IMPACT: queue is at-most-once", "a.ts:1", question="adopt?", change="adopt it",
                                ask_class="plan-drift")
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[impact_ask]))
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
         self.assertFalse((script_utils.git_path(self.repo, "review-fix") / "ask-findings.md").exists())
@@ -2851,7 +2863,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                                ask_class="plan-drift")
         real_ask = ask_entry("real ask", "b.ts:2", finding_id="a1b2c3d4e5f60004")
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[impact_ask, real_ask]))
-        self.run_script(["asks-done", "accepted", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
         self.assertEqual(findings_file.read_text(), "- b.ts:2 cap? Proposed change: cap at 3\n")
 
@@ -2860,7 +2872,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         long_ask = ask_entry("long", "b.ts:2", finding_id="a1b2c3d4e5f60004", question=long_question,
                              change="change " * 60 + "done")
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[long_ask]))
-        self.run_script(["asks-done", "modified:first line\n  second line"])
+        self.run_script(["asks-done", "--by", "user", "modified:first line\n  second line"])
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
         findings = findings_file.read_text()
         self.assertEqual(len(findings.splitlines()), 1, findings)
@@ -2972,14 +2984,14 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_modified_ask_with_no_note_stops_and_logs_nothing(self):
         self.packet(WITH_ASK)
         writes_before = len(self.ledger_writes())
-        code, output = self.run_script(["asks-done", "accepted", "modified"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "modified"])
         self.assertEqual(code, 2, output)
         self.assertIn("outcome 2 is modified with no note", output)
         self.assertEqual(len(self.ledger_writes()), writes_before)
 
     def test_an_accepted_ask_of_a_run_launch_did_not_start_prints_a_launch_line_for_the_findings_file(self):
         self.packet(packet_text(WITH_ASK_FIELDS, iter=3))
-        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
         self.assertIn("ACTION: launch-fix-run", output)
@@ -2995,12 +3007,12 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_a_repeat_asks_done_with_no_launch_record_prints_the_same_launch_line(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
         first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(first_launch_lines), 1, output)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
         self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
@@ -3017,7 +3029,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(packet_args, HOME=home)
         self.assertEqual(code, 0, output)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
 
         launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(launch_lines), 1, output)
@@ -3025,13 +3037,14 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_asks_done_retried_after_a_logging_failure_with_no_launch_record_stops_again(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], FAKE_LEDGER_WRITE_EXIT="2")
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"],
+                                          FAKE_LEDGER_WRITE_EXIT="2")
         self.assertIn("ACTION: launch-fix-run", output)
 
         first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(first_launch_lines), 1, output)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
         self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
@@ -3045,40 +3058,41 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
 
         current_id = self.stored_state()["packet_id"]
-        code, output = self.run_script(["asks-done", "--packet", current_id, "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", current_id, "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
         current_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
-        code, output = self.run_script(["asks-done", "--packet", older_id, "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", older_id, "accepted", "rejected"],
+                                          HOME=home)
         self.assertEqual(code, 0, output)
         kept_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(kept_launch_lines), 1, output)
         self.assertNotEqual(kept_launch_lines, current_launch_lines)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
                          kept_launch_lines)
 
-        code, output = self.run_script(["asks-done", "accepted", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"], HOME=home)
         self.assertEqual(code, 2, output)
         self.assertIn("belongs to an earlier packet", output)
         self.assertNotIn("use --correct", output)
 
     def test_a_changed_retry_with_the_current_packets_run_pending_names_correct(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
 
-        code, output = self.run_script(["asks-done", "rejected", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "rejected", "rejected"])
         self.assertEqual(code, 2, output)
         self.assertIn("use --correct", output)
 
     def test_a_done_retry_with_the_wrong_outcome_count_gives_the_logged_count(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
         self.assertEqual(code, 0, output)
 
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 2, output)
         self.assertIn("give the 2 outcome(s) already logged", output)
         self.assertNotIn("ask(s) waiting", output)
@@ -3090,12 +3104,13 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(self.ONE_ASK, HOME=home)
         self.assertEqual(code, 0, output)
         current_id = self.stored_state()["packet_id"]
-        code, output = self.run_script(["asks-done", "--packet", current_id, "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", current_id, "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
-        code, output = self.run_script(["asks-done", "--packet", older_id, "rejected", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", older_id, "rejected", "rejected"],
+                                          HOME=home)
         self.assertEqual(code, 0, output)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 2, output)
         self.assertNotIn("use --correct", output)
 
@@ -3107,14 +3122,16 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual([kept["packet_id"] for kept in self.stored_state()["waiting_packets"]], [older_id])
 
-        code, output = self.run_script(["asks-done", "--packet", older_id, "accepted", "rejected"], HOME=home,
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", older_id, "accepted", "rejected"],
+                                          HOME=home,
                                        FAKE_LEDGER_WRITE_EXIT="2")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: redispatch", output)
         first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(first_launch_lines), 1, output)
 
-        code, output = self.run_script(["asks-done", "--packet", older_id, "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", older_id, "accepted", "rejected"],
+                                          HOME=home)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
         self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
@@ -3128,12 +3145,13 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_asks_done_retried_after_a_logging_failure_prints_the_plan_deviation_lines_once(self):
         self.packet(self.plan_impact_beside_a_real_ask("adopt it"))
-        code, output = self.run_script(["asks-done", "accepted", "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"],
+                                          FAKE_LEDGER_WRITE_EXIT="2")
         self.assertEqual(code, 0, output)
         self.assertIn("## Plan Deviations", output)
         self.assertIn("Failures", output)
 
-        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertNotIn("## Plan Deviations", output)
         self.assertNotIn("  adopt it", output)
@@ -3141,12 +3159,13 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_packet_run_again_after_a_logging_failure_prints_the_plan_deviation_lines_once(self):
         packet_text_with_impact = self.plan_impact_beside_a_real_ask("adopt it")
         self.packet(packet_text_with_impact)
-        code, output = self.run_script(["asks-done", "accepted", "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"],
+                                          FAKE_LEDGER_WRITE_EXIT="2")
         self.assertIn("## Plan Deviations", output)
 
         code, output = self.packet(packet_text_with_impact)
         self.assertEqual(code, 0, output)
-        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.assertEqual(code, 0, output)
         self.assertNotIn("## Plan Deviations", output)
 
@@ -3156,25 +3175,26 @@ class ReviewFixScriptTest(unittest.TestCase):
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
         findings_file.mkdir(parents=True)
 
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertNotEqual(code, 0, output)
         self.assertIn(str(findings_file), output)
         self.assertNotIn("asks_redispatched", self.stored_state())
         self.assertEqual(self.ledger_writes(), [])
 
         findings_file.rmdir()
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: redispatch", output)
         self.assertTrue([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)])
 
     def test_a_modified_plan_impact_ask_records_the_users_note_as_the_ruling(self):
         self.packet(self.plan_impact_beside_a_real_ask("adopt it"))
-        code, output = self.run_script(["asks-done", "modified", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "modified", "rejected"])
         self.assertEqual(code, 2, output)
         self.assertIn("outcome 1 is modified with no note", output)
 
-        code, output = self.run_script(["asks-done", "modified:keep the queue but add a retry", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "modified:keep the queue but add a retry",
+                                                  "rejected"])
         self.assertEqual(code, 0, output)
         self.assertIn("keep the queue but add a retry", output)
         self.assertNotIn("Adopted the proposed plan change.", output)
@@ -3288,7 +3308,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[self.CONDITIONAL_ASK]))
         for outcome in ("accepted", "rejected"):
             with self.subTest(outcome):
-                code, output = self.run_script(["asks-done", outcome])
+                code, output = self.run_script(["asks-done", "--by", "user", outcome])
                 self.assertEqual(code, 2, output)
                 self.assertIn("ask 1 (src/a.ts:1)", output)
                 self.assertIn("modified:", output)
@@ -3297,14 +3317,14 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_asks_done_modified_on_a_conditional_change_logs_the_row_and_writes_the_finding(self):
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[self.CONDITIONAL_ASK]))
-        code, output = self.run_script(["asks-done", "modified:revert X"])
+        code, output = self.run_script(["asks-done", "--by", "user", "modified:revert X"])
         self.assertEqual(code, 0, output)
         self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()], ["modified"])
         self.assertIn("make this change in its place: revert X", self.findings_file().read_text())
 
     def printed_fix_run_of_two_accepted_asks(self, home):
         self.launched_review_with_asks(home)
-        code, output = self.run_script(["asks-done", "accepted", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
         return output.splitlines()[-1]
 
@@ -3314,7 +3334,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         findings_before = self.findings_file().read_text()
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "rejected"], HOME=home)
 
         self.assertEqual(code, 0, output)
         findings_text = self.findings_file().read_text()
@@ -3332,7 +3352,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         home = str(self.temp_root / "home")
         self.printed_fix_run_of_two_accepted_asks(home)
 
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "rejected"], HOME=home)
 
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
@@ -3350,7 +3370,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "rejected"], HOME=home)
 
         self.assertEqual(code, 2, output)
         self.assertIn("already launched", output)
@@ -3360,11 +3380,11 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[ask_entry("first", "one.ts:1", finding_id="a1b2c3d4e5f60051",
                                                                    question="first?", change="cap at 3"),
                                                          self.CONDITIONAL_ASK]))
-        code, output = self.run_script(["asks-done", "accepted", "modified:revert X"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "modified:revert X"])
         self.assertEqual(code, 0, output)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "accepted"])
 
         self.assertEqual(code, 2, output)
         self.assertIn("modified:", output)
@@ -3375,7 +3395,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.printed_fix_run_of_two_accepted_asks(home)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "accepted"], HOME=home)
 
         self.assertEqual(code, 2, output)
         self.assertIn("nothing to correct", output)
@@ -3389,7 +3409,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "accepted"])
 
         self.assertEqual(code, 2, output)
         self.assertIn("does not change plan-impact asks", output)
@@ -3397,13 +3417,13 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_correct_with_no_stored_answers_refuses(self):
         self.packet(WITH_ASK)
-        self.run_script(["asks-done", "accepted", "accepted"])
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         state_file = self.repo / ".git" / "review-fix" / "state.json"
         state = self.stored_state()
         del state["ask_outcomes"]
         state_file.write_text(json.dumps(state))
 
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "rejected"])
 
         self.assertEqual(code, 2, output)
         self.assertIn("found no logged answers", output)
@@ -3412,11 +3432,11 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet(self.ONE_ASK)
         first_id = self.stored_state()["packet_id"]
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "--packet", first_id, "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--packet", first_id, "accepted"])
         self.assertEqual(code, 0, output)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "accepted"])
 
         self.assertEqual(code, 2, output)
         self.assertIn("earlier packet", output)
@@ -3426,7 +3446,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         home = str(self.temp_root / "home")
         self.printed_fix_run_of_two_accepted_asks(home)
 
-        code, output = self.run_script(["asks-done", "--correct", "--packet", "other-id", "accepted", "rejected"],
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "--packet", "other-id",
+                                           "accepted", "rejected"],
                                        HOME=home)
 
         self.assertEqual(code, 2, output)
@@ -3435,11 +3456,12 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_correct_while_the_first_asks_done_has_unlogged_asks_refuses(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted", "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"],
+                                          FAKE_LEDGER_WRITE_EXIT="2")
         self.assertIn("Failures", output)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "rejected"])
 
         self.assertEqual(code, 2, output)
         self.assertIn("unlogged asks", output)
@@ -3451,7 +3473,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         findings_before = self.findings_file().read_text()
         state_before = self.stored_state()
 
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"], HOME=home,
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "rejected"], HOME=home,
                                        FAKE_LEDGER_WRITE_EXIT="2")
 
         self.assertEqual(code, 2, output)
@@ -3461,7 +3483,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(self.findings_file().read_text(), findings_before)
 
         rows_before = len(self.ledger_writes())
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()[rows_before:]], ["rejected"])
 
@@ -3470,23 +3492,25 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.printed_fix_run_of_two_accepted_asks(home)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "modified:new cap", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "modified:new cap", "accepted"],
+                                          HOME=home)
 
         self.assertEqual(code, 0, output)
         new_rows = self.ledger_writes()[rows_before:]
         self.assertEqual([row["ask_outcome"] for row in new_rows], ["modified"])
         self.assertIn("make this change in its place: new cap", self.findings_file().read_text())
 
-        code, output = self.run_script(["asks-done", "--correct", "modified:newer cap", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "modified:newer cap", "accepted"],
+                                          HOME=home)
         self.assertEqual(code, 0, output)
         self.assertIn("make this change in its place: newer cap", self.findings_file().read_text())
 
     def test_correct_of_an_ask_with_no_finding_id_logs_the_new_row_under_the_first_rows_id(self):
         self.packet(self.ASK_WITHOUT_FINDING_ID, FAKE_LEDGER_WRITE_EXIT="1")
-        code, output = self.run_script(["asks-done", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 0, output)
 
-        code, output = self.run_script(["asks-done", "--correct", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected"])
 
         self.assertEqual(code, 0, output)
         first_row, corrected_row = self.ledger_writes()
@@ -3496,21 +3520,22 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_correct_after_a_same_packet_rerun_still_has_the_logged_answers(self):
         self.packet(WITH_ASK)
-        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.assertEqual(code, 0, output)
         self.packet(WITH_ASK)
         self.assertEqual(self.stored_state()["ask_outcomes"], ["accepted", "accepted"])
 
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "rejected"])
 
         self.assertEqual(code, 0, output)
         self.assertNotIn("src/db.ts:5", self.findings_file().read_text())
 
     def test_a_retried_asks_done_with_other_answers_refuses_and_logs_nothing(self):
         self.packet(WITH_ASK)
-        self.run_script(["asks-done", "accepted", "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"],
+                                          FAKE_LEDGER_WRITE_EXIT="2")
 
-        code, output = self.run_script(["asks-done", "rejected", "rejected"])
+        code, output = self.run_script(["asks-done", "--by", "user", "rejected", "rejected"])
 
         self.assertEqual(code, 2, output)
         self.assertIn("asks-done is a retry", output)
@@ -3523,7 +3548,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         calls_before = len(self.ledger_writes())
         fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
 
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "modified:x"], HOME=home,
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "modified:x"], HOME=home,
                                        FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
 
         self.assertEqual(code, 2, output)
@@ -3536,7 +3561,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("src/db.ts:5", self.findings_file().read_text())
         self.assertEqual(len(self.ledger_writes()), calls_before + 1)
 
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "modified:x"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "modified:x"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()[calls_before + 1:]], ["modified"])
 
@@ -3544,7 +3569,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         home = str(self.temp_root / "home")
         self.printed_fix_run_of_two_accepted_asks(home)
         fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "modified:x"], HOME=home,
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "modified:x"], HOME=home,
                                        FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
         self.assertEqual(code, 2, output)
         launch_args = shlex.split(self.stored_state()["asks_launch_pending"])[2:]
@@ -3552,7 +3577,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "modified:x"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "modified:x"], HOME=home)
 
         self.assertEqual(code, 2, output)
         self.assertIn("already launched", output)
@@ -3561,18 +3586,18 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_correct_that_leaves_no_ask_after_a_partial_failure_can_be_retried(self):
         home = str(self.temp_root / "home")
         self.launched_review_with_asks(home)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
 
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"], HOME=home,
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "accepted"], HOME=home,
                                        FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
 
         self.assertEqual(code, 2, output)
         self.assertIn("src/db.ts:5:", output)
         self.assertEqual(self.stored_state()["ask_outcomes"], ["rejected", "rejected"])
 
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "accepted"], HOME=home)
 
         self.assertEqual(code, 0, output)
         self.assertNotIn("is pending", output)
@@ -3583,10 +3608,10 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_correct_open_survives_a_same_packet_rerun(self):
         home = str(self.temp_root / "home")
         packet_args = self.launched_review_with_asks(home)
-        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"], HOME=home,
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "accepted"], HOME=home,
                                        FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
         self.assertEqual(code, 2, output)
         self.assertTrue(self.stored_state()["correct_open"])
@@ -3597,7 +3622,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertTrue(self.stored_state()["correct_open"])
 
         rows_before = len(self.ledger_writes())
-        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "rejected", "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
         self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()[rows_before:]], ["accepted"])
 
@@ -3606,13 +3631,13 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.printed_fix_run_of_two_accepted_asks(home)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "rejected", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "rejected", "rejected"], HOME=home)
 
         self.assertEqual(code, 2, output)
         self.assertIn("--correct", output)
         self.assertEqual(len(self.ledger_writes()), rows_before)
 
-        code, output = self.run_script(["asks-done", "accepted", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"], HOME=home)
 
         self.assertEqual(code, 0, output)
         self.assertEqual(len(self.ledger_writes()), rows_before)
@@ -3620,11 +3645,11 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_plain_asks_done_with_the_original_outcomes_after_a_correct_refuses_with_the_logged_wording(self):
         home = str(self.temp_root / "home")
         self.printed_fix_run_of_two_accepted_asks(home)
-        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "accepted", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"], HOME=home)
 
         self.assertEqual(code, 2, output)
         self.assertIn("rerun it with the outcomes already logged", output)
@@ -3638,7 +3663,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "rejected", "rejected"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "rejected", "rejected"], HOME=home)
 
         self.assertEqual(code, 2, output)
         self.assertIn("None is pending", output)
@@ -3650,7 +3675,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.printed_fix_run_of_two_accepted_asks(home)
         rows_before = len(self.ledger_writes())
 
-        code, output = self.run_script(["asks-done", "--correct", "accepted:some note", "accepted"], HOME=home)
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted:some note", "accepted"],
+                                          HOME=home)
 
         self.assertEqual(code, 2, output)
         self.assertIn("nothing to correct", output)

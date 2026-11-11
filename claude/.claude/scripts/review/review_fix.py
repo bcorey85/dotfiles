@@ -33,7 +33,7 @@ still judges.
                                          CLAUDE_CODE_SESSION_ID is not set, on a bad flag or findings file, and on a
                                          review-first run with nothing to review.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
-  review_fix.py asks-done [--by <user|session>] [--packet <packet_id>] [--correct] <outcome>...
+  review_fix.py asks-done --by <user|session> [--packet <packet_id>] [--correct] <outcome>...
                                          one outcome per ask, in order: accepted | rejected | modified, optional
                                          ":<one line note>" after it; modified needs the note, the user's change.
                                          Logs one row per ask, once. With an ask accepted or modified it writes them
@@ -58,7 +58,8 @@ still judges.
                                          and prints the launch line again (`ACTION: done` when no ask is left to
                                          apply). It refuses after the launch, while the first asks-done still has
                                          unlogged asks, and for a packet other than the current one.
-                                         --by session when the session ruled on the asks itself; default user.
+                                         --by is required: user when the user gave the answer, session when the
+                                         session ruled on the asks itself. A call without it exits 2 and logs nothing.
                                          Answers one packet. When a second packet handed back before the first one's
                                          asks were answered, both wait: asks-done then refuses and lists them, and
                                          --packet <packet_id> names the one the outcomes belong to.
@@ -357,13 +358,14 @@ def jumped_line(state):
 
 
 def asks_done_line(asks, state):
-    """The asks-done command for the packet in `state`. It names --packet when another packet still waits, so the
-    command runs as printed."""
+    """The asks-done command for the packet in `state`, relaying the user's answer (`--by user`). It names --packet
+    when another packet still waits, so the command runs as printed."""
     packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
     outcome_slots = " ".join(f"<outcome-{number}>" for number in range(1, len(asks) + 1))
     return (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
-            f"{packet_flag}{outcome_slots}  (one outcome per ask, in order; accepted: {review_asks.ACCEPT_MEANS} | "
-            f"rejected: {review_asks.REJECT_MEANS} | 'modified:<the user's change in one line>', quoted as one shell "
+            f"--by user {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
+            f"accepted: {review_asks.ACCEPT_MEANS} | rejected: {review_asks.REJECT_MEANS} | "
+            "'modified:<the user's change in one line>', quoted as one shell "
             "word: make that change instead; an optional ':<one line note>' after accepted or rejected is not stored)")
 
 
@@ -373,7 +375,8 @@ def present_packet_asks(packet, state):
         jumped_line(state),
         "Present each ask below with its question and its proposed change, and wait for the user's direction. "
         "Never auto-fix an ask. If the repo's CLAUDE.md hands ask decisions to the session, decide each ask "
-        "yourself and add `--by session` to asks-done; otherwise wait for the user.",
+        "yourself and run the asks-done below with `--by session` in place of `--by user`; otherwise wait for the "
+        "user and run it as printed.",
         asks_done_line(asks, state),
         *review_asks.numbered_ask_lines(asks, detail=True),
     ]

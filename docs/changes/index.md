@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-901 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+902 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-11, [A user-accepted ask the fix coder skips comes back as an ask](notes/2026-11-11-a-user-accepted-ask-the-fix-coder-skips-comes-back.md).
+Latest change: 2026-11-11, [asks-done needs --by; no default records a user sign-off](notes/2026-11-11-asks-done-needs-by-no-default-records-a-user-sign.md).
 
 ## Top gains
 

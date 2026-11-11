@@ -21,9 +21,10 @@ unmeasured: ""
 before. "No upstream" means no upstream config (`branch.<branch>.merge` unset). A branch whose set upstream does not
 resolve (`@{u}` fails: pruned or never fetched) and that its remote says is gone (`ls-remote --exit-code` exits 2)
 exits 1 before anything is set aside, naming the gone upstream and the recovery (`git branch --unset-upstream`, then
-`git push -u <remote> HEAD`), so a chained push does not recreate it. An unpruned gone upstream resolves `@{u}`, so it ends in the generic pull
-failure (still exit 1, so a chained push stops). An upstream that `@{u}` cannot resolve (not fetched, as in a
-single-branch clone) but the remote still has goes on to `git pull`, which reads the branch config. With no upstream
+`git push -u <remote> HEAD`), so a chained push does not recreate it. An unpruned gone upstream resolves `@{u}`
+through its stale remote-tracking ref, so the pull runs and fails; after the changes are back, the script asks the
+remote and exits 1 with the same recovery. When that lookup also fails, it ends in the generic pull failure. An upstream
+that `@{u}` cannot resolve (not fetched, as in a single-branch clone) but the remote still has goes on to `git pull`, which reads the branch config. With no upstream
 config, it asks origin for `refs/heads/<branch>` (the full ref, so `feature/<branch>` does not count): when origin has
 it, it pulls `origin <branch>` with the same keep-index handling, then sets `origin/<branch>` as the upstream so a
 later bare `git push` works (written as `branch.<branch>.remote` and `.merge` config, so a single-branch clone with no
@@ -41,9 +42,10 @@ non-zero and the `&&` chain stopped before `git push -u`.
 The new tests cover no upstream and no remote branch (exit 0, staged files stay staged), a remote branch whose name
 only ends in the local name, a remote branch of the same name (pulled, and `@{u}` then resolves to it), a set upstream
 deleted on origin and pruned (exit 1 with the recovery message, staged files stay staged), a gone upstream on a
-non-origin remote (names that remote), a set upstream deleted on origin and not pruned (exit 1 through the failed pull,
-staged files stay staged), a failed configured-remote lookup and a missing remote URL (each exit 1 with the lookup
-error), a single-branch clone with no `origin/<branch>` ref (pulled, exit 0, upstream config, remote and merge,
+non-origin remote (names that remote), a set upstream deleted on origin and not pruned (exit 1 with the recovery
+message after the failed pull, staged files stay staged), the same with the remote URL gone (exit 1 with the pull
+failure), a failed configured-remote lookup and a missing remote URL (each exit 1 with the lookup error), a
+single-branch clone with no `origin/<branch>` ref (pulled, exit 0, upstream config, remote and merge,
 written; a second run with the upstream set and no remote-tracking ref pulls and exits 0), a folder where the branch
 lookup fails (exit 1), and no origin (exit 1).
 

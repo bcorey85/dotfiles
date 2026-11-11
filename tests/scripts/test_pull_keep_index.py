@@ -99,6 +99,8 @@ class PullKeepIndexTest(unittest.TestCase):
         finished = self.run_script()
 
         self.assertNotEqual(finished.returncode, 0)
+        self.assertIn("git pull failed", finished.stderr)
+        self.assertIn("the local changes are back in place", finished.stderr)
         self.assertEqual(self.status(), ["M  f"])
 
     def test_a_staged_change_the_pull_conflicts_with_stops_and_names_the_saved_commit(self):
@@ -226,7 +228,7 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertNotIn("stash apply --index", finished.stderr)
         self.assertEqual(self.status(), ["M  f"])
 
-    def test_an_unpruned_upstream_deleted_on_origin_exits_1_through_the_failed_pull(self):
+    def test_an_unpruned_upstream_deleted_on_origin_exits_1_with_the_recovery_after_the_failed_pull(self):
         self.git(self.repo, "checkout", "-q", "-b", "gone")
         self.git(self.repo, "push", "-q", "-u", "origin", "gone")
         self.git(self.remote, "branch", "-q", "-D", "gone")
@@ -236,8 +238,9 @@ class PullKeepIndexTest(unittest.TestCase):
         finished = self.run_script()
 
         self.assertEqual(finished.returncode, 1, finished.stdout)
-        self.assertIn("git pull failed", finished.stderr)
-        self.assertNotIn("is gone from", finished.stderr)
+        self.assertIn("the upstream refs/heads/gone of gone is gone from origin", finished.stderr)
+        self.assertIn("the local changes are in place", finished.stderr)
+        self.assertIn(f"git -C {self.repo} branch --unset-upstream", finished.stderr)
         self.assertEqual(self.status(), ["M  f"])
 
     def test_a_branch_whose_upstream_is_gone_from_a_remote_other_than_origin_names_that_remote(self):
@@ -272,6 +275,21 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1, finished.stdout)
         self.assertIn(f"could not look up refs/heads/gone on origin in {self.repo}:", finished.stderr)
         self.assertNotIn("is gone from", finished.stderr)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_failed_pull_whose_remote_also_fails_the_lookup_reports_the_pull_failure(self):
+        self.git(self.repo, "checkout", "-q", "-b", "gone")
+        self.git(self.repo, "push", "-q", "-u", "origin", "gone")
+        self.git(self.remote, "branch", "-q", "-D", "gone")
+        self.git(self.repo, "remote", "set-url", "origin", str(self.tmp / "no-such-remote.git"))
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn("git pull failed", finished.stderr)
+        self.assertIn("the local changes are back in place", finished.stderr)
         self.assertEqual(self.status(), ["M  f"])
 
     def test_a_failed_lookup_of_the_configured_upstream_exits_1_naming_the_remote_and_ref(self):

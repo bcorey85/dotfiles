@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-901 changes
+902 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -20,6 +20,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The backend error-class rule names raise and a built-in Python error, so the coder follows it in Python too](notes/2026-11-10-the-backend-error-class-rule-names-raise-and-a.md) [rule/backend] The error line in the path-scoped rules/backend.md is reworded from 'never a bare Error' to name raise and ValueError: the coder now uses the repo's error class in 8 of 8 Django runs, up from 3 of 8.
 * [Ask the user only about criteria the user or a tracker wrote](notes/2026-11-10-ask-the-user-only-about-criteria-the-user-or-a.md) [rule/global-claude-md, agent/plan-verifier, skill/code, skill/verify-branch, skill/eng-spec] A session rules on cutting or rewording criteria a session wrote (a ticket copied from a session-written queue item) or the plan drafted (a ticket with no criteria heading); only the user's and a tracker's criteria still need the user's sign-off.
 * [The coder's failing-test-first rule moves to the top of its rule list](notes/2026-11-10-the-coder-s-failing-test-first-rule-moves-to-the.md) [skill/coder-core] The coder's failing-test-first line now sits first in its first rule list, so the coder writes and runs a failing test before a small frontend fix where it used to skip the test.
 * [Code stops at every phase end and hands the user the commit line](notes/2026-11-10-code-stops-at-every-phase-end-and-hands-the-user.md) [skill/code] /code no longer goes on to the next phase by itself: every phase end stops for the user's read, and the stop names the commit line to run after reading and staging, so phases no longer pile up uncommitted.
@@ -1069,6 +1070,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [The backend error-class rule names raise and a built-in Python error, so the coder follows it in Python too](notes/2026-11-10-the-backend-error-class-rule-names-raise-and-a.md) - No intake number reads this behavior: work escape descriptions are hashed, so no class count maps to the rule. Stacks with no run: React and Vue. One task per stack, Sonnet only, plain prompt only.
 * [The coder's failing-test-first rule moves to the top of its rule list](notes/2026-11-10-the-coder-s-failing-test-first-rule-moves-to-the.md) - No intake number reads the order of a coder's test and source edits on a bug fix. Measured on React and a TypeScript backend with the line at the top; Vue and Django held with the line in its old place and were not rerun.
 * [The reviewer reports a query on an unindexed column as a fix](notes/2026-11-10-the-reviewer-reports-a-query-on-an-unindexed.md) - No intake number reads it: the work logs do not tag a review finding as an index finding. Measured on a TypeScript backend and Django only; Django shows no gain because the reviewer already reports it there. No run on any other stack, on a diff with several queries, or on a small lookup table where an index would not matter.
 * [The coder logs or returns every caught error, also when the task asks for a fallback](notes/2026-11-10-the-coder-logs-or-returns-every-caught-error-also.md) - No intake number reads this behavior: work escape descriptions are hashed, so no class count maps to the rule. The new wording has no run without the rule in its own batch; the count without it comes from the earlier batch on the same task. No run put a catch in a Vue component's script block.

@@ -7,7 +7,7 @@ Repo: ~/dotfiles (direct-edit). Three independent script fixes in the review loo
 - [x] Phase 1: the full-check pass fails on lint left in any changed file (risk: medium)
 - [x] Phase 2: the removed-change guard ignores formatting-only hunks (risk: low)
 - [x] Phase 3: gate env from a personal per-repo file (risk: low)
-- [ ] Phase 4: the relay sends a stop back for review when the tree changed after the converged review (risk: low)
+- [x] Phase 4: the relay sends a stop back for review when the tree changed after the converged review (risk: low)
 
 ## Phase 1: the full-check pass fails on lint left in any changed file
 
@@ -69,4 +69,5 @@ Changes:
 
 Phase 1: lint_problems drops the unused check_command parameter; adopted by the session, 2026-11-10; no acceptance criterion changes.
 Phase 2: a reflow next to a real edit in the same replace hunk still counts as added (whole-hunk comparison kept as the plan says); decided by the session, 2026-11-10; no acceptance criterion changes.
+Phase 4: RE_REVIEW_FEEDBACK keeps the plan's wording ("phase review (step 5)") though the relay also serves /review and /fix stops, which have no step 5; the relay also prints a To go on line after the rule, which the plan did not state; held by the session, 2026-11-10; no acceptance criterion changes. A skill-neutral wording is open for the user.
 Phase 3: the personal file's words must match script_utils.ENV_ASSIGNMENT (literal NAME=value) and the stop hint names the actual repo key and file; adopted by the session, 2026-11-10; no acceptance criterion changes.

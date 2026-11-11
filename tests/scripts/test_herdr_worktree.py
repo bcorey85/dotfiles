@@ -294,8 +294,19 @@ esac""")
         self.wait_for_file(watch_args)
         worktree = self.root / "repo-new-thing"
         self.assertEqual(watch_args.read_text().splitlines(),
-                         ["w1", str(worktree), str(self.main_checkout), "w1:p1"])
+                         ["w1", str(worktree), str(self.main_checkout), "w1:p1", "s1"])
         self.assertIn("herdr-worktree: watching workspace w1 for 120s; recovery steps go to", finished.stderr)
+
+    def test_a_watcher_that_fails_leaves_its_message_in_the_watch_log(self):
+        self.stub_fork(CLAUDE_PANE)
+        write_stub(self.bin_dir / "herdr-worktree-watch", 'echo "watcher blew up" >&2\nexit 3')
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        watch_log = self.main_checkout / ".git" / "worktrees" / "repo-new-thing" / "herdr-worktree-watch.log"
+        self.wait_for_file(watch_log)
+        self.assertEqual(watch_log.read_text(), "watcher blew up\n")
 
     def stub_launcher(self, name):
         """A launcher that records its argv, one per line, then runs the command it was given."""

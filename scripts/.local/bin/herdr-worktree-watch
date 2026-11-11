@@ -3,6 +3,16 @@
 # steps when it is gone. Started detached by herdr-worktree --fork.
 #
 # Usage: herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane>
+#                             <parent session>
+#
+# <parent session> is the session id of the conversation that was forked (empty
+# when unknown). The pane can report it before the fork's own id, so the
+# watcher keeps polling while the pane reports it; a parent id that is still
+# the only one at the end of the wait counts as no session id.
+# After the argument check, an error message goes to stderr (the launcher sends
+# stderr to the log, so it lands there once, and a direct run shows it). The
+# usage error and a failed git rev-parse also go to stderr, because the log
+# path is not known until rev-parse succeeds.
 #
 # Reads the fork's session id from the claude pane, waits
 # HERDR_WORKTREE_WATCH_SECONDS (default 120), then asks herdr for the
@@ -18,17 +28,19 @@
 # workspace focus "$ws" >/dev/null` follows the `[ -n "$ws" ]` test. With no session id,
 # step 1 is that reopen command and step 2 is `claude --resume` in the
 # worktree. Any other failure of the workspace check is
-# logged as "could not check workspace" and exits 1. It never reopens the
-# workspace: the user may have closed it on purpose.
+# reported on stderr as "could not check workspace" (the log under the launcher)
+# and exits 1. It never reopens the workspace: the user may have closed it on
+# purpose.
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 
-[ $# -eq 4 ] || { echo "usage: herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane>" >&2; exit 1; }
+[ $# -eq 5 ] || { echo "usage: herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane> <parent session>" >&2; exit 1; }
 workspace="$1"
 worktree="$2"
 main_checkout="$3"
 claude_pane="$4"
+parent_session="$5"
 
 log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
 
@@ -39,15 +51,21 @@ watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
 RESUME_PROMPT="Go on with the work in this worktree; your brief is already in context."
 
 # herdr-worktree checks this value before it starts the watcher; this check
-# covers a direct run, and the log keeps the message.
+# covers a direct run, and stderr shows the message.
 if [[ ! "$watch_seconds" =~ ^(0|[1-9][0-9]*)$ ]]; then
-    echo "HERDR_WORKTREE_WATCH_SECONDS must be a whole number of seconds, got: $watch_seconds" | tee -a "$log" >&2
+    echo "HERDR_WORKTREE_WATCH_SECONDS must be a whole number of seconds, got: $watch_seconds" >&2
     exit 1
 fi
 
-# The session hook can report the fork's id after the agent shows up, so poll
-# until it is non-empty, bounded by the wait. The pane may already be gone; an
-# empty session id is reported in the steps.
+# The session hook can report the fork's id after the agent shows up, and the
+# pane starts as a fork of the parent conversation, so herdr can report the
+# parent's id first. Poll until the id is non-empty and is not the parent's,
+# bounded by the wait. The pane may already be gone; an empty session id is
+# reported in the steps.
+is_unsettled() {
+    [ -z "$1" ] || [ "$1" = "$parent_session" ]
+}
+
 read_session() {
     herdr-api pane get "$claude_pane" 2>/dev/null | jq -r '.result.pane.agent_session.value // empty' \
         || echo ""
@@ -56,10 +74,12 @@ read_session() {
 # The wait is wall time, so the poll calls count against it as well as the sleeps.
 start_seconds=$SECONDS
 session=$(read_session)
-while [ -z "$session" ] && [ $((SECONDS - start_seconds)) -lt "$watch_seconds" ]; do
+while is_unsettled "$session" && [ $((SECONDS - start_seconds)) -lt "$watch_seconds" ]; do
     sleep 1
     session=$(read_session)
 done
+# Only the parent's id after the whole wait means the fork's id never showed.
+[ "$session" != "$parent_session" ] || session=""
 
 waited=$((SECONDS - start_seconds))
 remaining=$((watch_seconds - waited))
@@ -77,7 +97,7 @@ fi
 # means the workspace is closed.
 error_code=$(jq -r '.error.code // empty' <<<"$workspace_error" 2>/dev/null) || error_code=""
 if [ "$error_code" != "workspace_not_found" ]; then
-    echo "could not check workspace $workspace: ${workspace_error:-no reply from herdr-api}" | tee -a "$log" >&2
+    echo "could not check workspace $workspace: ${workspace_error:-no reply from herdr-api}" >&2
     exit 1
 fi
 
@@ -110,4 +130,4 @@ focus_step=""
 
 [ -z "${TUIOS_SOCKET:-}" ] || exit 0
 herdr notification show "herdr-worktree: workspace closed" \
-    --body "workspace $workspace for $worktree closed; recovery steps are in $log" --sound request
+    --body "workspace $workspace for $worktree closed; recovery steps are in $log" --sound request >/dev/null

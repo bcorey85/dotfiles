@@ -32,10 +32,10 @@ Deviations. Each phase starts with a test that fails on the current tree.
 The cause of the closing workspace is unknown. The script cannot keep it open, so it makes a close visible and names
 the recovery. It never reopens the workspace by itself: the user may have closed it on purpose.
 
-1. New bash script `scripts/.local/bin/herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane>`
+1. New bash script `scripts/.local/bin/herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane> <parent session>`
    (`set -euo pipefail`, header usage comment like `herdr-worktree`).
    - Poll `herdr-api pane get <claude pane>` once a second for a non-empty
-     `.result.pane.agent_session.value`, bounded by `HERDR_WORKTREE_WATCH_SECONDS` (default 120); empty when the pane
+     `.result.pane.agent_session.value` that is not the parent session id, bounded by `HERDR_WORKTREE_WATCH_SECONDS` (default 120); empty when the pane
      is already gone. Then sleep the time left of that wait.
    - `herdr-api workspace get <workspace id>`. Exit 0 succeeds: log one line `workspace <id> still open` and exit 0.
    - On a non-zero exit whose stderr holds `.error.code == "workspace_not_found"`, the workspace is gone. Any other
@@ -52,7 +52,7 @@ the recovery. It never reopens the workspace by itself: the user may have closed
    - The log is `herdr-worktree-watch.log` in the worktree's git dir
      (`git -C <worktree> rev-parse --path-format=absolute --git-path herdr-worktree-watch.log`).
 2. `herdr-worktree`: once the fork's pane shows the claude agent (the `exit 0` inside the wait loop), start the
-   watcher detached (`setsid "$bin_dir/herdr-worktree-watch" ... >/dev/null 2>&1 &` with stdin from `/dev/null`;
+   watcher detached (`setsid "$bin_dir/herdr-worktree-watch" ... >>"$log" 2>&1 &` (the watch log) with stdin from `/dev/null`;
    `perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' --` when `setsid` is missing) and
    print one stderr line: `herdr-worktree: watching workspace <ws> for <N>s; recovery steps go to <log path> if it
    closes`. Then exit 0. A run without `--fork` starts no watcher.
@@ -66,10 +66,12 @@ the recovery. It never reopens the workspace by itself: the user may have closed
   checkout and session id to the log and calls `herdr notification show`; a gone workspace with an empty session id
   logs the `claude --resume` line; under `TUIOS_SOCKET` no notification is called and the log still holds the steps; a
   session id that appears after the first poll is picked up, and a session id that never appears is polled once a
-  second for the whole wait.
+  second for the whole wait; a parent session id reported first is polled past and the fork's id is logged, and a
+  pane that only ever reports the parent id logs the `claude --resume` line.
 - New tests in `tests/scripts/test_herdr_worktree.py`: a `--fork` run whose pane shows the claude agent starts
-  `herdr-worktree-watch` with the workspace id, worktree, main checkout and pane id (a stub records its args); a run
-  without `--fork` starts no watcher; `--help` output names `herdr worktree open --cwd`.
+  `herdr-worktree-watch` with the workspace id, worktree, main checkout, pane id and parent session id (a stub
+  records its args); a watcher that fails leaves its message in the watch log once; a run without `--fork` starts no
+  watcher; `--help` output names `herdr worktree open --cwd`.
 - `python3 tests/parallel_tests.py test_herdr_worktree.py test_herdr_worktree_watch.py` passes;
   `bash -n` on both scripts passes.
 
@@ -135,6 +137,11 @@ Prompt edits only.
   '<resume prompt>'`, in place of two steps with a `<new workspace id>` placeholder, so every value is literal
   (branch review 4 ask). Adopted by the coder-worktree-fixes lane session, 2026-11-11, under the verify-branch rule
   that an ask cutting no AC takes its proposed change; not a user sign-off. With no session id, step 1 is the reopen and step 2 is `claude --resume`, as before.
+- Phase 1 step 1: the watcher takes the parent session id as a 5th argument and keeps polling while the pane reports it,
+  so the recovery line never names the parent conversation (branch review 5 ask). Adopted by the
+  coder-worktree-fixes lane session, 2026-11-11, under the verify-branch rule that an ask cutting no AC takes its
+  proposed change; not a user sign-off. The launcher's output goes to the watch log, and the watcher writes its
+  error messages to stderr, which the launcher sends to the log, so each line lands there once and a direct run shows it.
 - Phase 1 step 1, tuios: tuios's `workspace get` reply for a missing workspace is unchecked (tuios is not on this
   machine). An unknown reply logs "could not check workspace" and exits 1, so it fails safe. The orchestrator
   (agent-evals-5e, 2026-11-10) ruled it a manual smoke check; not a user sign-off.

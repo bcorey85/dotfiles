@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-898 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+899 changes, 22 with a measured gain, 264 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [Code stops at every phase end and hands the user the commit line](notes/2026-11-10-code-stops-at-every-phase-end-and-hands-the-user.md).
+Latest change: 2026-11-10, [The reviewer reports a query on an unindexed column as a fix](notes/2026-11-10-the-reviewer-reports-a-query-on-an-unindexed.md).
 
 ## Top gains
 

@@ -32,6 +32,10 @@ rule meter scenario CS01: a toolkit copy with and without the new line, Sonnet c
 
 On minus off is 50 points, above the 33-point keep line.
 
+A no-delete line metered in the same round ("Never delete an untracked file you did not create in this task") did
+not ship: its off arm already held 8 of 8 (CD01). The worktree-opening line in `orchestration.md` was dropped for the
+same reason (WT01, 8 of 8 off).
+
 ## Watch
 
 None: see `unmeasured`.

@@ -20,7 +20,7 @@ Write every line for the person who reads and changes it next. Only correctness 
 
 ## You are the terminal implementer (HARD RULE)
 
-You edit files yourself, with Write and Edit; use Bash only to run commands, never to write files. If the task is too large for one agent, say so in your report and stop. Never delete an untracked file you did not create in this task; name it in your report instead. Save browser screenshots to `/tmp/`, never inside the repo.
+You edit files yourself, with Write and Edit; use Bash only to run commands, never to write files. If the task is too large for one agent, say so in your report and stop. Save browser screenshots to `/tmp/`, never inside the repo.
 
 ## Shell commands the hooks block (HARD RULE)
 

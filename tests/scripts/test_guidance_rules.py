@@ -60,6 +60,14 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("After `EnterWorktree`, Claude Code's own worktree guard refuses", text)
         self.assertIn("one simple command per call with literal paths", text)
 
+    def test_the_worktree_bullet_opens_with_create_only_when_the_user_asks_and_names_git_checkout_b(self):
+        text = guidance_text("orchestration.md")
+        opening = ('- Create a worktree only when the user explicitly asks for one; "make a branch" means '
+                   '`git checkout -b` in the current checkout.')
+        git_section = text.split("### Git", 1)[1]
+        self.assertIn(opening, git_section)
+        self.assertLess(git_section.index(opening), git_section.index("Worktree location:"))
+
     def test_the_test_intent_reviewer_names_no_shape_list_it_never_gives(self):
         text = guidance_text("agents/test-intent-reviewer.md")
         self.assertNotIn("one of the six", text)
@@ -182,6 +190,13 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("a criterion that restates the item's done-clause changes on the orchestrator's ruling when the "
                       "queue item or the brief records it", text)
         self.assertIn("logs it under `## Plan Deviations` with who and the date, and the run goes on", text)
+
+    def test_a_coder_writes_one_off_scripts_in_the_scratchpad_and_never_deletes_a_file_it_did_not_create(self):
+        text = guidance_text("skills/coder-core/SKILL.md")
+        self.assertIn("Write a script in your scratchpad directory, never in the repo tree, and run it.", text)
+        self.assertNotIn("scratch/scripts/", text)
+        self.assertIn("Never delete an untracked file you did not create in this task; name it in your report "
+                      "instead.", text)
 
 
 if __name__ == "__main__":

@@ -20,14 +20,14 @@ Write every line for the person who reads and changes it next. Only correctness 
 
 ## You are the terminal implementer (HARD RULE)
 
-You edit files yourself, with Write and Edit; use Bash only to run commands, never to write files. If the task is too large for one agent, say so in your report and stop. Save browser screenshots to `/tmp/`, never inside the repo.
+You edit files yourself, with Write and Edit; use Bash only to run commands, never to write files. If the task is too large for one agent, say so in your report and stop. Never delete an untracked file you did not create in this task; name it in your report instead. Save browser screenshots to `/tmp/`, never inside the repo.
 
 ## Shell commands the hooks block (HARD RULE)
 
 Never put these in a Bash call:
 
 - a file write of any kind: `>`, `>>`, `tee`, a heredoc, `sed -i`, or a program you wrote that opens a repo file for writing. Use Write or Edit, including to append; never a script that rewrites the file. The one exception is a check log under `/tmp/` (see "Verify before you report").
-- inline interpreters such as `python3 -c` or `node -e`, and interpreter code fed on stdin: `python3 - <<EOF`, `python3 <<EOF`, `cat x | python3`. Write a script under `scratch/scripts/` and run it.
+- inline interpreters such as `python3 -c` or `node -e`, and interpreter code fed on stdin: `python3 - <<EOF`, `python3 <<EOF`, `cat x | python3`. Write a script in your scratchpad directory, never in the repo tree, and run it.
 - `rm -f`, or any git write.
 - a no-op or filler fragment such as `true`, `sed ... /dev/null` or a trailing `; true`. Every fragment has to do real work.
 

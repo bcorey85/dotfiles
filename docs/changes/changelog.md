@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-902 changes
+900 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,13 +15,11 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
-* [The coder never deletes an untracked file it did not create](notes/2026-11-10-the-coder-never-deletes-an-untracked-file-it-did.md) [skill/coder-core] coder-core's terminal-implementer paragraph now says never to delete an untracked file the coder did not create in this task, and to name it in the report instead.
 * [The coder validates handler input, keeps caught errors, uses the repo error type, sorts lists and writes the failing test first](notes/2026-11-10-the-coder-validates-handler-input-keeps-caught.md) [skill/coder-core, rule/backend] Five one-line rules reach the coder: two in its core skill (never drop a caught error; for a bug fix, no source edit until a new test has run and failed) and three in a new path-scoped rules/backend.md (validate handler fields, repo error type, explicit sort).
 
 ### Changed
 
 * [The coder writes its scripts in the scratchpad, never in the repo tree](notes/2026-11-10-the-coder-writes-its-scripts-in-the-scratchpad.md) [skill/coder-core] coder-core's script line now sends a helper script to the session scratchpad directory, never the repo tree, in place of `scratch/scripts/`.
-* [The worktree rule opens with only when the user asks](notes/2026-11-10-the-worktree-rule-opens-with-only-when-the-user.md) [rule/orchestration] orchestration.md's worktree bullet now opens with "Create a worktree only when the user explicitly asks for one; make a branch means git checkout -b in the current checkout", and the location and herdr steps follow as what to do once asked.
 * [The coder logs or returns every caught error, also when the task asks for a fallback](notes/2026-11-10-the-coder-logs-or-returns-every-caught-error-also.md) [skill/coder-core] The coder's swallowed-error line now says to bind the error in every catch block and use it, and names a catch that only returns a fallback as a swallowed error.
 
 ### Fixed
@@ -1070,9 +1068,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
-* [The coder never deletes an untracked file it did not create](notes/2026-11-10-the-coder-never-deletes-an-untracked-file-it-did.md) - No intake number counts untracked files a coder deletes.
 * [The coder writes its scripts in the scratchpad, never in the repo tree](notes/2026-11-10-the-coder-writes-its-scripts-in-the-scratchpad.md) - No intake number counts scripts a coder leaves in the repo tree.
-* [The worktree rule opens with only when the user asks](notes/2026-11-10-the-worktree-rule-opens-with-only-when-the-user.md) - No intake number counts worktrees a session makes unasked.
 * [The coder logs or returns every caught error, also when the task asks for a fallback](notes/2026-11-10-the-coder-logs-or-returns-every-caught-error-also.md) - No intake number reads this behavior: work escape descriptions are hashed, so no class count maps to the rule. The new wording has no run without the rule in its own batch; the count without it comes from the earlier batch on the same task. No run put a catch in a Vue component's script block.
 * [The coder validates handler input, keeps caught errors, uses the repo error type, sorts lists and writes the failing test first](notes/2026-11-10-the-coder-validates-handler-input-keeps-caught.md) - No intake number reads these behaviors: work escape descriptions are hashed, so no class count maps to a rule. Stacks with no run: Vue (all rules); React for the three backend rules; Django and React for the new test-first wording (the old wording ran there); Django with the three backend rules in the path-scoped file has no same-batch arm without the file. The live globs (`**/*.py`, `**/backend/**`, `**/server/**`, `**/api/**`) are a judgment; the run used `backend/src/**/*.ts`.
 * [Coder fixes every site of a reviewed defect](notes/2026-11-02-coder-fixes-every-site-of-a-reviewed-defect.md) - Finding text in the work logs is hashed, so no intake number can tell an unswept sibling from any other round-two finding.

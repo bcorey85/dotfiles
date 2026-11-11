@@ -129,3 +129,6 @@ Prompt edits only.
   prose, because `review_loop_script.py` rebuilds the receipt from open and held members when any member is open and
   would drop that prose. `class_closure_pass` appends `left_alone_clause` to every receipt it writes, so AC7 holds on
   every path. This widens scope to `review_loop_script.py` (`class_closure_pass` only) and its tests.
+- Phase 2 step 2 and Phase 4: reverted before merge on the orchestrator's ruling (agent-evals-5e, 2026-11-10). The
+  rule meter's off arm already held 8 of 8 for both lines (CD01, WT01), so they cost tokens and change nothing.
+  The phase 2 scratchpad line ships.

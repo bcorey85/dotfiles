@@ -6,11 +6,13 @@ import pathlib
 import re
 import sys
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent)]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import script_utils
 from review_loop_findings import reply_with_one_retry
 
 NO_CLOSURE = "n/a - fixed[] empty"
 OPEN_KEY = re.compile(r'"open"\s*:\s*(?=\[)')
+LEFT_ALONE_KEY = re.compile(r'"left_alone"\s*:\s*(?=\[)')
 RECEIPT_KEY = re.compile(r'^"receipt"\s*:\s*')
 
 CLOSURE_RULES = (
@@ -20,6 +22,9 @@ CLOSURE_RULES = (
     'N-1 were never re-read. Close it by re-enumerating them and stating where each one lands.\n'
     '- Proxy predicate: the fix removed a cheap check standing in for the property actually needed. '
     'Close it by naming the other members that proxy was covering for.\n'
+    'Before you call a member open, say what it reads the value for, next to what the fixed line reads it for. '
+    'A member that reads the value for a different purpose than the fixed line is not in the class: leave it, and '
+    'list it under left_alone with that purpose. Never list it as open.\n'
     'Work from the fix diff files; read a repo file only to see a member the diff does not show. If a fixed finding '
     'is class-shaped and the class is NOT closed (some member still has the defect), list those members '
     'as open findings, each with file and line and the one correction. You may not edit files.'
@@ -56,6 +61,14 @@ def held_clause(held_texts):
     return "; skipped, held by another session: " + "; ".join(held_texts)
 
 
+def left_alone_clause(left_alone):
+    """The receipt's tail naming the members the check left alone because they read the value for another purpose;
+    empty when none."""
+    if not left_alone:
+        return ""
+    return "; left alone, read for another purpose: " + "; ".join(left_alone)
+
+
 def receipt_after_class_repair(closed_members, held_texts):
     """The closure receipt once the class-fix coder changed a file. It names only the members sent to the coder, so
     members skipped as held are not claimed fixed. It replaces the check's receipt, whose prose still calls the sent
@@ -78,47 +91,62 @@ def receipt_still_open(open_texts, held_texts):
 
 
 def closure_check(repo, out, fixed, claude_call):
-    """The closure call's receipt and open findings. `claude_call` is the loop's model step."""
+    """The closure call's receipt, open findings and the members it left alone. `claude_call` is the loop's model
+    step."""
     if not fixed:
-        return {"receipt": NO_CLOSURE, "open": []}
+        return {"receipt": NO_CLOSURE, "open": [], "left_alone": []}
     prompt = (
         f"Repo root: {repo}\n\n{CLOSURE_RULES}\n\nfixed[]:\n" + "\n".join(f"- {item}" for item in fixed)
         + f"\n\nWhat the coder changed, one diff file per path under {out / 'fix-diffs'} (path, lines added and "
         "removed, diff file). Read only the diff files for paths a fixed[] finding names; never read a path marked "
         "regenerated.\n" + "\n".join(diff_stat_lines(FIX_DIFF_STATS))
         + '\n\nEnd your reply with one JSON object: {"receipt": "<the enumeration, or none plus each fixed finding '
-        'and why it fits neither shape>", '
-        '"open": ["<file:line - defect - correction>", ...]}. "open" is empty when every class is closed. It must '
-        'parse as JSON: escape every double quote inside the receipt as \\".'
+        'and why it fits neither shape>", "open": ["<file:line - defect - correction>", ...], '
+        '"left_alone": ["<file:line - what it reads the value for>", ...]}. "open" is empty when every class is '
+        'closed; "left_alone" is empty when no member was left alone. It must parse as JSON: escape every double '
+        'quote inside the receipt as \\".'
     )
     parsed = reply_with_one_retry(claude_call, "class-closure", prompt, repo, out, ("open",),
-                                  '{"receipt": .., "open": [..]}', recover=closure_from_open_list,
+                                  '{"receipt": .., "open": [..], "left_alone": [..]}', recover=closure_from_open_list,
                                   model="sonnet", tools="Read,Grep")
-    parsed_open = parsed.get("open")
-    open_findings = ([item for item in parsed_open if isinstance(item, str) and item.strip()]
-                     if isinstance(parsed_open, list) else [])
-    return {"receipt": str(parsed.get("receipt", "")), "open": open_findings}
+    open_findings = script_utils.nonblank_strings(parsed.get("open"))
+    return {"receipt": str(parsed.get("receipt", "")), "open": open_findings,
+            "left_alone": script_utils.nonblank_strings(parsed.get("left_alone"))}
 
 
 def closure_from_open_list(reply):
-    """The receipt and open list of a closure reply whose object does not decode, as when the receipt holds a raw
-    double quote: decodes the list after the last `"open": [` and keeps the text after the `"receipt":` key, without
-    its wrapping quotes, as the receipt. None when no open list decodes."""
-    open_keys = list(OPEN_KEY.finditer(reply))
-    if not open_keys:
+    """The receipt, open list and left-alone list of a closure reply whose object does not decode, as when the receipt
+    holds a raw double quote: decodes the lists after the last `"open": [` and the last `"left_alone": [`, and keeps
+    the text after the `"receipt":` key, without its wrapping quotes, as the receipt. The left-alone list is empty
+    when its key is absent. None when no open list decodes or the left-alone list is present and does not decode."""
+    open_found, parsed_open, open_key_start = list_after_last_key(reply, OPEN_KEY)
+    if not open_found or parsed_open is None:
         return None
 
-    last_open_key = open_keys[-1]
-    try:
-        parsed_open, _ = json.JSONDecoder().raw_decode(reply, last_open_key.end())
-    except json.JSONDecodeError:
+    left_alone_found, left_alone, _ = list_after_last_key(reply, LEFT_ALONE_KEY)
+    if left_alone_found and left_alone is None:
         return None
 
-    before_open = reply[:last_open_key.start()]
+    before_open = reply[:open_key_start]
     receipt_start = before_open.rfind('"receipt"')
     receipt_text = RECEIPT_KEY.sub("", before_open[receipt_start:]) if receipt_start >= 0 else ""
     receipt = receipt_text.strip().rstrip(",").strip()
     if len(receipt) > 1 and receipt.startswith('"') and receipt.endswith('"'):
         receipt = receipt[1:-1]
 
-    return {"receipt": receipt, "open": parsed_open}
+    return {"receipt": receipt, "open": parsed_open, "left_alone": left_alone if left_alone_found else []}
+
+
+def list_after_last_key(reply, key_pattern):
+    """(found, value, key_start) for the list after the last match of `key_pattern` in a reply. `found` is False when
+    the key is absent; `value` is None when the key is present and its list does not decode."""
+    keys = list(key_pattern.finditer(reply))
+    if not keys:
+        return False, None, -1
+
+    last_key = keys[-1]
+    try:
+        value, _ = json.JSONDecoder().raw_decode(reply, last_key.end())
+    except json.JSONDecodeError:
+        return True, None, last_key.start()
+    return True, value, last_key.start()

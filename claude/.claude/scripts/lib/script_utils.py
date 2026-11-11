@@ -126,6 +126,13 @@ def is_string_list(value):
     return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
 
 
+def nonblank_strings(value):
+    """The non-blank strings of a decoded JSON list; empty when the value is not a list."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item.strip()]
+
+
 def help_requested(arguments):
     # A stored check command is one argument holding a whole shell command, so it never equals either flag.
     return any(argument in ("--help", "-h") for argument in arguments)

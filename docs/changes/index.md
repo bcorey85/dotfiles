@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-901 changes, 22 with a measured gain, 266 behavior changes that no intake metric reads.
+902 changes, 22 with a measured gain, 266 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [The coder never deletes an untracked file it did not create](notes/2026-11-10-the-coder-never-deletes-an-untracked-file-it-did.md).
+Latest change: 2026-11-10, [Class closure leaves members that read the value for another purpose and names them in the receipt](notes/2026-11-10-review-class-closure-leaves-members-that-read-the.md).
 
 ## Top gains
 

@@ -38,4 +38,15 @@ None: the change is pinned by tests.
 
 ## Back-out
 
-Revert the commit.
+The change spans `44bab1ba` and `2d7b96f0`. Restore each closure file to its state before `44bab1ba` (`git checkout 44bab1ba^ -- <file>`); `2d7b96f0` also holds unrelated detach and plan edits, which stay. Restore these files:
+
+- `claude/.claude/scripts/lib/script_utils.py`
+- `claude/.claude/scripts/review/handback.py`
+- `claude/.claude/scripts/review/review_loop_closure.py`
+- `claude/.claude/scripts/review/review_loop_packet.py`
+- `claude/.claude/scripts/review/review_loop_script.py`
+- `tests/scripts/test_handback.py`
+- `tests/scripts/test_review_loop_closure.py`
+- `tests/scripts/test_review_loop_script.py`
+
+Separately, revert the Phase 3 edits in `docs/plans/coder-worktree-fixes/plan.md`, `docs/changes/changelog.md` and `docs/changes/index.md`.

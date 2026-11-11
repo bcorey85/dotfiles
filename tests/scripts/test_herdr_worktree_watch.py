@@ -6,6 +6,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import time
 import unittest
 
 from stubs import write_stub
@@ -133,16 +134,43 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn(f'2. herdr-dev {self.worktree} <new workspace id> s1 "<prompt>"', self.log.read_text())
 
-    def test_a_session_id_that_never_appears_is_polled_only_for_the_wait_and_slept_for_nothing_more(self):
-        sleep_args = self.root / "sleep-args"
-        write_stub(self.bin_dir / "sleep", f'echo "$*" >> {sleep_args}')
+    def test_a_session_id_that_never_appears_is_polled_for_the_wait_by_wall_time_and_no_longer(self):
         self.stub_herdr_api(workspace_open=False, pane=PANE_WITHOUT_SESSION)
+        started = time.monotonic()
+
+        finished = self.run_watch(watch_seconds="2")
+
+        elapsed = time.monotonic() - started
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        # SECONDS ticks on shell-start boundaries, so the loop can stop a second early.
+        self.assertGreaterEqual(elapsed, 1)
+        self.assertLess(elapsed, 3.5)
+        self.assertIn("run claude --resume in", self.log.read_text())
+
+    def test_the_wait_counts_time_spent_polling_not_only_the_sleeps(self):
+        # Each poll takes a second; the sleeps are instant. A sleep-counting loop would poll 4 times.
+        pane_calls = self.root / "pane-calls"
+        write_stub(self.bin_dir / "sleep", "exit 0")
+        write_stub(self.bin_dir / "herdr-api", f"""case "$1 $2" in
+    "pane get") echo x >> {pane_calls}; /bin/sleep 1; echo '{PANE_WITHOUT_SESSION}' ;;
+    "workspace get") exit 0 ;;
+esac""")
 
         finished = self.run_watch(watch_seconds="3")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(sleep_args.read_text().splitlines(), ["1", "1", "1"])
-        self.assertIn("run claude --resume in", self.log.read_text())
+        self.assertLessEqual(len(pane_calls.read_text().splitlines()), 3)
+
+    def test_a_wait_that_is_not_a_whole_number_logs_the_bad_value_and_exits_non_zero(self):
+        for bad_value in ("soon", "08"):
+            with self.subTest(bad_value=bad_value):
+                self.stub_herdr_api(workspace_open=True, pane=PANE_WITH_SESSION)
+
+                finished = self.run_watch(watch_seconds=bad_value)
+
+                self.assertEqual(finished.returncode, 1)
+                self.assertIn(f"HERDR_WORKTREE_WATCH_SECONDS must be a whole number of seconds, got: {bad_value}",
+                              self.log.read_text())
 
     def test_a_session_id_found_after_one_poll_leaves_the_rest_of_the_wait_to_sleep(self):
         sleep_args = self.root / "sleep-args"
@@ -162,7 +190,9 @@ esac""")
         finished = self.run_watch(watch_seconds="5")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(sleep_args.read_text().splitlines(), ["1", "4"])
+        sleeps = sleep_args.read_text().splitlines()
+        # The stub sleep is instant; the clock ticks in whole seconds, so a tick can land between the reads.
+        self.assertIn(sleeps, (["1", "5"], ["1", "4"]))
 
     def test_recovery_steps_quote_a_path_with_a_space(self):
         spaced = self.root / "my repo"

@@ -61,10 +61,13 @@ git -C {self.main_checkout} worktree add -q -b "$branch" "$path" "$base"
 echo '{CREATED_WORKSPACE}'""")
         write_stub(self.bin_dir / "herdr-api", "exit 0")
         write_stub(self.bin_dir / "herdr-dev", "exit 0")
+        write_stub(self.bin_dir / "herdr-worktree-watch", "exit 0")
 
-    def run_herdr_worktree(self, cwd, *args, fork_start_timeout="30", base_path=None):
+    def run_herdr_worktree(self, cwd, *args, fork_start_timeout="30", base_path=None, watch_seconds=None):
         env = {key: value for key, value in os.environ.items()
                if key not in ("TUIOS_SOCKET", "HERDR_WORKTREE_WATCH_SECONDS")}
+        if watch_seconds is not None:
+            env["HERDR_WORKTREE_WATCH_SECONDS"] = watch_seconds
         env["HOME"] = str(self.root)
         env["HERDR_WORKTREE_FORK_TIMEOUT"] = fork_start_timeout
         env["PATH"] = f"{self.bin_dir}:{base_path or env['PATH']}"
@@ -343,6 +346,49 @@ esac""")
         self.assertIn("POSIX::setsid()", "\n".join(perl_lines[2:separator]))
         self.assertEqual(perl_lines[separator + 1], str(self.bin_dir / "herdr-worktree-watch"))
         self.wait_for_file(watch_args)
+
+    def test_a_fork_with_a_helper_not_yet_stowed_fails_naming_it_and_prints_no_watch_line(self):
+        for helper in ("herdr-worktree-watch", "detach"):
+            with self.subTest(helper=helper):
+                self.stub_fork(CLAUDE_PANE)
+                self.stub_watcher()
+                (self.bin_dir / helper).chmod(0o644)
+                self.addCleanup((self.bin_dir / helper).chmod, 0o755)
+
+                finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.",
+                                                   f"fix/new-thing-{helper}")
+
+                self.assertNotEqual(finished.returncode, 0)
+                self.assertIn(f"{self.bin_dir / helper} missing; run install/stow", finished.stderr)
+                self.assertNotIn("watching workspace", finished.stderr)
+                self.assertFalse((self.root / f"repo-new-thing-{helper}").exists())
+                self.assertFalse(self.herdr_args.exists())
+
+    def test_a_fork_with_a_bad_watch_wait_fails_before_creating_anything(self):
+        self.stub_fork(CLAUDE_PANE)
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.",
+                                           "fix/new-thing", watch_seconds="08")
+
+        self.assertNotEqual(finished.returncode, 0)
+        self.assertIn("HERDR_WORKTREE_WATCH_SECONDS must be a whole number of seconds, got: 08",
+                      finished.stderr)
+        self.assertFalse((self.root / "repo-new-thing").exists())
+        self.assertFalse(self.herdr_args.exists())
+
+    def test_a_fork_with_a_bad_fork_timeout_fails_before_creating_anything(self):
+        self.stub_fork(CLAUDE_PANE)
+
+        for bad_value in ("abc", "0"):
+            with self.subTest(bad_value=bad_value):
+                finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.",
+                                                   "fix/new-thing", fork_start_timeout=bad_value)
+
+                self.assertNotEqual(finished.returncode, 0)
+                self.assertIn("HERDR_WORKTREE_FORK_TIMEOUT must be a whole number of seconds, at least 1, "
+                              f"got: {bad_value}", finished.stderr)
+                self.assertFalse((self.root / "repo-new-thing").exists())
+                self.assertFalse(self.herdr_args.exists())
 
     def test_a_run_without_fork_starts_no_watcher(self):
         watch_args = self.stub_watcher()

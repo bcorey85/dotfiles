@@ -58,6 +58,11 @@ class DetachPerlBranchTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("detach: exec /nonexistent/command", result.stderr)
 
+    def test_no_command_prints_usage_and_exits_non_zero(self):
+        result = self.run_detach(new_session=False)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("usage: detach", result.stderr)
+
 
 @unittest.skipUnless(shutil.which("setsid") and PS, "needs setsid and ps")
 class DetachSetsidBranchTest(DetachPerlBranchTest):

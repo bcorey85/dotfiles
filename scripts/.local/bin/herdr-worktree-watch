@@ -28,6 +28,13 @@ log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-workt
 
 watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
 
+# herdr-worktree checks this value before it starts the watcher; this check
+# covers a direct run, and the log keeps the message.
+if [[ ! "$watch_seconds" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "HERDR_WORKTREE_WATCH_SECONDS must be a whole number of seconds, got: $watch_seconds" | tee -a "$log" >&2
+    exit 1
+fi
+
 # The session hook can report the fork's id after the agent shows up, so poll
 # until it is non-empty, bounded by the wait. The pane may already be gone; an
 # empty session id is reported in the steps.
@@ -36,14 +43,15 @@ read_session() {
         || echo ""
 }
 
-waited=0
+# The wait is wall time, so the poll calls count against it as well as the sleeps.
+start_seconds=$SECONDS
 session=$(read_session)
-while [ -z "$session" ] && [ "$waited" -lt "$watch_seconds" ]; do
+while [ -z "$session" ] && [ $((SECONDS - start_seconds)) -lt "$watch_seconds" ]; do
     sleep 1
-    waited=$((waited + 1))
     session=$(read_session)
 done
 
+waited=$((SECONDS - start_seconds))
 remaining=$((watch_seconds - waited))
 if [ "$remaining" -gt 0 ]; then
     sleep "$remaining"

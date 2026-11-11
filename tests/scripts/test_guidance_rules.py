@@ -40,7 +40,8 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("When two paths are both defensible, take the one closer to the plan and name it in the report.",
                       text)
         self.assertNotIn("or when two paths are both defensible", text)
-        self.assertIn("say the fork's stop word for word and make no other tool call", text)
+        self.assertIn("say the fork's stop word for word and make no other tool call, or run the `To go on:` line it "
+                      "gives", text)
         self.assertNotIn("confirm here", text)
         self.assertNotIn("present it as a STOP", text)
         self.assertIn("Before a step that cannot be undone or that leaves this machine, STOP: name the step and say "

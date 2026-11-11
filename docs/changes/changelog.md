@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-902 changes
+907 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -28,6 +28,11 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The code skill description lets main run the relay's re-review line](notes/2026-11-10-the-code-skill-description-lets-main-run-the-relay.md) [skill/code] The /code description told the main session to say the stop word for word and make no other tool call; it now also allows running the `To go on:` line the relay gives, so the relay's re-review rule is not overridden.
+* [The relay sends a stop back for review when the tree changed after the converged review](notes/2026-11-10-the-relay-sends-a-stop-back-for-review-when-the.md) [skill/code] code_relay.py no longer relays a stop that waits on the user when the session's latest hand-back was clean, came after HEAD's commit, and the tree is no longer the reviewed one; it tells the main session to go on with re-review feedback, so a /code resume edit after convergence gets reviewed before the commit gate denies it.
+* [Scoped test and full-check runs take env from a personal per-repo file](notes/2026-11-10-scoped-test-and-full-check-runs-take-env-from-a.md) [skill/review, skill/code] The review loop's gate env now merges the NAME=value assignments listed under the repo's origin name in ~/.claude/gate-env.json, so a repo whose CI sets a test env var that no plan names gets scoped and full-check runs with it; a plan's assignment wins and a malformed file fails naming the file.
+* [The removed-change guard ignores formatting-only hunks](notes/2026-11-10-the-removed-change-guard-ignores-formatting-only.md) [skill/review] A hunk whose only change is whitespace, line breaks, quote style or a trailing comma before a closing bracket adds no lines to the change under review, so a fix pass that reverts formatter churn no longer stops the loop with fix-removed-change.
+* [The review loop's full check stops on lint left in any changed file](notes/2026-11-10-the-review-loop-s-full-check-stops-on-lint-left-in.md) [skill/review] Before the review loop's full check and each recheck, it runs the repo's configured ruff, oxlint or eslint in check mode on every reviewed or touched file, test files included; lint left after one coder repair stops the loop as critical-blocker with the linter output.
 * [code-fork writes its run folder files with the Write tool, held to the run folder by a hook](notes/2026-11-10-code-fork-writes-its-run-folder-files-with-the.md) [agent/code-fork, skill/code, shared/review-fork-run] The /code, /review and /fix fork writes stop.md, handoff and findings files with the Write tool, which a new Write hook holds to the run folder, so a stop whose text names an interpreter flag no longer loses its stop file.
 * [A fix the review loop's coder commits itself counts as a fix and is reviewed](notes/2026-11-10-a-fix-the-review-loop-s-coder-commits-itself.md) [script/review-loop-script, agent/review-loop] When the review loop's fix coder commits its own fix, the loop now reads the change against the commit HEAD named before the call and reviews against the loop's start commit, so the fix counts as fixed and the next round reviews its diff instead of reporting "the coder made no change".
 * [The /code ask-outcome call passes its free text to log-review-finding on stdin](notes/2026-11-09-the-code-ask-outcome-call-passes-its-free-text-to.md) [skill/code, shared/finding-log] `log-review-finding desc=-` reads the text from stdin, and the /code ask-outcome call passes its one-line ruling in a quoted heredoc, so quotes, backticks and semicolons in it no longer split or run as shell and the outcome row is logged.

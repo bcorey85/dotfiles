@@ -85,7 +85,7 @@ def lines_added_since(repo, changes):
     for path, tree_text in counted_texts(repo, files).items():
         base_path = origins.get(path, path)
         base_text = script_utils.git_output(repo, "show", f"{base}:{base_path}") or ""
-        added = change_removal.added_lines(base_text, tree_text)
+        added = change_removal.added_lines(base_text, tree_text, path)
         if added:
             added_by_file[path] = added
     return added_by_file
@@ -111,7 +111,7 @@ class ChangeUnderReview:
             before_text = self.start_texts.get(path)
             if before_text is None:
                 before_text = script_utils.git_output(self.repo, "show", f"{self.start}:{path}") or ""
-            added = change_removal.added_lines(before_text, now_text)
+            added = change_removal.added_lines(before_text, now_text, path)
             if added:
                 added_by_file[path] = added
         return added_by_file

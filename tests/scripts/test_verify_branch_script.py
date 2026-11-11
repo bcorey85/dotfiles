@@ -311,6 +311,16 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("  gate-env: LEDGER_EDIT_WATCH_PY=/x/edit_watch.py", review_step)
         self.assertIn("Put these variables before every test, check or build command you run.", review_step)
 
+    def test_a_malformed_personal_gate_env_file_stops_prep_with_an_error_naming_the_file(self):
+        self.task_dir()
+        gate_env_file = self.temp_root / "personal-gate-env.json"
+        gate_env_file.write_text("{nope")
+
+        done = self.prep(extra_env={"CLAUDE_GATE_ENV_FILE": str(gate_env_file)})
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(str(gate_env_file), done.stderr)
+
     def test_the_review_step_is_a_report_only_review_then_one_coder_for_every_finding(self):
         self.task_dir()
 

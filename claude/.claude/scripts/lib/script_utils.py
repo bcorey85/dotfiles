@@ -79,6 +79,19 @@ def environment_from_assignments(assignments):
     return environment
 
 
+def last_per_name(assignments):
+    """The `NAME=value` words with one word per name: the last one given for a name wins."""
+    chosen = {}
+    for assignment in assignments:
+        chosen[assignment.split("=", 1)[0]] = assignment
+    return list(chosen.values())
+
+
+def repo_name_from_url(url):
+    """The last part of a git remote URL without `.git`: `git@host:org/app.git` and `https://host/org/app/` give app."""
+    return re.split(r"[/:]", url.rstrip("/"))[-1].removesuffix(".git")
+
+
 def fenced_line_indexes(lines):
     """Indexes of the lines inside a fenced code block, the fence lines themselves included. A fence is closed by
     the same character, at least as long as the opener. A fence that is never closed runs to the last line."""
@@ -245,6 +258,14 @@ def git_output(cwd, *args, timeout=None):
     if finished.returncode != 0:
         return None
     return os.fsdecode(finished.stdout).rstrip("\n")
+
+
+def head_commit_time(top):
+    """The HEAD commit's committer time in seconds, or None when git cannot tell (no commit yet)."""
+    stamp = git_output(top, "log", "-1", "--format=%ct")
+    if not stamp:
+        return None
+    return float(stamp)
 
 
 def changed_files(directory, base="HEAD"):

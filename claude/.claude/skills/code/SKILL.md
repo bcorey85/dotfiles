@@ -1,6 +1,6 @@
 ---
 name: code
-description: Dispatch a coder subagent for implementation, then auto-run `/review`. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first. When it hands back, run `python3 ~/.claude/scripts/code/code_relay.py` from the repo root and do what it prints: say the fork's stop word for word and make no other tool call. When the user replies, run the stop's `To go on:` line with their reply as its feedback. To cancel a running /code fork, SendMessage it `stop` and wait for its stop; TaskStop the fork only after that stop names every agent it dispatched as stopped.
+description: Dispatch a coder subagent for implementation, then auto-run `/review`. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first. When it hands back, run `python3 ~/.claude/scripts/code/code_relay.py` from the repo root and do what it prints: say the fork's stop word for word and make no other tool call, or run the `To go on:` line it gives. When the user replies, run the stop's `To go on:` line with their reply as its feedback. To cancel a running /code fork, SendMessage it `stop` and wait for its stop; TaskStop the fork only after that stop names every agent it dispatched as stopped.
 context: fork
 agent: code-fork
 model: sonnet

@@ -27,6 +27,7 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review", "code"
 import coder_gate
 import expected_red
 import gate_commands
+import gate_env
 import handback
 import handback_hook
 import handoff_files
@@ -153,7 +154,8 @@ def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), held=()):
         header.append(f"{HELD_FILES_KEY}: {LIST_SEPARATOR.join(held)}")
 
     prompt = "\n".join(header) + "\n\n" + handoff.strip()
-    gate_env_text = plan_format.gate_env_text(plan_format.repo_gate_env(repo, None if plan == NO_PLAN else plan))
+    assignments = gate_env.repo_gate_env(repo, None if plan == NO_PLAN else plan)
+    gate_env_text = plan_format.gate_env_text(assignments)
     return f"{prompt}\n\n{gate_env_text}\n" if gate_env_text else prompt + "\n"
 
 

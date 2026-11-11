@@ -113,6 +113,44 @@ class HandbackTestBase(unittest.TestCase):
         return repo, capped
 
 
+class CleanHandbackSinceTest(HandbackTestBase):
+    REPO = "/work/repo"
+
+    def store_clean_handback(self):
+        handback_store.record(SESSION, "dispatch", repo=self.REPO, tool_use_id="toolu_1")
+        handback_store.record(SESSION, "dispatch-ran", tool_use_id="toolu_1")
+        handback_store.record_handback(SESSION, status="converged", message="")
+
+    def test_a_clean_handback_counts_only_when_stored_after_the_time(self):
+        self.store_clean_handback()
+        self.assertTrue(handback.clean_handback_since(SESSION, self.REPO, 0))
+        self.assertFalse(handback.clean_handback_since(SESSION, self.REPO, time.time() + 3600))
+
+    def test_a_handback_that_is_not_clean_counts_for_nothing(self):
+        self.store_clean_handback()
+        with unittest.mock.patch.object(handback, "standing_false_clean_reason", return_value="not clean"):
+            self.assertFalse(handback.clean_handback_since(SESSION, self.REPO, 0))
+
+    def test_a_handback_stored_at_exactly_the_time_does_not_count_as_after_it(self):
+        self.store_clean_handback()
+        stored_at = handback_store.latest_for_repo(SESSION, self.REPO)["handback"]["ts"]
+
+        self.assertFalse(handback.clean_handback_since(SESSION, self.REPO, stored_at))
+
+    def test_a_stored_time_that_is_missing_or_a_string_counts_for_nothing(self):
+        for message, row in (("string", {"ts": "5"}), ("missing", {})):
+            with self.subTest(message):
+                seen = {"handback": row}
+                with (unittest.mock.patch.object(handback, "latest_for_repo", return_value=seen),
+                      unittest.mock.patch.object(handback, "standing_false_clean_reason", return_value=None)):
+                    self.assertFalse(handback.clean_handback_since(SESSION, self.REPO, 0))
+
+    def test_no_handback_for_the_repo_counts_for_nothing(self):
+        self.store_clean_handback()
+        self.assertFalse(handback.clean_handback_since(SESSION, "/work/other", 0))
+        self.assertFalse(handback.clean_handback_since("no-such-session", self.REPO, 0))
+
+
 class ParseTest(HandbackTestBase):
     def test_a_plain_text_entry_is_refused_not_read_as_free_text(self):
         for packet_with_text, problem in ((ask_packet("which cache holds the session?"),

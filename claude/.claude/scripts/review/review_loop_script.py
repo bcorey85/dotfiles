@@ -76,6 +76,7 @@ import coder_report
 import format_files
 import full_check
 import full_check_gate
+import gate_env
 import handback
 import loop_transcript
 import plan_format
@@ -442,7 +443,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         """Run the formatters the repo configures on the reviewed and touched files, so the tree the hand-back records
         is already formatted and a formatter run after the loop leaves the reviewed tree as it was. The changed files
         count as touched."""
-        paths = sorted(set(self.review_scope()) | self.files_touched)
+        paths = self.reviewed_and_touched_files()
         changed = format_files.run_formatters(self.repo, paths, include_python=True, configured_only=True,
                                               check_command=check_command or "")
         self.files_touched.update(changed)
@@ -906,7 +907,10 @@ class LoopRun(full_check_gate.FullCheckSteps):
             return True
 
         if tails:
-            self.stop("critical-blocker", ["scoped tests failing after the last fix:\n" + "\n\n".join(tails)])
+            env_hint = ("If a test needs an env var the repo's CI sets, add it under "
+                        f"{gate_env.gate_env_repo_name(self.repo)!r} in {gate_env.personal_gate_env_file()}.")
+            self.stop("critical-blocker",
+                      ["scoped tests failing after the last fix:\n" + "\n\n".join(tails) + "\n" + env_hint])
             return False
 
         return True

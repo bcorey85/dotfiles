@@ -626,13 +626,11 @@ def gate_env_words_in(prompt_text):
     return [word.group(0) for word in script_utils.ENV_ASSIGNMENT.finditer(match.group(1))]
 
 
-def repo_gate_env(repo_root, plan_rel=None):
-    """The environment variables the repo's gate commands need: what `gate_env` reads from the plans under
-    docs/plans/*/spec.md. A run whose own plan `planRel` (a path under repoRoot) is readable gets only that plan's
-    names. A run with no readable plan takes a name the other plans set when they all give it the same value; a name
-    they give different values is left out, since no plan says which one this run needs."""
-    root = pathlib.Path(repo_root)
-
+def plan_gate_env(root, plan_rel):
+    """What `gate_env` reads from the plans under docs/plans/*/spec.md. A run whose own plan `plan_rel` (a path
+    under root) is readable gets only that plan's names. A run with no readable plan takes a name the other plans set
+    when they all give it the same value; a name they give different values is left out, since no plan says which
+    one this run needs."""
     if plan_rel:
         own_assignments = own_plan_gate_env(root, plan_rel)
         if own_assignments is not None:
@@ -648,10 +646,7 @@ def own_plan_gate_env(root, plan_rel):
     except OSError:
         return None
 
-    chosen = {}
-    for assignment in gate_env(own_text):
-        chosen[assignment.split("=", 1)[0]] = assignment
-    return list(chosen.values())
+    return script_utils.last_per_name(gate_env(own_text))
 
 
 def agreed_gate_env(root, plan_rel):

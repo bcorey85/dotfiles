@@ -341,6 +341,28 @@ def current_branch(cwd, timeout=None):
     return git_output(cwd, "branch", "--show-current", timeout=timeout)
 
 
+def remote_ref_state(repo, remote, ref):
+    """(has_ref, git_error): True when the remote has the full ref, False when it answered that it has none, None with
+    the git error when the lookup fails. `ls-remote --exit-code` exits 2 for an answered "no such ref"."""
+    listed = subprocess.run(["git", "-C", repo, "ls-remote", "--exit-code", remote, ref], capture_output=True,
+                            stdin=subprocess.DEVNULL)
+    if listed.returncode == 0:
+        return True, ""
+    if listed.returncode == 2:
+        return False, ""
+    return None, process_stderr_text(listed)
+
+
+def branch_merge_ref(repo, branch):
+    """The upstream ref set for the branch in git config, or None when none is set or git fails."""
+    return git_output(repo, "config", "--get", f"branch.{branch}.merge")
+
+
+def branch_remote(repo, branch):
+    """The remote set for the branch in git config, or None when none is set or git fails."""
+    return git_output(repo, "config", "--get", f"branch.{branch}.remote")
+
+
 def repo_name(cwd):
     """The repository name that tools/repo-name prints (a linked worktree reports its main checkout). When the script
     fails, the name of cwd, as repo-name prints outside a repo. REPO_NAME_SCRIPT names another script."""

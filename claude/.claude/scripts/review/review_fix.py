@@ -88,6 +88,7 @@ from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_LOGGER,
     CLAUDE_DIR,
+    PENDING_LAUNCH_KEY,
     REVIEW_FIX_COMMAND,
     UsageError,
     argument_parser,
@@ -493,6 +494,9 @@ def new_state(options, packet, packet_id):
                 state[key] = previous[key]
     if waiting_packets:
         state["waiting_packets"] = waiting_packets
+    # A pending launch outlives any packet: only the launch clears it.
+    if PENDING_LAUNCH_KEY in previous:
+        state[PENDING_LAUNCH_KEY] = previous[PENDING_LAUNCH_KEY]
     return state
 
 

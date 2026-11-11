@@ -21,6 +21,7 @@ import sys
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 import code_wait
 import handback_hook
+import review_fix_state
 import reviewer_dispatch
 import script_utils
 from review_loop_plan import review_files
@@ -234,6 +235,10 @@ def read_relaunch_args(launch_file):
 def command_launch(argv, loop_script):
     """Runs the launch. The skill runs it as a background command, so its completion is the wake-up."""
     options = launch_arguments(argv)
+    # The --fix launch of the printed line clears before the session, repo and file checks, so a launch that fails
+    # below still lets the fork report the failure.
+    if options.fix:
+        review_fix_state.clear_asks_launch_pending(options.fix)
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not session_id:
         raise LaunchError("CLAUDE_CODE_SESSION_ID is not set, so the review loop cannot be tied to this session. "

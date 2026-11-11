@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-897 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+898 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-10, [The coder logs or returns every caught error, also when the task asks for a fallback](notes/2026-11-10-the-coder-logs-or-returns-every-caught-error-also.md).
 

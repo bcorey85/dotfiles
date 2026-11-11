@@ -2341,6 +2341,170 @@ class ReviewFixScriptTest(unittest.TestCase):
                          first_launch_lines)
         self.assertEqual(findings_file.read_text(), findings_before)
 
+    def test_asks_done_that_prints_a_launch_line_sets_the_pending_flag_to_that_line(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")
+        self.assertEqual(code, 0, output)
+        launch_line = output.splitlines()[-1]
+        self.assertTrue(launch_line.startswith(LAUNCH_COMMAND), output)
+        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+
+    def test_asks_done_with_no_accepted_ask_sets_no_pending_flag(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "rejected", "rejected")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("asks_launch_pending", self.stored_state())
+
+    def printed_launch_args(self, home):
+        """The args of the launch line asks-done printed."""
+        _code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")
+        return shlex.split(output.splitlines()[-1])[2:]
+
+    def test_the_launch_of_the_printed_fix_run_clears_the_pending_flag(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.printed_launch_args(home)
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("asks_launch_pending", self.stored_state())
+
+    def test_a_printed_fix_run_that_fails_validation_still_clears_the_pending_flag(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.printed_launch_args(home)
+        code, output = self.run_script([*launch_args, "--file", "no-such-file.txt"], HOME=home,
+                                       REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("no-such-file.txt", output)
+        self.assertNotIn("asks_launch_pending", self.stored_state())
+
+    def test_a_printed_fix_run_with_no_session_id_still_clears_the_pending_flag(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.printed_launch_args(home)
+        code, output = self.run_script(launch_args, HOME=home, CLAUDE_CODE_SESSION_ID="",
+                                       REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("CLAUDE_CODE_SESSION_ID is not set", output)
+        self.assertNotIn("asks_launch_pending", self.stored_state())
+
+    def test_a_launch_with_an_unreadable_state_leaves_the_state_and_says_so(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.printed_launch_args(home)
+        state_file = script_utils.git_path(self.repo, "review-fix") / "state.json"
+        state_file.write_text("{not json")
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertEqual(code, 0, output)
+        self.assertIn("not readable JSON", output)
+        self.assertEqual(state_file.read_text(), "{not json")
+
+    def test_a_launch_in_another_repo_clears_the_flag_in_the_findings_files_repo_only(self):
+        home = str(self.temp_root / "home")
+        other = self.temp_root / "other"
+        other.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=other, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+        (other / "notes.md").write_text("new\n")
+        other_state_file = script_utils.git_path(other, "review-fix") / "state.json"
+        other_state_file.parent.mkdir(parents=True)
+        other_state_text = json.dumps({"asks_launch_pending": "other launch line"})
+        other_state_file.write_text(other_state_text)
+        launch_args = self.printed_launch_args(home)
+        launch_args[launch_args.index("--file") + 1] = "notes.md"
+
+        code, output = self.run_script([*launch_args, "--repo", str(other)], HOME=home,
+                                       REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("asks_launch_pending", self.stored_state())
+        self.assertEqual(other_state_file.read_text(), other_state_text)
+
+    def test_an_ask_findings_file_outside_a_review_fix_folder_leaves_the_pending_flag(self):
+        home = str(self.temp_root / "home")
+        findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+        launch_args = self.printed_launch_args(home)
+        stray_folder = self.temp_root / "stray"
+        stray_folder.mkdir()
+        stray_file = stray_folder / "ask-findings.md"
+        stray_file.write_text(findings_file.read_text())
+        launch_args[launch_args.index("--fix") + 1] = str(stray_file)
+        pending_before = self.stored_state()["asks_launch_pending"]
+
+        code, output = self.run_script(launch_args, HOME=home,
+                                       REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.stored_state()["asks_launch_pending"], pending_before)
+
+    def test_a_different_packet_run_before_the_launch_keeps_the_pending_flag(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        launch_line = output.splitlines()[-1]
+        old_id = self.stored_state()["packet_id"]
+        code, output = self.packet(self.ONE_ASK, HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertNotEqual(self.stored_state()["packet_id"], old_id)
+        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+
+    def test_a_packet_run_again_before_the_launch_keeps_the_pending_flag(self):
+        home = str(self.temp_root / "home")
+        packet_args = self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        launch_line = output.splitlines()[-1]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+
+    def test_a_repeat_asks_done_after_the_launch_leaves_the_pending_flag_cleared(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")
+        launch_args = shlex.split(output.splitlines()[-1])[2:]
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("asks_launch_pending", self.stored_state())
+
+    def test_a_launch_with_another_findings_file_leaves_the_pending_flag(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")
+        launch_line = output.splitlines()[-1]
+        other = self.temp_root / "other-findings.md"
+        other.write_text("- README.md:1 something\n")
+        code, output = self.launch("--fix", str(other), HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+        self.assertTrue(launch_line.startswith(LAUNCH_COMMAND), launch_line)
+
+    def test_a_launch_with_no_fix_in_a_clean_tree_keeps_the_pending_flag(self):
+        home = str(self.temp_root / "home")
+        _code, asks_output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")
+        launch_line = asks_output.splitlines()[-1]
+        self.git("checkout", "--", "README.md")
+        code, output = self.run_script(["launch"], HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("has no changes", output)
+        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+
+    def test_a_launch_with_no_fix_and_no_session_id_keeps_the_pending_flag(self):
+        home = str(self.temp_root / "home")
+        _code, asks_output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")
+        launch_line = asks_output.splitlines()[-1]
+        code, output = self.launch(HOME=home, CLAUDE_CODE_SESSION_ID="")
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("CLAUDE_CODE_SESSION_ID is not set", output)
+        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+
+    def test_a_failed_asks_done_keeps_the_printed_launch_line_pending_and_a_repeat_prints_it_again(self):
+        home = str(self.temp_root / "home")
+        code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected", FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertIn("Failures", output)
+        launch_line = next(line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND))
+        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)], [launch_line])
+        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+
     def test_a_repeat_asks_done_after_a_clean_first_call_prints_the_stored_launch_line_again(self):
         home = str(self.temp_root / "home")
         code, output = self.answer_asks_of_a_launched_review(home, "accepted", "rejected")

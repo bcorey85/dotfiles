@@ -4,9 +4,11 @@ import argparse
 import json
 import os
 import pathlib
+import sys
 
 import handback_store
 import script_utils
+from review_fix_names import ASK_FINDINGS_NAME, PENDING_LAUNCH_KEY, REVIEW_FIX_FOLDER, STATE_FILE_NAME
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))
 ASK_LOGGER = CLAUDE_DIR / "skills/review/log-review-finding"
@@ -26,19 +28,41 @@ def argument_parser(name):
 
 
 def review_fix_dir():
-    found = script_utils.git_path(".", "review-fix")
+    found = script_utils.git_path(".", REVIEW_FIX_FOLDER)
     if found is None:
         raise UsageError("not inside a git repo")
     return found
 
 
 def review_fix_state_file():
-    return review_fix_dir() / "state.json"
+    return review_fix_dir() / STATE_FILE_NAME
 
 
-def read_state():
-    """The saved state, or None when there is none or it is unreadable."""
-    path = review_fix_state_file()
+def clear_asks_launch_pending(findings_file):
+    """Clears the pending fix-run flag when findings_file is the asks-done findings file. The fix state sits beside
+    that file, so the launch's --repo plays no part. Any other file, a missing state, or a state that is not
+    readable JSON is left as it is."""
+    findings_path = pathlib.Path(findings_file).resolve()
+    run_dir = findings_path.parent
+    if findings_path.name != ASK_FINDINGS_NAME or run_dir.name != REVIEW_FIX_FOLDER:
+        return
+    state_file = run_dir / STATE_FILE_NAME
+    if not state_file.exists():
+        return
+    state = read_state(state_file)
+    if state is None:
+        print(f"review_fix: {state_file} is not readable JSON; the pending fix-run flag was not cleared.",
+              file=sys.stderr)
+        return
+    if PENDING_LAUNCH_KEY not in state:
+        return
+    del state[PENDING_LAUNCH_KEY]
+    save_fix_state(state, state_file)
+
+
+def read_state(state_file=None):
+    """The saved state, or None when there is none or it is unreadable. state_file defaults to this repo's."""
+    path = state_file or review_fix_state_file()
     if not path.exists():
         return None
     try:
@@ -59,8 +83,8 @@ def load_fix_state():
                      "in none, run `packet` first.")
 
 
-def save_fix_state(state):
-    path = review_fix_state_file()
+def save_fix_state(state, state_file=None):
+    path = state_file or review_fix_state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(path, json.dumps(state, indent=1))
 

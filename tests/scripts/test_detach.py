@@ -3,19 +3,18 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 DETACH = pathlib.Path(os.environ.get("DETACH", BIN_DIR / "detach"))
-SHELL = "/bin/sh"
-PS = shutil.which("ps")
 PERL = shutil.which("perl")
 CHILD_WAIT_SECONDS = 10
 
 
-@unittest.skipUnless(PERL and PS, "needs perl and ps")
+@unittest.skipUnless(PERL, "needs perl")
 class DetachPerlBranchTest(unittest.TestCase):
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
@@ -41,9 +40,8 @@ class DetachPerlBranchTest(unittest.TestCase):
         self.fail("the detached child never wrote its report")
 
     def assert_child_leads_a_new_session(self, new_session):
-        # The pid line comes last, so a report that ends in a newline holds both values.
-        script = f'{PS} -o sid= -p $$ > {self.report}; echo $$ >> {self.report}'
-        result = self.run_detach(SHELL, "-c", script, new_session=new_session)
+        script = f"import os; open({str(self.report)!r}, 'w').write(f'{{os.getsid(0)}} {{os.getpid()}}\\n')"
+        result = self.run_detach(sys.executable, "-c", script, new_session=new_session)
         self.assertEqual(0, result.returncode, result.stderr)
         sid, pid = self.wait_for_report()
         self.assertEqual(pid, sid, "the child is not the leader of a new session")
@@ -65,7 +63,7 @@ class DetachPerlBranchTest(unittest.TestCase):
         self.assertIn("usage: detach", result.stderr)
 
 
-@unittest.skipUnless(shutil.which("setsid") and PS, "needs setsid and ps")
+@unittest.skipUnless(shutil.which("setsid"), "needs setsid")
 class DetachSetsidBranchTest(DetachPerlBranchTest):
     """Runs detach down its setsid branch, the one Linux takes, with setsid on PATH."""
 

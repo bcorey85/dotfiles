@@ -14,6 +14,7 @@ from stubs import write_stub
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_WORKTREE_WATCH = pathlib.Path(os.environ.get("HERDR_WORKTREE_WATCH", BIN_DIR / "herdr-worktree-watch"))
 PANE_WITH_SESSION = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"s1"}}}}'
+PARENT_PANE = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"parent1"}}}}'
 PANE_WITHOUT_SESSION = '{"result":{"pane":null}}'
 RESUME_PROMPT = "Go on with the work in this worktree; your brief is already in context."
 WORKSPACE_ID_FIELD = "jq -r '.result.workspace.workspace_id // empty')"
@@ -63,7 +64,7 @@ exit 0""")
     "workspace get") {workspace_command} ;;
 esac""")
 
-    def run_watch(self, tuios=False, watch_seconds="0"):
+    def run_watch(self, tuios=False, watch_seconds="0", parent_session=""):
         env = {key: value for key, value in os.environ.items()
                if key not in ("TUIOS_SOCKET", "HERDR_WORKTREE_WATCH_SECONDS")}
         env["HOME"] = str(self.root)
@@ -72,7 +73,8 @@ esac""")
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
         if tuios:
             env["TUIOS_SOCKET"] = str(self.root / "tuios.sock")
-        return subprocess.run([str(HERDR_WORKTREE_WATCH), "w1", str(self.worktree), str(self.main_checkout), "w1:p1"],
+        return subprocess.run([str(HERDR_WORKTREE_WATCH), "w1", str(self.worktree), str(self.main_checkout), "w1:p1",
+                               parent_session],
                               env=env, capture_output=True, text=True)
 
     def resume_step_line(self):
@@ -188,6 +190,38 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn(self.resume_step(), self.log.read_text())
 
+    def test_the_parent_session_id_reported_first_is_polled_past_and_the_fork_id_is_logged(self):
+        pane_calls = self.root / "pane-calls"
+        write_stub(self.bin_dir / "sleep", "exit 0")
+        write_stub(self.bin_dir / "herdr-api", f"""case "$1 $2" in
+    "pane get")
+        echo x >> {pane_calls}
+        if [ "$(wc -l < {pane_calls})" -ge 3 ]; then
+            echo '{PANE_WITH_SESSION}'
+        else
+            echo '{PARENT_PANE}'
+        fi ;;
+    "workspace get") {WORKSPACE_NOT_FOUND_COMMAND} ;;
+esac""")
+
+        finished = self.run_watch(watch_seconds="5", parent_session="parent1")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        log_text = self.log.read_text()
+        self.assertIn(self.resume_step(), log_text)
+        self.assertNotIn("parent1", log_text)
+
+    def test_a_pane_that_only_ever_reports_the_parent_session_logs_the_claude_resume_step(self):
+        write_stub(self.bin_dir / "sleep", "exit 0")
+        self.stub_herdr_api(workspace_open=False, pane=PARENT_PANE)
+
+        finished = self.run_watch(watch_seconds="2", parent_session="parent1")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        log_text = self.log.read_text()
+        self.assertIn(f"run claude --resume in {self.worktree}", log_text)
+        self.assertNotIn("herdr-dev", log_text)
+
     def test_a_session_id_that_never_appears_is_polled_for_the_wait_by_wall_time_and_no_longer(self):
         self.stub_herdr_api(workspace_open=False, pane=PANE_WITHOUT_SESSION)
         started = time.monotonic()
@@ -215,7 +249,7 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertLessEqual(len(pane_calls.read_text().splitlines()), 3)
 
-    def test_a_wait_that_is_not_a_whole_number_logs_the_bad_value_and_exits_non_zero(self):
+    def test_a_wait_that_is_not_a_whole_number_reports_the_bad_value_on_stderr_and_exits_non_zero(self):
         for bad_value in ("soon", "08"):
             with self.subTest(bad_value=bad_value):
                 self.stub_herdr_api(workspace_open=True, pane=PANE_WITH_SESSION)
@@ -224,7 +258,7 @@ esac""")
 
                 self.assertEqual(finished.returncode, 1)
                 self.assertIn(f"HERDR_WORKTREE_WATCH_SECONDS must be a whole number of seconds, got: {bad_value}",
-                              self.log.read_text())
+                              finished.stderr)
 
     def test_a_session_id_found_after_one_poll_leaves_the_rest_of_the_wait_to_sleep(self):
         sleep_args = self.root / "sleep-args"
@@ -284,10 +318,9 @@ esac""")
         finished = self.run_watch()
 
         self.assertEqual(finished.returncode, 1)
-        log_text = self.log.read_text()
-        self.assertIn("could not check workspace w1: ", log_text)
-        self.assertIn("server_unavailable", log_text)
-        self.assertNotIn("closed", log_text)
+        self.assertIn("could not check workspace w1: ", finished.stderr)
+        self.assertIn("server_unavailable", finished.stderr)
+        self.assertNotIn("closed", finished.stderr)
         self.assertNotIn("notification", self.herdr_calls_text())
 
 

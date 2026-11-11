@@ -31,17 +31,19 @@
 # pane and the command to run there. Once the fork starts, herdr-worktree-watch
 # checks the workspace HERDR_WORKTREE_WATCH_SECONDS later (default 120). If the
 # workspace is gone it writes the recovery steps to herdr-worktree-watch.log in
-# the worktree's git dir and shows a herdr notification that points at that log
-# (none under tuios):
-# one paste-ready line:
+# the worktree's git dir and shows a herdr notification that names that log (no
+# notification under tuios). With the fork's session id the log holds one
+# paste-ready line:
 # `ws=$(<reopen> | jq -r '.result.workspace.workspace_id // empty') && [ -n "$ws" ]
 # && herdr-dev <worktree> "$ws" <fork session id> '<resume prompt>'`, where <reopen> is
 # `herdr worktree open --cwd <main checkout> --path <worktree> --focus` (under
 # tuios `herdr-api workspace create --cwd <worktree> --label <worktree folder
 # name> --focus`, with `&& herdr-api workspace focus "$ws" >/dev/null` after
 # the `[ -n "$ws" ]` test) and the prompt is a short "go on", not the original brief.
-# When the session id is unknown it logs the reopen command, then
-# `claude --resume` in the worktree.
+# Without one, the log holds the reopen command, then `claude --resume` in the
+# worktree. The watcher is given this conversation's session id and keeps
+# waiting while the pane reports it, so the line never names the parent.
+# The watcher's own output goes to that log too.
 #
 # Every pane in the new workspace starts in the worktree, so popups that
 # inherit the pane cwd (prefix+d, prefix+g, prefix+space, ...) see it too.
@@ -241,8 +243,9 @@ for _ in $(seq "$fork_timeout"); do
     if [ "$pane_agent" = "claude" ]; then
         watch_log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
         # The caller's process group can be torn down, so the watcher runs in its own session.
-        "$bin_dir/detach" "$bin_dir/herdr-worktree-watch" "$ws" "$worktree" "$main_checkout" "$claude_pane" \
-            </dev/null >/dev/null 2>&1 &
+        # Its output goes to the watch log, so a failure of the launch or of the watcher stays readable.
+        "$bin_dir/detach" "$bin_dir/herdr-worktree-watch" "$ws" "$worktree" "$main_checkout" "$claude_pane" "$claude_session" \
+            </dev/null >>"$watch_log" 2>&1 &
         disown
         echo "herdr-worktree: watching workspace $ws for ${watch_seconds}s; recovery steps go to $watch_log if it closes" >&2
         exit 0

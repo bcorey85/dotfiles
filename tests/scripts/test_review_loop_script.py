@@ -138,20 +138,6 @@ def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
 
 
-class LastJsonObjectTest(unittest.TestCase):
-    def test_the_last_object_that_holds_a_wanted_key_is_returned_past_prose_braces(self):
-        cases = [
-            ("prose braces before the object", 'see {CUBE} then {"command": "make test"}', ("command",),
-             {"command": "make test"}),
-            ("the last of two objects", '{"open": 1} and {"open": 2}', ("open",), {"open": 2}),
-            ("an object without a wanted key", '{"other": 1}', ("command",), None),
-            ("no object", "plain text", ("command",), None),
-        ]
-        for message, reply, keys, expected in cases:
-            with self.subTest(message):
-                self.assertEqual(expected, review_loop_findings.last_json_object(reply, keys))
-
-
 class SkipHeldItemsTest(unittest.TestCase):
     def test_a_held_item_is_recorded_once_however_many_times_it_is_met(self):
         held_item = finding_record.parse_finding("`notes.py:1` the keys are out of order")

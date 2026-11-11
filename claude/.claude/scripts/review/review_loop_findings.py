@@ -1,7 +1,6 @@
 """The review loop's reading of reviewer text: the Fix/Ask/Nit sections of a review as finding records, and the merge
 of findings that name the same code."""
 
-import json
 import pathlib
 import re
 import sys
@@ -12,6 +11,7 @@ import plan_format
 import script_utils
 from finding_record import combine, parse_finding
 from plan_format import PLAN_CHANGE_MARK
+from reply_json import last_json_object
 from source_text import indent_of
 
 UNLOCATED = handback.UNLOCATED
@@ -187,21 +187,6 @@ def parse_review(text):
     if review_texts is None:
         return None
     return finding_records(review_texts)
-
-
-def last_json_object(reply, keys):
-    """The last JSON object in a reply that holds any of `keys`, or None. Decodes from each "{" back to front, because
-    prose before the object can hold braces of its own ("{CUBE}")."""
-    decoder = json.JSONDecoder()
-    brace_positions = [match.start() for match in re.finditer(r"\{", reply)]
-    for position in reversed(brace_positions):
-        try:
-            parsed, _ = decoder.raw_decode(reply, position)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict) and any(key in parsed for key in keys):
-            return parsed
-    return None
 
 
 # How much of the first unusable reply's error the retry note quotes.

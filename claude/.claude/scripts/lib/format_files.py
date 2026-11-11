@@ -27,12 +27,13 @@ RUSTFMT_COMMANDS = ("cargo fmt", "rustfmt")
 RUSTFMT_CONFIG_FILES = ("rustfmt.toml", ".rustfmt.toml")
 # rustfmt's own default is 2015, which cannot parse later syntax; cargo new has written 2021 or later since Rust 1.56.
 DEFAULT_RUST_EDITION = "2021"
+ESLINT_FLAT_CONFIG_FILES = ("eslint.config.js", "eslint.config.mjs", "eslint.config.cjs", "eslint.config.ts",
+                            "eslint.config.mts", "eslint.config.cts")
 # What marks a repo as configuring a web tool: a config file at the repo root, or this key in its package.json.
 WEB_TOOL_CONFIG_FILES = {
     "oxlint": (".oxlintrc.json", "oxlint.config.ts"),
-    "eslint": ("eslint.config.js", "eslint.config.mjs", "eslint.config.cjs", "eslint.config.ts", "eslint.config.mts",
-               "eslint.config.cts", ".eslintrc", ".eslintrc.js", ".eslintrc.cjs", ".eslintrc.json", ".eslintrc.yaml",
-               ".eslintrc.yml"),
+    "eslint": (*ESLINT_FLAT_CONFIG_FILES, ".eslintrc", ".eslintrc.js", ".eslintrc.cjs", ".eslintrc.json",
+               ".eslintrc.yaml", ".eslintrc.yml"),
     "oxfmt": (".oxfmtrc.json", ".oxfmtrc.jsonc", "oxfmt.config.ts"),
     "prettier": (".prettierrc", ".prettierrc.json", ".prettierrc.yaml", ".prettierrc.yml", ".prettierrc.json5",
                  ".prettierrc.js", ".prettierrc.cjs", ".prettierrc.mjs", ".prettierrc.toml", "prettier.config.js",
@@ -106,7 +107,17 @@ def web_lint_command(repo, tool, lint_files, fix):
     fix_flags = ["--fix"] if fix else []
     if tool == "oxlint":
         return [*launcher, *fix_flags, *lint_files]
+    if not uses_eslint_flat_config(repo):
+        # Legacy .eslintrc mode rejects --no-warn-ignored, and with --max-warnings=0
+        # the "file ignored" warning for an ignored file would exit 1.
+        return [*launcher, *fix_flags, *lint_files]
     return [*launcher, *fix_flags, "--no-warn-ignored", "--max-warnings=0", *lint_files]
+
+
+def uses_eslint_flat_config(repo):
+    """True when the repo root holds an eslint.config.* file."""
+    repo_path = pathlib.Path(repo)
+    return any((repo_path / config).is_file() for config in ESLINT_FLAT_CONFIG_FILES)
 
 
 def run_web_formatters(repo, lint_files, paths_to_format, configured_only=False):

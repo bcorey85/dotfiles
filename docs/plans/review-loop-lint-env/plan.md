@@ -68,6 +68,8 @@ Changes:
 ## Plan Deviations
 
 Phase 1: lint_problems drops the unused check_command parameter; adopted by the session, 2026-11-10; no acceptance criterion changes.
+Phase 1: --no-warn-ignored and --max-warnings=0 go to eslint only in a flat-config repo (an eslint.config.* file), since legacy .eslintrc mode rejects the first and the second turns an ignored-file warning into a failure; asked by agent-evals-5e, 2026-11-10; no acceptance criterion changes.
 Phase 2: a reflow next to a real edit in the same replace hunk still counts as added (whole-hunk comparison kept as the plan says); decided by the session, 2026-11-10; no acceptance criterion changes.
-Phase 4: RE_REVIEW_FEEDBACK keeps the plan's wording ("phase review (step 5)") though the relay also serves /review and /fix stops, which have no step 5; the relay also prints a To go on line after the rule, which the plan did not state; held by the session, 2026-11-10; no acceptance criterion changes. A skill-neutral wording is open for the user.
+Phase 4: RE_REVIEW_FEEDBACK says "Re-run the review round on the current tree…" in place of the plan's "phase review (step 5)", because the relay also serves /review and /fix stops, which have no step 5; the relay also prints a To go on line after the rule, which the plan did not state; asked by agent-evals-5e, 2026-11-10; no acceptance criterion changes.
+Phase 4: claude/.claude/skills/code/SKILL.md description gains 'or run the `To go on:` line it gives' to match the relay's re-review rule, although the plan header bars `skills/` edits; asked by agent-evals-5e, 2026-11-10; no acceptance criterion changes.
 Phase 3: the personal file's words must match script_utils.ENV_ASSIGNMENT (literal NAME=value) and the stop hint names the actual repo key and file; adopted by the session, 2026-11-10; no acceptance criterion changes.

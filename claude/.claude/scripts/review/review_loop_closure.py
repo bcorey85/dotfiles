@@ -2,13 +2,13 @@
 asks whether each fixed finding's class is closed."""
 
 import dataclasses
-import json
 import pathlib
 import re
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import script_utils
+from reply_json import list_after_last_key
 from review_loop_findings import reply_with_one_retry
 
 NO_CLOSURE = "n/a - fixed[] empty"
@@ -150,18 +150,3 @@ def closure_from_open_list(reply):
         receipt = receipt[1:-1]
 
     return {"receipt": receipt, "open": parsed_open, "left_alone": left_alone if left_alone_found else []}
-
-
-def list_after_last_key(reply, key_pattern):
-    """(found, value, key_start) for the list after the last match of `key_pattern` in a reply. `found` is False when
-    the key is absent; `value` is None when the key is present and its list does not decode."""
-    keys = list(key_pattern.finditer(reply))
-    if not keys:
-        return False, None, -1
-
-    last_key = keys[-1]
-    try:
-        value, _ = json.JSONDecoder().raw_decode(reply, last_key.end())
-    except json.JSONDecodeError:
-        return True, None, last_key.start()
-    return True, value, last_key.start()

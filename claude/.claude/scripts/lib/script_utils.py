@@ -247,6 +247,14 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+def head_commit_time(top):
+    """The HEAD commit's committer time in seconds, or None when git cannot tell (no commit yet)."""
+    stamp = git_output(top, "log", "-1", "--format=%ct")
+    if not stamp:
+        return None
+    return float(stamp)
+
+
 def changed_files(directory, base="HEAD"):
     """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded) plus
     untracked files that .gitignore does not hide."""

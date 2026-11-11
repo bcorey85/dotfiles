@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-900 changes
+901 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -23,6 +23,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The relay sends a stop back for review when the tree changed after the converged review](notes/2026-11-10-the-relay-sends-a-stop-back-for-review-when-the.md) [skill/code] code_relay.py no longer relays a stop that waits on the user when the session's latest hand-back was clean, came after HEAD's commit, and the tree is no longer the reviewed one; it tells the main session to go on with re-review feedback, so a /code resume edit after convergence gets reviewed before the commit gate denies it.
 * [Scoped test and full-check runs take env from a personal per-repo file](notes/2026-11-10-scoped-test-and-full-check-runs-take-env-from-a.md) [skill/review, skill/code] The review loop's gate env now merges the NAME=value assignments listed under the repo's origin name in ~/.claude/gate-env.json, so a repo whose CI sets a test env var that no plan names gets scoped and full-check runs with it; a plan's assignment wins and a malformed file fails naming the file.
 * [The removed-change guard ignores formatting-only hunks](notes/2026-11-10-the-removed-change-guard-ignores-formatting-only.md) [skill/review] A hunk whose only change is whitespace, line breaks, quote style or a trailing comma before a closing bracket adds no lines to the change under review, so a fix pass that reverts formatter churn no longer stops the loop with fix-removed-change.
 * [The review loop's full check stops on lint left in any changed file](notes/2026-11-10-the-review-loop-s-full-check-stops-on-lint-left-in.md) [skill/review] Before the review loop's full check and each recheck, it runs the repo's configured ruff, oxlint or eslint in check mode on every reviewed or touched file, test files included; lint left after one coder repair stops the loop as critical-blocker with the linter output.

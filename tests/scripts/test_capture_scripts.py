@@ -8,7 +8,8 @@ import unittest
 
 from stubs import write_stub
 
-BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
+DEFAULT_BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
+BIN_DIR = pathlib.Path(os.environ.get("CAPTURE_SCRIPTS_BIN_DIR", DEFAULT_BIN_DIR))
 RUN_TIMEOUT_SECONDS = 20
 
 CASES = (

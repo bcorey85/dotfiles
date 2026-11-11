@@ -6,7 +6,7 @@ description: "The review loop's class-closure check now says what each member re
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-11-10T18:49:00-06:00"}
 seq: 9
 kind: "fix"
-components: ["script/review-loop-script"]
+components: ["script/review-loop-script", "script/handback", "script/review-loop-packet", "script/review-loop-findings"]
 evidence: ["review-class-closure-sweeps-readers-without"]
 watches: []
 test: "tests/scripts/test_review_loop_script.py::ReviewLoopScriptTest::test_a_repaired_class_packet_carries_the_members_left_alone"
@@ -40,11 +40,11 @@ None: the change is pinned by tests.
 
 ## Back-out
 
-The change spans `44bab1ba`, `2d7b96f0` and the later commit that adds the `problem` check to `review_loop_findings.py`. Restore each closure file to its state before `44bab1ba` (`git checkout 44bab1ba^ -- <file>`); `2d7b96f0` also holds unrelated detach and plan edits, which stay. Restore these files:
+The change spans `44bab1ba`, `2d7b96f0` and `c16f9d73`, which adds the `problem` check to `review_loop_findings.py`. Restore each closure file to its state before `44bab1ba` (`git checkout 44bab1ba^ -- <file>`); `2d7b96f0` also holds unrelated detach and plan edits, which stay. Restore these files:
 
 - `claude/.claude/scripts/review/handback.py`
 - `claude/.claude/scripts/review/review_loop_closure.py`
-- `claude/.claude/scripts/review/review_loop_findings.py` (its `problem` check comes from a later commit on the branch)
+- `claude/.claude/scripts/review/review_loop_findings.py` (its `problem` check comes from `c16f9d73`)
 - `claude/.claude/scripts/review/review_loop_packet.py`
 - `claude/.claude/scripts/review/review_loop_script.py`
 - `tests/scripts/test_handback.py`

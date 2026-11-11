@@ -7,7 +7,8 @@ import tempfile
 import time
 import unittest
 
-DETACH = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "detach"
+BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
+DETACH = pathlib.Path(os.environ.get("DETACH", BIN_DIR / "detach"))
 SHELL = "/bin/sh"
 PS = shutil.which("ps")
 PERL = shutil.which("perl")

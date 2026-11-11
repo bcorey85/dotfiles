@@ -8,10 +8,16 @@
 # HERDR_WORKTREE_WATCH_SECONDS (default 120), then asks herdr for the
 # workspace. A workspace that is gone gets its recovery steps written to
 # herdr-worktree-watch.log in the worktree's git dir, and a herdr notification
-# names that log (none under tuios, which has no notification command). Step 1
-# is `herdr worktree open --cwd <main checkout> --path <worktree> --focus`;
-# under tuios it is `herdr-api workspace create --cwd <worktree> --label
-# <worktree folder name> --focus`. Any other failure of the workspace check is
+# names that log (none under tuios, which has no notification command). With a
+# session id, the log holds one paste-ready line: `ws=$(<reopen> | jq -r
+# '.result.workspace.workspace_id // empty') && [ -n "$ws" ] && herdr-dev
+# <worktree> "$ws" <session> '<resume prompt>'`. <reopen> is `herdr worktree
+# open --cwd <main checkout> --path <worktree> --focus`; under tuios it is
+# `herdr-api workspace create
+# --cwd <worktree> --label <worktree folder name> --focus`, and `&& herdr-api
+# workspace focus "$ws" >/dev/null` follows the `[ -n "$ws" ]` test. With no session id,
+# step 1 is that reopen command and step 2 is `claude --resume` in the
+# worktree. Any other failure of the workspace check is
 # logged as "could not check workspace" and exits 1. It never reopens the
 # workspace: the user may have closed it on purpose.
 
@@ -27,7 +33,8 @@ claude_pane="$4"
 log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
 
 watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
-# Step 2 resumes a fork that already holds its brief, so it never retypes it.
+# The herdr-dev part of the recovery line resumes a fork that already holds
+# its brief, so it never retypes it.
 # Keep the text free of single quotes: the log wraps it in them.
 RESUME_PROMPT="Go on with the work in this worktree; your brief is already in context."
 
@@ -83,13 +90,20 @@ if [ -n "${TUIOS_SOCKET:-}" ]; then
 else
     reopen="herdr worktree open --cwd $(printf %q "$main_checkout") --path $(printf %q "$worktree") --focus"
 fi
+focus_step=""
+# tuios ignores create's --focus, and herdr-dev's layout calls need the client
+# on this workspace.
+[ -z "${TUIOS_SOCKET:-}" ] || focus_step=" && herdr-api workspace focus \"\$ws\" >/dev/null"
 {
     echo "workspace $workspace closed. Recovery steps:"
-    echo "1. $reopen"
     if [ -n "$session" ]; then
-        echo "2. herdr-dev $(printf %q "$worktree") <new workspace id> $(printf %q "$session") '$RESUME_PROMPT'"
-        echo "   (<new workspace id> is the id step 1 prints)"
+        # Same jq path herdr-worktree uses on its own create call. "// empty"
+        # turns a reply without an id into an empty string, so the -n check
+        # stops herdr-dev for both an empty and an id-less reopen. The line
+        # has no number prefix so it pastes into a shell as written.
+        echo "ws=\$($reopen | jq -r '.result.workspace.workspace_id // empty') && [ -n \"\$ws\" ]$focus_step && herdr-dev $(printf %q "$worktree") \"\$ws\" $(printf %q "$session") '$RESUME_PROMPT'"
     else
+        echo "1. $reopen"
         echo "2. the fork's session id could not be read; run claude --resume in $(printf %q "$worktree")"
     fi
 }>>"$log"

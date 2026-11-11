@@ -48,5 +48,7 @@ The change spans the commits from `6d3e125a` onward on branch `fix/coder-worktre
 - `tests/scripts/test_herdr_worktree_watch.py` (new in `6d3e125a`: remove)
 - `tests/scripts/test_detach.py` (new in `2d7b96f0`: remove)
 - `tests/scripts/test_capture_scripts.py` (new: remove)
+- `claude/.claude/scripts/lib/shell_command.py` (edited in `41c03629` and `e3d21041`), `claude/.claude/scripts/gates/wait_loop_gate.py` (edited in `41c03629`)
+- `tests/scripts/test_shell_command.py`, `tests/scripts/test_shell_write_gate.py`, `tests/scripts/test_wait_loop_gate.py` (edited in `41c03629`)
 
 Separately, revert the Phase 1 edits in `docs/plans/coder-worktree-fixes/acceptance-criteria.md`, `docs/plans/coder-worktree-fixes/plan.md`, `docs/changes/changelog.md` and `docs/changes/index.md`.

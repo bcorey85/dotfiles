@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-899 changes
+900 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -25,6 +25,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 * [Test commands named in a review resume reply run in the fix run](notes/2026-11-10-test-commands-named-in-a-review-resume-reply-run.md) [skill/review, skill/fix, shared/review-fork-run] review_fix.py launch takes a repeatable --test that the loop runs as a gate command and the relaunch keeps, the resume step puts each test the reply names on the launch line, and the packet says why named tests did not run.
 * [code-fork writes its run folder files with the Write tool, held to the run folder by a hook](notes/2026-11-10-code-fork-writes-its-run-folder-files-with-the.md) [agent/code-fork, skill/code, shared/review-fork-run] The /code, /review and /fix fork writes stop.md, handoff and findings files with the Write tool, which a new Write hook holds to the run folder, so a stop whose text names an interpreter flag no longer loses its stop file.
+* [asks-done refuses a conditional proposed change and corrects a logged outcome](notes/2026-11-10-asks-done-refuses-a-conditional-proposed-change.md) [skill/review, skill/fix, shared/review-fork-run, skill/audit] asks-done refuses accepted or rejected on a proposed change that hangs on the ask's answer and asks for modified:, takes --correct to change a logged outcome while the fix run is unlaunched, and every ask reads Accept = make this change, Reject = leave the code.
 * [A resumed review cannot stop before the fix run asks-done printed](notes/2026-11-10-a-resumed-review-cannot-stop-before-the-fix-run.md) [skill/review, skill/fix, shared/review-fork-run] asks-done marks its printed fix run pending, the code-fork Write hook refuses review-stop.md until a launch with that findings file starts, so a resumed /review always ends with a review round over the asks it applied.
 * [A fix the review loop's coder commits itself counts as a fix and is reviewed](notes/2026-11-10-a-fix-the-review-loop-s-coder-commits-itself.md) [script/review-loop-script, agent/review-loop] When the review loop's fix coder commits its own fix, the loop now reads the change against the commit HEAD named before the call and reviews against the loop's start commit, so the fix counts as fixed and the next round reviews its diff instead of reporting "the coder made no change".
 * [The /code ask-outcome call passes its free text to log-review-finding on stdin](notes/2026-11-09-the-code-ask-outcome-call-passes-its-free-text-to.md) [skill/code, shared/finding-log] `log-review-finding desc=-` reads the text from stdin, and the /code ask-outcome call passes its one-line ruling in a quoted heredoc, so quotes, backticks and semicolons in it no longer split or run as shell and the outcome row is logged.

@@ -32,7 +32,7 @@ still judges.
                                          CLAUDE_CODE_SESSION_ID is not set, on a bad flag or findings file, and on a
                                          review-first run with nothing to review.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
-  review_fix.py asks-done [--by <user|session>] [--packet <packet_id>] <outcome>...
+  review_fix.py asks-done [--by <user|session>] [--packet <packet_id>] [--correct] <outcome>...
                                          one outcome per ask, in order: accepted | rejected | modified, optional
                                          ":<one line note>" after it; modified needs the note, the user's change.
                                          Logs one row per ask, once. With an ask accepted or modified it writes them
@@ -40,9 +40,21 @@ still judges.
                                          with the fix run's launch line (review_fix_asks.py). `ACTION: done` when
                                          all are rejected, when only plan-impact asks were accepted (they write no
                                          findings), and on a retry after the launch line printed (it prints the
-                                         stored launch line again). `ACTION: launch-fix-run` when the run has no
+                                         stored launch line again). A retry with outcomes that differ from the ones
+                                         already logged is refused (exit 2); --correct changes an answer while the
+                                         printed fix run of the current packet has not launched and every ask of the
+                                         first asks-done has logged.
+                                         `ACTION: launch-fix-run` when the run has no
                                          launch flags on record: the findings file is written and the line is
                                          `review_fix.py launch --fix <file> --iter <n> --repo <repo> --detach`.
+                                         An accepted or rejected outcome on an ask whose proposed change is conditional
+                                         ("if not confirmed, revert X") is refused with exit 2 and nothing logged:
+                                         answer it with 'modified:<the change to make, with no condition>'.
+                                         --correct <outcome>... re-answers the asks while the printed fix run has
+                                         not launched: it logs a row for each changed ask, rewrites the findings file
+                                         and prints the launch line again (`ACTION: done` when no ask is left to
+                                         apply). It refuses after the launch, while the first asks-done still has
+                                         unlogged asks, and for a packet other than the current one.
                                          --by session when the session ruled on the asks itself; default user.
                                          Answers one packet. When a second packet handed back before the first one's
                                          asks were answered, both wait: asks-done then refuses and lists them, and
@@ -88,6 +100,7 @@ from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_LOGGER,
     CLAUDE_DIR,
+    CORRECT_OPEN_KEY,
     PENDING_LAUNCH_KEY,
     REVIEW_FIX_COMMAND,
     UsageError,
@@ -343,8 +356,8 @@ def asks_done_line(asks, state):
     packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
     outcome_slots = " ".join(f"<outcome-{number}>" for number in range(1, len(asks) + 1))
     return (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
-            f"{packet_flag}{outcome_slots}  (one outcome per ask, in order; accepted: make the proposed change | "
-            "rejected: leave the code as it stands | 'modified:<the user's change in one line>', quoted as one shell "
+            f"{packet_flag}{outcome_slots}  (one outcome per ask, in order; accepted: {review_asks.ACCEPT_MEANS} | "
+            f"rejected: {review_asks.REJECT_MEANS} | 'modified:<the user's change in one line>', quoted as one shell "
             "word: make that change instead; an optional ':<one line note>' after accepted or rejected is not stored)")
 
 
@@ -459,6 +472,32 @@ def post_aikido_replies(packet, targets, state, pr_number=None):
 
 # ---------- the packet ----------
 
+# State keys a repeat of the same packet keeps from the previous state.
+SAME_RUN_STATE_KEYS = (
+    "stage",
+    "asks",
+    "jumped",
+    "aikido_posted",
+    "escapes_logged",
+    "asks_logged",
+    "asks_redispatched",
+    "asks_launch_line",
+    "ask_outcomes",
+    "ask_notes",
+    CORRECT_OPEN_KEY,
+    "last_asks_launch_line",
+    "last_ask_outcomes",
+    "last_ask_notes",
+    "asks_deviations_printed",
+    "plan_impact",
+    "plan_impact_held",
+    "plan_impact_applied",
+    "carried_findings",
+    "waiting_packets",
+    "relaunch_args",
+)
+
+
 def new_state(options, packet, packet_id):
     previous = read_state() or {}
     same_run = previous.get("packet_id") == packet_id
@@ -472,24 +511,7 @@ def new_state(options, packet, packet_id):
     if options.relaunch_args:
         state["relaunch_args"] = options.relaunch_args
     if same_run:
-        for key in (
-            "stage",
-            "asks",
-            "jumped",
-            "aikido_posted",
-            "escapes_logged",
-            "asks_logged",
-            "asks_redispatched",
-            "asks_launch_line",
-            "last_asks_launch_line",
-            "asks_deviations_printed",
-            "plan_impact",
-            "plan_impact_held",
-            "plan_impact_applied",
-            "carried_findings",
-            "waiting_packets",
-            "relaunch_args",
-        ):
+        for key in SAME_RUN_STATE_KEYS:
             if key in previous:
                 state[key] = previous[key]
     if waiting_packets:

@@ -15,7 +15,16 @@ ACCEPTED = "accepted"
 REJECTED = "rejected"
 MODIFIED = "modified"
 ASK_OUTCOMES = (ACCEPTED, REJECTED, MODIFIED)
+ACCEPT_MEANS = "make this change"
+REJECT_MEANS = "leave the code as it is"
 JUMP_NOTE_LIMIT = 160
+# A proposed change that hangs on the answer to the ask: it starts with `If not`, `If no`, `Unless` or `Otherwise`, or
+# it holds `if (not) confirmed/approved/accepted`, `if yes`, `if no,` or `if the user`. An accepted answer to it applies
+# the branch the user never chose. A plain condition such as "When the list is empty, return []" is not one.
+CONDITIONAL_CHANGE = re.compile(
+    r"^\s*(if (not|no)|unless|otherwise)\b"
+    r"|\bif (not )?(confirmed|approved|accepted)\b|\bif yes\b|\bif no,|\bif the user\b",
+    re.IGNORECASE)
 # One path with a line or line range and nothing else: a list of locations or a bare path has no one place to jump to.
 JUMP_ANCHOR = re.compile(r"^[^\s,;]+:\d+(-\d+)?$")
 
@@ -49,6 +58,19 @@ def run_nvim_jump(command, asks, cwd=None):
     return f"nvim-jump exit {code}: {output}"
 
 
+def is_conditional_change(text):
+    """True when the proposed change text is conditional, so accepting or rejecting it as written is ambiguous."""
+    return CONDITIONAL_CHANGE.search(text) is not None
+
+
+def accept_reject_lines(change):
+    """The lines that state a proposed change with what accepting and rejecting it do, as every ask listing shows it."""
+    change_text = str(change).rstrip().rstrip(".")
+    stop = "" if change_text.endswith(("?", "!")) else "."
+    text = f"{change_text}{stop} Reject = {REJECT_MEANS}."
+    return hanging_indent_lines(f"   Accept = {ACCEPT_MEANS}: ", text)
+
+
 def numbered_ask_lines(asks, detail=False):
     """The numbered listing of the asks, each with the one change an accepted answer makes; a multi-line text's later
     lines sit indented under its number. detail adds the location and `[gate/class]` after the number and lists the
@@ -62,7 +84,7 @@ def numbered_ask_lines(asks, detail=False):
         else:
             lines += hanging_indent_lines(f"{number}. ", ask_text(item))
         if item.get("change"):
-            lines += hanging_indent_lines("   Proposed change: ", item["change"])
+            lines += accept_reject_lines(item["change"])
     return lines
 
 

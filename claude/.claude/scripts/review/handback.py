@@ -247,8 +247,8 @@ def supply_ask_finding_ids(asks, session_id, logger, context, cwd=None):
 def ask_outcome_finding_id(item):
     """(the finding_id an ask's outcome row is logged under, a stderr note or None). A valid id, which the script
     supplied from the ask's logged row, supersedes that row. An ask the script could not match or log has no valid id:
-    its outcome row gets a new id in the ledger writer's shape and stands as that ask's only row, so the user's answer
-    is never dropped."""
+    its outcome row gets a new id in the ledger writer's shape, so the user's answer is never dropped. A later
+    --correct row for that ask is logged under this minted id."""
     finding_id = ask_finding_id(item)
     if finding_id is not None:
         return finding_id, None

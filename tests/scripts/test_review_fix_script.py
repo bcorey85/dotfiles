@@ -965,7 +965,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("Do not re-dispatch", output)
         self.assertIn("1. src/retry.ts:10  [code-reviewer/smell]", output)
         self.assertIn("2. src/db.ts:5  [perf-reviewer/perf]", output)
-        self.assertIn("Proposed change: add the index", output)
+        self.assertIn("Accept = make this change: add the index. Reject = leave the code as it is.", output)
         self.assertIn("asks-done <outcome-1> <outcome-2>", output)
         self.assertNotIn("review-gate-mark", output)
 
@@ -1019,7 +1019,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                          ["a1b2c3d4e5f60031", "a1b2c3d4e5f60001", "a1b2c3d4e5f60002"])
         self.assertEqual(self.stored_stage(), "done")
 
-        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
         self.assertIn("already logged", output)
 
     def ask_packet_numbered(self, number):
@@ -1664,6 +1664,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual([row["path_key"] for row in self.ledger_writes()], ["b.ts"])
 
     ASK_WITHOUT_FINDING_ID = packet_text(CLEAN_EMPTY_FIELDS, ask=[ask_entry("x", "a.ts:1")])
+    CONDITIONAL_ASK = ask_entry("keep X?", "src/a.ts:1", finding_id="a1b2c3d4e5f60041", question="Is X confirmed?",
+                                change="If not confirmed, revert X")
 
     def test_an_ask_the_loop_logged_without_writing_its_id_gets_its_outcome_under_the_logged_id(self):
         self.seed(self.ASK_WITHOUT_FINDING_ID)
@@ -1779,10 +1781,10 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_present_asks_names_each_proposed_change_and_what_each_outcome_does(self):
         code, output = self.packet(WITH_ASK)
         self.assertEqual(code, 0, output)
-        self.assertIn("Proposed change: cap retries at 3", output)
-        self.assertIn("Proposed change: add an index on tenant_id", output)
-        self.assertIn("accepted: make the proposed change", output)
-        self.assertIn("rejected: leave the code as it stands", output)
+        self.assertIn("Accept = make this change: cap retries at 3. Reject", output)
+        self.assertIn("Accept = make this change: add an index on tenant_id. Reject", output)
+        self.assertIn("accepted: make this change |", output)
+        self.assertIn("rejected: leave the code as it is |", output)
 
     def test_present_asks_indents_a_multi_line_asks_later_lines_under_its_number(self):
         jobs_ask = ask_entry("jobs count changed", "plan.md:12", finding_id="a1b2c3d4e5f60031",
@@ -1796,7 +1798,8 @@ class ReviewFixScriptTest(unittest.TestCase):
                              question="which one holds?", change="restore -j8\nand log the count")
         code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[jobs_ask]))
         self.assertEqual(code, 0, output)
-        self.assertIn("\n   Proposed change: restore -j8\n   and log the count\n", output)
+        self.assertIn("\n   Accept = make this change: restore -j8\n   and log the count. Reject = leave the code "
+                      "as it is.\n", output)
 
     def test_an_either_or_ask_with_no_proposed_change_is_a_parse_failure(self):
         either_or_ask = {key: value for key, value in RETRY_ASK.items() if key != "change"}
@@ -2858,6 +2861,46 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual([line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)],
                          kept_launch_lines)
 
+        code, output = self.run_script(["asks-done", "accepted", "accepted"], HOME=home)
+        self.assertEqual(code, 2, output)
+        self.assertIn("belongs to an earlier packet", output)
+        self.assertNotIn("use --correct", output)
+
+    def test_a_changed_retry_with_the_current_packets_run_pending_names_correct(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["asks-done", "rejected", "rejected"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("use --correct", output)
+
+    def test_a_done_retry_with_the_wrong_outcome_count_gives_the_logged_count(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["asks-done", "accepted"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("give the 2 outcome(s) already logged", output)
+        self.assertNotIn("ask(s) waiting", output)
+
+    def test_a_changed_retry_after_the_kept_packet_was_answered_last_does_not_name_correct(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        older_id = self.stored_state()["packet_id"]
+        code, output = self.packet(self.ONE_ASK, HOME=home)
+        self.assertEqual(code, 0, output)
+        current_id = self.stored_state()["packet_id"]
+        code, output = self.run_script(["asks-done", "--packet", current_id, "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "--packet", older_id, "rejected", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 2, output)
+        self.assertNotIn("use --correct", output)
+
     def test_the_kept_packet_answered_by_id_keeps_its_launch_record_and_prints_the_fix_run_once(self):
         home = str(self.temp_root / "home")
         self.launched_review_with_asks(home)
@@ -3039,6 +3082,381 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("is not inside a git work tree", output)
         self.assertNotIn("Traceback", output)
         self.assertEqual(self.dispatch_rows(), [])
+
+    def findings_file(self):
+        return script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+
+    def test_asks_done_refuses_accepted_and_rejected_on_a_conditional_change_and_logs_nothing(self):
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[self.CONDITIONAL_ASK]))
+        for outcome in ("accepted", "rejected"):
+            with self.subTest(outcome):
+                code, output = self.run_script(["asks-done", outcome])
+                self.assertEqual(code, 2, output)
+                self.assertIn("ask 1 (src/a.ts:1)", output)
+                self.assertIn("modified:", output)
+                self.assertEqual(self.ledger_writes(), [])
+                self.assertFalse(self.findings_file().exists())
+
+    def test_asks_done_modified_on_a_conditional_change_logs_the_row_and_writes_the_finding(self):
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[self.CONDITIONAL_ASK]))
+        code, output = self.run_script(["asks-done", "modified:revert X"])
+        self.assertEqual(code, 0, output)
+        self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()], ["modified"])
+        self.assertIn("make this change in its place: revert X", self.findings_file().read_text())
+
+    def printed_fix_run_of_two_accepted_asks(self, home):
+        self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "accepted", "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        return output.splitlines()[-1]
+
+    def test_correct_before_the_launch_rewrites_the_findings_without_the_ask_and_logs_the_new_outcome(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+        findings_before = self.findings_file().read_text()
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        findings_text = self.findings_file().read_text()
+        self.assertIn("src/retry.ts:10", findings_text)
+        self.assertNotIn("src/db.ts:5", findings_text)
+        new_rows = self.ledger_writes()[rows_before:]
+        self.assertEqual([(row["finding_id"], row["ask_outcome"]) for row in new_rows],
+                         [("a1b2c3d4e5f60002", "rejected")])
+        launch_line = output.splitlines()[-1]
+        self.assertNotEqual(findings_text, findings_before)
+        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+        self.assertEqual(self.stored_state()["last_asks_launch_line"], launch_line)
+
+    def test_correct_that_leaves_no_accepted_ask_clears_the_pending_flag_and_prints_done(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "rejected"], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertNotIn(LAUNCH_COMMAND, output)
+        self.assertFalse(self.findings_file().exists())
+        state = self.stored_state()
+        self.assertNotIn("asks_launch_pending", state)
+        self.assertNotIn("asks_launch_line", state)
+        self.assertIsNone(state["last_asks_launch_line"])
+
+    def test_correct_after_the_fix_run_launched_refuses_and_logs_nothing(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.printed_launch_args(home)
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertEqual(code, 0, output)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "rejected"], HOME=home)
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("already launched", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_correct_refuses_an_accepted_answer_on_a_conditional_change(self):
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[ask_entry("first", "one.ts:1", finding_id="a1b2c3d4e5f60051",
+                                                                   question="first?", change="cap at 3"),
+                                                         self.CONDITIONAL_ASK]))
+        code, output = self.run_script(["asks-done", "accepted", "modified:revert X"])
+        self.assertEqual(code, 0, output)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("modified:", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_correct_with_every_outcome_unchanged_refuses_and_logs_nothing(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "accepted"], HOME=home)
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("nothing to correct", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_correct_refuses_a_changed_plan_impact_ask(self):
+        plan_ask = {**RETRY_ASK, "question": "PLAN-IMPACT: the retry cap contradicts the plan?",
+                    "change": "move the retry cap into the config"}
+        self.packet(packet_text(WITH_ASK_FIELDS, ask=[plan_ask, INDEX_ASK]))
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "accepted"])
+        self.assertEqual(code, 0, output)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("does not change plan-impact asks", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_correct_with_no_stored_answers_refuses(self):
+        self.packet(WITH_ASK)
+        self.run_script(["asks-done", "accepted", "accepted"])
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        state = self.stored_state()
+        del state["ask_outcomes"]
+        state_file.write_text(json.dumps(state))
+
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("found no logged answers", output)
+
+    def test_correct_with_the_pending_run_of_an_earlier_packet_refuses(self):
+        self.packet(self.ONE_ASK)
+        first_id = self.stored_state()["packet_id"]
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "--packet", first_id, "accepted"])
+        self.assertEqual(code, 0, output)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("earlier packet", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_correct_naming_another_packet_refuses(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+
+        code, output = self.run_script(["asks-done", "--correct", "--packet", "other-id", "accepted", "rejected"],
+                                       HOME=home)
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("'other-id'", output)
+        self.assertIn(self.stored_state()["packet_id"], output)
+
+    def test_correct_while_the_first_asks_done_has_unlogged_asks_refuses(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "accepted", "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+        self.assertIn("Failures", output)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("unlogged asks", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_correct_with_a_failed_row_changes_nothing_and_a_rerun_retries_it(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+        findings_before = self.findings_file().read_text()
+        state_before = self.stored_state()
+
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"], HOME=home,
+                                       FAKE_LEDGER_WRITE_EXIT="2")
+
+        self.assertEqual(code, 2, output)
+        state_after = self.stored_state()
+        self.assertEqual(state_after["asks_launch_pending"], state_before["asks_launch_pending"])
+        self.assertEqual(state_after["ask_outcomes"], state_before["ask_outcomes"])
+        self.assertEqual(self.findings_file().read_text(), findings_before)
+
+        rows_before = len(self.ledger_writes())
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()[rows_before:]], ["rejected"])
+
+    def test_correct_logs_a_modified_answer_and_puts_the_new_change_in_the_findings(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "modified:new cap", "accepted"], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        new_rows = self.ledger_writes()[rows_before:]
+        self.assertEqual([row["ask_outcome"] for row in new_rows], ["modified"])
+        self.assertIn("make this change in its place: new cap", self.findings_file().read_text())
+
+        code, output = self.run_script(["asks-done", "--correct", "modified:newer cap", "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("make this change in its place: newer cap", self.findings_file().read_text())
+
+    def test_correct_of_an_ask_with_no_finding_id_logs_the_new_row_under_the_first_rows_id(self):
+        self.packet(self.ASK_WITHOUT_FINDING_ID, FAKE_LEDGER_WRITE_EXIT="1")
+        code, output = self.run_script(["asks-done", "accepted"])
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["asks-done", "--correct", "rejected"])
+
+        self.assertEqual(code, 0, output)
+        first_row, corrected_row = self.ledger_writes()
+        self.assertEqual((first_row["ask_outcome"], corrected_row["ask_outcome"]), ("accepted", "rejected"))
+        self.assertRegex(first_row["finding_id"], r"^[0-9a-f]{16}$")
+        self.assertEqual(first_row["finding_id"], corrected_row["finding_id"])
+
+    def test_correct_after_a_same_packet_rerun_still_has_the_logged_answers(self):
+        self.packet(WITH_ASK)
+        code, output = self.run_script(["asks-done", "accepted", "accepted"])
+        self.assertEqual(code, 0, output)
+        self.packet(WITH_ASK)
+        self.assertEqual(self.stored_state()["ask_outcomes"], ["accepted", "accepted"])
+
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"])
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("src/db.ts:5", self.findings_file().read_text())
+
+    def test_a_retried_asks_done_with_other_answers_refuses_and_logs_nothing(self):
+        self.packet(WITH_ASK)
+        self.run_script(["asks-done", "accepted", "accepted"], FAKE_LEDGER_WRITE_EXIT="2")
+
+        code, output = self.run_script(["asks-done", "rejected", "rejected"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("asks-done is a retry", output)
+        self.assertEqual(self.ledger_writes(), [])
+        self.assertEqual(self.stored_state()["ask_outcomes"], ["accepted", "accepted"])
+
+    def test_correct_with_the_second_of_two_rows_failing_saves_the_first_and_keeps_findings_in_step(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+        calls_before = len(self.ledger_writes())
+        fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
+
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "modified:x"], HOME=home,
+                                       FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("src/db.ts:5:", output)
+        state = self.stored_state()
+        self.assertEqual(state["ask_outcomes"], ["rejected", "accepted"])
+        self.assertNotIn("correct_open", state)
+        self.assertTrue(state["asks_launch_pending"])
+        self.assertNotIn("src/retry.ts:10", self.findings_file().read_text())
+        self.assertIn("src/db.ts:5", self.findings_file().read_text())
+        self.assertEqual(len(self.ledger_writes()), calls_before + 1)
+
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "modified:x"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()[calls_before + 1:]], ["modified"])
+
+    def test_correct_after_a_partial_failure_and_the_launch_refuses_as_already_launched(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+        fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "modified:x"], HOME=home,
+                                       FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
+        self.assertEqual(code, 2, output)
+        launch_args = shlex.split(self.stored_state()["asks_launch_pending"])[2:]
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertEqual(code, 0, output)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "modified:x"], HOME=home)
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("already launched", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_correct_that_leaves_no_ask_after_a_partial_failure_can_be_retried(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
+
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"], HOME=home,
+                                       FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("src/db.ts:5:", output)
+        self.assertEqual(self.stored_state()["ask_outcomes"], ["rejected", "rejected"])
+
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("is pending", output)
+        self.assertIn("src/db.ts:5", self.findings_file().read_text())
+        self.assertNotIn("src/retry.ts:10", self.findings_file().read_text())
+        self.assertNotIn("correct_open", self.stored_state())
+
+    def test_correct_open_survives_a_same_packet_rerun(self):
+        home = str(self.temp_root / "home")
+        packet_args = self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"], HOME=home,
+                                       FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
+        self.assertEqual(code, 2, output)
+        self.assertTrue(self.stored_state()["correct_open"])
+
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+
+        self.assertTrue(self.stored_state()["correct_open"])
+
+        rows_before = len(self.ledger_writes())
+        code, output = self.run_script(["asks-done", "--correct", "rejected", "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()[rows_before:]], ["accepted"])
+
+    def test_a_plain_asks_done_after_done_with_other_answers_refuses_and_names_correct(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "rejected", "rejected"], HOME=home)
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("--correct", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+        code, output = self.run_script(["asks-done", "accepted", "accepted"], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_a_plain_asks_done_with_the_original_outcomes_after_a_correct_refuses_with_the_logged_wording(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+        code, output = self.run_script(["asks-done", "--correct", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "accepted", "accepted"], HOME=home)
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("rerun it with the outcomes already logged", output)
+        self.assertNotIn("first call", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_a_changed_retry_with_no_pending_launch_refuses_without_naming_correct(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.printed_launch_args(home)
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+        self.assertEqual(code, 0, output)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "rejected", "rejected"], HOME=home)
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("None is pending", output)
+        self.assertNotIn("use --correct", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_correct_with_only_a_note_on_an_accepted_answer_counts_as_unchanged(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "accepted:some note", "accepted"], HOME=home)
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("nothing to correct", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
 
 
 if __name__ == "__main__":

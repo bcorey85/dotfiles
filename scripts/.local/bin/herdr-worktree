@@ -32,17 +32,16 @@
 # checks the workspace HERDR_WORKTREE_WATCH_SECONDS later (default 120). If the
 # workspace is gone it writes the recovery steps to herdr-worktree-watch.log in
 # the worktree's git dir and shows a herdr notification that names that log (no
-# notification under tuios). With the fork's session id the log holds one
-# paste-ready line:
-# `ws=$(<reopen> | jq -r '.result.workspace.workspace_id // empty') && [ -n "$ws" ]
-# && herdr-dev <worktree> "$ws" <fork session id> '<resume prompt>'`, where <reopen> is
-# `herdr worktree open --cwd <main checkout> --path <worktree> --focus` (under
-# tuios `herdr-api workspace create --cwd <worktree> --label <worktree folder
-# name> --focus`, with `&& herdr-api workspace focus "$ws" >/dev/null` after
-# the `[ -n "$ws" ]` test) and the prompt is a short "go on", not the original brief.
-# Without one, the log holds the reopen command, then `claude --resume` in the
-# worktree. The watcher is given this conversation's session id and keeps
-# waiting while the pane reports it, so the line never names the parent.
+# notification under tuios). With the fork's session id the log holds two steps:
+#   1. herdr worktree open --cwd <main checkout> --path <worktree> --focus
+#   2. herdr-dev <worktree> <ws> <fork session id> '<resume prompt>'
+# <ws> is the workspace id that step 1 prints (.result.workspace.workspace_id);
+# the prompt is a short "go on", not the original brief. Under tuios step 1 is
+#   1. herdr-api workspace create --cwd <worktree> --label <worktree folder name> --focus
+# and step 2 starts with `herdr-api workspace focus <ws> >/dev/null && `.
+# Without the session id, step 1 stays and step 2 is `claude --resume` run in
+# the worktree. The watcher is given this conversation's session id and keeps
+# waiting while the pane reports it, so step 2 never names the parent.
 # The watcher's own output goes to that log too.
 #
 # Every pane in the new workspace starts in the worktree, so popups that

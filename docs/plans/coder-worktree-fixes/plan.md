@@ -27,6 +27,7 @@ Deviations. Each phase starts with a test that fails on the current tree.
 - [x] Phase 1: herdr-worktree watches the forked workspace and names the recovery steps (risk: medium)
 - [x] Phase 2: coder scripts go to the scratchpad (risk: low). The no-delete-untracked-file half was reverted, see Plan Deviations
 - [x] Phase 3: class closure checks what each member reads the value for (risk: low)
+- [x] Phase 4: the watcher logs the ticket's two recovery steps (risk: low)
 
 ## Phase 1: herdr-worktree watches the forked workspace and names the recovery steps
 
@@ -106,6 +107,33 @@ Prompt edits only.
 - The new test fails on the current tree and passes after, through `python3 tests/parallel_tests.py <file>`;
   `bash tests/lint.sh claude/.claude/scripts/review/review_loop_closure.py` passes.
 
+## Phase 4: the watcher logs the ticket's two recovery steps
+
+Replaces the one-line paste-ready form, see Plan Deviations.
+
+1. `herdr-worktree-watch`, with a session id: log two numbered steps with literal values.
+   `1. herdr worktree open --cwd <main checkout> --path <worktree> --focus` (under `TUIOS_SOCKET`:
+   `1. herdr-api workspace create --cwd <worktree> --label <worktree folder name> --focus`), then
+   `2. herdr-dev <worktree> <ws> <fork session id> 'Go on with the work in this worktree; your brief is already in context.'`,
+   then one line that says `<ws>` is the workspace id that step 1 prints (`.result.workspace.workspace_id`). Under
+   `TUIOS_SOCKET` step 2 starts with `herdr-api workspace focus <ws> >/dev/null && `. No `ws=$(...)` capture and no
+   `jq` in the log. With no session id, keep step 1 and the `claude --resume` step 2 as they are.
+2. `herdr-worktree` header: name the two steps in the same form, with the tuios variant and the `claude --resume`
+   fallback, so `--help` shows them.
+3. Change note `docs/changes/notes/2026-11-10-herdr-worktree-watches-a-forked-workspace-and-logs.md`: describe the
+   two steps in place of the one line, rename its `test:` to the new test, and regenerate the changes files.
+
+#### Automated Verification
+
+- `tests/scripts/test_herdr_worktree_watch.py`: a gone workspace with a session id logs `1. herdr worktree open
+  --cwd <main> --path <worktree> --focus` and `2. herdr-dev <worktree> <ws> <session> '<resume prompt>'` with literal
+  values and no `ws=$(`; under `TUIOS_SOCKET` step 1 is the `workspace create` line and step 2 starts with the
+  focus call. The tests that ran the pasted one-line form are removed with that form.
+- `tests/scripts/test_herdr_worktree.py`: `--help` names `1. herdr worktree open --cwd`, `2. herdr-dev <worktree>
+  <ws> <fork session id>` and the tuios focus call, and no longer names `ws=$(`.
+- Both tests fail on the current tree; `python3 tests/parallel_tests.py test_herdr_worktree.py
+  test_herdr_worktree_watch.py` passes after; `bash -n` on both scripts passes.
+
 ## Plan Deviations
 
 - Phase 1 step 2: the watcher starts under `setsid`, with perl `POSIX::setsid()` as the fallback where `setsid` is missing (macOS; perl ships with it).
@@ -133,11 +161,10 @@ Prompt edits only.
 - Phase 1 step 2: the herdr-dev recovery step passes a fixed resume prompt ("Go on with the work in this worktree;
   your brief is already in context.") in place of `"<prompt>"`, so the fork does not restart its brief. The
   orchestrator (agent-evals-5e, 2026-11-10) ruled it; AC2 still holds.
-- Phase 1 step 1: with a session id, the watcher logs one paste-ready line,
-  `ws=$(<reopen> | jq -r '.result.workspace.workspace_id // empty') && [ -n "$ws" ] && herdr-dev <worktree> "$ws" <session>
-  '<resume prompt>'`, in place of two steps with a `<new workspace id>` placeholder, so every value is literal
-  (branch review 4 ask). Adopted by the coder-worktree-fixes lane session, 2026-11-11, under the verify-branch rule
-  that an ask cutting no AC takes its proposed change; not a user sign-off. With no session id, step 1 is the reopen and step 2 is `claude --resume`, as before.
+- Phase 4: the one-line paste-ready form (branch review 4 ask, adopted by the lane session) is dropped, and the
+  watcher logs the ticket's two steps as written: the reopen, then `herdr-dev <worktree> <ws> <fork session id>
+  '<resume prompt>'`, the prompt being the short resume prompt. Ruled by the orchestrator agent-evals-5e,
+  2026-11-11 (an orchestrator ruling, not a user sign-off).
 - Phase 1 step 1: the watcher takes the parent session id as a 5th argument and keeps polling while the pane reports it,
   so the recovery line never names the parent conversation (branch review 5 ask). Adopted by the
   coder-worktree-fixes lane session, 2026-11-11, under the verify-branch rule that an ask cutting no AC takes its

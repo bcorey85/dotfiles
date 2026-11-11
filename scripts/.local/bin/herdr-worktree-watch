@@ -27,6 +27,9 @@ claude_pane="$4"
 log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
 
 watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
+# Step 2 resumes a fork that already holds its brief, so it never retypes it.
+# Keep the text free of single quotes: the log wraps it in them.
+RESUME_PROMPT="Go on with the work in this worktree; your brief is already in context."
 
 # herdr-worktree checks this value before it starts the watcher; this check
 # covers a direct run, and the log keeps the message.
@@ -84,7 +87,7 @@ fi
     echo "workspace $workspace closed. Recovery steps:"
     echo "1. $reopen"
     if [ -n "$session" ]; then
-        echo "2. herdr-dev $(printf %q "$worktree") <new workspace id> $(printf %q "$session") \"<prompt>\""
+        echo "2. herdr-dev $(printf %q "$worktree") <new workspace id> $(printf %q "$session") '$RESUME_PROMPT'"
         echo "   (<new workspace id> is the id step 1 prints)"
     else
         echo "2. the fork's session id could not be read; run claude --resume in $(printf %q "$worktree")"

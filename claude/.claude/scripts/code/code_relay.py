@@ -19,10 +19,8 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent),
                 str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
 import code_wait
 import script_utils
+from stop_file_names import STOP_FILES
 
-STOP_FILE = "stop.md"
-REVIEW_STOP_FILE = "review-stop.md"
-STOP_FILES = (STOP_FILE, REVIEW_STOP_FILE)
 RELAYED_FILE = "relayed"
 GO_ON_PREFIX = "To go on:"
 RULE = ("Say the text between the markers as your whole reply, word for word. Make no other tool call before the "

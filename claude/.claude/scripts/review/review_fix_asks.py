@@ -14,7 +14,9 @@ from handback import PLAN_IMPACT_STATUS, is_plan_impact_ask
 from review_asks import ASK_OUTCOMES, MODIFIED, REJECTED
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
+    ASK_FINDINGS_NAME,
     ASK_LOGGER,
+    PENDING_LAUNCH_KEY,
     REVIEW_FIX_COMMAND,
     UsageError,
     has_unanswered_asks,
@@ -28,7 +30,6 @@ from saved_handback import dispatched_repo
 from script_utils import one_line, split_location
 
 NEW_FINDING_ID = "new-finding-id"
-ASK_FINDINGS_NAME = "ask-findings.md"
 LAUNCH_COMMAND = f"{REVIEW_FIX_COMMAND} launch"
 NO_LAUNCH_RECORD_ACTION = "launch-fix-run"
 PRINTED_RUN_LINE = "The first asks-done printed this fix run; run it now unless it already ran."
@@ -231,17 +232,20 @@ def unprinted_deviation_lines(target, asks, outcomes, notes, decided_by):
     return deviation_lines
 
 
-def write_unprinted_fix_run(target, finding_lines):
+def write_unprinted_fix_run(state, target, finding_lines):
     """Writes the findings file for a fix run not yet printed and returns its path, else None. The write comes
-    before the latch: a failed write leaves the state unlatched, so a retry prints the run."""
+    before the latch: a failed write leaves the state unlatched, so a retry prints the run. The launch line also
+    goes to the top of state as pending, until the launch of that run clears it."""
     if not finding_lines or target.get("asks_redispatched"):
         return None
     findings_file = write_findings_file(finding_lines)
     target["asks_redispatched"] = True
-    if not target.get("relaunch_args"):
-        target["asks_launch_line"] = no_record_launch_line(target, findings_file)
-        return findings_file
-    target["asks_launch_line"] = fix_launch_line(target, findings_file)
+    if target.get("relaunch_args"):
+        launch_line = fix_launch_line(target, findings_file)
+    else:
+        launch_line = no_record_launch_line(target, findings_file)
+    target["asks_launch_line"] = launch_line
+    state[PENDING_LAUNCH_KEY] = launch_line
     return findings_file
 
 
@@ -253,6 +257,15 @@ def print_done_again(state):
     if not launch_line:
         return print_action("done", done_line, "Run nothing more.")
     return print_action("done", done_line, PRINTED_RUN_LINE, launch_line)
+
+
+def mark_packet_answered(state, target):
+    """Records that every ask of target was logged: the state is done, or target leaves the waiting packets."""
+    if target is state:
+        state["stage"] = "done"
+    else:
+        state["waiting_packets"] = [kept for kept in state["waiting_packets"] if kept is not target]
+    state["last_asks_launch_line"] = target.get("asks_launch_line")
 
 
 def command_asks_done(argv):
@@ -269,7 +282,7 @@ def command_asks_done(argv):
     outcomes, notes = read_outcomes(outcome_words, asks)
 
     finding_lines = ask_finding_lines(asks, outcomes, notes)
-    findings_file = write_unprinted_fix_run(target, finding_lines)
+    findings_file = write_unprinted_fix_run(state, target, finding_lines)
 
     ask_counts, failures = log_fix_ask_outcomes(target, asks, outcomes, decided_by)
     summary_lines = [summary_line(target, asks, ask_counts, decided_by, failures),
@@ -278,12 +291,8 @@ def command_asks_done(argv):
     if deviation_lines:
         summary_lines += [ADD_DEVIATIONS_LINE, *deviation_lines]
 
-    if not failures and target is state:
-        state["stage"] = "done"
-    if not failures and target is not state:
-        state["waiting_packets"] = [kept for kept in state["waiting_packets"] if kept is not target]
     if not failures:
-        state["last_asks_launch_line"] = target.get("asks_launch_line")
+        mark_packet_answered(state, target)
     save_fix_state(state)
 
     if findings_file:

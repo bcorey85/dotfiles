@@ -71,6 +71,76 @@ class ForkWriteScopeTest(unittest.TestCase):
                 self.assertEqual(decision(run_hook(str(self.repo / "app.py"), agent_type)), "allow")
 
 
+class PendingLaunchTest(unittest.TestCase):
+    LAUNCH_LINE = "python3 ~/.claude/scripts/review/review_fix.py launch --fix /g/review-fix/ask-findings.md --detach"
+
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        git_dir = pathlib.Path(temp_dir.name) / "repo" / ".git"
+        (git_dir / "code-phase").mkdir(parents=True)
+        (git_dir / "review-fix").mkdir()
+        (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
+        self.stop_file = str(git_dir / "code-phase" / "review-stop.md")
+        self.other_file = str(git_dir / "code-phase" / "stop.md")
+        self.state_file = git_dir / "review-fix" / "state.json"
+
+    def test_review_stop_is_denied_while_a_fix_run_is_pending_and_the_reason_names_the_line(self):
+        self.state_file.write_text(json.dumps({"asks_launch_pending": self.LAUNCH_LINE}))
+        result = run_hook(self.stop_file)
+        self.assertEqual(decision(result), "deny")
+        reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn(self.LAUNCH_LINE, reason)
+        self.assertIn("stop and tell the user", reason)
+        self.assertIn("`asks_launch_pending` key", reason)
+        self.assertIn(str(self.state_file.resolve()), reason)
+        self.assertNotIn("launch a new review", reason)
+
+    def test_review_stop_in_a_linked_worktree_is_denied_while_a_fix_run_is_pending(self):
+        worktree_git_dir = self.state_file.parent.parent / "worktrees" / "x"
+        (worktree_git_dir / "code-phase").mkdir(parents=True)
+        (worktree_git_dir / "review-fix").mkdir()
+        (worktree_git_dir / "HEAD").write_text("ref: refs/heads/x\n")
+        (worktree_git_dir / "review-fix" / "state.json").write_text(
+            json.dumps({"asks_launch_pending": self.LAUNCH_LINE}))
+        result = run_hook(str(worktree_git_dir / "code-phase" / "review-stop.md"))
+        self.assertEqual(decision(result), "deny")
+        self.assertIn(self.LAUNCH_LINE, result.stdout)
+
+    def test_review_stop_is_allowed_without_a_pending_fix_run(self):
+        cases = {"no state file": None, "no flag": {"stage": "done"}, "empty flag": {"asks_launch_pending": ""}}
+        for label, state in cases.items():
+            with self.subTest(label):
+                self.state_file.unlink(missing_ok=True)
+                if state is not None:
+                    self.state_file.write_text(json.dumps(state))
+                self.assertEqual(decision(run_hook(self.stop_file)), "allow", label)
+
+    def test_another_run_folder_file_is_allowed_while_a_fix_run_is_pending(self):
+        self.state_file.write_text(json.dumps({"asks_launch_pending": self.LAUNCH_LINE}))
+        self.assertEqual(decision(run_hook(self.other_file)), "allow")
+
+    def test_a_non_code_fork_write_is_allowed_while_a_fix_run_is_pending(self):
+        self.state_file.write_text(json.dumps({"asks_launch_pending": self.LAUNCH_LINE}))
+        for agent_type in ("coder", None):
+            with self.subTest(agent_type=agent_type):
+                self.assertEqual(decision(run_hook(self.stop_file, agent_type)), "allow")
+
+    def test_an_unreadable_state_denies_review_stop_and_names_the_gate(self):
+        self.state_file.write_text("{not json")
+        result = run_hook(self.stop_file)
+        self.assertEqual(decision(result), "deny")
+        self.assertIn("fork_write_scope", result.stdout)
+        self.assertIn(str(self.state_file.resolve()), result.stdout)
+        self.assertIn("Tell the user to repair or delete that file", result.stdout)
+
+    def test_a_state_that_is_not_an_object_denies_review_stop_and_names_the_file(self):
+        self.state_file.write_text("[1]")
+        result = run_hook(self.stop_file)
+        self.assertEqual(decision(result), "deny")
+        self.assertIn(str(self.state_file.resolve()), result.stdout)
+
+
 class ForkHasWriteTest(unittest.TestCase):
     def test_code_fork_may_use_write(self):
         frontmatter = FORK_AGENT.read_text().split("---")[1]

@@ -370,6 +370,17 @@ class WebLintProblemsTest(unittest.TestCase):
         self.assertNotIn("--fix", command)
         self.assertIn("--no-warn-ignored --max-warnings=0", output)
 
+    def test_a_legacy_eslintrc_repo_gets_no_flat_config_only_flag(self):
+        (self.repo / ".eslintrc.json").write_text("{}\n")
+        self.install_local_linter("eslint", 1)
+
+        problems = format_files.lint_problems(str(self.repo), ["a.ts"])
+
+        self.assertEqual(len(problems), 1, problems)
+        command, output = problems[0]
+        self.assertNotIn("--fix", command)
+        self.assertEqual(output.strip(), "eslint from .bin a.ts")
+
     def test_a_passing_oxlint_has_no_problems(self):
         (self.repo / ".oxlintrc.json").write_text("{}")
         self.install_local_linter("oxlint", 0)

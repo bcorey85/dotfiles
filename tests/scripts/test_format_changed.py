@@ -168,8 +168,16 @@ class FormatChangedTest(unittest.TestCase):
             self.repo.calls(), [("oxlint", ["--fix", "a.ts"]), ("npx", ["oxfmt", "a.ts", "b.json"])]
         )
 
+    def test_local_eslint_without_flat_config_omits_flat_only_flags(self):
+        self.repo.tool("eslint", local=True)
+        self.turn({"a.vue": "1", "b.md": "1"})
+        self.assertEqual(self.repo.calls(), [
+            ("eslint", ["--fix", "a.vue"]),
+            ("npx", ["--yes", "prettier", "--write", "a.vue", "b.md"])])
+
     def test_local_eslint_is_used_without_oxlint(self):
         self.repo.tool("eslint", local=True)
+        self.repo.put("eslint.config.js", "export default []")
         self.turn({"a.vue": "1", "b.md": "1"})
         self.assertEqual(self.repo.calls(), [
             ("eslint", ["--fix", "--no-warn-ignored", "--max-warnings=0", "a.vue"]),

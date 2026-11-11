@@ -15,7 +15,7 @@ import reviewed_tree  # noqa: E402
 
 SCRIPT = pathlib.Path(os.environ.get("CODE_RELAY_SCRIPT") or toolkit_paths.CODE_DIR / "code_relay.py")
 SESSION = "relay-session"
-RE_REVIEW_FEEDBACK = ("Re-run the phase review (step 5) on the current tree: files changed after the review "
+RE_REVIEW_FEEDBACK = ("Re-run the review round on the current tree: files changed after the review "
                       "converged.")
 STOP = "Phase 2 complete. Stopped for your review.\n\nTo go on: /code resume <your feedback>"
 

@@ -10,7 +10,7 @@ other tool call. A stop without one is a finished run: the rule says to go on wi
 relayed stop's name and mtime go in <run folder>/relayed, so a second relay of the same stop, or a run that wrote no
 new stop, exits 1 and says to relay the Skill result instead. A stop that waits on the user, in a tree whose source
 changed after the session's clean review (and no commit since), is not relayed: the rule sends the main session
-back through the `To go on:` line to re-run the phase review, and `relayed` stays unwritten.
+back through the `To go on:` line to re-run the review round, and `relayed` stays unwritten.
 """
 
 import os
@@ -36,7 +36,7 @@ RULE = ("Say the text between the markers as your whole reply, word for word. Ma
         "the stop's `To go on:` line.")
 FINISHED_RULE = ("Say the text between the markers word for word. The run is finished: when a skill you are running "
                  "invoked this one, go on with that skill's next step; otherwise make no other tool call.")
-RE_REVIEW_FEEDBACK = ("Re-run the phase review (step 5) on the current tree: files changed after the review "
+RE_REVIEW_FEEDBACK = ("Re-run the review round on the current tree: files changed after the review "
                       "converged.")
 RE_REVIEW_RULE = ("Do not say the stop. Run the command on the stop's `To go on:` line below with this feedback, "
                   f"then relay again.\nFeedback: {RE_REVIEW_FEEDBACK}\n")

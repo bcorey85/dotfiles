@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-`lib/format_files.py` gains `lint_problems(repo, paths)`: the linters `run_formatters` picks, run only where the repo configures them, in check mode (`ruff check --force-exclude`, `oxlint`, or `eslint --no-warn-ignored --max-warnings=0`). A missing linter binary is no problem; a timeout is one. `review/full_check_gate.py` runs `lint_pass` at the start of `full_check_pass` and `recheck_full_check`: one `coder-lint` repair, then a `critical-blocker` stop naming every linter's output. The ruff formatter commands also get `--force-exclude`.
+`lib/format_files.py` gains `lint_problems(repo, paths)`: the linters `run_formatters` picks, run only where the repo configures them, in check mode (`ruff check --force-exclude`, `oxlint`, or `eslint`, plus `--no-warn-ignored --max-warnings=0` only with a flat `eslint.config.*` config; a legacy `.eslintrc` repo gets neither, so an ignored file's warning is not a failure). A missing linter binary is no problem; a timeout is one. `review/full_check_gate.py` runs `lint_pass` at the start of `full_check_pass` and `recheck_full_check`: one `coder-lint` repair, then a `critical-blocker` stop naming every linter's output. The ruff formatter commands also get `--force-exclude`.
 
 ## Evidence
 

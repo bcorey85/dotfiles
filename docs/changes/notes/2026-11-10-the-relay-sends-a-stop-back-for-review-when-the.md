@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-`code/code_relay.py` `relay` reads the session's latest hand-back for the repo (`handback_store.latest_for_repo`) before relaying a stop that waits on the user. When that hand-back is clean (`handback.standing_false_clean_reason` is None), was stored after HEAD's committer time (new `script_utils.head_commit_time`), and `reviewed_tree.is_reviewed` is False, it exits 0 with a rule to run the stop's `To go on:` line with the feedback "Re-run the phase review (step 5) on the current tree: files changed after the review converged." It writes no `relayed` file and no USER TEXT markers. Notes-path edits, a later commit, no session id, no commit, a non-clean or missing hand-back, and finished stops relay as before.
+`code/code_relay.py` `relay` reads the session's latest hand-back for the repo (`handback_store.latest_for_repo`) before relaying a stop that waits on the user. When that hand-back is clean (`handback.standing_false_clean_reason` is None), was stored after HEAD's committer time (new `script_utils.head_commit_time`), and `reviewed_tree.is_reviewed` is False, it exits 0 with a rule to run the stop's `To go on:` line with the feedback "Re-run the review round on the current tree: files changed after the review converged." It writes no `relayed` file and no USER TEXT markers. Notes-path edits, a later commit, no session id, no commit, a non-clean or missing hand-back, and finished stops relay as before.
 
 ## Evidence
 

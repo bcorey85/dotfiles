@@ -6,7 +6,7 @@ description: "After `herdr-worktree --fork` starts the forked claude, a detached
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-10T18:24:23-06:00"}
 seq: 4
 kind: "fix"
-components: ["script/herdr-worktree", "script/herdr-worktree-watch", "script/detach"]
+components: ["script/herdr-worktree", "script/herdr-worktree-watch", "script/detach", "script/shell-command", "script/wait-loop-gate"]
 evidence: ["forked-worktree-workspace-closes-about-a-minute"]
 watches: []
 test: "tests/scripts/test_herdr_worktree_watch.py::HerdrWorktreeWatchTest::test_a_gone_workspace_logs_one_line_with_literal_values_that_captures_the_new_workspace_id"
@@ -23,6 +23,7 @@ unmeasured: ""
 - The detached watcher's stdout and stderr go to `herdr-worktree-watch.log` (append) in place of `/dev/null`, so a failed detach or a watcher crash leaves its message there. The watcher writes its error messages to stderr, which the launcher sends to the log, so each line lands once and a direct run shows it.
 - `tests/scripts/test_detach.py` reads the child's session id and pid with Python in place of `ps -o sid=`, which BSD and macOS `ps` lack.
 - New `scripts/.local/bin/detach`: runs a command in its own session (`setsid`, else perl `POSIX::setsid` on macOS). `bookmark` and `research` use it in place of their own `setsid` line.
+- `lib/shell_command.py` lists `detach` as a wrapper, and `gates/wait_loop_gate.py` adds `detach` to its detach words and deny message. The shell-write gate now reads `echo x | detach tee tracked.txt` as a write to `tracked.txt`, and a review-loop `detach make test` is denied like `setsid`. New cases in `tests/scripts/test_shell_command.py`, `test_shell_write_gate.py` and `test_wait_loop_gate.py`.
 - Deploy: run `install/stow` so ~/.local/bin links the new `detach` and `herdr-worktree-watch`. Until then `herdr-worktree --fork`, `bookmark` and `research` stop with `<path> missing; run install/stow`. `bookmark` and `research` log the capture first, so they print `bookmark: logged to bookmarks.org, no source stub: <path> missing; run install/stow` and `research: logged to questions.org, no answer stub: <path> missing; run install/stow`.
 
 ## Evidence

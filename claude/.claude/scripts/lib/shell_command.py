@@ -56,6 +56,7 @@ WRAPPER_VALUE_OPTIONS = {
     "builtin": set(),
     "stdbuf": {"-i", "-o", "-e"},
     "setsid": set(),
+    "detach": set(),
     "ionice": {"-c", "-n", "-p"},
     "unbuffer": set(),
     "taskset": set(),
@@ -390,6 +391,22 @@ def command_after_wrappers(words, peel_containers=True):
         peeled = _peel_wrapper_once(words, peel_containers)
         if peeled is None:
             return words
+        words = peeled
+
+
+def wrapper_chain(words):
+    """The basename of each wrapper word that command_after_wrappers drops, in order, then the basename of the final
+    command word. Empty when the words name no command."""
+    chain = []
+    while True:
+        words = without_assignments(words)
+        if not words:
+            return chain
+
+        chain.append(os.path.basename(words[0]))
+        peeled = _peel_wrapper_once(words, True)
+        if peeled is None:
+            return chain
         words = peeled
 
 

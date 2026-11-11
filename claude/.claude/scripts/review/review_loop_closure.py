@@ -130,8 +130,9 @@ def closure_from_open_list(reply):
     """The receipt, open list and left-alone list of a closure reply whose object does not decode, as when the
     receipt holds a raw double quote: decodes the lists after the last `"open": [` and the last `"left_alone": [`,
     and keeps the text after the `"receipt":` key, without its wrapping quotes, as the receipt. The left-alone
-    list is empty when its key is absent. The receipt text stops at the first list key after it. None when
-    no open list decodes or the left-alone list is present and does not decode."""
+    list is empty when its key is absent. The receipt text stops at whichever of the last `open` key and the last
+    `left_alone` key comes first after it. None when no open list decodes or the left-alone list is present and
+    does not decode."""
     open_found, parsed_open, open_key_start = list_after_last_key(reply, OPEN_KEY)
     if not open_found or parsed_open is None:
         return None

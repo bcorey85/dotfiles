@@ -15,7 +15,8 @@ Deviations. Each phase starts with a test that fails on the current tree.
   `claude/.claude/scripts/review/review_loop_packet.py` (`packet_message`, `EMPTY_OUTCOME`),
   `claude/.claude/scripts/review/handback.py` (the `left_alone` field), `claude/.claude/scripts/review/review_loop_findings.py` (`reply_with_one_retry`'s `problem` check),
   `claude/.claude/scripts/lib/script_utils.py` (`is_nonblank_string_list`),
-  `claude/.claude/scripts/review/review_loop_prompt_file.py` (`read_findings`), and their tests in `tests/scripts/`. `claude/.claude/orchestration.md` (the worktree
+  `claude/.claude/scripts/review/review_loop_prompt_file.py` (`read_findings`),
+  `claude/.claude/scripts/lib/shell_command.py`, `claude/.claude/scripts/gates/wait_loop_gate.py`, and their tests in `tests/scripts/`. `claude/.claude/orchestration.md` (the worktree
   bullet) was in scope and is not shipped: reverted, see Plan Deviations.
 - Out: `review_loop_coder.py` (its untracked-file restore already exists and stays as is), `review_fix.py`,
   `review_fix_asks.py`, `skills/review/`, `skills/fix/`, `review-fork-run.md`, lint, format, gate-env and
@@ -52,8 +53,8 @@ the recovery. It never reopens the workspace by itself: the user may have closed
    - The log is `herdr-worktree-watch.log` in the worktree's git dir
      (`git -C <worktree> rev-parse --path-format=absolute --git-path herdr-worktree-watch.log`).
 2. `herdr-worktree`: once the fork's pane shows the claude agent (the `exit 0` inside the wait loop), start the
-   watcher detached (`setsid "$bin_dir/herdr-worktree-watch" ... >>"$log" 2>&1 &` (the watch log) with stdin from `/dev/null`;
-   `perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' --` when `setsid` is missing) and
+   watcher through `$bin_dir/detach` (setsid, else perl POSIX::setsid with a fork when the caller leads its
+   process group), output appended to the watch log, stdin from `/dev/null`, and
    print one stderr line: `herdr-worktree: watching workspace <ws> for <N>s; recovery steps go to <log path> if it
    closes`. Then exit 0. A run without `--fork` starts no watcher.
 3. `herdr-worktree` header: add a paragraph that names the recovery line (and the `claude --resume` fallback), so `--help` shows them.
@@ -142,6 +143,7 @@ Prompt edits only.
   coder-worktree-fixes lane session, 2026-11-11, under the verify-branch rule that an ask cutting no AC takes its
   proposed change; not a user sign-off. The launcher's output goes to the watch log, and the watcher writes its
   error messages to stderr, which the launcher sends to the log, so each line lands there once and a direct run shows it.
+- Branch review 6: `detach` is added to the shell parser's wrapper list and wait_loop_gate's detach words, so the gates read a command run through it like one run through setsid. Adopted by the coder-worktree-fixes lane session, 2026-11-11, under the verify-branch rule; not a user sign-off.
 - Phase 1 step 1, tuios: tuios's `workspace get` reply for a missing workspace is unchecked (tuios is not on this
   machine). An unknown reply logs "could not check workspace" and exits 1, so it fails safe. The orchestrator
   (agent-evals-5e, 2026-11-10) ruled it a manual smoke check; not a user sign-off.

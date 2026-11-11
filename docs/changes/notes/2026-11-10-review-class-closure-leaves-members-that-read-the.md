@@ -23,6 +23,7 @@ unmeasured: "No meter run; the user ruled ship on 2026-11-10 in session agent-ev
 - `review/review_loop_packet.py`: the packet message writes `left_alone`, and the empty outcome carries it.
 - `review/handback.py`: `left_alone` is a packet key, a list key and a string-list key, and the hand-back renders it.
 - `review/review_loop_findings.py`: `reply_with_one_retry` takes a `problem` check, which returns a reason string. A closure reply whose `open` or `left_alone` is not a list of non-blank strings is rejected with that reason, retried once, and a second bad reply raises. The retry note now reads "could not be used" in place of "could not be parsed".
+- `review/review_loop_findings.py`: new `ReplyShapeError(ValueError)`, which `reply_with_one_retry` raises on a second unusable reply in place of a bare `ValueError`. The review loop's top-level `except Exception` still turns it into a crash packet.
 - `lib/script_utils.py`: new `is_nonblank_string_list`, which the closure check and `read_findings` share.
 - `review/review_loop_prompt_file.py`: `read_findings` uses `is_nonblank_string_list`.
 - New `lib/reply_json.py` holds the two readers of JSON inside a model reply: the closure parser's `list_after_last_key` and `last_json_object`, moved from `review_loop_findings.py`. Their tests are in `tests/scripts/test_reply_json.py`.

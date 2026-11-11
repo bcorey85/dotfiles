@@ -12,8 +12,8 @@ import shell_statements
 
 
 def pipe_shell_pattern(escaped_pipe):
-    """A pipe into a shell: a `|` not right after another `|` (the second half of `||`), or a `|` the escaped_pipe
-    pattern matches right before the bar pair."""
+    """A pipe into a shell: a `|` not right after another `|` (the second half of `||`), or a `|` right after a
+    match of the escaped_pipe pattern, which matches a backslash run plus the first bar of the pair."""
     return re.compile(
         rf"(?:(?<!\|)|{escaped_pipe})\|&?\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba|z|da|k)?sh(?![\w.-])",
         re.IGNORECASE)

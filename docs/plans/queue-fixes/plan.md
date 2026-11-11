@@ -41,7 +41,7 @@ Files: `claude/.claude/scripts/tools/pull_keep_index.py`, `tests/scripts/test_pu
 ## Plan Deviations
 
 - 2026-11-10: Phase 2 lookup is `git ls-remote --exit-code origin refs/heads/<branch>`, not `--heads origin <branch>` (tail match). No criterion changed. Adopted by the /code run, ruled by orchestrating session agent-evals-5e, not the user.
-- 2026-11-10: Phase 2 "No upstream" is `branch.<branch>.merge` unset, not `@{u}` failing: a branch whose upstream is set but pruned from origin goes to `git pull` and exits 1, so a chained push does not recreate it. No criterion changed (AC3 and AC4 hold). Adopted by the /code run, not the user.
+- 2026-11-10: Phase 2 "No upstream" is `branch.<branch>.merge` unset, not `@{u}` failing: a branch whose upstream is set but pruned from origin stops before the pull with the recovery command (unset the upstream, `push -u <remote> HEAD`), so a chained push does not recreate it. No criterion changed (AC3 and AC4 hold). Adopted by the /code run, not the user.
 - 2026-11-10: Phase 2 sets `origin/<branch>` as the upstream after a targeted pull, and exits 1 with the recovery command when that fails. The plan did not name this step. No criterion changed (AC3 and AC4 hold). Adopted by the /code run, not the user.
 - AC1 narrowed to `pipe_shell_check.py`; the live `bash-safety-gate.sh` deny (line 307, bare grep) is logged for the work machine. Ruled by the orchestrating session agent-evals-5e (plan author), not the user, 2026-11-10.
 - AC2 narrowed to shells (`| bash`, `|& sh`); the `| python3 -` stdin case belongs to the interpreter_stdin rule. Ruled by the orchestrating session agent-evals-5e (plan author), not the user, 2026-11-10.

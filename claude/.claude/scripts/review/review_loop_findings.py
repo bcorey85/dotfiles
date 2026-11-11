@@ -204,32 +204,38 @@ def last_json_object(reply, keys):
     return None
 
 
-# How much of the first unparsable reply the retry note quotes.
+# How much of the first unusable reply's error the retry note quotes.
 RETRY_ERROR_CHARS = 200
 
 
-def reply_with_one_retry(claude_call, role, prompt, repo, out, keys, shape, recover=None, **options):
+def reply_with_one_retry(claude_call, role, prompt, repo, out, keys, shape, recover=None, problem=None, **options):
     """The parsed JSON object of a model reply that holds any of `keys`. A reply with none is read by `recover`, when
-    given, then retried once under "<role>-retry", so the retry has its own row in calls.jsonl; a second miss raises
-    ValueError."""
+    given. An object that `problem`, when given, returns a problem string for is rejected, and that string goes into
+    the retry note and the error. A miss is retried once under "<role>-retry", so the retry has its own row in
+    calls.jsonl; a second miss raises ValueError."""
     def parsed_reply(reply):
+        """(object, error): the object is None when the reply is rejected, and the error says why."""
         parsed = last_json_object(reply, keys)
         if parsed is None and recover:
-            return recover(reply)
-        return parsed
+            parsed = recover(reply)
+        if parsed is None:
+            return None, f"the {role} reply holds no {shape} object: {reply!r}"
+        rejection = problem(parsed) if problem else None
+        if rejection:
+            return None, f"the {role} reply's object fails its check: {rejection}: {reply!r}"
+        return parsed, None
 
     reply = claude_call(role, prompt, repo, out, **options)
-    parsed = parsed_reply(reply)
+    parsed, error = parsed_reply(reply)
     if parsed is not None:
         return parsed
 
-    error = f"the {role} reply holds no {shape} object: {reply!r}"
-    retry_note = f"A previous reply to this prompt could not be parsed: {error[:RETRY_ERROR_CHARS]}"
+    retry_note = f"A previous reply to this prompt could not be used: {error[:RETRY_ERROR_CHARS]}"
     retry_prompt = prompt + f"\n\n{retry_note}\nReply with the JSON object only."
     reply = claude_call(f"{role}-retry", retry_prompt, repo, out, **options)
-    parsed = parsed_reply(reply)
+    parsed, error = parsed_reply(reply)
     if parsed is None:
-        raise ValueError(f"the {role} reply holds no {shape} object: {reply!r}")
+        raise ValueError(error)
     return parsed
 
 

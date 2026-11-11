@@ -112,10 +112,18 @@ def closure_check(repo, out, fixed, claude_call):
     )
     parsed = reply_with_one_retry(claude_call, "class-closure", prompt, repo, out, ("open",),
                                   '{"receipt": .., "open": [..], "left_alone": [..]}', recover=closure_from_open_list,
-                                  model="sonnet", tools="Read,Grep")
-    open_findings = script_utils.nonblank_strings(parsed.get("open"))
-    return {"receipt": str(parsed.get("receipt", "")), "open": open_findings,
-            "left_alone": script_utils.nonblank_strings(parsed.get("left_alone"))}
+                                  problem=closure_list_problem, model="sonnet", tools="Read,Grep")
+    return {"receipt": str(parsed.get("receipt", "")), "open": parsed["open"],
+            "left_alone": parsed.get("left_alone", [])}
+
+
+def closure_list_problem(parsed):
+    """A sentence naming the first of `open` and `left_alone` that the reply holds and that is not a list of
+    non-blank strings; None when both are fine."""
+    for key in ("open", "left_alone"):
+        if key in parsed and not script_utils.is_nonblank_string_list(parsed[key]):
+            return f"'{key}' must be a list of non-blank strings"
+    return None
 
 
 def closure_from_open_list(reply):

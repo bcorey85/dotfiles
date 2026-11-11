@@ -12,7 +12,8 @@ the verify scripts call:
   anything else                          exits 64
 
 `ledger write` records nothing and exits with the code in FAKE_LEDGER_WRITE_EXIT when that is set
-to a nonzero number. It refuses a row that carries a key named in FAKE_LEDGER_UNKNOWN_FIELDS (comma
+to a nonzero number. FAKE_LEDGER_FAIL_WRITE_CALL=N fails only the Nth write call since the rows file began
+(failed calls count), exit 2. It refuses a row that carries a key named in FAKE_LEDGER_UNKNOWN_FIELDS (comma
 separated) as an older build does: `reject: field_unknown <key>` on stderr, exit 2.
 
 `path_without_ledger(path)` returns `path` with every directory that holds a `ledger` left out.
@@ -48,6 +49,15 @@ def recordedRows():
 
 if len(args) >= 2 and args[0] == "write":
     writeExit = int(os.environ.get("FAKE_LEDGER_WRITE_EXIT", "0"))
+    callsPath = rowsPath + ".calls"
+    callNumber = 1
+    if os.path.isfile(callsPath):
+        with open(callsPath) as handle:
+            callNumber = int(handle.read()) + 1
+    with open(callsPath, "w") as handle:
+        handle.write(str(callNumber))
+    if callNumber == int(os.environ.get("FAKE_LEDGER_FAIL_WRITE_CALL", "0")):
+        writeExit = 2
     if writeExit != 0:
         sys.stdin.read()
         sys.exit(writeExit)
@@ -95,6 +105,15 @@ def install(directory):
 def path_without_ledger(path):
     """`path`, a PATH string, without the directories that hold a `ledger` (the stand-in's included)."""
     return os.pathsep.join(part for part in path.split(os.pathsep) if not os.path.exists(os.path.join(part, "ledger")))
+
+
+def write_call_count(env):
+    """How many `ledger write` calls the stand-in has taken, failed ones and `review_escape` rows included. It is the
+    count FAKE_LEDGER_FAIL_WRITE_CALL numbers its calls by."""
+    calls_path = pathlib.Path(env["FAKE_LEDGER_ROWS"] + ".calls")
+    if not calls_path.is_file():
+        return 0
+    return int(calls_path.read_text())
 
 
 def recorded_rows(env, row_type=None):

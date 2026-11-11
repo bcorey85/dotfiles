@@ -6,3 +6,6 @@ STATE_FILE_NAME = "state.json"
 ASK_FINDINGS_NAME = "ask-findings.md"
 # Set by asks-done when it prints a fix run, cleared when that run launches. The fork-write gate reads it.
 PENDING_LAUNCH_KEY = "asks_launch_pending"
+# Set when a --correct call had a row fail and the stored answers leave no ask to apply (the pending launch was
+# dropped), so the retry is allowed with no pending launch.
+CORRECT_OPEN_KEY = "correct_open"

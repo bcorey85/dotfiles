@@ -17,7 +17,7 @@ Scripts live in `claude/.claude/scripts/`; tests in `tests/scripts/`, paths from
 
 - [x] Phase 1: a resumed review cannot stop before the fix run asks-done printed (risk: medium)
 - [x] Phase 2: test commands named in a resume reply run in the fix run (risk: low)
-- [ ] Phase 3: asks-done refuses a conditional proposed change and corrects a logged outcome (risk: medium)
+- [x] Phase 3: asks-done refuses a conditional proposed change and corrects a logged outcome (risk: medium)
 - [ ] Phase 4: a user-accepted ask the fix coder skips comes back as an ask (risk: medium)
 - [ ] Phase 5: asks-done needs --by; no default records a user sign-off (risk: low)
 
@@ -77,8 +77,9 @@ Bug: an ask's proposed change was conditional ("if not confirmed, revert X"); th
 `accepted` and the fix coder applied the revert, the opposite of the user's answer. A second asks-done with the right
 outcome printed "already logged" and could not fix it.
 
-1. `review_asks.py`: own one constant pattern for a conditional proposed change: a change whose first clause starts
-   with `if`, `unless`, `when` or `otherwise`, or that holds `if not` / `if no` / `if the user`. One function,
+1. `review_asks.py`: own one constant pattern for a conditional proposed change: a change is
+   conditional only when it hangs on the answer to the ask: it starts with `If not`, `If no`, `Unless` or
+   `Otherwise`, or holds `if (not )?(confirmed|approved|accepted)`, `if yes`, `if no,` or `if the user`. One function,
    `is_conditional_change(text)`.
 2. `asks-done`: when an `accepted` or `rejected` outcome lands on an ask with a conditional change, refuse before
    logging anything (exit 2). Name the ask and tell the caller to answer it with `modified:<the change to make, with no
@@ -140,3 +141,4 @@ Bug: `review_fix.py asks-done` defaults to `--by user`, so a session's own rulin
 ## Plan Deviations
 
 - Phase 1 step 3: the names live in two new import-free modules, `lib/review_fix_names.py` and `lib/stop_file_names.py`, in place of either option the plan gives. One owner holds each name, and the gate imports no heavy module. `review_fix_state` re-exports them. Every acceptance criterion holds.
+- Phase 3: the conditional-change pattern is narrowed to wording that hangs on the answer to the ask (starts with `If not`, `If no`, `Unless`, `Otherwise`, or holds `if (not )?(confirmed|approved|accepted)`, `if yes`, `if no,`, `if the user`); plain changes such as "When the list is empty, return []" pass. Session ruling (the /code session, not the user), 2026-11-10.

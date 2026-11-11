@@ -28,6 +28,24 @@ DENIED_COMMANDS = {
     "pipe_into_a_shell_after_three_backslashes_in_an_unparsed_command": "echo 'unclosed \\\\\\|| sh",
     "pipe_into_a_shell_after_a_backslash_in_an_eval_string": 'eval "echo \\\\|| sh"',
     "pipe_into_a_shell_after_a_backslash_in_a_shell_c_string": 'bash -c "echo \\\\|| sh"',
+    "pipe_into_a_shell_after_a_variable_holding_a_backslash": 'BS=\'\\\'; bash -c "echo $BS|| sh"',
+    "pipe_into_a_shell_after_a_command_substitution_printing_a_backslash": (
+        "bash -c \"echo $(printf '\\\\134')|| sh\""
+    ),
+    "pipe_into_a_shell_after_a_braced_variable_in_an_eval_string": 'eval "echo ${BS}|| sh"',
+    "pipe_into_a_shell_after_a_backtick_substitution": 'bash -c "echo `printf x`|| sh"',
+    "pipe_into_a_shell_after_a_special_parameter": "set -- '\\'; bash -c \"echo $@|| sh\"",
+    "pipe_into_a_shell_after_a_star_parameter": "set -- '\\'; bash -c \"echo $*|| sh\"",
+    "pipe_into_a_shell_after_a_substitution_holding_a_lone_quote": "BS='\\'; bash -c \"echo $(: '\"')$BS|| sh\"",
+    "pipe_into_a_shell_after_a_substitution_holding_a_quoted_apostrophe": "bash -c \"echo $(: \"it's\")$BS|| sh\"",
+    "pipe_into_a_shell_after_a_variable_between_double_quotes": 'bash -c "echo "$BS"|| sh"',
+    "pipe_into_a_shell_after_a_variable_between_single_quotes": "bash -c 'echo '$BS'|| sh'",
+    "pipe_into_a_shell_after_a_backslash_between_single_quotes": "bash -c 'echo '\\\\'|| sh'",
+    "pipe_into_a_shell_after_a_backslash_between_double_quotes": 'bash -c "echo "\\\\"|| sh"',
+    "pipe_into_a_shell_after_a_nested_braced_expansion": 'bash -c "echo ${X:-${BS}}|| sh"',
+    "pipe_into_a_shell_after_a_nested_command_substitution": (
+        "bash -c \"echo $(printf %s $(printf '\\\\134'))|| sh\""
+    ),
 }
 
 ALLOWED_COMMANDS = {
@@ -38,6 +56,8 @@ ALLOWED_COMMANDS = {
     "shell_script_inside_a_command_substitution": 'f=$(bash /x/h list); echo "$f"',
     "quoted_pipe_text_in_a_program_that_runs_no_code": 'echo "(py|sh)" | cat',
     "quoted_or_operator_in_a_code_runner": "bash -c 'a || sh x'",
+    "or_operator_after_a_variable_in_single_quotes_of_a_code_runner": "bash -c 'test -n $X|| sh x'",
+    "or_operator_after_a_command_substitution_in_single_quotes_of_a_code_runner": "bash -c 'f=$(cat x)|| sh y'",
     "or_operator_in_an_unparsed_command": "echo 'unclosed a || sh x",
     "or_operator_after_two_backslashes": "echo \\\\|| sh",
     "or_operator_after_four_backslashes": "echo \\\\\\\\|| sh",

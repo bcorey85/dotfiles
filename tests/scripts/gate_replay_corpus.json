@@ -76,6 +76,7 @@
     {"id": "psc-rg-alternation-bash", "gate": "pipe-shell-check", "command": "rg -n 'Write|Bash' agents", "expect": "allow", "mustDeny": false, "redundant": false, "source": "queue/bash-safety-gate-flags-a-regex-alternation-as-pipe"},
     {"id": "psc-heredoc-body-alternation", "gate": "pipe-shell-check", "command": "cat <<'EOF'\nit's r\"(py|sh)\"\nEOF", "expect": "allow", "mustDeny": false, "redundant": false, "source": "queue/pipe-shell-check-falls-back-to-a-regex-that"},
     {"id": "psc-test-output-into-grep", "gate": "pipe-shell-check", "command": "pytest -q 2>&1 | grep -E \"^(FAIL|ERROR|    )\"", "expect": "allow", "mustDeny": false, "redundant": false, "source": "WORK-SECURITY-HOOKS.md: pipe_shell denies a search whose quoted regex holds |zsh"},
-    {"id": "psc-find-into-xargs", "gate": "pipe-shell-check", "command": "find . -name '*.py' | xargs wc -l", "expect": "allow", "mustDeny": false, "redundant": false, "source": "tag:xargs_exec"}
+    {"id": "psc-find-into-xargs", "gate": "pipe-shell-check", "command": "find . -name '*.py' | xargs wc -l", "expect": "allow", "mustDeny": false, "redundant": false, "source": "tag:xargs_exec"},
+    {"id": "psc-or-operator-before-shell-script", "gate": "pipe-shell-check", "command": "test -f x || bash /x/h list", "expect": "allow", "mustDeny": false, "redundant": false, "source": "queue/pipe-shell-check-falls-back-to-a-regex-that"}
   ]
 }

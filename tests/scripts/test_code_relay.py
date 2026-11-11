@@ -17,6 +17,7 @@ SCRIPT = pathlib.Path(os.environ.get("CODE_RELAY_SCRIPT") or toolkit_paths.CODE_
 SESSION = "relay-session"
 RE_REVIEW_FEEDBACK = ("Re-run the review round on the current tree: files changed after the review "
                       "converged.")
+UNREVIEWED_NOTE = "The tree changed after the converged review; this stop is unreviewed."
 STOP = "Phase 2 complete. Stopped for your review.\n\nTo go on: /code resume <your feedback>"
 
 
@@ -166,6 +167,48 @@ class ReviewedTreeRelayTest(unittest.TestCase):
         self.assertIn(STOP.splitlines()[-1], result.stdout)
         self.assertNotIn("USER TEXT", result.stdout)
         self.assertFalse((self.run_folder / "relayed").exists())
+
+    def test_a_stop_bounced_once_relays_when_the_resume_wrote_no_new_stop(self):
+        (self.repo / "app.py").write_text("x = 2\n")
+        bounced = self.relay()
+        self.assertIn(RE_REVIEW_FEEDBACK, bounced.stdout)
+
+        result = self.relay()
+
+        self.assert_relayed(result)
+        self.assertIn(UNREVIEWED_NOTE, result.stdout.split("-----BEGIN USER TEXT-----\n")[1].split(STOP)[0])
+
+    def test_a_handback_stored_within_a_second_before_a_commit_does_not_count_as_after_it(self):
+        stored_at = handback_store.latest_for_repo(SESSION, self.top)["handback"]["ts"]
+        (self.repo / "app.py").write_text("x = 2\n")
+        self.commit("second", f"{int(stored_at)} +0000")
+        (self.repo / "app.py").write_text("x = 3\n")
+
+        result = self.relay()
+
+        self.assert_relayed(result)
+        self.assertNotIn(UNREVIEWED_NOTE, result.stdout)
+
+    def test_a_new_stop_written_after_a_bounce_bounces_again(self):
+        (self.repo / "app.py").write_text("x = 2\n")
+        self.assertIn(RE_REVIEW_FEEDBACK, self.relay().stdout)
+        os.utime(self.run_folder / "stop.md", ns=(1, 1))
+
+        result = self.relay()
+
+        self.assertIn(RE_REVIEW_FEEDBACK, result.stdout)
+
+    def test_a_tree_that_cannot_be_fingerprinted_relays(self):
+        (self.repo / "app.py").write_text("x = 2\n")
+        # An untracked nested repository makes the fingerprint fail.
+        nested = self.repo / "nested"
+        nested.mkdir()
+        subprocess.run(["git", "init", "-q", str(nested)], check=True)
+        self.assertIsNone(reviewed_tree.reviewed_fingerprint(self.repo))
+
+        result = self.relay()
+
+        self.assert_relayed(result)
 
     def test_a_notes_edit_after_the_review_relays(self):
         (self.repo / "docs" / "plans").mkdir(parents=True)

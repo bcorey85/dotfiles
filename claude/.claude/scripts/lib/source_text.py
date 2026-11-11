@@ -47,16 +47,69 @@ def stripped_lines(text):
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
-def normalized_block(lines):
-    """A block of lines reduced to what a formatter leaves alone: no whitespace, one quote style, and no comma
-    right before a closing bracket."""
-    squeezed = "".join("".join(lines).split()).replace("'", '"')
-    return re.sub(r",(?=[)\]}])", "", squeezed)
+@dataclass
+class _BracketGroup:
+    is_bare_paren: bool
+    commas: int = 0
 
 
-def formatting_only_lines(old_text, new_text):
+def _opens_bare_paren(char, previous):
+    """True for a `(` that groups an expression: not directly after a name, `>` (a generic call such as `f<T>(a)` or
+    `f::<T>(a)`), `)`, `]`, `.` (`cb?.(a)`) or `!` (`dbg!(a)`), which make it a call."""
+    if char != "(":
+        return False
+    return not (previous.isalnum() or previous in ("_", "$", ">", ")", "]", ".", "!"))
+
+
+SUFFIXES_WITH_TUPLES = (".py", ".pyi")
+
+
+def has_tuple_syntax(path):
+    """True only for a Python file, where `(1,)` is a tuple; False for every other language and for no path."""
+    if path is None:
+        return False
+    return os.path.splitext(path)[1] in SUFFIXES_WITH_TUPLES
+
+
+def _close_group(kept, groups, char, has_tuples):
+    """Close the innermost bracket group at `char`: drop the comma kept right before it, unless it is the one comma
+    of a bare parenthesized tuple."""
+    group = groups.pop() if groups else _BracketGroup(False)
+    is_tuple_comma = has_tuples and char == ")" and group.is_bare_paren and group.commas == 1
+    if kept and kept[-1] == "," and not is_tuple_comma:
+        kept.pop()
+
+
+def normalized_block(lines, has_tuples=True):
+    """A block of lines reduced to what a formatter leaves alone: whitespace removed, `'` read as `"`, and no comma
+    right before a closing bracket. With has_tuples, the one comma of a bare parenthesized group stays: `(1,)` is a
+    tuple and `(1)` is not, while `f(a,)` and `f(a)` are the same call. Strings are not tracked: both sides of a
+    comparison go through the same rule."""
+    text = "\n".join(lines)
+    kept = []
+    groups = []
+    previous = ""
+    for raw in text:
+        before = previous
+        previous = raw
+        if raw.isspace():
+            continue
+
+        char = '"' if raw == "'" else raw
+        if char == "," and groups:
+            groups[-1].commas += 1
+        elif char in "([{":
+            groups.append(_BracketGroup(_opens_bare_paren(char, before)))
+        elif char in ")]}":
+            _close_group(kept, groups, char, has_tuples)
+        kept.append(char)
+    return "".join(kept)
+
+
+def formatting_only_lines(old_text, new_text, path=None):
     """The lines of old_text and of new_text, as Counters, that sit in a replaced hunk whose two sides differ only
-    in formatting."""
+    in formatting. The path of the file, when known, tells whether `(1,)` is a tuple (see has_tuple_syntax)."""
+    has_tuples = has_tuple_syntax(path)
     old_lines = stripped_lines(old_text)
     new_lines = stripped_lines(new_text)
     matcher = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
@@ -66,7 +119,7 @@ def formatting_only_lines(old_text, new_text):
             continue
         old_block = old_lines[old_start:old_end]
         new_block = new_lines[new_start:new_end]
-        if normalized_block(old_block) == normalized_block(new_block):
+        if normalized_block(old_block, has_tuples) == normalized_block(new_block, has_tuples):
             reformatted.old.update(old_block)
             reformatted.new.update(new_block)
     return reformatted

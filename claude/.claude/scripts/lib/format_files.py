@@ -80,20 +80,33 @@ def web_tool_enabled(repo, name):
     return locally_installed(repo, name) or tool_configured(repo, name)
 
 
-def web_lint_tool(repo, configured_only=False):
-    """"oxlint", "eslint" or None: the web linter that runs on the repo's script files. With `configured_only`, the
-    first of oxlint then eslint that the repo configures and that can run."""
-    if configured_only:
-        use_oxlint = tool_configured(repo, "oxlint") and tool_available(repo, "oxlint")
-        use_eslint = tool_configured(repo, "eslint") and tool_available(repo, "eslint")
-    else:
-        use_oxlint = tool_available(repo, "oxlint")
-        use_eslint = locally_installed(repo, "eslint")
+def first_lint_tool(use_oxlint, use_eslint):
+    """"oxlint" when it is wanted, else "eslint" when that is, else None."""
     if use_oxlint:
         return "oxlint"
     if use_eslint:
         return "eslint"
     return None
+
+
+def web_fix_tool(repo, configured_only=False):
+    """"oxlint", "eslint" or None: the web linter whose `--fix` pass runs on the repo's script files. With
+    `configured_only`, one the repo configures or has in node_modules/.bin, that can run: a configured linter that is
+    not installed does not displace an installed one."""
+    if configured_only:
+        use_oxlint = web_tool_enabled(repo, "oxlint") and tool_available(repo, "oxlint")
+        use_eslint = web_tool_enabled(repo, "eslint") and tool_available(repo, "eslint")
+        return first_lint_tool(use_oxlint, use_eslint)
+
+    return first_lint_tool(tool_available(repo, "oxlint"), locally_installed(repo, "eslint"))
+
+
+def web_check_tool(repo):
+    """"oxlint", "eslint" or None: the first web linter that the repo configures and that can run, for the check-mode
+    lint of `lint_problems`."""
+    use_oxlint = tool_configured(repo, "oxlint") and tool_available(repo, "oxlint")
+    use_eslint = tool_configured(repo, "eslint") and tool_available(repo, "eslint")
+    return first_lint_tool(use_oxlint, use_eslint)
 
 
 def web_tool_launcher(repo, tool):
@@ -111,6 +124,9 @@ def web_lint_command(repo, tool, lint_files, fix):
         # Legacy .eslintrc mode rejects --no-warn-ignored, and with --max-warnings=0
         # the "file ignored" warning for an ignored file would exit 1.
         return [*launcher, *fix_flags, *lint_files]
+    if not fix:
+        # Check mode: only eslint errors are violations, as in eslint's own exit code that CI and pre-commit use.
+        return [*launcher, "--no-warn-ignored", *lint_files]
     return [*launcher, *fix_flags, "--no-warn-ignored", "--max-warnings=0", *lint_files]
 
 
@@ -121,7 +137,7 @@ def uses_eslint_flat_config(repo):
 
 
 def run_web_formatters(repo, lint_files, paths_to_format, configured_only=False):
-    lint_tool = web_lint_tool(repo, configured_only) if lint_files else None
+    lint_tool = web_fix_tool(repo, configured_only) if lint_files else None
     if lint_tool:
         run_quiet(web_lint_command(repo, lint_tool, lint_files, fix=True), repo)
 
@@ -295,7 +311,7 @@ def lint_problems(repo, paths):
     if files.python and ruff_enabled(repo):
         ruff_command = ["ruff", "check", "--force-exclude", "--output-format", "concise", *files.python]
         problems += lint_command_problem(ruff_command, repo)
-    web_tool = web_lint_tool(repo, configured_only=True) if files.lint else None
+    web_tool = web_check_tool(repo) if files.lint else None
     if web_tool:
         problems += lint_command_problem(web_lint_command(repo, web_tool, files.lint, fix=False), repo)
     return problems

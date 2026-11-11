@@ -803,17 +803,12 @@ def review_handed_back_since(session, dirty_at, repo_top):
         return False
     try:
         import handback
-        import handback_store
     except ImportError as error:
         # A missing store or handback module reads as no current hand-back (fail open to the plain review deny).
         hook_input.emit_stderr(f"review-commit-gate: cannot import handback: {error}\n")
         return False
 
-    seen = handback_store.latest_for_repo(session, repo_top)
-    if handback.standing_false_clean_reason(seen) is not None:
-        return False
-    handed_back_at = seen["handback"].get("ts")
-    return isinstance(handed_back_at, (int, float)) and handed_back_at > dirty_at
+    return handback.clean_handback_since(session, repo_top, dirty_at)
 
 
 def earns_credit(repo_dir, repo_top, dirty_at, session):

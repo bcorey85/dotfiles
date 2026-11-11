@@ -76,6 +76,7 @@ import coder_report
 import format_files
 import full_check
 import full_check_gate
+import gate_env
 import handback
 import loop_transcript
 import plan_format
@@ -906,8 +907,8 @@ class LoopRun(full_check_gate.FullCheckSteps):
             return True
 
         if tails:
-            env_hint = ("a test that needs an env var the repo's CI sets: add it under "
-                        f"{plan_format.gate_env_repo_name(self.repo)!r} in {plan_format.personal_gate_env_file()}")
+            env_hint = ("If a test needs an env var the repo's CI sets, add it under "
+                        f"{gate_env.gate_env_repo_name(self.repo)!r} in {gate_env.personal_gate_env_file()}.")
             self.stop("critical-blocker",
                       ["scoped tests failing after the last fix:\n" + "\n\n".join(tails) + "\n" + env_hint])
             return False

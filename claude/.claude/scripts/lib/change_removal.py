@@ -20,10 +20,11 @@ def nonblank_lines(text):
     return Counter(source_text.stripped_lines(text))
 
 
-def added_lines(old_text, new_text):
+def added_lines(old_text, new_text, path=None):
     """The lines new_text holds that old_text does not, as a Counter of line text: a line repeated in both texts
-    counts only for the copies the change added. Formatting-only hunks add nothing (see the module docstring)."""
-    reformatted = source_text.formatting_only_lines(old_text, new_text)
+    counts only for the copies the change added. Formatting-only hunks add nothing (see the module docstring).
+    `path` is the file's path, which tells whether a one-comma group is a tuple."""
+    reformatted = source_text.formatting_only_lines(old_text, new_text, path)
     new_counts = nonblank_lines(new_text) - reformatted.new
     old_counts = nonblank_lines(old_text) - reformatted.old
     return new_counts - old_counts

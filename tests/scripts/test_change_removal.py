@@ -48,6 +48,63 @@ class FormattingOnlyHunkTest(unittest.TestCase):
             ("quote style", "x = 'a'\n", 'x = "a"\n'),
             ("inner whitespace", "x = a+b\n", "x = a + b\n"),
             ("trailing comma", "f(a, b)\n", "f(a, b,)\n"),
+            ("one-argument call", "foo(a)\n", "foo(\n    a,\n)\n"),
+            ("one-argument call, comma inline", "foo(arg)\n", "foo(arg,)\n"),
+            ("one-parameter signature", "def f(a):\n", "def f(a,):\n"),
+            ("call after optional chaining", "cb?.(a)\n", "cb?.(\n  a,\n)\n"),
+            ("macro call", "dbg!(a)\n", "dbg!(\n    a,\n)\n"),
+            ("exploded arrow parameter", "(a) => a\n", "(\n  a,\n) => a\n"),
+            ("exploded generic call", "useState<string>(initial)\n", "useState<string>(\n  initial,\n)\n"),
+            ("exploded turbofish call", "foo::<T>(a)\n", "foo::<T>(\n  a,\n)\n"),
+            ("exploded anonymous function", "function (a) {\n", "function (\n  a,\n) {\n"),
+        ]
+        for message, old, new in cases:
+            with self.subTest(message):
+                self.assertEqual(Counter(), change_removal.added_lines(old, new))
+
+    def test_exploded_js_and_ts_parameter_lists_add_no_lines(self):
+        cases = [
+            ("typed arrow function", "app.ts", "const f = (x: T): R => {\n", "const f = (\n  x: T,\n): R => {\n"),
+            ("anonymous function", "app.js", "const g = function (a) {\n", "const g = function (\n  a,\n) {\n"),
+            ("one-element group", "app.tsx", "const h = (a)\n", "const h = (\n  a,\n)\n"),
+        ]
+        for message, path, old, new in cases:
+            with self.subTest(message):
+                self.assertEqual(Counter(), change_removal.added_lines(old, new, path))
+
+    def test_a_python_tuple_losing_its_comma_is_real_but_a_js_group_is_not(self):
+        old = "x = (1,)\n"
+        new = "x = (1)\n"
+
+        self.assertEqual(Counter({"x = (1)": 1}), change_removal.added_lines(old, new, "mod.py"))
+        self.assertEqual(Counter(), change_removal.added_lines(old, new, "mod.js"))
+
+    def test_a_tuple_rule_applies_to_python_files_only(self):
+        for path in ("a.go", "a.rs", "a.java", None):
+            with self.subTest(path):
+                self.assertEqual(Counter(), change_removal.added_lines("x = (1,)\n", "x = (1)\n", path))
+
+    def test_a_tuple_before_a_colon_losing_its_comma_is_a_real_change(self):
+        cases = [
+            ("in", "if x in (1,):\n", "if x in (1):\n"),
+            ("equality", "if t == (1,):\n", "if t == (1):\n"),
+            ("identity", "elif x is (1,):\n", "elif x is (1):\n"),
+        ]
+        for message, old, new in cases:
+            with self.subTest(message):
+                self.assertEqual(Counter({new.strip(): 1}), change_removal.added_lines(old, new, "mod.py"))
+
+    def test_a_four_thousand_line_replace_hunk_is_normalized_in_linear_time(self):
+        old = "".join(f"call_{n}(a, [b], {{c: d}})\n" for n in range(5000))
+        new = "".join(f"call_{n}(a, [b], {{c: d,}})\n" for n in range(5000))
+
+        self.assertEqual(Counter(), change_removal.added_lines(old, new, "mod.py"))
+
+    def test_a_trailing_comma_in_a_list_or_a_longer_tuple_is_formatting(self):
+        cases = [
+            ("list", "x = [1]\n", "x = [1,]\n"),
+            ("tuple with two elements", "x = (1, 2)\n", "x = (1, 2,)\n"),
+            ("exploded tuple with two elements", "x = (1, 2)\n", "x = (\n    1,\n    2,\n)\n"),
         ]
         for message, old, new in cases:
             with self.subTest(message):

@@ -104,7 +104,7 @@ class GitDisciplineGateTest(unittest.TestCase):
                                          "--no-autostash to the command, or do not set the autostash config. "
                                          "To pull right before a push and keep staged files staged, run "
                                          "`python3 ~/.claude/scripts/tools/pull_keep_index.py <repo> && "
-                                         "git -C <repo> push`. "
+                                         "git -C <repo> push -u origin HEAD`. "
                                          "To bring a base into unfinished work, run `git merge <base>` with the work "
                                          "uncommitted: git stops and changes nothing when the merge touches an "
                                          "edited file. If it stops, commit the work once /review hands back "

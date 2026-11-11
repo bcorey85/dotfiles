@@ -40,6 +40,7 @@ Files: `claude/.claude/scripts/tools/pull_keep_index.py`, `tests/scripts/test_pu
 
 ## Plan Deviations
 
+- 2026-11-10: User sign-off, Brandon Corey, given directly in session agent-evals-5e, which wrote this line. The user said yes. So: ticket #1's quoted-pipe-text case is cut (still denied, fail closed); AC2 stays narrowed to shells; ticket #2's gone upstream exits 1 with the recovery command; ticket #2's no-upstream branch with an origin copy pulls and sets the upstream.
 - 2026-11-10: Phase 2 lookup is `git ls-remote --exit-code origin refs/heads/<branch>`, not `--heads origin <branch>` (tail match). No criterion changed. Adopted by the /code run, ruled by orchestrating session agent-evals-5e, not the user.
 - 2026-11-10: Phase 2 "No upstream" is `branch.<branch>.merge` unset, not `@{u}` failing: a branch whose upstream is set but pruned from origin stops before the pull with the recovery command (unset the upstream, `push -u <remote> HEAD`), so a chained push does not recreate it. No criterion changed (AC3 and AC4 hold). Adopted by the /code run, not the user.
 - 2026-11-10: Phase 2 sets `origin/<branch>` as the upstream after a targeted pull, and exits 1 with the recovery command when that fails. The plan did not name this step. No criterion changed (AC3 and AC4 hold). Adopted by the /code run, not the user.

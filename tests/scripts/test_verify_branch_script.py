@@ -16,6 +16,9 @@ import unittest
 import fake_ledger
 import toolkit_paths
 
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import plan_format
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
 REAL_HOME = pathlib.Path.home()
@@ -329,6 +332,41 @@ class PrepTest(VerifyBranchBase):
 
         self.assertNotIn("gate-env:", done.stdout)
         self.assertEqual([], self.context()["gateEnv"])
+
+    def test_the_verifier_prompt_names_a_session_written_tickets_criteria_owner(self):
+        queue_dir = self.home / "agent-evals" / "queue"
+        queue_dir.mkdir(parents=True)
+        (queue_dir / "item.md").write_text('---\ngenerated: {"by": "claude-code/x", "at": "2026-11-01"}\n---\n')
+        self.task_dir(ticket=TICKET + "\nSource: ~/agent-evals/queue/item.md\n")
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn(f"criteria owner: session — {plan_format.CRITERIA_OWNER_RULES['session']}", done.stdout)
+        self.assertEqual(self.context()["criteria"]["criteriaOwner"]["owner"], "session")
+
+    def test_the_verifier_prompt_names_user_as_the_owner_of_an_ordinary_ticket(self):
+        self.task_dir()
+
+        done = self.prep()
+
+        self.assertIn(f"criteria owner: user — {plan_format.CRITERIA_OWNER_RULES['user']}", done.stdout)
+
+    def test_the_verifier_prompt_names_plan_as_the_owner_of_a_ticket_with_no_criteria_heading(self):
+        self.task_dir(ticket="# LED-9: Thing\n\n## Background\n\nThe thing works.\n")
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn(f"criteria owner: plan — {plan_format.CRITERIA_OWNER_RULES['plan']}", done.stdout)
+
+    def test_a_queue_source_with_no_queue_file_fails_prep(self):
+        self.task_dir(ticket=TICKET + "\nSource: ~/agent-evals/queue/gone.md\n")
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("queue/gone.md", done.stderr)
 
     def test_task_dir_prints_review_step_then_verifier_payload(self):
         self.task_dir()

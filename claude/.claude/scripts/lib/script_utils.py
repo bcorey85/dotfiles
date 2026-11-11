@@ -708,6 +708,20 @@ def agent_transcript_path(hook):
     return subagent_transcript_path(hook["transcript_path"], hook["agent_id"])
 
 
+def frontmatter_value(text, key):
+    """The text after `key:` on the first such line of the file's frontmatter; None when there is no frontmatter or no
+    such key."""
+    frontmatter = FRONTMATTER.match(text)
+    if frontmatter is None:
+        return None
+    key_line = re.compile(rf"^{re.escape(key)}:\s*(.*)$")
+    for line in frontmatter.group(1).splitlines():
+        match = key_line.match(line)
+        if match:
+            return match.group(1)
+    return None
+
+
 def frontmatter_skills(agent_text):
     """The skill names in an agent file's `skills:` frontmatter key: a block list of `- name` lines. An inline
     value after `skills:` raises ValueError."""

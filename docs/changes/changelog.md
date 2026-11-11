@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-900 changes
+901 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -20,6 +20,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Ask the user only about criteria the user or a tracker wrote](notes/2026-11-10-ask-the-user-only-about-criteria-the-user-or-a.md) [rule/global-claude-md, agent/plan-verifier, skill/code, skill/verify-branch, skill/eng-spec] A session rules on cutting or rewording criteria a session wrote (a ticket copied from a session-written queue item) or the plan drafted (a ticket with no criteria heading); only the user's and a tracker's criteria still need the user's sign-off.
 * [The coder's failing-test-first rule moves to the top of its rule list](notes/2026-11-10-the-coder-s-failing-test-first-rule-moves-to-the.md) [skill/coder-core] The coder's failing-test-first line now sits first in its first rule list, so the coder writes and runs a failing test before a small frontend fix where it used to skip the test.
 * [Code stops at every phase end and hands the user the commit line](notes/2026-11-10-code-stops-at-every-phase-end-and-hands-the-user.md) [skill/code] /code no longer goes on to the next phase by itself: every phase end stops for the user's read, and the stop names the commit line to run after reading and staging, so phases no longer pile up uncommitted.
 * [The coder logs or returns every caught error, also when the task asks for a fallback](notes/2026-11-10-the-coder-logs-or-returns-every-caught-error-also.md) [skill/coder-core] The coder's swallowed-error line now says to bind the error in every catch block and use it, and names a catch that only returns a fallback as a swallowed error.

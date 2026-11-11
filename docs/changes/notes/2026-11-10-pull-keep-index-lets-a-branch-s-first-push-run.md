@@ -18,8 +18,10 @@ unmeasured: ""
 ## Change
 
 `scripts/tools/pull_keep_index.py` looks up the upstream before it sets anything aside. With an upstream, it pulls as
-before. "No upstream" means no upstream config (`branch.<branch>.merge` unset): a branch whose upstream is set but
-deleted on origin still goes to `git pull`, which fails, so a chained push does not recreate it. With no upstream
+before. "No upstream" means no upstream config (`branch.<branch>.merge` unset). A branch whose set upstream its
+remote says is gone (`ls-remote --exit-code` exits 2) exits 1 before anything is set aside, naming the gone upstream and the recovery
+(`git branch --unset-upstream`, then `git push -u <remote> HEAD`), so a chained push does not recreate it. A set
+upstream the remote still has goes on to `git pull`, which reads the branch config. With no upstream
 config, it asks origin for `refs/heads/<branch>` (the full ref, so `feature/<branch>` does not count): when origin has
 it, it pulls `origin <branch>` with the same keep-index handling, then sets `origin/<branch>` as the upstream so a
 later bare `git push` works (written as `branch.<branch>.remote` and `.merge` config, so a single-branch clone with no
@@ -36,7 +38,7 @@ non-zero and the `&&` chain stopped before `git push -u`.
 
 The new tests cover no upstream and no remote branch (exit 0, staged files stay staged), a remote branch whose name
 only ends in the local name, a remote branch of the same name (pulled, and `@{u}` then resolves to it), a set upstream
-deleted on origin and pruned (exit 1), a single-branch clone with no `origin/<branch>` ref (pulled, exit 0,
+deleted on origin and pruned (exit 1 with the recovery message, staged files stay staged), a single-branch clone with no `origin/<branch>` ref (pulled, exit 0,
 upstream config, remote and merge, written), a folder where the branch lookup fails (exit 1), and no origin (exit 1).
 
 ## Watch

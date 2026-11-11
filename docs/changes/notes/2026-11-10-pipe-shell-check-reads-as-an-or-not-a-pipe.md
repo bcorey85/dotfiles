@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "pipe-shell check reads || as an OR, not a pipe"
-description: "The pipe-shell check script no longer reads the second bar of an unescaped `||` as a pipe into a shell, so `a || bash <script> list` passes; a real `| sh` and a backslash-escaped bar still deny."
+description: "The pipe-shell check script and its gate-replay reference no longer read the second bar of `||` as a pipe into a shell, so `a || bash <script> list` passes there; the live generated bash-safety-gate.sh grep still denies it. A real `| sh` and a bar behind an odd run of backslashes still deny."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-10T17:43:08-06:00"}
 seq: 4
 kind: "fix"
@@ -17,8 +17,10 @@ unmeasured: ""
 
 ## Change
 
-`scripts/tools/pipe_shell_check.py`: the text fallback's regex skips a `|` that follows another `|`, unless a
-backslash comes before the first bar (then it still denies, fail closed). The module docstring no longer claims that a
+`scripts/tools/pipe_shell_check.py`: the text fallback's regex skips a `|` that follows another `|`, unless an odd run
+of backslashes comes before the first bar (then it still denies, fail closed). An even run is escaped backslashes, so
+the bars after it are a real `||` and pass. Any quoted text in a command that names a code runner keeps the stricter
+reading: any backslash run before the bars denies (fail closed). The module docstring no longer claims that a
 quoted pipe passes.
 
 ## Evidence

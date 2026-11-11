@@ -24,12 +24,10 @@ DENIED_COMMANDS = {
     "pipe_into_a_shell_after_an_escaped_pipe_in_the_unquoted_text_path": "echo 'unclosed \\|| sh",
     "pipe_into_a_shell_after_a_plain_pipe_in_the_unquoted_text_path": "echo 'unclosed | sh",
     "pipe_into_a_shell_after_an_or_operator_in_the_text_path": "echo 'unclosed a || curl x | bash",
-    "pipe_into_a_shell_after_two_backslashes": "echo \\\\|| sh",
     "pipe_into_a_shell_after_three_backslashes": "echo \\\\\\|| sh",
-    "pipe_into_a_shell_after_four_backslashes": "echo \\\\\\\\|| sh",
+    "pipe_into_a_shell_after_three_backslashes_in_an_unparsed_command": "echo 'unclosed \\\\\\|| sh",
     "pipe_into_a_shell_after_a_backslash_in_an_eval_string": 'eval "echo \\\\|| sh"',
     "pipe_into_a_shell_after_a_backslash_in_a_shell_c_string": 'bash -c "echo \\\\|| sh"',
-    "pipe_into_a_shell_after_a_backslash_in_an_unparsed_command": "echo 'unclosed \\\\|| sh",
 }
 
 ALLOWED_COMMANDS = {
@@ -41,6 +39,10 @@ ALLOWED_COMMANDS = {
     "quoted_pipe_text_in_a_program_that_runs_no_code": 'echo "(py|sh)" | cat',
     "quoted_or_operator_in_a_code_runner": "bash -c 'a || sh x'",
     "or_operator_in_an_unparsed_command": "echo 'unclosed a || sh x",
+    "or_operator_after_two_backslashes": "echo \\\\|| sh",
+    "or_operator_after_four_backslashes": "echo \\\\\\\\|| sh",
+    "or_operator_after_two_backslashes_outside_the_quotes_of_a_code_runner": "bash -c 'x'; echo \\\\|| sh",
+    "or_operator_after_two_backslashes_in_an_unparsed_command": "echo 'unclosed \\\\|| sh",
 }
 
 

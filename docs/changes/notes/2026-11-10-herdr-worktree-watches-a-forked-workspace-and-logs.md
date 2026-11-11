@@ -9,7 +9,7 @@ kind: "fix"
 components: ["script/herdr-worktree", "script/herdr-worktree-watch", "script/detach"]
 evidence: ["forked-worktree-workspace-closes-about-a-minute"]
 watches: []
-test: "tests/scripts/test_herdr_worktree_watch.py::HerdrWorktreeWatchTest::test_a_gone_workspace_logs_literal_worktree_checkout_session_and_placeholder_workspace_id_prompt"
+test: "tests/scripts/test_herdr_worktree_watch.py::HerdrWorktreeWatchTest::test_a_gone_workspace_logs_one_line_with_literal_values_that_captures_the_new_workspace_id"
 asked: ""
 proof: []
 unmeasured: ""
@@ -17,8 +17,8 @@ unmeasured: ""
 
 ## Change
 
-- New `scripts/.local/bin/herdr-worktree-watch <workspace> <worktree> <main checkout> <pane>`: polls `herdr-api pane get` once a second for the fork's session id, bounded by `HERDR_WORKTREE_WATCH_SECONDS` (default 120), sleeps the rest of the wait, then runs `herdr-api workspace get`. An open workspace logs `still open`. A `workspace_not_found` reply logs `herdr worktree open --cwd <main> --path <worktree> --focus` (under tuios, `herdr-api workspace create`) and `herdr-dev <worktree> <new workspace id> <session> 'Go on with the work in this worktree; your brief is already in context.'` (a resume prompt, never the original brief, which the fork already holds), or `claude --resume` when no session id showed, to `herdr-worktree-watch.log` in the worktree's git dir, and runs `herdr notification show` (not under tuios). Any other error logs the raw reply and exits 1. It never reopens the workspace itself.
-- `herdr-worktree --fork`: starts the watcher detached once the fork pane shows claude, prints the watch line, and names both recovery steps in `--help`.
+- New `scripts/.local/bin/herdr-worktree-watch <workspace> <worktree> <main checkout> <pane>`: polls `herdr-api pane get` once a second for the fork's session id, bounded by `HERDR_WORKTREE_WATCH_SECONDS` (default 120), sleeps the rest of the wait, then runs `herdr-api workspace get`. An open workspace logs `still open`. A `workspace_not_found` reply logs one paste-ready line, `ws=$(herdr worktree open --cwd <main> --path <worktree> --focus | jq -r '.result.workspace.workspace_id // empty') && [ -n "$ws" ] && herdr-dev <worktree> "$ws" <session> 'Go on with the work in this worktree; your brief is already in context.'` with no number prefix, so it pastes as written (under tuios the reopen is `herdr-api workspace create` and `&& herdr-api workspace focus "$ws" >/dev/null` follows the `[ -n "$ws" ]` test; the prompt is a resume prompt, never the original brief, which the fork already holds). When no session id showed, it logs the reopen command and then `claude --resume` in the worktree. The log goes to `herdr-worktree-watch.log` in the worktree's git dir, and the watcher runs `herdr notification show` (not under tuios). Any other error logs the raw reply and exits 1. It never reopens the workspace itself.
+- `herdr-worktree --fork`: starts the watcher detached once the fork pane shows claude, prints the watch line, and names the recovery line (and the `claude --resume` fallback) in `--help`. A create reply with no workspace id exits 1 with `herdr-worktree: create reply has no workspace id: <reply>` before any pane or watcher command runs.
 - New `scripts/.local/bin/detach`: runs a command in its own session (`setsid`, else perl `POSIX::setsid` on macOS). `bookmark` and `research` use it in place of their own `setsid` line.
 - Deploy: run `install/stow` so ~/.local/bin links the new `detach` and `herdr-worktree-watch`. Until then `herdr-worktree --fork`, `bookmark` and `research` stop with `<path> missing; run install/stow`. `bookmark` and `research` log the capture first, so they print `bookmark: logged to bookmarks.org, no source stub: <path> missing; run install/stow` and `research: logged to questions.org, no answer stub: <path> missing; run install/stow`.
 
@@ -28,7 +28,7 @@ Queue item: a forked worktree workspace closed about a minute after `herdr-workt
 
 ## Result
 
-`tests/scripts/test_herdr_worktree_watch.py` (13 tests) and new cases in `tests/scripts/test_herdr_worktree.py` (25 tests in the file) fail before and pass after. `bash tests/run.sh` passes.
+`tests/scripts/test_herdr_worktree_watch.py` (16 tests) and new cases in `tests/scripts/test_herdr_worktree.py` (26 tests in the file) fail before and pass after. `bash tests/run.sh` passes.
 
 ## Watch
 

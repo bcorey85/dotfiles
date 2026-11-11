@@ -390,6 +390,19 @@ esac""")
                 self.assertFalse((self.root / "repo-new-thing").exists())
                 self.assertFalse(self.herdr_args.exists())
 
+    def test_a_create_reply_without_a_workspace_id_exits_1_and_runs_no_pane_or_watcher_command(self):
+        write_stub(self.bin_dir / "herdr", "echo '{\"result\":{}}'")
+        other_calls = self.root / "other-calls"
+        for name in ("herdr-api", "herdr-dev", "herdr-worktree-watch"):
+            write_stub(self.bin_dir / name, f'echo {name} >> {other_calls}')
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn('herdr-worktree: create reply has no workspace id: {"result":{}}', finished.stderr)
+        time.sleep(0.5)
+        self.assertFalse(other_calls.exists())
+
     def test_a_run_without_fork_starts_no_watcher(self):
         watch_args = self.stub_watcher()
 
@@ -406,7 +419,10 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn("herdr worktree open --cwd", finished.stdout)
         self.assertIn("herdr-api workspace create --cwd <worktree>", finished.stdout)
-        self.assertIn("herdr-dev <worktree> <new workspace id> <fork session id>", finished.stdout)
+        self.assertIn("jq -r '.result.workspace.workspace_id // empty') && [ -n \"$ws\" ]", finished.stdout)
+        self.assertIn("&& herdr-dev", finished.stdout)
+        self.assertIn('&& herdr-api workspace focus "$ws" >/dev/null', finished.stdout)
+        self.assertIn('<worktree> "$ws" <fork session id>', finished.stdout)
 
 
 class HerdrDevTest(unittest.TestCase):

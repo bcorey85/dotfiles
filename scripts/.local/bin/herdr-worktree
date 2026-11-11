@@ -33,12 +33,15 @@
 # workspace is gone it writes the recovery steps to herdr-worktree-watch.log in
 # the worktree's git dir and shows a herdr notification that points at that log
 # (none under tuios):
-# first `herdr worktree open --cwd <main checkout> --path <worktree> --focus`
-# (under tuios `herdr-api workspace create --cwd <worktree> --label <worktree
-# folder name> --focus`), then
-# `herdr-dev <worktree> <new workspace id> <fork session id> '<resume prompt>'`,
-# a short "go on" prompt, not the original brief
-# (`claude --resume` in the worktree when the session id is unknown).
+# one paste-ready line:
+# `ws=$(<reopen> | jq -r '.result.workspace.workspace_id // empty') && [ -n "$ws" ]
+# && herdr-dev <worktree> "$ws" <fork session id> '<resume prompt>'`, where <reopen> is
+# `herdr worktree open --cwd <main checkout> --path <worktree> --focus` (under
+# tuios `herdr-api workspace create --cwd <worktree> --label <worktree folder
+# name> --focus`, with `&& herdr-api workspace focus "$ws" >/dev/null` after
+# the `[ -n "$ws" ]` test) and the prompt is a short "go on", not the original brief.
+# When the session id is unknown it logs the reopen command, then
+# `claude --resume` in the worktree.
 #
 # Every pane in the new workspace starts in the worktree, so popups that
 # inherit the pane cwd (prefix+d, prefix+g, prefix+space, ...) see it too.
@@ -187,7 +190,11 @@ else
         --path "$worktree" --label "$label" --focus) \
         || { echo "herdr-worktree: herdr worktree create failed" >&2; exit 1; }
 fi
-ws=$(jq -r '.result.workspace.workspace_id' <<<"$created")
+ws=$(jq -r '.result.workspace.workspace_id // empty' <<<"$created")
+if [ -z "$ws" ]; then
+    echo "herdr-worktree: create reply has no workspace id: $created" >&2
+    exit 1
+fi
 
 # A new worktree has no node_modules, so install node dependencies for each
 # lockfile at the root or one folder down before any pane runs repo tooling.

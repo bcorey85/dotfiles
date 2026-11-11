@@ -56,13 +56,13 @@ the recovery. It never reopens the workspace by itself: the user may have closed
    `perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' --` when `setsid` is missing) and
    print one stderr line: `herdr-worktree: watching workspace <ws> for <N>s; recovery steps go to <log path> if it
    closes`. Then exit 0. A run without `--fork` starts no watcher.
-3. `herdr-worktree` header: add a paragraph that names both recovery steps above, so `--help` shows them.
+3. `herdr-worktree` header: add a paragraph that names the recovery line (and the `claude --resume` fallback), so `--help` shows them.
 
 #### Automated Verification
 
 - New tests in `tests/scripts/test_herdr_worktree_watch.py` (script path from one env var, stubs from `stubs.py`
   like `test_herdr_worktree.py`, `HERDR_WORKTREE_WATCH_SECONDS=0`): a workspace that `workspace get` still finds logs
-  `still open` and calls no notification; a gone workspace writes both recovery lines with the literal worktree, main
+  `still open` and calls no notification; a gone workspace writes one recovery line with the literal worktree, main
   checkout and session id to the log and calls `herdr notification show`; a gone workspace with an empty session id
   logs the `claude --resume` line; under `TUIOS_SOCKET` no notification is called and the log still holds the steps; a
   session id that appears after the first poll is picked up, and a session id that never appears is polled once a
@@ -130,8 +130,20 @@ Prompt edits only.
 - Phase 1 step 2: the herdr-dev recovery step passes a fixed resume prompt ("Go on with the work in this worktree;
   your brief is already in context.") in place of `"<prompt>"`, so the fork does not restart its brief. The
   orchestrator (agent-evals-5e, 2026-11-10) ruled it; AC2 still holds.
+- Phase 1 step 1: with a session id, the watcher logs one paste-ready line,
+  `ws=$(<reopen> | jq -r '.result.workspace.workspace_id // empty') && [ -n "$ws" ] && herdr-dev <worktree> "$ws" <session>
+  '<resume prompt>'`, in place of two steps with a `<new workspace id>` placeholder, so every value is literal
+  (branch review 4 ask). Adopted by the coder-worktree-fixes lane session, 2026-11-11, under the verify-branch rule
+  that an ask cutting no AC takes its proposed change; not a user sign-off. With no session id, step 1 is the reopen and step 2 is `claude --resume`, as before.
 - Phase 3: the user ruled "ship" on the class-closure edit (44bab1ba), 2026-11-10, in session agent-evals-5e.
 - Phase 3 step 2: the orchestrator (agent-evals-5e, 2026-11-10) ruled that the members left alone get their own
   packet field, which the hand-back shows even when the closure receipt is missing. This is not a user sign-off.
 - AC5 and AC8 cut, AC7 reworded from "receipt" to "hand-back": user sign-off, Brandon Corey, 2026-11-10, written
   by the user's own command.
+
+- 2026-11-11: Adopt plan change. Ruled by the session, not the user at 2026-11-11 00:29.
+
+  The ruling: Adopted by the coder-worktree-fixes lane session (session ruling, not the user) on 2026-11-11 under the verify-branch rule; AC2 unchanged; Plan Deviations bullet names this
+
+  The disagreement:
+  docs/plans/coder-worktree-fixes/plan.md:43-46 [plan-drift] — PLAN-IMPACT: Phase 1's step text still describes two logged steps with a `<new workspace id>` placeholder. The code now logs one line that captures the id. The new Plan Deviations bullet (lines 133-136) records the change but cites "branch review 4 ask" as its authority. No orchestrator or user ruling is named, while the sibling bullets each name who ruled and when. Question: did the orchestrator or the user approve the one-line form? If so, who and when? Change: add that name and date to the deviation bullet. acceptance_criteria: none (AC2's literal recovery steps hold either way).

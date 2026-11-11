@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-900 changes, 22 with a measured gain, 265 behavior changes that no intake metric reads.
+901 changes, 22 with a measured gain, 266 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [The coder's failing-test-first rule moves to the top of its rule list](notes/2026-11-10-the-coder-s-failing-test-first-rule-moves-to-the.md).
+Latest change: 2026-11-10, [The backend error-class rule names raise and a built-in Python error, so the coder follows it in Python too](notes/2026-11-10-the-backend-error-class-rule-names-raise-and-a.md).
 
 ## Top gains
 

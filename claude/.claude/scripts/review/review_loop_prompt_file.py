@@ -15,6 +15,9 @@ import json
 import pathlib
 import sys
 
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / "../lib")]
+import script_utils
+
 # Who runs the reviewers (--reviewers): `claude -p` calls of the loop script, or the main session as its subagents.
 REVIEWERS_HEADLESS = "headless"
 REVIEWERS_MAIN = "main"
@@ -78,7 +81,7 @@ def read_findings(header):
         findings = json.loads(pathlib.Path(findings_file).read_text())
     except (OSError, json.JSONDecodeError) as error:
         raise PromptFileError(f"{findings_file}: {error}; expected a JSON list of finding texts") from error
-    if not isinstance(findings, list) or not all(isinstance(item, str) and item.strip() for item in findings):
+    if not script_utils.is_nonblank_string_list(findings):
         raise PromptFileError(f"{findings_file}: expected a JSON list of non-empty finding texts")
     return findings
 

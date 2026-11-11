@@ -268,10 +268,11 @@ def record_reviewed(session, repo_dir, tree=None):
     return True
 
 
-def is_reviewed(session, repo_dir):
+def is_reviewed(session, repo_dir, tree=None):
     """True when repo_dir's working tree, notes paths left out, is exactly a tree that a converged review covered:
-    the one recorded for the session, or one in the shared record that any session wrote."""
-    found = reviewed_fingerprint(repo_dir)
+    the one recorded for the session, or one in the shared record that any session wrote. `tree` is a
+    (top, hash) pair that `reviewed_fingerprint` already returned, used in place of fingerprinting again."""
+    found = tree or reviewed_fingerprint(repo_dir)
     if found is None:
         return False
     top, tree_hash = found

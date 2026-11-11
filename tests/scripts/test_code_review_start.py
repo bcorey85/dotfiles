@@ -36,11 +36,11 @@ class CodeReviewStartTest(unittest.TestCase):
         (self.repo / "docs/plans/p/spec.md").write_text(PLAN)
         (self.repo / "handoff.txt").write_text("  Phase 1 is done.\n")
 
-    def start(self, *extra):
+    def start(self, *extra, env=None):
         return subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "1",
                                "handoff.txt", "--base", BASE, *extra], cwd=self.repo, capture_output=True, text=True,
                               check=False,
-                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session", **(env or {})})
 
     def test_a_dry_run_prints_the_header_the_later_phase_files_and_the_handoff(self):
         done = self.start("--dry-run")
@@ -51,6 +51,25 @@ class CodeReviewStartTest(unittest.TestCase):
             "mode: review-first", "caller: code", "lane: lane-a", f"repo: {self.repo}", "plan: docs/plans/p/spec.md",
             "phase: 1", "later-phase files: src/two.py"])
         self.assertEqual(handoff.strip(), "Phase 1 is done.")
+
+    def test_the_prompt_gate_env_line_carries_the_personal_file_assignment(self):
+        subprocess.run(["git", "-C", str(self.repo), "remote", "add", "origin", "git@x:org/app.git"], check=True)
+        gate_env_file = self.repo / "personal-gate-env.json"
+        gate_env_file.write_text(json.dumps({"app": ["PLUGINS=1"]}))
+
+        done = self.start("--dry-run", env={"CLAUDE_GATE_ENV_FILE": str(gate_env_file)})
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("gate-env: PLUGINS=1\n", done.stdout)
+
+    def test_a_malformed_personal_gate_env_file_stops_the_start_with_a_traceback_naming_the_file(self):
+        gate_env_file = self.repo / "personal-gate-env.json"
+        gate_env_file.write_text("{nope")
+
+        done = self.start("--dry-run", env={"CLAUDE_GATE_ENV_FILE": str(gate_env_file)})
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(str(gate_env_file), done.stderr)
 
     def test_a_later_phase_file_this_phase_already_changed_is_not_a_later_phase_file(self):
         subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",

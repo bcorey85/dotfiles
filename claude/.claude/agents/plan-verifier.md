@@ -37,7 +37,7 @@ Read plan + ticket in full. A `plan: none` dispatch is ticket-only: verdict the 
 
 Verdict every ticket AC from the ticket's own words, never from the plan's or `acceptance-criteria.md`'s restatement of it. Use the labels the dispatch lists (`Ticket #n`; when the ticket has no Acceptance or Requirements heading, the `ACn` lines the dispatch takes from `acceptance-criteria.md`), one row each, and start each row's Source item with its label. With `ACn` labels, also read each section of the ticket: a ticket requirement that no `ACn` covers gets its own **`missing`** row that quotes it. A `Comment #n` label is a ticket comment: one that adds or changes a criterion is verdicted like a ticket AC from the comment's words; any other gets **`no-criterion`**.
 
-- A ticket AC the plan cuts (`What We're NOT Doing`), narrows, rewords, or hands to another repo or team is **`overridden`**. It passes only when the plan records the user's explicit sign-off: who and when. Without one it is **`missing`**: quote the AC and the plan line that dropped it.
+- A ticket AC the plan cuts (`What We're NOT Doing`), narrows, rewords, or hands to another repo or team is **`overridden`**. It passes when the plan records the user's explicit sign-off: who and when. When the dispatch's `criteria owner:` is `session`, a recorded session ruling (who and when) also passes; when it is `plan`, a recorded session ruling passes only while the ticket's own words are still met. Without one it is **`missing`**: quote the AC and the plan line that dropped it.
 - An AC about what a user sees (an answer, a screen, a message) is never `done` from the code or prose meant to cause it. Verdict it **`needs-manual`** unless a captured run shows the behavior.
 
 ### Every item
@@ -109,7 +109,7 @@ Execute what a terminal can drive and record by editing the item's line **in the
 ### Verdicts
 | Source item | Verdict | Evidence |
 |-------------|---------|----------|
-| Ticket #n: <ticket AC> / <plan criterion> | done / partial / missing / needs-manual / overridden (sign-off recorded) | `file:line` or cmd result |
+| Ticket #n: <ticket AC> / <plan criterion> | done / partial / missing / needs-manual / overridden (sign-off or ruling recorded) | `file:line` or cmd result |
 
 ### Acceptance criteria
 [Per id: covered (test `file:line`) | manual (on the smoke checklist) | ⚠️ MISSING — quote the criterion. Or "no acceptance-criteria.md".]
@@ -133,4 +133,4 @@ Execute what a terminal can drive and record by editing the item's line **in the
 
 - **Not a code review** — a noticed bug gets one line under Gaps.
 - **Not test-intent** — pinning is `test-intent-reviewer`'s question.
-- **Not plan judgment** — check delivery against plan-as-written (+ Deviations); a wrong plan is a user finding, not your rewrite. A plan that drops a ticket AC without sign-off is a `missing` item, not a user finding.
+- **Not plan judgment** — check delivery against plan-as-written (+ Deviations); a wrong plan is a user finding, not your rewrite. A plan that drops a ticket AC without the sign-off or ruling above is a `missing` item, not a user finding.

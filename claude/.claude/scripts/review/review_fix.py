@@ -13,7 +13,7 @@ still judges.
       --aikido "<path>:<line>=<comment_id>"                                                 (fix, repeatable)
       --pr <number>  (fix) the PR the Aikido comments are on; without it gh asks the current branch
       --launch <launch.json>  the run's launch record, which `launch` adds to the packet command it prints; asks-done
-                     reads the fix run's flags from it
+                     reads the fix run's flags from it, and `packet` reads its `user_ruled` flag
       With empty stdin, `packet` reads this session's latest review-loop hand-back: the loop script stores it
       itself (write_handback_rows) after `launch`, and handback.py's hook stores it for a dispatched agent. It
       refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
@@ -22,8 +22,9 @@ still judges.
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
-  review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review]] [--base <ref>] [--file <path>]...
-                       [--handoff <file>] [--fast|--deep] [--iter N] [--lane <lane>] [--detach]
+  review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--user-ruled]]
+                       [--base <ref>] [--file <path>]... [--handoff <file>] [--fast|--deep] [--iter N]
+                       [--lane <lane>] [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch
                                          --help` lists the flags). It returns when the loop asks for reviewers
                                          (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop
@@ -46,7 +47,9 @@ still judges.
                                          first asks-done has logged.
                                          `ACTION: launch-fix-run` when the run has no
                                          launch flags on record: the findings file is written and the line is
-                                         `review_fix.py launch --fix <file> --iter <n> --repo <repo> --detach`.
+                                         `review_fix.py launch --fix <file> [--user-ruled] --iter <n> --repo <repo>
+                                         --detach`. Both launch lines carry `--user-ruled` once the asks-done that
+                                         printed the fix run, or any later --correct, ran --by user.
                                          An accepted or rejected outcome on an ask whose proposed change is conditional
                                          ("if not confirmed, revert X") is refused with exit 2 and nothing logged:
                                          answer it with 'modified:<the change to make, with no condition>'.
@@ -92,6 +95,7 @@ import handoff_files
 import plan_format
 import review_asks
 import review_launch
+import review_user_ruled
 import script_utils
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
@@ -100,9 +104,9 @@ from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_LOGGER,
     CLAUDE_DIR,
-    CORRECT_OPEN_KEY,
     PENDING_LAUNCH_KEY,
     REVIEW_FIX_COMMAND,
+    SAME_RUN_STATE_KEYS,
     UsageError,
     argument_parser,
     has_unanswered_asks,
@@ -168,9 +172,11 @@ def packet_arguments(argv):
     parser.add_argument("--launch")
     options = parser.parse_args(argv)
     options.relaunch_args = []
+    options.user_ruled = False
     if options.launch:
         try:
             options.relaunch_args = review_launch.read_relaunch_args(options.launch)
+            options.user_ruled = review_launch.read_user_ruled(options.launch)
         except review_launch.LaunchError as error:
             raise UsageError(str(error)) from error
     if options.pr is not None and not options.pr.isdigit():
@@ -472,32 +478,6 @@ def post_aikido_replies(packet, targets, state, pr_number=None):
 
 # ---------- the packet ----------
 
-# State keys a repeat of the same packet keeps from the previous state.
-SAME_RUN_STATE_KEYS = (
-    "stage",
-    "asks",
-    "jumped",
-    "aikido_posted",
-    "escapes_logged",
-    "asks_logged",
-    "asks_redispatched",
-    "asks_launch_line",
-    "ask_outcomes",
-    "ask_notes",
-    CORRECT_OPEN_KEY,
-    "last_asks_launch_line",
-    "last_ask_outcomes",
-    "last_ask_notes",
-    "asks_deviations_printed",
-    "plan_impact",
-    "plan_impact_held",
-    "plan_impact_applied",
-    "carried_findings",
-    "waiting_packets",
-    "relaunch_args",
-)
-
-
 def new_state(options, packet, packet_id):
     previous = read_state() or {}
     same_run = previous.get("packet_id") == packet_id
@@ -652,6 +632,8 @@ def command_packet(argv):
         return 2
     packet = handback.load(message)
     handback.print_dropped_asks(packet)
+    if options.user_ruled:
+        review_user_ruled.skipped_become_asks(packet)
     stored_status = packet["status"]
     packet["scoped_tests"] = review_launch.unrun_scoped_tests_note(
         options.relaunch_args, stored_status, packet["scoped_tests"])
@@ -771,7 +753,11 @@ def fill_packet_ask_ids(packet, state):
 
 def discuss_commands():
     commands = []
-    for by, words in (("user", "the decision in one line"), ("session", "your reason")):
+    rulers = (
+        (plan_format.USER_RULING, "the decision in one line"),
+        (plan_format.SESSION_RULING, "your reason"),
+    )
+    for by, words in rulers:
         for decision in ("adopt", "keep"):
             commands.append(f'{REVIEW_FIX_COMMAND} decide {decision} --by {by} --ruling "<{words}>" {PLAN_ARG_NOTE}')
     return commands
@@ -887,7 +873,7 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
     state.pop("plan_impact_held", None)
 
     spec = state.get("spec_iter")
-    session_note = " The session ruled, not the user." if by == "session" else ""
+    session_note = " The session ruled, not the user." if by == plan_format.SESSION_RULING else ""
     lines = [f"plan_impact: RESOLVED - {choice}.{session_note} Ruling: {one_line(ruling)}",
              f"iter={state['iter']}"]
     if spec is not None:

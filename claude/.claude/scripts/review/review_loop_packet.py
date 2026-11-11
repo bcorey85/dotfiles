@@ -26,6 +26,15 @@ def located(finding):
     return f"{finding.path}:{finding.line}" if finding.path else UNLOCATED
 
 
+def skipped_entry(entry):
+    """The packet's skipped_fp entry. `given` marks a skip of a finding the caller gave the fix coder."""
+    packet_entry = {"item": entry["item"].text, "reason": entry["reason"], "file_line": located(entry["item"]),
+                    "class": entry["item"].finding_class}
+    if entry.get("given"):
+        packet_entry["given"] = True
+    return packet_entry
+
+
 def finding_entry(finding):
     return {"finding": finding.text, "file_line": located(finding)}
 
@@ -66,8 +75,7 @@ def packet_message(outcome):
         "iter": outcome["iter"],
         "review_round": outcome["review_round"],
         "fixed": [finding_entry(finding) for finding in outcome["fixed"]],
-        "skipped_fp": [{"item": entry["item"].text, "reason": entry["reason"], "file_line": located(entry["item"])}
-                       for entry in outcome["skipped_fp"]],
+        "skipped_fp": [skipped_entry(entry) for entry in outcome["skipped_fp"]],
         "blockers": outcome["blockers"],
         "findings_remaining": [{"disposition": "fix", **finding_entry(finding)}
                                for finding in outcome["open_fixes"]],

@@ -51,6 +51,8 @@ FINDINGS_JSON = "findings.json"
 HANDOFF_NAME = "handoff.txt"
 # The launch record's flags for a later fix run of the same review: `packet --launch` stores them for asks-done.
 RELAUNCH_KEY = "relaunch_args"
+# True in the launch record of a fix run whose findings the user accepted.
+USER_RULED_KEY = "user_ruled"
 FINDING_START = "- "
 FINDINGS_FORM = "expected `- <finding>` at column 0, an indented continuation line, or a blank line"
 
@@ -69,6 +71,9 @@ def launch_parser():
     parser.add_argument("--fix", metavar="FINDINGS_FILE",
                         help="fix-first: the fix coder applies these findings, then the loop reviews")
     parser.add_argument("--no-review", action="store_true", help="with --fix: apply the findings and review nothing")
+    parser.add_argument("--user-ruled", action="store_true",
+                        help="with --fix: the user accepted these findings; a finding the fix coder skips comes "
+                             "back as an ask")
     parser.add_argument("--base", help="review every change since this ref, commits included")
     parser.add_argument("--file", action="append", default=[], dest="files",
                         help="review only this file (repeatable): absolute, or relative to the repo root")
@@ -89,6 +94,8 @@ def launch_arguments(argv):
     options = launch_parser().parse_args(argv)
     if options.no_review and not options.fix:
         raise LaunchError("--no-review needs --fix: a review-first run with no review does nothing")
+    if options.user_ruled and not options.fix:
+        raise LaunchError("--user-ruled needs --fix: only a fix run applies findings the user accepted")
     if options.iter < 0:
         raise LaunchError(f"--iter {options.iter} is negative; expected the rounds an earlier run used")
     if any(not command.strip() for command in options.tests):
@@ -199,7 +206,7 @@ def packet_args(options, launch_file):
 
 def relaunch_args(options, repo, paths, handoff_file):
     """The flags a later fix run of this review carries: the same repo, range, files, reviewer model, lane,
-    handoff and test commands. `--fix`, `--iter` and `--detach` are the caller's to add."""
+    handoff and test commands. `--fix`, `--iter`, `--user-ruled` and `--detach` are the caller's to add."""
     args = ["--repo", str(repo)]
     if options.base:
         args += ["--base", options.base]
@@ -251,6 +258,17 @@ def read_relaunch_args(launch_file):
     return args
 
 
+def read_user_ruled(launch_file):
+    """Whether a launch record says the user accepted its findings. A record written before the key existed says no."""
+    try:
+        user_ruled = reviewer_dispatch.read_launch_record(launch_file, USER_RULED_KEY, default=False)
+    except reviewer_dispatch.ManifestError as error:
+        raise LaunchError(f"--launch {error}") from error
+    if not isinstance(user_ruled, bool):
+        raise LaunchError(f"--launch {launch_file}: {USER_RULED_KEY} is not true or false")
+    return user_ruled
+
+
 def command_launch(argv, loop_script):
     """Runs the launch. The skill runs it as a background command, so its completion is the wake-up."""
     options = launch_arguments(argv)
@@ -293,7 +311,8 @@ def command_launch(argv, loop_script):
     script_utils.write_text_atomically(handoff_file, handoff)
     launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
     launch_record = {"packet_args": packet_args(options, launch_file),
-                     RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file)}
+                     RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file),
+                     USER_RULED_KEY: options.user_ruled}
     script_utils.write_text_atomically(launch_file, json.dumps(launch_record) + "\n")
     print(f"The review loop runs as a script; its log is {log_path}")
     sys.stdout.flush()

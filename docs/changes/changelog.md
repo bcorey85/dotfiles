@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-910 changes
+911 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [The test reviewer opens the fixture of every test that asserts an order](notes/2026-11-11-the-test-reviewer-opens-the-fixture-of-every-test.md) [agent/test-reviewer] The test reviewer now opens the fixture of every test that asserts an order and reports a fixture already in the expected order as a fix. On Sonnet it used to miss that gap in half its reviews of a real-size phase.
 * [The reviewer reports a query on an unindexed column as a fix](notes/2026-11-10-the-reviewer-reports-a-query-on-an-unindexed.md) [agent/code-reviewer] The code reviewer now reports a new query that filters or sorts on a column with no index as a fix, where it used to stay silent or raise it as a question or a nit on TypeScript backends.
 * [The coder validates handler input, keeps caught errors, uses the repo error type, sorts lists and writes the failing test first](notes/2026-11-10-the-coder-validates-handler-input-keeps-caught.md) [skill/coder-core, rule/backend] Five one-line rules reach the coder: two in its core skill (never drop a caught error; for a bug fix, no source edit until a new test has run and failed) and three in a new path-scoped rules/backend.md (validate handler fields, repo error type, explicit sort).
 
@@ -1078,6 +1079,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [The test reviewer opens the fixture of every test that asserts an order](notes/2026-11-11-the-test-reviewer-opens-the-fixture-of-every-test.md) - No intake number reads it: the work logs do not tag a test-reviewer finding as a fixture finding. Measured on a TypeScript billing app, a small TypeScript case and a small Django case; the Django case shows no gain because the reviewer already reports it there. No run on any other stack or on a frontend test.
 * [The coder writes its scripts in the scratchpad, never in the repo tree](notes/2026-11-10-the-coder-writes-its-scripts-in-the-scratchpad.md) - No intake number counts scripts a coder leaves in the repo tree.
 * [The backend error-class rule names raise and a built-in Python error, so the coder follows it in Python too](notes/2026-11-10-the-backend-error-class-rule-names-raise-and-a.md) - No intake number reads this behavior: work escape descriptions are hashed, so no class count maps to the rule. Stacks with no run: React and Vue. One task per stack, Sonnet only, plain prompt only.
 * [The coder's failing-test-first rule moves to the top of its rule list](notes/2026-11-10-the-coder-s-failing-test-first-rule-moves-to-the.md) - No intake number reads the order of a coder's test and source edits on a bug fix. Measured on React and a TypeScript backend with the line at the top; Vue and Django held with the line in its old place and were not rerun.

@@ -383,30 +383,29 @@ def command_after_wrappers(words, peel_containers=True):
     nohup, time, command, exec, builtin, uv/poetry/pipenv run, a leading group word (GROUP_WORDS) and, unless
     peel_containers is False, a docker exec or run call. Words that name no wrapper come back as they are; an empty
     list when the wrappers name no command."""
-    while True:
-        words = without_assignments(words)
-        if not words:
-            return words
-
-        peeled = _peel_wrapper_once(words, peel_containers)
-        if peeled is None:
-            return words
-        words = peeled
+    word_lists = list(_peeled_word_lists(words, peel_containers))
+    return word_lists[-1]
 
 
 def wrapper_chain(words):
     """The basename of each wrapper word that command_after_wrappers drops, in order, then the basename of the final
     command word. Empty when the words name no command."""
-    chain = []
+    return [os.path.basename(step[0]) for step in _peeled_word_lists(words) if step]
+
+
+def _peeled_word_lists(words, peel_containers=True):
+    # Each word list on the way through the wrappers, assignments dropped: first the whole command, then the words
+    # after each peeled wrapper, last the command the wrappers run. Only the last one can be empty: the wrappers
+    # named no command.
     while True:
         words = without_assignments(words)
+        yield words
         if not words:
-            return chain
+            return
 
-        chain.append(os.path.basename(words[0]))
-        peeled = _peel_wrapper_once(words, True)
+        peeled = _peel_wrapper_once(words, peel_containers)
         if peeled is None:
-            return chain
+            return
         words = peeled
 
 

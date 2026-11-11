@@ -442,7 +442,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         """Run the formatters the repo configures on the reviewed and touched files, so the tree the hand-back records
         is already formatted and a formatter run after the loop leaves the reviewed tree as it was. The changed files
         count as touched."""
-        paths = sorted(set(self.review_scope()) | self.files_touched)
+        paths = self.reviewed_and_touched_files()
         changed = format_files.run_formatters(self.repo, paths, include_python=True, configured_only=True,
                                               check_command=check_command or "")
         self.files_touched.update(changed)

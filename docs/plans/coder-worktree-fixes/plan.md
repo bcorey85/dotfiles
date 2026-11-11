@@ -135,6 +135,9 @@ Prompt edits only.
   '<resume prompt>'`, in place of two steps with a `<new workspace id>` placeholder, so every value is literal
   (branch review 4 ask). Adopted by the coder-worktree-fixes lane session, 2026-11-11, under the verify-branch rule
   that an ask cutting no AC takes its proposed change; not a user sign-off. With no session id, step 1 is the reopen and step 2 is `claude --resume`, as before.
+- Phase 1 step 1, tuios: tuios's `workspace get` reply for a missing workspace is unchecked (tuios is not on this
+  machine). An unknown reply logs "could not check workspace" and exits 1, so it fails safe. The orchestrator
+  (agent-evals-5e, 2026-11-10) ruled it a manual smoke check; not a user sign-off.
 - Phase 3: the user ruled "ship" on the class-closure edit (44bab1ba), 2026-11-10, in session agent-evals-5e.
 - Phase 3 step 2: the orchestrator (agent-evals-5e, 2026-11-10) ruled that the members left alone get their own
   packet field, which the hand-back shows even when the closure receipt is missing. This is not a user sign-off.

@@ -205,6 +205,46 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual((self.repo / "h").read_text(), "2\n")
         self.assertEqual(self.status(), ["M  f"])
+        upstream = self.git(self.repo, "rev-parse", "--abbrev-ref", "@{u}").strip()
+        self.assertEqual(upstream, "origin/shared")
+
+    def test_a_branch_whose_upstream_was_deleted_on_origin_exits_1_so_a_chained_push_does_not_run(self):
+        self.git(self.repo, "checkout", "-q", "-b", "gone")
+        self.git(self.repo, "push", "-q", "-u", "origin", "gone")
+        self.git(self.remote, "branch", "-q", "-D", "gone")
+        self.git(self.repo, "fetch", "-q", "--prune")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn("git pull failed", finished.stderr)
+
+    def test_a_single_branch_clone_pulls_the_remote_branch_and_sets_its_upstream(self):
+        self.git(self.repo, "push", "-q", "origin", "HEAD:refs/heads/solo")
+        single = self.tmp / "single"
+        self.git(self.tmp, "clone", "-q", "--single-branch", "-b", "master", str(self.remote), str(single))
+        self.git(single, "fetch", "-q", "origin", "solo")
+        self.git(single, "checkout", "-q", "-b", "solo", "FETCH_HEAD")
+        self.assertEqual(self.git(single, "branch", "-r", "--list", "origin/solo"), "")
+        self.repo = single
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        merge = self.git(single, "config", "--get", "branch.solo.merge").strip()
+        self.assertEqual(merge, "refs/heads/solo")
+        self.assertEqual(self.git(single, "config", "--get", "branch.solo.remote").strip(), "origin")
+
+    def test_a_folder_that_is_not_a_repo_exits_1_naming_the_failed_branch_lookup(self):
+        not_a_repo = self.tmp / "plain"
+        not_a_repo.mkdir()
+        env = {**os.environ, **GIT_ENV, "GIT_CEILING_DIRECTORIES": str(self.tmp)}
+
+        finished = subprocess.run([sys.executable, str(SCRIPT), str(not_a_repo)], capture_output=True, text=True,
+                                  env=env)
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("git branch --show-current failed", finished.stderr)
 
     def test_a_branch_with_no_upstream_and_no_origin_exits_1_with_the_git_error(self):
         self.git(self.repo, "checkout", "-q", "-b", "fresh")

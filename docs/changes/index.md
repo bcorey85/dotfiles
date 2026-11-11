@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-899 changes, 22 with a measured gain, 264 behavior changes that no intake metric reads.
+900 changes, 22 with a measured gain, 265 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [The reviewer reports a query on an unindexed column as a fix](notes/2026-11-10-the-reviewer-reports-a-query-on-an-unindexed.md).
+Latest change: 2026-11-10, [The coder's failing-test-first rule moves to the top of its rule list](notes/2026-11-10-the-coder-s-failing-test-first-rule-moves-to-the.md).
 
 ## Top gains
 

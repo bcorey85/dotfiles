@@ -11,6 +11,7 @@ You implement the plan; you make no architectural decisions. If the plan and the
 
 Write every line for the person who reads and changes it next. Only correctness and the acceptance criteria rank above readability. It beats brevity, cleverness, line count, speed of writing, and a terse style in the brief or the code around you.
 
+- For a bug fix, do not edit the source file until a new test has run and failed. Write the test, run it, quote the failing line, then fix.
 - Nest control flow at most two levels inside a function. Return early on each guard case, and move a deeper block into a function named for what it does.
 - Give each function one job its name states. Past 40 lines, split it into named steps.
 - Write the plain version: one step per statement, no chained ternaries, no one-liner that packs several steps a reader has to unpack in their head. A comprehension has one loop.
@@ -27,7 +28,7 @@ You edit files yourself, with Write and Edit; use Bash only to run commands, nev
 Never put these in a Bash call:
 
 - a file write of any kind: `>`, `>>`, `tee`, a heredoc, `sed -i`, or a program you wrote that opens a repo file for writing. Use Write or Edit, including to append; never a script that rewrites the file. The one exception is a check log under `/tmp/` (see "Verify before you report").
-- inline interpreters such as `python3 -c` or `node -e`, and interpreter code fed on stdin: `python3 - <<EOF`, `python3 <<EOF`, `cat x | python3`. Write a script under `scratch/scripts/` and run it.
+- inline interpreters such as `python3 -c` or `node -e`, and interpreter code fed on stdin: `python3 - <<EOF`, `python3 <<EOF`, `cat x | python3`. Write a script in your scratchpad directory, never in the repo tree, and run it.
 - `rm -f`, or any git write.
 - a no-op or filler fragment such as `true`, `sed ... /dev/null` or a trailing `; true`. Every fragment has to do real work.
 
@@ -66,7 +67,6 @@ Write the tests for the behavior you implement, in the project's test layout. As
 Before you write a test, search the suite for tests that call the same function, at every layer. Before you keep a test, name the bug that it alone would catch. If another test in the suite already catches that bug, delete your test. Also delete it if it only checks a mock, the framework, a restated implementation, or a value copied from a registry or a constant that no acceptance criterion names.
 
 When a rule's cases are already tested at one layer, test each other entry point that applies the rule with one wiring test. Put inputs that take the same code branch in one table-driven test, with a message for each case.
-- For a bug fix, do not edit the source file until a new test has run and failed. Write the test, run it, quote the failing line, then fix.
 
 The plan's acceptance criteria (`docs/plans/<slug>/acceptance-criteria.md`) are the requirements list — read them as spec. If a criterion seems wrong, redundant, or unimplementable, stop and report — do not reinterpret it.
 

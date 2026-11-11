@@ -1,0 +1,126 @@
+#!/bin/bash
+# Check that a forked herdr workspace is still open, and name the recovery
+# steps when it is gone. Started detached by herdr-worktree --fork.
+#
+# Usage: herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane>
+#                             <parent session>
+#
+# <parent session> is the session id of the conversation that was forked (empty
+# when unknown). The pane can report it before the fork's own id, so the
+# watcher keeps polling while the pane reports it; a parent id that is still
+# the only one at the end of the wait counts as no session id.
+# After the argument check, an error message goes to stderr (the launcher sends
+# stderr to the log, so it lands there once, and a direct run shows it). The
+# usage error and a failed git rev-parse also go to stderr, because the log
+# path is not known until rev-parse succeeds.
+#
+# Reads the fork's session id from the claude pane, waits
+# HERDR_WORKTREE_WATCH_SECONDS (default 120), then asks herdr for the
+# workspace. An open workspace logs `still open`. A workspace that is gone gets
+# its recovery steps written to herdr-worktree-watch.log in the worktree's git
+# dir, and a herdr notification names that log (none under tuios, which has no
+# notification command). The recovery steps' format is in
+# `herdr-worktree --help`. Any other failure of the workspace check is
+# reported on stderr as "could not check workspace" (the log under the launcher)
+# and exits 1. It never reopens the workspace: the user may have closed it on
+# purpose.
+
+set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+
+[ $# -eq 5 ] || { echo "usage: herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane> <parent session>" >&2; exit 1; }
+workspace="$1"
+worktree="$2"
+main_checkout="$3"
+claude_pane="$4"
+parent_session="$5"
+
+log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
+
+watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
+# Step 2's herdr-dev call resumes a fork that already holds its brief, so it
+# never retypes it.
+# Keep the text free of single quotes: the log wraps it in them.
+RESUME_PROMPT="Go on with the work in this worktree; your brief is already in context."
+
+# herdr-worktree checks this value before it starts the watcher; this check
+# covers a direct run, and stderr shows the message.
+if [[ ! "$watch_seconds" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "HERDR_WORKTREE_WATCH_SECONDS must be a whole number of seconds, got: $watch_seconds" >&2
+    exit 1
+fi
+
+# The session hook can report the fork's id after the agent shows up, and the
+# pane starts as a fork of the parent conversation, so herdr can report the
+# parent's id first. Poll until the id is non-empty and is not the parent's,
+# bounded by the wait. The pane may already be gone; an empty session id is
+# reported in the steps.
+is_unsettled() {
+    [ -z "$1" ] || [ "$1" = "$parent_session" ]
+}
+
+read_session() {
+    herdr-api pane get "$claude_pane" 2>/dev/null | jq -r '.result.pane.agent_session.value // empty' \
+        || echo ""
+}
+
+# The wait is wall time, so the poll calls count against it as well as the sleeps.
+start_seconds=$SECONDS
+session=$(read_session)
+while is_unsettled "$session" && [ $((SECONDS - start_seconds)) -lt "$watch_seconds" ]; do
+    sleep 1
+    session=$(read_session)
+done
+# Only the parent's id after the whole wait means the fork's id never showed.
+[ "$session" != "$parent_session" ] || session=""
+
+waited=$((SECONDS - start_seconds))
+remaining=$((watch_seconds - waited))
+if [ "$remaining" -gt 0 ]; then
+    sleep "$remaining"
+fi
+
+if workspace_error=$(herdr-api workspace get "$workspace" 2>&1 >/dev/null); then
+    echo "workspace $workspace still open" >>"$log"
+    exit 0
+fi
+
+# herdr writes its error JSON to stderr. A restarting server or a shim that
+# does not answer also exits non-zero, so only a workspace_not_found reply
+# means the workspace is closed.
+error_code=$(jq -r '.error.code // empty' <<<"$workspace_error" 2>/dev/null) || error_code=""
+if [ "$error_code" != "workspace_not_found" ]; then
+    echo "could not check workspace $workspace: ${workspace_error:-no reply from herdr-api}" >&2
+    exit 1
+fi
+
+# %q quotes each value so, after its number, step 1 pastes into a shell as
+# written and the herdr-dev step 2 does once `<ws>` is replaced. The fallback
+# step 2 is prose; only its worktree path pastes, as a cd target.
+# tuios answers no worktree.create, so there the workspace opens on the
+# existing worktree through herdr-api.
+label=$(basename "$worktree")
+if [ -n "${TUIOS_SOCKET:-}" ]; then
+    reopen="herdr-api workspace create --cwd $(printf %q "$worktree") --label $(printf %q "$label") --focus"
+else
+    reopen="herdr worktree open --cwd $(printf %q "$main_checkout") --path $(printf %q "$worktree") --focus"
+fi
+focus_step=""
+# tuios ignores create's --focus, and herdr-dev's layout calls need the client
+# on this workspace.
+[ -z "${TUIOS_SOCKET:-}" ] || focus_step="herdr-api workspace focus <ws> >/dev/null && "
+{
+    echo "workspace $workspace closed. Recovery steps:"
+    echo "1. $reopen"
+    if [ -n "$session" ]; then
+        # <ws> stays a placeholder: the user reads the id off step 1's reply.
+        echo "2. ${focus_step}herdr-dev $(printf %q "$worktree") <ws> $(printf %q "$session") '$RESUME_PROMPT'"
+        echo "<ws> is the workspace id that step 1 prints (.result.workspace.workspace_id)"
+    else
+        echo "2. the fork's session id could not be read; run claude --resume in $(printf %q "$worktree")"
+    fi
+}>>"$log"
+
+[ -z "${TUIOS_SOCKET:-}" ] || exit 0
+herdr notification show "herdr-worktree: workspace closed" \
+    --body "workspace $workspace for $worktree closed; recovery steps are in $log" --sound request >/dev/null

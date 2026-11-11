@@ -1,0 +1,23 @@
+# tairiki dimmed (deparr/tairiki.nvim): the plugin's own terminal colours.
+palette = 0=#3c3e3f
+palette = 1=#a66a69
+palette = 2=#989e6b
+palette = 3=#b8a274
+palette = 4=#7d8f9c
+palette = 5=#96859c
+palette = 6=#849692
+palette = 7=#afb2b0
+palette = 8=#858886
+palette = 9=#c37d7c
+palette = 10=#b3ba7e
+palette = 11=#d9bf89
+palette = 12=#93a8b8
+palette = 13=#b19db8
+palette = 14=#9bb0ac
+palette = 15=#bbbebc
+background = #1d1f21
+foreground = #afb2b0
+cursor-color = #afb2b0
+cursor-text = #1d1f21
+selection-background = #323435
+selection-foreground = #afb2b0

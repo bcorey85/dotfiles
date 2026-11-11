@@ -60,10 +60,15 @@ def remove_live_base_trees():
         shutil.rmtree(tree.parent, ignore_errors=True)
 
 
+def lint_finding_texts(problems):
+    """One finding text per (command text, output) lint problem."""
+    return [f"lint failed (`{command}`), output:\n{output}" for command, output in problems]
+
+
 class FullCheckSteps:
     """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix,
-    expected_red, and provides stop(status, remaining), repair(call_name, findings) and
-    mark_repaired(findings, changed)."""
+    expected_red, and provides review_scope(), stop(status, remaining), repair(call_name, findings),
+    mark_repaired(findings, changed) and format_reviewed_files(check_command)."""
 
     def init_full_check_state(self):
         self.full_check = ""
@@ -75,9 +80,13 @@ class FullCheckSteps:
         self.check_details = {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
 
     def full_check_pass(self, check_command):
-        """The full check, with one coder repair when it fails outside a spec file. A check that did not run, in CI
-        or past its time limit, and one that exited 0 with no runner summary or ran no test, is no failure and gets no
-        repair; one the environment could not run stops as `setup-fault`."""
+        """The lint pass runs first, and a lint stop skips the check. Then the full check, with one coder repair when
+        it fails outside a spec file. A check that did not run, in CI or past its time limit, and one that exited 0 with
+        no runner summary or ran no test, is no failure and gets no repair; one the environment could not run stops
+        as `setup-fault`."""
+        if not self.lint_pass(check_command):
+            return
+
         tail = self.run_check(check_command)
         if full_check.is_setup_fault_result(self.full_check):
             self.stop_on_setup_fault(check_command, tail)
@@ -95,6 +104,30 @@ class FullCheckSteps:
         _report, _diffs, gate_changed = self.repair("coder-gate", gate_records)
         self.mark_repaired(gate_records, gate_changed)
         self.recheck_full_check(check_command, "full check still failing after one repair")
+
+    def reviewed_and_touched_files(self):
+        """The sorted union of the review scope and the files a repair touched."""
+        return sorted(set(self.review_scope()) | self.files_touched)
+
+    def lint_pass(self, check_command):
+        """Lint the reviewed and touched files with the repo's configured linters. A violation gets one coder repair
+        and the formatters, then a second lint; one still failing stops as `critical-blocker`. True when the files
+        are clean, or no linter applies."""
+        problems = format_files.lint_problems(self.repo, self.reviewed_and_touched_files())
+        if not problems:
+            return True
+
+        lint_records = [parse_finding(text) for text in lint_finding_texts(problems)]
+        _report, _diffs, lint_changed = self.repair("coder-lint", lint_records)
+        self.mark_repaired(lint_records, lint_changed)
+        self.format_reviewed_files(check_command)
+        problems = format_files.lint_problems(self.repo, self.reviewed_and_touched_files())
+        if not problems:
+            return True
+
+        output = "\n".join(f"`{command}`:\n{text}" for command, text in problems)
+        self.stop("critical-blocker", ["lint still failing after one repair:\n" + output])
+        return False
 
     def run_check(self, check_command):
         """Run the full check, keep its result, command and details for the packet. Returns the log's tail.
@@ -174,8 +207,12 @@ class FullCheckSteps:
         return bool(changed)
 
     def recheck_full_check(self, check_command, failure_heading):
-        """The full check after a coder repair. A failure the formatters can fix is fixed and checked once more. Then a
+        """The lint pass runs first, so every repair that ends here is linted, and a lint stop skips the check. Then
+        the full check after a coder repair. A failure the formatters can fix is fixed and checked once more. Then a
         setup fault stops as `setup-fault`, any other failure as `critical-blocker`."""
+        if not self.lint_pass(check_command):
+            return
+
         tail = self.run_check(check_command)
         if full_check.is_failure(self.full_check) and self.autofix_touched_files():
             tail = self.run_check(check_command)

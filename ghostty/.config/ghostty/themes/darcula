@@ -1,0 +1,25 @@
+# darcula — dark only (xiantang/darcula-dark.nvim ground #2b2b2b). ANSI from
+# IntelliJ's Darcula console: the plugin's own terminal map paints slot 8 #4c4c4c,
+# unreadable on this ground.
+palette = 0=#3c3f41
+palette = 1=#f43753
+palette = 2=#98be65
+palette = 3=#ffc66d
+palette = 4=#6897bb
+palette = 5=#9876aa
+palette = 6=#6fafbd
+palette = 7=#c9d0d3
+palette = 8=#808080
+palette = 9=#f43753
+palette = 10=#c9d05c
+palette = 11=#ffc24b
+palette = 12=#b3deef
+palette = 13=#d3b987
+palette = 14=#73cef4
+palette = 15=#eeeeee
+background = #2b2b2b
+foreground = #c9d0d3
+cursor-color = #c9d0d3
+cursor-text = #2b2b2b
+selection-background = #484848
+selection-foreground = #eeeeee

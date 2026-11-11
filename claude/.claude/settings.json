@@ -156,7 +156,6 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "fable",
   "skillOverrides": {
     "artifact-capabilities": "user-invocable-only",
     "artifact-design": "user-invocable-only",

@@ -1,0 +1,23 @@
+# token dark (ThorstenRhau/token contrib/ghostty), verbatim.
+palette = 0=#1d1d1c
+palette = 1=#d68585
+palette = 2=#8fb78c
+palette = 3=#b99d4a
+palette = 4=#81a5c4
+palette = 5=#b195ca
+palette = 6=#7dbbba
+palette = 7=#b3aea5
+palette = 8=#8a8884
+palette = 9=#f4906f
+palette = 10=#a0c89d
+palette = 11=#f7c699
+palette = 12=#8fb1cb
+palette = 13=#bea5d4
+palette = 14=#88c0c0
+palette = 15=#c3c0b8
+background = #262624
+foreground = #c3c0b8
+cursor-color = #f4906f
+cursor-text = #262624
+selection-background = #3a3a37
+selection-foreground = #c3c0b8

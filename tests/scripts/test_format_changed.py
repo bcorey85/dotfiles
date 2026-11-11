@@ -165,14 +165,22 @@ class FormatChangedTest(unittest.TestCase):
         self.repo.tool("oxfmt")
         self.turn({"a.ts": "1", "b.json": "1"})
         self.assertEqual(
-            self.repo.calls(), [("npx", ["oxlint", "--fix", "a.ts"]), ("npx", ["oxfmt", "a.ts", "b.json"])]
+            self.repo.calls(), [("oxlint", ["--fix", "a.ts"]), ("npx", ["oxfmt", "a.ts", "b.json"])]
         )
 
-    def test_local_eslint_is_used_without_oxlint(self):
+    def test_local_eslint_without_flat_config_omits_flat_only_flags(self):
         self.repo.tool("eslint", local=True)
         self.turn({"a.vue": "1", "b.md": "1"})
         self.assertEqual(self.repo.calls(), [
-            ("npx", ["eslint", "--fix", "--no-warn-ignored", "--max-warnings=0", "a.vue"]),
+            ("eslint", ["--fix", "a.vue"]),
+            ("npx", ["--yes", "prettier", "--write", "a.vue", "b.md"])])
+
+    def test_local_eslint_is_used_without_oxlint(self):
+        self.repo.tool("eslint", local=True)
+        self.repo.put("eslint.config.js", "export default []")
+        self.turn({"a.vue": "1", "b.md": "1"})
+        self.assertEqual(self.repo.calls(), [
+            ("eslint", ["--fix", "--no-warn-ignored", "--max-warnings=0", "a.vue"]),
             ("npx", ["--yes", "prettier", "--write", "a.vue", "b.md"])])
 
     def test_local_oxlint_wins_over_eslint(self):
@@ -180,7 +188,7 @@ class FormatChangedTest(unittest.TestCase):
         self.repo.tool("oxlint", local=True)
         self.repo.tool("oxfmt", local=True)
         self.turn({"a.js": "1"})
-        self.assertEqual(self.repo.calls(), [("npx", ["oxlint", "--fix", "a.js"]), ("npx", ["oxfmt", "a.js"])])
+        self.assertEqual(self.repo.calls(), [("oxlint", ["--fix", "a.js"]), ("npx", ["oxfmt", "a.js"])])
 
     def test_format_only_files_skip_the_linter(self):
         self.repo.tool("oxlint")

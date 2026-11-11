@@ -132,3 +132,4 @@ Prompt edits only.
 - Phase 2 step 2 and Phase 4: reverted before merge on the orchestrator's ruling (agent-evals-5e, 2026-11-10). The
   rule meter's off arm already held 8 of 8 for both lines (CD01, WT01), so they cost tokens and change nothing.
   The phase 2 scratchpad line ships.
+- Phase 3: the user ruled "ship" on the class-closure edit (44bab1ba), 2026-11-10, in session agent-evals-5e.

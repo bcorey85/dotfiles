@@ -145,9 +145,9 @@ class FullCheckSteps:
 
     def scoped_failures_pre_existing(self, real_failures):
         """True when every red scoped test command, each a (command, outcome, output) from
-        coder_gate.run_scoped_tests_with_failures, fails as its base run does on HEAD without the working-tree changes,
-        by full_check.is_pre_existing. A new failing test, a new error line or a base run that passes makes it False.
-        Each command's base run happens once per loop."""
+        coder_gate.scoped_run (ScopedRun.real_failures), fails as its base run does on HEAD without
+        the working-tree changes, by full_check.is_pre_existing. A new failing test, a new error line or a base run
+        that passes makes it False. Each command's base run happens once per loop."""
         if not real_failures:
             return False
 

@@ -13,7 +13,7 @@ still judges.
       --aikido "<path>:<line>=<comment_id>"                                                 (fix, repeatable)
       --pr <number>  (fix) the PR the Aikido comments are on; without it gh asks the current branch
       --launch <launch.json>  the run's launch record, which `launch` adds to the packet command it prints; asks-done
-                     reads the fix run's flags from it, and `packet` reads its `user_ruled` flag
+                     reads the fix run's flags from it, and `packet` reads its `user_ruled` findings
       With empty stdin, `packet` reads this session's latest review-loop hand-back: the loop script stores it
       itself (write_handback_rows) after `launch`, and handback.py's hook stores it for a dispatched agent. It
       refuses when the session has no dispatch on record. When the loop ended without handing back, it prints
@@ -22,9 +22,9 @@ still judges.
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
-  review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--user-ruled]]
-                       [--base <ref>] [--file <path>]... [--handoff <file>] [--fast|--deep] [--iter N]
-                       [--lane <lane>] [--detach]
+  review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--user-ruled <N>]...]
+                       [--base <ref>] [--file <path>]... [--handoff <file>] [--test <cmd>]... [--fast|--deep]
+                       [--iter N] [--lane <lane>] [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch
                                          --help` lists the flags). It returns when the loop asks for reviewers
                                          (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop
@@ -47,14 +47,18 @@ still judges.
                                          first asks-done has logged.
                                          `ACTION: launch-fix-run` when the run has no
                                          launch flags on record: the findings file is written and the line is
-                                         `review_fix.py launch --fix <file> [--user-ruled] --iter <n> --repo <repo>
-                                         --detach`. Both launch lines carry `--user-ruled` once the asks-done that
-                                         printed the fix run, or any later --correct, ran --by user.
+                                         `review_fix.py launch --fix <file> [--user-ruled <N>]... --iter <n>
+                                         --repo <repo> --detach`. Both launch lines carry `--user-ruled <N>` for
+                                         each finding N of the findings file whose ask the user answered
+                                         (asks-done or --correct --by user); a finding only a session
+                                         answered carries none, and a session correction that changes a
+                                         user-ruled ask's answer drops its `--user-ruled <N>`.
                                          An accepted or rejected outcome on an ask whose proposed change is conditional
                                          ("if not confirmed, revert X") is refused with exit 2 and nothing logged:
                                          answer it with 'modified:<the change to make, with no condition>'.
                                          --correct <outcome>... re-answers the asks while the printed fix run has
-                                         not launched: it logs a row for each changed ask, rewrites the findings file
+                                         not launched: it logs a row for each changed ask (an unchanged ask keeps
+                                         its earlier decider), rewrites the findings file
                                          and prints the launch line again (`ACTION: done` when no ask is left to
                                          apply). It refuses after the launch, while the first asks-done still has
                                          unlogged asks, and for a packet other than the current one.
@@ -173,7 +177,7 @@ def packet_arguments(argv):
     parser.add_argument("--launch")
     options = parser.parse_args(argv)
     options.relaunch_args = []
-    options.user_ruled = False
+    options.user_ruled = []
     if options.launch:
         try:
             options.relaunch_args = review_launch.read_relaunch_args(options.launch)
@@ -635,11 +639,8 @@ def command_packet(argv):
         return 2
     packet = handback.load(message)
     handback.print_dropped_asks(packet)
-    if options.user_ruled:
-        review_user_ruled.skipped_become_asks(packet)
     stored_status = packet["status"]
-    packet["scoped_tests"] = review_launch.unrun_scoped_tests_note(
-        options.relaunch_args, stored_status, packet["scoped_tests"])
+    review_user_ruled.apply_user_ruled(packet, options.user_ruled)
     packet["status"] = capped_review.effective_status(packet, dispatched_repo())
     capped_defer = packet["status"] != stored_status
     if unreviewed_in_a_row:

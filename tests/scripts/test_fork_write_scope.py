@@ -82,7 +82,6 @@ class PendingLaunchTest(unittest.TestCase):
         (git_dir / "review-fix").mkdir()
         (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
         self.stop_file = str(git_dir / "code-phase" / "review-stop.md")
-        self.other_file = str(git_dir / "code-phase" / "stop.md")
         self.state_file = git_dir / "review-fix" / "state.json"
 
     def test_review_stop_is_denied_while_a_fix_run_is_pending_and_the_reason_names_the_line(self):
@@ -91,6 +90,7 @@ class PendingLaunchTest(unittest.TestCase):
         self.assertEqual(decision(result), "deny")
         reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn(self.LAUNCH_LINE, reason)
+        self.assertIn("review-stop.md cannot be written yet", reason)
         self.assertIn("stop and tell the user", reason)
         self.assertIn("`asks_launch_pending` key", reason)
         self.assertIn(str(self.state_file.resolve()), reason)
@@ -118,7 +118,10 @@ class PendingLaunchTest(unittest.TestCase):
 
     def test_another_run_folder_file_is_allowed_while_a_fix_run_is_pending(self):
         self.state_file.write_text(json.dumps({"asks_launch_pending": self.LAUNCH_LINE}))
-        self.assertEqual(decision(run_hook(self.other_file)), "allow")
+        for file_name in ("stop.md", "notes.md"):
+            with self.subTest(file_name):
+                other_file = str(pathlib.Path(self.stop_file).parent / file_name)
+                self.assertEqual(decision(run_hook(other_file)), "allow")
 
     def test_a_non_code_fork_write_is_allowed_while_a_fix_run_is_pending(self):
         self.state_file.write_text(json.dumps({"asks_launch_pending": self.LAUNCH_LINE}))

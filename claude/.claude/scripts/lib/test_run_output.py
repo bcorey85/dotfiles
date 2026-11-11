@@ -67,6 +67,16 @@ def runner_summaries(output, limit=MAX_RUNNER_SUMMARIES):
     return list(dict.fromkeys(ordered))[:limit]
 
 
+def command_summaries_text(summaries):
+    """Each (command, runner summary lines) pair as `command: summary lines`, joined by ` | `. A command whose runner
+    printed no summary reads `no runner summary`."""
+    parts = []
+    for command, summary_lines in summaries:
+        summary = ", ".join(summary_lines) or "no runner summary"
+        parts.append(f"{command}: {summary}")
+    return " | ".join(parts)
+
+
 def command_without_piped_stages(command):
     """The command text with each pipeline stage that feeds a later stage left out: the last stage owns the output
     and the exit code, so an earlier stage's report never reaches them. A command that cannot be read as shell

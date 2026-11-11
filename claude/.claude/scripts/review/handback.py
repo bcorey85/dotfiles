@@ -554,7 +554,7 @@ def full_check_lines(packet):
     if packet["full_check"].startswith(("not run", "unverified", "pre-existing", full_check.CHECK_ONLY_PASSED)):
         lines.append("Full check: " + packet["full_check"])
     if packet["scoped_tests"]:
-        lines.append("Scoped tests after the last fix: " + packet["scoped_tests"])
+        lines.append("Scoped tests: " + packet["scoped_tests"])
     if packet["check_changed"]:
         lines.append("Changed by the full check, not by the coder (restore with `git checkout --` or keep): "
                      + ", ".join(packet["check_changed"]))

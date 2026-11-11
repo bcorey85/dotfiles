@@ -587,8 +587,8 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.gate_set(setup_fault, command_error)
 
         self.gate_hook()
-        scoped_result, _tails = load_gate_module().run_scoped_tests(str(self.repo), [setup_fault, command_error], (),
-                                                                    log_path)
+        scoped_result = load_gate_module().scoped_run(str(self.repo), [setup_fault, command_error], (),
+                                                      log_path).result
 
         hook_outcome = self.stored_gate()["coders"]["a1"]["result"]
         scoped_outcome = scoped_result.split(":")[0].replace(" ", "-")
@@ -630,7 +630,7 @@ class RunCommandsTests(unittest.TestCase):
         return self.gate.run_commands({"repoRoot": str(self.repo), "commands": list(commands), "env": env or {}})
 
     def test_a_failing_command_reports_its_exit_code_and_both_streams(self):
-        failures, skipped, _, _ = self.run_gate_commands("echo to-stdout; echo to-stderr >&2; exit 3")
+        failures, skipped, _, _, _ = self.run_gate_commands("echo to-stdout; echo to-stderr >&2; exit 3")
 
         self.assertEqual([], skipped)
         (_command, outcome, output), = failures
@@ -639,9 +639,21 @@ class RunCommandsTests(unittest.TestCase):
         self.assertIn("to-stderr", output)
 
     def test_the_gate_variables_reach_the_command(self):
-        failures, _, _, _ = self.run_gate_commands('test "$GATE_PROBE" = set', env={"GATE_PROBE": "set"})
+        failures, _, _, _, _ = self.run_gate_commands('test "$GATE_PROBE" = set', env={"GATE_PROBE": "set"})
 
         self.assertEqual([], failures)
+
+    def test_a_command_that_ran_to_its_end_records_its_runner_summary_and_no_other_command_does(self):
+        finished = 'echo "2 passed in 0.1s"'
+        timed_out = "sleep 30"
+        skipped = "echo {files}"
+
+        with mock.patch.object(self.gate, "COMMAND_TIMEOUT_SECONDS", 1):
+            run = self.run_gate_commands(finished, timed_out, skipped)
+
+        self.assertEqual([(finished, ["2 passed in 0.1s"])], run.summaries)
+        self.assertEqual([timed_out], [command for command, _output, _timeout in run.timed_out])
+        self.assertEqual([skipped], run.skipped)
 
     def test_a_timeout_kills_a_child_that_holds_the_pipes_open(self):
         marker = self.repo / "survived"
@@ -650,7 +662,7 @@ class RunCommandsTests(unittest.TestCase):
 
         command = f"echo before; (sleep 3; touch {marker}) & wait"
 
-        failures, _, timed_out, _ = self.run_gate_commands(command)
+        failures, _, timed_out, _, _ = self.run_gate_commands(command)
 
         self.assertLess(time.monotonic() - started, 3)
         self.assertEqual([], failures)
@@ -666,23 +678,125 @@ class RunCommandsTests(unittest.TestCase):
         command = "echo partial-marker && sleep 30"
 
         with mock.patch.object(self.gate, "COMMAND_TIMEOUT_SECONDS", 1):
-            result, tails = self.gate.run_scoped_tests(str(self.repo), [command], (), log_path)
+            run = self.gate.scoped_run(str(self.repo), [command], (), log_path)
 
-        self.assertEqual(f"not run (timeout): {command}; full output: {log_path}", result)
-        self.assertEqual([], tails)
+        self.assertEqual(f"not run (timeout): {command}; full output: {log_path}", run.result)
+        self.assertEqual([], run.tails)
         log_text = log_path.read_text()
         self.assertIn(f"$ {command}\ntimeout\n", log_text)
         self.assertIn("partial-marker", log_text)
+
+    def test_a_scoped_run_with_no_budget_left_names_the_commands_that_never_started(self):
+        log_path = self.repo / "scoped-tests.log"
+        marker = self.repo / "ran.txt"
+        command = f"echo ran > {marker}"
+
+        run = self.gate.scoped_run(str(self.repo), [command], (), log_path, 0)
+
+        self.assertEqual(f"not run (time budget used up): {command}", run.result)
+        self.assertEqual([], run.tails)
+        self.assertFalse(marker.exists())
+
+    def test_a_scoped_run_with_one_command_timed_out_and_another_never_started_names_both(self):
+        log_path = self.repo / "scoped-tests.log"
+        partial = self.gate.CommandRun([], [], [("slow", "partial", 30)], ["later"], [])
+
+        with mock.patch.object(self.gate, "run_commands", return_value=partial):
+            run = self.gate.scoped_run(str(self.repo), ["slow", "later"], (), log_path, 100)
+
+        self.assertTrue(run.result.startswith("not run (timeout): slow"), run.result)
+        self.assertIn("not run (time budget used up): later", run.result)
+        self.assertEqual([], run.unnamed_lines)
+        self.assertTrue(run.gave_no_result)
+
+    def test_a_scoped_run_where_the_second_command_cannot_start_names_only_that_command(self):
+        log_path = self.repo / "scoped-tests.log"
+        ran = ("echo one", ["1 passed"])
+        partial = self.gate.CommandRun([], [], [], ["echo two"], [ran])
+
+        with mock.patch.object(self.gate, "run_commands", return_value=partial):
+            run = self.gate.scoped_run(str(self.repo), ["echo one", "echo two"], (), log_path, 100)
+
+        self.assertEqual("not run (time budget used up): echo two", run.result)
+        self.assertEqual([ran], run.summaries)
+        self.assertEqual([], run.unnamed_lines)
+        self.assertTrue(run.gave_no_result)
+
+    def test_a_scoped_run_lists_a_timed_out_command_as_unrun_even_when_a_command_error_hides_it(self):
+        log_path = self.repo / "scoped-tests.log"
+        error_output = "ERROR: file or directory not found: missing/test_x.py"
+        partial = self.gate.CommandRun([self.gate.GateFailure("bad", "exit 4", error_output)], [],
+                                       [("slow", "partial", 30)], [], [])
+
+        with mock.patch.object(self.gate, "run_commands", return_value=partial):
+            run = self.gate.scoped_run(str(self.repo), ["bad", "slow"], (), log_path)
+
+        self.assertTrue(run.result.startswith("command error:"), run.result)
+        self.assertEqual(["not run: slow"], run.unnamed_lines)  # command error result leaves the timeout unnamed
+        self.assertTrue(run.gave_no_result)
+
+    def scoped_run_of(self, failures, timed_out, not_started, commands):
+        log_path = self.repo / "scoped-tests.log"
+        partial = self.gate.CommandRun(failures, [], timed_out, not_started, [])
+        with mock.patch.object(self.gate, "run_commands", return_value=partial):
+            return self.gate.scoped_run(str(self.repo), commands, (), log_path, 100)
+
+    def test_a_failed_run_lists_the_unrun_command_error_and_setup_fault_commands_its_result_leaves_out(self):
+        failures = [self.gate.GateFailure("real", "exit 1", "FAILED tests/test_a.py::test_x - assert 0"),
+                    self.gate.GateFailure("bad", "exit 4", "ERROR: file or directory not found: missing/test_x.py"),
+                    self.gate.GateFailure("env", "exit 2", "ModuleNotFoundError: No module named 'sqlalchemy'")]
+
+        run = self.scoped_run_of(failures, [], ["later"], ["real", "bad", "env", "later"])
+
+        self.assertTrue(run.result.startswith("failed:"), run.result)
+        self.assertEqual(["not run: later", "command error: bad", "setup fault: env"], run.unnamed_lines)
+        self.assertTrue(run.gave_no_result)
+
+    def test_a_command_error_run_lists_only_its_setup_fault_command(self):
+        failures = [self.gate.GateFailure("bad", "exit 4", "ERROR: file or directory not found: missing/test_x.py"),
+                    self.gate.GateFailure("env", "exit 2", "ModuleNotFoundError: No module named 'sqlalchemy'")]
+
+        run = self.scoped_run_of(failures, [], [], ["bad", "env"])
+
+        self.assertTrue(run.result.startswith("command error:"), run.result)
+        self.assertEqual(["setup fault: env"], run.unnamed_lines)
+        self.assertTrue(run.gave_no_result)
+
+    def test_a_timed_out_run_with_a_never_started_command_has_no_unnamed_lines(self):
+        run = self.scoped_run_of([], [("slow", "partial", 30)], ["later"], ["slow", "later"])
+
+        self.assertTrue(run.result.startswith("not run (timeout):"), run.result)
+        self.assertEqual([], run.unnamed_lines)
+        self.assertTrue(run.gave_no_result)
+
+    def test_a_setup_fault_run_with_an_unrun_command_names_each_no_result_command_once(self):
+        failure = self.gate.GateFailure("env", "exit 2", "ModuleNotFoundError: No module named 'sqlalchemy'")
+        cases = [
+            ("timeout with a never-started command", [], [("slow", "partial", 30)], ["later"],
+             ["slow", "later"], ["slow", "later"]),
+            ("command error with a setup fault",
+             [self.gate.GateFailure("bad", "exit 4", "ERROR: file or directory not found: missing/test_x.py"),
+              failure], [], [], ["bad", "env"], ["bad", "env"]),
+            ("setup fault with a never-started command", [failure], [], ["later"], ["env", "later"],
+             ["env", "later"]),
+        ]
+        for message, failures, timed_out, not_started, commands, no_result_commands in cases:
+            with self.subTest(message):
+                run = self.scoped_run_of(failures, timed_out, not_started, commands)
+
+                shown = run.result + "\n" + "\n".join(run.unnamed_lines)
+                for command in no_result_commands:
+                    self.assertEqual(1, shown.count(command), f"{message}: {command} in {shown!r}")
 
     def test_a_scoped_test_that_names_a_missing_path_is_a_command_error_with_the_log(self):
         log_path = self.repo / "scoped-tests.log"
         message = "ERROR: file or directory not found: missing/test_x.py"
         command = f'echo "{message}"; exit 1'
 
-        result, tails = self.gate.run_scoped_tests(str(self.repo), [command], (), log_path)
+        run = self.gate.scoped_run(str(self.repo), [command], (), log_path)
 
-        self.assertEqual(f"command error: {command} ({message}); full output: {log_path}", result)
-        self.assertEqual([], tails)
+        self.assertEqual(f"command error: {command} ({message}); full output: {log_path}", run.result)
+        self.assertEqual([], run.tails)
         self.assertIn(message, log_path.read_text())
 
 
@@ -1191,11 +1305,12 @@ class StaleProseCheckTests(unittest.TestCase):
         missing_path_output = "ERROR: file or directory not found: nope.py\n"
         hit_with_missing_path_text = "No such file or directory: x\ndocs/a.md:1: moveMe\n"
         cases = [
-            ("a clean run", ([], [], [], []), "passed", [], False),
-            ("a timeout", ([], [], [(command, "partial", 60)], []), "not run (timeout)", [], True),
-            ("a missing path", ([(command, "exit 2", missing_path_output)], [], [], []), "command error:", [], True),
+            ("a clean run", ([], [], [], [], []), "passed", [], False),
+            ("a timeout", ([], [], [(command, "partial", 60)], [], []), "not run (timeout)", [], True),
+            ("a missing path", ([(command, "exit 2", missing_path_output)], [], [], [], []), "command error:", [],
+             True),
             ("a hit whose output has a missing-path line",
-             ([(command, "exit 1", hit_with_missing_path_text)], [], [], []), "passed",
+             ([(command, "exit 1", hit_with_missing_path_text)], [], [], [], []), "passed",
              [hit_with_missing_path_text], True),
         ]
         for message, run_result, result_start, hit_outputs, log_written in cases:

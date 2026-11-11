@@ -102,10 +102,13 @@ def write_script_prompt(state_dir, agent_id, prompt):
 
 
 def loop_script_command(loop_script, repo_dir, state_dir, session_id, agent_id, prompt_file, gate_commands=(),
-                        reviewers=REVIEWERS_HEADLESS):
-    """The argv that runs review_loop_script.py, with one --gate-command per gate command."""
+                        reviewers=REVIEWERS_HEADLESS, gates_every_run=False):
+    """The argv that runs review_loop_script.py, with one --gate-command per gate command. gates_every_run makes the
+    loop run them on every converged run; a time budget bounds only the run on a converged run with no untested fix."""
     command = [sys.executable, str(loop_script), str(repo_dir), "--state-dir", str(state_dir), "--session", session_id,
                "--agent-id", agent_id, "--prompt-file", str(prompt_file), "--reviewers", reviewers]
     for gate_command in gate_commands:
         command += ["--gate-command", gate_command]
+    if gates_every_run:
+        command.append("--gates-every-run")
     return command

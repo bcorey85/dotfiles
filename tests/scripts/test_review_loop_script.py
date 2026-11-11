@@ -24,11 +24,13 @@ import finding_record
 import handback
 import handback_store
 import plan_format
+import review_loop_calls
 import review_loop_closure
 import review_loop_findings
 import review_loop_held
 import review_loop_packet
 import review_loop_plan
+import review_loop_scoped_tests
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_LOOP_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_loop_script.py")
 SESSION = "session-1"
@@ -317,6 +319,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
     def script_command(self, prompt, session=SESSION):
         gate_flags = [flag for command in getattr(self, "gate_commands", []) for flag in ("--gate-command", command)]
+        if getattr(self, "gates_every_run", False):
+            gate_flags.append("--gates-every-run")
         return [sys.executable, str(SCRIPT), str(self.repo), "--state-dir", str(self.state_dir), "--session", session,
                 "--agent-id", AGENT_ID, "--prompt-file", str(prompt), *gate_flags]
 
@@ -1221,7 +1225,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
         self.assertEqual(packet["scoped_tests"], "passed")
-        self.assertIn("Scoped tests after the last fix: passed", handback.render(packet, "review"))
+        self.assertIn("Scoped tests: passed", handback.render(packet, "review"))
 
     def test_a_scoped_test_left_red_by_the_last_fix_stops_the_loop(self):
         completed = self.run_with_scoped_tests(["grep -q 'limit = 99' app.py"], FIX_THEN_CLEAN)
@@ -1232,6 +1236,142 @@ class ReviewLoopScriptTest(unittest.TestCase):
         log_path = self.state_dir / "loop-script" / AGENT_ID / "scoped-tests.log"
         self.assertEqual(packet["scoped_tests"], f"failed: grep -q 'limit = 99' app.py; full output: {log_path}")
         self.assertIn("grep -q 'limit = 99' app.py", packet["blockers"][0])
+
+    def run_clean_review_with_gates(self, gate_commands, every_run):
+        self.gates_every_run = every_run
+        return self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]})
+
+    def test_gate_commands_run_on_a_converged_run_with_no_fix_when_the_loop_gates_every_run(self):
+        marker = self.scratch / "ran.txt"
+        self.save_gate_commands([f"echo ran >> {marker}"])
+        completed = self.run_clean_review_with_gates(self.gate_commands, True)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["scoped_tests"], f"passed; counts: echo ran >> {marker}: no runner summary")
+        self.assertEqual(marker.read_text(), "ran\n")
+
+    def test_a_red_gate_command_on_a_converged_run_with_no_fix_stops_the_loop_before_credit(self):
+        self.save_gate_commands(["echo boom >&2; exit 1"])
+        completed = self.run_clean_review_with_gates(self.gate_commands, True)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("boom", packet["blockers"][0])
+        self.assertNotIn(packet["status"], handback.CLEAN_STATUSES, "a red gate command must withhold credit")
+
+    def test_a_gate_command_failing_the_same_way_on_head_leaves_a_converged_run_converged(self):
+        self.commit_files({"failing.txt": "FAIL: test_old (shop.tests.OldTest)\n"})
+        self.save_gate_commands(["cat failing.txt; exit 1"])
+        completed = self.run_clean_review_with_gates(self.gate_commands, True)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertTrue(packet["scoped_tests"].startswith("pre-existing failure"), packet["scoped_tests"])
+
+    def test_a_stop_before_the_gate_commands_ran_says_they_did_not_run(self):
+        self.save_gate_commands(["echo ran"])
+        self.gates_every_run = True
+        completed = self.run_script(
+            {"code-reviewer": [{"result": CLEAN_REVIEW}]},
+            quality_check="echo 'ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND No package.json found'; exit 1")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "setup-fault")
+        self.assertEqual(packet["scoped_tests"], "not run: loop stopped as setup-fault before the scoped tests")
+
+    def use_named_tests_budget(self, seconds):
+        patcher = mock.patch.object(review_loop_scoped_tests, "NAMED_TESTS_BUDGET_SECONDS", seconds)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def loop_main_module(self):
+        return self.load_script_module(SCRIPT.parent / "review_loop_main.py")
+
+    def gate_command_request(self, command, gates_every_run):
+        """The review_loop_main module and a LoopRequest that gates on `command`."""
+        loop_main = self.loop_main_module()
+        prompt = self.scratch / "prompt.txt"
+        prompt.write_text(self.prompt_file_text())
+        header, handoff = loop_main.read_prompt(str(prompt))
+        request = loop_main.LoopRequest(str(self.repo), self.scratch, SESSION, header, handoff,
+                                        {"fixed": [], "files_touched": set()}, [command],
+                                        gates_every_run=gates_every_run)
+        return loop_main, request
+
+    def built_loop_for_gate_command(self, command, gates_every_run):
+        loop_main, request = self.gate_command_request(command, gates_every_run)
+        loop, _check_command = loop_main.build_loop(request)
+        return loop
+
+    def test_the_named_tests_budget_stops_a_command_that_cannot_start_when_the_loop_gates_every_run(self):
+        marker = self.scratch / "ran.txt"
+        command = f"echo ran >> {marker}"
+        self.use_named_tests_budget(0)
+        loop = self.built_loop_for_gate_command(command, True)
+
+        passed = loop.run_test_commands([command], budgeted=True, stop_when_unrun=True)
+
+        self.assertFalse(marker.exists())
+        self.assertTrue(loop.scoped_tests.startswith("not run (time budget used up):"), loop.scoped_tests)
+        self.assertFalse(passed)
+        self.assertEqual(loop.status, "critical-blocker")
+
+    def test_a_red_named_run_with_no_time_left_does_not_run_the_autofix_formatters(self):
+        loop_script = self.load_script_module()
+        self.use_named_tests_budget(0)
+        loop = self.built_loop_for_gate_command("cmd", True)
+        red = loop_script.coder_gate.ScopedRun("failed: cmd", ["tail"], [("cmd", "exit 1", "out")], [], [], False)
+
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=red), \
+                mock.patch.object(loop, "autofix_touched_files") as autofix:
+            passed = loop.run_test_commands(["cmd"], budgeted=True, stop_when_unrun=True)
+
+        self.assertFalse(passed)
+        autofix.assert_not_called()
+
+    def test_the_named_tests_budget_does_not_cap_the_post_fix_scoped_run(self):
+        marker = self.scratch / "ran.txt"
+        command = f"echo ran >> {marker}"
+        self.use_named_tests_budget(0)
+        loop = self.built_loop_for_gate_command(command, True)
+
+        passed = loop.run_test_commands([command])
+
+        self.assertTrue(passed)
+        self.assertEqual(marker.read_text(), "ran\n")
+
+    def test_the_named_tests_budget_does_not_apply_when_the_loop_does_not_gate_every_run(self):
+        marker = self.scratch / "ran.txt"
+        command = f"echo ran >> {marker}"
+        self.use_named_tests_budget(0)
+        loop = self.built_loop_for_gate_command(command, False)
+
+        loop.run_test_commands([command])
+
+        self.assertEqual(marker.read_text(), "ran\n")
+        self.assertEqual(loop.scoped_tests, "passed")
+
+    def test_a_loop_that_does_not_gate_every_run_leaves_the_runner_counts_off_the_line(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        passed_run = loop_script.coder_gate.ScopedRun("passed", [], [], [("cmd", ["2 passed"])], [], False)
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=passed_run):
+            loop.run_test_commands(["cmd"])
+
+        self.assertEqual(loop.scoped_tests, "passed")
+
+    def test_gate_commands_stay_unrun_on_a_converged_run_with_no_fix_unless_the_loop_gates_every_run(self):
+        marker = self.scratch / "ran.txt"
+        self.save_gate_commands([f"echo ran >> {marker}"])
+        completed = self.run_clean_review_with_gates(self.gate_commands, False)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(marker.exists())
 
     def stale_prose_command(self, exit_code):
         script = self.scratch / "stale_prose.py"
@@ -1318,7 +1458,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
-        self.assertIn("scoped tests failing after the last fix", packet["blockers"][0])
+        self.assertIn("scoped tests failing", packet["blockers"][0])
         self.assertIn("corrected claim", packet["blockers"][0])
 
     def test_a_stale_prose_hit_the_coder_fixes_converges_and_ends_on_an_unreviewed_fix(self):
@@ -1726,13 +1866,14 @@ class ReviewLoopScriptTest(unittest.TestCase):
         loop_script = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(loop_script)
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"app.py"}})
-        with mock.patch.object(loop_script.coder_gate, "run_scoped_tests_with_failures",
-                               side_effect=scoped_results) as scoped, \
+        runs = [loop_script.coder_gate.ScopedRun(*result, [], [], False)
+                for result in scoped_results]
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", side_effect=runs) as scoped, \
                 mock.patch.object(loop, "autofix_touched_files", return_value=True) as autofix:
             passed = loop.run_test_commands(["npm run lint"])
         return loop, passed, scoped.call_count, autofix.call_count
 
-    def run_scoped_tests_red(self, failing_output):
+    def run_scoped_tests_red(self, failing_output, unrun=(), named_tests=False):
         """run_test_commands with one red scoped command, `cat failing.txt; exit 1`, whose head output is
         `failing_output`; the commit holds failing.txt with one old failing test, so the base run is real."""
         self.commit_files({"failing.txt": "FAIL: test_old (shop.tests.OldTest)\n"})
@@ -1743,9 +1884,12 @@ class ReviewLoopScriptTest(unittest.TestCase):
         loop_script = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(loop_script)
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"app.py"}})
-        with mock.patch.object(loop_script.coder_gate, "run_scoped_tests_with_failures", return_value=red), \
+        loop.gates_every_run = named_tests
+        unnamed_lines = [f"not run: {command}" for command in unrun]
+        run = loop_script.coder_gate.ScopedRun(*red, [], unnamed_lines, bool(unrun))
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=run), \
                 mock.patch.object(loop, "autofix_touched_files", return_value=False):
-            passed = loop.run_test_commands([command])
+            passed = loop.run_test_commands([command], budgeted=named_tests, stop_when_unrun=named_tests)
         return loop, passed
 
     def test_a_scoped_failure_that_fails_the_same_way_on_head_without_the_diff_does_not_stop_the_loop(self):
@@ -1754,6 +1898,180 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertTrue(passed)
         self.assertNotEqual(loop.status, "critical-blocker")
         self.assertTrue(loop.scoped_tests.startswith("pre-existing failure"), loop.scoped_tests)
+
+    def test_a_named_run_with_a_pre_existing_failure_and_an_unrun_command_stops_the_loop(self):
+        loop, passed = self.run_scoped_tests_red("FAIL: test_old (shop.tests.OldTest)\n",
+                                                 unrun=["slow command"], named_tests=True)
+
+        self.assertFalse(passed)
+        self.assertEqual(loop.status, "critical-blocker")
+        (blocker,) = loop.remaining
+        self.assertIn("not run: slow command", blocker)
+        self.assertIn("FAIL: test_old", blocker)
+
+    def test_a_loop_that_gates_every_run_names_the_runner_counts_of_a_post_fix_run(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.gates_every_run = True
+        passed_run = loop_script.coder_gate.ScopedRun("passed", [], [], [("cmd", ["2 passed"])], [], False)
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=passed_run):
+            loop.run_test_commands(["cmd"])
+
+        self.assertEqual(loop.scoped_tests, "passed; counts: cmd: 2 passed")
+
+    def test_a_loop_stopped_by_a_later_phase_edit_says_why_the_named_tests_did_not_run(self):
+        loop_main, request = self.gate_command_request("echo ran", True)
+        error = loop_main.LaterPhaseEditError("edited a later phase file")
+        with mock.patch.object(loop_main, "walk", side_effect=error), \
+                mock.patch.object(loop_main, "first_pass"), \
+                mock.patch.object(loop_main, "write_telemetry", return_value=([], [])):
+            outcome = loop_main.run_loop(request)
+
+        self.assertEqual(outcome["status"], "critical-blocker")
+        self.assertEqual(outcome["scoped_tests"],
+                         loop_main.full_check.SCOPED_NOT_RUN_STOPPED.format(status="critical-blocker"))
+
+    def test_a_post_fix_run_with_an_unrun_command_does_not_stop_the_loop(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        timed_out = loop_script.coder_gate.ScopedRun("not run (timeout): cmd", [], [], [], [], True)
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=timed_out):
+            passed = loop.run_test_commands(["cmd"])
+
+        self.assertTrue(passed)
+        self.assertEqual(loop.status, "converged")
+
+    def test_a_post_fix_run_of_a_loop_that_gates_every_run_stops_on_a_timed_out_command(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.gates_every_run = True
+        timed_out = loop_script.coder_gate.ScopedRun("not run (timeout): cmd", [], [], [], [], True)
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=timed_out) as scoped:
+            loop.scoped_tests_pass("check", ["cmd"])
+
+        self.assertEqual(loop.status, "critical-blocker")
+        self.assertIsNone(scoped.call_args.args[4], "the post-fix run is not capped by the named-tests budget")
+
+    def test_a_named_run_with_a_timed_out_command_stops_the_loop(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.gates_every_run = True
+        timed_out = loop_script.coder_gate.ScopedRun("not run (timeout): cmd", [], [], [], [], True)
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=timed_out):
+            passed = loop.run_test_commands(["cmd"], budgeted=True, stop_when_unrun=True)
+
+        self.assertFalse(passed)
+        self.assertEqual(loop.status, "critical-blocker")
+        self.assertEqual(["not run (timeout): cmd"], loop.remaining)
+
+    def test_a_named_run_with_a_command_error_or_setup_fault_stops_the_loop(self):
+        loop_script = self.load_script_module()
+        cases = [("command error: cmd (no such file)", loop_script.coder_gate.RESULT_COMMAND_ERROR),
+                 ("setup fault: cmd", loop_script.coder_gate.RESULT_SETUP_FAULT)]
+        for result, outcome in cases:
+            with self.subTest(outcome=outcome):
+                loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+                loop.gates_every_run = True
+                run = loop_script.coder_gate.ScopedRun(result, [], [], [], ["no result line: cmd"], True)
+                with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=run):
+                    passed = loop.run_test_commands(["cmd"], budgeted=True, stop_when_unrun=True)
+
+                self.assertFalse(passed, f"{outcome} must block credit")
+                self.assertEqual(loop.status, "critical-blocker")
+                self.assertEqual(1, len(loop.remaining))
+                self.assertTrue(loop.remaining[0].startswith(result), "the blocker leads with the run's result")
+
+    def test_a_command_error_run_with_a_setup_fault_names_the_setup_fault(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.gates_every_run = True
+        result = "command error: cmd-a (no such file)"
+        run = loop_script.coder_gate.ScopedRun(result, [], [], [], ["setup fault: cmd-b"], True)
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=run):
+            passed = loop.run_test_commands(["cmd-a", "cmd-b"], budgeted=True, stop_when_unrun=True)
+
+        self.assertFalse(passed)
+        self.assertIn("setup fault: cmd-b", loop.remaining[0])
+        self.assertEqual(1, loop.remaining[0].count("command error: cmd-a"))
+
+    def test_a_post_fix_command_error_or_setup_fault_stops_only_a_loop_that_gates_every_run(self):
+        loop_script = self.load_script_module()
+        labels = ["command error", "setup fault"]
+        for gates_every_run, expected_status in ((True, "critical-blocker"), (False, "converged")):
+            for label in labels:
+                with self.subTest(label=label, gates_every_run=gates_every_run):
+                    loop = loop_script.LoopRun(self.repo, self.scratch, "", (),
+                                               {"fixed": [], "files_touched": set()})
+                    loop.gates_every_run = gates_every_run
+                    run = loop_script.coder_gate.ScopedRun(f"{label}: cmd", [], [], [], [f"{label}: cmd"], True)
+                    with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=run), \
+                            mock.patch.object(loop, "hit_check_pass", return_value=False):
+                        loop.scoped_tests_pass("check", ["cmd"])
+
+                    self.assertEqual(loop.status, expected_status)
+
+    def test_a_command_error_stops_a_named_run_even_when_another_command_fails_as_it_does_on_head(self):
+        self.commit_files({"failing.txt": "FAIL: test_old (shop.tests.OldTest)\n"})
+        failing = "cat failing.txt; exit 1"
+        wrong = "pytest missing/test_x.py"
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.gates_every_run = True
+        ran = loop_script.coder_gate.CommandRun(
+            [loop_script.coder_gate.GateFailure(failing, "exit 1", "FAIL: test_old (shop.tests.OldTest)\n"),
+             loop_script.coder_gate.GateFailure(
+                 wrong, "exit 4", "ERROR: file or directory not found: missing/test_x.py")],
+            [], [], [], [])
+        with mock.patch.object(loop_script.coder_gate, "run_commands", return_value=ran), \
+                mock.patch.object(loop, "autofix_touched_files", return_value=False):
+            passed = loop.run_test_commands([failing, wrong], budgeted=True, stop_when_unrun=True)
+
+        self.assertFalse(passed)
+        self.assertEqual(loop.status, "critical-blocker")
+        self.assertIn(f"command error: {wrong}", loop.remaining[0])
+
+    def test_a_named_run_names_the_runner_counts_in_the_scoped_tests_line(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.gates_every_run = True
+        passed_run = loop_script.coder_gate.ScopedRun("passed", [], [], [("cmd", ["2 passed"])], [], False)
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=passed_run):
+            loop.run_test_commands(["cmd"], budgeted=True, stop_when_unrun=True)
+
+        self.assertEqual(loop.scoped_tests, "passed; counts: cmd: 2 passed")
+
+    def test_the_named_tests_budget_counts_from_the_named_run_not_from_the_loop_build(self):
+        marker = self.scratch / "ran.txt"
+        command = f"echo ran >> {marker}"
+        loop = self.built_loop_for_gate_command(command, True)
+        built_at = time.monotonic()
+
+        with mock.patch.object(review_loop_scoped_tests.time, "monotonic", return_value=built_at + 10 * 60):
+            passed = loop.run_test_commands([command], budgeted=True, stop_when_unrun=True)
+
+        self.assertTrue(passed)
+        self.assertEqual(marker.read_text(), "ran\n")
+
+    def test_the_autofix_rerun_of_a_named_run_gets_the_budget_left(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"app.py"}})
+        loop.gates_every_run = True
+        red = loop_script.coder_gate.ScopedRun("failed: cmd", ["tail"], [("cmd", "exit 1", "out")], [], [], False)
+        clock = iter([0.0, 0.0])
+
+        def monotonic():
+            # The first two reads are the deadline and the first run's budget; every later read is 100 s in.
+            return next(clock, 100.0)
+
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", side_effect=[red, red]) as scoped, \
+                mock.patch.object(loop, "autofix_touched_files", return_value=True), \
+                mock.patch.object(review_loop_scoped_tests.time, "monotonic", side_effect=monotonic), \
+                mock.patch.object(loop, "scoped_failures_pre_existing", return_value=False):
+            loop.run_test_commands(["cmd"], budgeted=True, stop_when_unrun=True)
+
+        budgets = [call.args[4] for call in scoped.call_args_list]
+        self.assertEqual(budgets, [review_loop_scoped_tests.NAMED_TESTS_BUDGET_SECONDS,
+                                   review_loop_scoped_tests.NAMED_TESTS_BUDGET_SECONDS - 100])
 
     def test_a_scoped_failure_new_to_the_diff_on_top_of_a_pre_existing_one_stops_the_loop(self):
         loop, passed = self.run_scoped_tests_red("FAIL: test_old (shop.tests.OldTest)\n"
@@ -1781,6 +2099,32 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(loop.status, "critical-blocker")
         self.assertIn("expected 20, got 99", loop.remaining[0])
 
+    def test_a_red_named_run_keeps_its_failure_when_no_budget_is_left_for_the_autofix_rerun(self):
+        self.use_named_tests_budget(0)
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"app.py"}})
+        red = loop_script.coder_gate.ScopedRun("failed: npm test", ["FAIL app.test.ts: expected 20, got 99"],
+                                               [("npm test", "exit 1", "x")], [], [], False)
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=red) as scoped, \
+                mock.patch.object(loop, "autofix_touched_files", return_value=True):
+            passed = loop.run_test_commands(["npm test"], budgeted=True, stop_when_unrun=True)
+
+        self.assertFalse(passed)
+        self.assertEqual(scoped.call_count, 1)
+        self.assertIn("expected 20, got 99", loop.remaining[0])
+
+    def test_a_failed_named_run_names_a_setup_fault_beside_the_failure_in_the_blocker(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        failed = loop_script.coder_gate.ScopedRun("failed: a", ["tail"], [("a", "exit 1", "x")], [],
+                                                  ["setup fault: b"], True)
+        with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=failed), \
+                mock.patch.object(loop, "autofix_touched_files", return_value=False):
+            passed = loop.run_test_commands(["a", "b"], stop_when_unrun=True)
+
+        self.assertFalse(passed)
+        self.assertIn("setup fault: b", loop.remaining[0])
+
     def test_the_loop_base_run_gets_the_module_live_base_trees_and_the_gate_environment_assignments(self):
         spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
         loop_script = importlib.util.module_from_spec(spec)
@@ -1802,18 +2146,16 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(base_run.call_args.kwargs["gate_env"], {"APP_DIR": "/x"})
 
     def test_sigterm_during_the_base_run_removes_the_base_worktree(self):
-        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
-        loop_script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(loop_script)
+        loop_main = self.loop_main_module()
         temp = self.scratch / "base-temp"
         temp.mkdir()
         tree = temp / "base"
         git(self.repo, "worktree", "add", "--detach", str(tree), "HEAD")
-        loop_script.full_check_gate.LIVE_BASE_TREES.add((self.repo, tree))
-        self.addCleanup(loop_script.full_check_gate.LIVE_BASE_TREES.discard, (self.repo, tree))
+        loop_main.full_check_gate.LIVE_BASE_TREES.add((self.repo, tree))
+        self.addCleanup(loop_main.full_check_gate.LIVE_BASE_TREES.discard, (self.repo, tree))
 
-        with mock.patch.object(loop_script.os, "_exit") as exit_now:
-            loop_script.stop_on_sigterm(signal.SIGTERM, None)
+        with mock.patch.object(loop_main.os, "_exit") as exit_now:
+            loop_main.stop_on_sigterm(signal.SIGTERM, None)
 
         exit_now.assert_called_once_with(128 + signal.SIGTERM)
         self.assertFalse(temp.exists())
@@ -2339,8 +2681,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(ids_by_session[1]), 1)
         self.assertFalse(ids_by_session[0] & ids_by_session[1])
 
-    def load_script_module(self):
-        loader = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
+    def load_script_module(self, script=SCRIPT):
+        loader = importlib.util.spec_from_file_location(f"{script.stem}_under_test", script)
         module = importlib.util.module_from_spec(loader)
         loader.loader.exec_module(module)
         return module
@@ -3770,7 +4112,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual(result, "not run (timeout)")
         self.assertFalse(loop_script.full_check.is_failure(result))
-        self.assertEqual(loop_script.LIVE_CHILDREN, set())
+        self.assertEqual(review_loop_calls.LIVE_CHILDREN, set())
 
     def test_sigterm_kills_the_process_group_of_a_running_claude_call(self):
         self.env["FAKE_CLAUDE_HANG"] = "1"

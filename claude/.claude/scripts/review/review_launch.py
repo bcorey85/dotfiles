@@ -20,8 +20,6 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 import code_wait
-import full_check
-import handback
 import handback_hook
 import review_fix_state
 import reviewer_dispatch
@@ -51,7 +49,8 @@ FINDINGS_JSON = "findings.json"
 HANDOFF_NAME = "handoff.txt"
 # The launch record's flags for a later fix run of the same review: `packet --launch` stores them for asks-done.
 RELAUNCH_KEY = "relaunch_args"
-# True in the launch record of a fix run whose findings the user accepted.
+# In the launch record of a fix run: the list of texts of the findings the user accepted; no key means none. A value
+# that is not a list of strings stops the read (read_user_ruled).
 USER_RULED_KEY = "user_ruled"
 FINDING_START = "- "
 FINDINGS_FORM = "expected `- <finding>` at column 0, an indented continuation line, or a blank line"
@@ -71,15 +70,15 @@ def launch_parser():
     parser.add_argument("--fix", metavar="FINDINGS_FILE",
                         help="fix-first: the fix coder applies these findings, then the loop reviews")
     parser.add_argument("--no-review", action="store_true", help="with --fix: apply the findings and review nothing")
-    parser.add_argument("--user-ruled", action="store_true",
-                        help="with --fix: the user accepted these findings; a finding the fix coder skips comes "
-                             "back as an ask")
+    parser.add_argument("--user-ruled", action="append", type=int, default=[], metavar="N",
+                        help="with --fix (repeatable): the user accepted finding N of the findings file, counted "
+                             "from 1; if the fix coder skips it, it comes back as an ask")
     parser.add_argument("--base", help="review every change since this ref, commits included")
     parser.add_argument("--file", action="append", default=[], dest="files",
                         help="review only this file (repeatable): absolute, or relative to the repo root")
     parser.add_argument("--handoff", metavar="FILE", help="the handoff block the reviewers and coder read")
     parser.add_argument("--test", action="append", default=[], dest="tests", metavar="CMD",
-                        help="a test command the loop runs after the last fix (repeatable)")
+                        help="a test command the loop runs on every converged run, before commit credit (repeatable)")
     models = parser.add_mutually_exclusive_group()
     models.add_argument("--fast", action="store_true", help=f"run the reviewers on {FAST_REVIEWER_MODEL}")
     models.add_argument("--deep", action="store_true", help="run the reviewers on their agents' own model")
@@ -104,16 +103,6 @@ def launch_arguments(argv):
     options.skill = "fix" if options.fix else "review"
     options.lane = options.lane or ("code" if options.fix else "none")
     return options
-
-
-def unrun_scoped_tests_note(relaunch_args, status, scoped_tests):
-    """The packet's scoped-tests text: `scoped_tests` itself when the loop ran the tests, else why they did not run
-    when the launch carried `--test`, else empty."""
-    if scoped_tests or "--test" not in relaunch_args:
-        return scoped_tests
-    if status in handback.CLEAN_STATUSES:
-        return full_check.SCOPED_NOT_RUN_NO_FIX
-    return full_check.SCOPED_NOT_RUN_STOPPED.format(status=status)
 
 
 def read_findings_file(findings_file):
@@ -258,15 +247,24 @@ def read_relaunch_args(launch_file):
     return args
 
 
+def user_ruled_texts(user_ruled, findings):
+    """The texts of the findings the --user-ruled numbers name. A number past the findings stops the launch."""
+    for number in user_ruled:
+        if not 1 <= number <= len(findings):
+            raise LaunchError(f"--user-ruled {number} names no finding: the findings file holds {len(findings)}")
+    return [findings[number - 1] for number in user_ruled]
+
+
 def read_user_ruled(launch_file):
-    """Whether a launch record says the user accepted its findings. A record written before the key existed says no."""
+    """What a launch record says the user accepted: the list of finding texts, empty for none (also a record with no
+    key)."""
     try:
-        user_ruled = reviewer_dispatch.read_launch_record(launch_file, USER_RULED_KEY, default=False)
+        user_ruled = reviewer_dispatch.read_launch_record(launch_file, USER_RULED_KEY, default=[])
     except reviewer_dispatch.ManifestError as error:
         raise LaunchError(f"--launch {error}") from error
-    if not isinstance(user_ruled, bool):
-        raise LaunchError(f"--launch {launch_file}: {USER_RULED_KEY} is not true or false")
-    return user_ruled
+    if isinstance(user_ruled, list) and all(isinstance(entry, str) for entry in user_ruled):
+        return user_ruled
+    raise LaunchError(f"--launch {launch_file}: {USER_RULED_KEY} is not a list of finding texts")
 
 
 def command_launch(argv, loop_script):
@@ -287,6 +285,7 @@ def command_launch(argv, loop_script):
     repo = found_root.resolve()
 
     findings = read_findings_file(options.fix) if options.fix else []
+    user_ruled = user_ruled_texts(options.user_ruled, findings)
     base = resolved_base(repo, options.base) if options.base else ""
     paths = repo_paths(repo, options.files)
     check_files_exist(repo, paths, base)
@@ -312,14 +311,15 @@ def command_launch(argv, loop_script):
     launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
     launch_record = {"packet_args": packet_args(options, launch_file),
                      RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file),
-                     USER_RULED_KEY: options.user_ruled}
+                     USER_RULED_KEY: user_ruled}
     script_utils.write_text_atomically(launch_file, json.dumps(launch_record) + "\n")
     print(f"The review loop runs as a script; its log is {log_path}")
     sys.stdout.flush()
 
     handback_hook.record_script_dispatch(session_id, repo, no_review=options.no_review)
     command = loop_script_command(loop_script, repo, state_dir, session_id, agent_id, prompt_file,
-                                  gate_commands=options.tests, reviewers=REVIEWERS_MAIN)
+                                  gate_commands=options.tests, reviewers=REVIEWERS_MAIN,
+                                  gates_every_run=bool(options.tests))
     with log_path.open("w") as log:
         loop = subprocess.Popen(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                 start_new_session=True)

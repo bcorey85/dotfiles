@@ -32,7 +32,8 @@ DISPATCH_ACTION = "dispatch-reviewer"
 WAIT_COMMAND = "python3 ~/.claude/scripts/review/reviewer_dispatch.py wait"
 PACKET_COMMAND = f"{REVIEW_FIX_COMMAND} packet"
 # The packet arguments and the relaunch flags of a run `review_fix.py launch` started:
-# {"packet_args": [...], "relaunch_args": [...], "user_ruled": <bool>}. `user_ruled` may be missing from older records.
+# {"packet_args": [...], "relaunch_args": [...], "user_ruled": [<finding text>...]}. `user_ruled` may be missing
+# from older records.
 LAUNCH_FILE = "launch.json"
 # `review_fix.py launch` keeps each run at <git path of LAUNCH_STATE_NAME>/loop-script/<agent id>.
 LAUNCH_STATE_NAME = "review-script"

@@ -269,17 +269,22 @@ def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
 
 
 def plan_impact_question_lines(plan_impact, packet):
-    """The lines that tell the session to put one plan-impact question to the user and what to run on the answer."""
+    """The lines that tell the session to rule on a plan-impact itself or put one question to the user, depending on
+    the criteria owner, and what to run on the answer."""
     return [
-        "Call AskUserQuestion now. Without that tool, ask the same question in plain text, list the options numbered, "
-        "end the turn and wait for the reply. Do not re-dispatch and do not triage this as an ask. Question: assumed, "
-        "then found, then what changes, taken from this block:",
+        f"When the run has a plan, first run `{plan_format.PLAN_CHECK_OWNER_COMMAND}` and read `owner`. Owner "
+        "`session`: rule yourself with `decide ... --by session`, no question. Owner `plan`: rule yourself only while "
+        "the ticket's own words stay met, else ask the user.",
+        "Owner `user`, owner `plan` with the ticket's words not met, or no plan: call AskUserQuestion now. Without "
+        "that tool, ask the same question in plain text, list the options numbered, end the turn and wait for the "
+        "reply. Do not re-dispatch and do not triage this as an ask. Question: assumed, then found, then what "
+        "changes, taken from this block:",
         plan_impact,
         f"Options, in this order: {' / '.join(plan_format.PLAN_IMPACT_OPTIONS)}.",
-        "Map the answer, picked or typed, to adopt, keep or discuss. For adopt or keep, put the user's words in "
-        "--ruling; for discuss, run `decide discuss`.",
-        f'Then run: {REVIEW_FIX_COMMAND} decide <adopt|keep> --by user --ruling "<the decision in one line>" '
-        f"{PLAN_ARG_NOTE}",
+        "Map the answer, picked or typed (or your own ruling when you rule yourself), to adopt, keep or discuss. "
+        "For adopt or keep, put the user's words, or your ruling under `--by session`, in --ruling; for discuss, "
+        "run `decide discuss`.",
+        f"Then run: {REVIEW_FIX_COMMAND} {plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}",
         plan_format.DECIDE_BY_NOTE,
         f"Counters held for the re-dispatch: iter={packet['iter']} "
         f"spec_iter={packet['spec_iter'] if packet['spec_iter'] is not None else 'absent'}",

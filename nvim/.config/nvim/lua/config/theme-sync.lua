@@ -132,6 +132,80 @@ local FAMILIES = {
       light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
     },
   },
+  ["dredge-roles-warm"] = {
+    -- colors/dredge-roles-warm.lua: dredge-roles on a warm dark ground; light is dredge-roles.
+    schemes = { dark = "dredge-roles-warm", light = "dredge-roles" },
+    own_comment_contrast = true,
+    accents = {
+      dark = { heading1 = "#f861a4", heading = "#9299ee", bullet = "#b7b5ae" },
+      light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
+    },
+  },
+  ["kanagawa"] = {
+    -- rebelot/kanagawa.nvim: wave dark / lotus light, both set colors_name "kanagawa".
+    schemes = { dark = "kanagawa-wave", light = "kanagawa-lotus" },
+    colors_name = "kanagawa",
+    accents = {
+      dark = { heading1 = "#e46876", heading = "#7e9cd8" },
+      light = { heading1 = "#c84053", heading = "#4d699b" },
+    },
+  },
+  ["darcula"] = {
+    -- xiantang/darcula-dark.nvim: dark only, in both modes.
+    schemes = { dark = "darcula-dark", light = "darcula-dark" },
+    colors_name = "darcula-dark",
+    dark_only = true,
+    accents = {
+      dark = { heading1 = "#cc7832", heading = "#b3deef" },
+      light = { heading1 = "#cc7832", heading = "#b3deef" },
+    },
+  },
+  ["tairiki"] = {
+    -- deparr/tairiki.nvim: dimmed dark / light; both set colors_name "tairiki".
+    schemes = { dark = "tairiki-dimmed", light = "tairiki-light" },
+    colors_name = "tairiki",
+    -- Dimmed's DiffAdd is a 30% green block; rows take the green/red/grey 15%
+    -- into the ground and words the blue 30%, so syntax stays readable.
+    pre = function(mode)
+      local highlights = nil
+      if mode == "dark" then
+        local bg = "#1d1f21"
+        highlights = function(hl)
+          hl.DiffAdd = { bg = blend("#b3ba7e", bg, 0.15) }
+          hl.DiffDelete = { bg = blend("#c37d7c", bg, 0.15) }
+          hl.DiffChange = { bg = blend("#858886", bg, 0.12) }
+          hl.DiffText = { bg = blend("#93a8b8", bg, 0.30) }
+        end
+      end
+      require("tairiki").setup({ highlights = highlights })
+    end,
+    accents = {
+      dark = { heading1 = "#c37d7c", heading = "#93a8b8" },
+      light = { heading1 = "#a31515", heading = "#0070c1" },
+    },
+  },
+  ["everforest"] = {
+    -- sainnhe/everforest, medium background: one colorscheme follows vim.o.background.
+    schemes = { dark = "everforest", light = "everforest" },
+    colors_name = "everforest",
+    pre = function()
+      vim.g.everforest_background = "medium"
+    end,
+    accents = {
+      dark = { heading1 = "#e67e80", heading = "#e69875" },
+      light = { heading1 = "#f85552", heading = "#f57d26" },
+    },
+  },
+  ["gruvbox"] = {
+    -- ellisonleao/gruvbox.nvim, medium contrast (the default): one colorscheme
+    -- follows vim.o.background and sets colors_name "gruvbox" in both modes.
+    schemes = { dark = "gruvbox", light = "gruvbox" },
+    colors_name = "gruvbox",
+    accents = {
+      dark = { heading1 = "#b8bb26", heading = "#fabd2f" }, -- green + yellow
+      light = { heading1 = "#79740e", heading = "#b57614" },
+    },
+  },
   ["solarized-osaka"] = {
     -- craftzdog/solarized-osaka.nvim: both colorschemes set colors_name "solarized-osaka".
     schemes = { dark = "solarized-osaka", light = "solarized-osaka-light" },
@@ -191,6 +265,16 @@ local FAMILIES = {
     accents = {
       dark = { heading1 = "#eb9e83", heading = "#f8d28a" },
       light = { heading1 = "#902a03", heading = "#6b4600" },
+    },
+  },
+  ["token"] = {
+    -- ThorstenRhau/token, default variant: one colorscheme "token" follows
+    -- vim.o.background (warm graphite #262624 dark / #faf9f5 light).
+    schemes = { dark = "token", light = "token" },
+    colors_name = "token",
+    accents = {
+      dark = { heading1 = "#f4906f", heading = "#f7c699" },
+      light = { heading1 = "#863716", heading = "#6d4717" },
     },
   },
   ["jellybeans"] = {
@@ -478,7 +562,7 @@ function M.apply(family, mode, force)
   if fam.pre then
     fam.pre(mode) -- variant globals the theme reads at :colorscheme time
   end
-  vim.o.background = mode
+  vim.o.background = fam.dark_only and "dark" or mode
   vim.cmd.colorscheme(fam.schemes[mode])
 end
 

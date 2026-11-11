@@ -120,7 +120,9 @@ class WaitLoopGateTest(unittest.TestCase):
 
     def test_review_loop_shell_background_denied(self):
         for command in ("make test > test.log 2>&1 &", "npm run dev & sleep 5; curl localhost:3000",
-                        "nohup make test > test.log", "setsid pytest -q", "make test & disown"):
+                        "nohup make test > test.log", "setsid pytest -q", "detach pytest -q",
+                        "~/.local/bin/detach pytest -q", "/usr/bin/setsid pytest -q",
+                        "make test & disown", "env A=1 detach pytest -q", "nice nohup make test"):
             with self.subTest(command=command):
                 finished = run_command(command, agent_type="review-loop")
                 self.assertIn("deny", finished.stdout)

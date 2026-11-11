@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-903 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+917 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-11, [Branch review fixes: named tests run in the loop under a time budget, per-finding user rulings](notes/2026-11-11-branch-review-fixes-named-tests-run-with-runner.md).
 

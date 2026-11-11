@@ -38,6 +38,8 @@ Then check every claim in prose: comments, docstrings, docs, ADRs, and descripti
 
 When you find a defect, search the whole diff for every other site of the same kind (each control, each exit path, each caller, each parsed field), and report each site.
 
+Flag a new query that filters or sorts on a column with no index as a fix.
+
 ### Step 3: Structure
 
 After the correctness pass, review the shape of the change, inside the same scope:

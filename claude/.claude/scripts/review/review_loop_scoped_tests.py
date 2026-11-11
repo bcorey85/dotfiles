@@ -5,6 +5,7 @@ import time
 
 import coder_gate
 import full_check
+import gate_env
 from test_run_output import command_summaries_text
 
 # The file in the loop's state folder that holds the whole output of a red scoped test run.
@@ -70,7 +71,10 @@ class ScopedTestRuns:
             return True
 
         if run.tails:
-            self.stop("critical-blocker", [full_check.SCOPED_FAILING_PREFIX + "\n\n".join(run.tails)])
+            env_hint = ("If a test needs an env var the repo's CI sets, add it under "
+                        f"{gate_env.gate_env_repo_name(self.repo)!r} in {gate_env.personal_gate_env_file()}.")
+            failing = full_check.SCOPED_FAILING_PREFIX + "\n\n".join(run.tails)
+            self.stop("critical-blocker", [failing + "\n" + env_hint])
             return False
 
         return True

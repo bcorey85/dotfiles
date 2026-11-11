@@ -18,6 +18,7 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import handback
 import handback_store
+import plan_format
 import review_loop_main
 import review_loop_prompt_file
 import reviewed_tree
@@ -486,6 +487,19 @@ class ReviewFixScriptTest(unittest.TestCase):
                    "plan_impacts": impacts, **fields}
         return self.packet(json.dumps(message))
 
+    def test_the_plan_impact_question_tells_the_session_to_read_the_criteria_owner_first(self):
+        code, output = self.packet(PLAN_IMPACT)
+
+        self.assertEqual(code, 0, output)
+        owner_command = plan_format.PLAN_CHECK_OWNER_COMMAND
+        self.assertIn(f"first run `{owner_command}`", output)
+        self.assertIn("Owner `session`: rule yourself with `decide ... --by session`, no question.", output)
+        self.assertIn("Owner `plan`: rule yourself only while the ticket's own words stay met, else ask the user.",
+                      output)
+        self.assertIn("Owner `user`, owner `plan` with the ticket's words not met, or no plan: call AskUserQuestion "
+                      "now.", output)
+        self.assertLess(output.index("first run"), output.index("call AskUserQuestion now"))
+
     def test_a_converged_packet_with_only_adopted_plan_impacts_prints_the_deviation_lines_and_holds_no_gate(self):
         code, output = self.impacts_packet([ADOPTED_IMPACT])
 
@@ -711,7 +725,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_plan_impact_modal_names_the_by_form(self):
         _code, output = self.packet(PLAN_IMPACT)
-        self.assertIn('decide <adopt|keep> --by user --ruling "<the decision in one line>"', output)
+        self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"', output)
         self.assertIn("pass `--by session`", output)
         self.assertIn("--plan <the plan path, when the handoff names one>", output)
 

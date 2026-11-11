@@ -84,7 +84,7 @@ from review_loop_calls import (
     record_main_dispatch,
 )
 from review_loop_closure import (
-    NO_CLOSURE,
+    ClosureState,
     closure_check,
     receipt_after_class_repair,
     receipt_all_held,
@@ -379,8 +379,7 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
                         "result": "PASS"}
         self.prior_issues = []
         self.status = "converged"
-        self.class_closure = NO_CLOSURE
-        self.open_classes = []  # the class members the repair pass left unfixed
+        self.closure = ClosureState()
 
     def init_round_state(self):
         """The per-round bookkeeping: dispatches, filed entries, which pass ran last and what it left untested."""
@@ -424,7 +423,7 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
         """Run the formatters the repo configures on the reviewed and touched files, so the tree the hand-back records
         is already formatted and a formatter run after the loop leaves the reviewed tree as it was. The changed files
         count as touched."""
-        paths = sorted(set(self.review_scope()) | self.files_touched)
+        paths = self.reviewed_and_touched_files()
         changed = format_files.run_formatters(self.repo, paths, include_python=True, configured_only=True,
                                               check_command=check_command or "")
         self.files_touched.update(changed)
@@ -829,10 +828,13 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
 
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open. When
-        that pass changes a file, the receipt names the members it fixed, so no member shows as both fixed and open."""
+        that pass changes a file, the receipt names the members it fixed, so no member shows as both fixed and open.
+        The members the check left alone because they read the value for another purpose go to their own packet field,
+        so a missing receipt, which the hand-back flags, never hides them."""
         closure = closure_check(self.repo, self.out, [finding.text for finding in self.fixed], claude_call)
-        self.class_closure = closure["receipt"]
+        self.closure.left_alone = closure["left_alone"]
         if not closure["open"]:
+            self.closure.receipt = closure["receipt"]
             return
 
         parsed_open = [parse_finding(text) for text in closure["open"]]
@@ -840,17 +842,17 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
         open_findings, held_items = self.sendable(parsed_open)
         held_texts = [item.text for item in held_items]
         if not open_findings:
-            self.class_closure = receipt_all_held(held_texts)
+            self.closure.receipt = receipt_all_held(held_texts)
             return
 
         _report, _diffs, class_changed = self.repair("coder-class", open_findings)
         self.mark_repaired(open_findings, class_changed)
         if class_changed:
             sent_texts = [item.text for item in open_findings]
-            self.class_closure = receipt_after_class_repair(sent_texts, held_texts)
+            self.closure.receipt = receipt_after_class_repair(sent_texts, held_texts)
         else:
-            self.open_classes = [item.text for item in open_findings]
-            self.class_closure = receipt_still_open(self.open_classes, held_texts)
+            self.closure.open_classes = [item.text for item in open_findings]
+            self.closure.receipt = receipt_still_open(self.closure.open_classes, held_texts)
 
         self.next_round()
         self.recheck_full_check(check_command, "full check failing after the class repair")
@@ -921,8 +923,9 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
             "pointer_asks": self.pointer_asks,
             "ask_ids": ask_ids,
             "ask_rows": ask_rows,
-            "class_closure": self.class_closure,
-            "open_classes": self.open_classes,
+            "class_closure": self.closure.receipt,
+            "open_classes": self.closure.open_classes,
+            "left_alone": self.closure.left_alone,
             "full_check": self.full_check,
             "full_check_command": self.full_check_command,
             "full_check_summaries": self.check_details["summaries"],

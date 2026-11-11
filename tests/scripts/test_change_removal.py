@@ -41,6 +41,40 @@ class AddedLinesTest(unittest.TestCase):
         self.assertEqual(Counter({"x": 2}), added)
 
 
+class FormattingOnlyHunkTest(unittest.TestCase):
+    def test_formatting_only_hunks_add_no_lines(self):
+        cases = [
+            ("reflowed call", "f(a, b)\n", "f(\n    a,\n    b,\n)\n"),
+            ("quote style", "x = 'a'\n", 'x = "a"\n'),
+            ("inner whitespace", "x = a+b\n", "x = a + b\n"),
+            ("trailing comma", "f(a, b)\n", "f(a, b,)\n"),
+        ]
+        for message, old, new in cases:
+            with self.subTest(message):
+                self.assertEqual(Counter(), change_removal.added_lines(old, new))
+
+    def test_a_reflow_that_also_changes_a_name_still_counts(self):
+        added = change_removal.added_lines("f(a, b)\n", "f(\n    a,\n    c,\n)\n")
+
+        self.assertEqual(Counter({"f(": 1, "a,": 1, "c,": 1, ")": 1}), added)
+
+    def test_a_reflowed_line_does_not_cancel_a_copy_the_change_really_added(self):
+        old = "f(\n    a,\n    b,\n)\nkeep = 1\nkeep = 2\n"
+        new = "f(a, b)\nkeep = 1\nkeep = 2\na,\n"
+
+        added = change_removal.added_lines(old, new)
+
+        self.assertEqual(Counter({"a,": 1}), added)
+
+    def test_reverting_twelve_reflowed_lines_is_not_gutted(self):
+        old = "".join(f"call{n}(a, b)\n" for n in range(3))
+        reflowed = "".join(f"call{n}(\n    a,\n    b,\n)\n" for n in range(3))
+
+        removed, gutted = gutted_after({"app.py": old}, {"app.py": reflowed}, {"app.py": old})
+
+        self.assertEqual(({}, False), (removed, gutted))
+
+
 class GuttedChangeTest(unittest.TestCase):
     def test_half_of_ten_added_lines_removed_is_gutted_and_four_is_not(self):
         new_texts = {"app.py": numbered(10)}

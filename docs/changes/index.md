@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-901 changes, 22 with a measured gain, 265 behavior changes that no intake metric reads.
+902 changes, 22 with a measured gain, 266 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [Ask the user only about criteria the user or a tracker wrote](notes/2026-11-10-ask-the-user-only-about-criteria-the-user-or-a.md).
+Latest change: 2026-11-10, [The backend error-class rule names raise and a built-in Python error, so the coder follows it in Python too](notes/2026-11-10-the-backend-error-class-rule-names-raise-and-a.md).
 
 ## Top gains
 

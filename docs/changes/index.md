@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-910 changes, 22 with a measured gain, 267 behavior changes that no intake metric reads.
+911 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [Class closure leaves members that read the value for another purpose and names them in the hand-back](notes/2026-11-10-review-class-closure-leaves-members-that-read-the.md).
+Latest change: 2026-11-11, [The test reviewer opens the fixture of every test that asserts an order](notes/2026-11-11-the-test-reviewer-opens-the-fixture-of-every-test.md).
 
 ## Top gains
 

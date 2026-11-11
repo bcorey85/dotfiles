@@ -10,9 +10,9 @@ is 0, so a chained first push runs. A set upstream that the remote says is gone 
 the upstream, push with `-u <remote> HEAD`), so the chained push does not recreate it: before anything is set aside
 when `@{u}` does not resolve, and after the failed pull when a stale remote-tracking ref still resolves it.
 Exit 0 when the pull ran and the changes are back, or when there is nothing to pull; exit 1 otherwise, with the
-recovery command when one exists. A failed branch-name lookup exits 1 naming the failed command. A failed remote
-lookup before the pull (origin, or the configured remote) exits 1 with the git error, before anything is set aside;
-one after a failed pull ends in the pull-failure exit."""
+recovery command when one exists. A failed branch-name lookup before the pull exits 1 naming the failed command. A
+failed remote lookup before the pull (origin, or the configured remote) exits 1 with the git error, before anything is
+set aside; one after a failed pull ends in the pull-failure exit."""
 import os
 import subprocess
 import sys
@@ -182,6 +182,7 @@ def configured_upstream_target(repo, branch, merge_ref):
 
 
 def exit_upstream_gone(repo, branch, merge_ref, remote):
+    """Exit 1 naming the gone upstream and the recovery commands."""
     sys.exit(f"pull_keep_index: the upstream {merge_ref} of {branch} is gone from {remote}; a chained push stops here "
              f"so it does not recreate it. Nothing was pulled and the local changes are in place. To recover, run: "
              f"git -C {repo} branch --unset-upstream, then, if you mean to recreate it, push with: "

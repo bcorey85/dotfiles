@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-901 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+902 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [The relay sends a stop back for review when the tree changed after the converged review](notes/2026-11-10-the-relay-sends-a-stop-back-for-review-when-the.md).
+Latest change: 2026-11-10, [The code skill description lets main run the relay's re-review line](notes/2026-11-10-the-code-skill-description-lets-main-run-the-relay.md).
 
 ## Top gains
 

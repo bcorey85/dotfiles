@@ -213,11 +213,45 @@ class PullKeepIndexTest(unittest.TestCase):
         self.git(self.repo, "push", "-q", "-u", "origin", "gone")
         self.git(self.remote, "branch", "-q", "-D", "gone")
         self.git(self.repo, "fetch", "-q", "--prune")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
 
         finished = self.run_script()
 
         self.assertEqual(finished.returncode, 1, finished.stdout)
-        self.assertIn("git pull failed", finished.stderr)
+        self.assertIn("the upstream refs/heads/gone of gone is gone from origin", finished.stderr)
+        self.assertIn("the push was stopped so it does not recreate it", finished.stderr)
+        self.assertIn(f"git -C {self.repo} branch --unset-upstream", finished.stderr)
+        self.assertIn(f"git -C {self.repo} push -u origin HEAD", finished.stderr)
+        self.assertNotIn("stash apply --index", finished.stderr)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_branch_whose_upstream_is_gone_from_a_remote_other_than_origin_names_that_remote(self):
+        self.git(self.repo, "remote", "add", "upstream", str(self.remote))
+        self.git(self.repo, "checkout", "-q", "-b", "gone")
+        self.git(self.repo, "push", "-q", "-u", "upstream", "gone")
+        self.git(self.remote, "branch", "-q", "-D", "gone")
+        self.git(self.repo, "fetch", "-q", "--prune", "upstream")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn("gone from upstream", finished.stderr)
+        self.assertIn(f"git -C {self.repo} push -u upstream HEAD", finished.stderr)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_failed_lookup_of_the_configured_upstream_exits_1_naming_the_remote_and_ref(self):
+        self.git(self.repo, "checkout", "-q", "-b", "lost")
+        self.git(self.repo, "push", "-q", "-u", "origin", "lost")
+        self.git(self.repo, "config", "branch.lost.remote", "nowhere")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn("could not look up refs/heads/lost on nowhere", finished.stderr)
+        self.assertNotIn("is gone from", finished.stderr)
 
     def test_a_single_branch_clone_pulls_the_remote_branch_and_sets_its_upstream(self):
         self.git(self.repo, "push", "-q", "origin", "HEAD:refs/heads/solo")
@@ -234,6 +268,10 @@ class PullKeepIndexTest(unittest.TestCase):
         merge = self.git(single, "config", "--get", "branch.solo.merge").strip()
         self.assertEqual(merge, "refs/heads/solo")
         self.assertEqual(self.git(single, "config", "--get", "branch.solo.remote").strip(), "origin")
+
+        second = self.run_script()
+
+        self.assertEqual(second.returncode, 0, second.stderr)
 
     def test_a_folder_that_is_not_a_repo_exits_1_naming_the_failed_branch_lookup(self):
         not_a_repo = self.tmp / "plain"

@@ -126,11 +126,9 @@ def is_string_list(value):
     return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
 
 
-def nonblank_strings(value):
-    """The non-blank strings of a decoded JSON list; empty when the value is not a list."""
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str) and item.strip()]
+def is_nonblank_string_list(value):
+    """Whether a decoded JSON value is a list whose every entry is a string with text in it."""
+    return is_string_list(value) and all(entry.strip() for entry in value)
 
 
 def help_requested(arguments):

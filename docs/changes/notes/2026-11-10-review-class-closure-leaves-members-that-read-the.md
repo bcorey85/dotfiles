@@ -22,7 +22,9 @@ unmeasured: "No meter run; the user ruled ship on 2026-11-10 in session agent-ev
 - `review/review_loop_script.py`: `class_closure_pass` stores the list in `ClosureState.left_alone`, which the outcome builder writes to the `left_alone` packet field, so a missing receipt keeps it. `LoopRun` holds one `closure` field in place of the receipt and open-classes fields.
 - `review/review_loop_packet.py`: the packet message writes `left_alone`, and the empty outcome carries it.
 - `review/handback.py`: `left_alone` is a packet key, a list key and a string-list key, and the hand-back renders it.
-- `lib/script_utils.py`: new `nonblank_strings`, the list filter the closure reply uses.
+- `review/review_loop_findings.py`: `reply_with_one_retry` takes a `problem` check, which returns a reason string. A closure reply whose `open` or `left_alone` is not a list of non-blank strings is rejected with that reason, retried once, and a second bad reply raises. The retry note now reads "could not be used" in place of "could not be parsed".
+- `lib/script_utils.py`: new `is_nonblank_string_list`, which the closure check and `read_findings` share.
+- `review/review_loop_prompt_file.py`: `read_findings` uses `is_nonblank_string_list`.
 
 ## Evidence
 
@@ -30,7 +32,7 @@ The closure check listed readers of a value as open when they read it for anothe
 
 ## Result
 
-Tests cover the closed, held, repaired and still-open packets, a reply without `left_alone`, and a raw-quote reply that keeps it.
+Tests cover the closed, held, repaired and still-open packets, a reply without `left_alone`, and a raw-quote reply that keeps it. A malformed `open` or `left_alone` list is retried with a prompt that names the rejected key, and a second malformed reply raises with the same text.
 
 ## Watch
 
@@ -38,15 +40,17 @@ None: the change is pinned by tests.
 
 ## Back-out
 
-The change spans `44bab1ba` and `2d7b96f0`. Restore each closure file to its state before `44bab1ba` (`git checkout 44bab1ba^ -- <file>`); `2d7b96f0` also holds unrelated detach and plan edits, which stay. Restore these files:
+The change spans `44bab1ba`, `2d7b96f0` and the later commit that adds the `problem` check to `review_loop_findings.py`. Restore each closure file to its state before `44bab1ba` (`git checkout 44bab1ba^ -- <file>`); `2d7b96f0` also holds unrelated detach and plan edits, which stay. Restore these files:
 
-- `claude/.claude/scripts/lib/script_utils.py`
 - `claude/.claude/scripts/review/handback.py`
 - `claude/.claude/scripts/review/review_loop_closure.py`
+- `claude/.claude/scripts/review/review_loop_findings.py` (its `problem` check comes from a later commit on the branch)
 - `claude/.claude/scripts/review/review_loop_packet.py`
 - `claude/.claude/scripts/review/review_loop_script.py`
 - `tests/scripts/test_handback.py`
 - `tests/scripts/test_review_loop_closure.py`
-- `tests/scripts/test_review_loop_script.py`
+- `tests/scripts/test_review_loop_script.py` (keep `test_a_fix_first_run_rejects_a_blank_finding_text`)
+
+`claude/.claude/scripts/lib/script_utils.py` and `claude/.claude/scripts/review/review_loop_prompt_file.py` stay, because `read_findings` uses the helper.
 
 Separately, revert the Phase 3 edits in `docs/plans/coder-worktree-fixes/plan.md`, `docs/changes/changelog.md` and `docs/changes/index.md`.

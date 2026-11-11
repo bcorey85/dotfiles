@@ -487,6 +487,12 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertEqual(packet["files_touched"], ["app.py"])
 
+    def test_a_fix_first_run_rejects_a_blank_finding_text(self):
+        completed = self.run_script({}, header_extra=self.findings_header("a.py:1 - x", " "))
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("expected a JSON list of non-empty finding texts", completed.stderr + completed.stdout)
+
     def test_a_fix_first_run_with_no_review_calls_no_reviewer(self):
         completed = self.run_script({
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
@@ -3071,7 +3077,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(findings["fix"]), 1)
         retry_prompt = calls[1][1]
         self.assertTrue(retry_prompt.startswith(calls[0][1]))
-        self.assertIn("A previous reply to this prompt could not be parsed: ", retry_prompt)
+        self.assertIn("A previous reply to this prompt could not be used: ", retry_prompt)
         self.assertIn("JSON object only", retry_prompt)
         note = retry_prompt[len(calls[0][1]):]
         self.assertIn("x" * 100, note)

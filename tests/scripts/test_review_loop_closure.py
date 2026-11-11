@@ -33,7 +33,7 @@ class ClosureCheckRetryTest(unittest.TestCase):
         self.assertEqual(result, {"receipt": "all exits re-read", "open": ["a.py:3 - defect - fix"], "left_alone": []})
         self.assertEqual([role for role, _ in calls], ["class-closure", "class-closure-retry"])
         retry_prompt = calls[1][1]
-        self.assertIn("could not be parsed", retry_prompt)
+        self.assertIn("could not be used", retry_prompt)
         self.assertIn("Reply with the JSON object only.", retry_prompt)
         shape = '{"receipt": .., "open": [..], "left_alone": [..]}'
         error = f'the class-closure reply holds no {shape} object: {prose!r}'
@@ -49,10 +49,38 @@ class ClosureCheckRetryTest(unittest.TestCase):
         self.assertIn('"left_alone": ["<file:line - what it reads the value for>", ...]', prompt)
 
     def test_the_members_left_alone_come_back_beside_the_open_list(self):
-        reply = '{"receipt": "two readers", "open": [], "left_alone": ["log.py:9 - prints the limit", " ", 3]}'
-        result, _ = self.check([reply])
+        reply = '{"receipt": "two readers", "open": [], "left_alone": ["log.py:9 - prints the limit"]}'
+        result, calls = self.check([reply])
 
         self.assertEqual(["log.py:9 - prints the limit"], result["left_alone"])
+        self.assertEqual(1, len(calls))
+
+    def test_a_malformed_list_is_retried_and_the_second_reply_is_used(self):
+        good = '{"receipt": "two readers", "open": [], "left_alone": ["log.py:9 - prints the limit"]}'
+        malformed_replies = [
+            ('{"receipt": "r", "open": [], "left_alone": "log.py:9 - prints the limit"}', "left_alone"),
+            ('{"receipt": "r", "open": [], "left_alone": ["log.py:9 - prints the limit", " "]}', "left_alone"),
+            ('{"receipt": "r", "open": [], "left_alone": ["log.py:9 - prints the limit", 3]}', "left_alone"),
+            ('{"receipt": "r", "open": "a.py:3 - defect - fix"}', "open"),
+            # A raw quote in the receipt: only closure_from_open_list decodes it, and its list is then rejected.
+            ('{"receipt": "the "limit" readers", "open": ["a.py:3 - defect - fix"], '
+             '"left_alone": ["log.py:9 - prints the limit", " "]}', "left_alone"),
+        ]
+        for malformed, rejected_key in malformed_replies:
+            with self.subTest(malformed=malformed):
+                result, calls = self.check([malformed, good])
+
+                self.assertEqual(["log.py:9 - prints the limit"], result["left_alone"])
+                self.assertEqual("two readers", result["receipt"])
+                self.assertEqual(["class-closure", "class-closure-retry"], [role for role, _ in calls])
+                self.assertIn(f"'{rejected_key}' must be a list of non-blank strings", calls[1][1])
+
+    def test_two_malformed_replies_raise(self):
+        malformed = '{"receipt": "r", "open": [], "left_alone": "log.py:9 - prints the limit"}'
+
+        with self.assertRaises(ValueError) as raised:
+            self.check([malformed, malformed])
+        self.assertIn("'left_alone' must be a list of non-blank strings", str(raised.exception))
 
     def test_a_reply_without_the_left_alone_key_gives_an_empty_list(self):
         result, _ = self.check([JSON_REPLY])

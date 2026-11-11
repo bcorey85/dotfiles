@@ -1,8 +1,9 @@
 # Coder and worktree fixes
 
-Fix four queue items: `forked-worktree-workspace-closes-about-a-minute`,
-`review-coder-deletes-untracked-files-it-did-not`, `review-class-closure-sweeps-readers-without` and
-`worktree-rule-reads-as-an-order-to-create`. Each phase starts with a test that fails on the current tree.
+Fix queue items `forked-worktree-workspace-closes-about-a-minute`,
+`review-coder-deletes-untracked-files-it-did-not` and `review-class-closure-sweeps-readers-without`.
+`worktree-rule-reads-as-an-order-to-create` and the no-delete half of the untracked-file item were cut, see Plan
+Deviations. Each phase starts with a test that fails on the current tree.
 
 ## Scope
 
@@ -12,8 +13,9 @@ Fix four queue items: `forked-worktree-workspace-closes-about-a-minute`,
   (`CLOSURE_RULES`, the closure prompt and the recovery parser `closure_from_open_list`),
   `claude/.claude/scripts/review/review_loop_script.py` (`class_closure_pass`),
   `claude/.claude/scripts/review/review_loop_packet.py` (`packet_message`, `EMPTY_OUTCOME`),
-  `claude/.claude/scripts/review/handback.py` (the `left_alone` field), `claude/.claude/scripts/lib/script_utils.py` (`nonblank_strings`),
-  `docs/rule-anchors.md`, and their tests in `tests/scripts/`. `claude/.claude/orchestration.md` (the worktree
+  `claude/.claude/scripts/review/handback.py` (the `left_alone` field), `claude/.claude/scripts/review/review_loop_findings.py` (`reply_with_one_retry`'s `problem` check),
+  `claude/.claude/scripts/lib/script_utils.py` (`is_nonblank_string_list`),
+  `claude/.claude/scripts/review/review_loop_prompt_file.py` (`read_findings`), and their tests in `tests/scripts/`. `claude/.claude/orchestration.md` (the worktree
   bullet) was in scope and is not shipped: reverted, see Plan Deviations.
 - Out: `review_loop_coder.py` (its untracked-file restore already exists and stays as is), `review_fix.py`,
   `review_fix_asks.py`, `skills/review/`, `skills/fix/`, `review-fork-run.md`, lint, format, gate-env and
@@ -24,7 +26,6 @@ Fix four queue items: `forked-worktree-workspace-closes-about-a-minute`,
 - [x] Phase 1: herdr-worktree watches the forked workspace and names the recovery steps (risk: medium)
 - [x] Phase 2: coder scripts go to the scratchpad (risk: low). The no-delete-untracked-file half was reverted, see Plan Deviations
 - [x] Phase 3: class closure checks what each member reads the value for (risk: low)
-- [ ] Phase 4: the worktree bullet opens with "only when the user asks" (risk: low) (reverted, see Plan Deviations)
 
 ## Phase 1: herdr-worktree watches the forked workspace and names the recovery steps
 
@@ -72,17 +73,15 @@ the recovery. It never reopens the workspace by itself: the user may have closed
 - `python3 tests/parallel_tests.py test_herdr_worktree.py test_herdr_worktree_watch.py` passes;
   `bash -n` on both scripts passes.
 
-## Phase 2: coder scripts go to the scratchpad; a coder never deletes an untracked file it did not create
+## Phase 2: coder scripts go to the scratchpad
 
 Prompt edits only.
 
 1. `skills/coder-core/SKILL.md` line 30: replace `Write a script under \`scratch/scripts/\` and run it.` with
    `Write a script in your scratchpad directory, never in the repo tree, and run it.`
-2. Same file, `## You are the terminal implementer` paragraph: add the sentence `Never delete an untracked file you
-   did not create in this task; name it in your report instead.`
-3. Guidance tests in `tests/scripts/test_guidance_rules.py`: coder-core names the scratchpad for scripts, no longer
-   names `scratch/scripts/`, and holds the no-delete sentence.
-4. No opencode port: opencode loads `~/.claude/skills/` as is.
+2. Guidance tests in `tests/scripts/test_guidance_rules.py`: coder-core names the scratchpad for scripts and no longer
+   names `scratch/scripts/`.
+3. No opencode port: opencode loads `~/.claude/skills/` as is.
 
 #### Automated Verification
 
@@ -104,20 +103,6 @@ Prompt edits only.
 - The new test fails on the current tree and passes after, through `python3 tests/parallel_tests.py <file>`;
   `bash tests/lint.sh claude/.claude/scripts/review/review_loop_closure.py` passes.
 
-## Phase 4: the worktree bullet opens with "only when the user asks"
-
-1. `orchestration.md` Git bullet `Worktree location: ...`: open it with `Create a worktree only when the user
-   explicitly asks for one; "make a branch" means \`git checkout -b\` in the current checkout.` The location rule and
-   the herdr and EnterWorktree steps follow, as what to do once the user asked.
-2. Update the `docs/rule-anchors.md` row for that bullet (`rule-anchors.sh list`, then `check`).
-3. Guidance test in `tests/scripts/test_guidance_rules.py`: the bullet's first sentence is the "only when the user
-   explicitly asks" sentence and names `git checkout -b`.
-
-#### Automated Verification
-
-- The new guidance test fails on the current tree and passes after; `~/.claude/scripts/tools/rule-anchors.sh check`
-  passes.
-
 ## Plan Deviations
 
 - Phase 1 step 2: the watcher starts under `setsid`, with perl `POSIX::setsid()` as the fallback where `setsid` is missing (macOS; perl ships with it).
@@ -138,7 +123,8 @@ Prompt edits only.
   hand-back renders as its own line, so the hand-back names every member left alone on every path, including a
   missing receipt. This
   widens scope to `review_loop_script.py`, `review_loop_packet.py`, `handback.py` and their tests.
-- Phase 2 step 2 and Phase 4: reverted before merge on the orchestrator's ruling (agent-evals-5e, 2026-11-10). The
+- The former Phase 2 step 2 (the no-delete-untracked-file sentence) and the former Phase 4 (the orchestration.md
+  worktree bullet, removed from this plan): reverted before merge on the orchestrator's ruling (agent-evals-5e, 2026-11-10). The
   rule meter's off arm already held 8 of 8 for both lines (CD01, WT01), so they cost tokens and change nothing.
   The phase 2 scratchpad line ships.
 - Phase 3: the user ruled "ship" on the class-closure edit (44bab1ba), 2026-11-10, in session agent-evals-5e.

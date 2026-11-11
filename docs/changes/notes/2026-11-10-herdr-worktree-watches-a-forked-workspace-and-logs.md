@@ -43,7 +43,7 @@ None: the fix is pinned by tests; no intake number counts closed workspaces.
 The change spans the commits from `6d3e125a` onward on branch `fix/coder-worktree-fixes`. Restore these files to their state before `6d3e125a` (`git checkout 6d3e125a^ -- <file>`, and `git rm` the files that did not exist then):
 
 - `scripts/.local/bin/herdr-worktree`, `scripts/.local/bin/bookmark`, `scripts/.local/bin/research`
-- `scripts/.local/bin/herdr-worktree-watch`, `scripts/.local/bin/detach` (new in `6d3e125a`; `detach` rewritten in `2d7b96f0`: remove both)
+- `scripts/.local/bin/herdr-worktree-watch`, `scripts/.local/bin/detach` (new in `6d3e125a`; `detach` edited in `2d7b96f0` and `d0db0fc4`: remove both)
 - `tests/scripts/test_herdr_worktree.py` (edited in several of those commits)
 - `tests/scripts/test_herdr_worktree_watch.py` (new in `6d3e125a`: remove)
 - `tests/scripts/test_detach.py` (new in `2d7b96f0`: remove)

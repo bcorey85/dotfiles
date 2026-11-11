@@ -93,9 +93,9 @@ End the note with at most ONE tag from the vault's current vocabulary — #backe
 If the fetch fails, still create the file with Source filled and a single 'FETCH FAILED: <reason>' bullet under Key Points."
 
 # Prompt via stdin: --allowedTools is variadic and would swallow a positional
-# prompt. Own session (detach: setsid, or perl's POSIX::setsid on macOS), not
-# nohup: the popup's whole process group is torn down shortly after capture, so
-# the run needs its own session, not just SIGHUP immunity.
+# prompt. Own session (see `detach`), not nohup: the popup's whole process
+# group is torn down shortly after capture, so the run needs its own session,
+# not just SIGHUP immunity.
 detach="$(dirname "$0")/detach"
 if [ ! -x "$detach" ]; then
   echo "bookmark: logged to bookmarks.org, no source stub: $detach missing; run install/stow" >&2

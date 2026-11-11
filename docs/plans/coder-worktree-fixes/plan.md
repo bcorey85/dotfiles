@@ -58,13 +58,13 @@ the recovery. It never reopens the workspace by itself: the user may have closed
    process group), output appended to the watch log, stdin from `/dev/null`, and
    print one stderr line: `herdr-worktree: watching workspace <ws> for <N>s; recovery steps go to <log path> if it
    closes`. Then exit 0. A run without `--fork` starts no watcher.
-3. `herdr-worktree` header: add a paragraph that names the recovery line (and the `claude --resume` fallback), so `--help` shows them.
+3. `herdr-worktree` header: add a paragraph that names the recovery steps (and the `claude --resume` fallback), so `--help` shows them.
 
 #### Automated Verification
 
 - New tests in `tests/scripts/test_herdr_worktree_watch.py` (script path from one env var, stubs from `stubs.py`
   like `test_herdr_worktree.py`, `HERDR_WORKTREE_WATCH_SECONDS=0`): a workspace that `workspace get` still finds logs
-  `still open` and calls no notification; a gone workspace writes one recovery line with the literal worktree, main
+  `still open` and calls no notification; a gone workspace writes the recovery steps with the literal worktree, main
   checkout and session id to the log and calls `herdr notification show`; a gone workspace with an empty session id
   logs the `claude --resume` line; under `TUIOS_SOCKET` no notification is called and the log still holds the steps; a
   session id that appears after the first poll is picked up, and a session id that never appears is polled once a
@@ -166,7 +166,7 @@ Replaces the one-line paste-ready form, see Plan Deviations.
   '<resume prompt>'`, the prompt being the short resume prompt. Ruled by the orchestrator agent-evals-5e,
   2026-11-11 (an orchestrator ruling, not a user sign-off).
 - Phase 1 step 1: the watcher takes the parent session id as a 5th argument and keeps polling while the pane reports it,
-  so the recovery line never names the parent conversation (branch review 5 ask). Adopted by the
+  so the recovery steps never name the parent conversation (branch review 5 ask). Adopted by the
   coder-worktree-fixes lane session, 2026-11-11, under the verify-branch rule that an ask cutting no AC takes its
   proposed change; not a user sign-off. The launcher's output goes to the watch log, and the watcher writes its
   error messages to stderr, which the launcher sends to the log, so each line lands there once and a direct run shows it.

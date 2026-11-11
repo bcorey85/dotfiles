@@ -42,7 +42,7 @@ None: the change is pinned by tests.
 
 ## Back-out
 
-The change spans `44bab1ba`, `2d7b96f0` and `c16f9d73`, which adds the `problem` check to `review_loop_findings.py`. Restore each closure file to its state before `44bab1ba` (`git checkout 44bab1ba^ -- <file>`); `2d7b96f0` also holds unrelated detach and plan edits, which stay. Restore these files:
+The change spans `44bab1ba`, `2d7b96f0`, `c16f9d73` (which adds the `problem` check to `review_loop_findings.py`), `3b8c1dc1` (the move to `lib/reply_json.py`) and `41c03629` (`ReplyShapeError`). Restore each closure file to its state before `44bab1ba` (`git checkout 44bab1ba^ -- <file>`); `2d7b96f0` and `41c03629` also hold unrelated detach, gate and plan edits, which stay. Restore these files:
 
 - `claude/.claude/scripts/review/handback.py`
 - `claude/.claude/scripts/review/review_loop_closure.py`

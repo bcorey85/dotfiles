@@ -32,7 +32,7 @@ DISPATCH_ACTION = "dispatch-reviewer"
 WAIT_COMMAND = "python3 ~/.claude/scripts/review/reviewer_dispatch.py wait"
 PACKET_COMMAND = f"{REVIEW_FIX_COMMAND} packet"
 # The packet arguments and the relaunch flags of a run `review_fix.py launch` started:
-# {"packet_args": [...], "relaunch_args": [...]}.
+# {"packet_args": [...], "relaunch_args": [...], "user_ruled": <bool>}. `user_ruled` may be missing from older records.
 LAUNCH_FILE = "launch.json"
 # `review_fix.py launch` keeps each run at <git path of LAUNCH_STATE_NAME>/loop-script/<agent id>.
 LAUNCH_STATE_NAME = "review-script"
@@ -201,12 +201,18 @@ def waiting_launch_lines(repo):
     return lines
 
 
-def read_launch_record(launch_file, key):
+_REQUIRED = object()
+
+
+def read_launch_record(launch_file, key, *, default=_REQUIRED):
     """The value of `key` in a launch record. Raises ManifestError naming the file when it is unreadable or lacks
-    the key."""
+    the key, unless the caller passes `default=` for a key an older record may lack."""
     try:
-        return json.loads(pathlib.Path(launch_file).read_text())[key]
-    except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+        record = json.loads(pathlib.Path(launch_file).read_text())
+        if default is _REQUIRED:
+            return record[key]
+        return record.get(key, default)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError) as error:
         raise ManifestError(f"{launch_file}: {error!r}; expected a launch record with {key}") from error
 
 

@@ -10,6 +10,7 @@ import handback_store
 import script_utils
 from review_fix_names import (
     ASK_FINDINGS_NAME,
+    ASKS_DECIDED_BY_KEY,
     PENDING_LAUNCH_KEY,
     REVIEW_FIX_FOLDER,
     STATE_FILE_NAME,
@@ -23,6 +24,32 @@ ASK_LOGGER = CLAUDE_DIR / "skills/review/log-review-finding"
 REVIEW_FIX_COMMAND = "python3 ~/.claude/scripts/review/review_fix.py"
 # The review fork matches this line to decide whether to dispatch the coder.
 ADD_DEVIATIONS_LINE = "Add these lines under ## Plan Deviations in the plan, and show the user:"
+
+# State keys a repeat of the same packet keeps from the previous state.
+SAME_RUN_STATE_KEYS = (
+    "stage",
+    "asks",
+    "jumped",
+    "aikido_posted",
+    "escapes_logged",
+    "asks_logged",
+    "asks_redispatched",
+    "asks_launch_line",
+    ASKS_DECIDED_BY_KEY,
+    "ask_outcomes",
+    "ask_notes",
+    CORRECT_OPEN_KEY,
+    "last_asks_launch_line",
+    "last_ask_outcomes",
+    "last_ask_notes",
+    "asks_deviations_printed",
+    "plan_impact",
+    "plan_impact_held",
+    "plan_impact_applied",
+    "carried_findings",
+    "waiting_packets",
+    "relaunch_args",
+)
 
 
 class UsageError(Exception):

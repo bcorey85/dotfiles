@@ -822,10 +822,11 @@ class LoopRun(full_check_gate.FullCheckSteps):
             self.record_coder_plan_impact(report, changed)
 
         skips = skipped_issues(report, len(findings))
-        skipped = [{"item": findings[number - 1], "reason": line} for number, line in sorted(skips.items())]
+        skipped = [{"item": findings[number - 1], "reason": line, "given": True}
+                   for number, line in sorted(skips.items())]
         kept = [item for number, item in enumerate(findings, 1) if number not in skips]
         if not changed:
-            skipped += [{"item": item, "reason": NO_CHANGE_REASON} for item in kept]
+            skipped += [{"item": item, "reason": NO_CHANGE_REASON, "given": True} for item in kept]
             kept = []
         self.skipped_fp += skipped
         self.given_skipped += len(skipped)

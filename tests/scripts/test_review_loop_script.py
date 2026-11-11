@@ -487,6 +487,34 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "converged")
         self.assertEqual(packet["files_touched"], ["app.py"])
 
+    def test_a_fix_first_run_marks_only_the_callers_skip_as_given_in_the_packet(self):
+        completed = self.run_script({
+            "coder": [{"result": "SKIPPED 1: the caller's wording is off", "edits": {"app.py": APP_FIXED}},
+                      {"result": "SKIPPED 1: the limit is meant to be 5", "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header("app.py:3 the caller's finding [bug]"))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(len(packet["skipped_fp"]), 2)
+        callers = [entry for entry in packet["skipped_fp"] if "wording is off" in entry["reason"]]
+        reviewers = [entry for entry in packet["skipped_fp"] if "meant to be 5" in entry["reason"]]
+        self.assertEqual([entry.get("given") for entry in callers], [True])
+        self.assertEqual([entry.get("given") for entry in reviewers], [None])
+
+    def test_a_fix_first_run_marks_a_no_change_skip_as_given_in_the_packet(self):
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1."}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header("app.py:2 the limit is wrong for `limit`"))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual([entry["reason"] for entry in packet["skipped_fp"]], ["the coder made no change"])
+        self.assertEqual([entry.get("given") for entry in packet["skipped_fp"]], [True])
+
     def test_a_fix_first_run_with_no_review_calls_no_reviewer(self):
         completed = self.run_script({
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
@@ -787,6 +815,17 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([call for call in self.fake_calls() if call["key"] == "coder"], [])
         _row, packet = self.stored_packet()
         self.assertEqual([entry["reason"] for entry in packet["skipped_fp"]], [HELD_FILE_REASON])
+
+    def test_a_given_finding_on_a_held_file_stays_a_plain_skip_in_the_packet(self):
+        (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra="files: app.py\n" + self.findings_header("notes.py:1 the keys are out of order"))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual([entry.get("given") for entry in packet["skipped_fp"]], [None])
 
     def test_a_class_member_open_in_a_held_file_is_only_skipped_and_no_class_coder_runs(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")

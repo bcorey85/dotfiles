@@ -9,3 +9,6 @@ PENDING_LAUNCH_KEY = "asks_launch_pending"
 # Set when a --correct call had a row fail and the stored answers leave no ask to apply (the pending launch was
 # dropped), so the retry is allowed with no pending launch.
 CORRECT_OPEN_KEY = "correct_open"
+# Who ruled on the asks: set by the asks-done that prints the fix run, raised to user by a later
+# `asks-done --correct --by user`, so a later session correction keeps `--user-ruled`.
+ASKS_DECIDED_BY_KEY = "asks_decided_by"

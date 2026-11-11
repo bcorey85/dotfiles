@@ -802,9 +802,13 @@ def below_criteria_ruling(impact):
     return f"{BELOW_CRITERIA_RULING} {below_criteria_summary(impact)}"
 
 
+USER_RULING = "user"
+SESSION_RULING = "session"
+
+
 def ruling_owner(repo_dir, by):
     """Who a plan-impact ruling is signed by: the git user name for `--by user`, the session otherwise."""
-    if by != "user":
+    if by != USER_RULING:
         return SESSION_RULING_OWNER
     return script_utils.git_output(repo_dir, "config", "user.name") or "the user"
 
@@ -818,7 +822,7 @@ DECIDE_USAGE_STEM = 'decide <adopt|keep> --by <user|session> --ruling "<the deci
 
 def is_ruling_by(by):
     """True when a `--by` value names who ruled: the user or the session."""
-    return by in ("user", "session")
+    return by in (USER_RULING, SESSION_RULING)
 
 
 def ruled_at_now():

@@ -18,7 +18,7 @@ Scripts live in `claude/.claude/scripts/`; tests in `tests/scripts/`, paths from
 - [x] Phase 1: a resumed review cannot stop before the fix run asks-done printed (risk: medium)
 - [x] Phase 2: test commands named in a resume reply run in the fix run (risk: low)
 - [x] Phase 3: asks-done refuses a conditional proposed change and corrects a logged outcome (risk: medium)
-- [ ] Phase 4: a user-accepted ask the fix coder skips comes back as an ask (risk: medium)
+- [x] Phase 4: a user-accepted ask the fix coder skips comes back as an ask (risk: medium)
 - [ ] Phase 5: asks-done needs --by; no default records a user sign-off (risk: low)
 
 ## Phase 1: a resumed review cannot stop before the fix run asks-done printed
@@ -142,3 +142,4 @@ Bug: `review_fix.py asks-done` defaults to `--by user`, so a session's own rulin
 
 - Phase 1 step 3: the names live in two new import-free modules, `lib/review_fix_names.py` and `lib/stop_file_names.py`, in place of either option the plan gives. One owner holds each name, and the gate imports no heavy module. `review_fix_state` re-exports them. Every acceptance criterion holds.
 - Phase 3: the conditional-change pattern is narrowed to wording that hangs on the answer to the ask (starts with `If not`, `If no`, `Unless`, `Otherwise`, or holds `if (not )?(confirmed|approved|accepted)`, `if yes`, `if no,`, `if the user`); plain changes such as "When the list is empty, return []" pass. Session ruling (the /code session, not the user), 2026-11-10.
+- Phase 4: `review/review_loop_script.py` (over 1000 lines) gains a `given` field on the `skipped_fp` entries of the caller's own findings, and `review_loop_packet.py` carries it into the packet, and `reviewer_dispatch.read_launch_record` takes an optional `default=` so `review_launch.read_user_ruled` reads `user_ruled` from an older launch record. The packet step cannot tell the caller's skips from review-round skips without that marker, so only `given` skips become asks, not every `skipped_fp` entry as step 3 says; a review-round skip must not read "You accepted this change". Held-file skips stay plain skips (no `given`). Every acceptance criterion holds. Session ruling (the /code session, not the user), 2026-11-10.

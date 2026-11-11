@@ -25,7 +25,9 @@ codeFlowFiles=(claude/.claude/scripts/code/plan_check.py claude/.claude/scripts/
     claude/.claude/scripts/code/readability_check.py claude/.claude/scripts/lib/plan_format.py)
 reviewFlowFiles=(claude/.claude/scripts/review/review_fix.py claude/.claude/scripts/review/handback.py
     claude/.claude/scripts/review/review_commit_gate.py
-    claude/.claude/scripts/review/review_loop_script.py claude/.claude/scripts/review/review_loop_findings.py
+    claude/.claude/scripts/review/review_loop_script.py claude/.claude/scripts/review/review_loop_main.py
+    claude/.claude/scripts/review/review_loop_scoped_tests.py
+    claude/.claude/scripts/review/review_loop_findings.py
     claude/.claude/scripts/review/review_loop_packet.py claude/.claude/scripts/review/review_loop_closure.py
     claude/.claude/scripts/review/full_check_gate.py claude/.claude/scripts/review/full_check.py
     claude/.claude/scripts/review/handback_store.py claude/.claude/scripts/review/saved_handback.py

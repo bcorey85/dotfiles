@@ -11,12 +11,10 @@ import script_utils
 from review_fix_names import (
     ASK_FINDINGS_NAME,
     ASKS_DECIDED_BY_KEY,
+    CORRECT_OPEN_KEY,
     PENDING_LAUNCH_KEY,
     REVIEW_FIX_FOLDER,
     STATE_FILE_NAME,
-)
-from review_fix_names import (
-    CORRECT_OPEN_KEY as CORRECT_OPEN_KEY,
 )
 
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR", pathlib.Path(__file__).resolve().parents[2]))

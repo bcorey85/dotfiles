@@ -40,6 +40,21 @@ class PassedTestCountTest(unittest.TestCase):
                 self.assertEqual(0, test_run_output.passed_test_count(output))
 
 
+class CommandSummariesTextTest(unittest.TestCase):
+    def test_no_summaries_read_as_an_empty_string(self):
+        self.assertEqual("", test_run_output.command_summaries_text([]))
+
+    def test_one_commands_summary_lines_join_with_a_comma(self):
+        text = test_run_output.command_summaries_text([("pytest a", ["2 passed", "1 skipped"])])
+
+        self.assertEqual("pytest a: 2 passed, 1 skipped", text)
+
+    def test_commands_join_with_a_pipe_and_one_without_a_summary_says_so(self):
+        text = test_run_output.command_summaries_text([("pytest a", ["2 passed"]), ("make t", [])])
+
+        self.assertEqual("pytest a: 2 passed | make t: no runner summary", text)
+
+
 class MatchesNoTestTest(unittest.TestCase):
     def test_a_runner_inside_a_command_substitution_is_not_judged(self):
         dollar = "test \"$(env CARGO_BUILD_JOBS=4 cargo test fault_codes -- --exact 2>&1 | rg -c 'ok')\" = 2"

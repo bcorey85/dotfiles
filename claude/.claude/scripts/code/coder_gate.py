@@ -59,6 +59,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for
 import check_output
 import script_utils
 import shell_command
+import test_run_output
 from check_output import (
     failing_test_lines,
     failing_test_quote,
@@ -112,6 +113,9 @@ SKIPPED = "skipped"
 # The gate's time budget ran out before the command could start: it gave no test result, as a timeout gives none.
 NOT_STARTED = "not-started"
 NOT_STARTED_DETAIL = "the gate's time budget was used up before this command could start"
+# The leads of a scoped result that gave no test result: a command timed out, or the budget ran out before it started.
+SCOPED_NOT_RUN_TIMEOUT = "not run (timeout)"
+SCOPED_NOT_RUN_BUDGET = "not run (time budget used up)"
 # The outcome of a whole gate run, in the result vocabulary the coder stores.
 RESULT_FAILED = "failed"
 RESULT_COMMAND_ERROR = "command-error"
@@ -276,7 +280,8 @@ def fill_files(command, repo_root):
     return filled_command
 
 
-CommandRun = namedtuple("CommandRun", ["failures", "skipped", "timed_out", "not_started"])
+# summaries: (command, the runner's own summary lines) of each command that ran to its end (not skipped, not timed out).
+CommandRun = namedtuple("CommandRun", ["failures", "skipped", "timed_out", "not_started", "summaries"])
 
 
 def _timeout_within_budget(budget_seconds, started):
@@ -310,7 +315,7 @@ def run_commands(gate, budget_seconds=None):
     # A command that hit the timeout gave no test result, so timed_out holds (command, output so far, the timeout it
     # got), never failures. With a budget, each command gets at most the budget left, and a command that cannot start
     # with MIN_COMMAND_SECONDS left is in not_started: no command runs past the budget.
-    run = CommandRun([], [], [], [])
+    run = CommandRun([], [], [], [], [])
     environment = {**os.environ, **gate.get("env", {})}
     started = time.monotonic()
     for command in gate["commands"]:
@@ -332,6 +337,8 @@ def run_commands(gate, budget_seconds=None):
             run.timed_out.append((command, output, command_timeout))
             continue
 
+        summary_lines = test_run_output.runner_summaries(output, limit=None)
+        run.summaries.append((command, summary_lines))
         failure = _failure_of(command, code, output, verdict)
         if failure is not None:
             run.failures.append(failure)
@@ -406,38 +413,56 @@ def command_outcomes(sorted_failures, timed_out, skipped, not_started=()):
     return outcomes
 
 
-def run_scoped_tests(repo_root, commands, gate_env, log_path):
-    # (one-line result, the failing commands' tails). The scoped commands, run as the gate runs them, outside a hook.
-    # A failing or timed-out command's whole output goes to log_path, and a failed, setup-fault, command-error or
-    # timeout result names it.
-    result, tails, _real_failures = run_scoped_tests_with_failures(repo_root, commands, gate_env, log_path)
-    return result, tails
+# unnamed_lines: the `not run:`, `command error:` and `setup fault:` lines of the commands that gave no result and
+# that the result line does not already name; empty for none.
+# gave_no_result: True when any command timed out, never started, errored or hit a setup fault, whatever the outcome.
+ScopedRun = namedtuple("ScopedRun", ["result", "tails", "real_failures", "summaries",
+                                     "unnamed_lines", "gave_no_result"])
 
 
-def run_scoped_tests_with_failures(repo_root, commands, gate_env, log_path):
-    # run_scoped_tests' (result, tails), plus the (command, outcome, output) of each real failure the tails quote:
-    # empty unless the result is a failure.
+def unnamed_result_lines(outcome, unrun, sorted_failures):
+    # The lines for the no-result commands that scoped_result leaves out of its result line: a timeout result names
+    # every unrun command; a failure result names none; a command-error result names the command errors only.
+    lines = []
+    if outcome != RESULT_TIMEOUT:
+        lines += [f"not run: {command}" for command in unrun]
+    if outcome == RESULT_FAILED:
+        lines += [f"command error: {command}" for command, _line in sorted_failures.command_errors]
+    if outcome in (RESULT_FAILED, RESULT_COMMAND_ERROR):
+        lines += [f"setup fault: {command}" for command, _output in sorted_failures.setup_faults]
+    return lines
+
+
+def scoped_run(repo_root, commands, gate_env, log_path, budget_seconds=None):
+    # The ScopedRun of the scoped commands. real_failures holds the (command, outcome, output) of each real failure the
+    # tails quote: empty unless the result is a failure. A budget_seconds bounds the whole run, as run_commands does.
     if not commands:
-        return "not run (no scoped test commands)", [], []
+        return ScopedRun("not run (no scoped test commands)", [], [], [], [], False)
 
     gate ={"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_env)}
-    # No hook timeout bounds this run, so it takes no budget and starts every command.
-    failures, skipped, timed_out, _not_started = run_commands(gate)
+    # Without a budget no hook timeout bounds this run, so it starts every command.
+    failures, skipped, timed_out, not_started, summaries = run_commands(gate, budget_seconds)
     if failures or timed_out:
         timed_out_outputs = [(command, "timeout", output) for command, output, _timeout in timed_out]
         script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
     sorted_failures = sort_failures(failures, repo_root)
-    result, tails = scoped_result(sorted_failures, timed_out, skipped, commands, log_path)
+    result, tails = scoped_result(sorted_failures, timed_out, skipped, commands, log_path, not_started)
     real_failures = sorted_failures.real_failures if tails else []
-    return result, tails, real_failures
+    unrun = [command for command, _output, _timeout in timed_out] + list(not_started)
+    outcome = gate_outcome(sorted_failures.real_failures, sorted_failures.command_errors,
+                           sorted_failures.setup_faults, timed_out, not_started)
+    unnamed_lines = unnamed_result_lines(outcome, unrun, sorted_failures)
+    gave_no_result = bool(unrun or sorted_failures.command_errors or sorted_failures.setup_faults)
+    return ScopedRun(result, tails, real_failures, summaries, unnamed_lines, gave_no_result)
 
 
-def scoped_result(sorted_failures, timed_out, skipped, commands, log_path):
-    # (one-line result, the real failures' tails) of a sorted scoped run.
+def scoped_result(sorted_failures, timed_out, skipped, commands, log_path, not_started=()):
+    # (one-line result, the real failures' tails) of a sorted scoped run. A command that never started for want of
+    # budget is no pass: the result names it.
     log_note = f"; full output: {log_path}"
     real_failures, setup_faults, command_errors = sorted_failures
-    outcome = gate_outcome(real_failures, command_errors, setup_faults, timed_out)
+    outcome = gate_outcome(real_failures, command_errors, setup_faults, timed_out, not_started)
     if outcome == RESULT_FAILED:
         return scoped_test_failure(real_failures, log_path)
     if outcome == RESULT_COMMAND_ERROR:
@@ -445,8 +470,14 @@ def scoped_result(sorted_failures, timed_out, skipped, commands, log_path):
         return "command error: " + command_error_text + log_note, []
     if outcome == RESULT_SETUP_FAULT:
         return "setup fault: " + "; ".join(command for command, _output in setup_faults) + log_note, []
+    if outcome == RESULT_TIMEOUT and timed_out:
+        timed_out_commands = "; ".join(command for command, _output, _timeout in timed_out)
+        not_started_note = ""
+        if not_started:
+            not_started_note = f"; {SCOPED_NOT_RUN_BUDGET}: " + "; ".join(not_started)
+        return f"{SCOPED_NOT_RUN_TIMEOUT}: {timed_out_commands}{not_started_note}{log_note}", []
     if outcome == RESULT_TIMEOUT:
-        return "not run (timeout): " + "; ".join(command for command, _output, _timeout in timed_out) + log_note, []
+        return SCOPED_NOT_RUN_BUDGET + ": " + "; ".join(not_started), []
     if len(skipped) == len(commands):
         return "not run (no changed file matches)", []
     return SCOPED_PASSED, []
@@ -458,10 +489,10 @@ HitCheck = namedtuple("HitCheck", ["result", "hit_outputs", "script_failure_tail
 def run_hit_check(repo_root, commands, gate_env, log_path):
     # The stale-prose or readability commands' result, hit outputs and script failure tails. A hit is a command that
     # exited 1, its whole output kept: it goes to a coder pass, not a stop. The result and the tails come from every
-    # other outcome, as run_scoped_tests reports them.
+    # other outcome, as scoped_run reports them.
     gate = {"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_env)}
-    failures, skipped, timed_out, _not_started = run_commands(gate)
+    failures, skipped, timed_out, _not_started, _summaries = run_commands(gate)
     if failures or timed_out:
         timed_out_outputs = [(command, "timeout", output) for command, output, _timeout in timed_out]
         script_utils.write_command_outputs(log_path, failures + timed_out_outputs)
@@ -602,7 +633,7 @@ def _run_stored_gate(gate, event, hook_started):
     # Runs the gate's commands for the coder of the event, stores the coder's result in the gate and reports the run.
     budget_seconds = GATE_BUDGET_SECONDS - (time.monotonic() - hook_started)
     started = time.time()
-    failures, skipped, timed_out, not_started = run_commands(gate, budget_seconds)
+    failures, skipped, timed_out, not_started, _summaries = run_commands(gate, budget_seconds)
     seconds = round(time.time() - started)
 
     sorted_failures = sort_failures(failures, gate["repoRoot"])

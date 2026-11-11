@@ -18,11 +18,15 @@ ASK_OUTCOMES = (ACCEPTED, REJECTED, MODIFIED)
 ACCEPT_MEANS = "make this change"
 REJECT_MEANS = "leave the code as it is"
 JUMP_NOTE_LIMIT = 160
-# A proposed change that hangs on the answer to the ask: it starts with `If not`, `If no`, `Unless` or `Otherwise`, or
-# it holds `if (not) confirmed/approved/accepted`, `if yes`, `if no,` or `if the user`. An accepted answer to it applies
-# the branch the user never chose. A plain condition such as "When the list is empty, return []" is not one.
+# The ask field that marks an ask converted from a finding the user already accepted. Its change is that finding's
+# line, so the conditional-change check skips it.
+USER_RULED_KEY = "user_ruled"
+# A proposed change that hangs on the answer to the ask: it starts with `If not`, `If no` (not `If no-op`), `Unless`
+# or `Otherwise`, or it holds `if (not) confirmed/approved/accepted`, `if yes`, `if no,` or `if the user`. An accepted
+# answer to it applies the branch the user never chose. A plain condition such as "When the list is empty, return []"
+# is not one.
 CONDITIONAL_CHANGE = re.compile(
-    r"^\s*(if (not|no)|unless|otherwise)\b"
+    r"^\s*(if not|if no(?!-)|unless|otherwise)\b"
     r"|\bif (not )?(confirmed|approved|accepted)\b|\bif yes\b|\bif no,|\bif the user\b",
     re.IGNORECASE)
 # One path with a line or line range and nothing else: a list of locations or a bare path has no one place to jump to.

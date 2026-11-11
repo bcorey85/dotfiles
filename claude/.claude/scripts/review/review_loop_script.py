@@ -2,7 +2,7 @@
 """The scripted review loop: the walking between steps is code, the judgment inside each step is a model call.
 
     review_loop_script.py <repo> --state-dir <dir> --session <id> --agent-id <id> --prompt-file <path>
-        [--gate-command <cmd>]... [--reviewers headless|main]
+        [--gate-command <cmd>]... [--gates-every-run] [--reviewers headless|main]
 
 The prompt file (review_loop_prompt_file.py holds its header keys) is header lines, a blank line, then the handoff
 block. A `findings:` line makes the run fix-first: the fix coder applies the caller's findings before any reviewer, and
@@ -53,20 +53,14 @@ review_loop_packet.py writes the packet and the hand-back rows.
 Not covered: the second-order caller supplement and the critical-blocker judgment (a reviewer routes it as an ask).
 """
 
-import argparse
-import contextlib
 import hashlib
-import os
 import pathlib
 import re
-import signal
 import sys
 import typing
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-# The file in the loop's state folder that holds the whole output of a red scoped test run.
-SCOPED_TESTS_LOG = "scoped-tests.log"
 STALE_PROSE_LOG = "stale-prose.log"
 READABILITY_LOG = "readability.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
@@ -86,11 +80,7 @@ from capped_review import DEFERRED
 from finding_record import parse_finding
 from review_loop_calls import (
     CALL_TIMEOUT_SECONDS,
-    CALLS,
-    LIVE_CHILDREN,
-    PARENT_SESSION,
     claude_call,
-    now,
     record_main_dispatch,
 )
 from review_loop_closure import (
@@ -116,24 +106,13 @@ from review_loop_findings import (
     same_finding,
 )
 from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges, split_outside_fixes
-from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
-from review_loop_plan import ChangeUnderReview, first_round_plan, head_commit, review_files, second_round_plan
+from review_loop_plan import first_round_plan, head_commit, review_files, second_round_plan
 from review_loop_prompt_file import (
-    BASE_KEY,
-    FILES_KEY,
-    HELD_FILES_KEY,
-    NO_REVIEW_KEY,
-    REVIEWER_MODEL_KEY,
     REVIEWERS_HEADLESS,
     REVIEWERS_MAIN,
-    YES,
-    header_iter,
-    header_list,
-    read_findings,
-    read_prompt,
-    reviewer_brief,
 )
 from review_loop_prompts import coder_prompt, reviewer_prompt
+from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
@@ -370,7 +349,7 @@ def prior_issue_entries(round_findings, skips):
     return entries
 
 
-class LoopRun(full_check_gate.FullCheckSteps):
+class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -433,6 +412,9 @@ class LoopRun(full_check_gate.FullCheckSteps):
         self.review_base = ""  # the commit the review diffs against; "" is HEAD
         self.only_files = []  # the files the caller scoped the review to; [] is every changed file
         self.held_files = set()  # files another session holds, which no reviewer reads and no coder pass may edit
+        # the user named tests: every scoped run reports runner counts and stops on an unrun command, a command
+        # error or a setup fault, and a converged run with no untested fix runs them too
+        self.gates_every_run = False
 
     def review_scope(self):
         files = review_files(self.repo, self.review_base, self.only_files)
@@ -879,9 +861,9 @@ class LoopRun(full_check_gate.FullCheckSteps):
         repair can change the prose a stale-prose hit names."""
         readability_commands = [command for command in gate_commands if coder_gate.is_readability_check(command)]
         prose_commands = [command for command in gate_commands if coder_gate.is_stale_prose_check(command)]
-        test_commands = [command for command in gate_commands
-                         if command not in readability_commands and command not in prose_commands]
-        if not self.run_test_commands(test_commands):
+        test_commands = test_commands_of(gate_commands)
+        # On a loop that gates every run the gate commands are the user's named tests: an unrun one must not pass.
+        if not self.run_test_commands(test_commands, stop_when_unrun=self.gates_every_run):
             return
 
         readability = HitCheck("readability check", "coder-readability", READABILITY_LOG, readability_commands)
@@ -890,27 +872,7 @@ class LoopRun(full_check_gate.FullCheckSteps):
         if self.status == "converged":
             edited = self.hit_check_pass(check_command, prose) or edited
         if edited and self.status == "converged" and self.untested_fix:
-            self.run_test_commands(test_commands)
-
-    def run_test_commands(self, test_commands):
-        """Run the scoped test commands and keep their result. A red run the autofix formatters can fix is fixed and
-        run once more. A red run whose every failure also fails on HEAD without the diff is pre-existing, not red.
-        False, with the loop stopped, when one stays red."""
-        log_path = self.out / SCOPED_TESTS_LOG
-        self.scoped_tests, tails, real_failures = coder_gate.run_scoped_tests_with_failures(
-            self.repo, test_commands, self.gate_env, log_path)
-        if tails and self.autofix_touched_files():
-            self.scoped_tests, tails, real_failures = coder_gate.run_scoped_tests_with_failures(
-                self.repo, test_commands, self.gate_env, log_path)
-        if tails and self.scoped_failures_pre_existing(real_failures):
-            self.scoped_tests = f"{full_check.SCOPED_PRE_EXISTING}: {self.scoped_tests}"
-            return True
-
-        if tails:
-            self.stop("critical-blocker", ["scoped tests failing after the last fix:\n" + "\n\n".join(tails)])
-            return False
-
-        return True
+            self.run_test_commands(test_commands, stop_when_unrun=self.gates_every_run)
 
     def hit_check_pass(self, check_command, check):
         """One coder pass on the hits of a readability or stale-prose check after the last fix. Only a real hit (exit
@@ -976,8 +938,9 @@ class LoopRun(full_check_gate.FullCheckSteps):
 
 
 def walk(loop, check_command, gate_commands):
-    """The review rounds, then the full check, the class closure and the scoped tests while the loop converges. A
-    converged run that still holds a fix deferred outside the fix diff ends `deferred`."""
+    """The review rounds, then the full check, the class closure and the scoped tests while the loop converges. With
+    gates_every_run the gate commands run on a converged run that holds no untested fix too, and a red one stops it
+    before commit credit. A converged run that still holds a fix deferred outside the fix diff ends `deferred`."""
     deferred = []
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
         loop.next_round()
@@ -994,6 +957,8 @@ def walk(loop, check_command, gate_commands):
         loop.class_closure_pass(check_command)
     if loop.status == "converged" and loop.untested_fix:
         loop.scoped_tests_pass(check_command, list(gate_commands))
+    elif loop.status == "converged" and loop.gates_every_run:
+        loop.run_test_commands(test_commands_of(gate_commands), budgeted=True, stop_when_unrun=True)
     still_deferred = any(item in loop.open_fixes for item in deferred)
     if loop.status == "converged" and still_deferred:
         loop.status = DEFERRED
@@ -1012,161 +977,9 @@ def first_pass(loop, findings, no_review, structure_pass_skipped):
     loop.dispatches = first_round_plan(loop.files, structure_pass_skipped)
 
 
-class LoopRequest(typing.NamedTuple):
-    """What one run of the loop is given: the repo, the state folder, the caller's prompt file and its settings."""
-
-    repo: str
-    out: pathlib.Path
-    session: str
-    header: dict
-    handoff: str
-    progress: dict
-    gate_commands: typing.Sequence = ()
-    reviewers: str = REVIEWERS_HEADLESS
-
-
-def telemetry_scope_fields(header, caller):
-    """The `scope=` fields every telemetry row of this run carries."""
-    if caller != "code":
-        return ["scope=standalone"]
-    if header.get("phase"):
-        return ["scope=phase", f"phase={header['phase']}"]
-    return ["scope=phase"]
-
-
-def later_phase_files(header):
-    """The set of files the plan gives to a later phase, from the prompt header's comma-separated list."""
-    listed = header.get("later-phase files", "")
-    names = listed.split(", ")
-    return set(filter(None, names))
-
-
-def build_loop(request):
-    """The LoopRun for one request, with the settings its prompt header gives. Returns (loop, check_command)."""
-    header, handoff, repo = request.header, request.handoff, request.repo
-    brief = reviewer_brief(header, handoff)
-    gate_env = plan_format.gate_env_words_in(handoff)
-    loop = LoopRun(repo, request.out, brief, gate_env, request.progress, header.get("plan", ""))
-    loop.reviewers = request.reviewers
-    loop.later_phase_files = later_phase_files(header)
-    loop.guidance = header.get("guidance", "")
-    loop.resolved_texts = plan_format.resolved_plan_texts(handoff)
-    loop.change = ChangeUnderReview(repo)
-
-    log_call(repo, [str(SKILLS / "review-scope"), f"caller={header.get('caller', 'code')}"])
-    found_command = full_check.configured_check_command(repo)
-    plan = header.get("plan")
-    plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
-    check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, header.get("phase"))
-    if plan_on_disk:
-        plan_lines = (pathlib.Path(repo) / plan_on_disk).read_text().splitlines()
-        loop.test_strategy = plan_format.test_strategy_section(plan_lines)
-
-    loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
-    loop.review_base = header.get(BASE_KEY, "")
-    loop.only_files = header_list(header, FILES_KEY)
-    caller_held = header_list(header, HELD_FILES_KEY)
-    loop.held_files = review_loop_held.run_held_files(repo, caller_held, loop.only_files)
-    loop.iter_count = min(header_iter(header), ROUND_BUDGET - 1)
-    request.progress["iter"] = loop.iter_count
-    return loop, check_command
-
-
-def tally_actioned(loop):
-    """Sets the metrics tallies of fixed and skipped findings from the run rows and the findings fixed outside them."""
-    every_actioned = []
-    for row in loop.run_rows:
-        every_actioned += [finding["actioned"] for finding in row["findings"]]
-    loop.tallies["fixed"] = every_actioned.count("fixed") + loop.check_fixed
-    loop.tallies["skipped_fp"] = every_actioned.count("skipped_fp") + loop.given_skipped
-
-
-def run_loop(request):
-    """Walks the graph. Returns the outcome mapping. `request.progress` holds what a crash still reports: iter, fixed
-    and files_touched, updated in place as the loop goes. `request.reviewers` says who runs the reviewers."""
-    header = request.header
-    structure_pass_skipped = header.get("structure-pass") == "skip"
-    scope_fields = telemetry_scope_fields(header, header.get("caller", "code"))
-    loop, check_command = build_loop(request)
-    try:
-        first_pass(loop, read_findings(header), header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
-        walk(loop, check_command, request.gate_commands)
-    except LaterPhaseEditError as error:
-        loop.stop("critical-blocker", [str(error)])
-    except ChangeRemovedError as error:
-        loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])
-
-    tally_actioned(loop)
-    run = TelemetryRun(request.session, header["lane"], scope_fields, loop.iter_count, loop.tallies, loop.run_rows,
-                       request.out)
-    ask_ids, ask_rows = write_telemetry(request.repo, run)
-    return loop.outcome(ask_ids, ask_rows)
-
-
-# ---------- main ----------
-
-def stop_on_sigterm(_signal_number, _frame):
-    """The stop signal of a caller stopping the loop: kill the process group of every claude call
-    that is running and remove the base run's worktree, then exit without a packet."""
-    for pid in list(LIVE_CHILDREN):
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(pid, signal.SIGKILL)
-    full_check_gate.remove_live_base_trees()
-    os._exit(128 + signal.SIGTERM)
-
-
-def parse_review_loop_arguments(argv):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("repo")
-    parser.add_argument("--state-dir", required=True)
-    parser.add_argument("--session", required=True)
-    parser.add_argument("--agent-id", required=True)
-    parser.add_argument("--prompt-file", required=True)
-    parser.add_argument("--gate-command", action="append", default=[])
-    parser.add_argument("--reviewers", choices=(REVIEWERS_HEADLESS, REVIEWERS_MAIN), default=REVIEWERS_HEADLESS)
-    return parser.parse_args(argv)
-
-
-def main(argv=None):
-    args = parse_review_loop_arguments(argv)
-    signal.signal(signal.SIGTERM, stop_on_sigterm)
-    PARENT_SESSION["label"] = script_utils.session_display_name(args.session) or f"session {args.session}"
-    repo = str(pathlib.Path(args.repo).resolve())
-    out = pathlib.Path(args.state_dir) / "loop-script" / args.agent_id
-    out.mkdir(parents=True, exist_ok=True)
-    started = now()
-    progress = {"iter": 0, "fixed": [], "files_touched": set()}
-
-    exit_code = 0
-    outcome = None
-    try:
-        header, handoff = read_prompt(args.prompt_file)
-        request = LoopRequest(repo, out, args.session, header, handoff, progress, args.gate_command, args.reviewers)
-        outcome = run_loop(request)
-        message = packet_message(outcome)
-        handback.load(message)
-    except handback.PacketError as error:
-        problems = "; ".join(error.problems)
-        print(f"review-loop-script: the packet does not parse: {problems}", file=sys.stderr)
-        reason = f"the review loop packet failed validation ({problems}); call log: {out / 'calls.jsonl'}"
-        outcome = {**crash_outcome(progress, reason), "ask_rows": outcome["ask_rows"]}
-        message = packet_message(outcome)
-        exit_code = 1
-    except Exception as error:
-        print(f"review-loop-script: {type(error).__name__}: {error}", file=sys.stderr)
-        reason = script_utils.one_line(f"the review loop script failed with {type(error).__name__}: {error}; "
-                                       f"call log: {out / 'calls.jsonl'}", limit=None)
-        outcome = crash_outcome(progress, reason)
-        message = packet_message(outcome)
-        exit_code = 1
-
-    status = handback.load(message)["status"]
-    (out / "packet.txt").write_text(message + "\n")
-    write_handback_rows(args, message, status, outcome["ask_rows"], outcome["unreviewed_fix"])
-    write_usage_row(repo, started, CALLS)
-    print(message)
-    return exit_code
-
-
+# The entry (request, build, run, packet, exit code) is review_loop_main.py. It imports this module, so the script
+# imports it only when it runs.
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    import review_loop_main
+
+    sys.exit(review_loop_main.main(sys.argv[1:]))

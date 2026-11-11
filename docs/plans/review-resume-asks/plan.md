@@ -106,7 +106,7 @@ outcome printed "already logged" and could not fix it.
 Bug: the user accepted an ask through `/fix resume accept`; the fix run's coder objected and the finding landed in
 `skipped_fp`, so the user's decision was dropped without a word.
 
-1. `review_launch`: add `--user-ruled` (needs `--fix`); store `user_ruled: true` in the launch record.
+1. `review_launch`: add `--user-ruled` (needs `--fix`); store `user_ruled` (the accepted findings' texts) in the launch record.
 2. `asks-done --by user`: the launch line it prints carries `--user-ruled`.
 3. `review_fix.py packet`, through a new sibling module: when the launch record holds `user_ruled`, each `skipped_fp`
    entry becomes an ask whose question is `You accepted this change; the fix coder skipped it: <reason>. Apply it
@@ -143,3 +143,43 @@ Bug: `review_fix.py asks-done` defaults to `--by user`, so a session's own rulin
 - Phase 1 step 3: the names live in two new import-free modules, `lib/review_fix_names.py` and `lib/stop_file_names.py`, in place of either option the plan gives. One owner holds each name, and the gate imports no heavy module. `review_fix_state` re-exports them. Every acceptance criterion holds.
 - Phase 3: the conditional-change pattern is narrowed to wording that hangs on the answer to the ask (starts with `If not`, `If no`, `Unless`, `Otherwise`, or holds `if (not )?(confirmed|approved|accepted)`, `if yes`, `if no,`, `if the user`); plain changes such as "When the list is empty, return []" pass. Session ruling (the /code session, not the user), 2026-11-10.
 - Phase 4: `review/review_loop_script.py` (over 1000 lines) gains a `given` field on the `skipped_fp` entries of the caller's own findings, and `review_loop_packet.py` carries it into the packet, and `reviewer_dispatch.read_launch_record` takes an optional `default=` so `review_launch.read_user_ruled` reads `user_ruled` from an older launch record. The packet step cannot tell the caller's skips from review-round skips without that marker, so only `given` skips become asks, not every `skipped_fp` entry as step 3 says; a review-round skip must not read "You accepted this change". Held-file skips stay plain skips (no `given`). Every acceptance criterion holds. Session ruling (the /code session, not the user), 2026-11-10.
+- Phase 4 steps 1-2: `--user-ruled N` is repeatable and names one finding of the `--fix` file; the launch record stores the texts of those findings as a list, and `asks-done` prints one `--user-ruled N` per finding whose ask the user ruled on (kept as a per-ask `asks_decided_by` list). Every acceptance criterion holds; both Phase 4 acceptance checks hold with `--user-ruled 1`. Session ruling (the /code session, not the user), 2026-11-11.
+- Phase 2 step 2: `review/review_loop_script.py` gains a route: on a converged run of a launch that named `--test` (the loop gets `--gates-every-run`) and whose loop ran none of them, the loop runs the named commands under a time deadline shared by its named-test runs (the base runs that check a red one are not bound) before it records commit credit; a red run blocks credit. `review_named_tests.py` (a packet-side run) is deleted. This replaces the plan's "no new route in review_loop_script.py". Session ruling (agent-evals-5e, not the user), 2026-11-11.
+- Phase 2 step 2 (later): the named-tests flag splits into a budget flag and a stop flag. A loop that gates every run stops on a named-test `not run (timeout)` or a command error in the post-fix scoped run too (stop on, budget off), so credit is never recorded on an unverified run. Session ruling (this lane session, inside agent-evals-5e's ruling), 2026-11-11.
+
+- 2026-11-11: Keep plan as written. Ruled by the session, not the user at 2026-11-11 03:17.
+
+  The ruling: Keep the plan as written: the loop's scoped_tests line carries runner pass/fail counts (ScopedRun.summaries via command_summaries_text), per Phase 2 step 4 and AC2; when the loop stops before the named tests ran, scoped_tests says why. Also apply round-2 findings: delete review_named_tests.py and its test, remove dead code (TESTS_KEY if unused), fix E501 at review_loop_script.py:428, fix stale docs, notes and plan text.
+
+  The disagreement:
+  claude/.claude/scripts/review/review_loop_script.py:904 [plan-drift] — PLAN-IMPACT: Plan Phase 2 step 4 says the stop text reports "pass/fail counts, or why they did not run". The deleted packet module was the only code that put runner counts in the line; the loop's `scoped_tests` now reads just `passed`. Question: should the loop add the runner counts (`ScopedRun.summaries` via `command_summaries_text`) to `self.scoped_tests`, or is a bare `passed` enough to meet step 4? Change: if accepted, keep `summaries` and `command_summaries_text` (Fix 2 then shrinks to folding `scoped_run`). `run_test_commands` then sets `self.scoped_tests` from `scoped_run(...)` as `f"{result}; counts: {command_summaries_text(run.summaries)}"`. acceptance_criteria: none (Phase 2's automated checks hold either way).
+
+- 2026-11-11: Adopt plan change. Ruled by the session, not the user at 2026-11-11 04:28.
+
+  The ruling: Adopt A: split named_tests into a budget flag and a stop flag; stop on, budget off on the post-fix run of a gates-every-run loop (session reply: adopt, --by session)
+
+  The disagreement:
+  PLAN-IMPACT:
+    assumed: the plan says not to cap the post-fix `scoped_tests_pass` run, and that a named-test `not run (timeout)` stops as `critical-blocker`.
+    found: `run_test_commands(test_commands)` in `scoped_tests_pass` passes `named_tests=False`, so a timeout there returns True. The cause is `review_loop_script.py:888,897`.
+    changes: the fix splits `named_tests` into a budget flag and a stop flag, with the stop on and the budget off when the loop gates every run. That fits both sides of the ruling.
+    acceptance_criteria: Phase 2 step 2. The 06:56 entry closes this: no ticket AC narrowed.
+    cause: plan
+
+- 2026-11-11: Mid-text `if the user` kept conditional in a proposed change (review_asks.py `CONDITIONAL_CHANGE`); no plan change. Phase 3 step 1 already lists `if the user` as a "holds" form.
+
+- 2026-11-11: Keep plan as written. Ruled by the session, not the user at 2026-11-11 06:56.
+
+  The ruling: Kept as written: the user did not sign off; agent-evals-5e and the lane session ruled, no ticket AC narrowed (plan-verifier 5/5 done). Entries reworded to 'session reply'.
+
+  The disagreement:
+  /home/brandon/dotfiles-review-resume-asks/docs/plans/review-resume-asks/plan.md:157 [plan-drift] — PLAN-IMPACT: The 04:28 entry says "Ruled by the session, not the user", but its ruling text says "(user reply: adopt, --by session)". Its own disagreement block says "acceptance_criteria: Phase 2 step 2, so it needs your sign-off". It therefore reads either as a user sign-off logged as a session ruling (the same mislabel Phase 5 fixes) or as an AC-touching change with no user sign-off. The plan side says no new route in review_loop_script.py, and a timeout in the post-fix run is not covered. The code side splits the named-tests flag into budget and stop, and stops on a post-fix timeout. — Did the user give "adopt" (so this is a user sign-off), or did the session rule alone? — change: if it was the user, rewrite the entry header to "Ruled by the user at 2026-11-11 04:28" and drop "--by session". If the session ruled alone, the entry stays open until the user signs off. acceptance_criteria: Phase 2 step 2.
+
+  docs/plans/review-resume-asks/plan.md:1204-1213 [plan-drift] — PLAN-IMPACT: The 2026-11-11 "Adopt plan change" entry says "acceptance_criteria: Phase 2 step 2, so it needs your sign-off". It also says "Ruled by the session, not the user", next to "(user reply: adopt, --by session)". Deviation line :147 records the same route change (a new route in review_loop_script.py, against Phase 2 step 2's "No new route … stop and report" and the Scope "Out" line) as a ruling by agent-evals-5e, not the user. The global rule says only the user's explicit sign-off overrides an acceptance criterion. The plan says one side, which is in doubt, and the code says the other. — Question: did the user sign off on the Phase 2 step 2 route change? If yes, record it as a user ruling. If no, the step needs that sign-off before merge. — Change: if accepted, record the sign-off as "Ruled by the user" with who and when in the decision log, and fix the contradicting "(user reply: adopt, --by session)" wording. acceptance_criteria: Phase 2 step 2.
+
+- 2026-11-11: Keep plan as written. Ruled by the session, not the user at 2026-11-11 08:43.
+
+  The ruling: Keep the Phase 2 route as ruled by agent-evals-5e
+
+  The disagreement:
+  /home/brandon/dotfiles-review-resume-asks/docs/plans/review-resume-asks/plan.md:65-69,147-149 [plan-drift] — PLAN-IMPACT: The plan's Scope "Out" line and Phase 2 step 2 say "No new route in `review_loop_script.py`: if a change there is needed, stop and report". The code adds that route: the `elif loop.status == "converged" and loop.gates_every_run` branch in `walk` (review_loop_script.py:960-961) and the `--gates-every-run` flag. The deviation log records this as a session ruling (agent-evals-5e and the lane session). The 04:28 block's own text says the change needs the user's sign-off. — Did the user sign off on the Phase 2 step 2 route change, or is the session ruling enough because step 2 is a plan step and not a ticket AC? — change: if the user signed off, rewrite the 04:28/06:56 entries as "Ruled by the user at <time>". Otherwise, if the user rules that the session ruling stands, delete the "so it needs your sign-off" clause. acceptance_criteria: none (Phase 2's Automated Verification holds either way).

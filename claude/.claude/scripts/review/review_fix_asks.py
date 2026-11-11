@@ -13,7 +13,7 @@ import review_asks
 import review_launch
 import script_utils
 from handback import PLAN_IMPACT_STATUS, is_plan_impact_ask
-from review_asks import ASK_OUTCOMES, MODIFIED, REJECTED
+from review_asks import ASK_OUTCOMES, MODIFIED, REJECTED, USER_RULED_KEY
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_FINDINGS_NAME,
@@ -28,6 +28,7 @@ from review_fix_state import (
     print_action,
     record_packet_asks_logged,
     review_fix_dir,
+    review_fix_state_file,
     save_fix_state,
 )
 from saved_handback import dispatched_repo
@@ -150,13 +151,18 @@ def asks_done_options(argv):
     return AsksDoneOptions(outcome_words, decided_by, packet_id, correct)
 
 
+def finding_ask_indexes(asks, outcomes):
+    """The indexes of the asks that go to the findings file: accepted or modified, and not a plan impact."""
+    return [index for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True))
+            if outcome != REJECTED and not is_plan_impact_ask(item)]
+
+
 def ask_finding_lines(asks, outcomes, notes):
     """One findings-file item per accepted or modified ask that is not a plan impact, in the form
     review_launch.read_findings_file reads. A modified ask carries the user's change in place of the proposed one."""
     lines = []
-    for item, outcome, note in zip(asks, outcomes, notes, strict=True):
-        if outcome == REJECTED or is_plan_impact_ask(item):
-            continue
+    for index in finding_ask_indexes(asks, outcomes):
+        item, outcome, note = asks[index], outcomes[index], notes[index]
         question = one_line(item["question"], None)
         change = one_line(item["change"], None)
         text = f"{item['file_line']} {question} Proposed change: {change}"
@@ -221,18 +227,53 @@ def print_fix_run(target, findings_file, summary_lines):
         target["asks_launch_line"])
 
 
-def fix_lead_args(findings_file, decided_by):
-    """The leading launch flags of a fix run for findings_file. The user's own answers add `--user-ruled`, so a
-    finding the fix coder skips comes back as an ask; a session's answers do not."""
+def ask_deciders(state):
+    """Who ruled on each ask of state: a list with one entry per ask, None for an ask nobody ruled on yet."""
+    # A state with no key (before the first asks-done): no ask is on record as user-ruled.
+    deciders = state.get(ASKS_DECIDED_BY_KEY)
+    if deciders is None:
+        return [None] * len(state["asks"])
+
+    if not isinstance(deciders, list) or len(deciders) != len(state["asks"]):
+        state_file = review_fix_state_file()
+        raise UsageError(f"{ASKS_DECIDED_BY_KEY} in the saved state ({state_file}) must be a list with one entry "
+                         f"per ask ({len(state['asks'])}), not {deciders!r}. "
+                         f"The saved state is in an older format that this version cannot read. Replace the "
+                         f"`{ASKS_DECIDED_BY_KEY}` value in {state_file} with a JSON list that has one entry per "
+                         f"ask, then run `asks-done --correct <outcomes> --by <user|session>`; with `--by user` every "
+                         f"non-plan-impact ask is logged as the user's. A bare `--user-ruled` in the pending launch "
+                         f"line of that state is not read either: replace it with `--user-ruled <N>` for each "
+                         f"user-ruled finding.")
+    return deciders
+
+
+def set_ask_decider(state, index, decided_by):
+    """Records who ruled on ask `index`: the latest decider of the ask's answer, so a session correction that
+    changes a user-ruled ask's answer drops its user ruling."""
+    deciders = ask_deciders(state)
+    deciders[index] = decided_by
+    state[ASKS_DECIDED_BY_KEY] = deciders
+
+
+def user_ruled_numbers(state):
+    """The 1-based positions, in the findings file, of the findings whose ask the user ruled on."""
+    deciders = ask_deciders(state)
+    indexes = finding_ask_indexes(state["asks"], state["ask_outcomes"])
+    return [number for number, index in enumerate(indexes, 1) if deciders[index] == plan_format.USER_RULING]
+
+
+def fix_lead_args(findings_file, user_numbers):
+    """The leading launch flags of a fix run for findings_file. Each finding the user ruled on adds `--user-ruled N`,
+    so the fix coder's skip of it comes back as an ask; a finding a session ruled on adds none."""
     lead_args = ["--fix", str(findings_file)]
-    if decided_by == plan_format.USER_RULING:
-        lead_args.append("--user-ruled")
+    for number in user_numbers:
+        lead_args += ["--user-ruled", str(number)]
     return lead_args
 
 
-def fix_launch_line(target, findings_file, decided_by):
+def fix_launch_line(target, findings_file, user_numbers):
     """The launch line of the fix run that applies the asks in findings_file."""
-    return relaunch_line(target, fix_lead_args(findings_file, decided_by))
+    return relaunch_line(target, fix_lead_args(findings_file, user_numbers))
 
 
 def relaunch_line(target, lead_args, handoff_file=None):
@@ -247,18 +288,19 @@ def relaunch_line(target, lead_args, handoff_file=None):
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
 
 
-def fix_run_launch_line(target, findings_file, decided_by):
+def fix_run_launch_line(target, findings_file):
     """The launch line of the fix run for findings_file: the stored launch flags, or the bare line when the run left
     no launch record."""
+    user_numbers = user_ruled_numbers(target)
     if target.get("relaunch_args"):
-        return fix_launch_line(target, findings_file, decided_by)
-    return no_record_launch_line(target, findings_file, decided_by)
+        return fix_launch_line(target, findings_file, user_numbers)
+    return no_record_launch_line(target, findings_file, user_numbers)
 
 
-def no_record_launch_line(target, findings_file, decided_by):
+def no_record_launch_line(target, findings_file, user_numbers):
     """The launch line of a fix run with no launch record: `--iter`, the dispatched `--repo` and `--detach` only."""
     repo = dispatched_repo() or pathlib.Path.cwd()
-    launch_args = [*fix_lead_args(findings_file, decided_by), "--iter", str(target["iter"]), "--repo", str(repo),
+    launch_args = [*fix_lead_args(findings_file, user_numbers), "--iter", str(target["iter"]), "--repo", str(repo),
                    "--detach"]
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
 
@@ -281,8 +323,8 @@ def write_unprinted_fix_run(state, target, finding_lines, decided_by):
         return None
     findings_file = write_findings_file(finding_lines)
     target["asks_redispatched"] = True
-    target[ASKS_DECIDED_BY_KEY] = decided_by
-    launch_line = fix_run_launch_line(target, findings_file, decided_by)
+    target[ASKS_DECIDED_BY_KEY] = [decided_by] * len(target["asks"])
+    launch_line = fix_run_launch_line(target, findings_file)
     target["asks_launch_line"] = launch_line
     state[PENDING_LAUNCH_KEY] = launch_line
     return findings_file
@@ -315,7 +357,9 @@ def refuse_conditional_changes(asks, outcomes):
     problems = []
     for number, (item, outcome) in enumerate(zip(asks, outcomes, strict=True), 1):
         change = item.get("change") or ""
-        if outcome == MODIFIED or not review_asks.is_conditional_change(change):
+        # A converted ask's change is the skipped finding line the user already accepted; any "if" in it is not a
+        # branch for the user to pick.
+        if outcome == MODIFIED or item.get(USER_RULED_KEY) or not review_asks.is_conditional_change(change):
             continue
         problems.append(f"ask {number} ({item.get('file_line') or 'no file:line'}) has a conditional proposed "
                         f"change: {one_line(change, 160)}")
@@ -331,9 +375,10 @@ def answer_of(outcome, note):
     return (outcome, note if outcome == MODIFIED else "")
 
 
-def corrected_ask_indexes(state, asks, outcomes, notes):
+def corrected_ask_indexes(state, asks, outcomes, notes, decided_by):
     """The indexes of the asks whose answer differs from the one logged. Refuses when no earlier answers are on
-    record, when a changed ask is a plan impact (--correct does not change those), and when nothing differs."""
+    record, when a changed ask is a plan
+    impact (--correct does not change those), and when no ask is left to correct."""
     logged_outcomes = state.get("ask_outcomes")
     logged_notes = state.get("ask_notes")
     if logged_outcomes is None or logged_notes is None:
@@ -342,6 +387,7 @@ def corrected_ask_indexes(state, asks, outcomes, notes):
     indexes = []
     for index, item in enumerate(asks):
         logged = answer_of(logged_outcomes[index], logged_notes[index])
+        # An ask repeated unchanged keeps its earlier decider, whoever passes --by.
         if logged == answer_of(outcomes[index], notes[index]):
             continue
         if is_plan_impact_ask(item):
@@ -368,9 +414,10 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by):
         item["finding_id"] = outcome_row.finding_id
         state["ask_outcomes"][index] = outcomes[index]
         state["ask_notes"][index] = notes[index]
+        set_ask_decider(state, index, decided_by)
     if not failures:
         return
-    findings_file = sync_pending_fix_run(state, decided_by)
+    findings_file = sync_pending_fix_run(state)
     # The sync drops the pending launch when every ask now reads rejected; the retry must still be allowed. With a
     # pending launch the guard on that launch covers the retry, and a launched run must refuse it.
     if findings_file is None:
@@ -383,10 +430,9 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by):
                      + "\n".join("- " + failure for failure in failures))
 
 
-def sync_pending_fix_run(state, decided_by):
-    """Rebuilds the findings file and the pending launch from the stored answers, or drops both when no ask is left to
-    apply. Does not save. Returns the findings file, or None when it was dropped. When the user ruled on any ask, it
-    raises `decided_by` and the stored `asks_decided_by` to the user ruling."""
+def sync_pending_fix_run(state):
+    """Rebuilds the findings file and the pending launch from the stored answers and deciders, or drops both when no
+    ask is left to apply. Does not save. Returns the findings file, or None when it was dropped."""
     finding_lines = ask_finding_lines(state["asks"], state["ask_outcomes"], state["ask_notes"])
     state["last_ask_outcomes"] = state["ask_outcomes"]
     state["last_ask_notes"] = state["ask_notes"]
@@ -398,11 +444,7 @@ def sync_pending_fix_run(state, decided_by):
         return None
 
     findings_file = write_findings_file(finding_lines)
-    # Any user ruling keeps `--user-ruled` on the line, even when a session corrects an ask later.
-    if decided_by == plan_format.USER_RULING or state.get(ASKS_DECIDED_BY_KEY) == plan_format.USER_RULING:
-        decided_by = plan_format.USER_RULING
-        state[ASKS_DECIDED_BY_KEY] = plan_format.USER_RULING
-    launch_line = fix_run_launch_line(state, findings_file, decided_by)
+    launch_line = fix_run_launch_line(state, findings_file)
     state["asks_launch_line"] = launch_line
     state["last_asks_launch_line"] = launch_line
     state[PENDING_LAUNCH_KEY] = launch_line
@@ -447,11 +489,11 @@ def command_correct_asks(options):
     asks = state["asks"]
     outcomes, notes = read_outcomes(options.outcome_words, asks)
     refuse_conditional_changes(asks, outcomes)
-    indexes = corrected_ask_indexes(state, asks, outcomes, notes)
+    indexes = corrected_ask_indexes(state, asks, outcomes, notes, options.decided_by)
     log_corrected_outcomes(state, indexes, outcomes, notes, options.decided_by)
 
     summary = f"Corrected {len(indexes)} ask outcome row(s)."
-    findings_file = sync_pending_fix_run(state, options.decided_by)
+    findings_file = sync_pending_fix_run(state)
     state.pop(CORRECT_OPEN_KEY, None)
     save_fix_state(state)
     if not findings_file:

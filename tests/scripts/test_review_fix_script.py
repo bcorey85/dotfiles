@@ -16,11 +16,10 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
-import full_check
 import handback
 import handback_store
-import review_launch
-import review_loop_script
+import review_loop_main
+import review_loop_prompt_file
 import reviewed_tree
 import script_utils
 from review_fix_asks import LAUNCH_COMMAND
@@ -2009,10 +2008,10 @@ class ReviewFixScriptTest(unittest.TestCase):
             "import json, pathlib, sys\n"
             f"sys.path[:0] = [{str(toolkit_paths.REVIEW_DIR)!r}, {str(toolkit_paths.CODE_DIR)!r}, "
             f"{str(toolkit_paths.LIB_DIR)!r}, {str(toolkit_paths.TELEMETRY_DIR)!r}]\n"
-            "import review_loop_packet, review_loop_script\n"
+            "import review_loop_main, review_loop_packet\n"
             "argv = sys.argv[1:]\n"
             "options = dict(zip(argv[1::2], argv[2::2]))\n"
-            "args = review_loop_script.parse_review_loop_arguments(argv)\n"
+            "args = review_loop_main.parse_review_loop_arguments(argv)\n"
             "print(json.dumps({'argv': argv, 'repo': argv[0], **options}))\n"
             "loop_folder = pathlib.Path(args.state_dir) / 'loop-script' / args.agent_id\n"
             f"(loop_folder / 'packet.txt').write_text({message!r} + '\\n')\n"
@@ -2152,10 +2151,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(called_with["--state-dir"], str(loop_root.parent))
         self.assertTrue(called_with["--agent-id"].startswith("review-script-"))
         # The loop script's own parser must accept the argv the launcher builds.
-        parsed = review_loop_script.parse_review_loop_arguments(called_with["argv"])
+        parsed = review_loop_main.parse_review_loop_arguments(called_with["argv"])
         self.assertEqual(parsed.session, SESSION)
         self.assertEqual(parsed.prompt_file, str(log_path.parent / "prompt.txt"))
-        self.assertEqual(parsed.reviewers, review_loop_script.REVIEWERS_MAIN)
+        self.assertEqual(parsed.reviewers, review_loop_prompt_file.REVIEWERS_MAIN)
 
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
@@ -2249,11 +2248,11 @@ class ReviewFixScriptTest(unittest.TestCase):
                          ["README.md:1 the greeting is wrong and too short", "README.md:2 second"])
         self.assertIs(self.dispatch_rows()[0]["no_review"], True)
 
-    def launched_fix_packet_args(self, *launch_flags, message):
+    def launched_fix_packet_args(self, *launch_flags, message, finding="README.md:1 the greeting is wrong"):
         """Launches a fix run whose loop hands back `message`. Returns the packet args the launch prints and the
         launch record's path."""
         findings = self.temp_root / "findings.md"
-        findings.write_text("- README.md:1 the greeting is wrong\n")
+        findings.write_text(f"- {finding}\n")
         code, output = self.launch("--fix", str(findings), *launch_flags, message=message,
                                    HOME=str(self.temp_root / "home"))
         self.assertEqual(code, 0, output)
@@ -2261,15 +2260,16 @@ class ReviewFixScriptTest(unittest.TestCase):
         launch_file = pathlib.Path(packet_args[packet_args.index("--launch") + 1])
         return packet_args, launch_file
 
-    def packet_of_fix_launch(self, *launch_flags, skipped_fp=None, ask=None):
+    def packet_of_fix_launch(self, *launch_flags, skipped_fp=None, ask=None,
+                             finding="README.md:1 the greeting is wrong"):
         """Launches a fix run whose loop hands back skipped_fp entries, then runs the packet it names. Returns the
         packet's (exit code, output)."""
         message = packet_text(CLEAN_EMPTY_FIELDS, skipped_fp=skipped_fp or [SKIPPED_BY_CODER], ask=ask or [])
-        packet_args, _launch_file = self.launched_fix_packet_args(*launch_flags, message=message)
+        packet_args, _launch_file = self.launched_fix_packet_args(*launch_flags, message=message, finding=finding)
         return self.run_script(packet_args, HOME=str(self.temp_root / "home"))
 
     def test_user_ruled_launch_turns_a_skipped_entry_into_an_ask_with_the_coders_reason(self):
-        code, output = self.packet_of_fix_launch("--user-ruled")
+        code, output = self.packet_of_fix_launch("--user-ruled", "1")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: present-asks", output)
         self.assertIn("You accepted this change; the fix coder skipped it: the greeting is a fixture. "
@@ -2280,7 +2280,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_user_ruled_launch_lists_a_real_ask_and_the_converted_ask_and_asks_done_covers_both(self):
         real_ask = ask_entry("real ask", "b.ts:2", finding_id="a1b2c3d4e5f60004")
-        code, output = self.packet_of_fix_launch("--user-ruled", ask=[real_ask])
+        code, output = self.packet_of_fix_launch("--user-ruled", "1", ask=[real_ask])
         self.assertEqual(code, 0, output)
         self.assertIn("cap?", output)
         self.assertIn("Apply it anyway?", output)
@@ -2298,7 +2298,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_packet_rerun_after_asks_done_on_a_converted_ask_logs_once_and_prints_no_second_launch_line(self):
         home = str(self.temp_root / "home")
         message = packet_text(CLEAN_EMPTY_FIELDS, skipped_fp=[SKIPPED_BY_CODER])
-        packet_args, _launch_file = self.launched_fix_packet_args("--user-ruled", message=message)
+        packet_args, _launch_file = self.launched_fix_packet_args("--user-ruled", "1", message=message)
         code, output = self.run_script(packet_args, HOME=home)
         self.assertEqual(code, 0, output)
         code, first_done = self.run_script(["asks-done", "--by", "user", "accepted"], HOME=home)
@@ -2316,7 +2316,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_user_ruled_launch_keeps_a_held_file_skip_in_skipped_with_no_ask(self):
         held = {"item": "README.md:2 the keys are out of order", "reason": "the file is held by another session",
                 "file_line": "README.md:2"}
-        code, output = self.packet_of_fix_launch("--user-ruled", skipped_fp=[held])
+        code, output = self.packet_of_fix_launch("--user-ruled", "1", skipped_fp=[held])
         self.assertEqual(code, 0, output)
         self.assertIn("skipped 1", output)
         self.assertNotIn("Apply it anyway?", output)
@@ -2324,7 +2324,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_user_ruled_launch_leaves_a_review_round_skip_in_skipped_fp(self):
         skipped = [SKIPPED_BY_CODER, {"item": "README.md:2 reviewer finding", "reason": "not needed"}]
-        code, output = self.packet_of_fix_launch("--user-ruled", skipped_fp=skipped)
+        code, output = self.packet_of_fix_launch("--user-ruled", "1", skipped_fp=skipped)
         self.assertEqual(code, 0, output)
         self.assertIn("skipped 1", output)
         self.assertNotIn("not needed. Apply it anyway?", output)
@@ -2346,7 +2346,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("skipped 1", output)
 
-    def test_a_launch_record_with_a_non_boolean_user_ruled_stops(self):
+    def test_a_launch_record_whose_user_ruled_is_not_a_list_of_finding_texts_stops(self):
         home = str(self.temp_root / "home")
         packet_args, launch_file = self.launched_fix_packet_args(message=packet_text(CLEAN_EMPTY_FIELDS))
         record = json.loads(launch_file.read_text())
@@ -2354,7 +2354,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         launch_file.write_text(json.dumps(record))
         code, output = self.run_script(packet_args, HOME=home)
         self.assertNotEqual(code, 0, output)
-        self.assertIn("user_ruled is not true or false", output)
+        self.assertIn("user_ruled is not a list of finding texts", output)
 
     def test_a_launch_record_that_is_not_an_object_stops_naming_the_file(self):
         home = str(self.temp_root / "home")
@@ -2366,7 +2366,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("Traceback", output)
 
     def test_launch_with_user_ruled_and_no_fix_stops(self):
-        code, output = self.launch("--user-ruled")
+        code, output = self.launch("--user-ruled", "1")
         self.assertEqual(code, 2, output)
         self.assertIn("--user-ruled needs --fix", output)
 
@@ -2408,27 +2408,122 @@ class ReviewFixScriptTest(unittest.TestCase):
         launch_line = next(line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND))
         self.assertIn("--user-ruled", launch_line)
 
-    def test_correct_by_user_after_asks_done_by_session_prints_user_ruled(self):
+    def test_correct_by_session_that_changes_a_user_ruled_answer_drops_that_user_ruling(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "accepted", "modified:cap at 5"],
+                                       HOME=home)
+        self.assertEqual(code, 0, output)
+        launch_line = shlex.split(next(line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)))
+        user_ruled = [launch_line[index + 1] for index, word in enumerate(launch_line) if word == "--user-ruled"]
+        self.assertEqual(user_ruled, ["1"])
+
+    def test_correct_by_user_of_one_ask_after_asks_done_by_session_marks_only_that_finding_user_ruled(self):
         home = str(self.temp_root / "home")
         self.launched_review_with_asks(home)
         code, output = self.run_script(["asks-done", "--by", "session", "accepted", "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
-        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "accepted", "rejected"],
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "accepted", "modified:cap at 5"],
                                        HOME=home)
         self.assertEqual(code, 0, output)
-        launch_line = next(line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND))
-        self.assertIn("--user-ruled", launch_line)
+        launch_line = shlex.split(next(line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)))
+        user_ruled = [launch_line[index + 1] for index, word in enumerate(launch_line) if word == "--user-ruled"]
+        self.assertEqual(user_ruled, ["2"])
+
+    def test_a_user_ruling_on_a_rejected_ask_marks_only_the_accepted_finding_user_ruled(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "modified:add the index",
+                                        "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        launch_line = shlex.split(next(line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)))
+        user_ruled = [launch_line[index + 1] for index, word in enumerate(launch_line) if word == "--user-ruled"]
+        self.assertEqual(user_ruled, ["1"])
+
+    def test_user_ruled_numbers_count_the_findings_not_the_asks(self):
+        import review_fix_asks
+        plan_impact = {"question": "PLAN-IMPACT: the queue is at-most-once", "finding": "queue"}
+        ordinary = {"question": "cap?", "finding": "cap"}
+        cases = [
+            ("a plan-impact ask before the user-ruled ask", [plan_impact, ordinary, ordinary],
+             ["accepted", "accepted", "accepted"], ["user", "user", "session"], [1]),
+            ("a rejected ask before the user-ruled ask", [ordinary, ordinary],
+             ["rejected", "accepted"], ["user", "user"], [1]),
+        ]
+        for message, asks, outcomes, deciders, expected in cases:
+            with self.subTest(message):
+                state = {"asks": asks, "ask_outcomes": outcomes, review_fix_asks.ASKS_DECIDED_BY_KEY: deciders}
+                self.assertEqual(expected, review_fix_asks.user_ruled_numbers(state), message)
+
+    def test_ask_deciders_rejects_a_saved_value_that_is_not_a_list_of_one_entry_per_ask(self):
+        import review_fix_asks
+        asks = [{"question": "first"}, {"question": "second"}]
+        self.assertEqual(review_fix_asks.ask_deciders({"asks": asks}), [None, None])
+        for saved in ({}, "", 0, "user", {"0": "user"}, ["user"]):
+            with self.subTest(saved=saved), self.assertRaises(review_fix_asks.UsageError):
+                review_fix_asks.ask_deciders({"asks": asks, review_fix_asks.ASKS_DECIDED_BY_KEY: saved})
+
+    def test_a_string_asks_decided_by_stops_and_names_the_key_to_remove_and_the_correct_recovery(self):
+        import review_fix_asks
+        state = {"asks": [{"question": "first"}], review_fix_asks.ASKS_DECIDED_BY_KEY: "user"}
+
+        with self.assertRaises(review_fix_asks.UsageError) as raised:
+            review_fix_asks.ask_deciders(state)
+
+        message = str(raised.exception)
+        self.assertIn(review_fix_asks.ASKS_DECIDED_BY_KEY, message)
+        self.assertIn(str(review_fix_asks.review_fix_state_file()), message)
+        self.assertIn("older format", message)
+        self.assertIn("asks-done --correct", message)
+
+    def test_a_fix_launch_carries_only_the_user_ruled_findings_into_the_packet(self):
+        home = str(self.temp_root / "home")
+        findings = self.temp_root / "two-findings.md"
+        findings.write_text("- README.md:1 first finding\n- README.md:2 second finding\n")
+        skipped = [{**SKIPPED_BY_CODER, "item": "README.md:1 first finding"},
+                   {**SKIPPED_BY_CODER, "item": "README.md:2 second finding"}]
+        message = packet_text(CLEAN_EMPTY_FIELDS, skipped_fp=skipped)
+        code, output = self.launch("--fix", str(findings), "--user-ruled", "2", message=message, HOME=home)
+        self.assertEqual(code, 0, output)
+        loop_dir, _prompt, packet_args = self.launched_run()
+        record = json.loads((loop_dir / "launch.json").read_text())
+        self.assertEqual(record["user_ruled"], ["README.md:2 second finding"])
+        code, output = self.run_script(["packet", *packet_args], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertIn("README.md:2 second finding. Reject =", " ".join(output.split()))
+        self.assertNotIn("first finding. Reject =", " ".join(output.split()))
+        self.assertIn("skipped 1", output)
+
+    def test_launch_with_a_user_ruled_number_past_the_findings_stops(self):
+        findings = self.temp_root / "findings.md"
+        findings.write_text("- README.md:1 the greeting is wrong\n")
+        code, output = self.launch("--fix", str(findings), "--user-ruled", "2")
+        self.assertEqual(code, 2, output)
+        self.assertIn("--user-ruled 2 names no finding", output)
+
+    def test_launch_with_a_user_ruled_number_below_one_stops(self):
+        findings = self.temp_root / "findings.md"
+        findings.write_text("- README.md:1 the greeting is wrong\n")
+        for number in ("0", "-1"):
+            with self.subTest(number):
+                code, output = self.launch("--fix", str(findings), "--user-ruled", number)
+                self.assertEqual(code, 2, output)
+                self.assertIn(f"--user-ruled {number} names no finding", output)
 
     def test_a_session_correct_after_a_user_correct_keeps_user_ruled(self):
         home = str(self.temp_root / "home")
         self.launched_review_with_asks(home)
         code, output = self.run_script(["asks-done", "--by", "session", "accepted", "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
-        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "accepted", "rejected"],
-                                       HOME=home)
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "modified:add the index",
+                                        "rejected"], HOME=home)
         self.assertEqual(code, 0, output)
-        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "accepted", "accepted"],
-                                       HOME=home)
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "modified:add the index",
+                                        "accepted"], HOME=home)
         self.assertEqual(code, 0, output)
         launch_line = next(line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND))
         self.assertIn("--user-ruled", launch_line)
@@ -2489,7 +2584,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         loop_dir, _prompt, _packet_args = self.launched_run()
         loop_argv = json.loads((loop_dir / "script.log").read_text().splitlines()[0])["argv"]
-        self.assertEqual(review_loop_script.parse_review_loop_arguments(loop_argv).gate_command, ["cmd a", "cmd b"])
+        self.assertEqual(review_loop_main.parse_review_loop_arguments(loop_argv).gate_command, ["cmd a", "cmd b"])
         relaunch_args = json.loads((loop_dir / "launch.json").read_text())["relaunch_args"]
         self.assertEqual(relaunch_args, ["--repo", str(self.repo.resolve()), "--test", "cmd a", "--test", "cmd b",
                                          "--lane", "none", "--handoff", str(loop_dir / "handoff.txt")])
@@ -2499,7 +2594,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         loop_dir, _prompt, _packet_args = self.launched_run()
         loop_argv = json.loads((loop_dir / "script.log").read_text().splitlines()[0])["argv"]
-        self.assertEqual(review_loop_script.parse_review_loop_arguments(loop_argv).gate_command, ["cmd a"])
+        self.assertEqual(review_loop_main.parse_review_loop_arguments(loop_argv).gate_command, ["cmd a"])
         relaunch_args = json.loads((loop_dir / "launch.json").read_text())["relaunch_args"]
         self.assertEqual(relaunch_args.count("--test"), 1)
 
@@ -2511,18 +2606,18 @@ class ReviewFixScriptTest(unittest.TestCase):
                 self.assertIn("--test needs a command", output)
                 self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
 
-    def test_packet_says_why_the_scoped_tests_did_not_run_when_the_launch_carried_a_test(self):
-        launch_file = self.temp_root / "launch.json"
-        launch_file.write_text(json.dumps({"relaunch_args": ["--test", "cmd a"]}))
-        self.assertEqual(review_launch.unrun_scoped_tests_note(["--test", "cmd a"], "critical-blocker", ""),
-                         full_check.SCOPED_NOT_RUN_STOPPED.format(status="critical-blocker"))
-        code, output = self.run_script(["packet", "--skill", "review", "--launch", str(launch_file)], CLEAN_EMPTY)
+    def loop_gates_every_run(self, *launch_flags):
+        code, output = self.launch(*launch_flags)
         self.assertEqual(code, 0, output)
-        self.assertIn(f"Scoped tests after the last fix: {full_check.SCOPED_NOT_RUN_NO_FIX}", output)
+        loop_dir, _prompt, _packet_args = self.launched_run()
+        loop_argv = json.loads((loop_dir / "script.log").read_text().splitlines()[0])["argv"]
+        return review_loop_main.parse_review_loop_arguments(loop_argv).gates_every_run
 
-    def test_packet_leaves_the_scoped_tests_alone_when_they_ran_or_the_launch_carried_no_test(self):
-        self.assertEqual(review_launch.unrun_scoped_tests_note(["--test", "cmd a"], "converged", "passed"), "passed")
-        self.assertEqual(review_launch.unrun_scoped_tests_note(["--fast"], "converged", ""), "")
+    def test_launch_with_a_test_makes_the_loop_run_its_gate_commands_on_every_converged_run(self):
+        self.assertTrue(self.loop_gates_every_run("--test", "cmd a"))
+
+    def test_launch_with_no_test_leaves_the_loop_gate_commands_to_untested_fixes(self):
+        self.assertFalse(self.loop_gates_every_run())
 
     def test_launch_with_two_files_records_each_in_the_relaunch_args_in_order(self):
         (self.repo / "second.txt").write_text("second\n")
@@ -2892,8 +2987,9 @@ class ReviewFixScriptTest(unittest.TestCase):
                          "Proposed change: cap retries at 3\n")
         launch_line = output.splitlines()[-1]
         self.assertEqual(shlex.split(launch_line)[2:], [
-            "launch", "--fix", str(findings_file), "--user-ruled", "--iter", "1", "--repo", str(self.repo.resolve()),
-            "--file", "README.md", "--lane", "none", "--handoff", str(first_loop / "handoff.txt"), "--detach"])
+            "launch", "--fix", str(findings_file), "--user-ruled", "1", "--iter", "1", "--repo",
+            str(self.repo.resolve()), "--file", "README.md", "--lane", "none", "--handoff",
+            str(first_loop / "handoff.txt"), "--detach"])
 
         code, output = self.run_script(shlex.split(launch_line)[2:], HOME=home,
                                        REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
@@ -3258,8 +3354,8 @@ class ReviewFixScriptTest(unittest.TestCase):
             "import pathlib, sys\n"
             f"sys.path[:0] = [{str(toolkit_paths.REVIEW_DIR)!r}, {str(toolkit_paths.CODE_DIR)!r}, "
             f"{str(toolkit_paths.LIB_DIR)!r}, {str(toolkit_paths.TELEMETRY_DIR)!r}]\n"
-            "import review_loop_packet, review_loop_script, reviewer_dispatch\n"
-            "args = review_loop_script.parse_review_loop_arguments(sys.argv[1:])\n"
+            "import review_loop_main, review_loop_packet, reviewer_dispatch\n"
+            "args = review_loop_main.parse_review_loop_arguments(sys.argv[1:])\n"
             "out = pathlib.Path(args.state_dir) / 'loop-script' / args.agent_id\n"
             "replies = reviewer_dispatch.request_round(out, 1, [('review1-code-reviewer', 'code-reviewer', "
             "'review it')], timeout=60, poll=0.05)\n"
@@ -3314,6 +3410,22 @@ class ReviewFixScriptTest(unittest.TestCase):
                 self.assertIn("modified:", output)
                 self.assertEqual(self.ledger_writes(), [])
                 self.assertFalse(self.findings_file().exists())
+
+    def test_asks_done_accepts_a_converted_ask_whose_finding_text_holds_if_the_user(self):
+        skipped = {**SKIPPED_BY_CODER, "item": "README.md:1 X breaks if the user passes none"}
+        code, output = self.packet_of_fix_launch("--user-ruled", "1", skipped_fp=[skipped], finding=skipped["item"])
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"], HOME=str(self.temp_root / "home"))
+        self.assertEqual(code, 0, output)
+        outcomes = [row["ask_outcome"] for row in self.ledger_writes() if "ask_outcome" in row]
+        self.assertEqual(outcomes, ["accepted"])
+
+    def test_a_user_ruled_key_on_a_packet_ask_does_not_skip_the_conditional_change_refusal(self):
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[{**self.CONDITIONAL_ASK, "user_ruled": True}]))
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("conditional proposed change", output)
+        self.assertEqual(self.ledger_writes(), [])
 
     def test_asks_done_modified_on_a_conditional_change_logs_the_row_and_writes_the_finding(self):
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[self.CONDITIONAL_ASK]))

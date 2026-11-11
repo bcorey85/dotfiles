@@ -15,6 +15,7 @@ import shutil
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import gate_env
 import numstat
 import plan_format
 import verify_common as vc
@@ -335,12 +336,12 @@ def main(argv):
 
     plan_file = plan_path or ticket_path
     plan_rel = vc.repo_relative(plan_file, top) or str(plan_file)
-    gate_env = plan_format.repo_gate_env(top, vc.repo_relative(plan_path, top) if plan_path else None)
+    env_assignments = gate_env.repo_gate_env(top, vc.repo_relative(plan_path, top) if plan_path else None)
     head = vc.script_utils.git_output(top, "rev-parse", "HEAD")
     context = {"repo": repo, "top": str(top), "head": head, "branch": branch, "note": note,
                "ticket": str(ticket_path),
                "plan": str(plan_path) if plan_path else None, "planRel": plan_rel, "criteriaPath": criteria_path,
-               "gateEnv": gate_env,
+               "gateEnv": env_assignments,
                "baseRef": base_ref, "mergeBase": merge_base, "diff": diff, "criteria": criteria,
                "excludeRel": exclude_rel, "fingerprint": fingerprint, "review": review,
                "fullCheck": vc.full_check_state(top),

@@ -1091,5 +1091,15 @@ class EndsOnApiErrorTest(unittest.TestCase):
         self.assertEqual(stderr.getvalue(), "")
 
 
+class SharedHelpersTest(unittest.TestCase):
+    def test_the_last_assignment_for_a_name_wins_and_names_keep_first_seen_order(self):
+        self.assertEqual(["A=3", "B=2"], script_utils.last_per_name(["A=1", "B=2", "A=3"]))
+
+    def test_a_remote_url_gives_the_repo_name_without_git_or_trailing_slash(self):
+        for url in ("git@host:org/app.git", "https://host/org/app/", "https://host/org/app", "/srv/git/app.git"):
+            with self.subTest(url=url):
+                self.assertEqual("app", script_utils.repo_name_from_url(url))
+
+
 if __name__ == "__main__":
     unittest.main()

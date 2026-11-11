@@ -10,7 +10,9 @@ other tool call. A stop without one is a finished run: the rule says to go on wi
 relayed stop's name and mtime go in <run folder>/relayed, so a second relay of the same stop, or a run that wrote no
 new stop, exits 1 and says to relay the Skill result instead. A stop that waits on the user, in a tree whose source
 changed after the session's clean review (and no commit since), is not relayed: the rule sends the main session
-back through the `To go on:` line to re-run the review round, and `relayed` stays unwritten.
+back through the `To go on:` line to re-run the review round, and `relayed` stays unwritten. The stop's stamp goes in
+<run folder>/bounced, so the same stop, relayed again after the resume wrote no new stop, relays to the user with a
+first line in the USER TEXT block that says the tree changed after the converged review.
 """
 
 import os
@@ -22,7 +24,6 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent),
                 str(pathlib.Path(__file__).resolve().parent.parent / "review")]
 import code_wait
 import handback
-import handback_store
 import reviewed_tree
 import script_utils
 
@@ -30,6 +31,7 @@ STOP_FILE = "stop.md"
 REVIEW_STOP_FILE = "review-stop.md"
 STOP_FILES = (STOP_FILE, REVIEW_STOP_FILE)
 RELAYED_FILE = "relayed"
+BOUNCED_FILE = "bounced"
 GO_ON_PREFIX = "To go on:"
 RULE = ("Say the text between the markers as your whole reply, word for word. Make no other tool call before the "
         "user's next message: no search, read, edit or check of the fork's work. A fix goes back through "
@@ -40,6 +42,7 @@ RE_REVIEW_FEEDBACK = ("Re-run the review round on the current tree: files change
                       "converged.")
 RE_REVIEW_RULE = ("Do not say the stop. Run the command on the stop's `To go on:` line below with this feedback, "
                   f"then relay again.\nFeedback: {RE_REVIEW_FEEDBACK}\n")
+UNREVIEWED_NOTE = "The tree changed after the converged review; this stop is unreviewed."
 FALLBACK = "Say the Skill result word for word as your whole reply, and make no other tool call."
 
 
@@ -60,8 +63,8 @@ def go_on_line(text):
 
 def edited_after_clean_review(repo):
     """True when the session's latest hand-back for `repo` is clean, was stored after the HEAD commit, and the work
-    tree is not a reviewed one. Fail-open on purpose: no session id, no repo, no commit or no hand-back means the
-    stop relays as it always has."""
+    tree is not a reviewed one. Fail-open on purpose: no session id, no repo, no commit, no hand-back or a tree that
+    cannot be fingerprinted means the stop relays as it always has."""
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
     if not session:
         return False
@@ -70,13 +73,19 @@ def edited_after_clean_review(repo):
         return False
 
     top = str(top_path)
-    seen = handback_store.latest_for_repo(session, top)
-    if handback.standing_false_clean_reason(seen) is not None:
-        return False
     committed_at = script_utils.head_commit_time(top)
-    if committed_at is None or seen["handback"]["ts"] < committed_at:
+    if committed_at is None:
         return False
-    return not reviewed_tree.is_reviewed(session, repo)
+    # `%ct` is whole seconds and a hand-back's `ts` is a float: a hand-back stored just before the commit has a `ts`
+    # above `committed_at`, so a second is added. Failing the other way only means a relay.
+    if not handback.clean_handback_since(session, top, committed_at + 1):
+        return False
+    # record_reviewed records nothing without a fingerprint, so every stop there would read as edited and bounce
+    # once before reaching the user.
+    tree = reviewed_tree.reviewed_fingerprint(repo)
+    if tree is None:
+        return False
+    return not reviewed_tree.is_reviewed(session, repo, tree)
 
 
 def relay(repo):
@@ -94,10 +103,16 @@ def relay(repo):
     text = stop.read_text().strip()
     go_on = go_on_line(text)
     waits = go_on is not None
-    if waits and edited_after_clean_review(repo):
+    bounced = folder / BOUNCED_FILE
+    already_bounced = bounced.is_file() and bounced.read_text().strip() == stamp
+    # A stop bounced once relays on the next call: a resume that wrote no new stop would bounce it forever.
+    if waits and not already_bounced and edited_after_clean_review(repo):
+        script_utils.write_text_atomically(bounced, stamp + "\n")
         return 0, RE_REVIEW_RULE + go_on
     script_utils.write_text_atomically(relayed, stamp + "\n")
     rule = RULE if waits else FINISHED_RULE
+    if waits and already_bounced and edited_after_clean_review(repo):
+        text = f"{UNREVIEWED_NOTE}\n\n{text}"
     return 0, f"{rule}\n-----BEGIN USER TEXT-----\n{text}\n-----END USER TEXT-----"
 
 

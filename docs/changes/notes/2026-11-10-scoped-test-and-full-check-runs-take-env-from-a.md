@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-`lib/plan_format.py` `repo_gate_env` merges the assignments of the personal file `~/.claude/gate-env.json` (path overridable with `CLAUDE_GATE_ENV_FILE`), shape `{"<repo name>": ["NAME=value"]}`. The repo name is the origin URL's last part without `.git`, else the main worktree folder name. A plan's assignment wins for the same name; a missing file adds nothing; a file that is not that shape, or holds a word that is not a literal `NAME=value`, raises `ValueError` naming the file. The scoped-tests `critical-blocker` text in `review/review_loop_script.py` names the repo key and the file to edit. The file lives in the home folder, so the toolkit adds nothing to a company repo.
+`lib/gate_env.py` `repo_gate_env` (plan assignments come from `plan_format.plan_gate_env`) merges the assignments of the personal file `~/.claude/gate-env.json` (path overridable with `CLAUDE_GATE_ENV_FILE`), shape `{"<repo name>": ["NAME=value"]}`. The repo name is the origin URL's last part without `.git`, else the main worktree folder name. A plan's assignment wins for the same name; a missing file adds nothing; a file that is not that shape, or holds a word that is not a literal `NAME=value`, raises `ValueError` naming the file. The scoped-tests `critical-blocker` text in `review/review_loop_script.py` names the repo key and the file to edit. The file lives in the home folder, so the toolkit adds nothing to a company repo.
 
 ## Evidence
 

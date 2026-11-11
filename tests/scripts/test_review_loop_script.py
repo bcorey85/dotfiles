@@ -1282,7 +1282,19 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn("scoped tests failing after the last fix", packet["blockers"][0])
         self.assertIn("corrected claim", packet["blockers"][0])
-        self.assertIn("gate-env.json", packet["blockers"][0])
+        self.assertIn(f"If a test needs an env var the repo's CI sets, add it under {self.repo.name!r} in ",
+                      packet["blockers"][0])
+        self.assertIn("gate-env.json.", packet["blockers"][0])
+
+    def test_the_scoped_test_stop_hint_names_the_gate_env_file_the_variable_sets(self):
+        personal_file = self.scratch / "my-gate-env.json"
+        self.env["CLAUDE_GATE_ENV_FILE"] = str(personal_file)
+
+        completed = self.run_with_scoped_tests(["grep -q 'limit = 99' app.py"], FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertIn(f"in {personal_file}.", packet["blockers"][0])
 
     def test_a_stale_prose_hit_the_coder_fixes_converges_and_ends_on_an_unreviewed_fix(self):
         reply = {"result": "Fixed the claim.", "edits": {"app.py": APP_FIXED + "# corrected claim\n"}}

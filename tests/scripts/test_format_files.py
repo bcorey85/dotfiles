@@ -368,7 +368,8 @@ class WebLintProblemsTest(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         command, output = problems[0]
         self.assertNotIn("--fix", command)
-        self.assertIn("--no-warn-ignored --max-warnings=0", output)
+        self.assertIn("--no-warn-ignored", output)
+        self.assertNotIn("--max-warnings", output)
 
     def test_a_legacy_eslintrc_repo_gets_no_flat_config_only_flag(self):
         (self.repo / ".eslintrc.json").write_text("{}\n")
@@ -386,6 +387,22 @@ class WebLintProblemsTest(unittest.TestCase):
         self.install_local_linter("oxlint", 0)
 
         self.assertEqual(format_files.lint_problems(str(self.repo), ["a.ts"]), [])
+
+    def test_the_fix_pass_runs_an_installed_oxlint_the_repo_does_not_configure_but_the_check_does_not(self):
+        oxlint_calls = self.bin.parent / "oxlint-local-calls.txt"
+        local_bin = self.repo / "node_modules" / ".bin"
+        local_bin.mkdir(parents=True)
+        oxlint = local_bin / "oxlint"
+        oxlint.write_text(f"#!/bin/sh\necho \"$@\" >> {oxlint_calls}\nexit 1\n")
+        oxlint.chmod(0o755)
+        (self.repo / "a.ts").write_text("const a = 1\n")
+
+        format_files.run_formatters(str(self.repo), ["a.ts"], configured_only=True)
+
+        self.assertIn("--fix a.ts", oxlint_calls.read_text())
+        oxlint_calls.unlink()
+        self.assertEqual(format_files.lint_problems(str(self.repo), ["a.ts"]), [])
+        self.assertFalse(oxlint_calls.exists())
 
     def test_a_linter_installed_but_not_configured_is_not_run(self):
         self.install_local_linter("oxlint", 1)

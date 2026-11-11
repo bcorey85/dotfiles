@@ -1,0 +1,20 @@
+#!/bin/bash
+# Run a command in its own session, so it outlives the caller's process group.
+#
+# Usage: detach <command> [args...]
+#
+# Uses setsid. macOS has no setsid by default, so there perl (shipped with
+# macOS) makes the new session through POSIX::setsid(). setsid fails for a
+# process-group leader, so the perl form forks first in that case.
+
+[ $# -gt 0 ] || { echo "usage: detach <command> [args...]" >&2; exit 1; }
+command -v setsid &>/dev/null && exec setsid "$@"
+exec perl -MPOSIX -e '
+if (getpgrp() == $$) {
+    my $pid = fork;
+    defined $pid or die "detach: fork: $!\n";
+    exit if $pid;
+}
+POSIX::setsid() or die "detach: setsid: $!\n";
+exec { $ARGV[0] } @ARGV or die "detach: exec $ARGV[0]: $!\n";
+' -- "$@"

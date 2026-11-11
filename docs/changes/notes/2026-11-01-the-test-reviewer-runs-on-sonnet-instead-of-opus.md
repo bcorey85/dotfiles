@@ -45,6 +45,13 @@ This trades about 0.75 seeded gaps per three-phase review for the cost cut.
 `test-reviewer-sonnet-findings` (findings per test-reviewer run, flat): a drop means Sonnet checks less at work.
 `test-reviewer-sonnet-cache-read` (cache-read tokens per dispatch, down).
 
+Reading 2026-11-11 (work intake, data to 2026-11-10, toolkit repos left out):
+
+- Cache read per dispatch: BETTER, 1.32M Opus tokens → 135k Sonnet tokens (169 dispatches). Watch closed.
+- Findings per run: MOVED up, 1.96 → 2.92 (494 findings over 169 runs). Kept, watch closed: fixed findings per run
+  rose 1.21 → 1.60 (222 over 183 runs → 270 over 169), so Sonnet does not check less. The rest of the rise is
+  hygiene notes that nobody acts on: 0.19 → 0.86 per run (34 → 146). Findings marked false: 6 of 382 → 21 of 494.
+
 ## Back-out
 
 Set `model: opus` again in `agents/test-reviewer.md`.

@@ -13,4 +13,6 @@
    the slug** (`RB-512`, `RB-512-invoice-export`). With no key, kebab-case the
    **area** touched plus the date, never the change (`invoice-export-0808`, not
    `fix-slow-invoice-export`). `Write` the ticket **verbatim** to
-   `00-ticket.md` per the persistence rule in `jira-ticket.md`.
+   `00-ticket.md` per the persistence rule in `jira-ticket.md`. When the
+   ticket is a file under `~/agent-evals/queue/`, the first line under the
+   title is `Source: ~/agent-evals/queue/<slug>.md`.

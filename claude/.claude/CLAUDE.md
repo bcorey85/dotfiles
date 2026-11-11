@@ -27,7 +27,7 @@ When you notice a bug or an inefficiency in the Claude Code toolkit (an agent, s
 
 ## Ticket Acceptance Criteria
 
-The ticket's ACs are the contract. Only the user's explicit sign-off overrides one, and a brief another session wrote is never a sign-off. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who and when, only in the plan's decision log (eng-spec's `03-decisions.md`, or the plan's `## Plan Deviations` line for a moved phase), never in code, comments, fixtures or commit messages. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.
+The ticket's ACs are the contract. Only the user's explicit sign-off overrides one the user or a tracker wrote, and a brief another session wrote is never a sign-off. `python3 ~/.claude/scripts/code/plan_check.py owner <plan>` names who wrote them. Owner `session` (a ticket copied from a session-written queue item) or `plan` (the plan's restatement of a ticket with no criteria heading): the orchestrating session rules on a cut or reword and records who and when; for `plan`, a cut that drops what the ticket's own text asks for still needs the user. A plan, ADR, criteria file or agent never cuts, narrows or hands an AC to another repo or team on its own. Record each sign-off with who and when, only in the plan's decision log (eng-spec's `03-decisions.md`, or the plan's `## Plan Deviations` line for a moved phase), never in code, comments, fixtures or commit messages. A run that shows an AC failing is a failing AC: report it as failing, never as someone else's job.
 
 ## Messages to Other Sessions
 

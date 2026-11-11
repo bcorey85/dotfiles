@@ -79,6 +79,19 @@ def environment_from_assignments(assignments):
     return environment
 
 
+def last_per_name(assignments):
+    """The `NAME=value` words with one word per name: the last one given for a name wins."""
+    chosen = {}
+    for assignment in assignments:
+        chosen[assignment.split("=", 1)[0]] = assignment
+    return list(chosen.values())
+
+
+def repo_name_from_url(url):
+    """The last part of a git remote URL without `.git`: `git@host:org/app.git` and `https://host/org/app/` give app."""
+    return re.split(r"[/:]", url.rstrip("/"))[-1].removesuffix(".git")
+
+
 def fenced_line_indexes(lines):
     """Indexes of the lines inside a fenced code block, the fence lines themselves included. A fence is closed by
     the same character, at least as long as the opener. A fence that is never closed runs to the last line."""
@@ -124,6 +137,11 @@ def json_type_name(value):
 def is_string_list(value):
     """Whether a decoded JSON value is a list whose every entry is a string."""
     return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
+
+
+def is_nonblank_string_list(value):
+    """Whether a decoded JSON value is a list whose every entry is a string with text in it."""
+    return is_string_list(value) and all(entry.strip() for entry in value)
 
 
 def help_requested(arguments):
@@ -250,6 +268,14 @@ def git_output(cwd, *args, timeout=None):
 def process_stderr_text(finished):
     """What a finished subprocess wrote to stderr, as text for a failure message."""
     return os.fsdecode(finished.stderr).strip()
+
+
+def head_commit_time(top):
+    """The HEAD commit's committer time in seconds, or None when git cannot tell (no commit yet)."""
+    stamp = git_output(top, "log", "-1", "--format=%ct")
+    if not stamp:
+        return None
+    return float(stamp)
 
 
 def changed_files(directory, base="HEAD"):
@@ -733,6 +759,20 @@ def agent_transcript_path(hook):
     if named:
         return named
     return subagent_transcript_path(hook["transcript_path"], hook["agent_id"])
+
+
+def frontmatter_value(text, key):
+    """The text after `key:` on the first such line of the file's frontmatter; None when there is no frontmatter or no
+    such key."""
+    frontmatter = FRONTMATTER.match(text)
+    if frontmatter is None:
+        return None
+    key_line = re.compile(rf"^{re.escape(key)}:\s*(.*)$")
+    for line in frontmatter.group(1).splitlines():
+        match = key_line.match(line)
+        if match:
+            return match.group(1)
+    return None
 
 
 def frontmatter_skills(agent_text):

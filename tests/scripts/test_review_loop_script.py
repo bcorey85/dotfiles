@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import typing
 import unittest
 from unittest import mock
 
@@ -138,20 +139,6 @@ def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
 
 
-class LastJsonObjectTest(unittest.TestCase):
-    def test_the_last_object_that_holds_a_wanted_key_is_returned_past_prose_braces(self):
-        cases = [
-            ("prose braces before the object", 'see {CUBE} then {"command": "make test"}', ("command",),
-             {"command": "make test"}),
-            ("the last of two objects", '{"open": 1} and {"open": 2}', ("open",), {"open": 2}),
-            ("an object without a wanted key", '{"other": 1}', ("command",), None),
-            ("no object", "plain text", ("command",), None),
-        ]
-        for message, reply, keys, expected in cases:
-            with self.subTest(message):
-                self.assertEqual(expected, review_loop_findings.last_json_object(reply, keys))
-
-
 class SkipHeldItemsTest(unittest.TestCase):
     def test_a_held_item_is_recorded_once_however_many_times_it_is_met(self):
         held_item = finding_record.parse_finding("`notes.py:1` the keys are out of order")
@@ -252,7 +239,7 @@ class ClosureCheckTest(unittest.TestCase):
                 self.assertEqual(expected_receipt, closure["receipt"])
 
     def test_an_open_list_that_does_not_decode_still_raises(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(review_loop_findings.ReplyShapeError):
             self.closure('{"receipt": "a "b" c", "open": ["app.py:4 - unclosed]}')
 
     def test_the_prompt_tells_the_model_to_escape_quotes_in_the_receipt(self):
@@ -486,6 +473,12 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
         self.assertEqual(packet["files_touched"], ["app.py"])
+
+    def test_a_fix_first_run_rejects_a_blank_finding_text(self):
+        completed = self.run_script({}, header_extra=self.findings_header("a.py:1 - x", " "))
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("expected a JSON list of non-empty finding texts", completed.stderr + completed.stdout)
 
     def test_a_fix_first_run_with_no_review_calls_no_reviewer(self):
         completed = self.run_script({
@@ -807,6 +800,72 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("held by another session", packet["class_closure"])
         self.assertIn("notes.py:1", packet["class_closure"])
         self.assertNotIn("one member still open", packet["class_closure"])
+
+    def assert_packet_carries_the_member_left_alone(self, closure, class_coder, branch_text=None):
+        left_alone = "`log.py:2` prints the limit, not a bound"
+        closure_reply = json.dumps({**closure, "left_alone": [left_alone]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, *class_coder],
+            "closure": [{"result": closure_reply}],
+        }, header_extra="files: app.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["left_alone"], [left_alone])
+        self.assertIn("Left alone, read for another purpose: " + left_alone, handback.render(packet, "review"))
+        self.assertNotIn("left alone", packet["class_closure"])
+        if branch_text:
+            self.assertIn(branch_text, packet["class_closure"])
+
+    def test_a_closed_class_packet_carries_the_members_left_alone(self):
+        self.assert_packet_carries_the_member_left_alone({"receipt": "all readers re-read", "open": []}, [])
+
+    def test_an_empty_receipt_with_members_left_alone_still_renders_the_missing_receipt_line(self):
+        closure_reply = json.dumps({"receipt": "", "open": [], "left_alone": ["`log.py:2` prints the limit"]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": closure_reply}],
+        }, header_extra="files: app.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertTrue(handback.receipt_is_missing(packet["class_closure"]))
+        self.assertEqual(packet["left_alone"], ["`log.py:2` prints the limit"])
+        rendered = handback.render(packet, "review")
+        self.assertIn("The class-closure receipt is missing", rendered)
+        self.assertIn("`log.py:2` prints the limit", rendered)
+
+    def test_a_closed_class_without_left_alone_leaves_no_left_alone_text(self):
+        closure_reply = json.dumps({"receipt": "all readers re-read", "open": []})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": closure_reply}],
+        }, header_extra="files: app.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertNotIn("left alone", packet["class_closure"])
+        self.assertEqual(packet["left_alone"], [])
+
+    def test_a_still_open_class_packet_carries_the_members_left_alone(self):
+        still_open = {"receipt": "one member still open", "open": ["`app.py:4` the same limit is wrong here too"]}
+        class_coder = [{"result": "Nothing to change."}]
+        self.assert_packet_carries_the_member_left_alone(
+            still_open, class_coder, "class members still open, the class repair changed nothing")
+
+    def test_a_held_class_packet_carries_the_members_left_alone(self):
+        (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
+        held = {"receipt": "one member still open", "open": ["`notes.py:1` the same limit is wrong here too"]}
+        self.assert_packet_carries_the_member_left_alone(held, [], "none went to a coder")
+
+    def test_a_repaired_class_packet_carries_the_members_left_alone(self):
+        repaired = {"receipt": "one member still open", "open": ["`app.py:4` the same limit is wrong here too"]}
+        class_coder = [{"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT}}]
+        self.assert_packet_carries_the_member_left_alone(
+            repaired, class_coder, "the class repair fixed these class members")
 
     def test_a_held_class_member_beside_a_sendable_one_is_named_apart_from_the_fixed_one(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
@@ -1281,6 +1340,19 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn("scoped tests failing after the last fix", packet["blockers"][0])
         self.assertIn("corrected claim", packet["blockers"][0])
+        self.assertIn(f"If a test needs an env var the repo's CI sets, add it under {self.repo.name!r} in ",
+                      packet["blockers"][0])
+        self.assertIn("gate-env.json.", packet["blockers"][0])
+
+    def test_the_scoped_test_stop_hint_names_the_gate_env_file_the_variable_sets(self):
+        personal_file = self.scratch / "my-gate-env.json"
+        self.env["CLAUDE_GATE_ENV_FILE"] = str(personal_file)
+
+        completed = self.run_with_scoped_tests(["grep -q 'limit = 99' app.py"], FIX_THEN_CLEAN)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertIn(f"in {personal_file}.", packet["blockers"][0])
 
     def test_a_stale_prose_hit_the_coder_fixes_converges_and_ends_on_an_unreviewed_fix(self):
         reply = {"result": "Fixed the claim.", "edits": {"app.py": APP_FIXED + "# corrected claim\n"}}
@@ -1317,9 +1389,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("CLAUDE.local.md", packet["tool_fault"])
 
     def test_a_packet_whose_full_check_timed_out_carries_a_tool_fault_naming_the_faster_command_fix(self):
-        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
-        loop_script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(loop_script)
+        loop_script = self.load_script_module()
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
         loop.full_check = loop_script.full_check.NOT_RUN_TIMEOUT
 
@@ -1545,9 +1615,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(handback.load(message)["blockers"], ["boom:\n- line two"])
 
     def test_the_crash_outcome_has_every_key_a_finished_loop_outcome_has(self):
-        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
-        loop_script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(loop_script)
+        loop_script = self.load_script_module()
         progress = {"iter": 0, "fixed": [], "files_touched": set()}
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), progress)
 
@@ -1683,9 +1751,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("did not verify this diff", packet["full_check"])
 
     def run_scoped_tests_with_autofix(self, scoped_results):
-        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
-        loop_script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(loop_script)
+        loop_script = self.load_script_module()
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"app.py"}})
         with mock.patch.object(loop_script.coder_gate, "run_scoped_tests_with_failures",
                                side_effect=scoped_results) as scoped, \
@@ -1700,14 +1766,91 @@ class ReviewLoopScriptTest(unittest.TestCase):
         command = "cat failing.txt; exit 1"
         red = (f"failed: {command}", [f"`{command}` (exit 1):\n{failing_output}"],
                [(command, "exit 1", failing_output)])
-        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
-        loop_script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(loop_script)
+        loop_script = self.load_script_module()
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"app.py"}})
         with mock.patch.object(loop_script.coder_gate, "run_scoped_tests_with_failures", return_value=red), \
                 mock.patch.object(loop, "autofix_touched_files", return_value=False):
             passed = loop.run_test_commands([command])
         return loop, passed
+
+    LINT_STEPS: typing.ClassVar[dict] = {
+        "full_check_pass": ("true",),
+        "recheck_full_check": ("true", "full check failing after the class repair")}
+
+    def run_full_check_pass_with_lint(self, lint_results, formatted=(), step="full_check_pass"):
+        """The loop method `step` (a key of LINT_STEPS) with lint_problems returning each of `lint_results` in turn;
+        returns the loop and the mocks of the repair, of the check, of lint_problems, of run_formatters and of
+        mark_repaired. The review scope is a.py and the touched files are b.py, so a lint of both shows each source
+        is read."""
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": {"b.py"}})
+        gate = loop_script.full_check_gate
+        with mock.patch.object(gate.format_files, "lint_problems", side_effect=lint_results) as lint, \
+                mock.patch.object(loop_script.format_files, "run_formatters",
+                                  return_value=list(formatted)) as formatters, \
+                mock.patch.object(loop, "review_scope", return_value=["a.py"]), \
+                mock.patch.object(loop, "repair", return_value=("", [], ["c.py"])) as repair, \
+                mock.patch.object(loop, "mark_repaired") as mark_repaired, \
+                mock.patch.object(loop, "run_check", return_value="") as run_check:
+            getattr(loop, step)(*self.LINT_STEPS[step])
+        return loop, repair, run_check, lint, formatters, mark_repaired
+
+    def test_lint_left_after_one_repair_stops_critical_blocker_and_the_check_never_runs(self):
+        problem = [("ruff check app.py", "app.py:1:1: N802 bad name")]
+
+        loop, repair, run_check, lint, _formatters, _marked = self.run_full_check_pass_with_lint([problem, problem])
+
+        self.assertEqual(lint.call_args_list[0].args[1], ["a.py", "b.py"])
+        self.assertEqual(loop.status, "critical-blocker")
+        self.assertIn("N802 bad name", "\n".join(loop.remaining))
+        self.assertEqual(repair.call_count, 1)
+        self.assertEqual(repair.call_args.args[0], "coder-lint")
+        run_check.assert_not_called()
+
+    def test_every_linter_output_and_command_reaches_the_stop_message(self):
+        problems = [("ruff check app.py", "app.py:1:1: N802 bad name"),
+                    ("oxlint a.ts", "a.ts: no-debugger found")]
+
+        loop, _repair, _run_check, _lint, _formatters, _marked = self.run_full_check_pass_with_lint(
+            [problems, problems])
+
+        remaining = "\n".join(loop.remaining)
+        for expected in ("ruff check app.py", "N802 bad name", "oxlint a.ts", "no-debugger found"):
+            self.assertIn(expected, remaining)
+
+    def test_lint_fixed_by_the_one_repair_lets_the_check_run(self):
+        problem = [("ruff check app.py", "app.py:1:1: N802 bad name")]
+
+        loop, repair, run_check, lint, formatters, mark_repaired = self.run_full_check_pass_with_lint(
+            [problem, []], formatted=["c.py"])
+
+        self.assertEqual(formatters.call_args.args[1], ["a.py", "b.py"])
+        self.assertEqual(lint.call_args_list[1].args[1], ["a.py", "b.py", "c.py"])
+        self.assertTrue(formatters.call_args.kwargs["configured_only"])
+        self.assertTrue(formatters.call_args.kwargs["include_python"])
+        self.assertEqual(mark_repaired.call_args.args[1], ["c.py"])
+        self.assertNotEqual(loop.status, "critical-blocker")
+        self.assertEqual(repair.call_count, 1)
+        run_check.assert_called_once()
+
+    def test_lint_left_by_a_class_or_scoped_test_repair_stops_critical_blocker_and_the_recheck_never_runs(self):
+        problem = [("ruff check app.py", "app.py:1:1: N802 bad name")]
+
+        loop, repair, run_check, *_ = self.run_full_check_pass_with_lint(
+            [problem, problem], step="recheck_full_check")
+
+        self.assertEqual(loop.status, "critical-blocker")
+        self.assertIn("N802 bad name", "\n".join(loop.remaining))
+        self.assertEqual(repair.call_count, 1)
+        self.assertEqual(repair.call_args.args[0], "coder-lint")
+        run_check.assert_not_called()
+
+    def test_clean_lint_after_a_class_or_scoped_test_repair_lets_the_recheck_run(self):
+        loop, repair, run_check, *_ = self.run_full_check_pass_with_lint([[]], step="recheck_full_check")
+
+        self.assertNotEqual(loop.status, "critical-blocker")
+        repair.assert_not_called()
+        run_check.assert_called_once()
 
     def test_a_scoped_failure_that_fails_the_same_way_on_head_without_the_diff_does_not_stop_the_loop(self):
         loop, passed = self.run_scoped_tests_red("FAIL: test_old (shop.tests.OldTest)\n")
@@ -1743,9 +1886,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("expected 20, got 99", loop.remaining[0])
 
     def test_the_loop_base_run_gets_the_module_live_base_trees_and_the_gate_environment_assignments(self):
-        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
-        loop_script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(loop_script)
+        loop_script = self.load_script_module()
         loop = loop_script.LoopRun(self.repo, self.scratch, "", ("APP_DIR=/x",), {"fixed": [], "files_touched": set()})
         loop.full_check = "failed (exit 1)"
         runners = []
@@ -1763,9 +1904,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(base_run.call_args.kwargs["gate_env"], {"APP_DIR": "/x"})
 
     def test_sigterm_during_the_base_run_removes_the_base_worktree(self):
-        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
-        loop_script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(loop_script)
+        loop_script = self.load_script_module()
         temp = self.scratch / "base-temp"
         temp.mkdir()
         tree = temp / "base"
@@ -1851,7 +1990,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
         tool_calls = (self.fake_dir / "tools.log").read_text().splitlines()
-        self.assertIn("ruff check --fix app.py", tool_calls)
+        self.assertIn("ruff check --fix --force-exclude app.py", tool_calls)
         self.assertEqual([call for call in tool_calls if call.startswith(("npx", "ruff format"))], [])
 
     def write_fake_ruff_that_appends_a_formatted_marker(self):
@@ -1949,9 +2088,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("FAIL: test_x 2", packet["blockers"][0])
 
     def test_every_coder_prompt_tells_the_coder_to_run_only_the_tests_for_its_changed_files(self):
-        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
-        loop_script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(loop_script)
+        loop_script = self.load_script_module()
 
         prompt = loop_script.coder_prompt(str(self.repo), ["`app.py:2` wrong limit"], ["a small item"], ["app.py"])
 
@@ -2991,7 +3128,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         with mock.patch.object(module, "claude_call", claude_call):
             try:
                 outcome = module.disposition_call("reviewer text", self.repo, self.scratch)
-            except ValueError as error:
+            except review_loop_findings.ReplyShapeError as error:
                 outcome = error
         return calls, outcome
 
@@ -3005,17 +3142,17 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(findings["fix"]), 1)
         retry_prompt = calls[1][1]
         self.assertTrue(retry_prompt.startswith(calls[0][1]))
-        self.assertIn("A previous reply to this prompt could not be parsed: ", retry_prompt)
+        self.assertIn("A previous reply to this prompt could not be used: ", retry_prompt)
         self.assertIn("JSON object only", retry_prompt)
         note = retry_prompt[len(calls[0][1]):]
         self.assertIn("x" * 100, note)
         self.assertNotIn("x" * 200, note)
 
-    def test_two_bad_disposition_replies_raise_the_value_error(self):
+    def test_two_bad_disposition_replies_raise_the_reply_shape_error(self):
         calls, outcome = self.disposition_calls_with(["no object here", "still none"])
 
         self.assertEqual(len(calls), 2)
-        self.assertIsInstance(outcome, ValueError)
+        self.assertIsInstance(outcome, review_loop_findings.ReplyShapeError)
         self.assertIn("still none", str(outcome))
 
     def test_the_disposition_retry_runs_under_its_own_role(self):
@@ -3722,9 +3859,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertNotIn("notes.py", packet["check_rewrote_edited"])
 
     def test_a_full_check_past_its_limit_is_not_run_and_no_failure(self):
-        spec = importlib.util.spec_from_file_location("review_loop_script_under_test", SCRIPT)
-        loop_script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(loop_script)
+        loop_script = self.load_script_module()
 
         with mock.patch.object(loop_script.full_check_gate, "CHECK_TIMEOUT_SECONDS", 1):
             result, _tail, _details = loop_script.full_check_gate.run_full_check(self.repo, self.scratch, "sleep 30")

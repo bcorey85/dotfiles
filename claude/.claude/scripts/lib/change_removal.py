@@ -2,9 +2,13 @@
 
 A line counts by its text with surrounding whitespace dropped, and blank lines never count. A line that is removed
 and added back unchanged is not removed, because the count compares the added lines with the tree as it is now.
+A hunk whose only change is formatting (whitespace, line breaks, quote style, a trailing comma before a closing
+bracket) adds no lines, so reverting formatter churn is not removed work.
 """
 
 from collections import Counter
+
+import source_text
 
 # A loop stops when the passes removed at least this share of the added lines, and the change added at least
 # MIN_ADDED_LINES of them.
@@ -13,13 +17,17 @@ MIN_ADDED_LINES = 10
 
 
 def nonblank_lines(text):
-    return Counter(line.strip() for line in text.splitlines() if line.strip())
+    return Counter(source_text.stripped_lines(text))
 
 
-def added_lines(old_text, new_text):
+def added_lines(old_text, new_text, path=None):
     """The lines new_text holds that old_text does not, as a Counter of line text: a line repeated in both texts
-    counts only for the copies the change added."""
-    return nonblank_lines(new_text) - nonblank_lines(old_text)
+    counts only for the copies the change added. Formatting-only hunks add nothing (see the module docstring).
+    `path` is the file's path, which tells whether a one-comma group is a tuple."""
+    reformatted = source_text.formatting_only_lines(old_text, new_text, path)
+    new_counts = nonblank_lines(new_text) - reformatted.new
+    old_counts = nonblank_lines(old_text) - reformatted.old
+    return new_counts - old_counts
 
 
 def removed_by_file(added_by_file, current_added_by_file, fix_added_by_file=None):

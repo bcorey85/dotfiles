@@ -73,7 +73,7 @@ One row per verdicted item, verbatim, plus one `failed-check` row for each ✗ a
 - Don't drive a browser or run the app. Smoke testing is the user's via the checklist.
 - Don't edit code or tests yourself. Step 1's fixes go through its one coder dispatch; gap fixes go through `/fix` or `/code`.
 - Don't trust `Phase Status` checkboxes.
-- Don't flag plan items in `What We're NOT Doing`. A ticket AC there is the exception: only the user's explicit sign-off cuts one.
+- Don't flag plan items in `What We're NOT Doing`. A ticket AC there is the exception: only the user's explicit sign-off cuts one, or a recorded session ruling when prep's `criteria owner:` line says `session` or `plan` (for `plan`, only while the ticket's own words stay met).
 - Don't skip Step 1 because the phases were reviewed. Only prep's "ran" report skips it.
 
 ## Arguments

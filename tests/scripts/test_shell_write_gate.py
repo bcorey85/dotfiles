@@ -409,7 +409,8 @@ class ShellWriteGateTest(unittest.TestCase):
 
     def test_tee_behind_an_output_wrapper_is_a_write(self):
         for command in ("echo x | stdbuf -oL tee tracked.txt", "echo x | stdbuf -o L tee -a tracked.txt",
-                        "echo x | setsid tee tracked.txt", "echo x | ionice -c 3 tee tracked.txt",
+                        "echo x | setsid tee tracked.txt", "echo x | detach tee tracked.txt",
+                        "echo x | ionice -c 3 tee tracked.txt",
                         "echo x | unbuffer tee tracked.txt"):
             reason = self.assert_denied(command)
             self.assertIn("tracked.txt is git-tracked", reason)

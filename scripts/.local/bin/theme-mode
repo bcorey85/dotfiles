@@ -92,13 +92,16 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles solarized-osaka solarized selenized flexoki token-flint jellybeans catppuccin; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles dredge-roles-warm solarized-osaka solarized selenized flexoki token-flint jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox; }
 
 # A family that differs from another only in nvim's syntax colours borrows that
-# family's terminal, prompt, herdr, hunk, delta and claude themes.
-asset_family() { # <family> -> the family whose non-nvim themes it uses
-  case "$1" in
-    dredge-roles) echo "dredge" ;;
+# family's terminal, prompt, herdr, delta and claude themes. dredge-warm exists
+# only as an asset family: dredge's themes on dredge-roles-warm's dark ground.
+asset_family() { # <family> <mode> -> the family whose non-nvim themes it uses
+  case "$1:$2" in
+    dredge-roles-warm:light) echo "dredge" ;;
+    dredge-roles-warm:*)     echo "dredge-warm" ;;
+    dredge-roles:*)          echo "dredge" ;;
     *) echo "$1" ;;
   esac
 }
@@ -112,6 +115,7 @@ claude_theme_file() { # <family> <mode> -> the authored Claude Code theme JSON, 
   case "$1:$2" in
     dredge:light) echo "$HOME/.claude/themes/dredge-light.json" ;;
     dredge:*)     echo "$HOME/.claude/themes/dredge.json" ;;
+    dredge-warm:*) echo "$HOME/.claude/themes/dredge-warm.json" ;;
   esac
 }
 
@@ -174,6 +178,23 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # catppuccin: ghostty BUILTINS — frappé dark, latte light.
     catppuccin:light)       echo "Catppuccin Latte" ;;
     catppuccin:*)           echo "Catppuccin Frappe" ;;
+    dredge-warm:*)          echo "dredge-warm" ;;
+    # kanagawa: ghostty BUILTINS — wave dark, lotus light.
+    kanagawa:light)         echo "Kanagawa Lotus" ;;
+    kanagawa:*)             echo "Kanagawa Wave" ;;
+    # darcula: dark only, both modes take the custom file.
+    darcula:*)              echo "darcula" ;;
+    # tairiki: custom files from the plugin's own terminal colours.
+    tairiki:light)          echo "tairiki-light" ;;
+    tairiki:*)              echo "tairiki-dimmed" ;;
+    # everforest: custom files — the Med builtins' palette on nvim's medium
+    # ground (the builtins sit on bg_dim).
+    everforest:light)       echo "everforest-light" ;;
+    everforest:*)           echo "everforest-dark" ;;
+    # gruvbox (ellisonleao/gruvbox.nvim, medium contrast): ghostty BUILTINS,
+    # morhetz's sixteen on the medium grounds.
+    gruvbox:light)          echo "Gruvbox Light" ;;
+    gruvbox:*)              echo "Gruvbox Dark" ;;
   esac
 }
 
@@ -218,8 +239,8 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     duskfox:*)              echo "rose-pine-moon" ;;
     # dredge light: github-light leaks the fewest scopes past the dark-tuned
     # table; one-light leaks its red variables and blue operators.
-    dredge:light | dredge-roles:light) echo "github-light" ;;
-    dredge:* | dredge-roles:*)         echo "one-dark-pro" ;;
+    dredge:light | dredge-roles:light | dredge-roles-warm:light) echo "github-light" ;;
+    dredge:* | dredge-roles:* | dredge-roles-warm:* | dredge-warm:*) echo "one-dark-pro" ;;
     # solarized-osaka: BASE of a full [custom_theme]. hunk's solarized
     # builtins render code #ffffff / #000000 (their text fails 4.5:1 on hunk's
     # own panel), so the bases are the nearest greys that pass.
@@ -249,6 +270,21 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # catppuccin: hunk BUILTINS.
     catppuccin:light)       echo "catppuccin-latte" ;;
     catppuccin:*)           echo "catppuccin-frappe" ;;
+    # kanagawa and everforest: hunk BUILTINS.
+    kanagawa:light)         echo "kanagawa-lotus" ;;
+    kanagawa:*)             echo "kanagawa-wave" ;;
+    everforest:light)       echo "everforest-light" ;;
+    everforest:*)           echo "everforest-dark" ;;
+    # gruvbox: hunk BUILTINS, medium contrast.
+    gruvbox:light)          echo "gruvbox-light-medium" ;;
+    gruvbox:*)              echo "gruvbox-dark-medium" ;;
+    # darcula: dark only, BASE of a full [custom_theme]; dark-plus is the
+    # nearest neutral grey.
+    darcula:*)              echo "dark-plus" ;;
+    # tairiki: BASE of a full [custom_theme]. Warm grey on near-black, and
+    # dark ink on white.
+    tairiki:light)          echo "light-plus" ;;
+    tairiki:*)              echo "vitesse-black" ;;
   esac
 }
 
@@ -687,7 +723,9 @@ EOF
       ;;
     # dredge (nvim colors/dredge.lua). Both modes share the scope table below.
     # dredge-roles (colors/dredge-roles.lua) keeps dredge's chrome and recolours syntax by role.
-    dredge:* | dredge-roles:*)
+    # dredge-roles-warm (colors/dredge-roles-warm.lua) is dredge-roles on a warm
+    # dark ground; dredge-warm is its asset family, which delta reads.
+    dredge:* | dredge-roles:* | dredge-roles-warm:* | dredge-warm:*)
       # Match nvim's tree-sitter colours where one-dark-pro's own selectors
       # out-rank the generic table. Headings (H1 $num, others $fn) and bullet mirror theme-sync's markdown.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
@@ -714,6 +752,19 @@ EOF
         kw="#9a9ea5"; punct="#91969c"; str="#46b8ae"; num="#fc61a5"; fn="#8e96ec"; cmt="#d6ae56"
         type_fg="#99af2e"; builtin_fg="#3ba6e2"; param_fg="#ee8448"; attr_fg="#f7665b"
         bright="#ebf2fd"; quote="#bec3cb"; bullet="#b1b5bc"
+        # The warm ground moves the green washes by the same step as the background.
+        # The red washes are muted to sit level with the green ones.
+        case "$1" in
+          dredge-roles-warm | dredge-warm)
+            bg="#24231f"; panel="#1c1b18"; panelAlt="#31302d"; border="#494845"; note="#1c1b18"
+            accentMuted="#494845"; ctxBg="#24231f"
+            addWord="#35483c"; remWord="#5a2f29"
+            addedBg="#32362c"; removedBg="#3f2723"
+            # The greys keep dredge's lightness on the warm hue.
+            text="#c3c1ba"; muted="#b7b5ae"; lnFg="#929089"; kw="#a09e97"; punct="#98958f"
+            bright="#f4f1ea"; quote="#c5c2bc"; bullet="#b7b5ae"
+            ;;
+        esac
       fi
       op="$punct"; tag="$kw"; imp="$kw"
       konst="$num"; esc="$num"; lang="$num"
@@ -729,14 +780,14 @@ EOF
       badgeAdd="$sAdd"; badgeRem="$sRem"
       fRename="$sAdd"; fMod="$sAdd"; fUntracked="$sAdd"
       local heading1="$num" role_extra=""
-      if [ "$1" = dredge-roles ]; then
+      if [ "$1" = dredge-roles ] || [ "$1" = dredge-roles-warm ]; then
         local bind act exit_fg lit desc
         if [ "$2" = light ]; then
           bind="#433fa8"; act="#006c66"; exit_fg="#a80e62"; lit="#2a7000"; desc="#07549f"
           kw="#4c5158"; cmt="#6d4a00"
         else
           bind="#9299ee"; act="#46b8ae"; exit_fg="#f861a4"; lit="#99af2e"; desc="#3ba6e2"
-          kw="#9a9ea5"; cmt="#c59f49"
+          cmt="#c59f49"
         fi
         # Binds: names where they are introduced. Acts: calls, decorators, builtins.
         fn="$bind"; cls="$bind"; param="$bind"; var="$bind"
@@ -1159,6 +1210,83 @@ EOF
 "entity.other.attribute-name"       = "$text"
 "punctuation.definition.tag"        = "$tagd"
 "markup.underline.link"             = "$link"
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
+    # darcula (xiantang/darcula-dark.nvim), dark only: roles are the resolved fg
+    # of nvim's groups. The plugin's DiffAdd is a solid green block, so rows are
+    # the green/red 15% into the ground and words 30%; the comment is the stock
+    # grey lifted to 4.5:1 on those rows.
+    darcula:*)
+      local addWord remWord cls key h1 h2 delim
+      bg="#2b2b2b"; panel="#242424"; panelAlt="#3c3f41"; border="#484848"
+      accent="#cc7832"; accentMuted="#3c3f41"; text="#c9d0d3"; muted="#929292"
+      addedBg="#3b4134"; removedBg="#492d31"; ctxBg="#2b2b2b"
+      addWord="#4c573c"; remWord="#672f37"
+      sAdd="#98be65"; sRem="#f43753"; lnFg="#808080"
+      badgeNeu="#6897bb"; fRename="#9876aa"; fMod="#ffc66d"; note="#242424"
+      kw="#cc7832"; str="#6a8759"; num="#6897bb"; fn="#b3deef"; call="#ad9e7d"
+      typ="#ffc24b"; konst="#dc9656"; lang="#c07c41"; esc="#73cef4"; ns="#d3b987"
+      punct="#c9d0d3"; delim="#dc9656"; cmt="#ababab"
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      h1="$kw"; h2="$fn"; op="$text"; cls="$typ"
+      vbi="$kw"; bfn="$kw"; prim="$kw"; imp="$kw"
+      attr="$typ"; tag="$typ"; pre="$typ"; mac="$typ"
+      mem="$text"; param="$text"; var="$text"; use="$text"; key="$text"
+      extra=$(cat <<EOF
+"punctuation.separator"             = "$delim"
+"punctuation.terminator"            = "$delim"
+"keyword.operator.word"             = "$kw"
+"markup.underline.link"             = "$num"
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
+    # tairiki (deparr/tairiki.nvim): dimmed dark / light. Roles are the resolved
+    # fg of nvim's groups; diff rows are theme-sync's washes. Comments are a
+    # neutral grey in dark and red in light, by the theme's design.
+    tairiki:*)
+      local addWord remWord cls key h1 h2 kwfn tagattr tagc
+      bg="#1d1f21"; panel="#17191a"; panelAlt="#242627"; border="#323435"
+      accent="#93a8b8"; accentMuted="#242627"; text="#afb2b0"; muted="#959896"
+      addedBg="#34362f"; removedBg="#362d2f"; ctxBg="#1d1f21"
+      addWord="#424638"; remWord="#473638"
+      sAdd="#b3ba7e"; sRem="#c37d7c"; lnFg="#858886"
+      badgeNeu="#93a8b8"; fRename="#b19db8"; fMod="#d9bf89"; note="#17191a"
+      kw="#b19db8"; kwfn="#b19db8"; str="#b3ba7e"; num="#d99667"; konst="#d99667"
+      fn="#93a8b8"; typ="#d9bf89"; op="#c5c8c6"; punct="#858886"
+      vbi="#c37d7c"; ns="#a7afb2"; tagattr="#afb2b0"; tagc="#93a8b8"; cmt="#9b9e9c"
+      if [ "$2" = light ]; then
+        bg="#ffffff"; panel="#f0f0f8"; panelAlt="#e8e8e0"; border="#d8d8d0"
+        accent="#0070c1"; accentMuted="#e8e8e0"; text="#001070"; muted="#595959"
+        addedBg="#d9ecd9"; removedBg="#f6e8e8"; ctxBg="#ffffff"
+        addWord="#bfdfbf"; remWord="#e8c4c4"
+        sAdd="#008000"; sRem="#a31515"; lnFg="#797979"
+        badgeNeu="#0070c1"; fRename="#7929c8"; fMod="#7c5c20"; note="#f0f0f8"
+        kw="#7929c8"; kwfn="#693988"; str="#008000"; num="#c72e0f"; konst="#df5926"
+        fn="#0070c1"; typ="#7c5c20"; op="#001070"; punct="#595959"
+        vbi="#a31515"; ns="#002d88"; tagattr="#df5926"; tagc="#a31515"; cmt="#cd0009"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      h1="$sRem"; h2="$fn"; cls="$typ"; prim="$num"; lang="$konst"; call="$fn"
+      bfn="$vbi"; esc="$vbi"; tag="$tagc"
+      attr="$kw"; pre="$kw"; mac="$kw"; imp="$kw"
+      mem="$text"; param="$text"; var="$text"; use="$text"; key="$text"
+      extra=$(cat <<EOF
+"storage.type.function"             = "$kwfn"
+"entity.other.attribute-name"       = "$tagattr"
+"markup.underline.link"             = "$fn"
 "markup.heading"                    = "$h2"
 "entity.name.section"               = "$h2"
 "entity.name.section.markdown"      = "$h2"
@@ -1802,6 +1930,106 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#46b8ae" yellow="#eed286" red="#f54b43"
       blue="#8e96ec" teal="#46b8ae" peach="#fc61a5"
       ;;
+    dredge-warm:*)
+      # dredge dark on the warm ground (#24231f).
+      base_name="one-dark"
+      accent="#46b8ae" panel_bg="#1c1b18" surface_dim="#31302d"
+      surface0="#3d3c38" surface1="#494845"
+      overlay0="#97958e" overlay1="#b7b5ae"
+      text="#c3c1ba" subtext0="#b7b5ae"
+      green="#46b8ae" yellow="#eed286" red="#f54b43"
+      blue="#8e96ec" teal="#46b8ae" peach="#fc61a5"
+      ;;
+    kanagawa:light)
+      # kanagawa lotus (#f2ecbc).
+      base_name="one-light"
+      accent="#4d699b" panel_bg="#e5ddb0" surface_dim="#e7dba0"
+      surface0="#dcd5ac" surface1="#d5cea3"
+      overlay0="#716e61" overlay1="#646154"
+      text="#545464" subtext0="#646154"
+      green="#6f894e" yellow="#836f4a" red="#c84053"
+      blue="#4d699b" teal="#597b75" peach="#cc6d00"
+      ;;
+    kanagawa:*)
+      # kanagawa wave (#1f1f28).
+      base_name="one-dark"
+      accent="#7e9cd8" panel_bg="#16161d" surface_dim="#2a2a37"
+      surface0="#363646" surface1="#54546d"
+      overlay0="#727169" overlay1="#9b9989"
+      text="#dcd7ba" subtext0="#9b9989"
+      green="#98bb6c" yellow="#e6c384" red="#e46876"
+      blue="#7e9cd8" teal="#7aa89f" peach="#ffa066"
+      ;;
+    darcula:*)
+      # darcula, dark only (#2b2b2b).
+      base_name="one-dark"
+      accent="#cc7832" panel_bg="#242424" surface_dim="#383838"
+      surface0="#484848" surface1="#5a5a5a"
+      overlay0="#929292" overlay1="#ababab"
+      text="#c9d0d3" subtext0="#ababab"
+      green="#98be65" yellow="#ffc66d" red="#f43753"
+      blue="#6897bb" teal="#73cef4" peach="#dc9656"
+      ;;
+    tairiki:light)
+      # tairiki light (#ffffff).
+      base_name="one-light"
+      accent="#0070c1" panel_bg="#f0f0f8" surface_dim="#e8e8e0"
+      surface0="#d8d8d0" surface1="#c8c8c0"
+      overlay0="#595959" overlay1="#595959"
+      text="#001070" subtext0="#595959"
+      green="#008000" yellow="#7c5c20" red="#a31515"
+      blue="#0070c1" teal="#1e797f" peach="#cf4a11"
+      ;;
+    tairiki:*)
+      # tairiki dimmed (#1d1f21).
+      base_name="one-dark"
+      accent="#93a8b8" panel_bg="#17191a" surface_dim="#242627"
+      surface0="#323435" surface1="#3c3e3f"
+      overlay0="#858886" overlay1="#9b9e9c"
+      text="#afb2b0" subtext0="#959896"
+      green="#b3ba7e" yellow="#d9bf89" red="#c37d7c"
+      blue="#93a8b8" teal="#9bb0ac" peach="#d99667"
+      ;;
+    everforest:light)
+      # everforest light medium (#fdf6e3); accents darkened to hold on cream.
+      base_name="one-light"
+      accent="#677900" panel_bg="#efebd4" surface_dim="#e6e2cc"
+      surface0="#e0dcc7" surface1="#bdc3af"
+      overlay0="#5f6e5e" overlay1="#5f6e5e"
+      text="#5c6a72" subtext0="#5f6e5e"
+      green="#677900" yellow="#a06400" red="#d43034"
+      blue="#1177a6" teal="#008058" peach="#bf4c00"
+      ;;
+    everforest:*)
+      # everforest dark medium (#2d353b).
+      base_name="one-dark"
+      accent="#a7c080" panel_bg="#232a2e" surface_dim="#343f44"
+      surface0="#3d484d" surface1="#475258"
+      overlay0="#859289" overlay1="#9da9a0"
+      text="#d3c6aa" subtext0="#9da9a0"
+      green="#a7c080" yellow="#dbbc7f" red="#e67e80"
+      blue="#7fbbb3" teal="#83c092" peach="#e69875"
+      ;;
+    gruvbox:light)
+      # gruvbox light medium (#fbf1c7), the faded accents.
+      base_name="one-light"
+      accent="#af3a03" panel_bg="#f2e5bc" surface_dim="#ebdbb2"
+      surface0="#d5c4a1" surface1="#bdae93"
+      overlay0="#7c6f64" overlay1="#665c54"
+      text="#3c3836" subtext0="#7c6f64"
+      green="#79740e" yellow="#b57614" red="#9d0006"
+      blue="#076678" teal="#427b58" peach="#af3a03"
+      ;;
+    gruvbox:*)
+      # gruvbox dark medium (#282828), the bright accents.
+      base_name="one-dark"
+      accent="#fe8019" panel_bg="#1d2021" surface_dim="#32302f"
+      surface0="#3c3836" surface1="#504945"
+      overlay0="#7c6f64" overlay1="#928374"
+      text="#ebdbb2" subtext0="#a89984"
+      green="#b8bb26" yellow="#fabd2f" red="#fb4934"
+      blue="#83a598" teal="#8ec07c" peach="#fe8019"
+      ;;
     solarized-osaka:light)
       # solarized-osaka light (base3 #fdf6e2 ground, base2 panel). Accents are
       # the plugin's darker tiers, so sidebar text holds on cream.
@@ -2086,7 +2314,7 @@ apply() { # <family> <mode> — write state and repaint herdr + ghostty
   printf '%s\n' "$mode" >"$MODE_FILE"     # nvim picks these up
   printf '%s\n' "$family" >"$FAMILY_FILE" # via its own watcher
   local assets
-  assets="$(asset_family "$family")"
+  assets="$(asset_family "$family" "$mode")"
 
   # ghostty: machine-local include; wins over the fallback `theme =` line
   # because config-file includes are processed after the main config.
@@ -2195,8 +2423,9 @@ case "$arg" in
   status) echo "$(current_family) $(current_mode)" ;;
   herdr | tuios)
     family="$(current_family)"
-    assets="$(asset_family "$family")"
-    "${arg}_apply" "$assets" "$(current_mode)"
+    mode="$(current_mode)"
+    assets="$(asset_family "$family" "$mode")"
+    "${arg}_apply" "$assets" "$mode"
     ;;
   *)
     echo "usage: theme-mode [dark|light|toggle] | use <family> [mode] | list | status | herdr | tuios" >&2

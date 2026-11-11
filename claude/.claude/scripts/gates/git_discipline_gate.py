@@ -244,7 +244,8 @@ def run(raw):
         raise DenyError("[git-discipline-gate] git autostash is blocked: it runs a git stash, which every worktree "
                         "shares and which resets staged files. Pass --no-autostash to the command, or do not set the "
                         "autostash config. To pull right before a push and keep staged files staged, run "
-                        "`python3 ~/.claude/scripts/tools/pull_keep_index.py <repo> && git -C <repo> push`. "
+                        "`python3 ~/.claude/scripts/tools/pull_keep_index.py <repo> "
+                        "&& git -C <repo> push -u origin HEAD`. "
                         f"{MERGE_WITH_WORK_UNCOMMITTED}")
 
     if any(is_amend(call) for call in calls):

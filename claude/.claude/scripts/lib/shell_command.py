@@ -537,12 +537,22 @@ def quoted_positions(command, unclosed_is_quoted=True):
     # unclosed_is_quoted is False: then the text after it counts as unquoted, as a check that must not be hidden by a
     # stray quote needs. A quote character inside a comment opens no quote. The text of a `$(...)` or backtick span
     # inside double quotes is code the shell runs, so it is not quoted: it is read with its own quote state.
+    return _scan_positions(command, unclosed_is_quoted).positions
+
+
+def double_quoted_positions(command, unclosed_is_quoted=True):
+    # The indexes quoted_positions marks that sit inside double quotes, or right after a backslash inside them.
+    # A quote inside a `$(...)` or backtick span in double quotes has its own state, so it does not change this one.
+    return _scan_positions(command, unclosed_is_quoted).double_positions
+
+
+def _scan_positions(command, unclosed_is_quoted):
     scan = _QuoteScan(command)
     scan.run()
-    positions = scan.positions
     if scan.levels[0]["quote"] is not None and not unclosed_is_quoted:
-        positions = {position for position in positions if position < scan.quote_opened_at}
-    return positions
+        scan.positions = {position for position in scan.positions if position < scan.quote_opened_at}
+        scan.double_positions = {position for position in scan.double_positions if position < scan.quote_opened_at}
+    return scan
 
 
 class _QuoteScan:
@@ -551,6 +561,7 @@ class _QuoteScan:
     def __init__(self, command):
         self.command = command
         self.positions = set()
+        self.double_positions = set()
         # One level per open `"$(` or "`" span, after the base level: its quote, how it closes, and its open `(` count.
         self.levels = [{"quote": None, "closer": None, "depth": 0}]
         self.quote_opened_at = 0
@@ -590,6 +601,7 @@ class _QuoteScan:
         if character == quote:
             level["quote"] = None
         elif character == "\\" and quote == '"':
+            self.double_positions.add(self.index + 1)
             self._hide_next_character()
         elif quote == '"' and self.command.startswith("$(", self.index):
             self.levels.append({"quote": None, "closer": ")", "depth": 0})
@@ -598,6 +610,8 @@ class _QuoteScan:
             self.levels.append({"quote": None, "closer": "`", "depth": 0})
         else:
             self.positions.add(self.index)
+            if quote == '"':
+                self.double_positions.add(self.index)
 
     def _open_quote(self, character, level):
         level["quote"] = character

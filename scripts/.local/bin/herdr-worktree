@@ -93,6 +93,26 @@ fi
 command -v herdr-api >/dev/null \
     || { echo "herdr-worktree: herdr-api is not on PATH; run ~/dotfiles/install/stow to link it into ~/.local/bin" >&2; exit 1; }
 
+watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
+fork_timeout="${HERDR_WORKTREE_FORK_TIMEOUT:-30}"
+if [ -n "$fork" ]; then
+    # Checked before anything is created: a failure after the fork starts would
+    # report a working fork as failed.
+    for helper in detach herdr-worktree-watch; do
+        [ -x "$bin_dir/$helper" ] && continue
+        echo "herdr-worktree: $bin_dir/$helper missing; run install/stow" >&2
+        exit 1
+    done
+    if [[ ! "$watch_seconds" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        echo "HERDR_WORKTREE_WATCH_SECONDS must be a whole number of seconds, got: $watch_seconds" >&2
+        exit 1
+    fi
+    if [[ ! "$fork_timeout" =~ ^[1-9][0-9]*$ ]]; then
+        echo "HERDR_WORKTREE_FORK_TIMEOUT must be a whole number of seconds, at least 1, got: $fork_timeout" >&2
+        exit 1
+    fi
+fi
+
 if [ -z "$branch" ]; then
     # fzf as a one-line prompt: Enter returns the typed text (exit 1, since
     # there is no list to match), Esc cancels (exit 130).
@@ -207,11 +227,9 @@ fi
 [ -n "$fork" ] || exit 0
 
 # herdr adopts a pane as a claude agent once it detects the process.
-fork_timeout="${HERDR_WORKTREE_FORK_TIMEOUT:-30}"
 for _ in $(seq "$fork_timeout"); do
     pane_agent=$(herdr-api pane get "$claude_pane" 2>/dev/null | jq -r '.result.pane.agent // empty') || pane_agent=""
     if [ "$pane_agent" = "claude" ]; then
-        watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
         watch_log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
         # The caller's process group can be torn down, so the watcher runs in its own session.
         "$bin_dir/detach" "$bin_dir/herdr-worktree-watch" "$ws" "$worktree" "$main_checkout" "$claude_pane" \

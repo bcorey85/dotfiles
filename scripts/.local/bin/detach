@@ -7,6 +7,7 @@
 # macOS) makes the new session through POSIX::setsid(). setsid fails for a
 # process-group leader, so the perl form forks first in that case.
 
+[ $# -gt 0 ] || { echo "usage: detach <command> [args...]" >&2; exit 1; }
 command -v setsid &>/dev/null && exec setsid "$@"
 exec perl -MPOSIX -e '
 if (getpgrp() == $$) {

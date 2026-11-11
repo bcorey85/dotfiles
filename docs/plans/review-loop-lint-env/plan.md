@@ -6,7 +6,7 @@ Repo: ~/dotfiles (direct-edit). Three independent script fixes in the review loo
 
 - [x] Phase 1: the full-check pass fails on lint left in any changed file (risk: medium)
 - [x] Phase 2: the removed-change guard ignores formatting-only hunks (risk: low)
-- [ ] Phase 3: gate env from a personal per-repo file (risk: low)
+- [x] Phase 3: gate env from a personal per-repo file (risk: low)
 - [ ] Phase 4: the relay sends a stop back for review when the tree changed after the converged review (risk: low)
 
 ## Phase 1: the full-check pass fails on lint left in any changed file
@@ -43,8 +43,8 @@ Queue item: `~/agent-evals/queue/code-review-loop-gate-env-and-churn-revert-fals
 The gate env reaches the loop only from the plans' Automated Verification commands (`lib/plan_format.py` `repo_gate_env`). A repo whose CI sets a test env var that no plan names gets scoped test runs without it, and the loop stops on errors that are not the change's. The toolkit never adds a file to a company repo, so the per-repo env lives in a personal file.
 
 Changes:
-- `lib/plan_format.py` `repo_gate_env(repo_root, plan_rel=None)`: merge assignments from the personal file `~/.claude/gate-env.json` (path overridable with env var `CLAUDE_GATE_ENV_FILE`, for tests). Shape: `{"<repo name>": ["NAME=value", ...]}`. The repo name is the last path part of `git remote get-url origin` without `.git`; with no origin, the main worktree folder name (`git rev-parse --path-format=absolute --git-common-dir`, parent folder). A plan's assignment wins over the file's for the same name. A missing file is no assignments. A file that is not valid JSON, or not that shape, or holds a word `environment_from_assignments` rejects: raise `ValueError` naming the file and the bad entry (loud failure; `code_review_start.py` lets it surface).
-- `review/review_loop_script.py`: the scoped-tests `critical-blocker` text (line ~909) gains one line after the tails: `a test that needs an env var the repo's CI sets: add it under this repo's name in ~/.claude/gate-env.json`. No other change to that file.
+- `lib/plan_format.py` `repo_gate_env(repo_root, plan_rel=None)`: merge assignments from the personal file `~/.claude/gate-env.json` (path overridable with env var `CLAUDE_GATE_ENV_FILE`, for tests). Shape: `{"<repo name>": ["NAME=value", ...]}`. The repo name is the last path part of `git remote get-url origin` without `.git`; with no origin, the main worktree folder name (`git rev-parse --path-format=absolute --git-common-dir`, parent folder). A plan's assignment wins over the file's for the same name. A missing file is no assignments. A file that is not valid JSON, or not that shape, or holds a word that is not a literal NAME=value (`script_utils.ENV_ASSIGNMENT`): raise `ValueError` naming the file and the bad entry (loud failure; `code_review_start.py` lets it surface).
+- `review/review_loop_script.py`: the scoped-tests `critical-blocker` text (line ~909) gains one line after the tails: the line names the repo's actual key and the personal file path in use (`plan_format.gate_env_repo_name`, `plan_format.personal_gate_env_file`-style path). No other change to that file.
 
 #### Automated Verification
 - New tests in `tests/scripts/test_plan_format.py`: a temp repo with origin `git@x:org/app.git` and a gate-env file `{"app": ["PLUGINS=1"]}` → `repo_gate_env` holds `PLUGINS=1`; a plan that sets `PLUGINS=0` wins; a missing file adds nothing; a malformed file raises `ValueError` naming the file. The first case fails before the change.
@@ -69,3 +69,4 @@ Changes:
 
 Phase 1: lint_problems drops the unused check_command parameter; adopted by the session, 2026-11-10; no acceptance criterion changes.
 Phase 2: a reflow next to a real edit in the same replace hunk still counts as added (whole-hunk comparison kept as the plan says); decided by the session, 2026-11-10; no acceptance criterion changes.
+Phase 3: the personal file's words must match script_utils.ENV_ASSIGNMENT (literal NAME=value) and the stop hint names the actual repo key and file; adopted by the session, 2026-11-10; no acceptance criterion changes.

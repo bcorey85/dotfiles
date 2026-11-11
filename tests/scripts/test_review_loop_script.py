@@ -1282,6 +1282,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn("scoped tests failing after the last fix", packet["blockers"][0])
         self.assertIn("corrected claim", packet["blockers"][0])
+        self.assertIn("gate-env.json", packet["blockers"][0])
 
     def test_a_stale_prose_hit_the_coder_fixes_converges_and_ends_on_an_unreviewed_fix(self):
         reply = {"result": "Fixed the claim.", "edits": {"app.py": APP_FIXED + "# corrected claim\n"}}

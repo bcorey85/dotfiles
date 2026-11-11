@@ -189,6 +189,10 @@ def parse_review(text):
     return finding_records(review_texts)
 
 
+class ReplyShapeError(ValueError):
+    """A model reply that holds no usable object after its one retry."""
+
+
 # How much of the first unusable reply's error the retry note quotes.
 RETRY_ERROR_CHARS = 200
 
@@ -197,7 +201,7 @@ def reply_with_one_retry(claude_call, role, prompt, repo, out, keys, shape, reco
     """The parsed JSON object of a model reply that holds any of `keys`. A reply with none is read by `recover`, when
     given. An object that `problem`, when given, returns a problem string for is rejected, and that string goes into
     the retry note and the error. A miss is retried once under "<role>-retry", so the retry has its own row in
-    calls.jsonl; a second miss raises ValueError."""
+    calls.jsonl; a second miss raises ReplyShapeError."""
     def parsed_reply(reply):
         """(object, error): the object is None when the reply is rejected, and the error says why."""
         parsed = last_json_object(reply, keys)
@@ -220,7 +224,7 @@ def reply_with_one_retry(claude_call, role, prompt, repo, out, keys, shape, reco
     reply = claude_call(f"{role}-retry", retry_prompt, repo, out, **options)
     parsed, error = parsed_reply(reply)
     if parsed is None:
-        raise ValueError(error)
+        raise ReplyShapeError(error)
     return parsed
 
 

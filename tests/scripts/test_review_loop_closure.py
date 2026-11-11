@@ -78,7 +78,7 @@ class ClosureCheckRetryTest(unittest.TestCase):
     def test_two_malformed_replies_raise(self):
         malformed = '{"receipt": "r", "open": [], "left_alone": "log.py:9 - prints the limit"}'
 
-        with self.assertRaises(ValueError) as raised:
+        with self.assertRaises(review_loop_findings.ReplyShapeError) as raised:
             self.check([malformed, malformed])
         self.assertIn("'left_alone' must be a list of non-blank strings", str(raised.exception))
 
@@ -148,7 +148,7 @@ class ClosureCheckRetryTest(unittest.TestCase):
         self.assertEqual(["a.py:3 - defect - fix"], result["open"])
 
     def test_two_prose_replies_raise(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(review_loop_findings.ReplyShapeError):
             self.check(["prose", "more prose"])
 
     def test_a_json_first_reply_makes_one_call(self):

@@ -238,7 +238,7 @@ class ClosureCheckTest(unittest.TestCase):
                 self.assertEqual(expected_receipt, closure["receipt"])
 
     def test_an_open_list_that_does_not_decode_still_raises(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(review_loop_findings.ReplyShapeError):
             self.closure('{"receipt": "a "b" c", "open": ["app.py:4 - unclosed]}')
 
     def test_the_prompt_tells_the_model_to_escape_quotes_in_the_receipt(self):
@@ -3049,7 +3049,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         with mock.patch.object(module, "claude_call", claude_call):
             try:
                 outcome = module.disposition_call("reviewer text", self.repo, self.scratch)
-            except ValueError as error:
+            except review_loop_findings.ReplyShapeError as error:
                 outcome = error
         return calls, outcome
 
@@ -3069,11 +3069,11 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("x" * 100, note)
         self.assertNotIn("x" * 200, note)
 
-    def test_two_bad_disposition_replies_raise_the_value_error(self):
+    def test_two_bad_disposition_replies_raise_the_reply_shape_error(self):
         calls, outcome = self.disposition_calls_with(["no object here", "still none"])
 
         self.assertEqual(len(calls), 2)
-        self.assertIsInstance(outcome, ValueError)
+        self.assertIsInstance(outcome, review_loop_findings.ReplyShapeError)
         self.assertIn("still none", str(outcome))
 
     def test_the_disposition_retry_runs_under_its_own_role(self):

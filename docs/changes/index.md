@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-903 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+904 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [pull_keep_index docstrings match the exits; replay case cites its queue item](notes/2026-11-10-pull-keep-index-docstrings-match-the-exits-replay.md).
+Latest change: 2026-11-10, [pull_keep_index inlines the upstream check and shares the stderr decode](notes/2026-11-10-pull-keep-index-inlines-the-upstream-check-and.md).
 
 ## Top gains
 

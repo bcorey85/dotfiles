@@ -247,6 +247,11 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+def process_stderr_text(finished):
+    """What a finished subprocess wrote to stderr, as text for a failure message."""
+    return os.fsdecode(finished.stderr).strip()
+
+
 def changed_files(directory, base="HEAD"):
     """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded) plus
     untracked files that .gitignore does not hide."""

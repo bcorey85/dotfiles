@@ -65,17 +65,13 @@ def set_aside(repo):
 
     reset = run_in_repo(repo, "reset", "--hard", "--quiet")
     if reset.returncode != 0:
-        sys.exit(f"pull_keep_index: git reset failed: {stderr_text(reset)}. " + recovery_text(repo, saved))
+        problem = script_utils.process_stderr_text(reset)
+        sys.exit(f"pull_keep_index: git reset failed: {problem}. " + recovery_text(repo, saved))
     return saved
 
 
 def run_in_repo(repo, *arguments, env=None, stdin=None):
     return subprocess.run(["git", "-C", repo, *arguments], capture_output=True, env=env, input=stdin)
-
-
-def stderr_text(finished):
-    """What a finished git command wrote to stderr, for a failure message."""
-    return os.fsdecode(finished.stderr).strip()
 
 
 def listed_paths(repo, *diff_arguments):
@@ -117,7 +113,7 @@ def restore_the_split(repo, saved, conflicts):
         return tree
     reset = run_in_repo(repo, "--literal-pathspecs", "reset", "-q", tree, "--", *applied)
     if reset.returncode != 0:
-        problem = stderr_text(reset)
+        problem = script_utils.process_stderr_text(reset)
         sys.exit(f"pull_keep_index: could not restore the staged files: {problem}. " + recovery_text(repo, saved))
     return tree
 
@@ -151,7 +147,7 @@ def lookup_remote_ref(repo, remote, ref):
         return True, ""
     if listed.returncode == 2:
         return False, ""
-    return None, stderr_text(listed)
+    return None, script_utils.process_stderr_text(listed)
 
 
 def remote_has_ref(repo, remote, ref):
@@ -172,15 +168,6 @@ def configured_merge_ref(repo, branch):
     return script_utils.git_output(repo, "config", "--get", f"branch.{branch}.merge")
 
 
-def configured_upstream_target(repo, branch, merge_ref):
-    """[] when the remote still has the configured upstream, so `git pull` reads the branch config. Exit 1 with the
-    gone-upstream recovery of the module docstring, or with the git error when the lookup fails."""
-    remote = configured_remote(repo, branch)
-    if remote_has_ref(repo, remote, merge_ref):
-        return []
-    exit_upstream_gone(repo, branch, merge_ref, remote)
-
-
 def exit_upstream_gone(repo, branch, merge_ref, remote):
     """Exit 1 naming the gone upstream and the recovery commands."""
     sys.exit(f"pull_keep_index: the upstream {merge_ref} of {branch} is gone from {remote}; a chained push stops here "
@@ -192,9 +179,9 @@ def exit_upstream_gone(repo, branch, merge_ref, remote):
 def pull_target(repo):
     """The remote and branch to name to `git pull`: [] when the upstream resolves or the remote still has the set
     upstream (or the head is detached), so git picks it; ["origin", branch] when no upstream is set but origin has the
-    branch; None when no upstream is set and origin lacks the branch, so there is nothing to pull. Exit 1 as
-    `configured_upstream_target` does when `@{u}` does not resolve, naming the failed command when the branch name
-    lookup fails, and with the git error when the origin lookup fails (no upstream set)."""
+    branch; None when no upstream is set and origin lacks the branch, so there is nothing to pull. Exit 1 with the
+    gone-upstream recovery of the module docstring when `@{u}` does not resolve and the remote lacks the set upstream,
+    naming the failed command when the branch name lookup fails, and with the git error when a remote lookup fails."""
     upstream = run_in_repo(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
     if upstream.returncode == 0:
         return []
@@ -208,7 +195,10 @@ def pull_target(repo):
     # remote decides: a deleted one stops here, before anything is set aside, or a chained `git push` would recreate it.
     configured = configured_merge_ref(repo, branch)
     if configured is not None:
-        return configured_upstream_target(repo, branch, configured)
+        remote = configured_remote(repo, branch)
+        if not remote_has_ref(repo, remote, configured):
+            exit_upstream_gone(repo, branch, configured, remote)
+        return []
 
     # The full ref is passed because a bare name also matches `x/<branch>`.
     if remote_has_ref(repo, FALLBACK_REMOTE, f"refs/heads/{branch}"):
@@ -241,7 +231,7 @@ def set_upstream(repo, remote, branch):
         written = run_in_repo(repo, "config", f"branch.{branch}.{key}", value)
         if written.returncode == 0:
             continue
-        problem = stderr_text(written)
+        problem = script_utils.process_stderr_text(written)
         sys.exit(f"pull_keep_index: the pull worked but setting the upstream of {branch} failed in {repo}: {problem}. "
                  f"To set it, run: git -C {repo} config branch.{branch}.{key} {value}")
 

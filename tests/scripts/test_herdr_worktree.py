@@ -338,8 +338,10 @@ esac""")
         self.wait_for_file(perl_args)
         perl_lines = perl_args.read_text().splitlines()
         self.assertEqual(perl_lines[0], "-MPOSIX")
-        self.assertIn("POSIX::setsid()", perl_lines[2])
-        self.assertEqual(perl_lines[3:5], ["--", str(self.bin_dir / "herdr-worktree-watch")])
+        # The perl program is one multi-line argument, so it spans several lines of the record.
+        separator = perl_lines.index("--")
+        self.assertIn("POSIX::setsid()", "\n".join(perl_lines[2:separator]))
+        self.assertEqual(perl_lines[separator + 1], str(self.bin_dir / "herdr-worktree-watch"))
         self.wait_for_file(watch_args)
 
     def test_a_run_without_fork_starts_no_watcher(self):

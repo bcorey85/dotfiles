@@ -267,6 +267,16 @@ local FAMILIES = {
       light = { heading1 = "#902a03", heading = "#6b4600" },
     },
   },
+  ["token"] = {
+    -- ThorstenRhau/token, default variant: one colorscheme "token" follows
+    -- vim.o.background (warm graphite #262624 dark / #faf9f5 light).
+    schemes = { dark = "token", light = "token" },
+    colors_name = "token",
+    accents = {
+      dark = { heading1 = "#f4906f", heading = "#f7c699" },
+      light = { heading1 = "#863716", heading = "#6d4717" },
+    },
+  },
   ["jellybeans"] = {
     -- WTFox/jellybeans.nvim: one colorscheme "jellybeans" follows vim.o.background
     -- (#151515 dark / sepia #f5e6d3 light).

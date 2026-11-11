@@ -59,6 +59,7 @@ ALLOWED_HITS = [
     ("scripts/code/code_review_start.py", "code_review_start.py <lane>", PRINTED),
     ("scripts/code/code_review_start.py", "WAIT_COMMAND = ", PRINTED),
     ("scripts/code/phase_start.py", "python3 ~/.claude/scripts/code/phase_start.py", PRINTED),
+    ("scripts/lib/plan_format.py", "PLAN_CHECK_OWNER_COMMAND = ", PRINTED),
     ("scripts/code/code_wait.py", "code_wait.py agent <agent id>", PRINTED),
     ("scripts/code/code_wait.py", "python3 ~/.claude/scripts/code/code_wait.py review", PRINTED),
     ("scripts/code/code_relay.py", "python3 ~/.claude/scripts/code/code_relay.py", PRINTED),

@@ -44,6 +44,7 @@ from handback_store import (
     hand_back_gap,
     hand_back_standing,
     latest,
+    latest_for_repo,
     plan_ruled_since,
 )
 from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
@@ -654,6 +655,16 @@ def standing_false_clean_reason(seen):
     if unruled:
         return f"the review-loop handed back {len(unruled)} plan impact(s) that await a ruling"
     return None
+
+
+def clean_handback_since(session, repo_top, since):
+    """True when the session's latest hand-back for repo_top stands as clean and was stored strictly after `since`.
+    A stored time that is not a number reads as not after."""
+    seen = latest_for_repo(session, repo_top)
+    if standing_false_clean_reason(seen) is not None:
+        return False
+    handed_back_at = seen["handback"].get("ts")
+    return isinstance(handed_back_at, (int, float)) and handed_back_at > since
 
 
 def unruled_plan_impacts(seen):

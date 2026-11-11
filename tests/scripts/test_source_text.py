@@ -239,5 +239,48 @@ class LiteralTest(unittest.TestCase):
         self.assertEqual("plan = \"\" + ''  # trailing note", source_text.without_string_text(line))
 
 
+class NormalizedBlockCommasTest(unittest.TestCase):
+    def test_a_comma_before_a_closing_bracket_goes_except_the_one_of_a_bare_tuple(self):
+        cases = [
+            ("bare one-element tuple", "x = (1,)", "x=(1,)"),
+            ("return of a one-element tuple", "return (1,)", "return(1,)"),
+            ("one-argument call", "f(a,)", "f(a)"),
+            ("one-parameter signature", "def f(a,):", "deff(a):"),
+            ("list", "[1,]", "[1]"),
+            ("comma inside a string", 'f("a,b",)', 'f("a,b")'),
+            ("single quote read as double", "x = 'a'", 'x="a"'),
+            ("tuple nested in a call", "f((1,))", "f((1,))"),
+            ("tuple nested in a tuple with a trailing comma", "((1,), 2,)", "((1,),2)"),
+            ("closing bracket with no opener", "a,)", "a)"),
+            ("comma with no bracket", "a, b", "a,b"),
+            ("opener never closed", "(1,", "(1,"),
+            ("generic call", "f<T>(a,)", "f<T>(a)"),
+            ("call on a call result", "f(a)(b,)", "f(a)(b)"),
+            ("call on an index result", "handlers[0](a,)", "handlers[0](a)"),
+            ("call on a short index result", "x[0](a,)", "x[0](a)"),
+            ("call on a $ name", "$(a,)", "$(a)"),
+            ("call after optional chaining", "cb?.(a,)", "cb?.(a)"),
+            ("macro call", "dbg!(a,)", "dbg!(a)"),
+            ("tuple after in, before a colon", "if x in (1,):", "ifxin(1,):"),
+            ("tuple as a case pattern", "case (1,):", "case(1,):"),
+            ("tuple as a dict key", "{(1,): v}", "{(1,):v}"),
+            ("tuple after ==, before a colon", "if t == (1,):", "ift==(1,):"),
+            ("tuple after is, before a colon", "elif x is (1,):", "elifxis(1,):"),
+        ]
+        for message, text, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, source_text.normalized_block([text]))
+
+    def test_without_tuple_syntax_every_group_loses_its_comma(self):
+        self.assertEqual("(a)=>a", source_text.normalized_block(["(a,)=>a"], has_tuples=False))
+
+    def test_only_python_paths_have_tuple_syntax(self):
+        cases = [("py", "a.py", True), ("pyi", "a.pyi", True), ("go", "a.go", False), ("rust", "a.rs", False),
+                 ("ts", "a.ts", False), ("no path", None, False)]
+        for message, path, expected in cases:
+            with self.subTest(message):
+                self.assertEqual(expected, source_text.has_tuple_syntax(path))
+
+
 if __name__ == "__main__":
     unittest.main()

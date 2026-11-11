@@ -97,6 +97,12 @@ def branch_ticket_criteria(ticket_text, ticket_name="ticket", criteria_entries=N
 
 
 @raising_verify_error
+def branch_criteria_owner(ticket_path):
+    """Who owns the ticket's criteria: plan_format.criteria_owner's record."""
+    return plan_format.criteria_owner(ticket_path)
+
+
+@raising_verify_error
 def branch_ticket_comments(ticket_text, ticket_name="ticket"):
     """The ticket's comments, labelled `Comment #n`."""
     return plan_format.ticket_comments(ticket_text, ticket_name)

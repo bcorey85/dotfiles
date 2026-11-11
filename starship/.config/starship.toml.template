@@ -230,6 +230,34 @@ fg = "#283039"
 bg = "#f5f7f8"
 grey = "#5a6571"
 
+# token dark (warm graphite #262624; salmon and peach accents).
+[palettes.token-dark]
+red = "#d68585"
+orange = "#f4906f"
+yellow = "#f7c699"
+green = "#8fb78c"
+blue = "#81a5c4"
+branch = "#81a5c4"
+teal = "#7dbbba"
+purple = "#b195ca"
+fg = "#c3c0b8"
+bg = "#262624"
+grey = "#8a8884"
+
+# token light (#faf9f5).
+[palettes.token-light]
+red = "#ad5253"
+orange = "#863716"
+yellow = "#857238"
+green = "#365a33"
+blue = "#315270"
+branch = "#315270"
+teal = "#185b5b"
+purple = "#61457c"
+fg = "#323128"
+bg = "#faf9f5"
+grey = "#6a655d"
+
 # jellybeans dark (#151515).
 [palettes.jellybeans-dark]
 red = "#d74545"
@@ -481,6 +509,155 @@ purple = "#a80e62"
 fg = "#293741"
 bg = "#c8d0d3"
 grey = "#4e5158"
+
+# dredge on the warm ground (dredge-roles-warm dark).
+[palettes.dredge-warm-dark]
+red = "#f7665b"
+orange = "#ee8448"
+yellow = "#d6ae56"
+green = "#99af2e"
+blue = "#3ba6e2"
+branch = "#8e96ec"
+teal = "#46b8ae"
+purple = "#fc61a5"
+fg = "#c3c1ba"
+bg = "#24231f"
+grey = "#b7b5ae"
+
+# kanagawa wave / lotus.
+[palettes.kanagawa-dark]
+red = "#e46876"
+orange = "#ffa066"
+yellow = "#e6c384"
+green = "#98bb6c"
+blue = "#7e9cd8"
+branch = "#7e9cd8"
+teal = "#7aa89f"
+purple = "#957fb8"
+fg = "#dcd7ba"
+bg = "#1f1f28"
+grey = "#9b9989"
+
+[palettes.kanagawa-light]
+red = "#bf374c"
+orange = "#ab4e00"
+yellow = "#716b39"
+green = "#587137"
+blue = "#4d699b"
+branch = "#4d699b"
+teal = "#4e6f69"
+purple = "#624c83"
+fg = "#545464"
+bg = "#f2ecbc"
+grey = "#6d6a5d"
+
+# darcula, dark only: the light palette is a verbatim copy.
+[palettes.darcula-dark]
+red = "#f43753"
+orange = "#dc9656"
+yellow = "#ffc66d"
+green = "#98be65"
+blue = "#6897bb"
+branch = "#cc7832"
+teal = "#73cef4"
+purple = "#a785ba"
+fg = "#c9d0d3"
+bg = "#2b2b2b"
+grey = "#929292"
+
+[palettes.darcula-light]
+red = "#f43753"
+orange = "#dc9656"
+yellow = "#ffc66d"
+green = "#98be65"
+blue = "#6897bb"
+branch = "#cc7832"
+teal = "#73cef4"
+purple = "#a785ba"
+fg = "#c9d0d3"
+bg = "#2b2b2b"
+grey = "#929292"
+
+# tairiki: dimmed dark, light.
+[palettes.tairiki-dark]
+red = "#c37d7c"
+orange = "#d99667"
+yellow = "#d9bf89"
+green = "#b3ba7e"
+blue = "#93a8b8"
+branch = "#93a8b8"
+teal = "#9bb0ac"
+purple = "#b19db8"
+fg = "#afb2b0"
+bg = "#1d1f21"
+grey = "#959896"
+
+[palettes.tairiki-light]
+red = "#a31515"
+orange = "#cf4a11"
+yellow = "#7c5c20"
+green = "#008000"
+blue = "#0070c1"
+branch = "#0070c1"
+teal = "#1e797f"
+purple = "#7929c8"
+fg = "#001070"
+bg = "#ffffff"
+grey = "#595959"
+
+# everforest, medium background.
+[palettes.everforest-dark]
+red = "#e67e80"
+orange = "#e69875"
+yellow = "#dbbc7f"
+green = "#a7c080"
+blue = "#7fbbb3"
+branch = "#a7c080"
+teal = "#83c092"
+purple = "#d699b6"
+fg = "#d3c6aa"
+bg = "#2d353b"
+grey = "#9da9a0"
+
+[palettes.everforest-light]
+red = "#d43034"
+orange = "#bf4c00"
+yellow = "#a06400"
+green = "#677900"
+blue = "#1177a6"
+branch = "#677900"
+teal = "#008058"
+purple = "#b64394"
+fg = "#5c6a72"
+bg = "#fdf6e3"
+grey = "#667565"
+
+# gruvbox (ellisonleao/gruvbox.nvim), medium contrast.
+[palettes.gruvbox-dark]
+red = "#fb4934"
+orange = "#fe8019"
+yellow = "#fabd2f"
+green = "#b8bb26"
+blue = "#83a598"
+branch = "#83a598"
+teal = "#8ec07c"
+purple = "#d3869b"
+fg = "#ebdbb2"
+bg = "#282828"
+grey = "#928374"
+
+[palettes.gruvbox-light]
+red = "#9d0006"
+orange = "#af3a03"
+yellow = "#b57614"
+green = "#79740e"
+blue = "#076678"
+branch = "#076678"
+teal = "#427b58"
+purple = "#8f3f71"
+fg = "#3c3836"
+bg = "#fbf1c7"
+grey = "#7c6f64"
 
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name

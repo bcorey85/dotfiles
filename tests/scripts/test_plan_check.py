@@ -1,5 +1,7 @@
 """Tests for plan_check.py: the argument handling of the check verb. The acceptance-criteria rows of
 check are tested in test_spec_ac_check.py."""
+import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -7,6 +9,9 @@ import tempfile
 import unittest
 
 import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import plan_format
 
 PLAN_CHECK = toolkit_paths.CODE_DIR / "plan_check.py"
 PLAN = ("## Phase Status\n\n- [ ] Phase 1: First (risk: low)\n- [x] Phase 2: Second (risk: low)\n\n"
@@ -21,9 +26,9 @@ class PlanCheckCliTest(unittest.TestCase):
         self.plan = self.folder / "spec.md"
         self.plan.write_text(PLAN)
 
-    def run_plan_check(self, *args):
+    def run_plan_check(self, *args, env=None):
         return subprocess.run([sys.executable, str(PLAN_CHECK), *args], cwd=self.folder, capture_output=True,
-                              text=True, check=False)
+                              text=True, check=False, env=env)
 
     def test_a_verb_it_does_not_know_prints_the_usage_and_fails(self):
         done = self.run_plan_check("run", str(self.plan))
@@ -36,6 +41,67 @@ class PlanCheckCliTest(unittest.TestCase):
 
         self.assertEqual(done.returncode, 1)
         self.assertIn("usage: plan_check.py", done.stderr)
+
+    def test_owner_prints_the_owner_of_the_ticket_beside_the_plan_as_json(self):
+        ticket = self.folder / "00-ticket.md"
+        ticket.write_text("# T-1: Thing\n\n## Background\n\nWords.\n")
+
+        done = self.run_plan_check("owner", str(self.plan))
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        owner = json.loads(done.stdout)
+        self.assertEqual(owner["owner"], "plan")
+        self.assertEqual(owner["ticket"], str(ticket))
+        self.assertEqual(owner["rule"], plan_format.CRITERIA_OWNER_RULES["plan"])
+        self.assertIsNone(owner["source"])
+
+    def test_owner_prints_session_and_the_queue_source_for_a_session_written_ticket(self):
+        home = self.folder / "home"
+        queue_dir = home / "agent-evals" / "queue"
+        queue_dir.mkdir(parents=True)
+        (queue_dir / "item.md").write_text('---\ngenerated: {"by": "claude-code/x", "at": "2026-11-01"}\n---\n')
+        (self.folder / "00-ticket.md").write_text(
+            "# T-1: Thing\n\nSource: ~/agent-evals/queue/item.md\n\n## Acceptance Criteria\n\n- Words.\n")
+
+        done = self.run_plan_check("owner", str(self.plan), env={**os.environ, "HOME": str(home)})
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        owner = json.loads(done.stdout)
+        self.assertEqual(owner["owner"], "session")
+        self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+        self.assertEqual(owner["rule"], plan_format.CRITERIA_OWNER_RULES["session"])
+
+    def test_owner_with_no_path_or_two_paths_prints_the_usage_and_fails(self):
+        for args in (("owner",), ("owner", str(self.plan), str(self.plan))):
+            with self.subTest(args):
+                done = self.run_plan_check(*args)
+
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn("usage:", done.stderr)
+
+    def test_owner_with_no_ticket_beside_the_plan_prints_user(self):
+        done = self.run_plan_check("owner", str(self.plan))
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(json.loads(done.stdout)["owner"], "user")
+
+    def test_owner_prints_the_error_and_fails_on_a_ticket_it_cannot_read(self):
+        ticket = self.folder / "00-ticket.md"
+        ticket.write_text("# T-1\n\nSource: ~/agent-evals/queue/no-such-item-here.md\n")
+
+        done = self.run_plan_check("owner", str(self.plan))
+
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("no-such-item-here.md", done.stdout)
+
+    def test_owner_prints_the_error_and_fails_when_several_tickets_sit_beside_the_plan(self):
+        (self.folder / "A-00-ticket.md").write_text("# T-1\n")
+        (self.folder / "B-00-ticket.md").write_text("# T-2\n")
+
+        done = self.run_plan_check("owner", str(self.plan))
+
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("B-00-ticket.md", done.stdout)
 
     def test_a_plan_with_an_entry_that_has_no_section_fails_the_check(self):
         done = self.run_plan_check("check", str(self.plan))

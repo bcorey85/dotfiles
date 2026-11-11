@@ -3,7 +3,10 @@
 
   plan_check.py check [--final] <plan>   print each way the plan does not hold; exit 1 when any, else 0. --final also
                                          fails a spec whose criteria file was never written.
+  plan_check.py owner <plan>             print who owns the criteria of the ticket beside the plan as JSON (owner,
+                                         ticket, source, rule); exit 1 with the message when the ticket cannot be read.
 """
+import json
 import os
 import pathlib
 import sys
@@ -16,7 +19,7 @@ import plan_format
 import script_utils
 from plan_verification import verification_format_failure
 
-USAGE = "usage: plan_check.py check [--final] <plan>"
+USAGE = "usage: plan_check.py check [--final] <plan>\n       plan_check.py owner <plan>"
 
 
 def expected_red_failure(plan_lines, plan_name, repo_dir):
@@ -56,9 +59,23 @@ def check_plan(plan_lines, plan, plan_path, final):
                 or criteria_failure)
 
 
+def print_owner(path_args):
+    if len(path_args) != 1:
+        sys.exit(USAGE)
+    try:
+        owner = plan_format.plan_criteria_owner(pathlib.Path(path_args[0]))
+    except plan_format.PlanFormatError as error:
+        print(error)
+        sys.exit(1)
+    print(json.dumps(owner))
+
+
 def main(args):
     if script_utils.help_requested(args):
         return print(USAGE)
+
+    if args[0] == "owner":
+        return print_owner(args[1:])
 
     final = args[1:2] == ["--final"] and args[0:1] == ["check"]
     path_args = args[2:] if final else args[1:]

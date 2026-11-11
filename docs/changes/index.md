@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-901 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
+902 changes, 22 with a measured gain, 263 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [pull_keep_index pull_target docstring names every exit](notes/2026-11-10-pull-keep-index-pull-target-docstring-names-every.md).
+Latest change: 2026-11-10, [pull_keep_index records the upstream on the remote it pulled from](notes/2026-11-10-pull-keep-index-records-the-upstream-on-the-remote.md).
 
 ## Top gains
 

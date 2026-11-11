@@ -16,18 +16,11 @@
 #
 # Reads the fork's session id from the claude pane, waits
 # HERDR_WORKTREE_WATCH_SECONDS (default 120), then asks herdr for the
-# workspace. A workspace that is gone gets its recovery steps written to
-# herdr-worktree-watch.log in the worktree's git dir, and a herdr notification
-# names that log (none under tuios, which has no notification command). With a
-# session id, the log holds one paste-ready line: `ws=$(<reopen> | jq -r
-# '.result.workspace.workspace_id // empty') && [ -n "$ws" ] && herdr-dev
-# <worktree> "$ws" <session> '<resume prompt>'`. <reopen> is `herdr worktree
-# open --cwd <main checkout> --path <worktree> --focus`; under tuios it is
-# `herdr-api workspace create
-# --cwd <worktree> --label <worktree folder name> --focus`, and `&& herdr-api
-# workspace focus "$ws" >/dev/null` follows the `[ -n "$ws" ]` test. With no session id,
-# step 1 is that reopen command and step 2 is `claude --resume` in the
-# worktree. Any other failure of the workspace check is
+# workspace. An open workspace logs `still open`. A workspace that is gone gets
+# its recovery steps written to herdr-worktree-watch.log in the worktree's git
+# dir, and a herdr notification names that log (none under tuios, which has no
+# notification command). The recovery line's format is in
+# `herdr-worktree --help`. Any other failure of the workspace check is
 # reported on stderr as "could not check workspace" (the log under the launcher)
 # and exits 1. It never reopens the workspace: the user may have closed it on
 # purpose.

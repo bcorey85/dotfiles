@@ -4,7 +4,16 @@
 # Usage: detach <command> [args...]
 #
 # Uses setsid. macOS has no setsid by default, so there perl (shipped with
-# macOS) makes the new session through POSIX::setsid().
+# macOS) makes the new session through POSIX::setsid(). setsid fails for a
+# process-group leader, so the perl form forks first in that case.
 
 command -v setsid &>/dev/null && exec setsid "$@"
-exec perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- "$@"
+exec perl -MPOSIX -e '
+if (getpgrp() == $$) {
+    my $pid = fork;
+    defined $pid or die "detach: fork: $!\n";
+    exit if $pid;
+}
+POSIX::setsid() or die "detach: setsid: $!\n";
+exec { $ARGV[0] } @ARGV or die "detach: exec $ARGV[0]: $!\n";
+' -- "$@"

@@ -60,13 +60,14 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "full_check_tree",
                "files_touched", "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean",
                "tool_fault", "blocked_agents", "scoped_tests", "open_classes",
-               "unrun_reviewer", "plan_impacts"]
+               "left_alone", "unrun_reviewer", "plan_impacts"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
 SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
-             "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "plan_impacts"]
+             "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
+             "plan_impacts"]
 # The list fields whose every JSON entry is a string.
-STRING_LIST_KEYS = ("open_classes",)
+STRING_LIST_KEYS = ("open_classes", "left_alone")
 # The list fields whose every entry is a mapping, and the text field each entry requires.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question",
                    "plan_impacts": "text"}
@@ -580,6 +581,8 @@ def render(packet, skill, sections=()):
         if skill == "review" and packet["status"] == "converged" and owes_receipt and receipt_is_missing(closure):
             lines.append("The class-closure receipt is missing or names no repaired finding. Do not present this "
                          "run as clean.")
+    if packet["left_alone"]:
+        lines.append("Left alone, read for another purpose: " + "; ".join(packet["left_alone"]))
     lines += full_check_lines(packet)
     if packet["tool_fault"]:
         lines.append("Tool fault: " + packet["tool_fault"])

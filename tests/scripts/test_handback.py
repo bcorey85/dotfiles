@@ -279,6 +279,7 @@ class JsonPacketTest(HandbackTestBase):
             "findings_remaining[0] has no finding": json_packet(status="cap-reached", findings_remaining=[{}]),
             "skipped_fp[0] has no item": json_packet(skipped_fp=[{"reason": "r"}]),
             "open_classes must be a JSON list of strings": json_packet(open_classes=[{"class": "x"}]),
+            "left_alone must be a JSON list of strings": json_packet(left_alone=[{"class": "x"}]),
         }
         for problem, message in cases.items():
             with self.subTest(problem), self.assertRaises(handback.PacketError) as raised:
@@ -290,6 +291,11 @@ class JsonPacketTest(HandbackTestBase):
         packet = handback.load(json_packet(open_classes=["log with a trailing blank line"]))
         self.assertEqual(packet["open_classes"], ["log with a trailing blank line"])
         self.assertEqual(handback.load(json_packet())["open_classes"], [])
+
+    def test_a_json_packet_carries_its_left_alone_members_as_a_list(self):
+        packet = handback.load(json_packet(left_alone=["a"]))
+        self.assertEqual(packet["left_alone"], ["a"])
+        self.assertEqual(handback.load(json_packet())["left_alone"], [])
 
     def test_check_accepts_a_json_packet(self):
         code, out, _err = self.run_cli(["check"], json_packet(ask=[JSON_ASK]))

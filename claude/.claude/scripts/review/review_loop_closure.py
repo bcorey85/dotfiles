@@ -1,6 +1,7 @@
 """The review loop's class-closure check: the per-path stats of what the fix coder changed, and the model call that
 asks whether each fixed finding's class is closed."""
 
+import dataclasses
 import json
 import pathlib
 import re
@@ -11,6 +12,17 @@ import script_utils
 from review_loop_findings import reply_with_one_retry
 
 NO_CLOSURE = "n/a - fixed[] empty"
+
+
+@dataclasses.dataclass
+class ClosureState:
+    """What the class-closure pass leaves for the outcome builder to read."""
+
+    receipt: str = NO_CLOSURE
+    open_classes: list = dataclasses.field(default_factory=list)  # the members the repair pass left unfixed
+    left_alone: list = dataclasses.field(default_factory=list)  # members that read the value for another purpose
+
+
 OPEN_KEY = re.compile(r'"open"\s*:\s*(?=\[)')
 LEFT_ALONE_KEY = re.compile(r'"left_alone"\s*:\s*(?=\[)')
 RECEIPT_KEY = re.compile(r'^"receipt"\s*:\s*')
@@ -61,14 +73,6 @@ def held_clause(held_texts):
     return "; skipped, held by another session: " + "; ".join(held_texts)
 
 
-def left_alone_clause(left_alone):
-    """The receipt's tail naming the members the check left alone because they read the value for another purpose;
-    empty when none."""
-    if not left_alone:
-        return ""
-    return "; left alone, read for another purpose: " + "; ".join(left_alone)
-
-
 def receipt_after_class_repair(closed_members, held_texts):
     """The closure receipt once the class-fix coder changed a file. It names only the members sent to the coder, so
     members skipped as held are not claimed fixed. It replaces the check's receipt, whose prose still calls the sent
@@ -115,21 +119,24 @@ def closure_check(repo, out, fixed, claude_call):
 
 
 def closure_from_open_list(reply):
-    """The receipt, open list and left-alone list of a closure reply whose object does not decode, as when the receipt
-    holds a raw double quote: decodes the lists after the last `"open": [` and the last `"left_alone": [`, and keeps
-    the text after the `"receipt":` key, without its wrapping quotes, as the receipt. The left-alone list is empty
-    when its key is absent. None when no open list decodes or the left-alone list is present and does not decode."""
+    """The receipt, open list and left-alone list of a closure reply whose object does not decode, as when the
+    receipt holds a raw double quote: decodes the lists after the last `"open": [` and the last `"left_alone": [`,
+    and keeps the text after the `"receipt":` key, without its wrapping quotes, as the receipt. The left-alone
+    list is empty when its key is absent. The receipt text stops at the first list key after it. None when
+    no open list decodes or the left-alone list is present and does not decode."""
     open_found, parsed_open, open_key_start = list_after_last_key(reply, OPEN_KEY)
     if not open_found or parsed_open is None:
         return None
 
-    left_alone_found, left_alone, _ = list_after_last_key(reply, LEFT_ALONE_KEY)
+    left_alone_found, left_alone, left_alone_key_start = list_after_last_key(reply, LEFT_ALONE_KEY)
     if left_alone_found and left_alone is None:
         return None
 
-    before_open = reply[:open_key_start]
-    receipt_start = before_open.rfind('"receipt"')
-    receipt_text = RECEIPT_KEY.sub("", before_open[receipt_start:]) if receipt_start >= 0 else ""
+    receipt_start = reply.rfind('"receipt"', 0, open_key_start)
+    receipt_end = open_key_start
+    if left_alone_found and receipt_start < left_alone_key_start < open_key_start:
+        receipt_end = left_alone_key_start
+    receipt_text = RECEIPT_KEY.sub("", reply[receipt_start:receipt_end]) if receipt_start >= 0 else ""
     receipt = receipt_text.strip().rstrip(",").strip()
     if len(receipt) > 1 and receipt.startswith('"') and receipt.endswith('"'):
         receipt = receipt[1:-1]

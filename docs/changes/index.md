@@ -7,7 +7,7 @@ okf_version: "0.2"
 
 900 changes, 22 with a measured gain, 264 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-10, [Class closure leaves members that read the value for another purpose and names them in the receipt](notes/2026-11-10-review-class-closure-leaves-members-that-read-the.md).
+Latest change: 2026-11-10, [Class closure leaves members that read the value for another purpose and names them in the hand-back](notes/2026-11-10-review-class-closure-leaves-members-that-read-the.md).
 
 ## Top gains
 

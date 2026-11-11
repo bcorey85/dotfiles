@@ -16,8 +16,10 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import full_check
 import handback
 import handback_store
+import review_launch
 import review_loop_script
 import reviewed_tree
 import script_utils
@@ -2269,6 +2271,46 @@ class ReviewFixScriptTest(unittest.TestCase):
         relaunch_args = json.loads((loop_dir / "launch.json").read_text())["relaunch_args"]
         self.assertEqual(relaunch_args, ["--repo", str(self.repo.resolve()), "--deep", "--lane", "none", "--handoff",
                                          str(loop_dir / "handoff.txt")])
+
+    def test_launch_with_two_tests_passes_each_as_a_gate_command_and_records_them_in_the_relaunch_args(self):
+        code, output = self.launch("--test", "cmd a", "--test", "cmd b")
+        self.assertEqual(code, 0, output)
+        loop_dir, _prompt, _packet_args = self.launched_run()
+        loop_argv = json.loads((loop_dir / "script.log").read_text().splitlines()[0])["argv"]
+        self.assertEqual(review_loop_script.parse_review_loop_arguments(loop_argv).gate_command, ["cmd a", "cmd b"])
+        relaunch_args = json.loads((loop_dir / "launch.json").read_text())["relaunch_args"]
+        self.assertEqual(relaunch_args, ["--repo", str(self.repo.resolve()), "--test", "cmd a", "--test", "cmd b",
+                                         "--lane", "none", "--handoff", str(loop_dir / "handoff.txt")])
+
+    def test_launch_with_a_repeated_test_runs_and_records_it_once(self):
+        code, output = self.launch("--test", "cmd a", "--test", "cmd a")
+        self.assertEqual(code, 0, output)
+        loop_dir, _prompt, _packet_args = self.launched_run()
+        loop_argv = json.loads((loop_dir / "script.log").read_text().splitlines()[0])["argv"]
+        self.assertEqual(review_loop_script.parse_review_loop_arguments(loop_argv).gate_command, ["cmd a"])
+        relaunch_args = json.loads((loop_dir / "launch.json").read_text())["relaunch_args"]
+        self.assertEqual(relaunch_args.count("--test"), 1)
+
+    def test_launch_with_an_empty_or_blank_test_stops_and_launches_nothing(self):
+        for command in ("", "   "):
+            with self.subTest(command=command):
+                code, output = self.launch("--test", command)
+                self.assertEqual(code, 2, output)
+                self.assertIn("--test needs a command", output)
+                self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
+
+    def test_packet_says_why_the_scoped_tests_did_not_run_when_the_launch_carried_a_test(self):
+        launch_file = self.temp_root / "launch.json"
+        launch_file.write_text(json.dumps({"relaunch_args": ["--test", "cmd a"]}))
+        self.assertEqual(review_launch.unrun_scoped_tests_note(["--test", "cmd a"], "critical-blocker", ""),
+                         full_check.SCOPED_NOT_RUN_STOPPED.format(status="critical-blocker"))
+        code, output = self.run_script(["packet", "--skill", "review", "--launch", str(launch_file)], CLEAN_EMPTY)
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"Scoped tests after the last fix: {full_check.SCOPED_NOT_RUN_NO_FIX}", output)
+
+    def test_packet_leaves_the_scoped_tests_alone_when_they_ran_or_the_launch_carried_no_test(self):
+        self.assertEqual(review_launch.unrun_scoped_tests_note(["--test", "cmd a"], "converged", "passed"), "passed")
+        self.assertEqual(review_launch.unrun_scoped_tests_note(["--fast"], "converged", ""), "")
 
     def test_launch_with_two_files_records_each_in_the_relaunch_args_in_order(self):
         (self.repo / "second.txt").write_text("second\n")

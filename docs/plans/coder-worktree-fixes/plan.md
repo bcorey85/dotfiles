@@ -16,7 +16,8 @@ Deviations. Each phase starts with a test that fails on the current tree.
   `claude/.claude/scripts/review/handback.py` (the `left_alone` field), `claude/.claude/scripts/review/review_loop_findings.py` (`reply_with_one_retry`'s `problem` check),
   `claude/.claude/scripts/lib/script_utils.py` (`is_nonblank_string_list`),
   `claude/.claude/scripts/review/review_loop_prompt_file.py` (`read_findings`),
-  `claude/.claude/scripts/lib/shell_command.py`, `claude/.claude/scripts/gates/wait_loop_gate.py`, and their tests in `tests/scripts/`. `claude/.claude/orchestration.md` (the worktree
+  `claude/.claude/scripts/lib/shell_command.py`, `claude/.claude/scripts/gates/wait_loop_gate.py`, a new
+  `claude/.claude/scripts/lib/reply_json.py`, `docs/toolkit-script-rules.md`, `docs/rule-anchors.md`, `docs/changes/` (the phase change notes and the regenerated changes files), and their tests in `tests/scripts/`. `claude/.claude/orchestration.md` (the worktree
   bullet) was in scope and is not shipped: reverted, see Plan Deviations.
 - Out: `review_loop_coder.py` (its untracked-file restore already exists and stays as is), `review_fix.py`,
   `review_fix_asks.py`, `skills/review/`, `skills/fix/`, `review-fork-run.md`, lint, format, gate-env and
@@ -186,3 +187,5 @@ Replaces the one-line paste-ready form, see Plan Deviations.
 
   The disagreement:
   docs/plans/coder-worktree-fixes/plan.md:43-46 [plan-drift] — PLAN-IMPACT: Phase 1's step text still describes two logged steps with a `<new workspace id>` placeholder. The code now logs one line that captures the id. The new Plan Deviations bullet (lines 133-136) records the change but cites "branch review 4 ask" as its authority. No orchestrator or user ruling is named, while the sibling bullets each name who ruled and when. Question: did the orchestrator or the user approve the one-line form? If so, who and when? Change: add that name and date to the deviation bullet. acceptance_criteria: none (AC2's literal recovery steps hold either way).
+
+  Superseded 2026-11-11: the Phase 4 bullet dated 2026-11-11 drops the one-line form (orchestrator ruling agent-evals-5e).

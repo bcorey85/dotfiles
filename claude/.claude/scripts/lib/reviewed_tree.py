@@ -16,7 +16,9 @@ with an optional path left out of both parts. A
 tree whose added paths are all untracked regular files keeps its old value; a tree that adds a file through the
 index or a commit since base hashes differently, so verify-prep and the branch review rerun once there.
 
-State: ~/.claude/state/review-gate/<session>.reviewed, one JSON object of repo top level -> fingerprint, and
+State: ~/.claude/state/review-gate/<session>.reviewed, one JSON object of repo top level -> fingerprint,
+<session>.reviewed-base beside it (the HEAD at record time and the tree fingerprint recorded then, so a reviewed tree
+split across commits keeps its credit while that HEAD is an ancestor of the current one), and
 ~/.claude/state/review-gate/reviewed-trees.json, repo top level -> the latest fingerprints any session recorded. A value
 written in the older form for a tree that adds a file through the index or a commit since base never equals a current
 one, so that tree counts as not reviewed until it is recorded again; a tree whose added paths are all untracked
@@ -33,6 +35,8 @@ import script_utils
 
 GIT_TIMEOUT_SECONDS = 10
 REVIEWED_SUFFIX = ".reviewed"
+# Per session: repo top level -> {"base": HEAD when recorded, "tree": the fingerprint recorded then}.
+BASE_SUFFIX = ".reviewed-base"
 # The reviewed trees of every session, so a commit from a fork's parent, a resumed session or a session after /clear
 # earns the credit of a review that converged under another session id. It credits only the exact tree reviewed.
 SHARED_REVIEWED_NAME = "reviewed-trees.json"
@@ -54,6 +58,10 @@ def review_gate_dir():
 
 def reviewed_file(session):
     return review_gate_dir() / (session + REVIEWED_SUFFIX)
+
+
+def base_file(session):
+    return review_gate_dir() / (session + BASE_SUFFIX)
 
 
 def shared_reviewed_file():
@@ -166,7 +174,7 @@ def fingerprint_base(top, timeout=None):
     """(head, base) for fingerprinting the work tree at `top`: HEAD's commit as both, or "unborn" and the empty tree
     for a repo with no commit yet. A failed HEAD lookup counts as no commit; None only when git cannot name the
     empty tree."""
-    head = script_utils.git_output(top, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+    head = script_utils.head_commit(top, timeout=timeout)
     if head is not None:
         return head, head
 
@@ -215,7 +223,7 @@ def fingerprint(repo_dir):
 
 def reviewed_fingerprint(repo_dir, base="HEAD"):
     """`fingerprint` with the notes paths the repo's committed list and docs/ name left out: the tree a review
-    credits, as a change against `base`. A bad committed list is named on stderr and leaves only docs/ out. None as
+    credits, taken against `base`. A bad committed list is named on stderr and leaves only docs/ out. None as
     `fingerprint` (so record_reviewed returns False and is_reviewed is always False there)."""
     top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
     if top is None:
@@ -249,6 +257,35 @@ def read_shared_reviewed():
     return read_json_object(shared_reviewed_file())
 
 
+def record_base(session, top, tree_hash, stored_tree=False):
+    """Store the HEAD at record time beside the tree fingerprint, so is_reviewed can fingerprint the same tree
+    against that base after part of it is committed. Nothing is stored for a repo with no commit.
+    `stored_tree` says the hash was fingerprinted earlier, against the HEAD of that moment: the base is then stored
+    only when the hash still equals the fingerprint against the HEAD read now. Fail-closed: a HEAD that moved since
+    (or a fingerprint that fails) stores nothing, so a later split commit gets no credit through the base."""
+    head = script_utils.head_commit(top, timeout=GIT_TIMEOUT_SECONDS)
+    if head is None:
+        drop_base(session, top)
+        return
+    if stored_tree:
+        against_head = reviewed_fingerprint(top, base=head)
+        if against_head is None or against_head[1] != tree_hash:
+            drop_base(session, top)
+            return
+    bases = read_json_object(base_file(session))
+    bases[top] = {"base": head, "tree": tree_hash}
+    script_utils.write_text_atomically(base_file(session), json.dumps(bases) + "\n")
+
+
+def drop_base(session, top):
+    """Remove the session's stored base for the repo: a record that stores no base must not leave the earlier tree's
+    base to credit a split commit of the new one."""
+    bases = read_json_object(base_file(session))
+    if bases.pop(top, None) is None:
+        return
+    script_utils.write_text_atomically(base_file(session), json.dumps(bases) + "\n")
+
+
 def record_reviewed(session, repo_dir, tree=None):
     """Store repo_dir's tree as reviewed for the session and in the shared record: `tree`, a stored
     (top, reviewed_fingerprint) pair, when given, else the tree as it stands. Returns False when the tree cannot be
@@ -261,6 +298,7 @@ def record_reviewed(session, repo_dir, tree=None):
     reviewed[top] = tree_hash
     reviewed_file(session).parent.mkdir(parents=True, exist_ok=True)
     script_utils.write_text_atomically(reviewed_file(session), json.dumps(reviewed) + "\n")
+    record_base(session, top, tree_hash, stored_tree=tree is not None)
 
     shared = read_shared_reviewed()
     stored = shared.get(top)
@@ -272,8 +310,10 @@ def record_reviewed(session, repo_dir, tree=None):
 
 def is_reviewed(session, repo_dir, tree=None):
     """True when repo_dir's working tree, notes paths left out, is exactly a tree that a converged review covered:
-    the one recorded for the session, or one in the shared record that any session wrote. `tree` is a
-    (top, hash) pair that `reviewed_fingerprint` already returned, used in place of fingerprinting again."""
+    the one recorded for the session, one in the shared record that any session wrote, or, after part of it was
+    committed, the session's recorded tree taken against the HEAD stored at record time while that HEAD is an
+    ancestor of the current one (session record only). `tree` is a (top, hash) pair that `reviewed_fingerprint`
+    already returned, used in place of fingerprinting again."""
     found = tree or reviewed_fingerprint(repo_dir)
     if found is None:
         return False
@@ -281,7 +321,9 @@ def is_reviewed(session, repo_dir, tree=None):
     if read_reviewed(session).get(top) == tree_hash:
         return True
 
-    return shared_record_holds(top, tree_hash)
+    if shared_record_holds(top, tree_hash):
+        return True
+    return matches_recorded_base(session, repo_dir, top)
 
 
 def shared_record_holds(top, tree_hash):
@@ -327,3 +369,29 @@ def last_commit_fingerprint(top):
     if found is None:
         return None
     return found[1]
+
+
+def matches_recorded_base(session, repo_dir, top):
+    """True when the tree, taken against the HEAD stored at record time, is the tree recorded then: a reviewed tree
+    that was partly committed since. Needs that HEAD to still be an ancestor of the current HEAD; a missing record,
+    an unborn repo or a rewound branch gives False."""
+    stored = read_json_object(base_file(session)).get(top)
+    if not isinstance(stored, dict):
+        return False
+    base = stored.get("base")
+    if not isinstance(base, str):
+        return False
+
+    # At the recorded HEAD the fingerprint against base is the one is_reviewed just compared, so it cannot match.
+    head = script_utils.head_commit(top, timeout=GIT_TIMEOUT_SECONDS)
+    if head is None or head == base:
+        return False
+
+    # Fail-closed: a non-ancestor, an unknown base commit or git failing counts as not reviewed.
+    is_ancestor = script_utils.git_output(top, "merge-base", "--is-ancestor", base, "HEAD",
+                                          timeout=GIT_TIMEOUT_SECONDS)
+    if is_ancestor is None:
+        return False
+
+    against_base = reviewed_fingerprint(repo_dir, base=base)
+    return against_base is not None and against_base[1] == stored.get("tree")

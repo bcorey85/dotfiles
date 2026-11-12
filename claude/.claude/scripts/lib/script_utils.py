@@ -270,6 +270,11 @@ def process_stderr_text(finished):
     return os.fsdecode(finished.stderr).strip()
 
 
+def head_commit(cwd, timeout=None):
+    """The commit HEAD names in cwd, or None in a repo with no commit or when git fails."""
+    return git_output(cwd, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+
+
 def head_commit_time(top):
     """The HEAD commit's committer time in seconds, or None when git cannot tell (no commit yet)."""
     stamp = git_output(top, "log", "-1", "--format=%ct")

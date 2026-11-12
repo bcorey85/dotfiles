@@ -172,11 +172,11 @@ def is_plan_impact_ask(item):
 def carried_findings(packet):
     """What a round that holds plan impacts leaves open for the next review, one line each: its
     blockers, its remaining findings and its closing prose, where the loop lists fix findings it did not dispatch."""
-    lines = ["blocker: " + one_line(item_text(item, "finding", "file_line"), 800) for item in packet["blockers"]]
-    lines += ["finding: " + one_line(item_text(item, "finding", "file_line"), 800)
+    lines = ["blocker: " + one_line(item_text(item, "finding", "file_line"), None) for item in packet["blockers"]]
+    lines += ["finding: " + one_line(item_text(item, "finding", "file_line"), None)
               for item in packet["findings_remaining"]]
     if packet["trailer"]:
-        lines.append("loop note: " + one_line(packet["trailer"], 800))
+        lines.append("loop note: " + one_line(packet["trailer"], None))
     return lines
 
 

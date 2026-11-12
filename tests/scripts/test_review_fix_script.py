@@ -3,6 +3,7 @@ import os
 import pathlib
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -22,7 +23,9 @@ import plan_format
 import review_loop_main
 import review_loop_prompt_file
 import reviewed_tree
+import reviewer_dispatch
 import script_utils
+from review_asks import REJECT_MEANS, REJECTED
 from review_fix_asks import LAUNCH_COMMAND
 
 LOGGED_MARK = "LOGGED / POSTED"
@@ -156,6 +159,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.temp_root = pathlib.Path(temp_dir.name)
         self.repo = self.temp_root / "myrepo"
         self.repo.mkdir()
+        self.addCleanup(self.stop_launched_loops)
         self.ledger_env = fake_ledger.install(self.temp_root)
         self.escapes_file = self.temp_root / "escapes.jsonl"
         self.jump_log = self.temp_root / "jump.log"
@@ -170,6 +174,20 @@ class ReviewFixScriptTest(unittest.TestCase):
         (self.repo / "README.md").write_text("hi\n")
         self.git("add", "README.md")
         self.git("commit", "-q", "-m", "init")
+
+    def stop_launched_loops(self):
+        """Waits for each loop a --detach launch left running, then kills its group, so no loop writes into the temp
+        dir while it is removed. Runs before the temp dir cleanup: cleanups run last-added first."""
+        state_dir = script_utils.git_path(self.repo, reviewer_dispatch.LAUNCH_STATE_NAME)
+        if state_dir is None:
+            return
+        loop_root = state_dir / reviewer_dispatch.LOOP_FOLDER
+        deadline = time.monotonic() + 10
+        for _loop_dir, pid in list(reviewer_dispatch.live_loops(loop_root)):
+            while reviewer_dispatch.pid_is_running(pid) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if reviewer_dispatch.pid_is_running(pid):
+                os.killpg(pid, signal.SIGKILL)
 
     def fake_command(self, name, body):
         path = self.temp_root / name
@@ -722,6 +740,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(2, code)
         self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]',
                       output)
+        self.assertIn(f"{REJECTED}: {REJECT_MEANS}", output)
 
     def test_plan_impact_modal_names_the_by_form(self):
         _code, output = self.packet(PLAN_IMPACT)
@@ -3070,6 +3089,40 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(packet_args, HOME=home)
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
+
+    def test_every_carried_line_and_the_ruling_appear_whole_in_the_adopt_handoff(self):
+        home = str(self.temp_root / "home")
+        handoff = self.temp_root / "handoff.md"
+        handoff.write_text("Review the greeting change.\n")
+
+        def long_text(label):
+            return " ".join(f"{label}{number}" for number in range(300))
+
+        long_finding = long_text("finding")
+        long_blocker = long_text("blocker")
+        long_trailer = long_text("trailer")
+        long_impact = long_text("impact")
+        long_ruling = long_text("ruling")
+        remaining = [{"disposition": "fix", "finding": long_finding, "file_line": "src/q.ts:7"}]
+        blockers = [{"finding": long_blocker, "file_line": "src/q.ts:8"}]
+        held = json.dumps({**CONVERGED_FIELDS, "files_touched": ["README.md"],
+                           "plan_impacts": [{**HELD_IMPACT, "text": long_impact}],
+                           "findings_remaining": remaining, "blockers": blockers, "trailer": long_trailer})
+        code, output = self.launch("--base", "HEAD", "--file", "README.md", "--deep", "--handoff", str(handoff),
+                                   message=held, HOME=home)
+        self.assertEqual(code, 0, output)
+        packet_args = shlex.split(output.splitlines()[-1].split("`")[1])[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", long_ruling],
+                                       HOME=home)
+
+        self.assertEqual(code, 0, output)
+        adopt_handoff = script_utils.git_path(self.repo, "review-fix") / "adopt-handoff.md"
+        handoff_text = adopt_handoff.read_text()
+        for whole in (long_finding, long_blocker, long_trailer, long_impact, long_ruling):
+            self.assertIn(whole, handoff_text)
 
     def test_a_modified_ask_carries_the_users_change_into_the_findings_file(self):
         home = str(self.temp_root / "home")

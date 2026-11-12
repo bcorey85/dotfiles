@@ -17,7 +17,7 @@ unmeasured: "The review-fork-run.md Resume line is call syntax: it names the exi
 
 ## Change
 
-- `review_asks.py`: `is_conditional_change` owns the pattern. A change is conditional when it starts with `If not`, `If no`, `Unless` or `Otherwise`, or holds `if (not )?(confirmed|approved|accepted)`, `if yes`, `if no,` or `if the user`. The accept/reject wording of every ask listing lives here too.
+- `review_asks.py`: `is_conditional_change` owns the pattern. A change is conditional when it starts with `If not`, `If no`, `Unless`, `Otherwise`, `If the user` or `If (not )?accepted`, or holds anywhere `if yes`, `if no,`, `if (not )?(confirmed|approved)` or `if the user (confirms|approves|accepts|agrees|says)`; a condition inside ordinary code ("Return 202 if accepted by the queue", "Show the banner if the user is an admin") is not. The accept/reject wording of every ask listing lives here too.
 - `review_fix_asks.py`: asks-done exits 2 and logs nothing on `accepted`/`rejected` for a conditional change, naming `modified:`. `--correct <outcome>...` logs new rows for changed outcomes, rewrites `ask-findings.md` and reprints the launch line while `asks_launch_pending` holds; with no accepted ask left it deletes the findings file, clears the launch keys and prints done. After the launch it refuses.
 - `skills/audit/review.md` counts the last `ask_outcome` row per finding; `handback.py` docstring updated.
 - `_shared/review-fork-run.md` Resume: one line naming the `modified:` answer to the refusal and `--correct`.

@@ -50,7 +50,7 @@ class ScopedTestRuns:
         """Run the scoped test commands and keep their result. A red run the autofix formatters can fix is fixed and
         run once more. A red run whose every failure also fails on HEAD without the diff is pre-existing, not red.
         A budgeted run is bound by the named-tests budget, counted from this call and shared with the rerun. With
-        under 60 s of it left, no rerun starts and the first red run is kept.
+        less than coder_gate.MIN_COMMAND_SECONDS of it left, no rerun starts and the first red run is kept.
         A run with stop_when_unrun that has a command that timed out, never started, or gave a command error or
         setup fault stops the loop too.
         A loop that gates every run adds the runner counts to every run's line. False, with the loop stopped, when one

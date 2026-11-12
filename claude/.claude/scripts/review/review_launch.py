@@ -51,7 +51,7 @@ HANDOFF_NAME = "handoff.txt"
 RELAUNCH_KEY = "relaunch_args"
 # In the launch record of a fix run: the list of texts of the findings the user accepted; no key means none. A value
 # that is not a list of strings stops the read (read_user_ruled).
-USER_RULED_KEY = "user_ruled"
+USER_RULED_RECORD_KEY = "user_ruled"
 FINDING_START = "- "
 FINDINGS_FORM = "expected `- <finding>` at column 0, an indented continuation line, or a blank line"
 
@@ -259,12 +259,12 @@ def read_user_ruled(launch_file):
     """What a launch record says the user accepted: the list of finding texts, empty for none (also a record with no
     key)."""
     try:
-        user_ruled = reviewer_dispatch.read_launch_record(launch_file, USER_RULED_KEY, default=[])
+        user_ruled = reviewer_dispatch.read_launch_record(launch_file, USER_RULED_RECORD_KEY, default=[])
     except reviewer_dispatch.ManifestError as error:
         raise LaunchError(f"--launch {error}") from error
     if isinstance(user_ruled, list) and all(isinstance(entry, str) for entry in user_ruled):
         return user_ruled
-    raise LaunchError(f"--launch {launch_file}: {USER_RULED_KEY} is not a list of finding texts")
+    raise LaunchError(f"--launch {launch_file}: {USER_RULED_RECORD_KEY} is not a list of finding texts")
 
 
 def command_launch(argv, loop_script):
@@ -311,7 +311,7 @@ def command_launch(argv, loop_script):
     launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
     launch_record = {"packet_args": packet_args(options, launch_file),
                      RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file),
-                     USER_RULED_KEY: user_ruled}
+                     USER_RULED_RECORD_KEY: user_ruled}
     script_utils.write_text_atomically(launch_file, json.dumps(launch_record) + "\n")
     print(f"The review loop runs as a script; its log is {log_path}")
     sys.stdout.flush()

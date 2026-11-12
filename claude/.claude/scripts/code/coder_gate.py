@@ -311,10 +311,11 @@ def _failure_of(command, code, output, verdict):
     return None
 
 
-def run_commands(gate, budget_seconds=None):
-    # A command that hit the timeout gave no test result, so timed_out holds (command, output so far, the timeout it
-    # got), never failures. With a budget, each command gets at most the budget left, and a command that cannot start
-    # with MIN_COMMAND_SECONDS left is in not_started: no command runs past the budget.
+def run_commands(gate, budget_seconds=None, collect_summaries=False):
+    # Only a caller that reads `summaries` sets collect_summaries: finding the summary lines costs a pass over each
+    # command's output. A command that hit the timeout gave no test result, so timed_out holds (command, output so
+    # far, the timeout it got), never failures. With a budget, each command gets at most the budget left, and a
+    # command that cannot start with MIN_COMMAND_SECONDS left is in not_started: no command runs past the budget.
     run = CommandRun([], [], [], [], [])
     environment = {**os.environ, **gate.get("env", {})}
     started = time.monotonic()
@@ -337,8 +338,9 @@ def run_commands(gate, budget_seconds=None):
             run.timed_out.append((command, output, command_timeout))
             continue
 
-        summary_lines = test_run_output.runner_summaries(output, limit=None)
-        run.summaries.append((command, summary_lines))
+        if collect_summaries:
+            summary_lines = test_run_output.runner_summaries(output, limit=None)
+            run.summaries.append((command, summary_lines))
         failure = _failure_of(command, code, output, verdict)
         if failure is not None:
             run.failures.append(failure)
@@ -442,7 +444,7 @@ def scoped_run(repo_root, commands, gate_env, log_path, budget_seconds=None):
     gate ={"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_env)}
     # Without a budget no hook timeout bounds this run, so it starts every command.
-    failures, skipped, timed_out, not_started, summaries = run_commands(gate, budget_seconds)
+    failures, skipped, timed_out, not_started, summaries = run_commands(gate, budget_seconds, collect_summaries=True)
     if failures or timed_out:
         timed_out_outputs = [(command, "timeout", output) for command, output, _timeout in timed_out]
         script_utils.write_command_outputs(log_path, failures + timed_out_outputs)

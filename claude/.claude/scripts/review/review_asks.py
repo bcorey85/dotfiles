@@ -21,13 +21,15 @@ JUMP_NOTE_LIMIT = 160
 # The ask field that marks an ask converted from a finding the user already accepted. Its change is that finding's
 # line, so the conditional-change check skips it.
 USER_RULED_KEY = "user_ruled"
-# A proposed change that hangs on the answer to the ask: it starts with `If not`, `If no` (not `If no-op`), `Unless`
-# or `Otherwise`, or it holds `if (not) confirmed/approved/accepted`, `if yes`, `if no,` or `if the user`. An accepted
-# answer to it applies the branch the user never chose. A plain condition such as "When the list is empty, return []"
-# is not one.
+# A proposed change that hangs on the answer to the ask: it starts with `If not`, `If no` (not `If no-op`), `Unless`,
+# `Otherwise`, `If the user` or `If (not) accepted`, or it holds anywhere `if yes`, `if no,`, `if (not) confirmed/
+# approved` or `if the user confirms/approves/accepts/agrees/says`. An accepted answer to it applies the branch the
+# user never chose. A condition inside ordinary code, such as "Return 202 if accepted by the queue" or "Show the banner
+# if the user is an admin", is not one.
 CONDITIONAL_CHANGE = re.compile(
-    r"^\s*(if not|if no(?!-)|unless|otherwise)\b"
-    r"|\bif (not )?(confirmed|approved|accepted)\b|\bif yes\b|\bif no,|\bif the user\b",
+    r"^\s*(if not|if no(?!-)|unless|otherwise|if the user|if (not )?accepted)\b"
+    r"|\bif yes\b|\bif no,|\bif (not )?(confirmed|approved)\b"
+    r"|\bif the user (confirms|approves|accepts|agrees|says)\b",
     re.IGNORECASE)
 # One path with a line or line range and nothing else: a list of locations or a bare path has no one place to jump to.
 JUMP_ANCHOR = re.compile(r"^[^\s,;]+:\d+(-\d+)?$")

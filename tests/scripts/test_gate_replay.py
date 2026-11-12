@@ -197,5 +197,14 @@ class GateReplayTest(unittest.TestCase):
         self.assertIn("gate crashed", finished.stderr)
 
 
+class CorpusLayoutTest(unittest.TestCase):
+    def test_the_formatter_ignore_file_lists_the_corpus(self):
+        ignore_lines = (TREE_ROOT / ".prettierignore").read_text(encoding="utf-8").splitlines()
+        corpus_path = pathlib.Path(__file__).resolve().with_name("gate_replay_corpus.json")
+        corpus_rel = corpus_path.relative_to(TREE_ROOT).as_posix()
+
+        self.assertIn(corpus_rel, ignore_lines)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,2 +1,3 @@
 docs/changes/
 docs/rule-anchors.md
+tests/scripts/gate_replay_corpus.json

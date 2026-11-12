@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles dredge-roles-warm solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox papercolor hybrid rose-pine; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles dredge-roles-warm solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox papercolor hybrid rose-pine ef-elea ef-maris; }
 
 # A family that differs from another only in nvim's syntax colours borrows that
 # family's terminal, prompt, herdr, delta and claude themes. dredge-warm exists
@@ -209,6 +209,12 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # rose-pine: ghostty BUILTINS — main dark, dawn light.
     rose-pine:light)        echo "Rose Pine Dawn" ;;
     rose-pine:*)            echo "Rose Pine" ;;
+    # ef-elea, ef-maris (oonamo/ef-themes.nvim): custom files, copies of the
+    # plugin's extras/ghostty files.
+    ef-elea:light)          echo "ef-elea-light" ;;
+    ef-elea:*)              echo "ef-elea-dark" ;;
+    ef-maris:light)         echo "ef-maris-light" ;;
+    ef-maris:*)             echo "ef-maris-dark" ;;
   esac
 }
 
@@ -314,6 +320,14 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # rose-pine: hunk BUILTINS — main dark, dawn light.
     rose-pine:light)        echo "rose-pine-dawn" ;;
     rose-pine:*)            echo "rose-pine" ;;
+    # ef-elea: BASE of a full [custom_theme]; near-white on neutral grey, and
+    # near-black on a pale ground.
+    ef-elea:light)          echo "light-plus" ;;
+    ef-elea:*)              echo "dark-plus" ;;
+    # ef-maris: BASE of a full [custom_theme]. night-owl is the navy match
+    # (#d6deeb on #011627); github-light is the cool light.
+    ef-maris:light)         echo "github-light" ;;
+    ef-maris:*)             echo "night-owl" ;;
   esac
 }
 
@@ -1470,6 +1484,77 @@ EOF
 EOF
       )
       ;;
+    # ef-elea, ef-maris (oonamo/ef-themes.nvim). Every value is a palette entry
+    # of the plugin: roles are the resolved fg of nvim's groups, panels are
+    # bg_dim / bg_alt, diff rows are bg_added_faint / bg_removed_faint (what
+    # neogit paints) and the changed words are the _refine pair.
+    ef-elea:* | ef-maris:*)
+      local addWord remWord cls key h1 h2 ctl bfnc
+      case "$1:$2" in
+        ef-elea:light)
+          bg="#edf5e2"; panel="#e3e9d6"; panelAlt="#d0d7ca"; border="#a5aaaf"
+          accent="#007047"; text="#221321"; muted="#676470"
+          addedBg="#def0cb"; removedBg="#f0e0c0"; addWord="#bed9b0"; remWord="#efbfbd"
+          sAdd="#005000"; sRem="#8f1313"
+          badgeNeu="#375cc6"; fRename="#80308f"; fMod="#9a501f"
+          kw="#894852"; ctl="#5032aa"; str="#007047"; konst="#5032aa"
+          fn="#355500"; typ="#162f8f"; vbi="#6a4a9f"; pre="#9f356a"
+          mem="#5032aa"; param="#9a501f"; cmt="#7f4f4a"; esc="#5032aa"
+          bfnc="#3a5099"; h1="#894852"; h2="#306630"
+          ;;
+        ef-elea:*)
+          bg="#222524"; panel="#303332"; panelAlt="#3e4140"; border="#5d5f63"
+          accent="#50cf89"; text="#eaf2ef"; muted="#969faf"
+          addedBg="#203a2f"; removedBg="#4a242a"; addWord="#136244"; remWord="#772a35"
+          sAdd="#a0e0a0"; sRem="#ffbfbf"
+          badgeNeu="#57aff6"; fRename="#f59acf"; fMod="#cac85f"
+          kw="#eba8a8"; ctl="#cfaaff"; str="#50cf89"; konst="#cfaaff"
+          fn="#7fca5a"; typ="#6fcfd2"; vbi="#d0b9f0"; pre="#fa90ea"
+          mem="#cfaaff"; param="#cac85f"; cmt="#cac89f"; esc="#cfaaff"
+          bfnc="#6ab4ef"; h1="#eba8a8"; h2="#a9c99f"
+          ;;
+        ef-maris:light)
+          bg="#edf4f8"; panel="#e0e7ef"; panelAlt="#cfd8e3"; border="#a2a6af"
+          accent="#003faf"; text="#151a27"; muted="#676470"
+          addedBg="#c5f0e0"; removedBg="#f0d6d6"; addWord="#a0d4b9"; remWord="#efb1cd"
+          sAdd="#005000"; sRem="#8f1313"
+          badgeNeu="#375cc6"; fRename="#5f2fba"; fMod="#805a1f"
+          kw="#444fcf"; ctl="#5f2fba"; str="#006f70"; konst="#003faf"
+          fn="#3a6f00"; typ="#007010"; vbi="#6a4a9f"; pre="#5f2fba"
+          mem="#1f66af"; param="#805a1f"; cmt="#8b4052"; esc="#805a1f"
+          bfnc="#3a5099"; h1="#444fcf"; h2="#3a6f00"
+          ;;
+        ef-maris:*)
+          bg="#131c2b"; panel="#1d2c39"; panelAlt="#2a3644"; border="#595a63"
+          accent="#12b4ff"; text="#eaedef"; muted="#969faf"
+          addedBg="#163530"; removedBg="#4a202d"; addWord="#136244"; remWord="#772a35"
+          sAdd="#a0e0a0"; sRem="#ffbfbf"
+          badgeNeu="#57b0ff"; fRename="#cf90ff"; fMod="#d0d24f"
+          kw="#70a0ff"; ctl="#cf90ff"; str="#65d5a8"; konst="#12b4ff"
+          fn="#7fce5f"; typ="#41bf4f"; vbi="#d4aaf0"; pre="#cf90ff"
+          mem="#2fd0db"; param="#d0d24f"; cmt="#eaa4a4"; esc="#d0d24f"
+          bfnc="#9acfff"; h1="#70a0ff"; h2="#7fce5f"
+          ;;
+      esac
+      accentMuted="$panelAlt"; ctxBg="$bg"; lnFg="$muted"; note="$panel"
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      num="$konst"; lang="$konst"; call="$fn"; cls="$typ"
+      op="$text"; punct="$muted"; var="$text"; use="$text"
+      prim="$vbi"; key="$vbi"; tag="$ctl"
+      attr="$pre"; mac="$pre"; imp="$pre"; ns="$pre"; bfn="$bfnc"
+      extra=$(cat <<EOF
+"keyword.control"                   = "$ctl"
+"entity.other.attribute-name"       = "$vbi"
+"markup.underline.link"             = "$fn"
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
     *) return 0 ;;
   esac
   # Roles the retired families never set; default them so their (inert) branches
@@ -2245,6 +2330,47 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#c5c8c6" subtext0="#8b9299"
       green="#b5bd68" yellow="#f0c674" red="#cc6666"
       blue="#81a2be" teal="#8abeb7" peach="#de935f"
+      ;;
+    ef-elea:light)
+      # ef-elea-light (#edf5e2), the plugin's palette. Peach is its warmer
+      # yellow; the panel and surfaces are its bg_dim / bg_alt / bg_active.
+      base_name="one-light"
+      accent="#007047" panel_bg="#e3e9d6" surface_dim="#e0e2d0"
+      surface0="#d0d7ca" surface1="#b0b7aa"
+      overlay0="#676470" overlay1="#676470"
+      text="#221321" subtext0="#676470"
+      green="#00601f" yellow="#9a501f" red="#c3303a"
+      blue="#375cc6" teal="#1f70af" peach="#b04300"
+      ;;
+    ef-elea:*)
+      # ef-elea-dark (#222524), same roles as the light half.
+      base_name="one-dark"
+      accent="#50cf89" panel_bg="#303332" surface_dim="#3b3e3d"
+      surface0="#3e4140" surface1="#5e6160"
+      overlay0="#969faf" overlay1="#969faf"
+      text="#eaf2ef" subtext0="#969faf"
+      green="#7fc87f" yellow="#cac85f" red="#ff656a"
+      blue="#57aff6" teal="#6fcfd2" peach="#e0b02f"
+      ;;
+    ef-maris:light)
+      # ef-maris-light (#edf4f8), the plugin's palette, same roles as ef-elea.
+      base_name="one-light"
+      accent="#003faf" panel_bg="#e0e7ef" surface_dim="#dbe4e6"
+      surface0="#cfd8e3" surface1="#afb8c3"
+      overlay0="#676470" overlay1="#676470"
+      text="#151a27" subtext0="#676470"
+      green="#007010" yellow="#805a1f" red="#c3303a"
+      blue="#375cc6" teal="#1f66af" peach="#8b4400"
+      ;;
+    ef-maris:*)
+      # ef-maris-dark (#131c2b), same roles as the light half.
+      base_name="one-dark"
+      accent="#12b4ff" panel_bg="#1d2c39" surface_dim="#2a3341"
+      surface0="#2a3644" surface1="#4a5664"
+      overlay0="#969faf" overlay1="#969faf"
+      text="#eaedef" subtext0="#969faf"
+      green="#41bf4f" yellow="#d0d24f" red="#ff6f6f"
+      blue="#57b0ff" teal="#2fd0db" peach="#f0c060"
       ;;
     rose-pine:light)
       # rose-pine dawn (#faf4ed), the plugin's palette: green is pine, blue

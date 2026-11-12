@@ -13,7 +13,7 @@ import review_asks
 import review_launch
 import script_utils
 from handback import PLAN_IMPACT_STATUS, is_plan_impact_ask
-from review_asks import ASK_OUTCOMES, MODIFIED, REJECTED, USER_RULED_KEY
+from review_asks import ACCEPT_MEANS, ACCEPTED, ASK_OUTCOMES, MODIFIED, REJECT_MEANS, REJECTED, USER_RULED_KEY
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_FINDINGS_NAME,
@@ -49,10 +49,13 @@ def read_outcomes(argv, asks):
     for number, word in enumerate(argv, 1):
         outcome, _separator, note = word.partition(":")
         if outcome not in ASK_OUTCOMES:
-            raise UsageError(f"outcome {word!r} is not one of {'|'.join(ASK_OUTCOMES)}")
+            raise UsageError(
+                f"outcome {word!r} is not one of {'|'.join(ASK_OUTCOMES)}. {ACCEPTED}: {ACCEPT_MEANS}; "
+                f"{REJECTED}: {REJECT_MEANS} (the outcome for a 'leave it' or 'accept the gap' "
+                f"option); {MODIFIED}:<change>: make that change instead")
         if outcome == MODIFIED and not note.strip():
             raise UsageError(f"outcome {number} is modified with no note; "
-                             "write 'modified:<the user's change>' quoted as one shell word")
+                             f"write '{MODIFIED}:<the user's change>' quoted as one shell word")
         outcomes.append(outcome)
         notes.append(one_line(note, None))
     return outcomes, notes
@@ -360,7 +363,7 @@ def refuse_conditional_changes(asks, outcomes):
                         f"change: {one_line(change, 160)}")
     if problems:
         raise UsageError("\n".join(problems) + "\nNothing was logged. Answer each of these asks with "
-                         "'modified:<the change to make, with no condition>', quoted as one shell word, and run "
+                         f"'{MODIFIED}:<the change to make, with no condition>', quoted as one shell word, and run "
                          "asks-done again.")
 
 

@@ -6,6 +6,7 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import review_asks
+import review_fix_asks
 
 
 class IsConditionalChangeTest(unittest.TestCase):
@@ -64,6 +65,16 @@ class AcceptRejectLinesTest(unittest.TestCase):
                 self.assertEqual(
                     review_asks.accept_reject_lines(change),
                     ["   Accept = make this change: Revert X. Reject = leave the code as it is."])
+
+
+class ReadOutcomesTest(unittest.TestCase):
+    def test_an_unknown_outcome_word_error_says_rejected_is_the_leave_it_outcome(self):
+        with self.assertRaises(review_fix_asks.UsageError) as raised:
+            review_fix_asks.read_outcomes(["leave-it"], [{}])
+        message = str(raised.exception)
+        self.assertIn(f"{review_asks.REJECTED}: {review_asks.REJECT_MEANS}", message)
+        self.assertIn(f"{review_asks.ACCEPTED}: {review_asks.ACCEPT_MEANS}", message)
+        self.assertIn("'leave it'", message)
 
 
 if __name__ == "__main__":

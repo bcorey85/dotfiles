@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-928 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+929 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-11, [refactor branch-prep covers uncommitted and untracked files](notes/2026-11-11-refactor-branch-prep-covers-uncommitted-and.md).
+Latest change: 2026-11-12, [pull-keep-index skips the pull on a branch rewritten locally](notes/2026-11-12-pull-keep-index-skips-the-pull-on-a-branch.md).
 
 ## Top gains
 

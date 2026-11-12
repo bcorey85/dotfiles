@@ -18,7 +18,7 @@ Fix six queued toolkit defects. Each phase starts with a test that fails on the 
 
 - [x] Phase 1: verify-prep runs on a plan.md folder with no ticket (risk: medium)
 - [x] Phase 2: a converged commit review of the current tree counts as the branch review once one was logged (risk: medium)
-- [ ] Phase 3: refactor branch-prep covers uncommitted and untracked files (risk: low)
+- [x] Phase 3: refactor branch-prep covers uncommitted and untracked files (risk: low)
 - [ ] Phase 4: pull_keep_index skips the pull on a branch rewritten locally (risk: medium)
 - [ ] Phase 5: the criteria dry run labels environment failures ENV and judges escaped rg patterns the same (risk: low)
 - [ ] Phase 6: the formatter leaves the gate replay corpus layout alone (risk: low)

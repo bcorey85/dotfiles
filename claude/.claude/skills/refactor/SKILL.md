@@ -37,7 +37,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 3. **Branch audit (default)**: target = entire branch diff. Do NOT ask focus, do NOT read changed files.
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py branch-prep` and read `~/.claude/skills/_shared/escape-ratchet.md` in the same response. It prints the base it chose (the `branch-base` helper picks it; pass `--base REF` to override), the mechanical-sweep matches, and the finder prompt with the changed-file list (deleted, renamed and binary files marked). `STOP:` on an empty diff, a base with no shared history, or no base found.
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py branch-prep` and read `~/.claude/skills/_shared/escape-ratchet.md` in the same response. It prints the base it chose (the `branch-base` helper picks it; pass `--base REF` to override), the mechanical-sweep matches, and the finder prompt with the changed-file list: committed, uncommitted and untracked changes against the merge base (deleted, renamed, binary and untracked files marked). `STOP:` when the branch diff, the uncommitted changes and the untracked files are all empty, a base with no shared history, or no base found.
 
    b. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model` unless `+fast`) with the prompt the script printed. Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).
 

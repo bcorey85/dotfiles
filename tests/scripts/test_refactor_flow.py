@@ -167,7 +167,8 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("a.py:2 [marker] # TODO fix", done.stdout)
         self.assertIn("a.py:3 [commented-out code]", done.stdout)
         self.assertIn("a.py:4 [marker] print('hi')", done.stdout)
-        self.assertIn("`git diff main...HEAD`", done.stdout)
+        merge_base = self.git("merge-base", "main", "HEAD").strip()
+        self.assertIn(f"`git diff {merge_base}`", done.stdout)
         self.assertIn("cross-phase smells", done.stdout)
         self.assertEqual(self.last_line(done)[:5], "NEXT:")
 
@@ -594,13 +595,99 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("- top.py", done.stdout)
         self.assertIn("- pkg/a.py", done.stdout)
 
+    def test_branch_prep_covers_committed_uncommitted_and_untracked_files(self):
+        self.branch_with({"committed.py": "x = 1\n"})
+        self.write("README.md", "hello\n# TODO edited\n")
+        self.write("new/fresh.py", "y = 2\nprint('new')\n")
+        self.write("new/blob.bin", "\0binary")
+        merge_base = self.git("merge-base", "main", "HEAD").strip()
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- committed.py\n", done.stdout)
+        self.assertIn("- README.md\n", done.stdout)
+        self.assertIn("- new/fresh.py (untracked)\n", done.stdout)
+        self.assertIn("- new/blob.bin (untracked, binary)\n", done.stdout)
+        self.assertIn("Changed files (4);", done.stdout)
+        self.assertIn("README.md:2 [marker] # TODO edited", done.stdout)
+        self.assertIn("new/fresh.py:2 [marker] print('new')", done.stdout)
+        self.assertIn(f"`git diff {merge_base}`", done.stdout)
+        after_bound = done.stdout.split("review bound", 1)[1]
+        bound_line = after_bound.split("\n", 1)[0]
+        self.assertIn("untracked", bound_line)
+        self.assertNotIn("main...HEAD", done.stdout)
+
+    def test_branch_prep_reads_an_untracked_plan_from_the_work_tree(self):
+        plan = ("# Plan\n\n## Phase 1: package\n\n### Changes Required:\n\n#### 1. Re-exports\n\n"
+                "**File**: `pkg/__init__.py`\n\nRe-export `parse`.\n")
+        self.branch_with({"pkg/__init__.py": "from .core import parse\n"})
+        self.write("docs/plans/T-1-pkg/spec.md", plan)
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("## Plan-required structure (`docs/plans/T-1-pkg/spec.md`)", done.stdout)
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a mode-000 file")
+    def test_branch_prep_names_an_unreadable_untracked_plan(self):
+        self.branch_with({"pkg/__init__.py": "x = 1\n"})
+        plan_path = "docs/plans/T-1-pkg/spec.md"
+        self.write(plan_path, "# Plan\n")
+        (self.repo / plan_path).chmod(0)
+        self.addCleanup((self.repo / plan_path).chmod, 0o644)
+        done = self.flow("branch-prep")
+        self.assertNotEqual(done.returncode, 0)
+        self.assertNotIn("Traceback", done.stderr)
+        self.assertIn(plan_path, done.stderr)
+
+    def test_branch_prep_lists_unreadable_and_non_text_untracked_files_as_binary(self):
+        self.git("checkout", "-q", "-b", "feature")
+        self.write("locked.py", "x = 1\n")
+        (self.repo / "locked.py").chmod(0)
+        self.addCleanup((self.repo / "locked.py").chmod, 0o644)
+        self.write_bytes("latin.txt", b"caf\xe9\n")
+        (self.repo / "link.py").symlink_to("latin.txt")
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- latin.txt (untracked, binary)", done.stdout)
+        self.assertIn("- link.py (untracked, binary)", done.stdout)
+        if os.geteuid() != 0:
+            self.assertIn("- locked.py (untracked, binary)", done.stdout)
+
+    def test_branch_prep_keeps_the_last_line_of_an_untracked_file_without_a_trailing_newline(self):
+        self.git("checkout", "-q", "-b", "feature")
+        self.write("tail.py", "a = 1\n# TODO last")
+        done = self.flow("branch-prep")
+        self.assertIn("tail.py:2 [marker] # TODO last", done.stdout)
+
+    def test_branch_prep_only_untracked_files_is_not_an_empty_diff(self):
+        self.git("checkout", "-q", "-b", "feature")
+        self.write("new.py", "# TODO later\n")
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("STOP: tell the user the branch diff is empty", done.stdout)
+        self.assertIn("- new.py (untracked)", done.stdout)
+        self.assertIn("new.py:1 [marker]", done.stdout)
+
+    def test_branch_prep_with_head_ignores_the_work_tree(self):
+        self.branch_with({"committed.py": "x = 1\n"})
+        self.write("loose.py", "z = 3\n")
+        done = self.flow("branch-prep", "--head", "feature")
+        self.assertNotIn("loose.py", done.stdout)
+        self.assertIn("`git diff main...feature`", done.stdout)
+
     def test_branch_prep_empty_diff_stops(self):
         self.git("checkout", "-q", "-b", "feature")
         done = self.flow("branch-prep")
         self.assertEqual(done.returncode, 0)
-        self.assertIn("branch diff is empty", done.stdout)
+        self.assertIn("is empty and no file is untracked", done.stdout)
         self.assertIn("STOP:", done.stdout)
         self.assertNotIn("dispatch prompt", done.stdout)
+
+    def test_branch_prep_empty_diff_with_head_keeps_the_old_message(self):
+        self.git("checkout", "-q", "-b", "feature")
+        self.write("loose.py", "z = 3\n")
+        done = self.flow("branch-prep", "--head", "feature")
+        self.assertIn("main...feature` is empty (base", done.stdout)
+        self.assertNotIn("untracked", done.stdout)
+        self.assertIn("STOP: tell the user the branch diff is empty", done.stdout)
 
     def test_branch_prep_falls_back_to_master(self):
         self.git("branch", "-m", "main", "master")

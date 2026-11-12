@@ -626,8 +626,9 @@ class RunCommandsTests(unittest.TestCase):
         self.repo = pathlib.Path(temp_directory.name)
         self.gate = load_gate_module()
 
-    def run_gate_commands(self, *commands, env=None):
-        return self.gate.run_commands({"repoRoot": str(self.repo), "commands": list(commands), "env": env or {}})
+    def run_gate_commands(self, *commands, env=None, collect_summaries=False):
+        gate = {"repoRoot": str(self.repo), "commands": list(commands), "env": env or {}}
+        return self.gate.run_commands(gate, collect_summaries=collect_summaries)
 
     def test_a_failing_command_reports_its_exit_code_and_both_streams(self):
         failures, skipped, _, _, _ = self.run_gate_commands("echo to-stdout; echo to-stderr >&2; exit 3")
@@ -643,13 +644,18 @@ class RunCommandsTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_a_run_collects_no_runner_summaries_unless_the_caller_asks(self):
+        run = self.run_gate_commands('echo "2 passed in 0.1s"')
+
+        self.assertEqual([], run.summaries)
+
     def test_a_command_that_ran_to_its_end_records_its_runner_summary_and_no_other_command_does(self):
         finished = 'echo "2 passed in 0.1s"'
         timed_out = "sleep 30"
         skipped = "echo {files}"
 
         with mock.patch.object(self.gate, "COMMAND_TIMEOUT_SECONDS", 1):
-            run = self.run_gate_commands(finished, timed_out, skipped)
+            run = self.run_gate_commands(finished, timed_out, skipped, collect_summaries=True)
 
         self.assertEqual([(finished, ["2 passed in 0.1s"])], run.summaries)
         self.assertEqual([timed_out], [command for command, _output, _timeout in run.timed_out])

@@ -2481,18 +2481,15 @@ class ReviewFixScriptTest(unittest.TestCase):
             with self.subTest(saved=saved), self.assertRaises(review_fix_asks.UsageError):
                 review_fix_asks.ask_deciders({"asks": asks, review_fix_asks.ASKS_DECIDED_BY_KEY: saved})
 
-    def test_a_string_asks_decided_by_stops_and_names_the_key_to_remove_and_the_correct_recovery(self):
+    def test_an_accepted_converted_ask_writes_its_finding_with_the_proposed_change_once(self):
         import review_fix_asks
-        state = {"asks": [{"question": "first"}], review_fix_asks.ASKS_DECIDED_BY_KEY: "user"}
+        finding = "README.md:1 the greeting is wrong. Proposed change: say hello"
+        converted = {"question": "Apply it anyway?", "change": finding, "file_line": "README.md:1",
+                     review_fix_asks.USER_RULED_KEY: True}
 
-        with self.assertRaises(review_fix_asks.UsageError) as raised:
-            review_fix_asks.ask_deciders(state)
+        lines = review_fix_asks.ask_finding_lines([converted], ["accepted"], [""])
 
-        message = str(raised.exception)
-        self.assertIn(review_fix_asks.ASKS_DECIDED_BY_KEY, message)
-        self.assertIn(str(review_fix_asks.review_fix_state_file()), message)
-        self.assertIn("older format", message)
-        self.assertIn("asks-done --correct", message)
+        self.assertEqual(["- " + finding], lines)
 
     def test_a_fix_launch_carries_only_the_user_ruled_findings_into_the_packet(self):
         home = str(self.temp_root / "home")
@@ -2796,7 +2793,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual(self.stored_state()["asks_launch_pending"], pending_before)
 
-    def test_a_different_packet_run_before_the_launch_keeps_the_pending_flag(self):
+    def test_a_packet_from_a_new_review_run_drops_the_pending_flag(self):
         home = str(self.temp_root / "home")
         self.launched_review_with_asks(home)
         code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
@@ -2805,7 +2802,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(self.ONE_ASK, HOME=home)
         self.assertEqual(code, 0, output)
         self.assertNotEqual(self.stored_state()["packet_id"], old_id)
-        self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
+        self.assertTrue(launch_line.startswith(LAUNCH_COMMAND), launch_line)
+        self.assertNotIn("asks_launch_pending", self.stored_state())
 
     def test_a_packet_run_again_before_the_launch_keeps_the_pending_flag(self):
         home = str(self.temp_root / "home")

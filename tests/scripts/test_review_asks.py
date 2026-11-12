@@ -15,10 +15,10 @@ class IsConditionalChangeTest(unittest.TestCase):
             "  unless the user objects, drop the cache",
             "Otherwise remove the retry",
             "Revert X if not confirmed",
+            "Keep the guard; remove it if the user confirms",
             "Keep X if yes",
             "Remove it if no, keep it",
             "If the user agrees, drop the column",
-            "Keep the guard; remove it if the user confirms",
         ]
         for change in conditional:
             with self.subTest(change):
@@ -36,6 +36,8 @@ class IsConditionalChangeTest(unittest.TestCase):
             "When the flag is unset, restore -j8",
             "If no-op, skip",
             "Keep the loop if no caller depends on it",
+            "Show the banner if the user is an admin",
+            "Return 202 if accepted by the queue",
             "",
         ]
         for change in plain:

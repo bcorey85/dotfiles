@@ -19,6 +19,7 @@ unmeasured: "No skill text changed; the hook enforces the existing resume rule."
 
 - `review_fix_asks.write_unprinted_fix_run` sets `asks_launch_pending` (the launch line) in the fix state when it stores a launch line.
 - `review_launch.command_launch` clears it right after argument parsing when `--fix` names the pending findings file, so a launch that then fails still lets the fork write its stop.
+- `review_fix.new_state` carries the flag only into a repeat of its own packet, or while the packet that printed it waits; a packet of another review run starts without it, so a stale flag never blocks that run's stop write.
 - `gates/fork_write_scope.py` denies a code-fork Write of `<run folder>/review-stop.md` while `<git dir>/review-fix/state.json` holds the flag, and names the launch line. An unreadable or non-object state denies and names the file.
 - State and stop file names move to import-free `lib/review_fix_names.py` and `lib/stop_file_names.py`, so the gate imports no heavy module.
 

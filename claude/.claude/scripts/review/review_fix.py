@@ -508,9 +508,13 @@ def new_state(options, packet, packet_id):
                 state[key] = previous[key]
     if waiting_packets:
         state["waiting_packets"] = waiting_packets
-    # A pending launch outlives any packet: only the launch clears it.
-    if PENDING_LAUNCH_KEY in previous:
-        state[PENDING_LAUNCH_KEY] = previous[PENDING_LAUNCH_KEY]
+    # A pending launch outlives a repeat of its own packet, and the packet that printed it while that packet waits:
+    # only the launch clears it. A packet of another review run starts clean, or the stale flag would block that
+    # run's stop write.
+    pending_line = previous.get(PENDING_LAUNCH_KEY)
+    printed_by_waiting = any(waiting.get("asks_launch_line") == pending_line for waiting in waiting_packets)
+    if pending_line and (same_run or printed_by_waiting):
+        state[PENDING_LAUNCH_KEY] = pending_line
     return state
 
 

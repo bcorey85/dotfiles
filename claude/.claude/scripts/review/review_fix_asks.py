@@ -28,7 +28,6 @@ from review_fix_state import (
     print_action,
     record_packet_asks_logged,
     review_fix_dir,
-    review_fix_state_file,
     save_fix_state,
 )
 from saved_handback import dispatched_repo
@@ -166,6 +165,9 @@ def ask_finding_lines(asks, outcomes, notes):
         question = one_line(item["question"], None)
         change = one_line(item["change"], None)
         text = f"{item['file_line']} {question} Proposed change: {change}"
+        # A converted ask's change is the finding line the user already accepted: it holds its own proposed change.
+        if item.get(USER_RULED_KEY):
+            text = change
         if outcome == MODIFIED:
             text += f" The user changed it; make this change in its place: {note}"
         lines.append("- " + text)
@@ -235,15 +237,8 @@ def ask_deciders(state):
         return [None] * len(state["asks"])
 
     if not isinstance(deciders, list) or len(deciders) != len(state["asks"]):
-        state_file = review_fix_state_file()
-        raise UsageError(f"{ASKS_DECIDED_BY_KEY} in the saved state ({state_file}) must be a list with one entry "
-                         f"per ask ({len(state['asks'])}), not {deciders!r}. "
-                         f"The saved state is in an older format that this version cannot read. Replace the "
-                         f"`{ASKS_DECIDED_BY_KEY}` value in {state_file} with a JSON list that has one entry per "
-                         f"ask, then run `asks-done --correct <outcomes> --by <user|session>`; with `--by user` every "
-                         f"non-plan-impact ask is logged as the user's. A bare `--user-ruled` in the pending launch "
-                         f"line of that state is not read either: replace it with `--user-ruled <N>` for each "
-                         f"user-ruled finding.")
+        raise UsageError(f"{ASKS_DECIDED_BY_KEY} in the saved state must be a list with one entry per ask "
+                         f"({len(state['asks'])}), not {deciders!r}.")
     return deciders
 
 
@@ -375,7 +370,7 @@ def answer_of(outcome, note):
     return (outcome, note if outcome == MODIFIED else "")
 
 
-def corrected_ask_indexes(state, asks, outcomes, notes, decided_by):
+def corrected_ask_indexes(state, asks, outcomes, notes):
     """The indexes of the asks whose answer differs from the one logged. Refuses when no earlier answers are on
     record, when a changed ask is a plan
     impact (--correct does not change those), and when no ask is left to correct."""
@@ -387,7 +382,7 @@ def corrected_ask_indexes(state, asks, outcomes, notes, decided_by):
     indexes = []
     for index, item in enumerate(asks):
         logged = answer_of(logged_outcomes[index], logged_notes[index])
-        # An ask repeated unchanged keeps its earlier decider, whoever passes --by.
+        # An ask repeated unchanged keeps its earlier decider.
         if logged == answer_of(outcomes[index], notes[index]):
             continue
         if is_plan_impact_ask(item):
@@ -489,7 +484,7 @@ def command_correct_asks(options):
     asks = state["asks"]
     outcomes, notes = read_outcomes(options.outcome_words, asks)
     refuse_conditional_changes(asks, outcomes)
-    indexes = corrected_ask_indexes(state, asks, outcomes, notes, options.decided_by)
+    indexes = corrected_ask_indexes(state, asks, outcomes, notes)
     log_corrected_outcomes(state, indexes, outcomes, notes, options.decided_by)
 
     summary = f"Corrected {len(indexes)} ask outcome row(s)."

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-927 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+928 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-11, [a converged /review of the uncommitted change counts as the branch review once one was logged](notes/2026-11-11-a-converged-commit-review-of-the-current-tree.md).
+Latest change: 2026-11-11, [refactor branch-prep covers uncommitted and untracked files](notes/2026-11-11-refactor-branch-prep-covers-uncommitted-and.md).
 
 ## Top gains
 

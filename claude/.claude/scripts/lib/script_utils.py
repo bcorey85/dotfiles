@@ -278,13 +278,41 @@ def head_commit_time(top):
     return float(stamp)
 
 
+def untracked_paths(directory):
+    """Sorted untracked paths that .gitignore does not hide, relative to directory, or None when git fails."""
+    listing = git_output(directory, "ls-files", "--others", "--exclude-standard", "-z")
+    if listing is None:
+        return None
+    return sorted(name for name in listing.split("\0") if name)
+
+
+def read_text_lines(path):
+    """The file's lines as (line number, text) pairs from 1, or None when it is not UTF-8 text (it holds a NUL or
+    bytes that do not decode) or cannot be read. A failed read is returned as None, not raised: the caller treats it
+    like binary content."""
+    try:
+        raw = pathlib.Path(path).read_bytes()
+    except OSError:
+        return None
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if "\0" in text:
+        return None
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return list(enumerate(lines, start=1))
+
+
 def changed_files(directory, base="HEAD"):
     """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded) plus
     untracked files that .gitignore does not hide."""
     tracked_files = git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d", base) or ""
-    untracked_files = git_output(directory, "ls-files", "--others", "--exclude-standard") or ""
-    names = [name for name in (tracked_files + "\n" + untracked_files).split("\n") if name]
-    return sorted(set(names))
+    untracked = untracked_paths(directory) or []
+    names = [name for name in tracked_files.split("\n") if name]
+    return sorted(set(names + untracked))
 
 
 def git_path(cwd, name):

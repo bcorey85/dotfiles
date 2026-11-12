@@ -79,6 +79,10 @@ CLONE_SITE = re.compile(r"^\s+(?:- )?(.+?) (\[\d+:\d+ - \d+:\d+\])\s*$")
 
 SMELL_BOUND = ("Your review bound for this run is the whole branch diff (`git diff {base}...{head}`), "
                "not a phase diff.")
+SMELL_BOUND_WORK_TREE = ("Your review bound for this run is the whole branch against the work tree "
+                         "(`git diff {merge_base}`, committed and uncommitted changes) plus the untracked files "
+                         "listed above, not a phase diff.")
+UNTRACKED_LABEL = "untracked"
 SMELL_PRIORITY = ("Prioritize cross-phase smells — things no single-phase view could see (multi-task "
                   "duplication, drifted naming, orphaned dead code, idiom divergence from unchanged siblings). "
                   "Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).")
@@ -224,6 +228,46 @@ def labelled_span_files(span):
     return entries
 
 
+def work_tree_merge_base(base):
+    """The commit the work-tree span starts from: where HEAD left `base`."""
+    done = git("merge-base", base, "HEAD", check=False)
+    if done.returncode == 1 and not done.stderr.strip():
+        raise NoSharedHistoryError(NO_HISTORY_STOP.format(base=base, head="HEAD"))
+    if done.returncode != 0:
+        raise RefactorFlowError(f"`git merge-base {base} HEAD` failed: {done.stderr.strip()}")
+    return done.stdout.strip()
+
+
+class UntrackedFile(NamedTuple):
+    path: str
+    is_binary: bool
+    added_lines: list  # (line number, text) pairs; empty for a binary file
+
+
+def untracked_files(root):
+    """Untracked files git does not ignore, root-relative; a symlink, a non-regular entry or a file that cannot be
+    read as UTF-8 text is listed as binary."""
+    names = script_utils.untracked_paths(root)
+    if names is None:
+        raise RefactorFlowError(f"git could not list the untracked files in {root}")
+    found = []
+    for name in names:
+        full_path = Path(root) / name
+        if full_path.is_symlink() or not full_path.is_file():
+            found.append(UntrackedFile(name, True, []))
+            continue
+        numbered = script_utils.read_text_lines(full_path)
+        if numbered is None:
+            found.append(UntrackedFile(name, True, []))
+            continue
+        found.append(UntrackedFile(name, False, numbered))
+    return found
+
+
+def untracked_label(entry):
+    return f"{UNTRACKED_LABEL}, binary" if entry.is_binary else UNTRACKED_LABEL
+
+
 def file_line(path, label):
     return f"- {path} ({label})" if label else f"- {path}"
 
@@ -265,9 +309,19 @@ def span_plans(files):
             if "deleted" not in label and PurePosixPath(path).match(plan_format.PLAN_FILES_GLOB)]
 
 
-def print_plan_structure(plan_paths, head):
+def read_plan_text(plan_path, head, root):
+    """A plan as of `head`; with no head, the plan as it sits in the work tree."""
+    if head is None:
+        try:
+            return (Path(root) / plan_path).read_text()
+        except (OSError, UnicodeDecodeError) as error:
+            raise RefactorFlowError(f"cannot read the plan {plan_path}: {error}") from error
+    return git("show", f"{head}:{plan_path}").stdout
+
+
+def print_plan_structure(plan_paths, head, root):
     for plan_path in plan_paths:
-        plan_text = git("show", f"{head}:{plan_path}").stdout
+        plan_text = read_plan_text(plan_path, head, root)
         structure = plan_format.required_structure(plan_text.splitlines())
         print(f"## Plan-required structure (`{plan_path}`)")
         print("Files the plan's phases name:")
@@ -292,20 +346,60 @@ def _sweep_text(matches):
     return "\n".join(lines)
 
 
-def _print_smell_prompt(files, base, head):
+def _smell_bound(base, opts_head, diff_ref):
+    if opts_head:
+        return SMELL_BOUND.format(base=base, head=opts_head)
+    return SMELL_BOUND_WORK_TREE.format(merge_base=diff_ref)
+
+
+def _print_smell_prompt(files, bound, plan_head, root):
     print("## smell-reviewer dispatch prompt (pinned; omit `model` unless +fast)")
     print("Changed files:")
     for path, label in files:
         print(file_line(path, label))
-    print(SMELL_BOUND.format(base=base, head=head))
+    print(bound)
     print(SMELL_PRIORITY)
     plan_paths = span_plans(files)
     if plan_paths:
-        print_plan_structure(plan_paths, head)
+        print_plan_structure(plan_paths, plan_head, root)
+
+
+class BranchSpan(NamedTuple):
+    """What branch-prep reads: committed changes, plus the work tree and untracked files when no --head is named."""
+    diff_ref: str  # `base...head` for --head, else the merge-base commit (git diff <commit> reads the work tree)
+    files: list  # (path, label)
+    diff_text: str  # the -U0 diff of committed (and, with no --head, uncommitted) changes
+    shortstat: str
+    untracked: list  # UntrackedFile entries; empty with --head
+
+
+def read_branch_span(base, opts_head, root):
+    if opts_head:
+        diff_ref = f"{base}...{opts_head}"
+        untracked = []
+    else:
+        diff_ref = work_tree_merge_base(base)
+        untracked = untracked_files(root)
+
+    files = labelled_span_files(diff_ref)
+    files += [(entry.path, untracked_label(entry)) for entry in untracked]
+    shortstat_parts = [diff_output(diff_ref, "--shortstat").strip()]
+    if untracked:
+        shortstat_parts.append(f"{len(untracked)} untracked file(s)")
+    shortstat = "; ".join(part for part in shortstat_parts if part)
+    return BranchSpan(diff_ref, files, diff_output(diff_ref, "-U0"), shortstat, untracked)
+
+
+def untracked_matches(untracked):
+    """The sweep matches in the untracked files, read as if every line were added."""
+    matches = []
+    for entry in untracked:
+        matches += _sweep_added_lines(entry.path, entry.added_lines)
+    return matches
 
 
 def branch_prep(opts):
-    require_repo()
+    root = require_repo()
     head = opts.head or "HEAD"
     if not ref_exists(head):
         if opts.head:
@@ -320,30 +414,35 @@ def branch_prep(opts):
         print(err)
         return 0
 
-    span = f"{base}...{head}"
     try:
-        files = labelled_span_files(span)
-        diff_text = diff_output(span, "-U0")
+        span = read_branch_span(base, opts.head, root)
     except NoSharedHistoryError as err:
-        print(f"Branch audit: {span} has no merge base.")
+        print(f"Branch audit: `{base}` and `{head}` have no merge base.")
         print(err)
         return 0
-    if not files:
-        print(f"Branch audit: `git diff --name-only {span}` is empty (base `{base}` from {base_source}).")
+    if not span.files:
+        no_untracked = "" if opts.head else " and no file is untracked"
+        print(f"Branch audit: `git diff --name-only {span.diff_ref}` is empty{no_untracked} "
+              f"(base `{base}` from {base_source}).")
         print("STOP: tell the user the branch diff is empty. Dispatch nothing.")
         return 0
 
-    log_input = fresh_log_input()
-    matches = sweep_matches(diff_text)
-    shortstat = diff_output(span, "--shortstat").strip()
+    _print_branch_report(span, base, base_source, opts.head, root)
+    return 0
 
-    print(f"## Branch audit scope (base `{base}` from {base_source}, head `{head}`)")
-    print(f"Changed files ({len(files)}); {shortstat}")
+
+def _print_branch_report(span, base, base_source, opts_head, root):
+    log_input = fresh_log_input()
+    matches = sweep_matches(span.diff_text) + untracked_matches(span.untracked)
+    scope_head = f"head `{opts_head}`" if opts_head else "the work tree"
+
+    print(f"## Branch audit scope (base `{base}` from {base_source}, {scope_head})")
+    print(f"Changed files ({len(span.files)}); {span.shortstat}")
     print(f"\n{_sweep_text(matches)}\n")
-    _print_smell_prompt(files, base, head)
+    bound = _smell_bound(base, opts_head, span.diff_ref)
+    _print_smell_prompt(span.files, bound, opts_head, root)
     print()
     print(_branch_next(base, log_input))
-    return 0
 
 
 def _branch_next(base, log_input):

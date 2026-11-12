@@ -254,8 +254,8 @@ def review_state(repo, branch, fingerprint, logged_tree, top):
     one for this same tree from this branch's saved context (`logged_tree` is the fingerprint it saved there).
     A branch review logged on an earlier tree (a ledger row for this branch on another tree, or, with the ledger
     unread, a saved `logged_tree`) also counts when a converged /review covers the work tree's uncommitted change
-    against HEAD, or, on a tree with no change against HEAD, the last commit's change against HEAD~1
-    (reviewed_tree.shared_record_covers); a converged review with no branch review logged earlier does
+    against HEAD, or, on a tree with no change against HEAD, the last commit's change against HEAD~1 (not when HEAD
+    is a merge; reviewed_tree.shared_record_covers); a converged review with no branch review logged earlier does
     not. That case adds "coveredByCommitReview": True, so the asks the earlier branch review left open stay open."""
     try:
         ran, reason = review_ran(repo, branch, fingerprint)

@@ -812,10 +812,11 @@ def ruling_owner(repo_dir, by):
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 PLAN_CHECK_OWNER_COMMAND = "python3 ~/.claude/scripts/code/plan_check.py owner <plan>"
+PLAN_OWNER_RULE_CONDITION = "the ticket's own words, or with no ticket the user's own request, stay met"
 DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
                   "place of `--by user`. A session ruling changes an acceptance criterion only when "
-                  f"`{PLAN_CHECK_OWNER_COMMAND}` names `session` or `plan`, and for `plan` only while any ticket's own "
-                  "words stay met.")
+                  f"`{PLAN_CHECK_OWNER_COMMAND}` names `session` or `plan`, and for `plan` only while "
+                  f"{PLAN_OWNER_RULE_CONDITION}.")
 DECIDE_USAGE_STEM = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
 
 
@@ -1229,9 +1230,9 @@ CRITERIA_OWNER_SESSION = "session"
 CRITERIA_OWNER_RULES = {
     CRITERIA_OWNER_USER: "only the user's recorded sign-off (who and when) cuts, narrows or rewords a criterion",
     CRITERIA_OWNER_PLAN: "the plan author wrote the criteria (the ticket has no criteria heading, or there is no "
-                         "ticket): the session may cut or reword one while any ticket's own words stay met, records "
-                         "the ruling in the plan's decision log (`03-decisions.md` or `## Plan Deviations`), and "
-                         "asks the user otherwise",
+                         f"ticket): the session may cut or reword one while {PLAN_OWNER_RULE_CONDITION}, "
+                         "records the ruling in the plan's decision log "
+                         "(`03-decisions.md` or `## Plan Deviations`), and asks the user otherwise",
     CRITERIA_OWNER_SESSION: "a session wrote this ticket's criteria: the session may rule on a change to one and "
                             "records the ruling; no user sign-off is needed",
 }
@@ -1339,20 +1340,14 @@ def plan_author_criteria_missing(plan_path):
     return missing
 
 
-def has_plan_author_criteria(plan_path):
-    """True when the plan is named `plan.md` and its folder holds `acceptance-criteria.md`. The plan file itself need
-    not exist: an owner is asked for before the plan is written."""
-    plan = pathlib.Path(plan_path)
-    return plan.name == PLAN_ONLY_PLAN_NAME and (plan.parent / CRITERIA_FILE_NAME).is_file()
-
-
 def plan_criteria_owner(plan_path):
     """`criteria_owner` of the ticket beside the plan. With no ticket beside it, `ticket: None` and the owner is `plan`
-    when the plan is named `plan.md` and its folder holds `acceptance-criteria.md` (the plan author wrote the
-    criteria), else `user`."""
+    when the plan is an existing file named `plan.md` and its folder holds `acceptance-criteria.md` (the plan author
+    wrote the criteria), else `user`."""
     ticket_path = ticket_beside(plan_path)
     if ticket_path is None:
-        owner = CRITERIA_OWNER_PLAN if has_plan_author_criteria(plan_path) else CRITERIA_OWNER_USER
+        author_wrote = not plan_author_criteria_missing(plan_path)
+        owner = CRITERIA_OWNER_PLAN if author_wrote else CRITERIA_OWNER_USER
         return owner_record(None, owner, None)
     return criteria_owner(ticket_path)
 

@@ -19,7 +19,8 @@ unmeasured: ""
 
 `refactor_flow.py branch-prep` with no `--head` diffs the merge base of the base and HEAD against the work tree
 (`git diff <merge-base>`), adds untracked files (`git ls-files --others --exclude-standard`) labelled `untracked`
-(`untracked, binary` for a non-text file), and sweeps each untracked text file's lines as added lines. The smell
+(`untracked, symlink` for a symlink, `untracked, not a file` for a non-regular entry, `untracked, binary` for
+a file that is unreadable or not UTF-8 text), and sweeps each untracked text file's lines as added lines. The smell
 bound names `git diff <merge-base>` plus the untracked files. The empty-diff stop fires only when committed,
 uncommitted and untracked changes are all empty. With `--head` the behavior is unchanged. The untracked listing (`untracked_paths`) and the text read
 (`read_text_lines`) now live in lib/script_utils.py, shared with `changed_files`.

@@ -83,6 +83,9 @@ SMELL_BOUND_WORK_TREE = ("Your review bound for this run is the whole branch aga
                          "(`git diff {merge_base}`, committed and uncommitted changes) plus the untracked files "
                          "listed above, not a phase diff.")
 UNTRACKED_LABEL = "untracked"
+UNTRACKED_SYMLINK = "symlink"
+UNTRACKED_NOT_A_FILE = "not a file"
+UNTRACKED_BINARY = "binary"
 SMELL_PRIORITY = ("Prioritize cross-phase smells — things no single-phase view could see (multi-task "
                   "duplication, drifted naming, orphaned dead code, idiom divergence from unchanged siblings). "
                   "Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).")
@@ -240,32 +243,35 @@ def work_tree_merge_base(base):
 
 class UntrackedFile(NamedTuple):
     path: str
-    is_binary: bool
-    added_lines: list  # (line number, text) pairs; empty for a binary file
+    added_lines: list  # (line number, text) pairs; empty when kind is set
+    kind: str  # why a file is not read as text: UNTRACKED_SYMLINK, UNTRACKED_NOT_A_FILE, UNTRACKED_BINARY; else ""
 
 
 def untracked_files(root):
     """Untracked files git does not ignore, root-relative; a symlink, a non-regular entry or a file that cannot be
-    read as UTF-8 text is listed as binary."""
+    read as UTF-8 text is listed with its kind and no lines."""
     names = script_utils.untracked_paths(root)
     if names is None:
         raise RefactorFlowError(f"git could not list the untracked files in {root}")
     found = []
     for name in names:
         full_path = Path(root) / name
-        if full_path.is_symlink() or not full_path.is_file():
-            found.append(UntrackedFile(name, True, []))
+        if full_path.is_symlink():
+            found.append(UntrackedFile(name, [], UNTRACKED_SYMLINK))
+            continue
+        if not full_path.is_file():
+            found.append(UntrackedFile(name, [], UNTRACKED_NOT_A_FILE))
             continue
         numbered = script_utils.read_text_lines(full_path)
         if numbered is None:
-            found.append(UntrackedFile(name, True, []))
+            found.append(UntrackedFile(name, [], UNTRACKED_BINARY))
             continue
-        found.append(UntrackedFile(name, False, numbered))
+        found.append(UntrackedFile(name, numbered, ""))
     return found
 
 
 def untracked_label(entry):
-    return f"{UNTRACKED_LABEL}, binary" if entry.is_binary else UNTRACKED_LABEL
+    return f"{UNTRACKED_LABEL}, {entry.kind}" if entry.kind else UNTRACKED_LABEL
 
 
 def file_line(path, label):
@@ -748,7 +754,8 @@ def validate_log(mode, refactor_log):
 
 
 def diff_loc_for(mode, base, targets):
-    """Lines the finder read: the branch diff size, or the line count of the files it received."""
+    """The committed branch diff size (not the uncommitted or untracked work the finder also read), or the line count
+    of the files it received."""
     if mode == "branch":
         base_ref, _ = pick_base(base)
         stat = diff_output(f"{base_ref}...HEAD", "--shortstat")

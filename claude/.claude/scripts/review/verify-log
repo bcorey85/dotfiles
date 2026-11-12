@@ -26,8 +26,8 @@ tell a later change) and one finding row per reviewer finding. --rows is a JSON 
 {"desc","file","line","actioned", optional "class","disposition"}; `actioned` is required and must be `fixed` or
 `skipped_fp`, except that an `ask` finding the user must rule on may stay `ask`. --findings, when given, must equal
 its length.
-A second review for a tree a row already covers, or that an earlier-tree row plus a converged /review already
-cover, exits 2.
+A second review for a tree a branch-review row already covers exits 2; a tree that only an earlier-tree row plus a
+converged /review cover logs its rows.
 
 Every value the loggers own (class, disposition, actioned, result, guard) is checked by the loggers themselves:
 before the first write each row goes through its logger once with `--check` as the first argument, and a refusal
@@ -246,7 +246,8 @@ def log_review(args, context, top):
 
     fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
     review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"), top)
-    if review["ran"]:
+    logged_on_this_tree = review["ran"] and not review.get("coveredByCommitReview")
+    if logged_on_this_tree:
         raise vc.VerifyError(f"a branch review already counts for this tree ({review['reason']}): nothing to "
                              "log. Rerun verify-prep. Change the tree (a fix) before logging another review.")
 

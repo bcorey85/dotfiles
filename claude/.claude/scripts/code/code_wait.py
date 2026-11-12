@@ -12,7 +12,8 @@ Nested Agent calls in a fork return at once, and a fork that ends its turn hands
 writes each one's report to its file as soon as that reviewer finishes, which is how the reports reach the loop (the
 fork has no Write tool). It returns when the loop asks for reviewers no pair answers (`ACTION: dispatch-reviewer`),
 when a named reviewer finished with no report (exit 1), or once the loop ends: it prints the loop's output when the
-loop left a packet, and otherwise exits 1 with the reason and the restart step.
+loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change), and otherwise
+exits 1 with the reason and the restart step.
 `review --loop <loop dir>` waits the same way on a loop that `review_fix.py launch --detach` started for the /review
 or /fix fork: its pid is <loop dir>/loop.pid, and once the loop ends with a packet it prints the packet command to run.
 Each call waits at most WAIT_SECONDS, then says to run the same command again.
@@ -27,9 +28,11 @@ from collections.abc import Callable
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review")]
+import handback
 import loop_transcript
 import reviewer_dispatch
 import script_utils
+import stop_file_names
 
 PROJECTS = pathlib.Path.home() / ".claude" / "projects"
 # The harness moves a Bash call that runs past 180 s to the background, where the fork cannot read its result.
@@ -138,6 +141,7 @@ class ReviewRun:
     final_output: Callable[[], str]
     no_output: Callable[[], str]
     restart: str
+    stop_line: Callable[[], str] = lambda: ""
 
 
 def phase_review_output(repo):
@@ -164,7 +168,26 @@ def phase_review(repo):
                 f"Log: {phase_dir(repo) / REVIEW_OUTPUT}.")
 
     return ReviewRun(REVIEW_COMMAND, lambda: loop_dir(repo), lambda: running_review_pid(repo) is not None,
-                     lambda: phase_review_output(repo), no_output, PHASE_RESTART)
+                     lambda: phase_review_output(repo), no_output, PHASE_RESTART, lambda: phase_stop_line(repo))
+
+
+def phase_stop_line(repo):
+    """The step line for a phase packet whose status the skill's routes do not cover, or "" for any other packet
+    (one that does not parse included: the skill reads it from the printed output)."""
+    folder = loop_dir(repo)
+    if folder is None:
+        return ""
+    packet_file = pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE
+    try:
+        status = handback.parse(packet_file.read_text()).get("status")
+    except handback.PacketError:
+        return ""
+    if status != handback.FIX_REMOVED_CHANGE:
+        return ""
+    stop_file = phase_dir(repo) / stop_file_names.STOP_FILE
+    return (f"STOP ({status}): the fix passes removed half or more of this phase's change. Write the packet's "
+            f"`blockers` to {stop_file} and end the run there. The user checks `git diff`; `/code resume` "
+            "(with the plan's absolute path when the run has a plan file) then runs this phase's review again.")
 
 
 def launched_loop_running(folder):
@@ -300,7 +323,11 @@ def print_ended_loop(run):
     final_output = run.final_output()
     if final_output.strip():
         print(final_output)
-        return 0
+        stop_line = run.stop_line()
+        if not stop_line:
+            return 0
+        print(stop_line)
+        return 1
 
     open_requests = open_reviewer_requests(run)
     if open_requests:

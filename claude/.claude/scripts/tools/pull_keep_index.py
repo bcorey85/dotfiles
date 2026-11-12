@@ -17,7 +17,9 @@ A branch rewritten here (rebase, amend, reset) pulls nothing and exits 0 with a 
 --force-with-lease: the upstream tip, fetched first, is not on HEAD but is in the branch's own reflog, so the remote
 holds nothing the branch never had. An upstream tip that is not in the reflog (another machine pushed) is pulled as
 usual. When the fetch fails (the upstream is deleted on the remote, or the remote is unreachable), the run goes on to
-the usual upstream checks and pull, so a deleted upstream still exits 1 naming it."""
+the usual upstream checks and pull, so a deleted upstream still exits 1 naming it.
+When the rebase stops on a conflict that a merge of the pulled tip would not have (a replayed merge commit that had
+resolved conflicts), the rebase is undone and the pulled tip is merged instead; else the run exits 1 mid-rebase."""
 import os
 import subprocess
 import sys
@@ -58,6 +60,49 @@ def stopped_rebase_text(repo, state_dir):
     conflict_text = "conflicted paths: " + " ".join(conflicts) if conflicts else "no conflicted paths"
     return (f"a rebase is stopped on {branch}, {conflict_text}. Finish it with git -C {repo} rebase --continue "
             f"after resolving any conflict, or undo it with git -C {repo} rebase --abort.")
+
+
+def put_back_text(repo, saved):
+    """The tail of a stop that leaves the local changes saved: how to put them back; "" for a clean tree."""
+    if not saved:
+        return ""
+    return " Then put the local changes back. " + recovery_text(repo, saved)
+
+
+def merge_abort_text(repo):
+    """What to say about undoing a failed merge: the abort command only when a merge is in progress."""
+    in_progress = run_in_repo(repo, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+    if in_progress.returncode == 0:
+        return f"Undo it with git -C {repo} merge --abort."
+    return "No merge is in progress."
+
+
+def merge_in_place_of_rebase(repo, state_dir, saved):
+    """When the stopped rebase's branch merges cleanly with the pulled tip (FETCH_HEAD), abort the rebase and merge;
+    True when the merge commit is made. A replay of a merge commit that resolved conflicts hits them again, where a
+    merge of the remote does not. False, with the rebase left stopped, when the merge would conflict too, when git
+    has no `merge-tree --write-tree` (before 2.38), or when the branch tip cannot be read."""
+    orig_head_file = os.path.join(state_dir, "orig-head")
+    if not os.path.exists(orig_head_file):
+        return False
+    with open(orig_head_file) as orig_head:
+        branch_tip = orig_head.read().strip()
+    trial = run_in_repo(repo, "merge-tree", "--write-tree", "--quiet", branch_tip, "FETCH_HEAD")
+    if trial.returncode != 0:
+        return False
+
+    aborted = run_in_repo(repo, "rebase", "--abort")
+    if aborted.returncode != 0:
+        problem = script_utils.process_stderr_text(aborted)
+        sys.exit(f"pull_keep_index: the rebase replay conflicted and git rebase --abort failed: {problem}"
+                 + put_back_text(repo, saved))
+    merged = run_in_repo(repo, "merge", "--no-edit", "--quiet", "FETCH_HEAD")
+    if merged.returncode != 0:
+        problem = script_utils.process_stderr_text(merged)
+        sys.exit(f"pull_keep_index: the rebase replay conflicted, so the rebase was undone, and the merge of the "
+                 f"remote failed: {problem}. {merge_abort_text(repo)}" + put_back_text(repo, saved))
+    print("pull_keep_index: the rebase replay conflicted where a merge does not; merged the remote instead.")
+    return True
 
 
 def rewritten_locally(repo):
@@ -275,14 +320,19 @@ def main(arguments):
 
     saved = set_aside(repo)
     pulled = subprocess.run(["git", "-C", repo, "pull", "--rebase=merges", "--no-autostash", *target])
+    pull_failed = pulled.returncode != 0
     state_dir = stopped_rebase_dir(repo)
-    if pulled.returncode != 0 and state_dir:
-        recovery = " Then put the local changes back. " + recovery_text(repo, saved) if saved else ""
-        sys.exit("pull_keep_index: the pull stopped mid-rebase: " + stopped_rebase_text(repo, state_dir) + recovery)
+    stopped_mid_rebase = pull_failed and state_dir
+    if stopped_mid_rebase:
+        merged = merge_in_place_of_rebase(repo, state_dir, saved)
+        if not merged:
+            sys.exit("pull_keep_index: the pull stopped mid-rebase: " + stopped_rebase_text(repo, state_dir)
+                     + put_back_text(repo, saved))
+        pull_failed = False
 
     if saved:
         put_back(repo, saved)
-    if pulled.returncode != 0:
+    if pull_failed:
         exit_if_upstream_gone(repo)
         sys.exit(f"pull_keep_index: git pull failed in {repo}; the local changes are back in place.")
     if target:

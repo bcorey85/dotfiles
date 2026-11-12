@@ -159,6 +159,36 @@ class CodeReviewStartTest(unittest.TestCase):
         loop_dir_file = self.repo / ".git/code-phase/loop-dir"
         self.assertEqual(loop_dir_file.read_text().strip(), str(prompt_folder))
 
+    def test_a_handoff_an_earlier_phase_review_read_stops_the_next_phase_review(self):
+        code_review_start = self.load_module()
+        handoff_text = (self.repo / "handoff.txt").read_text()
+        self.assertIsNone(code_review_start.record_handoff_phase(self.repo, "docs/plans/p/spec.md", "1", handoff_text))
+        self.assertIsNone(code_review_start.record_handoff_phase(self.repo, "docs/plans/p/spec.md", "1", handoff_text),
+                          "a rerun passes")
+
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "2",
+                               "handoff.txt", "--base", "HEAD", "--detach"], cwd=self.repo, capture_output=True,
+                              text=True, check=False, env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("Phase 1's review read, not one for Phase 2", done.stderr)
+        self.assertIn(str(self.repo / ".git/code-phase/handoff.txt"), done.stderr)
+        self.assertIn(str(self.repo / ".git/code-phase/handoff-phases.json"), done.stderr)
+        self.assertFalse((self.repo / ".git/code-phase/pid").exists(), "no loop starts")
+
+    def test_a_new_handoff_for_the_next_phase_is_recorded_for_that_phase(self):
+        code_review_start = self.load_module()
+        code_review_start.record_handoff_phase(self.repo, "plan-a", "1", "handoff one\n")
+
+        self.assertIsNone(code_review_start.record_handoff_phase(self.repo, "plan-a", "2", "handoff two\n"))
+        self.assertEqual(code_review_start.record_handoff_phase(self.repo, "plan-a", "3", "handoff two\n"), "2")
+
+    def test_the_same_handoff_text_under_a_different_plan_passes(self):
+        code_review_start = self.load_module()
+        code_review_start.record_handoff_phase(self.repo, "plan-a", "1", "handoff one\n")
+
+        self.assertIsNone(code_review_start.record_handoff_phase(self.repo, "plan-b", "2", "handoff one\n"))
+
     def test_detach_drops_the_loop_folder_an_earlier_phase_named(self):
         code_review_start = self.load_module()
         phase_dir = self.repo / ".git/code-phase"
@@ -280,6 +310,26 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertNotIn("invented export", handoff)
         self.assertNotIn("forgotten_by_git", handoff)
         self.assertIn("      why:\n        - lines: 1-1\n          note: kept\n  tests-run: none", handoff)
+
+    def test_a_dry_run_records_no_handoff_phase(self):
+        done = self.start("--dry-run")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertFalse((self.repo / ".git/code-phase/handoff-phases.json").exists())
+
+    def test_an_unreadable_handoff_phases_file_stops_with_its_path_and_the_recovery(self):
+        phases_file = self.repo / ".git/code-phase/handoff-phases.json"
+        for bad_text in ('{"digest": ', '["a"]', '{"digest": 3}'):
+            with self.subTest(bad_text=bad_text):
+                phases_file.parent.mkdir(exist_ok=True)
+                phases_file.write_text(bad_text)
+
+                done = self.start()
+
+                self.assertEqual(done.returncode, 1, done.stderr)
+                self.assertIn(str(phases_file), done.stderr)
+                self.assertIn('{"<sha256>": "<plan>#<phase>"}', done.stderr)
+                self.assertIn("Delete it and run this step again", done.stderr)
 
     def test_a_base_that_is_not_a_commit_stops_the_run_when_the_handoff_lists_files(self):
         (self.repo / "handoff.txt").write_text("handoff:\n  files:\n    - path: a.py\n  iter: 0\n")

@@ -2,7 +2,8 @@
 """verify-prep [<ticket|dir>] [--base <ref>] [--ticket-file <path>]
 
 Fixed first steps of /verify-branch: resolve the task dir, read the criteria, measure the diff, decide whether a
-branch-wide code review ran on the current tree, and print the dispatches. Exit codes:
+branch-wide code review ran on the current tree (or on an earlier tree that a converged /review carried forward),
+and print the dispatches. Exit codes:
   0 ready   2 loud failure (no criteria, missing file, no base, empty diff, detached HEAD, unknown option)
   3 several task dirs: ask which   4 no plan found: ticket-only (fetch the ticket, rerun with --ticket-file)
 A <dir> or its plan.md path with plan.md and acceptance-criteria.md but no ticket runs `plan-only` (a spec.md path
@@ -337,8 +338,9 @@ def print_plan(context):
     if untracked:
         lines.append(f"  {untracked}: they are part of the branch.")
     if not context["review"]["read"]:
-        lines.append(f"  review state: not read from the ledger ({context['review']['reason']}); this checkout's "
-                     "own record of the logged review stood in. Name this skipped input in your report.")
+        records = vc.review_records_read(context["review"])
+        lines.append(f"  review state: not read from the ledger ({context['review']['reason']}); {records} "
+                     "stood in. Name this skipped input in your report.")
     lines += gate_env_lines
     lines += [f"  {ticket_line}" for ticket_line in criteria["ticketLines"]]
     criteria_owner = criteria["criteriaOwner"]
@@ -388,7 +390,7 @@ def main(argv):
             earlier_context = {}
     earlier_escapes = earlier_context.get("escapes", [])
     review_logged_tree = earlier_context.get("reviewLoggedTree")
-    review = vc.review_state(repo, branch, fingerprint, review_logged_tree)
+    review = vc.review_state(repo, branch, fingerprint, review_logged_tree, top)
 
     plan_file = plan_path or ticket_path
     plan_rel = vc.repo_relative(plan_file, top) or str(plan_file)

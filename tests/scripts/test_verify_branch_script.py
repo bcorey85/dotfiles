@@ -12,12 +12,14 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import fake_ledger
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import plan_format
+import reviewed_tree
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 REAL_CLAUDE = REPO_ROOT / "claude" / ".claude"
@@ -599,6 +601,25 @@ class PrepTest(VerifyBranchBase):
         self.write("docs/plans/LED-9-thing/notes.md", "scratch\n")
         self.assertIn("REVIEW: ran", self.prep().stdout)
 
+    def test_a_converged_review_of_the_edited_tree_keeps_the_logged_branch_review_counting(self):
+        self.reviewed_tree()
+        self.write("src/a.py", "print(2)\n")
+        self.assertIn("NOT run", self.prep().stdout)
+
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}):
+            self.assertTrue(reviewed_tree.record_reviewed("fix-session", self.repo))
+        done = self.prep()
+
+        self.assertIn("REVIEW: ran. branch review logged on an earlier tree; a converged /review covers this tree",
+                      done.stdout)
+
+    def test_a_converged_review_alone_does_not_count_before_any_branch_review_was_logged(self):
+        self.task_dir()
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}):
+            self.assertTrue(reviewed_tree.record_reviewed("fix-session", self.repo))
+
+        self.assertIn("NOT run", self.prep().stdout)
+
     def test_flat_plan_file_edit_does_not_stale_the_review(self):
         self.write("docs/plans/LED-9-flat.md", TICKET + "\n" + SPEC)
         self.assertIn("NOT run", self.prep("LED-9").stdout)
@@ -678,7 +699,7 @@ class PrepTest(VerifyBranchBase):
 
         self.assertEqual(logged.returncode, 0, logged.stderr)
         self.assertEqual(second.returncode, 2)
-        self.assertIn("already covers", second.stderr)
+        self.assertIn("already counts for this tree", second.stderr)
         self.assertIn("REVIEW: ran", self.prep(extra_env=busy_env).stdout)
 
     def test_a_failing_ledger_read_never_blocks_the_run(self):
@@ -1283,6 +1304,32 @@ class OpenAskTest(VerifyBranchBase):
         self.assertIn("Ticket #2", done.stdout)
         self.assertEqual(self.verifier_rows(), [])
 
+    def cover_edited_tree_with_a_converged_review(self):
+        self.write("src/a.py", "print(2)\n")
+        self.assertEqual(self.prep().returncode, 0)
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}):
+            self.assertTrue(reviewed_tree.record_reviewed("fix-session", self.repo))
+        done = self.prep()
+        self.assertIn("REVIEW: ran. branch review logged on an earlier tree", done.stdout)
+
+    def test_an_ask_the_earlier_branch_review_left_open_stays_open_when_a_converged_review_covers_the_tree(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.cover_edited_tree_with_a_converged_review()
+
+        done = self.log("--rows", "-", stdin=self.rows())
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("ASKS OPEN: 1", done.stdout)
+
+    def test_a_second_branch_review_is_refused_when_a_converged_review_covers_the_tree(self):
+        self.assertEqual(self.log_review().returncode, 0)
+        self.cover_edited_tree_with_a_converged_review()
+
+        done = self.log_review()
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("a branch review already counts for this tree", done.stderr)
+
     def test_a_long_ask_reaches_the_user_whole(self):
         long_ask = ("the code keeps the plan's reading of the ticket and the ticket says otherwise " * 5
                     + "... END-OF-ASK")
@@ -1875,7 +1922,7 @@ class ReviewLogTest(VerifyBranchBase):
         self.assertEqual(self.log_review().returncode, 0)
         again = self.log_review()
         self.assertEqual(again.returncode, 2)
-        self.assertIn("already covers this tree", again.stderr)
+        self.assertIn("already counts for this tree", again.stderr)
         self.assertEqual(len(self.jsonl(self.findings)), 1)
 
     def test_a_review_after_a_fix_is_allowed(self):

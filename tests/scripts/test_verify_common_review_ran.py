@@ -6,6 +6,7 @@ run: python3 tests/scripts/test_verify_common_review_ran.py
 """
 import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = pathlib.Path(os.environ.get("VERIFY_COMMON_SCRIPTS_DIR") or REPO_ROOT / "claude" / ".claude" / "scripts")
 sys.path.insert(0, str(SCRIPTS_DIR / "review"))
 sys.path.insert(0, str(SCRIPTS_DIR / "lib"))
+import reviewed_tree
 import script_utils
 import verify_common
 
@@ -81,15 +83,116 @@ class ReviewStateWithoutLedger(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def test_the_review_logged_here_counts(self):
-        review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, PLANTED_TREE)
+        with mock.patch.object(verify_common.reviewed_tree, "shared_record_covers", return_value=True):
+            review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, PLANTED_TREE, "/no/repo")
 
         self.assertEqual((review["read"], review["ran"]), (False, True))
         self.assertIn("ledger not installed", review["reason"])
+        self.assertNotIn(verify_common.COVERED_BY_COMMIT_REVIEW_REASON, review["reason"])
+        self.assertFalse(review.get("coveredByCommitReview"))
 
     def test_no_review_logged_here_did_not_run(self):
-        review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, None)
+        review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, None, "/no/repo")
 
         self.assertEqual((review["read"], review["ran"]), (False, False))
+
+    def test_a_review_logged_on_an_earlier_tree_counts_when_a_converged_review_covers_this_one(self):
+        with mock.patch.object(verify_common.reviewed_tree, "shared_record_covers", return_value=True) as covers:
+            review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, OTHER_TREE, "/the/top")
+
+        covers.assert_called_once_with("/the/top")
+        self.assertEqual((review["read"], review["ran"]), (False, True))
+        self.assertIn("ledger not installed", review["reason"])
+        self.assertIn(verify_common.COVERED_BY_COMMIT_REVIEW_REASON, review["reason"])
+        self.assertTrue(review["coveredByCommitReview"])
+
+    def test_a_review_logged_on_an_earlier_tree_does_not_count_when_no_converged_review_covers_this_one(self):
+        with mock.patch.object(verify_common.reviewed_tree, "shared_record_covers", return_value=False):
+            review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, OTHER_TREE, "/the/top")
+
+        self.assertEqual((review["read"], review["ran"]), (False, False))
+        self.assertNotIn("coveredByCommitReview", review)
+        self.assertNotIn(verify_common.COVERED_BY_COMMIT_REVIEW_REASON, review["reason"])
+
+    def test_a_converged_review_alone_does_not_count_with_no_branch_review_saved(self):
+        with mock.patch.object(verify_common.reviewed_tree, "shared_record_covers", return_value=True):
+            review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, None, "/the/top")
+
+        self.assertEqual((review["read"], review["ran"]), (False, False))
+
+
+class ReviewStateWithLedger(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        patcher = mock.patch.dict(os.environ, {"PATH": self.directory.name, "CARGO_HOME": self.directory.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def state(self, covered):
+        with mock.patch.object(verify_common.reviewed_tree, "shared_record_covers", return_value=covered):
+            return verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, None, "/the/top")
+
+    def test_an_earlier_tree_in_the_ledger_and_a_covering_converged_review_ran(self):
+        plant_ledger(self.directory.name, f'printf "tree\\n{OTHER_TREE}\\n"\n')
+
+        review = self.state(covered=True)
+
+        self.assertEqual((review["read"], review["ran"]), (True, True))
+        self.assertEqual(verify_common.COVERED_BY_COMMIT_REVIEW_REASON, review["reason"])
+        self.assertTrue(review["coveredByCommitReview"])
+
+    def test_an_earlier_tree_in_the_ledger_with_no_covering_review_did_not_run(self):
+        plant_ledger(self.directory.name, f'printf "tree\\n{OTHER_TREE}\\n"\n')
+
+        review = self.state(covered=False)
+
+        self.assertEqual((review["read"], review["ran"]), (True, False))
+
+    def test_no_branch_review_row_in_the_ledger_did_not_run_even_when_a_converged_review_covers_the_tree(self):
+        plant_ledger(self.directory.name, 'printf "tree\\n"\n')
+
+        review = self.state(covered=True)
+
+        self.assertEqual((review["read"], review["ran"]), (True, False))
+
+
+class ReviewStateAfterCommit(unittest.TestCase):
+    """A converged review of an uncommitted change still counts once the change is committed."""
+
+    def setUp(self):
+        git_env = {
+            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
+        }
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = pathlib.Path(directory.name)
+        self.repo = root / "repo"
+        self.repo.mkdir()
+        (root / "home").mkdir()
+        patcher = mock.patch.dict(os.environ, {**git_env, "HOME": str(root / "home")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.git("init", "-q", "-b", "master")
+        (self.repo / "a.txt").write_text("one\n")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "init")
+
+    def git(self, *args):
+        subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True)
+
+    def test_a_converged_review_of_an_uncommitted_change_still_ran_after_one_commit_of_it(self):
+        (self.repo / "a.txt").write_text("two\n")
+        self.assertTrue(reviewed_tree.record_reviewed("review-session", self.repo))
+        self.git("commit", "-q", "-am", "reviewed change")
+
+        with mock.patch.object(script_utils, "read_ledger", return_value=mock.Mock(
+                returncode=0, stdout=f"tree\n{OTHER_TREE}\n")):
+            review = verify_common.review_state("some-repo", "some-branch", PLANTED_TREE, None, self.repo)
+
+        self.assertEqual((review["read"], review["ran"]), (True, True))
+        self.assertTrue(review["coveredByCommitReview"])
 
 
 class BusyLedger(unittest.TestCase):

@@ -12,7 +12,12 @@ when `@{u}` does not resolve, and after the failed pull when a stale remote-trac
 Exit 0 when the pull ran and the changes are back, or when there is nothing to pull; exit 1 otherwise, with the
 recovery command when one exists. A failed branch-name lookup before the pull exits 1 naming the failed command. A
 failed remote lookup before the pull (origin, or the configured remote) exits 1 with the git error, before anything is
-set aside; one after a failed pull ends in the pull-failure exit."""
+set aside; one after a failed pull ends in the pull-failure exit.
+A branch rewritten here (rebase, amend, reset) pulls nothing and exits 0 with a message to push with
+--force-with-lease: the upstream tip, fetched first, is not on HEAD but is in the branch's own reflog, so the remote
+holds nothing the branch never had. An upstream tip that is not in the reflog (another machine pushed) is pulled as
+usual. When the fetch fails (the upstream is deleted on the remote, or the remote is unreachable), the run goes on to
+the usual upstream checks and pull, so a deleted upstream still exits 1 naming it."""
 import os
 import subprocess
 import sys
@@ -53,6 +58,34 @@ def stopped_rebase_text(repo, state_dir):
     conflict_text = "conflicted paths: " + " ".join(conflicts) if conflicts else "no conflicted paths"
     return (f"a rebase is stopped on {branch}, {conflict_text}. Finish it with git -C {repo} rebase --continue "
             f"after resolving any conflict, or undo it with git -C {repo} rebase --abort.")
+
+
+def rewritten_locally(repo):
+    """(branch, short id of the upstream tip) when the freshly fetched upstream tip is not on HEAD but the branch's own
+    reflog holds it, so the branch was rewritten here (rebase, amend, reset) and the remote has nothing it never had;
+    None otherwise, including when the fetch or any git lookup fails (the run goes on as before, and reports a
+    deleted upstream)."""
+    branch = script_utils.current_branch(repo)
+    if not branch:
+        return None
+    merge_ref = script_utils.branch_merge_ref(repo, branch)
+    if not merge_ref:
+        return None
+    # Without the fetch, `@{u}` is the last-fetched tip: another machine's later push would hide behind it.
+    fetched = run_in_repo(repo, "fetch", "--quiet", configured_remote(repo, branch), merge_ref)
+    if fetched.returncode != 0:
+        return None
+    tip = script_utils.git_output(repo, "rev-parse", "--verify", "--quiet", "@{u}^{commit}")
+    if not tip:
+        return None
+    on_head = run_in_repo(repo, "merge-base", "--is-ancestor", tip, "HEAD")
+    if on_head.returncode == 0:
+        return None
+    held = script_utils.git_output(repo, "rev-list", "--walk-reflogs", f"refs/heads/{branch}")
+    if held is None or tip not in held.split():
+        return None
+    short_tip = script_utils.git_output(repo, "rev-parse", "--short", tip)
+    return branch, short_tip or tip
 
 
 def set_aside(repo):
@@ -227,6 +260,13 @@ def main(arguments):
     state_dir = stopped_rebase_dir(repo)
     if state_dir:
         sys.exit("pull_keep_index: nothing was pulled or set aside: " + stopped_rebase_text(repo, state_dir))
+
+    rewrite = rewritten_locally(repo)
+    if rewrite:
+        branch, short_tip = rewrite
+        print(f"pull_keep_index: {branch} was rewritten locally (the upstream tip {short_tip} was on it before); "
+              "nothing pulled. Push with --force-with-lease.")
+        return
 
     target = pull_target(repo)
     if target is None:

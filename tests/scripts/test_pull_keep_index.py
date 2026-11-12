@@ -343,6 +343,75 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1)
         self.assertIn("could not look up refs/heads/fresh on origin", finished.stderr)
 
+    def test_a_branch_rewritten_locally_pulls_nothing_and_says_to_force_push(self):
+        old_tip = self.git(self.repo, "rev-parse", "--short", "HEAD").strip()
+        self.write(self.repo, "f", "amended\n")
+        self.git(self.repo, "commit", "-qa", "--amend", "--no-edit")
+        head = self.git(self.repo, "rev-parse", "HEAD")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn(f"was rewritten locally (the upstream tip {old_tip} was on it before); nothing pulled.",
+                      finished.stdout)
+        self.assertIn("--force-with-lease", finished.stdout)
+        self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
+        self.assertEqual(self.status(), [])
+        for name in ("rebase-merge", "rebase-apply"):
+            self.assertFalse((self.repo / ".git" / name).exists(), name)
+
+    def test_a_rewrite_leaves_staged_and_unstaged_changes_untouched(self):
+        self.write(self.repo, "f", "amended\n")
+        self.git(self.repo, "commit", "-qa", "--amend", "--no-edit")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+        self.write(self.repo, "g", "unstaged\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("--force-with-lease", finished.stdout)
+        self.assertEqual(sorted(self.status()), [" M g", "M  f"])
+        self.assertEqual((self.repo / "f").read_text(), "staged\n")
+        self.assertEqual((self.repo / "g").read_text(), "unstaged\n")
+
+    def test_a_rewrite_after_another_machine_pushed_without_a_fetch_still_pulls(self):
+        self.commit_local("k", "1\n")
+        self.git(self.repo, "push", "-q")
+        self.push_from_other_machine("h", "2\n")
+        self.write(self.repo, "k", "amended\n")
+        self.git(self.repo, "commit", "-qa", "--amend", "--no-edit")
+
+        finished = self.run_script()
+
+        self.assertNotIn("rewritten locally", finished.stdout)
+        self.assertEqual((self.repo / "h").read_text(), "2\n", finished.stdout + finished.stderr)
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        self.assertIn("the pull stopped mid-rebase", finished.stderr)
+
+    def test_a_rewrite_with_the_upstream_deleted_on_the_remote_exits_1_naming_the_gone_upstream(self):
+        self.git(self.repo, "checkout", "-q", "-b", "topic")
+        self.git(self.repo, "push", "-q", "-u", "origin", "topic")
+        self.git(self.remote, "branch", "-q", "-D", "topic")
+        self.write(self.repo, "f", "amended\n")
+        self.git(self.repo, "commit", "-qa", "--amend", "--no-edit")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertNotIn("rewritten locally", finished.stdout)
+        self.assertIn("is gone from origin", finished.stderr)
+
+    def test_a_commit_another_machine_pushed_is_still_pulled_after_a_fetch(self):
+        self.push_from_other_machine("h", "2\n")
+        self.git(self.repo, "fetch", "-q")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertNotIn("rewritten locally", finished.stdout)
+        self.assertEqual((self.repo / "h").read_text(), "2\n")
+
     def commit_local(self, name, text):
         self.write(self.repo, name, text)
         self.git(self.repo, "add", name)

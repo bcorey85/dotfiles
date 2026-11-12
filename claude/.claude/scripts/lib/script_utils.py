@@ -265,6 +265,11 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+def process_stderr_text(finished):
+    """What a finished subprocess wrote to stderr, as text for a failure message."""
+    return os.fsdecode(finished.stderr).strip()
+
+
 def head_commit_time(top):
     """The HEAD commit's committer time in seconds, or None when git cannot tell (no commit yet)."""
     stamp = git_output(top, "log", "-1", "--format=%ct")
@@ -360,6 +365,28 @@ def work_tree_top(path, timeout=None):
 def current_branch(cwd, timeout=None):
     """The checked-out branch name: "" on a detached HEAD, None when git fails."""
     return git_output(cwd, "branch", "--show-current", timeout=timeout)
+
+
+def remote_ref_state(repo, remote, ref):
+    """(has_ref, git_error): True when the remote has the full ref, False when it answered that it has none, None with
+    the git error when the lookup fails. `ls-remote --exit-code` exits 2 for an answered "no such ref"."""
+    listed = subprocess.run(["git", "-C", repo, "ls-remote", "--exit-code", remote, ref], capture_output=True,
+                            stdin=subprocess.DEVNULL)
+    if listed.returncode == 0:
+        return True, ""
+    if listed.returncode == 2:
+        return False, ""
+    return None, process_stderr_text(listed)
+
+
+def branch_merge_ref(repo, branch):
+    """The upstream ref set for the branch in git config, or None when none is set or git fails."""
+    return git_output(repo, "config", "--get", f"branch.{branch}.merge")
+
+
+def branch_remote(repo, branch):
+    """The remote set for the branch in git config, or None when none is set or git fails."""
+    return git_output(repo, "config", "--get", f"branch.{branch}.remote")
 
 
 def repo_name(cwd):

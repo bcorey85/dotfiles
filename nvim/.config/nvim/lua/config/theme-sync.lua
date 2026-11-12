@@ -387,6 +387,23 @@ local FAMILIES = {
       light = { heading1 = "#907aa9", heading = "#56949f" },
     },
   },
+  ["ef-elea"] = {
+    -- oonamo/ef-themes.nvim: #222524 dark / #edf5e2 light. Each scheme sets
+    -- colors_name to its own name. Headings are the plugin's markdownH1 / H2.
+    schemes = { dark = "ef-elea-dark", light = "ef-elea-light" },
+    accents = {
+      dark = { heading1 = "#eba8a8", heading = "#a9c99f" },
+      light = { heading1 = "#894852", heading = "#306630" },
+    },
+  },
+  ["ef-maris"] = {
+    -- oonamo/ef-themes.nvim: #131c2b dark / #edf4f8 light.
+    schemes = { dark = "ef-maris-dark", light = "ef-maris-light" },
+    accents = {
+      dark = { heading1 = "#70a0ff", heading = "#7fce5f" },
+      light = { heading1 = "#444fcf", heading = "#3a6f00" },
+    },
+  },
   ["catppuccin"] = {
     -- catppuccin/nvim: frappé #303446 / latte #eff1f5.
     schemes = { dark = "catppuccin-frappe", light = "catppuccin-latte" },

@@ -4,15 +4,22 @@ import re
 from typing import NamedTuple
 
 import script_utils
-from check_output import FAILED_EXIT_ZERO, NO_TEST_MATCHED_NOTE, NO_TESTS_RAN, SUMMARY_FAILURE_NOTE, check_verdict
+from check_output import (
+    FAILED_EXIT_ZERO,
+    NO_TEST_MATCHED_NOTE,
+    NO_TESTS_RAN,
+    SUMMARY_FAILURE_NOTE,
+    cannot_start_line,
+    check_verdict,
+)
 from test_run_output import matches_no_test
 
 # A run that exits 0 but ran no test, or whose runner summary reports failures, fails the box.
 NO_TEST_MATCHED_EXIT_CODE = 1
 NO_TEST_MATCHED_FLAG = "matches no test: the run exits 0 but ran no test, so it reads RED until a test exists"
-# An rg, grep or git grep line is a ban (exit 1, no match, holds it) unless its text, outside the command, says it
-# checks presence (exit 0 passes). Ban wording on the same line wins. A search wrapped in another command, such as
-# `test -n "$(git grep ...)"`, is judged by its own exit code.
+# An rg, grep or git grep line is a ban (exit 1, no match, holds it) unless its text, outside every backticked span,
+# says it checks presence (exit 0 passes). Ban wording on the same line wins. A search wrapped in another command,
+# such as `test -n "$(git grep ...)"`, is judged by its own exit code.
 SEARCH_COMMAND = re.compile(r"^(?:rg|grep|egrep|git grep)\s")
 BAN_WORDING = re.compile(r"\bprohibition\b|\bno\s+(?:match(?:es)?|output|hits?)\b|\bprints?\s+nothing\b"
                          r"|\bexit(?:s|ing)?\s+(?:code\s+)?1\b|\babsent\b|\bmust\s+not\b|\bnone\b|\bnothing\b"
@@ -26,14 +33,19 @@ SEARCH_BAN_NOTE = ("\nan rg, grep or git grep line is a ban unless its text says
 # A leading `cd <dir> &&` does not change what the command searches: it stays in the command and is ignored here.
 LEADING_CD = r"(?:cd \S+ && )?"
 NEGATED_SEARCH = re.compile(r"^(" + LEADING_CD + r")!\s+(?=(?:rg|grep|egrep|git grep)\s)")
+# Output that shows the tool itself could not start (check_output owns the forms) reads ENV: the item says nothing
+# about the plan then.
+ENV_OUTCOME = "ENV"
 # Exit codes that mean the command did not run to an answer.
 NOT_RUN_EXIT_CODES = (script_utils.COMMAND_NOT_FOUND_EXIT_CODE, script_utils.TIMEOUT_EXIT_CODE)
 
 
 class ItemVerdict(NamedTuple):
-    """outcome: GREEN, RED or BROKEN. code: the exit-style verdict (0 holds, anything else fails), output: the command's
-    output with any note on why it failed, hits: the number of matches of a search ban (None for any other item), flag:
-    the dry-run flag text for a zero-test match (else None)."""
+    """outcome: GREEN, RED, BROKEN (the command did not run: not found, timed out) or ENV (it failed and its output
+    shows the tool could not start, such as a version manager's missing version). code: the exit-style verdict (0
+    holds, anything else fails), output: the command's output with any note on why it failed, hits: the number of
+    matches of a search ban (None for any other item), flag: the dry-run flag text for a zero-test match or an ENV
+    outcome (else None)."""
     outcome: str
     code: int
     output: str
@@ -62,7 +74,7 @@ def is_search_ban(command, line):
     if any(without_negation(span) == command and span != command for span in script_utils.backticked_spans(line)):
         return True
 
-    text = line.replace(command, "")
+    text = script_utils.without_backticked_spans(line)
     if BAN_WORDING.search(text):
         return True
 
@@ -90,19 +102,25 @@ def ban_verdict(command, code, output):
 
 def item_verdict(command, line, code, output):
     """Judge one item whose command ran with exit `code` and `output`. `line` is the plan item's text. An exit that
-    says the command did not run (not found, timed out) keeps the exit-style verdict, but reads BROKEN."""
+    says the command did not run (not found, timed out) keeps the exit-style verdict, but reads BROKEN. A failing run
+    whose output shows the tool could not start reads ENV, keeping the exit-style code."""
     verdict = judge_item(command, line, code, output)
     if code in NOT_RUN_EXIT_CODES:
         return verdict._replace(outcome="BROKEN")
 
-    return verdict
+    cause_line = cannot_start_line(code, output)
+    if cause_line is None:
+        return verdict
+
+    return verdict._replace(outcome=ENV_OUTCOME, flag=f"environment failure: {cause_line}")
 
 
 def judge_item(command, line, code, output):
-    """The verdict on one item by its command's exit code and output, before the did-not-run exits read BROKEN."""
+    """The verdict on one item by its command's exit code and output, before the did-not-run exits read BROKEN
+    and the environment failures read ENV (both applied by item_verdict)."""
     if is_search_ban(command, line):
         verdict, hits = ban_verdict(command, code, output)
-        if verdict != 0 and not PRESENCE_WORDING.search(line.replace(command, "")):
+        if verdict != 0 and not PRESENCE_WORDING.search(script_utils.without_backticked_spans(line)):
             output += SEARCH_BAN_NOTE
         if verdict == 0:
             outcome = "GREEN"

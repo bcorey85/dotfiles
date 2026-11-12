@@ -53,13 +53,13 @@
     - **Falsifiability run**: run
       `python3 ~/.claude/scripts/tools/criteria_dry_run.py docs/plans/<slug>/spec.md`
       once. It runs every Automated Verification command of every phase against
-      the pre-implementation tree and prints `CHECK <n> RED|GREEN|BROKEN|UNPARSED`
-      plus `FLAG` lines. Clean RED is good; GREEN, BROKEN or UNPARSED lets the coder
-      pass with no check running. A filtered test run that matches no test reads RED
-      (the test does not exist yet). A `FLAG` is a defect in the criterion: a
-      `pgrep -f` that matches the shell running it, or a count that differs from
-      the plan's own code. Pass `--skip <n>` for each command that writes; a
-      command that writes never runs.
+      the pre-implementation tree and prints `CHECK <n> RED|GREEN|BROKEN|ENV|UNPARSED`
+      plus `FLAG` lines. Clean RED is good; GREEN, BROKEN, ENV or UNPARSED lets the coder
+      pass with no check running. A filtered test run that matches no test reads RED.
+      A `FLAG` is a criterion defect (a `pgrep -f` that matches its own shell, a count
+      differing from the plan's code), except `environment failure` (ENV): install the
+      missing tool or version and re-run first. Pass `--skip <n>` for each command
+      that writes; the dry run then never runs that command.
     - **Criteria that read a file or a diff**: open the file and confirm it holds
       what the criterion looks for, and that the container or path is the one the
       phase changes. An `rg` over prose uses `-U` and `\s+`, or a wrapped phrase

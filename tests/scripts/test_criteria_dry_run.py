@@ -8,6 +8,9 @@ import unittest
 
 from toolkit_paths import TOOLS_DIR
 
+sys.path.insert(0, str(TOOLS_DIR))
+import criteria_dry_run
+
 SCRIPT = pathlib.Path(os.environ.get("CRITERIA_DRY_RUN_SCRIPT") or TOOLS_DIR / "criteria_dry_run.py")
 
 PLAN = """# Plan
@@ -121,6 +124,51 @@ class SearchItemVerdictTest(unittest.TestCase):
 
     def test_a_plain_search_with_presence_wording_that_hits_is_green(self):
         self.assertIn(" GREEN ", self.checks[2])
+
+
+ENV_PLAN = """# Plan
+
+## Phase 1: Shim
+
+#### Automated Verification:
+
+- [ ] `uv-shim-check run` passes
+"""
+
+
+# What mise 2026.11.3 prints from the uv shim when the pinned uv is not installed.
+MISE_NOT_INSTALLED_LINES = (
+    "mise ERROR Tool not installed for shim: uv",
+    "Missing tool version: aqua:astral-sh/uv@0.1.0",
+    "Install all missing tools with: mise install",
+)
+
+
+class EnvironmentFailureTest(unittest.TestCase):
+    def test_a_tool_that_cannot_start_reads_env_with_a_flag_and_needs_an_answer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = pathlib.Path(temp)
+            program = repo / "uv-shim-check"
+            echoes = "".join(f"echo '{line}'\n" for line in MISE_NOT_INSTALLED_LINES)
+            program.write_text(f"#!/bin/sh\n{echoes}exit 1\n")
+            program.chmod(program.stat().st_mode | stat.S_IEXEC)
+            (repo / "plan.md").write_text(ENV_PLAN)
+            env = dict(os.environ, PATH=f"{repo}{os.pathsep}{os.environ['PATH']}")
+            finished = subprocess.run([sys.executable, str(SCRIPT), str(repo / "plan.md"), "--repo", temp],
+                                      capture_output=True, text=True, env=env)
+        self.assertIn("CHECK 1.1 ENV rc=1", finished.stdout)
+        self.assertIn("FLAG environment failure: mise ERROR Tool not installed for shim: uv", finished.stdout)
+        self.assertNotIn(" RED ", finished.stdout)
+        self.assertEqual(finished.returncode, 1)
+
+
+class StatedCountTest(unittest.TestCase):
+    def test_a_number_inside_another_backticked_span_is_not_the_stated_count(self):
+        item = "`grep -c foo a` counts the lines, unlike `echo returns 9`"
+        self.assertIsNone(criteria_dry_run.stated_count("grep -c foo a", item))
+
+    def test_a_number_after_a_stating_word_outside_the_spans_is_the_stated_count(self):
+        self.assertEqual(criteria_dry_run.stated_count("grep -c foo a", "`grep -c foo a` prints 3"), 3)
 
 
 class SkipTest(unittest.TestCase):

@@ -6,9 +6,11 @@ Prints one `CHECK <phase>.<n> <verdict> rc=<code> <command>` line per command, i
 under it for each problem the exit code cannot show:
 - a filtered test run that exits 0 while reporting no passed test is RED (the test is not written yet);
 - a `pgrep -f` pattern that matches the shell running the check always finds that shell;
-- a count criterion whose stated number differs from the number the plan's own code blocks give.
-Exit 0 when every command is RED and unflagged; exit 1 otherwise (GREEN, BROKEN or any flag need an answer before the
-plan is final). `--skip N` leaves out check N (every phase's checks are numbered in one sequence) for a command that
+- a count criterion whose stated number differs from the number the plan's own code blocks give;
+- an ENV verdict (the tool could not start, such as a version manager's missing version) carries
+  `environment failure: <the output line that shows it>`.
+Exit 0 when every command is RED and unflagged; exit 1 otherwise (GREEN, BROKEN, ENV or any flag need an answer before
+the plan is final). `--skip N` leaves out check N (every phase's checks are numbered in one sequence) for a command that
 writes."""
 import argparse
 import pathlib
@@ -101,7 +103,8 @@ def search_count_pattern(command):
 def stated_count(command, item_text):
     """The number the criterion says the count must be: `-eq 3` or `= 3` in the command, else a number after a word
     such as `prints` or `returns` in the item's text. None when it states none."""
-    for text, rule in ((command, STATED_IN_COMMAND), (item_text.replace(command, ""), STATED_IN_ITEM)):
+    item_wording = script_utils.without_backticked_spans(item_text)
+    for text, rule in ((command, STATED_IN_COMMAND), (item_wording, STATED_IN_ITEM)):
         match = rule.search(text)
         if match:
             return int(match.group(1))

@@ -9,7 +9,7 @@ import review_loop_held
 import script_utils
 from review_loop_calls import claude_call
 from review_loop_closure import FIX_DIFF_STATS
-from review_loop_plan import changed_files_since, head_commit, scope
+from review_loop_plan import changed_files_since, scope
 
 DIFF_CONTEXT = 12
 # One note per fix call that deleted an untracked file it did not make, for the packet's tool_fault.
@@ -80,7 +80,7 @@ def coder_call(role, prompt, repo, out, held):
     left as it is and noted, and never counts as changed. A commit the coder made during the call is kept; its changes
     count against the commit HEAD named before the call. A failed call raises CoderCallError naming the files it
     changed before it died."""
-    head_before = head_commit(repo)
+    head_before = script_utils.head_commit(repo)
     before = script_utils.without_paths(file_texts(repo), held)
     untracked = [path for path, entry in scope(repo).items() if entry[1] == "??" and path not in held]
     backup = file_backup.save_files(repo, untracked)

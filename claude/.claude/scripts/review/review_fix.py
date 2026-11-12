@@ -34,8 +34,9 @@ still judges.
                                          review-first run with nothing to review.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review_fix.py asks-done --by <user|session> [--packet <packet_id>] [--correct] <outcome>...
-                                         one outcome per ask, in order: accepted | rejected | modified, optional
+                                         one outcome per ask, in order: {outcomes}, optional
                                          ":<one line note>" after it; modified needs the note, the user's change.
+                                         accepted: {accept_means}; rejected: {reject_means}.
                                          Logs one row per ask, once. With an ask accepted or modified it writes them
                                          to <git dir>/review-fix/ask-findings.md and prints `ACTION: redispatch`
                                          with the fix run's launch line (review_fix_asks.py). `ACTION: done` when
@@ -55,7 +56,7 @@ still judges.
                                          user-ruled ask's answer drops its `--user-ruled <N>`.
                                          An accepted or rejected outcome on an ask whose proposed change is conditional
                                          ("if not confirmed, revert X") is refused with exit 2 and nothing logged:
-                                         answer it with 'modified:<the change to make, with no condition>'.
+                                         answer it with '{modified}:<the change to make, with no condition>'.
                                          --correct <outcome>... re-answers the asks while the printed fix run has
                                          not launched: it logs a row for each changed ask (an unchanged ask keeps
                                          its earlier decider), rewrites the findings file
@@ -274,8 +275,8 @@ def plan_impact_question_lines(plan_impact, packet):
     return [
         f"When the run has a plan, first run `{plan_format.PLAN_CHECK_OWNER_COMMAND}` and read `owner`. Owner "
         "`session`: rule yourself with `decide ... --by session`, no question. Owner `plan`: rule yourself only while "
-        "any ticket's own words stay met, else ask the user.",
-        "Owner `user`, owner `plan` with any ticket's own words not met, or no plan: call AskUserQuestion now. Without "
+        f"{plan_format.PLAN_OWNER_RULE_CONDITION}, else ask the user.",
+        "Owner `user`, owner `plan` with that condition not met, or no plan: call AskUserQuestion now. Without "
         "that tool, ask the same question in plain text, list the options numbered, end the turn and wait for the "
         "reply. Do not re-dispatch and do not triage this as an ask. Question: assumed, then found, then what "
         "changes, taken from this block:",
@@ -338,7 +339,7 @@ def present_plan_impacts(packet, state):
     applied = any(impact["applied"] for impact in held)
     state.update({"plan_impact": held_text, "plan_impact_held": True, "plan_impact_applied": applied,
                   "carried_findings": [*handback.carried_findings(packet),
-                                       *[f"plan impact: {one_line(impact['text'], 800)}" for impact in held]]})
+                                       *[f"plan impact: {one_line(impact['text'], None)}" for impact in held]]})
     if state.get("stage") != "asks":
         state["stage"] = "plan-impact"
     save_fix_state(state)
@@ -374,7 +375,7 @@ def asks_done_line(asks, state):
     return (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
             f"--by user {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
             f"accepted: {review_asks.ACCEPT_MEANS} | rejected: {review_asks.REJECT_MEANS} | "
-            "'modified:<the user's change in one line>', quoted as one shell "
+            f"'{review_asks.MODIFIED}:<the user's change in one line>', quoted as one shell "
             "word: make that change instead; an optional ':<one line note>' after accepted or rejected is not stored)")
 
 
@@ -887,7 +888,7 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
 
     spec = state.get("spec_iter")
     session_note = " The session ruled, not the user." if by == plan_format.SESSION_RULING else ""
-    lines = [f"plan_impact: RESOLVED - {choice}.{session_note} Ruling: {one_line(ruling)}",
+    lines = [f"plan_impact: RESOLVED - {choice}.{session_note} Ruling: {one_line(ruling, None)}",
              f"iter={state['iter']}"]
     if spec is not None:
         lines.append(f"spec_iter={spec}")
@@ -979,7 +980,9 @@ def main():
     handlers = {"packet": command_packet, "launch": command_launch, "escape": command_escape,
                 "asks-done": command_asks_done, "decide": command_decide, "defer": command_defer}
     if not arguments or arguments[0] not in handlers:
-        print(__doc__)
+        outcomes = " | ".join(review_asks.ASK_OUTCOMES)
+        print(__doc__.format(outcomes=outcomes, modified=review_asks.MODIFIED,
+                             accept_means=review_asks.ACCEPT_MEANS, reject_means=review_asks.REJECT_MEANS))
         return 2
     command = arguments[0]
     try:

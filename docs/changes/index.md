@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-931 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+935 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-12, [the formatter leaves the gate replay corpus layout alone](notes/2026-11-12-the-formatter-leaves-the-gate-replay-corpus-layout.md).
 

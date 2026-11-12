@@ -6,7 +6,8 @@ fork) it returns once the loop has started and names the `code_wait.py review --
 It records the session's dispatch row,
 writes the prompt file, the loop's pid, <loop dir>/handoff.txt and <loop dir>/launch.json (the packet arguments the
 wait prints, and the flags a later fix run of the same review carries), and keeps its state under
-<git dir>/review-script.
+<git dir>/review-script. It SIGTERMs the process group of every live earlier loop of the same repo, and deletes the
+--fix and --handoff files that sit in the code-phase run folder.
 
 A findings file (`--fix`) holds one finding per item: a line that starts with `- ` at column 0, then any indented
 continuation lines. Blank lines may sit between items. Any other line stops the launch.
@@ -17,10 +18,12 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 import code_wait
 import handback_hook
+import process_group
 import review_fix_state
 import reviewer_dispatch
 import script_utils
@@ -42,6 +45,9 @@ from review_loop_prompt_file import (
 )
 
 STATE_NAME = reviewer_dispatch.LAUNCH_STATE_NAME
+# How long a launch waits for a stopped loop's SIGTERM handler to finish removing its worktrees and children.
+STOP_WAIT_SECONDS = 5
+STOP_POLL_SECONDS = 0.05
 AGENT_PREFIX = "review-script-"
 DEFAULT_HANDOFF = "Review the working tree against HEAD."
 FAST_REVIEWER_MODEL = "haiku"
@@ -267,6 +273,70 @@ def read_user_ruled(launch_file):
     raise LaunchError(f"--launch {launch_file}: {USER_RULED_RECORD_KEY} is not a list of finding texts")
 
 
+def consume_run_folder_inputs(repo, options):
+    """Deletes the --fix and --handoff files that sit in the code-phase run folder. A file elsewhere, such as the
+    asks findings file, and the run folder's review-stop.md stay. A failed Write of the next launch's input then
+    cannot leave this launch's file in place for the next one to read."""
+    run_folder = script_utils.git_path(repo, code_wait.PHASE_DIR_NAME)
+    if run_folder is None:
+        return
+    inputs = [pathlib.Path(given).resolve() for given in (options.fix, options.handoff) if given]
+    consumed = [input_file for input_file in inputs if input_file.parent == run_folder.resolve()]
+    if not consumed:
+        return
+    for stale in consumed:
+        try:
+            stale.unlink(missing_ok=True)
+        except OSError as error:
+            print(f"review_launch: could not delete {stale}: {error}", file=sys.stderr)
+
+
+def loop_repo(launch_file):
+    """The repo a loop's launch record names: the --repo that `relaunch_args` always puts in its relaunch flags."""
+    args = read_relaunch_args(launch_file)
+    if "--repo" not in args:
+        raise LaunchError(f"--launch {launch_file}: {RELAUNCH_KEY} names no --repo")
+    return pathlib.Path(args[args.index("--repo") + 1]).resolve()
+
+
+def wait_for_exit(pid):
+    """Waits up to STOP_WAIT_SECONDS for pid to exit, so the old loop has removed its worktrees and children before
+    the new loop starts. A pid still running after that is named on stderr and the launch goes on."""
+    deadline = time.monotonic() + STOP_WAIT_SECONDS
+    while reviewer_dispatch.pid_is_running(pid):
+        if time.monotonic() >= deadline:
+            print(f"review_launch: the earlier loop (pid {pid}) is still running after {STOP_WAIT_SECONDS} s",
+                  file=sys.stderr)
+            return
+        time.sleep(STOP_POLL_SECONDS)
+
+
+def stop_loop_if_live(loop_dir, pid, repo):
+    """SIGTERMs the process group of the running loop (loop_dir, pid) when it is a loop of repo. A pid whose command
+    line does not name the loop's agent id (the pid was reused) is left alone. A failed record, `ps` or kill is
+    printed on stderr and the launch goes on."""
+    launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
+    if not launch_file.is_file():
+        return
+    try:
+        if loop_repo(launch_file) != repo:
+            return
+        if loop_dir.name not in process_group.command_line(pid):
+            return
+        if process_group.terminate_group(pid):
+            print(f"Stopped the earlier review loop {loop_dir.name} of {repo} (pid {pid}).")
+            wait_for_exit(pid)
+    except (LaunchError, OSError) as error:
+        print(f"review_launch: could not stop the loop in {loop_dir}: {error}", file=sys.stderr)
+
+
+def stop_earlier_loops(state_dir, repo):
+    """Stops every live loop of repo that an earlier launch started, so two loops never edit one tree."""
+    loop_root = pathlib.Path(state_dir) / reviewer_dispatch.LOOP_FOLDER
+    for loop_dir, pid in reviewer_dispatch.live_loops(loop_root):
+        stop_loop_if_live(loop_dir, pid, repo)
+
+
 def command_launch(argv, loop_script):
     """Runs the launch. The skill runs it as a background command, so its completion is the wake-up."""
     options = launch_arguments(argv)
@@ -298,6 +368,7 @@ def command_launch(argv, loop_script):
                           "with --base <ref>.")
 
     state_dir = script_utils.git_path(repo, STATE_NAME)
+    stop_earlier_loops(state_dir, repo)
     agent_id = f"{AGENT_PREFIX}{script_utils.sortable_unique_id()}"
     loop_dir = pathlib.Path(state_dir) / reviewer_dispatch.LOOP_FOLDER / agent_id
     loop_dir.mkdir(parents=True, exist_ok=True)
@@ -313,6 +384,7 @@ def command_launch(argv, loop_script):
                      RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file),
                      USER_RULED_RECORD_KEY: user_ruled}
     script_utils.write_text_atomically(launch_file, json.dumps(launch_record) + "\n")
+    consume_run_folder_inputs(repo, options)
     print(f"The review loop runs as a script; its log is {log_path}")
     sys.stdout.flush()
 

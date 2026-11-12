@@ -41,6 +41,14 @@ require("lazy").setup({
   },
 })
 
+-- A startup install leaves lazy's window open over the first screen, and the
+-- VimEnter session restore and picker popup then draw under it. Close it.
+-- lazy.view is loaded only when that window was shown.
+local install_view = package.loaded["lazy.view"]
+if install_view and install_view.visible() then
+  install_view.view:close()
+end
+
 -- Must stay here, not in a plugin spec: the eager colorscheme spec is already
 -- on the rtp by this line, and start() must run exactly once.
 require("config.theme-sync").start()

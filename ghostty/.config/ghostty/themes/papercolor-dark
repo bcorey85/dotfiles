@@ -1,0 +1,24 @@
+# papercolor dark (NLKNguyen/papercolor-theme). The plugin's palette, re-slotted so
+# each ANSI index holds its own hue; red is its pink (#af005f is 2.4:1 on the ground).
+palette = 0=#303030
+palette = 1=#ff5faf
+palette = 2=#5faf00
+palette = 3=#d7af5f
+palette = 4=#5fafd7
+palette = 5=#af87d7
+palette = 6=#00afaf
+palette = 7=#d0d0d0
+palette = 8=#808080
+palette = 9=#ff5faf
+palette = 10=#afd700
+palette = 11=#ffaf00
+palette = 12=#5fafd7
+palette = 13=#d787ff
+palette = 14=#5fffff
+palette = 15=#eeeeee
+background = #1c1c1c
+foreground = #d0d0d0
+cursor-color = #c6c6c6
+cursor-text = #1c1c1c
+selection-background = #8787af
+selection-foreground = #000000

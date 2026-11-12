@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles dredge-roles-warm solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles dredge-roles-warm solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox papercolor hybrid rose-pine; }
 
 # A family that differs from another only in nvim's syntax colours borrows that
 # family's terminal, prompt, herdr, delta and claude themes. dredge-warm exists
@@ -189,8 +189,8 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     darcula:*)              echo "darcula" ;;
     # tairiki: custom files from the plugin's own terminal colours.
     tairiki:light)          echo "tairiki-light" ;;
-    tairiki:*)              echo "tairiki-dimmed" ;;
-    # everforest: custom files — the Med builtins' palette on nvim's medium
+    tairiki:*)              echo "tairiki-dark" ;;
+    # everforest: custom files — the Med builtins' palette on nvim's hard
     # ground (the builtins sit on bg_dim).
     everforest:light)       echo "everforest-light" ;;
     everforest:*)           echo "everforest-dark" ;;
@@ -198,6 +198,17 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # morhetz's sixteen on the medium grounds.
     gruvbox:light)          echo "Gruvbox Light" ;;
     gruvbox:*)              echo "Gruvbox Dark" ;;
+    # papercolor: no ghostty builtin — custom files, the plugin's palette
+    # re-slotted so each ANSI index holds its own hue.
+    papercolor:light)       echo "papercolor-light" ;;
+    papercolor:*)           echo "papercolor-dark" ;;
+    # hybrid: custom files. Dark is the plugin's terminal sixteen; light is the
+    # palette of nvim's colors/hybrid-light.lua.
+    hybrid:light)           echo "hybrid-light" ;;
+    hybrid:*)               echo "hybrid-dark" ;;
+    # rose-pine: ghostty BUILTINS — main dark, dawn light.
+    rose-pine:light)        echo "Rose Pine Dawn" ;;
+    rose-pine:*)            echo "Rose Pine" ;;
   esac
 }
 
@@ -292,6 +303,17 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # dark ink on white.
     tairiki:light)          echo "light-plus" ;;
     tairiki:*)              echo "vitesse-black" ;;
+    # papercolor: BASE of a full [custom_theme]. dark-plus is #d4d4d4 on
+    # #1e1e1e (papercolor is #d0d0d0 on #1c1c1c); one-light is the nearest
+    # grey-on-off-white.
+    papercolor:light)       echo "one-light" ;;
+    papercolor:*)           echo "dark-plus" ;;
+    # hybrid: BASE of a full [custom_theme]; grey on #1d1f21, and grey on white.
+    hybrid:light)           echo "light-plus" ;;
+    hybrid:*)               echo "dark-plus" ;;
+    # rose-pine: hunk BUILTINS — main dark, dawn light.
+    rose-pine:light)        echo "rose-pine-dawn" ;;
+    rose-pine:*)            echo "rose-pine" ;;
   esac
 }
 
@@ -547,10 +569,11 @@ EOF
     gruvbox-material:*)
       # gruvbox-material HARD dark (#1d2021), foreground=mix. Chrome
       # ladder bg1 #282828 / bg3 #3c3836 / bg5 #504945. Diff washes are the
-      # theme's own bg_diff_green #32361a / bg_diff_red #3c1f1e.
+      # rows neogit renders (#282a1a / #2e1d1c), not the theme's bg_diff_green
+      # / bg_diff_red: hunk fills whole lines, where the stock pair reads hot.
       bg="#1d2021"; panel="#282828"; panelAlt="#32302f"; border="#3c3836"
       accent="#f2594b"; accentMuted="#504945"; text="#e2cca9"; muted="#928374"
-      addedBg="#32361a"; removedBg="#3c1f1e"; ctxBg="#1d2021"
+      addedBg="#282a1a"; removedBg="#2e1d1c"; ctxBg="#1d2021"
       sAdd="#b0b846"; sRem="#f2594b"; lnFg="#504945"
       badgeAdd="#b0b846"; badgeRem="#f2594b"; badgeNeu="#80aa9e"
       fRename="#d3869b"; fMod="#e9b143"; fUntracked="#928374"; note="#282828"
@@ -1310,20 +1333,22 @@ EOF
 EOF
       )
       ;;
-    # tairiki (deparr/tairiki.nvim): dimmed dark / light. Roles are the resolved
-    # fg of nvim's groups; diff rows are theme-sync's washes. Comments are a
-    # neutral grey in dark and red in light, by the theme's design.
+    # tairiki (deparr/tairiki.nvim): dark / light. Roles are the plugin's syntax
+    # table; diff rows are theme-sync's washes. Panels are the plugin's lighter
+    # ground step, not a darker one. Punctuation is its second grey: the third
+    # is 3.3:1 on the ground. Comments are a warm grey in dark and red in light,
+    # by the theme's design.
     tairiki:*)
       local addWord remWord cls key h1 h2 kwfn tagattr tagc
-      bg="#1d1f21"; panel="#17191a"; panelAlt="#242627"; border="#323435"
-      accent="#93a8b8"; accentMuted="#242627"; text="#afb2b0"; muted="#959896"
-      addedBg="#34362f"; removedBg="#362d2f"; ctxBg="#1d1f21"
-      addWord="#424638"; remWord="#473638"
-      sAdd="#b3ba7e"; sRem="#c37d7c"; lnFg="#858886"
-      badgeNeu="#93a8b8"; fRename="#b19db8"; fMod="#d9bf89"; note="#17191a"
-      kw="#b19db8"; kwfn="#b19db8"; str="#b3ba7e"; num="#d99667"; konst="#d99667"
-      fn="#93a8b8"; typ="#d9bf89"; op="#c5c8c6"; punct="#858886"
-      vbi="#c37d7c"; ns="#a7afb2"; tagattr="#afb2b0"; tagc="#93a8b8"; cmt="#9b9e9c"
+      bg="#151515"; panel="#1d1f21"; panelAlt="#282828"; border="#3b3f4c"
+      accent="#81a2be"; accentMuted="#282828"; text="#c5c8c6"; muted="#969896"
+      addedBg="#2d2e21"; removedBg="#302121"; ctxBg="#151515"
+      addWord="#3d3f2a"; remWord="#432929"
+      sAdd="#b5bd68"; sRem="#cc6666"; lnFg="#969896"
+      badgeNeu="#81a2be"; fRename="#b294bb"; fMod="#f0c674"; note="#1d1f21"
+      kw="#b294bb"; kwfn="#c397d8"; str="#b5bd68"; num="#e78c45"; konst="#de935f"
+      fn="#81a2be"; typ="#f0c674"; op="#afb2b0"; punct="#969896"
+      vbi="#cc6666"; ns="#b1bdc4"; tagattr="#de935f"; tagc="#cc6666"; cmt="#a89984"
       if [ "$2" = light ]; then
         bg="#ffffff"; panel="#f0f0f8"; panelAlt="#e8e8e0"; border="#d8d8d0"
         accent="#0070c1"; accentMuted="#e8e8e0"; text="#001070"; muted="#595959"
@@ -1344,6 +1369,98 @@ EOF
 "storage.type.function"             = "$kwfn"
 "entity.other.attribute-name"       = "$tagattr"
 "markup.underline.link"             = "$fn"
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
+    # papercolor (NLKNguyen/papercolor-theme). Roles are the resolved fg of
+    # nvim's groups; diff rows are the sign colours washed into the ground.
+    # Comments and muted text are the plugin's grey moved one xterm step
+    # toward the text so they clear 4.5:1.
+    papercolor:*)
+      local addWord remWord cls key h1 h2 kwfn tagattr tagc
+      bg="#1c1c1c"; panel="#121212"; panelAlt="#262626"; border="#3a3a3a"
+      accent="#5fafd7"; accentMuted="#262626"; text="#d0d0d0"; muted="#949494"
+      addedBg="#263218"; removedBg="#361728"; ctxBg="#1c1c1c"
+      addWord="#304814"; remWord="#4b1331"
+      sAdd="#5faf00"; sRem="#ff5faf"; lnFg="#808080"
+      badgeNeu="#5fafd7"; fRename="#af87d7"; fMod="#d7af5f"; note="#121212"
+      kw="#00afaf"; kwfn="#00afaf"; str="#d7af5f"; num="#ff5faf"; konst="#ff5faf"
+      fn="#d0d0d0"; typ="#afd700"; op="#5fafd7"; punct="#5fafd7"
+      vbi="#d0d0d0"; ns="#00afaf"; tagattr="#d7af00"; tagc="#d7af00"; cmt="#949494"
+      imp="#5faf5f"; mem="#d7875f"
+      if [ "$2" = light ]; then
+        bg="#eeeeee"; panel="#e4e4e4"; panelAlt="#dadada"; border="#d0d0d0"
+        accent="#005f87"; accentMuted="#dadada"; text="#444444"; muted="#626262"
+        addedBg="#cadfca"; removedBg="#e6d1d1"; ctxBg="#eeeeee"
+        addWord="#a7cfa7"; remWord="#dcabab"
+        sAdd="#008700"; sRem="#af0000"; lnFg="#878787"
+        badgeNeu="#005faf"; fRename="#8700af"; fMod="#af5f00"; note="#e4e4e4"
+        kw="#005faf"; kwfn="#005faf"; str="#5f8700"; num="#d75f00"; konst="#d75f00"
+        fn="#444444"; typ="#d70087"; op="#0087af"; punct="#0087af"
+        vbi="#444444"; ns="#005faf"; tagattr="#008700"; tagc="#008700"; cmt="#626262"
+        imp="#d70000"; mem="#005f87"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      h1="$num"; h2="$op"; cls="$typ"; prim="$num"; lang="$konst"; call="$fn"
+      bfn="$vbi"; esc="$vbi"; tag="$tagc"
+      attr="$kw"; pre="$kw"; mac="$kw"
+      param="$text"; var="$text"; use="$text"; key="$mem"
+      extra=$(cat <<EOF
+"storage.type.function"             = "$kwfn"
+"entity.other.attribute-name"       = "$tagattr"
+"markup.underline.link"             = "$op"
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
+    # hybrid (HoNamDuong/hybrid.nvim dark; nvim's colors/hybrid-light.lua light).
+    # Roles are the plugin's highlight table. Diff rows are its own washes: the
+    # dull green and red at 20% on the ground, 40% for the changed words.
+    # Comments are its grey moved toward the text so they clear 4.5:1.
+    hybrid:*)
+      local addWord remWord cls key h1 h2 kwfn tagattr tagc
+      bg="#1d1f21"; panel="#151718"; panelAlt="#272a2e"; border="#373b41"
+      accent="#7aa6da"; accentMuted="#272a2e"; text="#c5c8c6"; muted="#8b9299"
+      addedBg="#333627"; removedBg="#382628"; ctxBg="#1d1f21"
+      addWord="#494e2d"; remWord="#532d2e"
+      sAdd="#b5bd68"; sRem="#cc6666"; lnFg="#707880"
+      badgeNeu="#81a2be"; fRename="#b294bb"; fMod="#f0c674"; note="#151718"
+      kw="#b294bb"; kwfn="#b294bb"; str="#b5bd68"; num="#de935f"; konst="#de935f"
+      fn="#81a2be"; typ="#70c0b1"; op="#81a2be"; punct="#c5c8c6"
+      vbi="#cc6666"; ns="#70c0b1"; tagattr="#8abeb7"; tagc="#7aa6da"; cmt="#8b9299"
+      imp="#b294bb"; mem="#8abeb7"; param="#f0c674"; h1="#e7c547"
+      if [ "$2" = light ]; then
+        bg="#ffffff"; panel="#efefef"; panelAlt="#efefef"; border="#d6d6d6"
+        accent="#2f5f9f"; accentMuted="#efefef"; text="#4d4d4c"; muted="#70726e"
+        addedBg="#e0e6cf"; removedBg="#f3dada"; ctxBg="#ffffff"
+        addWord="#c2cc9f"; remWord="#e6b5b5"
+        sAdd="#5f7700"; sRem="#c82829"; lnFg="#8e908c"
+        badgeNeu="#4271ae"; fRename="#8959a8"; fMod="#8f6f00"; note="#efefef"
+        kw="#8959a8"; kwfn="#8959a8"; str="#5f7700"; num="#b85a00"; konst="#b85a00"
+        fn="#4271ae"; typ="#1f7178"; op="#4271ae"; punct="#4d4d4c"
+        vbi="#c82829"; ns="#1f7178"; tagattr="#2c7d83"; tagc="#2f5f9f"; cmt="#70726e"
+        imp="#8959a8"; mem="#2c7d83"; param="#8f6f00"; h1="#7a5e00"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      h2="$fn"; cls="$typ"; prim="$typ"; lang="$konst"; call="$fn"
+      bfn="$vbi"; esc="$kw"; tag="$tagc"
+      attr="$kw"; pre="$kw"; mac="$kw"
+      var="$text"; use="$text"; key="$mem"
+      extra=$(cat <<EOF
+"storage.type.function"             = "$kwfn"
+"entity.other.attribute-name"       = "$tagattr"
+"markup.underline.link"             = "$op"
 "markup.heading"                    = "$h2"
 "entity.name.section"               = "$h2"
 "entity.name.section.markdown"      = "$h2"
@@ -2038,30 +2155,30 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       blue="#0070c1" teal="#1e797f" peach="#cf4a11"
       ;;
     tairiki:*)
-      # tairiki dimmed (#1d1f21).
+      # tairiki dark (#151515). Panels are the plugin's lighter ground step.
       base_name="one-dark"
-      accent="#93a8b8" panel_bg="#17191a" surface_dim="#242627"
-      surface0="#323435" surface1="#3c3e3f"
-      overlay0="#858886" overlay1="#9b9e9c"
-      text="#afb2b0" subtext0="#959896"
-      green="#b3ba7e" yellow="#d9bf89" red="#c37d7c"
-      blue="#93a8b8" teal="#9bb0ac" peach="#d99667"
+      accent="#81a2be" panel_bg="#1d1f21" surface_dim="#1d1f21"
+      surface0="#282828" surface1="#3b3f4c"
+      overlay0="#696969" overlay1="#969896"
+      text="#c5c8c6" subtext0="#afb2b0"
+      green="#b5bd68" yellow="#f0c674" red="#cc6666"
+      blue="#81a2be" teal="#7eada7" peach="#de935f"
       ;;
     everforest:light)
-      # everforest light medium (#fdf6e3); accents darkened to hold on cream.
+      # everforest light hard (#fffbef); accents darkened to hold on cream.
       base_name="one-light"
-      accent="#677900" panel_bg="#efebd4" surface_dim="#e6e2cc"
-      surface0="#e0dcc7" surface1="#bdc3af"
+      accent="#677900" panel_bg="#f2efdf" surface_dim="#edeada"
+      surface0="#e8e5d5" surface1="#bec5b2"
       overlay0="#5f6e5e" overlay1="#5f6e5e"
       text="#5c6a72" subtext0="#5f6e5e"
       green="#677900" yellow="#a06400" red="#d43034"
       blue="#1177a6" teal="#008058" peach="#bf4c00"
       ;;
     everforest:*)
-      # everforest dark medium (#2d353b).
+      # everforest dark hard (#272e33).
       base_name="one-dark"
-      accent="#a7c080" panel_bg="#232a2e" surface_dim="#343f44"
-      surface0="#3d484d" surface1="#475258"
+      accent="#a7c080" panel_bg="#1e2326" surface_dim="#2e383c"
+      surface0="#374145" surface1="#414b50"
       overlay0="#859289" overlay1="#9da9a0"
       text="#d3c6aa" subtext0="#9da9a0"
       green="#a7c080" yellow="#dbbc7f" red="#e67e80"
@@ -2086,6 +2203,69 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#ebdbb2" subtext0="#a89984"
       green="#b8bb26" yellow="#fabd2f" red="#fb4934"
       blue="#83a598" teal="#8ec07c" peach="#fe8019"
+      ;;
+    papercolor:light)
+      # papercolor light (#eeeeee); the comment grey darkened to hold on it.
+      base_name="one-light"
+      accent="#005f87" panel_bg="#e4e4e4" surface_dim="#dadada"
+      surface0="#d0d0d0" surface1="#bcbcbc"
+      overlay0="#626262" overlay1="#626262"
+      text="#444444" subtext0="#626262"
+      green="#008700" yellow="#af5f00" red="#af0000"
+      blue="#005faf" teal="#0087af" peach="#d75f00"
+      ;;
+    papercolor:*)
+      # papercolor dark (#1c1c1c). Red is the pink #ff5faf: the plugin's own
+      # red #af005f is 2.4:1 on the ground.
+      base_name="one-dark"
+      accent="#5fafd7" panel_bg="#121212" surface_dim="#262626"
+      surface0="#303030" surface1="#3a3a3a"
+      overlay0="#808080" overlay1="#bcbcbc"
+      text="#d0d0d0" subtext0="#bcbcbc"
+      green="#5faf00" yellow="#d7af5f" red="#ff5faf"
+      blue="#5fafd7" teal="#00afaf" peach="#d7875f"
+      ;;
+    hybrid:light)
+      # hybrid light (white ground): the palette of nvim's colors/hybrid-light.lua.
+      base_name="one-light"
+      accent="#2f5f9f" panel_bg="#efefef" surface_dim="#e6e6e6"
+      surface0="#d6d6d6" surface1="#c4c4c4"
+      overlay0="#70726e" overlay1="#70726e"
+      text="#4d4d4c" subtext0="#70726e"
+      green="#5f7700" yellow="#8f6f00" red="#c82829"
+      blue="#4271ae" teal="#2c7d83" peach="#b85a00"
+      ;;
+    hybrid:*)
+      # hybrid dark (#1d1f21), the plugin's palette. The greys are its comment
+      # grey moved toward the text.
+      base_name="one-dark"
+      accent="#7aa6da" panel_bg="#151718" surface_dim="#272a2e"
+      surface0="#2f3338" surface1="#373b41"
+      overlay0="#707880" overlay1="#8b9299"
+      text="#c5c8c6" subtext0="#8b9299"
+      green="#b5bd68" yellow="#f0c674" red="#cc6666"
+      blue="#81a2be" teal="#8abeb7" peach="#de935f"
+      ;;
+    rose-pine:light)
+      # rose-pine dawn (#faf4ed), the plugin's palette: green is pine, blue
+      # and teal are foam, peach is rose.
+      base_name="one-light"
+      accent="#907aa9" panel_bg="#fffaf3" surface_dim="#f2e9e1"
+      surface0="#dfdad9" surface1="#cecacd"
+      overlay0="#9893a5" overlay1="#797593"
+      text="#464261" subtext0="#797593"
+      green="#286983" yellow="#ea9d34" red="#b4637a"
+      blue="#56949f" teal="#56949f" peach="#d7827e"
+      ;;
+    rose-pine:*)
+      # rose-pine main (#191724), the plugin's palette, same roles as dawn.
+      base_name="one-dark"
+      accent="#c4a7e7" panel_bg="#1f1d2e" surface_dim="#26233a"
+      surface0="#403d52" surface1="#524f67"
+      overlay0="#6e6a86" overlay1="#908caa"
+      text="#e0def4" subtext0="#908caa"
+      green="#31748f" yellow="#f6c177" red="#eb6f92"
+      blue="#9ccfd8" teal="#9ccfd8" peach="#ebbcba"
       ;;
     solarized-osaka:light)
       # solarized-osaka light (base3 #fdf6e2 ground, base2 panel). Accents are

@@ -1,5 +1,5 @@
--- everforest (sainnhe/everforest) — theme-mode family, medium background.
--- Green-grey forest tones on #2d353b dark / #fdf6e3 light. Loads eagerly
+-- everforest (sainnhe/everforest) — theme-mode family, hard background.
+-- Green-grey forest tones on #272e33 dark / #fffbef light. Loads eagerly
 -- (lazy = false, priority = 1000) so it's on the rtp before config.lazy.lua's
 -- theme-sync.start().
 --

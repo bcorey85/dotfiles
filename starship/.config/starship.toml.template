@@ -578,19 +578,19 @@ fg = "#c9d0d3"
 bg = "#2b2b2b"
 grey = "#929292"
 
-# tairiki: dimmed dark, light.
+# tairiki: dark, light.
 [palettes.tairiki-dark]
-red = "#c37d7c"
-orange = "#d99667"
-yellow = "#d9bf89"
-green = "#b3ba7e"
-blue = "#93a8b8"
-branch = "#93a8b8"
-teal = "#9bb0ac"
-purple = "#b19db8"
-fg = "#afb2b0"
-bg = "#1d1f21"
-grey = "#959896"
+red = "#cc6666"
+orange = "#de935f"
+yellow = "#f0c674"
+green = "#b5bd68"
+blue = "#81a2be"
+branch = "#81a2be"
+teal = "#7eada7"
+purple = "#b294bb"
+fg = "#c5c8c6"
+bg = "#151515"
+grey = "#969896"
 
 [palettes.tairiki-light]
 red = "#a31515"
@@ -605,7 +605,7 @@ fg = "#001070"
 bg = "#ffffff"
 grey = "#595959"
 
-# everforest, medium background.
+# everforest, hard background.
 [palettes.everforest-dark]
 red = "#e67e80"
 orange = "#e69875"
@@ -616,7 +616,7 @@ branch = "#a7c080"
 teal = "#83c092"
 purple = "#d699b6"
 fg = "#d3c6aa"
-bg = "#2d353b"
+bg = "#272e33"
 grey = "#9da9a0"
 
 [palettes.everforest-light]
@@ -629,7 +629,7 @@ branch = "#677900"
 teal = "#008058"
 purple = "#b64394"
 fg = "#5c6a72"
-bg = "#fdf6e3"
+bg = "#fffbef"
 grey = "#667565"
 
 # gruvbox (ellisonleao/gruvbox.nvim), medium contrast.
@@ -658,6 +658,90 @@ purple = "#8f3f71"
 fg = "#3c3836"
 bg = "#fbf1c7"
 grey = "#7c6f64"
+
+# papercolor (NLKNguyen/papercolor-theme). Dark red is the plugin's pink; the
+# greys are its comment grey moved one xterm step toward the text.
+[palettes.papercolor-dark]
+red = "#ff5faf"
+orange = "#d7875f"
+yellow = "#d7af5f"
+green = "#5faf00"
+blue = "#5fafd7"
+branch = "#5fafd7"
+teal = "#00afaf"
+purple = "#af87d7"
+fg = "#d0d0d0"
+bg = "#1c1c1c"
+grey = "#949494"
+
+[palettes.papercolor-light]
+red = "#af0000"
+orange = "#d75f00"
+yellow = "#af5f00"
+green = "#008700"
+blue = "#005faf"
+branch = "#005faf"
+teal = "#0087af"
+purple = "#8700af"
+fg = "#444444"
+bg = "#eeeeee"
+grey = "#626262"
+
+# hybrid (HoNamDuong/hybrid.nvim dark; nvim's colors/hybrid-light.lua light).
+# The greys are the comment grey moved toward the text.
+[palettes.hybrid-dark]
+red = "#cc6666"
+orange = "#de935f"
+yellow = "#f0c674"
+green = "#b5bd68"
+blue = "#81a2be"
+branch = "#81a2be"
+teal = "#8abeb7"
+purple = "#b294bb"
+fg = "#c5c8c6"
+bg = "#1d1f21"
+grey = "#8b9299"
+
+[palettes.hybrid-light]
+red = "#c82829"
+orange = "#b85a00"
+yellow = "#8f6f00"
+green = "#5f7700"
+blue = "#4271ae"
+branch = "#4271ae"
+teal = "#2c7d83"
+purple = "#8959a8"
+fg = "#4d4d4c"
+bg = "#ffffff"
+grey = "#70726e"
+
+# rose-pine (rose-pine/neovim): main dark, dawn light. Green is pine, blue and
+# teal are foam, orange is rose.
+[palettes.rose-pine-dark]
+red = "#eb6f92"
+orange = "#ebbcba"
+yellow = "#f6c177"
+green = "#31748f"
+blue = "#9ccfd8"
+branch = "#9ccfd8"
+teal = "#9ccfd8"
+purple = "#c4a7e7"
+fg = "#e0def4"
+bg = "#191724"
+grey = "#908caa"
+
+[palettes.rose-pine-light]
+red = "#b4637a"
+orange = "#d7827e"
+yellow = "#ea9d34"
+green = "#286983"
+blue = "#56949f"
+branch = "#56949f"
+teal = "#56949f"
+purple = "#907aa9"
+fg = "#464261"
+bg = "#faf4ed"
+grey = "#797593"
 
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name

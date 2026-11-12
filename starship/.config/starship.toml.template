@@ -715,6 +715,34 @@ fg = "#4d4d4c"
 bg = "#ffffff"
 grey = "#70726e"
 
+# rose-pine (rose-pine/neovim): main dark, dawn light. Green is pine, blue and
+# teal are foam, orange is rose.
+[palettes.rose-pine-dark]
+red = "#eb6f92"
+orange = "#ebbcba"
+yellow = "#f6c177"
+green = "#31748f"
+blue = "#9ccfd8"
+branch = "#9ccfd8"
+teal = "#9ccfd8"
+purple = "#c4a7e7"
+fg = "#e0def4"
+bg = "#191724"
+grey = "#908caa"
+
+[palettes.rose-pine-light]
+red = "#b4637a"
+orange = "#d7827e"
+yellow = "#ea9d34"
+green = "#286983"
+blue = "#56949f"
+branch = "#56949f"
+teal = "#56949f"
+purple = "#907aa9"
+fg = "#464261"
+bg = "#faf4ed"
+grey = "#797593"
+
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name
 # still needs both keys because theme-mode selects `<family>-<mode>`. No

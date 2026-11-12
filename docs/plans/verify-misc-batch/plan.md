@@ -17,7 +17,7 @@ Fix six queued toolkit defects. Each phase starts with a test that fails on the 
 ## Phase Status
 
 - [x] Phase 1: verify-prep runs on a plan.md folder with no ticket (risk: medium)
-- [ ] Phase 2: a converged commit review of the current tree counts as the branch review once one was logged (risk: medium)
+- [x] Phase 2: a converged commit review of the current tree counts as the branch review once one was logged (risk: medium)
 - [ ] Phase 3: refactor branch-prep covers uncommitted and untracked files (risk: low)
 - [ ] Phase 4: pull_keep_index skips the pull on a branch rewritten locally (risk: medium)
 - [ ] Phase 5: the criteria dry run labels environment failures ENV and judges escaped rg patterns the same (risk: low)
@@ -147,7 +147,16 @@ Bug: the format-on-Edit hook runs prettier with its defaults on this repo's JSON
 ## Plan Deviations
 
 Phase 1: plan-only mode limited to a plan named plan.md (a ticketless spec.md folder still exits 2); decided by the session, 2026-11-11; changes no criterion.
+Phase 2: covered case does not require HEAD unmoved since the branch review (Option B: the commit gate covers commits made in between); session, 2026-11-11.
+Phase 2: the review-credit rule in shared_record_covers covers the uncommitted change, or the last commit's change (work tree fingerprinted against HEAD~1, notes paths left out) when the tree is clean and HEAD has a parent; the empty change never counts; adopted, ruled by the user on the commit-survival change at 2026-11-11 23:33 (criteria owner plan, AC3 wording unchanged and met).
 
 - 2026-11-11: Adopt plan change. Ruled by the session, not the user at 2026-11-11 22:51. No acceptance criterion changes, so the code wins: the plan follows the code. claude/.claude/skills/code/SKILL.md:34 [plan-drift]: a ticketless plan.md with acceptance-criteria.md now gets owner `plan`, and the skill's queue-item clause for ticketless plans adds a stricter condition (a record in the queue item or brief) than the owner-`plan` path; the skill was not reconciled with plan step 5.
 - 2026-11-11: Adopt plan change. Ruled by the session, not the user at 2026-11-11 22:51. No acceptance criterion changes, so the code wins. Same plan-drift as above, raised again in review round two; still undecided between removing the queue-item sentence or keeping it as a stricter rule.
 - 2026-11-11: Adopt plan change. Ruled by the session, not the user at 2026-11-11 22:51. No acceptance criterion changes, so the code wins. Same plan-drift as above, raised by the second code reviewer.
+
+- 2026-11-11: Adopt plan change. Ruled by the user at 2026-11-11 23:33: the credit must survive the commit.
+
+  The ruling: credit covers the uncommitted change, or the last commit's change when the tree is clean, never the empty change; criteria owner plan, AC3 wording unchanged and met
+
+  The disagreement:
+  claude/.claude/scripts/lib/reviewed_tree.py:302 [plan-drift] PLAN-IMPACT: `shared_record_covers` returns False when the tree has no change against HEAD (`NO_CHANGE_FINDERPRINT`, spelled `NO_CHANGE_FINGERPRINT` in the code). The plan does not say this. Plan Phase 2 step 1 says only "True when the work tree's `reviewed_fingerprint` is in the shared reviewed record", and the Plan Deviations line for Phase 2 records only Option B (HEAD may move). **What breaks:** the converged /review exists so the commit gate lets the user commit. Once the reviewed change is committed, the uncommitted change is empty, so the commit-review route stops counting. Two cases: (a) Branch review logged on T1, then a converged /review plus a commit. verify-prep reports `NOT run` and asks for another branch review. That is the loop the bug describes, now one commit later. (b) verify-prep reports `ran` through this route, the user commits, then runs `verify-log --rows`. The branch fingerprint does not change, because the content against the merge-base is the same. But `require_current_review` (verify-log:224) recomputes `review_state`, coverage is now False, and verify-log exits 2 with "no branch-wide code review covers this tree". **Why it is not a plain fix:** the reason for the exclusion holds. The empty-change value sits in many repos' records and would credit everything. But no record of a committed, gate-credited change exists to stand in for it, so more than one correction is defensible. **Question:** is "the converged review must still be uncommitted when verify-prep and verify-log run" the rule you want, given AC3's wording ("a converged /review of the current tree makes verify-prep report the review as ran")? **Change if accepted:** add a Phase 2 line to docs/plans/verify-misc-batch/plan.md `## Plan Deviations` that records the clean-tree exclusion and the commit-before-verify-log consequence, with who and when. If rejected, commit credit needs a record that survives the commit, which is a design call. acceptance_criteria: AC3

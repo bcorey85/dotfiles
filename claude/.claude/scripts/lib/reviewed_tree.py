@@ -40,6 +40,8 @@ SHARED_LIMIT = 50
 # Added submodules (160000) are not hashed as files; they stay in the patch. Symlinks (120000) are hashed by link text.
 PATCH_MODES = {b"160000"}
 SYMLINK_MODE = b"120000"
+# The fingerprint of a work tree with no change against its base: nothing was hashed.
+NO_CHANGE_FINGERPRINT = "sha256:" + hashlib.sha256().hexdigest()
 
 
 class TreeFingerprintError(Exception):
@@ -211,10 +213,10 @@ def fingerprint(repo_dir):
     return str(top), tree_hash
 
 
-def reviewed_fingerprint(repo_dir):
+def reviewed_fingerprint(repo_dir, base="HEAD"):
     """`fingerprint` with the notes paths the repo's committed list and docs/ name left out: the tree a review
-    credits. A bad committed list is named on stderr and leaves only docs/ out. None as `fingerprint` (so
-    record_reviewed returns False and is_reviewed is always False there)."""
+    credits, as a change against `base`. A bad committed list is named on stderr and leaves only docs/ out. None as
+    `fingerprint` (so record_reviewed returns False and is_reviewed is always False there)."""
     top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
     if top is None:
         return None
@@ -223,7 +225,7 @@ def reviewed_fingerprint(repo_dir):
     for error in errors:
         print("[reviewed-tree] " + error, file=sys.stderr)
     try:
-        tree_hash = tree_fingerprint(top, timeout=GIT_TIMEOUT_SECONDS, notes_entries=entries)
+        tree_hash = tree_fingerprint(top, base=base, timeout=GIT_TIMEOUT_SECONDS, notes_entries=entries)
     except TreeFingerprintError:
         return None
     return str(top), tree_hash
@@ -279,5 +281,42 @@ def is_reviewed(session, repo_dir, tree=None):
     if read_reviewed(session).get(top) == tree_hash:
         return True
 
+    return shared_record_holds(top, tree_hash)
+
+
+def shared_record_holds(top, tree_hash):
+    """True when the shared record, which any session wrote, lists `tree_hash` for the repo top level `top`."""
     shared_trees = read_shared_reviewed().get(top)
     return isinstance(shared_trees, list) and tree_hash in shared_trees
+
+
+def shared_record_covers(repo_dir):
+    """True when repo_dir's uncommitted change against HEAD, notes paths left out, is in the shared reviewed record:
+    the read `is_reviewed` does with no session. When the tree has no change against HEAD, the change the last commit
+    made (the tree against HEAD~1) is read instead, so a credit survives committing the reviewed change. False when
+    the tree cannot be fingerprinted, and False for the empty-change value: it sits in the record of many repos, and
+    covering it would credit every commit made since a review."""
+    found = reviewed_fingerprint(repo_dir)
+    if found is None:
+        return False
+    top, tree_hash = found
+    if tree_hash != NO_CHANGE_FINGERPRINT:
+        return shared_record_holds(top, tree_hash)
+
+    committed_hash = last_commit_fingerprint(top)
+    if committed_hash is None or committed_hash == NO_CHANGE_FINGERPRINT:
+        return False
+    return shared_record_holds(top, committed_hash)
+
+
+def last_commit_fingerprint(top):
+    """The fingerprint of the work tree at `top` against HEAD~1, notes paths left out as `reviewed_fingerprint` does;
+    None when HEAD has no parent or the tree cannot be fingerprinted."""
+    parent = script_utils.git_output(top, "rev-parse", "--verify", "-q", "HEAD~1", timeout=GIT_TIMEOUT_SECONDS)
+    if parent is None:
+        return None
+
+    found = reviewed_fingerprint(top, base=parent)
+    if found is None:
+        return None
+    return found[1]

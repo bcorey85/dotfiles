@@ -16,6 +16,10 @@ TOOLKIT_DIR = pathlib.Path(__file__).resolve().parents[2]
 STATE_ROOT = pathlib.Path.home() / ".claude" / "state"
 REVIEW_MARKER = "verify-branch"
 REVIEW_GATE = "code-reviewer"
+# review_ran's reason when the ledger lists branch reviews on other trees only; review_state reads it to tell that
+# case from "no branch review logged".
+TREE_DIFFERS_REASON = "the tree differs from the one reviewed"
+COVERED_BY_COMMIT_REVIEW_REASON = "branch review logged on an earlier tree; a converged /review covers this tree"
 # Accepted id spans: a plain id, an id followed by a parenthetical, an id with a qualifier inside the bold,
 # or several comma-separated ids inside one bold span.
 ID_LINE = re.compile(r"^\s*[-*]\s+\*\*(AC\d+[^*]*)\*\*\s*(?:\([^)]*\))?\s*[—–-]+\s*(.*)$")
@@ -234,20 +238,37 @@ def review_ran(repo, branch, fingerprint):
         return False, f"no {REVIEW_GATE} branch-exit run row from verify-log for {repo}@{branch}"
     if fingerprint in trees:
         return True, f"{REVIEW_GATE} run row in the ledger, tree unchanged since"
-    return False, "the tree differs from the one reviewed"
+    return False, TREE_DIFFERS_REASON
 
 
-def review_state(repo, branch, fingerprint, logged_tree):
+def review_records_read(review):
+    """The phrase naming the records that decided the review when the ledger was unread."""
+    if review.get("coveredByCommitReview"):
+        return "this checkout's record and the shared reviewed record"
+    return "this checkout's record"
+
+
+def review_state(repo, branch, fingerprint, logged_tree, top):
     """{"read", "ran", "reason"} for the context's `review`. read is True when the ledger answered. When it gives no
     answer (not installed, busy or failing), read is False, and the review counts as ran only when verify-log logged
-    one for this same tree from this branch's saved context (`logged_tree` is the fingerprint it saved there)."""
+    one for this same tree from this branch's saved context (`logged_tree` is the fingerprint it saved there).
+    A branch review logged on an earlier tree (a ledger row for this branch on another tree, or, with the ledger
+    unread, a saved `logged_tree`) also counts when a converged /review covers the work tree's uncommitted change
+    against HEAD, or, on a tree with no change against HEAD, the last commit's change against HEAD~1
+    (reviewed_tree.shared_record_covers); a converged review with no branch review logged earlier does
+    not. That case adds "coveredByCommitReview": True, so the asks the earlier branch review left open stay open."""
     try:
         ran, reason = review_ran(repo, branch, fingerprint)
     except script_utils.LedgerUnreadError as error:
         logged_here = logged_tree == fingerprint
+        if not logged_here and logged_tree and reviewed_tree.shared_record_covers(top):
+            return {"read": False, "ran": True, "reason": f"{error}; {COVERED_BY_COMMIT_REVIEW_REASON}",
+                    "coveredByCommitReview": True}
         record = ("verify-log logged a review of this tree from this checkout" if logged_here
                   else "no review of this tree was logged from this checkout")
         return {"read": False, "ran": logged_here, "reason": f"{error}; {record}"}
+    if not ran and reason == TREE_DIFFERS_REASON and reviewed_tree.shared_record_covers(top):
+        return {"read": True, "ran": True, "reason": COVERED_BY_COMMIT_REVIEW_REASON, "coveredByCommitReview": True}
     return {"read": True, "ran": ran, "reason": reason}
 
 

@@ -3,7 +3,8 @@
 verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file|-> [--findings <n>]
 
 Logging half of /verify-branch. Reads the context verify-prep saved, and refuses to write unless a branch-wide review
-covers the tree verify-prep measured and the tree has not changed since (exit 2: rerun verify-prep).
+covers the tree verify-prep measured (or one logged on an earlier tree that a converged /review carries forward) and
+the tree has not changed since (exit 2: rerun verify-prep).
 
 rows: a JSON list; each row {"item","verdict","file","line","evidence", optional "severity","guard","signoff"}.
 Every criterion id verify-prep saved needs a verdict row naming it, `missing` included; any id with no row exits 2 and
@@ -25,7 +26,8 @@ tell a later change) and one finding row per reviewer finding. --rows is a JSON 
 {"desc","file","line","actioned", optional "class","disposition"}; `actioned` is required and must be `fixed` or
 `skipped_fp`, except that an `ask` finding the user must rule on may stay `ask`. --findings, when given, must equal
 its length.
-A second review for a tree a row already covers exits 2.
+A second review for a tree a row already covers, or that an earlier-tree row plus a converged /review already
+cover, exits 2.
 
 Every value the loggers own (class, disposition, actioned, result, guard) is checked by the loggers themselves:
 before the first write each row goes through its logger once with `--check` as the first argument, and a refusal
@@ -212,18 +214,20 @@ def finding_prefix(context, gate):
 
 
 def require_current_review(context, top):
-    """Exit 2 unless the tree is the one verify-prep measured and a branch-wide review row covers it."""
+    """Exit 2 unless the tree is the one verify-prep measured and a branch review counts for it (a row for this tree,
+    or an earlier-tree row a converged /review carries forward)."""
     if "fingerprint" not in context:
         raise vc.VerifyError("the saved verify-prep context has no tree fingerprint: rerun verify-prep")
     fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
     if fingerprint != context["fingerprint"]:
         raise vc.VerifyError("the tree changed since verify-prep measured it: rerun verify-prep")
-    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"))
+    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"), top)
     if not review["ran"]:
         raise vc.VerifyError(f"no branch-wide code review covers this tree ({review['reason']}): rerun verify-prep "
                              "and do its review step first")
     if not review["read"]:
-        print(f"verify-log: review check read from this checkout's record: {review['reason']}", file=sys.stderr)
+        records = vc.review_records_read(review)
+        print(f"verify-log: review check read from {records}: {review['reason']}", file=sys.stderr)
 
 
 def log_review(args, context, top):
@@ -241,9 +245,9 @@ def log_review(args, context, top):
         raise vc.VerifyError("review needs --rows (a JSON list; [] when the reviewer found nothing)")
 
     fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
-    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"))
+    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"), top)
     if review["ran"]:
-        raise vc.VerifyError(f"a branch-wide review row already covers this tree ({review['reason']}): nothing to "
+        raise vc.VerifyError(f"a branch review already counts for this tree ({review['reason']}): nothing to "
                              "log. Rerun verify-prep. Change the tree (a fix) before logging another review.")
 
     logger = vc.script_path("LOG_REVIEW_FINDING_SCRIPT", "skills/review/log-review-finding")
@@ -371,8 +375,10 @@ def plan_row_writes(rows, context, not_applicable, escapes_only):
 
 
 def open_review_asks(context):
-    """The asks the branch review left open on the tree verify-prep measured; a review of an older tree has none."""
-    if context.get("reviewLoggedTree") != context["fingerprint"]:
+    """The asks the branch review left open on the tree verify-prep measured; a review of an older tree has none,
+    unless a converged /review covers this tree and carries that review forward."""
+    covered = context["review"].get("coveredByCommitReview")
+    if not covered and context.get("reviewLoggedTree") != context["fingerprint"]:
         return []
     return context.get("reviewAsks") or []
 

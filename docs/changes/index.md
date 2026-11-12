@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-926 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+927 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-11, [verify-prep runs on a plan.md folder with no ticket](notes/2026-11-11-verify-prep-runs-on-a-plan-md-folder-with-no.md).
+Latest change: 2026-11-11, [a converged /review of the uncommitted change counts as the branch review once one was logged](notes/2026-11-11-a-converged-commit-review-of-the-current-tree.md).
 
 ## Top gains
 

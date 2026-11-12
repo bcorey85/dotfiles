@@ -1,0 +1,24 @@
+# papercolor light (NLKNguyen/papercolor-theme). The plugin's palette, re-slotted so
+# each ANSI index holds its own hue; yellow is its amber CursorLineNr.
+palette = 0=#444444
+palette = 1=#af0000
+palette = 2=#008700
+palette = 3=#af5f00
+palette = 4=#005faf
+palette = 5=#8700af
+palette = 6=#005f87
+palette = 7=#bcbcbc
+palette = 8=#878787
+palette = 9=#d70000
+palette = 10=#5f8700
+palette = 11=#d75f00
+palette = 12=#0087af
+palette = 13=#d70087
+palette = 14=#0087af
+palette = 15=#ffffff
+background = #eeeeee
+foreground = #444444
+cursor-color = #005f87
+cursor-text = #eeeeee
+selection-background = #0087af
+selection-foreground = #eeeeee

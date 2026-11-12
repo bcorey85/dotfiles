@@ -161,35 +161,35 @@ local FAMILIES = {
     },
   },
   ["tairiki"] = {
-    -- deparr/tairiki.nvim: dimmed dark / light; both set colors_name "tairiki".
-    schemes = { dark = "tairiki-dimmed", light = "tairiki-light" },
+    -- deparr/tairiki.nvim: dark / light; both set colors_name "tairiki".
+    schemes = { dark = "tairiki-dark", light = "tairiki-light" },
     colors_name = "tairiki",
-    -- Dimmed's DiffAdd is a 30% green block; rows take the green/red/grey 15%
+    -- Dark's DiffAdd is a 30% green block; rows take the green/red/grey 15%
     -- into the ground and words the blue 30%, so syntax stays readable.
     pre = function(mode)
       local highlights = nil
       if mode == "dark" then
-        local bg = "#1d1f21"
+        local bg = "#151515"
         highlights = function(hl)
-          hl.DiffAdd = { bg = blend("#b3ba7e", bg, 0.15) }
-          hl.DiffDelete = { bg = blend("#c37d7c", bg, 0.15) }
-          hl.DiffChange = { bg = blend("#858886", bg, 0.12) }
-          hl.DiffText = { bg = blend("#93a8b8", bg, 0.30) }
+          hl.DiffAdd = { bg = blend("#b5bd68", bg, 0.15) }
+          hl.DiffDelete = { bg = blend("#cc6666", bg, 0.15) }
+          hl.DiffChange = { bg = blend("#696969", bg, 0.12) }
+          hl.DiffText = { bg = blend("#81a2be", bg, 0.30) }
         end
       end
       require("tairiki").setup({ highlights = highlights })
     end,
     accents = {
-      dark = { heading1 = "#c37d7c", heading = "#93a8b8" },
+      dark = { heading1 = "#cc6666", heading = "#81a2be" },
       light = { heading1 = "#a31515", heading = "#0070c1" },
     },
   },
   ["everforest"] = {
-    -- sainnhe/everforest, medium background: one colorscheme follows vim.o.background.
+    -- sainnhe/everforest, hard background: one colorscheme follows vim.o.background.
     schemes = { dark = "everforest", light = "everforest" },
     colors_name = "everforest",
     pre = function()
-      vim.g.everforest_background = "medium"
+      vim.g.everforest_background = "hard"
     end,
     accents = {
       dark = { heading1 = "#e67e80", heading = "#e69875" },
@@ -204,6 +204,81 @@ local FAMILIES = {
     accents = {
       dark = { heading1 = "#b8bb26", heading = "#fabd2f" }, -- green + yellow
       light = { heading1 = "#79740e", heading = "#b57614" },
+    },
+  },
+  ["papercolor"] = {
+    -- NLKNguyen/papercolor-theme: one colorscheme "PaperColor" follows
+    -- vim.o.background and sets colors_name "PaperColor" in both modes.
+    schemes = { dark = "PaperColor", light = "PaperColor" },
+    colors_name = "PaperColor",
+    -- Dark diff rows are washes of the sign colours: the plugin's saturated
+    -- grounds push the comment floor up to near-text.
+    pre = function()
+      local diff_washes = {
+        diffadd_bg = { "#263218", "22" },
+        diffdelete_bg = { "#361728", "52" },
+        diffchange_bg = { "#183232", "23" },
+        difftext_bg = { "#144848", "30" },
+      }
+      vim.g.PaperColor_Theme_Options = {
+        theme = {
+          ["default"] = { allow_bold = 0 },
+          ["default.dark"] = { override = diff_washes },
+        },
+      }
+    end,
+    -- The plugin predates treesitter and float groups. An empty @variable
+    -- drops nvim's default fg so variables take Normal's. Floats take the
+    -- ground in place of nvim's default near-black. Every other group that
+    -- paints the ground colour as its bg loses it, so it shows no patch on a
+    -- float or on the transparent editor.
+    post = function()
+      local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+      local keeps_bg = { Normal = true, NormalNC = true }
+      for name, spec in pairs(vim.api.nvim_get_hl(0, {})) do
+        local paints_ground = spec.bg == normal.bg and not spec.reverse
+        if paints_ground and not keeps_bg[name] then
+          spec.bg = nil
+          spec.ctermbg = nil
+          vim.api.nvim_set_hl(0, name, spec)
+        end
+      end
+      vim.api.nvim_set_hl(0, "@variable", {})
+      vim.api.nvim_set_hl(0, "NormalFloat", { fg = normal.fg, bg = normal.bg })
+      local border = vim.api.nvim_get_hl(0, { name = "LineNr", link = false })
+      vim.api.nvim_set_hl(0, "FloatBorder", { fg = border.fg, bg = normal.bg })
+      vim.api.nvim_set_hl(0, "FloatTitle", { fg = normal.fg, bg = normal.bg })
+      vim.api.nvim_set_hl(0, "WinBar", { fg = normal.fg })
+      vim.api.nvim_set_hl(0, "WinBarNC", { fg = border.fg })
+    end,
+    accents = {
+      dark = { heading1 = "#ff5faf", heading = "#5fafd7" },
+      light = { heading1 = "#d70087", heading = "#005faf" },
+    },
+  },
+  ["hybrid"] = {
+    -- HoNamDuong/hybrid.nvim is dark only; light is colors/hybrid-light.lua,
+    -- the plugin's highlight table over a light palette.
+    schemes = { dark = "hybrid", light = "hybrid-light" },
+    -- The plugin draws line numbers in its selection grey, 1.5:1 on the
+    -- ground. They take the comment grey at 70% instead. It also paints floats,
+    -- menus and the tabline a step darker than the ground; they take the ground,
+    -- with a border in the line-number grey.
+    post = function(mode)
+      local line_number = { dark = "#575d64", light = "#b0b1ae" }
+      local ground = { dark = "#1d1f21", light = "#ffffff" }
+      vim.api.nvim_set_hl(0, "LineNr", { fg = line_number[mode] })
+      local on_ground = { "NormalFloat", "FloatTitle", "Pmenu", "PmenuSbar", "TabLine", "TabLineFill" }
+      for _, name in ipairs(on_ground) do
+        local spec = vim.api.nvim_get_hl(0, { name = name, link = false })
+        spec.bg = ground[mode]
+        vim.api.nvim_set_hl(0, name, spec)
+      end
+      vim.api.nvim_set_hl(0, "FloatBorder", { fg = line_number[mode], bg = ground[mode] })
+    end,
+    accents = {
+      dark = { heading1 = "#e7c547", heading = "#81a2be" },
+      light = { heading1 = "#7a5e00", heading = "#4271ae" },
     },
   },
   ["solarized-osaka"] = {
@@ -509,6 +584,15 @@ local function set_dashboard()
   end
 end
 
+-- Snacks picker links a path's directory part, hidden and ignored paths and the
+-- match count to NonText, which most themes draw near the ground. They take the
+-- comment grey, which set_comment_floor keeps readable.
+local function set_picker()
+  for _, group in ipairs({ "Dir", "PathHidden", "PathIgnored", "Totals" }) do
+    vim.api.nvim_set_hl(0, "SnacksPicker" .. group, { link = "Comment" })
+  end
+end
+
 -- Clear the editor background so the terminal's translucent one shows
 -- through. Floats keep theirs to stay readable. Must run last: the passes
 -- above read Normal's bg.
@@ -535,12 +619,16 @@ local function apply_overrides()
   if own_scheme then
     set_headings(fam.accents[mode])
   end
+  if own_scheme and fam.post then
+    fam.post(mode) -- groups the theme leaves at nvim's defaults
+  end
   set_word_diff()
   if not (own_scheme and fam.own_comment_contrast) then
     set_comment_floor()
   end
   set_org_agenda()
   set_dashboard()
+  set_picker()
   set_prose()
   -- An audition keeps its own ground: the terminal's belongs to the active family.
   if own_scheme then

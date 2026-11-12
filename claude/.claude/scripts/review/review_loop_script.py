@@ -106,7 +106,7 @@ from review_loop_findings import (
     same_finding,
 )
 from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges, split_outside_fixes
-from review_loop_plan import first_round_plan, head_commit, review_files, second_round_plan
+from review_loop_plan import first_round_plan, review_files, second_round_plan
 from review_loop_prompt_file import (
     REVIEWERS_HEADLESS,
     REVIEWERS_MAIN,
@@ -700,7 +700,7 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
         if self.review_base:
             return
         start = self.change.start
-        if start is None or head_commit(self.repo) == start:
+        if start is None or script_utils.head_commit(self.repo) == start:
             return
         self.review_base = start
 

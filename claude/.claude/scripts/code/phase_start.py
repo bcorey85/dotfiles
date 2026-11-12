@@ -33,14 +33,14 @@ class StartRecordError(ValueError):
 
 def start_record(repo):
     """{"head", "dirty"} of the repo now."""
-    head = script_utils.git_output(repo, "rev-parse", "--verify", "-q", "HEAD")
+    head = script_utils.head_commit(repo)
     if head is None:
         raise StartRecordError(f"{repo} has no HEAD commit, so the phase has no base")
 
     root = pathlib.Path(repo)
     codes = worktree_snapshot.status_codes(root)
     dirty = {path: worktree_snapshot.file_hash(root, path) for path in sorted(codes)}
-    return {"head": head.strip(), "dirty": dirty}
+    return {"head": head, "dirty": dirty}
 
 
 def read_start_record(repo):

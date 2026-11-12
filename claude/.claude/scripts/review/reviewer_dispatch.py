@@ -182,20 +182,26 @@ def loop_pid(loop_dir):
         return None
 
 
+def live_loops(loop_root):
+    """(loop dir, pid) of each folder under loop_root whose loop.pid names a running process, in folder order. A
+    missing loop_root yields nothing."""
+    loop_root = pathlib.Path(loop_root)
+    if not loop_root.is_dir():
+        return
+    for loop_dir in sorted(loop_root.iterdir()):
+        pid = loop_pid(loop_dir)
+        if pid is None or not pid_is_running(pid):
+            continue
+        yield loop_dir, pid
+
+
 def waiting_launch_lines(repo):
     """The dispatch lines of every `launch` run of repo whose loop still runs and waits on a reviewer report."""
     state_dir = script_utils.git_path(repo, LAUNCH_STATE_NAME)
     if state_dir is None:
         return []
-    loop_root = state_dir / LOOP_FOLDER
-    if not loop_root.is_dir():
-        return []
-
     lines = []
-    for loop_dir in sorted(loop_root.iterdir()):
-        pid = loop_pid(loop_dir)
-        if pid is None or not pid_is_running(pid):
-            continue
+    for loop_dir, _pid in live_loops(state_dir / LOOP_FOLDER):
         pending = pending_requests(loop_dir)
         if pending:
             lines += dispatch_lines(loop_dir, pending)

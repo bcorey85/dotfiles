@@ -1,0 +1,24 @@
+# hybrid light: the palette of nvim's colors/hybrid-light.lua (Tomorrow's hues,
+# darkened to hold as text on white).
+palette = 0=#4d4d4c
+palette = 1=#c82829
+palette = 2=#5f7700
+palette = 3=#8f6f00
+palette = 4=#4271ae
+palette = 5=#8959a8
+palette = 6=#2c7d83
+palette = 7=#d6d6d6
+palette = 8=#8e908c
+palette = 9=#a81e1f
+palette = 10=#4f6600
+palette = 11=#7a5e00
+palette = 12=#2f5f9f
+palette = 13=#7446a0
+palette = 14=#1f7178
+palette = 15=#ffffff
+background = #ffffff
+foreground = #4d4d4c
+cursor-color = #4d4d4c
+cursor-text = #ffffff
+selection-background = #d6d6d6
+selection-foreground = #4d4d4c

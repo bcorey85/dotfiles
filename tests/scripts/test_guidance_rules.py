@@ -71,7 +71,7 @@ class GuidanceRulesTest(unittest.TestCase):
     def test_a_push_line_pulls_with_the_keep_index_script(self):
         text = guidance_text("CLAUDE.md")
         self.assertIn("runs `python3 ~/.claude/scripts/tools/pull_keep_index.py <repo>` right before "
-                      "`git -C <repo> push`", text)
+                      "`git -C <repo> push -u origin HEAD`", text)
 
     def test_the_close_pass_recap_lists_criteria_changes_from_the_sign_off_lines(self):
         text = guidance_text("skills/close-branch/SKILL.md")

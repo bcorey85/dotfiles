@@ -40,6 +40,14 @@ worse in either arm. Opus cache read across reviewers and root rose 32% (233.1M 
 
 `review-lens-split-escapes`: review escapes after the change, against the window before it.
 
+Reading 2026-11-11 (work intake, data to 2026-11-10, toolkit repos left out):
+
+- Escapes: no verdict yet. Escapes are counted through 2026-11-03, before the edit.
+- Review-loop cache read per run: MOVED down, 7.31M → 2.37M (51 runs). Kept. The scripted loop moved in the same
+  window, so the drop is not this edit's alone; the guard was against a rise.
+- Fixed bug or correctness findings per code-reviewer run, `/code` reviews: round one 0.30 → 0.81, round two
+  0.19 → 0.19.
+
 ## Back-out
 
 Restore the size gate in `first_round_plan` (split by file above 5 files and 300 changed lines), drop `LensOwned` and

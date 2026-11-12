@@ -99,6 +99,8 @@ class PullKeepIndexTest(unittest.TestCase):
         finished = self.run_script()
 
         self.assertNotEqual(finished.returncode, 0)
+        self.assertIn("git pull failed", finished.stderr)
+        self.assertIn("the local changes are back in place", finished.stderr)
         self.assertEqual(self.status(), ["M  f"])
 
     def test_a_staged_change_the_pull_conflicts_with_stops_and_names_the_saved_commit(self):
@@ -164,6 +166,182 @@ class PullKeepIndexTest(unittest.TestCase):
         self.write(self.repo, "f", "resolved\n")
         subprocess.run(recovery, check=True, env={**os.environ, **GIT_ENV})
         self.assertEqual(sorted(self.status()), [" M f", " M k", "M  g", "MM m"])
+
+    def test_a_new_branch_with_no_upstream_and_no_remote_branch_exits_0_and_keeps_staged_files(self):
+        self.git(self.repo, "checkout", "-q", "-b", "fresh")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("nothing to pull", finished.stdout)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_remote_branch_whose_name_ends_in_the_local_name_does_not_count_as_the_same_branch(self):
+        self.git(self.repo, "push", "-q", "origin", "HEAD:refs/heads/feature/fresh")
+        self.git(self.repo, "checkout", "-q", "-b", "fresh")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("nothing to pull", finished.stdout)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_branch_with_no_upstream_pulls_the_remote_branch_of_the_same_name(self):
+        self.git(self.repo, "checkout", "-q", "-b", "shared")
+        self.git(self.repo, "push", "-q", "origin", "shared")
+        other = self.clone("other-shared")
+        self.git(other, "checkout", "-q", "shared")
+        self.write(other, "h", "2\n")
+        self.git(other, "add", "h")
+        self.git(other, "commit", "-qm", "other h")
+        self.git(other, "push", "-q", "origin", "shared")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual((self.repo / "h").read_text(), "2\n")
+        self.assertEqual(self.status(), ["M  f"])
+        upstream = self.git(self.repo, "rev-parse", "--abbrev-ref", "@{u}").strip()
+        self.assertEqual(upstream, "origin/shared")
+
+    def test_a_branch_whose_upstream_was_deleted_on_origin_exits_1_so_a_chained_push_does_not_run(self):
+        self.git(self.repo, "checkout", "-q", "-b", "gone")
+        self.git(self.repo, "push", "-q", "-u", "origin", "gone")
+        self.git(self.remote, "branch", "-q", "-D", "gone")
+        self.git(self.repo, "fetch", "-q", "--prune")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn("the upstream refs/heads/gone of gone is gone from origin", finished.stderr)
+        self.assertIn("a chained push stops here so it does not recreate it", finished.stderr)
+        self.assertIn(f"git -C {self.repo} branch --unset-upstream", finished.stderr)
+        self.assertIn(f"git -C {self.repo} push -u origin HEAD", finished.stderr)
+        self.assertNotIn("stash apply --index", finished.stderr)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_an_unpruned_upstream_deleted_on_origin_exits_1_with_the_recovery_after_the_failed_pull(self):
+        self.git(self.repo, "checkout", "-q", "-b", "gone")
+        self.git(self.repo, "push", "-q", "-u", "origin", "gone")
+        self.git(self.remote, "branch", "-q", "-D", "gone")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn("the upstream refs/heads/gone of gone is gone from origin", finished.stderr)
+        self.assertIn("the local changes are in place", finished.stderr)
+        self.assertIn(f"git -C {self.repo} branch --unset-upstream", finished.stderr)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_branch_whose_upstream_is_gone_from_a_remote_other_than_origin_names_that_remote(self):
+        self.git(self.repo, "remote", "add", "upstream", str(self.remote))
+        self.git(self.repo, "checkout", "-q", "-b", "gone")
+        self.git(self.repo, "push", "-q", "-u", "upstream", "gone")
+        self.git(self.remote, "branch", "-q", "-D", "gone")
+        self.git(self.repo, "fetch", "-q", "--prune", "upstream")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn("the upstream refs/heads/gone of gone is gone from upstream", finished.stderr)
+        self.assertIn(f"git -C {self.repo} push -u upstream HEAD", finished.stderr)
+        self.assertNotIn("origin", finished.stderr)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_set_upstream_whose_remote_url_is_a_missing_path_exits_1_with_the_lookup_failure(self):
+        self.git(self.repo, "checkout", "-q", "-b", "gone")
+        self.git(self.repo, "push", "-q", "-u", "origin", "gone")
+        self.git(self.remote, "branch", "-q", "-D", "gone")
+        self.git(self.repo, "fetch", "-q", "--prune")
+        missing = self.tmp / "no-such-remote.git"
+        self.git(self.repo, "remote", "set-url", "origin", str(missing))
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn(f"could not look up refs/heads/gone on origin in {self.repo}:", finished.stderr)
+        self.assertNotIn("is gone from", finished.stderr)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_failed_pull_whose_remote_also_fails_the_lookup_reports_the_pull_failure(self):
+        self.git(self.repo, "checkout", "-q", "-b", "gone")
+        self.git(self.repo, "push", "-q", "-u", "origin", "gone")
+        self.git(self.remote, "branch", "-q", "-D", "gone")
+        self.git(self.repo, "remote", "set-url", "origin", str(self.tmp / "no-such-remote.git"))
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn("git pull failed", finished.stderr)
+        self.assertIn("the local changes are back in place", finished.stderr)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_failed_lookup_of_the_configured_upstream_exits_1_naming_the_remote_and_ref(self):
+        self.git(self.repo, "checkout", "-q", "-b", "lost")
+        self.git(self.repo, "push", "-q", "-u", "origin", "lost")
+        self.git(self.repo, "config", "branch.lost.remote", "nowhere")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertIn("could not look up refs/heads/lost on nowhere", finished.stderr)
+        self.assertNotIn("is gone from", finished.stderr)
+
+    def test_a_single_branch_clone_pulls_the_remote_branch_and_sets_its_upstream(self):
+        self.git(self.repo, "push", "-q", "origin", "HEAD:refs/heads/solo")
+        single = self.tmp / "single"
+        self.git(self.tmp, "clone", "-q", "--single-branch", "-b", "master", str(self.remote), str(single))
+        self.git(single, "fetch", "-q", "origin", "solo")
+        self.git(single, "checkout", "-q", "-b", "solo", "FETCH_HEAD")
+        self.assertEqual(self.git(single, "branch", "-r", "--list", "origin/solo"), "")
+        self.repo = single
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        merge = self.git(single, "config", "--get", "branch.solo.merge").strip()
+        self.assertEqual(merge, "refs/heads/solo")
+        self.assertEqual(self.git(single, "config", "--get", "branch.solo.remote").strip(), "origin")
+
+        second = self.run_script()
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+
+    def test_a_folder_that_is_not_a_repo_exits_1_naming_the_failed_branch_lookup(self):
+        not_a_repo = self.tmp / "plain"
+        not_a_repo.mkdir()
+        env = {**os.environ, **GIT_ENV, "GIT_CEILING_DIRECTORIES": str(self.tmp)}
+
+        finished = subprocess.run([sys.executable, str(SCRIPT), str(not_a_repo)], capture_output=True, text=True,
+                                  env=env)
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("git branch --show-current failed", finished.stderr)
+
+    def test_a_branch_with_no_upstream_and_no_origin_exits_1_with_the_git_error(self):
+        self.git(self.repo, "checkout", "-q", "-b", "fresh")
+        self.git(self.repo, "remote", "remove", "origin")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("could not look up refs/heads/fresh on origin", finished.stderr)
 
     def commit_local(self, name, text):
         self.write(self.repo, name, text)

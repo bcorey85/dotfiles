@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-917 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+925 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-11, [Branch review fixes: named tests run in the loop under a time budget, per-finding user rulings](notes/2026-11-11-branch-review-fixes-named-tests-run-with-runner.md).
+Latest change: 2026-11-11, [pull_keep_index moves its git questions to script_utils](notes/2026-11-11-pull-keep-index-moves-its-git-questions-to-script.md).
 
 ## Top gains
 

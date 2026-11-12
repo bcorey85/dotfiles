@@ -4,8 +4,15 @@ Run `git pull --rebase=merges` in the repo with its local changes set aside and 
 staged. `--autostash` puts them back unstaged. The changes are saved as a dangling stash commit, never on the shared
 stash stack. The re-apply names that commit in BUILT_PAGE_STASH, so the agent-evals built-page merge driver rebuilds a
 generated page in place of a text merge. When the re-apply conflicts, every other file gets back its staged or
-unstaged state and the conflicted paths stay conflicted. Exit 0 when the pull ran and the changes are back; exit 1
-with the recovery command otherwise."""
+unstaged state and the conflicted paths stay conflicted. A branch with no upstream setting pulls `origin <branch>`
+when origin has it, then sets that as its upstream; when origin lacks it, nothing is pulled or set aside and the exit
+is 0, so a chained first push runs. A set upstream that the remote says is gone exits 1 naming the recovery (unset
+the upstream, push with `-u <remote> HEAD`), so the chained push does not recreate it: before anything is set aside
+when `@{u}` does not resolve, and after the failed pull when a stale remote-tracking ref still resolves it.
+Exit 0 when the pull ran and the changes are back, or when there is nothing to pull; exit 1 otherwise, with the
+recovery command when one exists. A failed branch-name lookup before the pull exits 1 naming the failed command. A
+failed remote lookup before the pull (origin, or the configured remote) exits 1 with the git error, before anything is
+set aside; one after a failed pull ends in the pull-failure exit."""
 import os
 import subprocess
 import sys
@@ -16,6 +23,7 @@ import script_utils
 
 # The variable ~/agent-evals/bin/merge_built_page.py reads for the stash commit a `git stash apply` is applying.
 BUILT_PAGE_STASH = "BUILT_PAGE_STASH"
+FALLBACK_REMOTE = "origin"
 
 
 def recovery_text(repo, saved):
@@ -55,9 +63,10 @@ def set_aside(repo):
     if not saved:
         return saved
 
-    reset = subprocess.run(["git", "-C", repo, "reset", "--hard", "--quiet"], capture_output=True, text=True)
+    reset = run_in_repo(repo, "reset", "--hard", "--quiet")
     if reset.returncode != 0:
-        sys.exit(f"pull_keep_index: git reset failed: {reset.stderr.strip()}. " + recovery_text(repo, saved))
+        problem = script_utils.process_stderr_text(reset)
+        sys.exit(f"pull_keep_index: git reset failed: {problem}. " + recovery_text(repo, saved))
     return saved
 
 
@@ -104,7 +113,7 @@ def restore_the_split(repo, saved, conflicts):
         return tree
     reset = run_in_repo(repo, "--literal-pathspecs", "reset", "-q", tree, "--", *applied)
     if reset.returncode != 0:
-        problem = os.fsdecode(reset.stderr).strip()
+        problem = script_utils.process_stderr_text(reset)
         sys.exit(f"pull_keep_index: could not restore the staged files: {problem}. " + recovery_text(repo, saved))
     return tree
 
@@ -129,6 +138,87 @@ def put_back(repo, saved):
              f"{names}\nThat marks them resolved with their staged text. The local changes are saved in {saved}.")
 
 
+def remote_has_ref(repo, remote, ref):
+    """`script_utils.remote_ref_state`, but exit 1 with the git error when the lookup fails."""
+    has_ref, problem = script_utils.remote_ref_state(repo, remote, ref)
+    if has_ref is None:
+        sys.exit(f"pull_keep_index: could not look up {ref} on {remote} in {repo}: {problem}")
+    return has_ref
+
+
+def configured_remote(repo, branch):
+    """The remote set for the branch, or FALLBACK_REMOTE when none is set."""
+    return script_utils.branch_remote(repo, branch) or FALLBACK_REMOTE
+
+
+def exit_upstream_gone(repo, branch, merge_ref, remote):
+    """Exit 1 naming the gone upstream and the recovery commands."""
+    sys.exit(f"pull_keep_index: the upstream {merge_ref} of {branch} is gone from {remote}; a chained push stops here "
+             f"so it does not recreate it. Nothing was pulled and the local changes are in place. To recover, run: "
+             f"git -C {repo} branch --unset-upstream, then, if you mean to recreate it, push with: "
+             f"git -C {repo} push -u {remote} HEAD")
+
+
+def pull_target(repo):
+    """The remote and branch to name to `git pull`: [] when the upstream resolves or the remote still has the set
+    upstream (or the head is detached), so git picks it; ["origin", branch] when no upstream is set but origin has the
+    branch; None when no upstream is set and origin lacks the branch, so there is nothing to pull. Exit 1 with the
+    gone-upstream recovery of the module docstring when `@{u}` does not resolve and the remote lacks the set upstream,
+    naming the failed command when the branch name lookup fails, and with the git error when a remote lookup fails."""
+    upstream = run_in_repo(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if upstream.returncode == 0:
+        return []
+    branch = script_utils.current_branch(repo)
+    if branch is None:
+        sys.exit(f"pull_keep_index: git branch --show-current failed in {repo}")
+    if not branch:
+        return []
+
+    # `@{u}` also fails when an upstream is set but not fetched (a single-branch clone) or deleted and pruned. The
+    # remote decides: a deleted one stops here, before anything is set aside, or a chained `git push` would recreate it.
+    configured = script_utils.branch_merge_ref(repo, branch)
+    if configured is not None:
+        remote = configured_remote(repo, branch)
+        if not remote_has_ref(repo, remote, configured):
+            exit_upstream_gone(repo, branch, configured, remote)
+        return []
+
+    # The full ref is passed because a bare name also matches `x/<branch>`.
+    if remote_has_ref(repo, FALLBACK_REMOTE, f"refs/heads/{branch}"):
+        return [FALLBACK_REMOTE, branch]
+    return None
+
+
+def exit_if_upstream_gone(repo):
+    """After a failed pull, ask the remote about the configured upstream: a stale remote-tracking ref hides a deleted
+    one from `pull_target`. Return when no upstream is set, the remote still has it, or the lookup fails (the caller
+    then reports the plain pull failure)."""
+    branch = script_utils.current_branch(repo)
+    if not branch:
+        return
+    configured = script_utils.branch_merge_ref(repo, branch)
+    if configured is None:
+        return
+    remote = configured_remote(repo, branch)
+    has_ref, _problem = script_utils.remote_ref_state(repo, remote, configured)
+    if has_ref is False:
+        exit_upstream_gone(repo, branch, configured, remote)
+
+
+def set_upstream(repo, remote, branch):
+    """Track <remote>/<branch> after a targeted pull, so a later bare `git push` and `git pull` work. The config is
+    written directly because `--set-upstream-to` needs a remote-tracking ref, which a single-branch clone never has.
+    Exit 1 with the git error and the command to run when that fails."""
+    settings = (("remote", remote), ("merge", f"refs/heads/{branch}"))
+    for key, value in settings:
+        written = run_in_repo(repo, "config", f"branch.{branch}.{key}", value)
+        if written.returncode == 0:
+            continue
+        problem = script_utils.process_stderr_text(written)
+        sys.exit(f"pull_keep_index: the pull worked but setting the upstream of {branch} failed in {repo}: {problem}. "
+                 f"To set it, run: git -C {repo} config branch.{branch}.{key} {value}")
+
+
 def main(arguments):
     if len(arguments) != 1:
         sys.exit(__doc__)
@@ -138,8 +228,13 @@ def main(arguments):
     if state_dir:
         sys.exit("pull_keep_index: nothing was pulled or set aside: " + stopped_rebase_text(repo, state_dir))
 
+    target = pull_target(repo)
+    if target is None:
+        print(f"pull_keep_index: the branch has no upstream and is not on {FALLBACK_REMOTE} yet; nothing to pull.")
+        return
+
     saved = set_aside(repo)
-    pulled = subprocess.run(["git", "-C", repo, "pull", "--rebase=merges", "--no-autostash"])
+    pulled = subprocess.run(["git", "-C", repo, "pull", "--rebase=merges", "--no-autostash", *target])
     state_dir = stopped_rebase_dir(repo)
     if pulled.returncode != 0 and state_dir:
         recovery = " Then put the local changes back. " + recovery_text(repo, saved) if saved else ""
@@ -148,7 +243,10 @@ def main(arguments):
     if saved:
         put_back(repo, saved)
     if pulled.returncode != 0:
+        exit_if_upstream_gone(repo)
         sys.exit(f"pull_keep_index: git pull failed in {repo}; the local changes are back in place.")
+    if target:
+        set_upstream(repo, *target)
 
 
 if __name__ == "__main__":

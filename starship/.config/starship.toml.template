@@ -743,6 +743,60 @@ fg = "#464261"
 bg = "#faf4ed"
 grey = "#797593"
 
+# ef-elea, ef-maris (oonamo/ef-themes.nvim): the plugin's palettes. Orange is
+# its warmer yellow; grey is fg_dim.
+[palettes.ef-elea-dark]
+red = "#ff656a"
+orange = "#e0b02f"
+yellow = "#cac85f"
+green = "#7fc87f"
+blue = "#57aff6"
+branch = "#57aff6"
+teal = "#6fcfd2"
+purple = "#f59acf"
+fg = "#eaf2ef"
+bg = "#222524"
+grey = "#969faf"
+
+[palettes.ef-elea-light]
+red = "#c3303a"
+orange = "#b04300"
+yellow = "#9a501f"
+green = "#00601f"
+blue = "#375cc6"
+branch = "#375cc6"
+teal = "#1f70af"
+purple = "#80308f"
+fg = "#221321"
+bg = "#edf5e2"
+grey = "#676470"
+
+[palettes.ef-maris-dark]
+red = "#ff6f6f"
+orange = "#f0c060"
+yellow = "#d0d24f"
+green = "#41bf4f"
+blue = "#57b0ff"
+branch = "#57b0ff"
+teal = "#2fd0db"
+purple = "#f59acf"
+fg = "#eaedef"
+bg = "#131c2b"
+grey = "#969faf"
+
+[palettes.ef-maris-light]
+red = "#c3303a"
+orange = "#8b4400"
+yellow = "#805a1f"
+green = "#007010"
+blue = "#375cc6"
+branch = "#375cc6"
+teal = "#1f66af"
+purple = "#80308f"
+fg = "#151a27"
+bg = "#edf4f8"
+grey = "#676470"
+
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name
 # still needs both keys because theme-mode selects `<family>-<mode>`. No

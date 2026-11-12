@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-925 changes
+926 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [verify-prep runs on a plan.md folder with no ticket](notes/2026-11-11-verify-prep-runs-on-a-plan-md-folder-with-no.md) [script/verify-prep, script/verify-log, script/verify-common, script/plan-format, agent/plan-verifier, skill/verify-branch, skill/code] A ticketless /code plan folder (plan.md plus acceptance-criteria.md) now runs /verify-branch in plan-only mode with criteria owner plan; a ticketless folder missing either file exits 2.
 * [pull_keep_index moves its git questions to script_utils](notes/2026-11-11-pull-keep-index-moves-its-git-questions-to-script.md) [script/pull-keep-index, script/script-utils, script/pipe-shell-check] The remote-ref lookup and the branch merge-ref and remote reads move to script_utils, and the pipe check's comments say when a bar is a pipe.
 * [Branch review fixes: named tests run in the loop under a time budget, per-finding user rulings](notes/2026-11-11-branch-review-fixes-named-tests-run-with-runner.md) [skill/review, skill/fix] A converged run with no untested fix runs the named tests under a 540 s budget; every converged run of a launch with --test runs them before commit credit, and a red run blocks credit; --user-ruled is per finding, so only a skip of a finding the user ruled on comes back as an ask.
 * [asks-done needs --by; no default records a user sign-off](notes/2026-11-11-asks-done-needs-by-no-default-records-a-user-sign.md) [skill/review, skill/fix] review_fix.py asks-done refuses a call with no --by and logs nothing, so an ask outcome is recorded as the user's only when the caller says the user gave it.

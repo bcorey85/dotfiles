@@ -274,8 +274,8 @@ def plan_impact_question_lines(plan_impact, packet):
     return [
         f"When the run has a plan, first run `{plan_format.PLAN_CHECK_OWNER_COMMAND}` and read `owner`. Owner "
         "`session`: rule yourself with `decide ... --by session`, no question. Owner `plan`: rule yourself only while "
-        "the ticket's own words stay met, else ask the user.",
-        "Owner `user`, owner `plan` with the ticket's words not met, or no plan: call AskUserQuestion now. Without "
+        "any ticket's own words stay met, else ask the user.",
+        "Owner `user`, owner `plan` with any ticket's own words not met, or no plan: call AskUserQuestion now. Without "
         "that tool, ask the same question in plain text, list the options numbered, end the turn and wait for the "
         "reply. Do not re-dispatch and do not triage this as an ask. Question: assumed, then found, then what "
         "changes, taken from this block:",

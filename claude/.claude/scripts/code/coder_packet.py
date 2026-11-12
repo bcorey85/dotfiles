@@ -235,7 +235,7 @@ testing_range = plan_format.test_strategy_range(plan_file_lines)
 if testing_range is not None:
     testing_start, testing_end = testing_range
     plan_ranges.append(f"- {plan_path} lines {testing_start + 1}-{testing_end} (Testing Strategy)")
-criteria = plan.parent / "acceptance-criteria.md"
+criteria = plan.parent / plan_format.CRITERIA_FILE_NAME
 if criteria.is_file():
     plan_ranges.append(f"- {criteria.relative_to(repository_root)} (the requirements list)")
 

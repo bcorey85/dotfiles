@@ -494,10 +494,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         owner_command = plan_format.PLAN_CHECK_OWNER_COMMAND
         self.assertIn(f"first run `{owner_command}`", output)
         self.assertIn("Owner `session`: rule yourself with `decide ... --by session`, no question.", output)
-        self.assertIn("Owner `plan`: rule yourself only while the ticket's own words stay met, else ask the user.",
+        self.assertIn("Owner `plan`: rule yourself only while any ticket's own words stay met, else ask the user.",
                       output)
-        self.assertIn("Owner `user`, owner `plan` with the ticket's words not met, or no plan: call AskUserQuestion "
-                      "now.", output)
+        self.assertIn("Owner `user`, owner `plan` with any ticket's own words not met, or no plan: "
+                      "call AskUserQuestion now.", output)
         self.assertLess(output.index("first run"), output.index("call AskUserQuestion now"))
 
     def test_a_converged_packet_with_only_adopted_plan_impacts_prints_the_deviation_lines_and_holds_no_gate(self):

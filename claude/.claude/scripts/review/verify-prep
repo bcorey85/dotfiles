@@ -5,6 +5,8 @@ Fixed first steps of /verify-branch: resolve the task dir, read the criteria, me
 branch-wide code review ran on the current tree, and print the dispatches. Exit codes:
   0 ready   2 loud failure (no criteria, missing file, no base, empty diff, detached HEAD, unknown option)
   3 several task dirs: ask which   4 no plan found: ticket-only (fetch the ticket, rerun with --ticket-file)
+A <dir> or its plan.md path with plan.md and acceptance-criteria.md but no ticket runs `plan-only` (a spec.md path
+resolves to its folder too).
 
 Runs from any directory in the repo: relative paths are read against the directory it ran in, and git and the
 resolver run from the repo top level.
@@ -89,21 +91,42 @@ def against_original_cwd(value, original_cwd, must_exist):
     return str(candidate)
 
 
-def find_in_dir(task_dir, fixed_name, glob_pattern):
-    """The task-dir file `fixed_name`, else the single `glob_pattern` match (legacy `<KEY>-00-ticket.md` names)."""
-    fixed = task_dir / fixed_name
-    if fixed.is_file():
-        return fixed
-    matches = sorted(task_dir.glob(glob_pattern))
+PLAN_ONLY_MODE = "plan-only"
+FOLDER_MODES = ("dir", PLAN_ONLY_MODE)
+PLAN_FILE_NAMES = ("spec.md", plan_format.PLAN_ONLY_PLAN_NAME)
+PLAN_GLOB = "*-05-plan.md"
+PLAN_NAMES_TEXT = ", ".join(PLAN_FILE_NAMES) + f" or {PLAN_GLOB}"
+
+
+def folder_of_plan_file(target, top):
+    """The plan folder when `target` is an existing file named `spec.md` or `plan.md`; else `target` unchanged."""
+    if not target:
+        return target
+    candidate = pathlib.Path(target)
+    if not candidate.is_absolute():
+        candidate = top / candidate
+    if candidate.is_file() and candidate.name in PLAN_FILE_NAMES:
+        return str(candidate.parent)
+    return target
+
+
+def find_plan_in_dir(task_dir):
+    """The first task-dir file named in `PLAN_FILE_NAMES`, else the single `PLAN_GLOB` match (legacy
+    `<KEY>-05-plan.md` name)."""
+    for fixed_name in PLAN_FILE_NAMES:
+        fixed = task_dir / fixed_name
+        if fixed.is_file():
+            return fixed
+    matches = sorted(task_dir.glob(PLAN_GLOB))
     if len(matches) > 1:
-        raise vc.VerifyError(f"{task_dir} holds several {glob_pattern}: {', '.join(m.name for m in matches)}")
+        raise vc.VerifyError(f"{task_dir} holds several {PLAN_GLOB}: {', '.join(m.name for m in matches)}")
     return matches[0] if matches else None
 
 
 def resolve_inputs(target, ticket_file, top):
-    """(mode, ticket_path, plan_path|None, note). Raises Fail for the ask / ticket-only exits. The resolver runs from
-    the
-    repo top level; a relative `target` or `ticketFile` has been made absolute by the caller."""
+    """(mode, ticket_path|None, plan_path|None, note). The ticket is None only in `plan-only` mode. Raises VerifyError
+    for the ask / ticket-only exits. The resolver runs from the repo top level; a relative `target` or `ticketFile` has
+    been made absolute by the caller."""
     if ticket_file:
         path = pathlib.Path(ticket_file)
         if not path.is_file():
@@ -111,7 +134,7 @@ def resolve_inputs(target, ticket_file, top):
         return "ticket-only", path, None, "plan: none (ticket-only)"
 
     resolver = vc.script_path("RESOLVE_TASK_DIR_SCRIPT", "scripts/tools/resolve-task-dir.sh")
-    done = vc.run(["bash", resolver, target], cwd=top)
+    done = vc.run(["bash", resolver, folder_of_plan_file(target, top)], cwd=top)
     output = done.stdout.strip()
     code = done.returncode
     if code == 3:
@@ -136,29 +159,44 @@ def resolve_inputs(target, ticket_file, top):
     except plan_format.PlanFormatError as error:
         raise vc.VerifyError(str(error)) from error
     if ticket is None:
-        raise vc.VerifyError(f"{task_dir}: no 00-ticket.md or *-00-ticket.md")
-    spec = find_in_dir(task_dir, "spec.md", "*-05-plan.md")
+        return plan_only_inputs(task_dir, output)
+    spec = find_plan_in_dir(task_dir)
     if spec is None:
-        return "dir", ticket, None, f"{task_dir.name} has no spec.md or *-05-plan.md: ticket-only (plan: none)"
+        return "dir", ticket, None, f"{task_dir.name} has no {PLAN_NAMES_TEXT}: ticket-only (plan: none)"
     return "dir", ticket, spec, f"task dir {output}"
+
+
+def plan_only_inputs(task_dir, output):
+    """The `plan-only` inputs of a folder with `plan.md` and `acceptance-criteria.md` and no ticket. Raises
+    VerifyError naming each missing file when the folder has no ticket and lacks either."""
+    criteria_name = plan_format.CRITERIA_FILE_NAME
+    plan = task_dir / plan_format.PLAN_ONLY_PLAN_NAME
+    missing = plan_format.plan_author_criteria_missing(plan)
+    if missing:
+        raise vc.VerifyError(f"{task_dir}: no 00-ticket.md or *-00-ticket.md; missing for a plan-only run: "
+                             + " and ".join(missing))
+    return PLAN_ONLY_MODE, None, plan, f"plan-only task dir {output}: no ticket, criteria from {criteria_name}"
+
+
+def task_folder(ticket_path, plan_path):
+    """The folder holding the ticket, or the plan when the run has no ticket."""
+    return (ticket_path or plan_path).parent
 
 
 def read_criteria(mode, ticket_path, plan_path):
     """(counts, criteriaPath|None). Every source is parsed here so a bad file fails at prep; verify-log reads them
     again when it prints the checklist, so it keeps the counts, the ids, and the ticket labels and lines."""
     criteria_path = None
-    candidate = ticket_path.parent / "acceptance-criteria.md"
-    if mode == "dir" and candidate.is_file():
+    candidate = task_folder(ticket_path, plan_path) / plan_format.CRITERIA_FILE_NAME
+    if mode in FOLDER_MODES and candidate.is_file():
         criteria_path = str(candidate)
 
     entries, manual_entries = [], []
     if criteria_path is not None:
         entries, manual_entries = vc.parse_criteria_file(candidate.read_text(), criteria_path)
-    ticket_text = ticket_path.read_text()
-    ticket_entries = vc.branch_ticket_criteria(ticket_text, str(ticket_path), entries)
-    comment_entries = vc.branch_ticket_comments(ticket_text, str(ticket_path))
+    ticket_entries, comment_entries = ticket_and_comment_entries(ticket_path, entries, candidate)
     labelled_entries = [*ticket_entries, *comment_entries]
-    counts = {"criteriaOwner": vc.branch_criteria_owner(ticket_path),
+    counts = {"criteriaOwner": vc.branch_criteria_owner(ticket_path, plan_path),
               "ticket": len(ticket_entries), "ticketLabels": [entry["label"] for entry in labelled_entries],
               "ticketLines": [f"{entry['label']}: {entry['text']}" for entry in labelled_entries],
               "criteriaFileIds": 0, "manualOnly": 0, "manualVerification": 0, "ids": []}
@@ -173,6 +211,17 @@ def read_criteria(mode, ticket_path, plan_path):
     if plan_path is not None:
         counts["manualVerification"] = len(vc.manual_items(plan_path.read_text(), str(plan_path)))
     return counts, criteria_path
+
+
+def ticket_and_comment_entries(ticket_path, criteria_entries, criteria_path):
+    """(criteria, comments), each labelled. With no ticket the criteria are the criteria file's non-manual entries,
+    labelled by id, and there are no comments."""
+    if ticket_path is None:
+        return vc.branch_criteria_entries(None, None, criteria_entries, criteria_path), []
+    ticket_text = ticket_path.read_text()
+    ticket_entries = vc.branch_criteria_entries(ticket_text, str(ticket_path), criteria_entries, criteria_path)
+    comment_entries = vc.branch_ticket_comments(ticket_text, str(ticket_path))
+    return ticket_entries, comment_entries
 
 
 def parse_numstat(raw):
@@ -219,7 +268,7 @@ def untracked_note(untracked):
 def print_plan(context):
     lines = []
     lines.append(f"verify-prep: {context['note']}")
-    lines.append(f"ticket: {context['ticket']}")
+    lines.append(f"ticket: {vc.ticket_label(context['ticket'])}")
     lines.append(f"plan: {context['plan'] or 'none'}")
     lines.append(f"base: {context['baseRef']} (merge-base {context['mergeBase'][:10]})")
     gate_env_text = plan_format.gate_env_text(context["gateEnv"])
@@ -233,7 +282,8 @@ def print_plan(context):
     if untracked:
         lines.append(f"  {untracked}")
     criteria = context["criteria"]
-    lines.append(f"ticket ACs: {criteria['ticket']}; acceptance-criteria.md ids: {criteria['criteriaFileIds']} "
+    ticket_acs = "" if context["ticket"] is None else f"ticket ACs: {criteria['ticket']}; "
+    lines.append(f"{ticket_acs}acceptance-criteria.md ids: {criteria['criteriaFileIds']} "
                  f"({criteria['manualOnly']} manual-only); plan Manual Verification items: "
                  f"{criteria['manualVerification']}")
     lines.append("")
@@ -280,7 +330,7 @@ def print_plan(context):
     lines.append("  scope: branch")
     lines.append(f"  repo: {context['top']}")
     lines.append(f"  head: {context['head']}")
-    lines.append(f"  ticket: {context['ticket']}")
+    lines.append(f"  ticket: {vc.ticket_label(context['ticket'])}")
     lines.append(f"  plan: {context['plan'] or 'none'}")
     lines.append(f"  diff scope: base {context['mergeBase']} ({context['baseRef']}); `git diff {context['mergeBase']}` "
                  "covers committed and uncommitted changes")
@@ -303,8 +353,8 @@ def print_plan(context):
 
 def excluded_from_fingerprint(mode, ticket_path, plan_path, top):
     """The repo-relative task dir (the plan file itself in flat mode), or None for a ticket-only run."""
-    if mode == "dir":
-        return vc.repo_relative(ticket_path.parent, top)
+    if mode in FOLDER_MODES:
+        return vc.repo_relative(task_folder(ticket_path, plan_path), top)
     if mode == "flat":
         return vc.repo_relative(plan_path, top)
     return None
@@ -345,7 +395,7 @@ def main(argv):
     env_assignments = gate_env.repo_gate_env(top, vc.repo_relative(plan_path, top) if plan_path else None)
     head = vc.script_utils.git_output(top, "rev-parse", "HEAD")
     context = {"repo": repo, "top": str(top), "head": head, "branch": branch, "note": note,
-               "ticket": str(ticket_path),
+               "ticket": str(ticket_path) if ticket_path else None,
                "plan": str(plan_path) if plan_path else None, "planRel": plan_rel, "criteriaPath": criteria_path,
                "gateEnv": env_assignments,
                "baseRef": base_ref, "mergeBase": merge_base, "diff": diff, "criteria": criteria,

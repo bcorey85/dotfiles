@@ -814,7 +814,7 @@ DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1
 PLAN_CHECK_OWNER_COMMAND = "python3 ~/.claude/scripts/code/plan_check.py owner <plan>"
 DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
                   "place of `--by user`. A session ruling changes an acceptance criterion only when "
-                  f"`{PLAN_CHECK_OWNER_COMMAND}` names `session` or `plan`, and for `plan` only while the ticket's own "
+                  f"`{PLAN_CHECK_OWNER_COMMAND}` names `session` or `plan`, and for `plan` only while any ticket's own "
                   "words stay met.")
 DECIDE_USAGE_STEM = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
 
@@ -938,9 +938,11 @@ CONTENT_WORD = re.compile(r"[a-z]{4,}")
 AC_STOP_WORDS = frozenset({"that", "this", "with", "from", "when", "then", "than", "into", "must", "shall", "will",
                            "have", "does", "each", "every", "criterion", "criteria", "ticket", "spec", "plan"})
 MIN_SHARED_WORDS = 2
+CRITERIA_FILE_NAME = "acceptance-criteria.md"
+PLAN_ONLY_PLAN_NAME = "plan.md"
 
 
-def criteria_by_id(criteria_text, name="acceptance-criteria.md"):
+def criteria_by_id(criteria_text, name=CRITERIA_FILE_NAME):
     """{"AC<n>": criterion text} for each `- **AC<n>** — text` line of the criteria file. A duplicate id raises
     PlanFormatError (`name:line:`)."""
     criteria = {}
@@ -968,7 +970,7 @@ def missing_criteria_failure(spec_path):
     if not has_criteria_section:
         return None
 
-    criteria_path = spec_path.with_name("acceptance-criteria.md")
+    criteria_path = spec_path.with_name(CRITERIA_FILE_NAME)
     if criteria_path.is_file() and criteria_path.read_text().strip():
         return None
     return (f"{criteria_path}: missing or empty, and the spec has an Acceptance Criteria section. The spec-criteria "
@@ -984,7 +986,7 @@ def spec_ac_failures(spec_path):
         return []
     spec_text = spec_path.read_text()
     failures = []
-    criteria_path = spec_path.with_name("acceptance-criteria.md")
+    criteria_path = spec_path.with_name(CRITERIA_FILE_NAME)
     criteria_text = criteria_path.read_text() if criteria_path.is_file() else None
     try:
         ticket_path = ticket_beside(spec_path)
@@ -998,7 +1000,7 @@ def spec_ac_failures(spec_path):
     return failures
 
 
-def ac_reference_failures(spec_text, criteria_text, spec_name="spec.md", criteria_name="acceptance-criteria.md"):
+def ac_reference_failures(spec_text, criteria_text, spec_name="spec.md", criteria_name=CRITERIA_FILE_NAME):
     """One `name:line: message` string for each bare `AC<n>` in the spec that does not name criterion n of the
     criteria file. `criteria_text` None means the criteria file does not exist, so every bare reference fails. A
     reference written `ticket AC<n>` is never checked. Fenced blocks are skipped. The line holding the reference, and
@@ -1226,8 +1228,10 @@ CRITERIA_OWNER_PLAN = "plan"
 CRITERIA_OWNER_SESSION = "session"
 CRITERIA_OWNER_RULES = {
     CRITERIA_OWNER_USER: "only the user's recorded sign-off (who and when) cuts, narrows or rewords a criterion",
-    CRITERIA_OWNER_PLAN: "the ticket has no criteria heading, so the criteria restate it: the session may cut or "
-                         "reword one while the ticket's own words stay met, and asks the user otherwise",
+    CRITERIA_OWNER_PLAN: "the plan author wrote the criteria (the ticket has no criteria heading, or there is no "
+                         "ticket): the session may cut or reword one while any ticket's own words stay met, records "
+                         "the ruling in the plan's decision log (`03-decisions.md` or `## Plan Deviations`), and "
+                         "asks the user otherwise",
     CRITERIA_OWNER_SESSION: "a session wrote this ticket's criteria: the session may rule on a change to one and "
                             "records the ruling; no user sign-off is needed",
 }
@@ -1323,11 +1327,33 @@ def ticket_beside(plan_path):
     return ticket_paths[0]
 
 
+def plan_author_criteria_missing(plan_path):
+    """The names still missing for the plan author to own the criteria: `a plan.md` when the plan is not an existing
+    file named `plan.md`, and `acceptance-criteria.md` when its folder lacks that file."""
+    plan = pathlib.Path(plan_path)
+    missing = []
+    if plan.name != PLAN_ONLY_PLAN_NAME or not plan.is_file():
+        missing.append(f"a {PLAN_ONLY_PLAN_NAME}")
+    if not (plan.parent / CRITERIA_FILE_NAME).is_file():
+        missing.append(CRITERIA_FILE_NAME)
+    return missing
+
+
+def has_plan_author_criteria(plan_path):
+    """True when the plan is named `plan.md` and its folder holds `acceptance-criteria.md`. The plan file itself need
+    not exist: an owner is asked for before the plan is written."""
+    plan = pathlib.Path(plan_path)
+    return plan.name == PLAN_ONLY_PLAN_NAME and (plan.parent / CRITERIA_FILE_NAME).is_file()
+
+
 def plan_criteria_owner(plan_path):
-    """`criteria_owner` of the ticket beside the plan; `user` with `ticket: None` when no ticket is beside it."""
+    """`criteria_owner` of the ticket beside the plan. With no ticket beside it, `ticket: None` and the owner is `plan`
+    when the plan is named `plan.md` and its folder holds `acceptance-criteria.md` (the plan author wrote the
+    criteria), else `user`."""
     ticket_path = ticket_beside(plan_path)
     if ticket_path is None:
-        return owner_record(None, CRITERIA_OWNER_USER, None)
+        owner = CRITERIA_OWNER_PLAN if has_plan_author_criteria(plan_path) else CRITERIA_OWNER_USER
+        return owner_record(None, owner, None)
     return criteria_owner(ticket_path)
 
 
@@ -1355,7 +1381,7 @@ def sign_off_names(lines, entry, mark=SIGN_OFF):
 
 
 def ac_drift_failures(ticket_text, criteria_text, spec_text, ticket_name="00-ticket.md",
-                      criteria_name="acceptance-criteria.md", owner=CRITERIA_OWNER_USER):
+                      criteria_name=CRITERIA_FILE_NAME, owner=CRITERIA_OWNER_USER):
     """One message for each ticket criterion whose text (compared after markdown marks and whitespace are normalised)
     is the text of no AC in the criteria file, unless a line of the criteria file or of the spec's `## Plan Deviations`
     section holds a sign-off that names it. For a `session` owner, a line holding a ruling (`ruled`, `ruling`) counts

@@ -293,9 +293,9 @@ def shared_record_holds(top, tree_hash):
 def shared_record_covers(repo_dir):
     """True when repo_dir's uncommitted change against HEAD, notes paths left out, is in the shared reviewed record:
     the read `is_reviewed` does with no session. When the tree has no change against HEAD, the change the last commit
-    made (the tree against HEAD~1) is read instead, so a credit survives committing the reviewed change. False when
-    the tree cannot be fingerprinted, and False for the empty-change value: it sits in the record of many repos, and
-    covering it would credit every commit made since a review."""
+    made (the tree against HEAD~1) is read instead, so a credit survives committing the reviewed change (never when
+    HEAD is a merge commit). False when the tree cannot be fingerprinted, and False for the empty-change value: it
+    sits in the record of many repos, and covering it would credit every commit made since a review."""
     found = reviewed_fingerprint(repo_dir)
     if found is None:
         return False
@@ -311,10 +311,17 @@ def shared_record_covers(repo_dir):
 
 def last_commit_fingerprint(top):
     """The fingerprint of the work tree at `top` against HEAD~1, notes paths left out as `reviewed_fingerprint` does;
-    None when HEAD has no parent or the tree cannot be fingerprinted."""
-    parent = script_utils.git_output(top, "rev-parse", "--verify", "-q", "HEAD~1", timeout=GIT_TIMEOUT_SECONDS)
-    if parent is None:
+    None when HEAD has no parent, is a merge (its change would be a whole merged-in branch), or the tree cannot be
+    fingerprinted."""
+    # Fails closed: a git failure or timeout, a root commit and a merge all give None, so none of them earns credit.
+    parents_line = script_utils.git_output(top, "rev-list", "--parents", "-n", "1", "HEAD",
+                                           timeout=GIT_TIMEOUT_SECONDS)
+    if parents_line is None:
         return None
+    tokens = parents_line.split()
+    if len(tokens) != 2:
+        return None
+    parent = tokens[1]
 
     found = reviewed_fingerprint(top, base=parent)
     if found is None:

@@ -98,6 +98,20 @@ class SharedRecordCovers(unittest.TestCase):
 
         self.assertFalse(reviewed_tree.shared_record_covers(self.repo))
 
+    def test_a_clean_tree_whose_head_is_a_merge_is_not_covered(self):
+        self.git("checkout", "-q", "-b", "side")
+        (self.repo / "b.txt").write_text("side\n")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "side change")
+        self.git("checkout", "-q", "master")
+        (self.repo / "a.txt").write_text("two\n")
+        self.git("commit", "-q", "-am", "master change")
+        self.git("merge", "-q", "--no-ff", "--no-commit", "side")
+        self.assertTrue(reviewed_tree.record_reviewed("other-session", self.repo))
+        self.git("commit", "-q", "-m", "merge side")
+
+        self.assertFalse(reviewed_tree.shared_record_covers(self.repo))
+
     def test_a_tree_nothing_recorded_is_not_covered(self):
         (self.repo / "a.txt").write_text("two\n")
         self.assertFalse(reviewed_tree.shared_record_covers(self.repo))

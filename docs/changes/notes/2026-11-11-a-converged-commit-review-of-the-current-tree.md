@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "a converged /review of the uncommitted change counts as the branch review once one was logged"
-description: "verify-prep and verify-log count the branch review as ran when one was logged on an earlier tree and a converged /review covers the work tree's uncommitted change against HEAD, or the last commit's change against HEAD~1 once committed (never the empty change)."
+description: "verify-prep and verify-log count the branch review as ran when one was logged on an earlier tree and a converged /review covers the work tree's uncommitted change against HEAD, or the last commit's change against HEAD~1 once committed (never the empty change, never when HEAD is a merge)."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-11T23:00:14-06:00"}
 seq: 13
 kind: "fix"
@@ -19,12 +19,12 @@ unmeasured: ""
 
 `lib/reviewed_tree.py` gains `shared_record_covers(repo_dir)`: True when the work tree's uncommitted change against HEAD
 is in the shared record any session wrote. On a tree with no change against HEAD it reads the change the last commit
-made instead (the tree against HEAD~1, notes paths left out), so the credit survives committing the reviewed change;
-the empty-change value never counts. `verify_common.review_state` takes the repo top and counts the review as ran,
-with the reason `branch review logged on an earlier tree; a converged /review covers this tree`, when the ledger lists
-a branch review on another tree (or, with the ledger unread, the saved context holds `reviewLoggedTree`) and the
-shared record covers the tree. A converged review with no branch review logged earlier does not count. verify-prep and
-verify-log pass the top.
+made instead (the tree against HEAD~1, notes paths left out), so the credit survives committing the reviewed change
+(never when HEAD is a merge); the empty-change value never counts. `verify_common.review_state` takes the repo top and
+counts the review as ran, with the reason `branch review logged on an earlier tree; a converged /review covers this
+tree`, when the ledger lists a branch review on another tree (or, with the ledger unread, the saved context holds
+`reviewLoggedTree`) and the shared record covers the tree. A converged review with no branch review logged earlier does
+not count. verify-prep and verify-log pass the top.
 
 ## Evidence
 

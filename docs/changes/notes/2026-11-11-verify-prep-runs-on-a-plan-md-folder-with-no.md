@@ -22,9 +22,9 @@ unmeasured: ""
 runs a new `plan-only` mode: ticket none, criteria from the folder, criteria owner `plan`. A ticketless folder that
 lacks either file exits 2 and names both. `review/verify-log` and `review/verify_common.py` handle a run with no
 ticket. `lib/plan_format.py` `plan_criteria_owner` gives `plan` for a ticketless `plan.md` whose folder holds
-`acceptance-criteria.md` (`has_plan_author_criteria`, `plan_author_criteria_missing`). The plan-verifier, the
-verify-branch and code skills, and the review-fix plan-impact lines read "any ticket's own words" so they fit a run
-with no ticket.
+`acceptance-criteria.md` and whose `plan.md` exists (`plan_author_criteria_missing`). The plan-verifier, the
+verify-branch and code skills read "the ticket's own words, or with no ticket the user's own request, stay met" so
+they fit a run with no ticket; `review_fix.py` keeps the old wording until agent-evals-5e merges.
 
 ## Evidence
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""verify-prep [<ticket|dir>] [--base <ref>] [--ticket-file <path>]
+"""verify-prep [<ticket|dir|plan.md|spec.md>] [--base <ref>] [--ticket-file <path>]
 
 Fixed first steps of /verify-branch: resolve the task dir, read the criteria, measure the diff, decide whether a
 branch-wide code review ran on the current tree (or on an earlier tree that a converged /review carried forward),
@@ -23,6 +23,7 @@ import numstat
 import plan_format
 import verify_common as vc
 
+USAGE = __doc__.splitlines()[0]
 REVIEW_PROMPT = ("Branch-wide peer review, report only: review the whole branch diff against its base branch (git diff "
                  "{base}...HEAD), backend and frontend together. This is the only review of cross-phase interactions. "
                  "Label each finding blocker/ask/fix/nit, with file:line, a concrete failure scenario and a proposed "
@@ -69,12 +70,10 @@ def parse_args(argv):
                 raise vc.VerifyError(f"{arg} needs a value", 2)
             options["base" if arg == "--base" else "ticketFile"] = argv[index]
         elif arg.startswith("-"):
-            raise vc.VerifyError(
-                f"unknown option {arg}; usage: verify-prep [<ticket|dir>] [--base <ref>] [--ticket-file <path>]"
-            )
+            raise vc.VerifyError(f"unknown option {arg}; usage: {USAGE}")
         elif options["target"]:
             raise vc.VerifyError(f"unexpected second argument {arg!r} (already have {options['target']!r}); "
-                          "usage: verify-prep [<ticket|dir>] [--base <ref>] [--ticket-file <path>]")
+                                 f"usage: {USAGE}")
         else:
             options["target"] = arg
         index += 1

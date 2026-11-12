@@ -644,12 +644,25 @@ class RefactorFlowTest(unittest.TestCase):
         self.addCleanup((self.repo / "locked.py").chmod, 0o644)
         self.write_bytes("latin.txt", b"caf\xe9\n")
         (self.repo / "link.py").symlink_to("latin.txt")
+        self.write("plain.txt", "text\n")
+        (self.repo / "text_link.py").symlink_to("plain.txt")
         done = self.flow("branch-prep")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("- latin.txt (untracked, binary)", done.stdout)
-        self.assertIn("- link.py (untracked, binary)", done.stdout)
+        self.assertIn("- link.py (untracked, symlink)", done.stdout)
+        self.assertIn("- text_link.py (untracked, symlink)", done.stdout)
         if os.geteuid() != 0:
             self.assertIn("- locked.py (untracked, binary)", done.stdout)
+
+    def test_branch_prep_labels_an_untracked_nested_repo_as_not_a_file(self):
+        self.git("checkout", "-q", "-b", "feature")
+        nested = self.repo / "nested"
+        nested.mkdir()
+        subprocess.run(["git", "init", "-q", str(nested)], check=True)
+        self.write("nested/inner.py", "x = 1\n")
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- nested/ (untracked, not a file)", done.stdout)
 
     def test_branch_prep_keeps_the_last_line_of_an_untracked_file_without_a_trailing_newline(self):
         self.git("checkout", "-q", "-b", "feature")

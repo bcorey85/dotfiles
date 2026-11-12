@@ -629,11 +629,19 @@ class CriteriaOwnerTest(unittest.TestCase):
 
     def test_no_ticket_but_a_criteria_file_beside_the_plan_gives_plan_with_no_ticket(self):
         (self.folder / "acceptance-criteria.md").write_text("- **AC1** — x\n")
+        (self.folder / "plan.md").write_text("# Plan\n")
 
         owner = plan_format.plan_criteria_owner(self.folder / "plan.md")
 
         self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_PLAN)
         self.assertIsNone(owner["ticket"])
+
+    def test_a_criteria_file_with_no_plan_file_gives_user(self):
+        (self.folder / "acceptance-criteria.md").write_text("- **AC1** — x\n")
+
+        owner = plan_format.plan_criteria_owner(self.folder / "plan.md")
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_USER)
 
     def test_several_tickets_beside_the_plan_raise_naming_the_folder_and_the_files(self):
         (self.folder / "A-00-ticket.md").write_text("# T-1\n")

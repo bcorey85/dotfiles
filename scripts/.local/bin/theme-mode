@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles dredge-roles-warm solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox papercolor hybrid; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge dredge-roles dredge-roles-warm solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox papercolor hybrid rose-pine; }
 
 # A family that differs from another only in nvim's syntax colours borrows that
 # family's terminal, prompt, herdr, delta and claude themes. dredge-warm exists
@@ -206,6 +206,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # palette of nvim's colors/hybrid-light.lua.
     hybrid:light)           echo "hybrid-light" ;;
     hybrid:*)               echo "hybrid-dark" ;;
+    # rose-pine: ghostty BUILTINS — main dark, dawn light.
+    rose-pine:light)        echo "Rose Pine Dawn" ;;
+    rose-pine:*)            echo "Rose Pine" ;;
   esac
 }
 
@@ -308,6 +311,9 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # hybrid: BASE of a full [custom_theme]; grey on #1d1f21, and grey on white.
     hybrid:light)           echo "light-plus" ;;
     hybrid:*)               echo "dark-plus" ;;
+    # rose-pine: hunk BUILTINS — main dark, dawn light.
+    rose-pine:light)        echo "rose-pine-dawn" ;;
+    rose-pine:*)            echo "rose-pine" ;;
   esac
 }
 
@@ -563,10 +569,11 @@ EOF
     gruvbox-material:*)
       # gruvbox-material HARD dark (#1d2021), foreground=mix. Chrome
       # ladder bg1 #282828 / bg3 #3c3836 / bg5 #504945. Diff washes are the
-      # theme's own bg_diff_green #32361a / bg_diff_red #3c1f1e.
+      # rows neogit renders (#282a1a / #2e1d1c), not the theme's bg_diff_green
+      # / bg_diff_red: hunk fills whole lines, where the stock pair reads hot.
       bg="#1d2021"; panel="#282828"; panelAlt="#32302f"; border="#3c3836"
       accent="#f2594b"; accentMuted="#504945"; text="#e2cca9"; muted="#928374"
-      addedBg="#32361a"; removedBg="#3c1f1e"; ctxBg="#1d2021"
+      addedBg="#282a1a"; removedBg="#2e1d1c"; ctxBg="#1d2021"
       sAdd="#b0b846"; sRem="#f2594b"; lnFg="#504945"
       badgeAdd="#b0b846"; badgeRem="#f2594b"; badgeNeu="#80aa9e"
       fRename="#d3869b"; fMod="#e9b143"; fUntracked="#928374"; note="#282828"
@@ -2238,6 +2245,27 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#c5c8c6" subtext0="#8b9299"
       green="#b5bd68" yellow="#f0c674" red="#cc6666"
       blue="#81a2be" teal="#8abeb7" peach="#de935f"
+      ;;
+    rose-pine:light)
+      # rose-pine dawn (#faf4ed), the plugin's palette: green is pine, blue
+      # and teal are foam, peach is rose.
+      base_name="one-light"
+      accent="#907aa9" panel_bg="#fffaf3" surface_dim="#f2e9e1"
+      surface0="#dfdad9" surface1="#cecacd"
+      overlay0="#9893a5" overlay1="#797593"
+      text="#464261" subtext0="#797593"
+      green="#286983" yellow="#ea9d34" red="#b4637a"
+      blue="#56949f" teal="#56949f" peach="#d7827e"
+      ;;
+    rose-pine:*)
+      # rose-pine main (#191724), the plugin's palette, same roles as dawn.
+      base_name="one-dark"
+      accent="#c4a7e7" panel_bg="#1f1d2e" surface_dim="#26233a"
+      surface0="#403d52" surface1="#524f67"
+      overlay0="#6e6a86" overlay1="#908caa"
+      text="#e0def4" subtext0="#908caa"
+      green="#31748f" yellow="#f6c177" red="#eb6f92"
+      blue="#9ccfd8" teal="#9ccfd8" peach="#ebbcba"
       ;;
     solarized-osaka:light)
       # solarized-osaka light (base3 #fdf6e2 ground, base2 panel). Accents are

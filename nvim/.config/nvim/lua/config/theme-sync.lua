@@ -378,6 +378,15 @@ local FAMILIES = {
       light = { heading1 = "#234291", heading = "#5f43aa" },
     },
   },
+  ["rose-pine"] = {
+    -- rose-pine/neovim: main #191724 / dawn #faf4ed, both set colors_name "rose-pine".
+    schemes = { dark = "rose-pine-main", light = "rose-pine-dawn" },
+    colors_name = "rose-pine",
+    accents = {
+      dark = { heading1 = "#c4a7e7", heading = "#9ccfd8" },
+      light = { heading1 = "#907aa9", heading = "#56949f" },
+    },
+  },
   ["catppuccin"] = {
     -- catppuccin/nvim: frappé #303446 / latte #eff1f5.
     schemes = { dark = "catppuccin-frappe", light = "catppuccin-latte" },

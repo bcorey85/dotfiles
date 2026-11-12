@@ -80,7 +80,6 @@ class ItemVerdictTest(unittest.TestCase):
             ("mise not installed", MISE_NOT_INSTALLED),
             ("mise install failed", MISE_INSTALL_FAILED),
             ("mise not active", "mise ERROR uv is a mise bin however it is not currently active\n"),
-            ("bash line", "bash: line 1: uv: command not found\n"),
             ("pyenv not installed", "pyenv: version `3.9.1' is not installed (set by /repo/.python-version)\n"),
             ("pyenv shim", "pyenv: uv: command not found\n"),
             ("asdf no version", "No version is set for command uv\nConsider adding one of the following versions\n"),
@@ -88,9 +87,8 @@ class ItemVerdictTest(unittest.TestCase):
             ("shell", "zsh: command not found: uv\n"),
             ("sh", "sh: 1: uv: not found\n"),
             ("dash", "/bin/sh: 1: uv: not found\n"),
+            ("dry run shell line", "/bin/sh: line 1: uv: command not found\n"),
             ("bash", "bash: uv: command not found\n"),
-            ("script with extension", "./run.sh: line 3: uv: command not found\n"),
-            ("script without extension", "scripts/check: line 3: uv: command not found\n"),
             ("shell with path", "/bin/bash: uv: command not found\n"),
             ("uv spawn", "error: Failed to spawn: `pytest`\n"),
             ("poetry", "Command not found: pytest\n"),
@@ -100,6 +98,18 @@ class ItemVerdictTest(unittest.TestCase):
             with self.subTest(label):
                 verdict = criteria_verdict.item_verdict(UV_COMMAND, UV_ITEM, 1, output)
                 self.assertEqual((verdict.outcome, verdict.code), ("ENV", 1))
+
+    def test_a_line_numbered_command_not_found_stays_red(self):
+        cases = [
+            ("script with extension", "tests/run.sh: line 40: new_helper: command not found\n"),
+            ("script with dot path", "./run.sh: line 3: uv: command not found\n"),
+            ("script without extension", "scripts/check: line 3: uv: command not found\n"),
+            ("shell command string", "bash: line 1: uv: command not found\n"),
+        ]
+        for label, output in cases:
+            with self.subTest(label):
+                verdict = criteria_verdict.item_verdict("bash tests/run.sh", "`bash tests/run.sh` passes", 1, output)
+                self.assertEqual(verdict.outcome, "RED")
 
     def test_an_environment_failure_flag_names_the_matched_line(self):
         verdict = criteria_verdict.item_verdict(UV_COMMAND, UV_ITEM, 1, MISE_NOT_INSTALLED)

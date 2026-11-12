@@ -29,16 +29,16 @@ MAX_ERROR_LINE_CHARS = 300
 COMMAND_NOT_RUN_CODES = {126, 127}
 RUNNER_CANNOT_START = re.compile(r"Failed to spawn: |Command not found: "
                                  r"|the command \S+ could not be found within PATH")
-# A shell or `.sh` script name, with an optional path.
-SHELL_PROGRAM = r"(?:\S*/)?(?:[\w.\-]+\.sh|(?:ba|z|k|da)?sh)"
-# A script line prefix, except an exception name, qualified or not (`pkg.AssertionError: line 3: ...`).
-SCRIPT_LINE = r"(?!\S*(?:Error|Exception):)\S+: line \d+"
-# A shell's `command not found` line or a version manager shim (mise, asdf, pyenv) whose pinned version is missing or
-# unset. Anchored to the start of a line and limited to shell, script and shim names, so a test's assertion text that
-# quotes the phrase (`AssertionError: uv: command not found`) does not match.
+# A shell name, with an optional path.
+SHELL_PROGRAM = r"(?:\S*/)?(?:ba|z|k|da)?sh"
+# A shell's top-level `command not found` line or a version manager shim (mise, asdf, pyenv) whose pinned version is
+# missing or unset. Anchored to the start of a line and limited to shell and shim names, so a test's assertion text that
+# quotes the phrase (`AssertionError: uv: command not found`) does not match. The only `: line N:` form kept is the dry
+# run's own `/bin/sh: line 1: uv: command not found`. A repo script's line (`tests/run.sh: line 40:`, a function it does
+# not define) and `bash: line 1:` (a script that runs `bash -c` prints it too) read as a failing check.
 SHELL_OR_SHIM_CANNOT_START = re.compile(
-    rf"^{SHELL_PROGRAM}(?:: line \d+)?: (?:\S+: )?command not found$"
-    rf"|^{SCRIPT_LINE}: (?:\S+: )?command not found$"
+    rf"^{SHELL_PROGRAM}: (?:\S+: )?command not found$"
+    r"|^/bin/sh: line \d+: \S+: command not found$"
     r"|^pyenv: \S+: command not found$"
     r"|^zsh: command not found: \S+$"
     r"|^(?:/bin/)?sh: \d+: .+: not found"

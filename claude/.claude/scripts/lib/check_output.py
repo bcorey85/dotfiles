@@ -29,6 +29,24 @@ MAX_ERROR_LINE_CHARS = 300
 COMMAND_NOT_RUN_CODES = {126, 127}
 RUNNER_CANNOT_START = re.compile(r"Failed to spawn: |Command not found: "
                                  r"|the command \S+ could not be found within PATH")
+# A shell or `.sh` script name, with an optional path.
+SHELL_PROGRAM = r"(?:\S*/)?(?:[\w.\-]+\.sh|(?:ba|z|k|da)?sh)"
+# A script line prefix, except an exception name, qualified or not (`pkg.AssertionError: line 3: ...`).
+SCRIPT_LINE = r"(?!\S*(?:Error|Exception):)\S+: line \d+"
+# A shell's `command not found` line or a version manager shim (mise, asdf, pyenv) whose pinned version is missing or
+# unset. Anchored to the start of a line and limited to shell, script and shim names, so a test's assertion text that
+# quotes the phrase (`AssertionError: uv: command not found`) does not match.
+SHELL_OR_SHIM_CANNOT_START = re.compile(
+    rf"^{SHELL_PROGRAM}(?:: line \d+)?: (?:\S+: )?command not found$"
+    rf"|^{SCRIPT_LINE}: (?:\S+: )?command not found$"
+    r"|^pyenv: \S+: command not found$"
+    r"|^zsh: command not found: \S+$"
+    r"|^(?:/bin/)?sh: \d+: .+: not found"
+    r"|^mise ERROR (?:.*\bnot installed\b|.*not currently active|Failed to install )"
+    r"|^pyenv: version `[^']*' is not installed"
+    r"|^No version is set for (?:command|shim)"
+    r"|^No preset version installed for command",
+    re.IGNORECASE | re.MULTILINE)
 NO_PACKAGE_MANIFEST = re.compile(
     r"ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND|Couldn't find a package\.json"
     r"|ENOENT[^\n]*package\.json|package\.json[^\n]*ENOENT", re.I)
@@ -138,6 +156,23 @@ def failing_test_lines(output):
     """The lines of the output that name a failed test, without repeats, at most MAX_FAILING_TEST_LINES."""
     names = [line.strip() for line in output.splitlines() if FAILING_TEST_LINE.match(line)]
     return list(dict.fromkeys(names))[:MAX_FAILING_TEST_LINES]
+
+
+def cannot_start_line(code, output):
+    """The first output line that shows the tool could not start, or None. A passing run, a run whose runner summary
+    reports failures and a run with failing-test lines never read as one: a test's own output may quote the text."""
+    if code == 0 or SUMMARY_FAILURE.search(output) or failing_test_lines(output):
+        return None
+
+    for line in output.splitlines():
+        stripped = line.strip()
+        # Match the runner text at the line start, after the tool's own `error: ` prefix, so a traceback line such as
+        # `AssertionError: Command not found: uv` does not read as a failure to start.
+        runner_text = re.sub(r"^error: ", "", stripped, flags=re.IGNORECASE)
+        if RUNNER_CANNOT_START.match(runner_text) or SHELL_OR_SHIM_CANNOT_START.search(stripped):
+            return stripped
+
+    return None
 
 
 def tail_with_failing_tests(output, tail):

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-929 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+930 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-12, [pull-keep-index skips the pull on a branch rewritten locally](notes/2026-11-12-pull-keep-index-skips-the-pull-on-a-branch.md).
+Latest change: 2026-11-12, [The criteria dry run labels environment failures ENV and judges escaped rg patterns the same](notes/2026-11-12-the-criteria-dry-run-labels-environment-failures.md).
 
 ## Top gains
 

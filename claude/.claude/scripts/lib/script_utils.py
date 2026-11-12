@@ -672,6 +672,11 @@ def backticked_spans(line):
     return BACKTICKED.findall(line)
 
 
+def without_backticked_spans(line):
+    """The line with every backticked span taken out."""
+    return BACKTICKED.sub("", line)
+
+
 def pre_tool_use_deny(reason):
     """Print the PreToolUse hook output that denies the tool call and shows `reason` to the model."""
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",

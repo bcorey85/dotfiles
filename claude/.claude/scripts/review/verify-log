@@ -9,8 +9,8 @@ rows: a JSON list; each row {"item","verdict","file","line","evidence", optional
 Every criterion id verify-prep saved needs a verdict row naming it, `missing` included; any id with no row exits 2 and
 writes nothing. The same holds for each ticket criterion, with or without a criteria file: it needs a row whose `item`
 starts with its label (`Ticket #n`, or the criteria-file id when the ticket has no Acceptance or Requirements
-heading; as verify-prep lists them; leading markdown emphasis or code marks are allowed), and so does each ticket
-comment (`Comment #n`).
+heading or the run has no ticket, as verify-prep lists them; leading markdown emphasis or code marks are allowed),
+and so does each ticket comment (`Comment #n`).
 verdict is done|partial|missing|failed-check|needs-manual|overridden|no-criterion. partial, missing, failed-check and
 an overridden row with no `signoff` are gaps. no-criterion is only for a `Comment #n` row: the comment adds or changes
 no criterion; any other row with it exits 2. `line` is an integer or a range like "12-20" (the first number is kept).
@@ -279,12 +279,13 @@ def checklist(context, rows):
     """The review-packet skeleton. The ticket, the criteria file and the plan are read again here, so an edit since
     verify-prep reaches the checklist."""
     ticket_path = context["ticket"]
-    ticket_text = read_source(ticket_path, "ticket")
     criteria_entries, manual_entries = [], []
     if context.get("criteriaPath"):
         criteria_text = read_source(context["criteriaPath"], "criteria file")
         criteria_entries, manual_entries = vc.parse_criteria_file(criteria_text, context["criteriaPath"])
-    ticket_entries = vc.branch_ticket_criteria(ticket_text, ticket_path, criteria_entries)
+    ticket_text = None if ticket_path is None else read_source(ticket_path, "ticket")
+    ticket_entries = vc.branch_criteria_entries(ticket_text, ticket_path, criteria_entries,
+                                                context.get("criteriaPath"))
 
     lines = ["## Smoke-test checklist (fill each steps: with concrete steps)"]
     for entry in ticket_entries:

@@ -32,6 +32,8 @@ Run every git, test and check command in the dispatch's `repo:` folder, never in
 
 Read plan + ticket in full — cross-phase reconciliation is your job, so `plan-reading.md`'s phase-scoping does not apply.
 
+When the dispatch says `ticket: none (plan-only)`, the `ACn` lines of `acceptance-criteria.md` are the criteria, verdicted from their own words. When `criteria owner:` is `plan`, a plan-recorded session ruling on a ticket AC passes only while any ticket's own words are still met.
+
 ## Job 1 — Reconcile
 
 Verdict **every** item in scope:

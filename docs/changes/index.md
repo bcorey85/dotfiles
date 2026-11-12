@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-925 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+926 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-11, [pull_keep_index moves its git questions to script_utils](notes/2026-11-11-pull-keep-index-moves-its-git-questions-to-script.md).
+Latest change: 2026-11-11, [verify-prep runs on a plan.md folder with no ticket](notes/2026-11-11-verify-prep-runs-on-a-plan-md-folder-with-no.md).
 
 ## Top gains
 

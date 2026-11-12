@@ -57,12 +57,12 @@ def raising_verify_error(plan_reader):
     return read
 
 
-def parse_criteria_file(text, name="acceptance-criteria.md"):
+def parse_criteria_file(text, name=plan_format.CRITERIA_FILE_NAME):
     """(entries, manual_entries) from acceptance-criteria.md, one {id, text} per id.
 
     Lines are `- **ACn** — text`; the id span may carry a parenthetical or several ids. Any line that starts
     with a `**ACn` bold span (after indent and an optional list marker), or holds a closed bold id span anywhere,
-    but does not match raises Fail; an unclosed `**ACn's ...` later in a line is prose and is skipped."""
+    but does not match raises VerifyError; an unclosed `**ACn's ...` later in a line is prose and is skipped."""
     entries = []
     manual_entries = []
     in_manual = False
@@ -92,14 +92,37 @@ def branch_ticket_criteria(ticket_text, ticket_name="ticket", criteria_entries=N
     except plan_format.NoCriteriaHeadingError:
         if not criteria_entries:
             raise
-        return [{"number": number, "label": entry["id"], "text": entry["text"]}
-                for number, entry in enumerate(criteria_entries, 1)]
+        return criteria_entries_as_labelled(criteria_entries)
+
+
+def criteria_entries_as_labelled(criteria_entries):
+    """The criteria-file entries as ticket-shaped entries, each labelled by its id."""
+    return [{"number": number, "label": entry["id"], "text": entry["text"]}
+            for number, entry in enumerate(criteria_entries, 1)]
+
+
+def branch_criteria_entries(ticket_text, ticket_name, criteria_entries, criteria_name):
+    """The labelled criteria of a run. `ticket_text` None (plan-only run) takes the criteria file's non-manual entries,
+    each labelled by its id, and raises when there are none; otherwise branch_ticket_criteria."""
+    if ticket_text is None:
+        if not criteria_entries:
+            raise VerifyError(f"{criteria_name} holds no criterion outside its manual-only section")
+        return criteria_entries_as_labelled(criteria_entries)
+    return branch_ticket_criteria(ticket_text, ticket_name, criteria_entries)
 
 
 @raising_verify_error
-def branch_criteria_owner(ticket_path):
-    """Who owns the ticket's criteria: plan_format.criteria_owner's record."""
+def branch_criteria_owner(ticket_path, plan_path):
+    """Who owns the criteria: plan_format.criteria_owner's record for the ticket. With no ticket (plan-only run) the
+    record is plan_format.plan_criteria_owner's for the plan."""
+    if ticket_path is None:
+        return plan_format.plan_criteria_owner(plan_path)
     return plan_format.criteria_owner(ticket_path)
+
+
+def ticket_label(ticket):
+    """The ticket as printed: its path, or `none (plan-only)` when the run has no ticket."""
+    return ticket if ticket else "none (plan-only)"
 
 
 @raising_verify_error
@@ -114,7 +137,7 @@ def manual_items(plan_text, name):
 
     The items of a phase moved to another ticket (`[-]` in Phase Status) are not listed: this branch does not owe them.
     The section grammar is plan_format's; a line it does not parse, and a moved line with no ticket key or no Plan
-    Deviations line, raise Fail with `name:line`."""
+    Deviations line, raise VerifyError with `name:line`."""
     parsed = plan_format.manual_verification(plan_text, name)
     moved_ids = {entry["number"] for entry in plan_format.moved_phases(plan_text, name)}
     return [{"text": item["text"], "humanOnly": item["humanOnly"]} for item in parsed
@@ -138,7 +161,7 @@ def moved_phase_notes(plan_text, name):
 # ---------- git ----------
 
 def repo_top(cwd):
-    """The repo top level as a resolved path. Raises Fail outside a repository."""
+    """The repo top level as a resolved path. Raises VerifyError outside a repository."""
     top = script_utils.repo_root(cwd)
     if top is None:
         raise VerifyError("not inside a git repository")

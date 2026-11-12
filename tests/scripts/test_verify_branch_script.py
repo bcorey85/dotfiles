@@ -1039,6 +1039,121 @@ class TicketOnlyLogTest(VerifyBranchBase):
         self.assertIn("CLEAN", done.stdout)
 
 
+class PlanOnlyTest(VerifyBranchBase):
+    """A plan folder of `plan.md` plus `acceptance-criteria.md`, with no ticket file."""
+
+    PLAN_REL = "docs/plans/x/plan.md"
+
+    def plan_folder(self, criteria=CRITERIA, plan_rel=PLAN_REL):
+        if plan_rel is not None:
+            self.write(plan_rel, SPEC)
+        if criteria is not None:
+            self.write("docs/plans/x/acceptance-criteria.md", criteria)
+        self.commit_all("plan folder")
+
+    def assert_plan_only_output(self, done):
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn(f"plan: {self.repo.resolve() / self.PLAN_REL}", done.stdout)
+        self.assertIn("ticket: none (plan-only)", done.stdout)
+        self.assertIn("acceptance-criteria.md ids: 4 (1 manual-only)", done.stdout)
+        self.assertIn(f"criteria owner: plan — {plan_format.CRITERIA_OWNER_RULES['plan']}", done.stdout)
+        for ac_id in ("AC1", "AC2", "AC3"):
+            self.assertIn(f"  {ac_id}: ", done.stdout)
+        self.assertNotIn("ticket ACs:", done.stdout)
+        context = self.context()
+        self.assertEqual(context["criteria"]["ticketLabels"], ["AC1", "AC2", "AC3"])
+        self.assertIsNone(context["ticket"])
+        self.assertEqual(context["planRel"], self.PLAN_REL)
+        self.assertEqual(context["excludeRel"], "docs/plans/x")
+
+    def test_the_plan_md_path_resolves_to_its_folder_with_no_ticket(self):
+        self.plan_folder()
+
+        self.assert_plan_only_output(self.prep(self.PLAN_REL))
+
+    def test_the_folder_resolves_with_no_ticket(self):
+        self.plan_folder()
+
+        self.assert_plan_only_output(self.prep("docs/plans/x"))
+
+    def test_a_folder_with_neither_ticket_nor_criteria_exits_2_naming_both_files(self):
+        self.write("docs/plans/x/spec.md", SPEC)
+        self.commit_all("spec only")
+
+        done = self.prep("docs/plans/x")
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("00-ticket.md", done.stderr)
+        self.assertIn("a plan.md and acceptance-criteria.md", done.stderr)
+
+    def test_a_folder_with_spec_and_plan_md_uses_plan_md(self):
+        self.plan_folder()
+        self.write("docs/plans/x/spec.md", SPEC)
+        self.commit_all("spec too")
+
+        self.assert_plan_only_output(self.prep("docs/plans/x"))
+
+    def test_a_folder_with_a_plan_and_no_criteria_file_names_the_criteria_file(self):
+        self.plan_folder(criteria=None)
+
+        done = self.prep("docs/plans/x")
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("missing for a plan-only run: acceptance-criteria.md", done.stderr)
+
+    def test_a_folder_with_criteria_and_no_plan_names_the_plan(self):
+        self.plan_folder(plan_rel=None)
+
+        done = self.prep("docs/plans/x")
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("missing for a plan-only run: a plan.md", done.stderr)
+        self.assertNotIn("and acceptance-criteria.md", done.stderr)
+
+    def test_criteria_with_only_a_manual_only_section_exits_2(self):
+        self.plan_folder(criteria="# Acceptance Criteria\n\n## Manual only\n\n- **AC1** — needs a real machine.\n")
+
+        done = self.prep("docs/plans/x")
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("holds no criterion outside its manual-only section", done.stderr)
+
+    def test_a_ticketless_spec_md_folder_exits_2_for_plan_only(self):
+        spec_rel = "docs/plans/x/spec.md"
+        self.plan_folder(plan_rel=spec_rel)
+
+        done = self.prep(spec_rel)
+
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("missing for a plan-only run: a plan.md", done.stderr)
+
+    def test_a_ticket_beside_plan_md_makes_plan_md_the_plan(self):
+        self.write("docs/plans/x/00-ticket.md", TICKET)
+        self.plan_folder()
+
+        done = self.prep("docs/plans/x")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn(f"plan: {self.repo.resolve() / self.PLAN_REL}", done.stdout)
+        self.assertIn("ticket ACs: 3", done.stdout)
+
+    def test_verify_log_logs_the_rows_for_a_plan_only_context(self):
+        self.plan_folder()
+        self.assertEqual(self.prep(self.PLAN_REL).returncode, 0)
+        self.assertEqual(self.log_review().returncode, 0)
+        self.assertEqual(self.prep(self.PLAN_REL).returncode, 0)
+        built = [{"item": f"AC{n}: item", "verdict": "done", "file": f"src/f{n}.py", "line": 1, "evidence": "e"}
+                 for n in (1, 2, 3)]
+
+        skipped = self.log("--rows", "-", stdin=json.dumps(built[:2]))
+        self.assertEqual(skipped.returncode, 2)
+        self.assertIn("no verdict row for AC3", skipped.stderr)
+
+        done = self.log("--rows", "-", stdin=json.dumps(built))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLEAN", done.stdout)
+
+
 class ReviewGateTest(VerifyBranchBase):
     """verify-log refuses to write unless a marked branch review covers the tree prep measured."""
 

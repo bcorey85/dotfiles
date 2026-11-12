@@ -4,7 +4,9 @@
   plan_check.py check [--final] <plan>   print each way the plan does not hold; exit 1 when any, else 0. --final also
                                          fails a spec whose criteria file was never written.
   plan_check.py owner <plan>             print who owns the criteria of the ticket beside the plan as JSON (owner,
-                                         ticket, source, rule); exit 1 with the message when the ticket cannot be read.
+                                         ticket, source, rule); with no ticket beside it, `plan` when the plan is a
+                                         `plan.md` whose folder holds acceptance-criteria.md, else `user` (ticket
+                                         null); exit 1 with the message when the ticket cannot be read.
 """
 import json
 import os

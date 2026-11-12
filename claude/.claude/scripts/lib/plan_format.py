@@ -483,7 +483,8 @@ AUTOMATED_ITEM = re.compile(r"^- \[[ x]\]")
 # A top-level list item of any marker: "- x", "* x", "+ x", "1. x", "1) x".
 TOP_LEVEL_LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s")
 AUTOMATED_ITEM_BOX = re.compile(r"^- \[[ x]\]\s*")
-PLAN_FILES_GLOB = "docs/plans/*/spec.md"
+SPEC_FILE_NAME = "spec.md"
+PLAN_FILES_GLOB = f"docs/plans/*/{SPEC_FILE_NAME}"
 GATE_ENV_HINT = "(Put these variables before every test, check or build command you run.)"
 
 # An Automated Verification item that says there is nothing to run: "- [ ] N/A — docs only", "- [ ] none".
@@ -983,7 +984,7 @@ def spec_ac_failures(spec_path):
     acceptance-criteria.md beside it (a missing file is None) and the ac_drift_failures rows against the ticket beside
     it (checked only when both the ticket and the criteria file exist). Any other file name gives []. A criteria file
     with a repeated id gives its one error row. A ticket with no criteria heading is not checked for drift."""
-    if spec_path.name != "spec.md":
+    if spec_path.name != SPEC_FILE_NAME:
         return []
     spec_text = spec_path.read_text()
     failures = []
@@ -1001,7 +1002,7 @@ def spec_ac_failures(spec_path):
     return failures
 
 
-def ac_reference_failures(spec_text, criteria_text, spec_name="spec.md", criteria_name=CRITERIA_FILE_NAME):
+def ac_reference_failures(spec_text, criteria_text, spec_name=SPEC_FILE_NAME, criteria_name=CRITERIA_FILE_NAME):
     """One `name:line: message` string for each bare `AC<n>` in the spec that does not name criterion n of the
     criteria file. `criteria_text` None means the criteria file does not exist, so every bare reference fails. A
     reference written `ticket AC<n>` is never checked. Fenced blocks are skipped. The line holding the reference, and

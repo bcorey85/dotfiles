@@ -93,7 +93,7 @@ def against_original_cwd(value, original_cwd, must_exist):
 
 PLAN_ONLY_MODE = "plan-only"
 FOLDER_MODES = ("dir", PLAN_ONLY_MODE)
-PLAN_FILE_NAMES = ("spec.md", plan_format.PLAN_ONLY_PLAN_NAME)
+PLAN_FILE_NAMES = (plan_format.SPEC_FILE_NAME, plan_format.PLAN_ONLY_PLAN_NAME)
 PLAN_GLOB = "*-05-plan.md"
 PLAN_NAMES_TEXT = ", ".join(PLAN_FILE_NAMES) + f" or {PLAN_GLOB}"
 
@@ -155,7 +155,7 @@ def resolve_inputs(target, ticket_file, top):
 
     task_dir = top / output
     try:
-        ticket = plan_format.ticket_beside(task_dir / "spec.md")
+        ticket = plan_format.ticket_beside(task_dir / plan_format.SPEC_FILE_NAME)
     except plan_format.PlanFormatError as error:
         raise vc.VerifyError(str(error)) from error
     if ticket is None:

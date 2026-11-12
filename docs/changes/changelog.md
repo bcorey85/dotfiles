@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-935 changes
+940 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,11 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [verify-log logs Step 1 review rows when only a commit review covers the tree](notes/2026-11-12-verify-log-logs-step-1-review-rows-when-only-a.md) [script/verify-log, skill/verify-branch] verify-log review refuses a second branch review only when a branch review already covers the tree, not when only a converged commit review does.
+* [code_wait prints the next step for a fix-removed-change stop](notes/2026-11-12-code-wait-prints-the-next-step-for-a-fix-removed.md) [script/code-wait, skill/code] When the /code review loop ends with fix-removed-change, code_wait.py review prints a STOP line naming stop.md and the resume command, and exits 1.
+* [the removed-change guard counts moved and edited lines as kept](notes/2026-11-12-the-removed-change-guard-counts-moved-and-edited.md) [script/review-loop-script] The review loop's fix-removed-change guard subtracts the removed lines the fix passes wrote again as near copies, so a block moved and edited on the way no longer stops the loop.
+* [code_review_start stops on a handoff an earlier phase read](notes/2026-11-12-code-review-start-stops-on-a-handoff-an-earlier.md) [script/code-review-start, skill/code] A live /code review start records which phase read each handoff text and stops, naming <run folder>/handoff.txt, when a later phase passes the same text.
+* [pull_keep_index merges the remote when a rebase replay re-conflicts](notes/2026-11-12-pull-keep-index-merges-the-remote-when-a-rebase.md) [script/pull-keep-index] When the pull's rebase stops on a conflict a plain merge of the remote would not have, pull_keep_index aborts the rebase and merges the remote instead.
 * [the formatter leaves the gate replay corpus layout alone](notes/2026-11-12-the-formatter-leaves-the-gate-replay-corpus-layout.md) [script/format-changed, script/gate-replay] The repo-root .prettierignore lists tests/scripts/gate_replay_corpus.json, so the format-on-Edit hook no longer reflows its one-line entries.
 * [The criteria dry run labels environment failures ENV and judges escaped rg patterns the same](notes/2026-11-12-the-criteria-dry-run-labels-environment-failures.md) [script/criteria-verdict, script/criteria-dry-run] A failing item whose output shows the tool could not start reads ENV with a flag, and a search ban is judged on the line's wording outside every backticked span.
 * [pull-keep-index skips the pull on a branch rewritten locally](notes/2026-11-12-pull-keep-index-skips-the-pull-on-a-branch.md) [script/pull-keep-index] When the upstream tip is not on HEAD but is in the branch's own reflog, pull_keep_index prints a force-with-lease hint and exits 0 without pulling.

@@ -20,12 +20,17 @@ def numbered(count, prefix="line"):
     return "".join(f"{prefix} {number}\n" for number in range(count))
 
 
+def removed_counts(added, current_added, fix_added=None):
+    lost_by_file = change_removal.lost_lines_by_file(added, current_added, fix_added)
+    return change_removal.lost_counts(lost_by_file)
+
+
 def gutted_after(old_texts, new_texts, current_texts):
     """(removed by file, whether gutted) for changes from old_texts to new_texts, once the tree holds current_texts."""
     added = {path: change_removal.added_lines(old_texts.get(path, ""), text) for path, text in new_texts.items()}
     current_added = {path: change_removal.added_lines(old_texts.get(path, ""), text)
                      for path, text in current_texts.items()}
-    removed = change_removal.removed_by_file(added, current_added)
+    removed = removed_counts(added, current_added)
     return removed, change_removal.is_gutted(added, removed)
 
 
@@ -233,7 +238,7 @@ class MovedByFixTest(unittest.TestCase):
         current_added = {}
         fix_added = {"dates.py": Counter(line.strip() for line in finder)}
 
-        removed = change_removal.removed_by_file(added, current_added, fix_added)
+        removed = removed_counts(added, current_added, fix_added)
 
         self.assertEqual({}, removed)
 
@@ -243,7 +248,7 @@ class MovedByFixTest(unittest.TestCase):
         current_added = {"a.py": change_removal.added_lines("", block)}
         fix_added = {"dates.py": change_removal.added_lines("", block)}
 
-        removed = change_removal.removed_by_file(added, current_added, fix_added)
+        removed = removed_counts(added, current_added, fix_added)
 
         self.assertEqual({}, removed)
         self.assertFalse(change_removal.is_gutted(added, removed))
@@ -252,7 +257,7 @@ class MovedByFixTest(unittest.TestCase):
         added = {"edit.py": change_removal.added_lines("", numbered(10))}
         fix_added = {"dates.py": change_removal.added_lines("", numbered(3, "other"))}
 
-        removed = change_removal.removed_by_file(added, {}, fix_added)
+        removed = removed_counts(added, {}, fix_added)
 
         self.assertEqual({"edit.py": 10}, removed)
 
@@ -282,7 +287,8 @@ class ChangeUnderReviewTest(unittest.TestCase):
         self.write("dates.py", "import datetime\n" + self.block)
         self.write("edit.py", "import edit_base\n")
 
-        self.assertEqual({}, change.removed())
+        removed, _written = change.removal()
+        self.assertEqual({}, removed)
 
     def test_a_block_moved_after_a_commit_made_during_the_loop_is_not_removed(self):
         change = review_loop_plan.ChangeUnderReview(str(self.repo))
@@ -291,16 +297,115 @@ class ChangeUnderReviewTest(unittest.TestCase):
         self.write("edit.py", "import edit_base\n")
         git(self.repo, "commit", "-q", "-am", "pass")
 
-        self.assertEqual({}, change.removed())
+        removed, _written = change.removal()
+        self.assertEqual({}, removed)
 
     def test_a_block_a_fix_pass_deletes_is_removed(self):
         change = review_loop_plan.ChangeUnderReview(str(self.repo))
         self.write("edit.py", "import edit_base\n")
 
-        self.assertEqual({"edit.py": 10}, change.removed())
+        removed, _written = change.removal()
+        self.assertEqual({"edit.py": 10}, removed)
+
+    def test_a_block_a_fix_pass_moves_and_edits_on_the_way_is_not_gutted(self):
+        change = review_loop_plan.ChangeUnderReview(str(self.repo))
+        self.write("edit.py", "import edit_base\n")
+        self.write("helpers.py", numbered(10, "finder_v2"))
+
+        removed, written = change.removal()
+
+        self.assertEqual(({"edit.py": 10}, 10), (removed, written))
+        self.assertFalse(change_removal.is_gutted(change.added, removed, written))
+
+    def test_lines_a_fix_pass_moves_unchanged_are_not_new_lines(self):
+        change = review_loop_plan.ChangeUnderReview(str(self.repo))
+        self.write("edit.py", "import edit_base\n")
+        self.write("moved.py", numbered(10, "finder"))
+
+        _removed, written = change.removal()
+
+        self.assertEqual(0, written)
+
+    def test_a_pass_that_deletes_the_block_and_writes_unrelated_lines_elsewhere_is_gutted(self):
+        change = review_loop_plan.ChangeUnderReview(str(self.repo))
+        self.write("edit.py", "import edit_base\n")
+        self.write("other.py", "".join(f"unrelated_call_{n}(argument, keyword=value)\n" for n in range(25)))
+
+        removed, written = change.removal()
+
+        self.assertEqual(({"edit.py": 10}, 0), (removed, written))
+        self.assertTrue(change_removal.is_gutted(change.added, removed, written))
+
+    def test_a_pass_that_deletes_the_block_and_writes_same_style_lines_is_gutted(self):
+        change = review_loop_plan.ChangeUnderReview(str(self.repo))
+        self.write("edit.py", "import edit_base\n" + "".join(f"finder_x = lookup_{n}(finder)\n" for n in range(10)))
+
+        removed, written = change.removal()
+
+        self.assertEqual(({"edit.py": 10}, 0), (removed, written))
+        self.assertTrue(change_removal.is_gutted(change.added, removed, written))
+
+    def test_a_block_a_fix_pass_deletes_is_gutted(self):
+        change = review_loop_plan.ChangeUnderReview(str(self.repo))
+        self.write("edit.py", "import edit_base\n")
+
+        removed, written = change.removal()
+
+        self.assertTrue(change_removal.is_gutted(change.added, removed, written))
+        self.assertIn("removed 10 of the 10", change_removal.removal_blocker(change.added, removed, written))
+
+
+class RewrittenCountTest(unittest.TestCase):
+    def test_only_near_copies_of_removed_lines_count_and_each_matches_once(self):
+        removed = Counter({"finder 1": 2})
+        written = Counter({"finder_v2 1": 1, "unrelated code here": 3})
+
+        self.assertEqual(1, change_removal.rewritten_count(removed, written))
+
+
+class BestMatchPositionTest(unittest.TestCase):
+    def test_the_most_similar_candidate_is_picked_and_the_other_stays_for_a_second_line(self):
+        medium = "compute_total(alpha, gamma)"
+        high = "compute_total(alpha, bet)"
+        lines_by_length = {len(medium): [medium], len(high): [high]}
+
+        first = change_removal.best_match_position("compute_total(alpha, beta)", lines_by_length)
+        self.assertEqual(high, lines_by_length[first[0]][first[1]])
+
+        del lines_by_length[first[0]][first[1]]
+        second = change_removal.best_match_position("compute_total(alpha, beta)", lines_by_length)
+        self.assertEqual(medium, lines_by_length[second[0]][second[1]])
+
+    def test_a_near_copy_at_the_longest_length_the_threshold_allows_matches(self):
+        removed_line = "abcdefghij"
+        at_bound = removed_line + "k" * 5  # ratio 2 * 10 / 25 = 0.8 at the longest length, 15
+        over_bound = removed_line + "k" * 6
+
+        self.assertEqual((15, 0), change_removal.best_match_position(removed_line, {15: [at_bound]}))
+        self.assertIsNone(change_removal.best_match_position(removed_line, {16: [over_bound]}))
+
+
+class SameStyleReplacementTest(unittest.TestCase):
+    def test_a_deleted_block_replaced_by_same_style_unrelated_code_is_still_gutted(self):
+        removed_lines = Counter(f"result_{n} = compute_value(first_input, second_input)" for n in range(10))
+        written_lines = Counter(f"output_{n} = compute_total(left_input, right_input)" for n in range(10))
+        added = {"edit.py": removed_lines}
+        removed = {"edit.py": 10}
+
+        written = change_removal.rewritten_count(removed_lines, written_lines)
+
+        self.assertEqual(0, written)
+        self.assertTrue(change_removal.is_gutted(added, removed, written))
 
 
 class RemovalBlockerTest(unittest.TestCase):
+    def test_the_blocker_names_the_written_count_only_when_it_is_nonzero(self):
+        added = {"a.py": Counter({f"a{n}": 1 for n in range(10)})}
+        removed = {"a.py": 8}
+
+        self.assertIn(" and wrote 3 of them again with edits", change_removal.removal_blocker(added, removed, 3))
+        self.assertNotIn("again with edits", change_removal.removal_blocker(added, removed, 0))
+
     def test_the_blocker_names_the_counts_and_the_files_that_lost_the_most(self):
         added = {"a.py": Counter({f"a{n}": 1 for n in range(10)}), "b.py": Counter({f"b{n}": 1 for n in range(4)}),
                  "c.py": Counter({"c0": 1, "c1": 1})}

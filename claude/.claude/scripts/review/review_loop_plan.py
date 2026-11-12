@@ -1,6 +1,7 @@
 """review_loop_plan.py: the files a scripted review loop reviews, the lines its change adds, and which reviewers go
 out in each round."""
 import pathlib
+from collections import Counter
 
 import change_removal
 import numstat
@@ -88,7 +89,7 @@ def lines_added_since(repo, changes):
 
 class ChangeUnderReview:
     """The lines the working tree adds when the loop starts, measured against the commit HEAD names then. The loop
-    reads `removed` after every coder pass; a commit made while the loop runs leaves that base where it was."""
+    reads `removal` after every coder pass; a commit made while the loop runs leaves that base where it was."""
 
     def __init__(self, repo):
         self.repo = repo
@@ -97,26 +98,45 @@ class ChangeUnderReview:
         self.added = lines_added_since(repo, changes)
         self.start_texts = counted_texts(repo, changes[0])
 
-    def lines_added_by_fixes(self, changes):
-        """{path: Counter} of the source lines the tree holds now that it did not hold when the loop started."""
+    def start_text(self, path):
+        """The text `path` held when the loop started; a file the start commit lacks reads as empty."""
+        before_text = self.start_texts.get(path)
+        if before_text is not None:
+            return before_text
+        return script_utils.git_output(self.repo, "show", f"{self.start}:{path}") or ""
+
+    def fix_line_changes(self, changes):
+        """({path: Counter} of the source lines the tree holds now that it did not hold when the loop started,
+        Counter of the source lines it held then and no longer holds, over all files)."""
         added_by_file = {}
+        dropped = Counter()
         # A file a pass put back to the base drops out of the changed files, so the files of the start count too.
         files = changes[0].keys() | self.start_texts.keys()
         for path, now_text in counted_texts(self.repo, sorted(files)).items():
-            before_text = self.start_texts.get(path)
-            if before_text is None:
-                before_text = script_utils.git_output(self.repo, "show", f"{self.start}:{path}") or ""
+            before_text = self.start_text(path)
+            dropped += change_removal.added_lines(now_text, before_text, path)
             added = change_removal.added_lines(before_text, now_text, path)
             if added:
                 added_by_file[path] = added
-        return added_by_file
+        return added_by_file, dropped
 
-    def removed(self):
-        """{path: count} of the added lines the tree no longer adds. A line a fix pass added to any file, even one
-        that already held the same line, is kept."""
+    def removal(self):
+        """Returns (removed, written). `removed` is {path: count} of the added lines the tree no longer adds.
+        `written` is the number of those lines the fix passes wrote again as near copies, and is 0 while the raw
+        removal is below the gutted threshold. A line a
+        fix pass added to any file, even one that already held the same line, is kept. A line a pass moved
+        unchanged, a rename included, is not a new line."""
         changes = changed_files_since(self.repo, self.start)
         now_added = lines_added_since(self.repo, changes)
-        return change_removal.removed_by_file(self.added, now_added, self.lines_added_by_fixes(changes))
+        fix_added, dropped = self.fix_line_changes(changes)
+        lost_by_file = change_removal.lost_lines_by_file(self.added, now_added, fix_added)
+        removed = change_removal.lost_counts(lost_by_file)
+        if not change_removal.is_gutted(self.added, removed):
+            return removed, 0
+        lost_lines = sum(lost_by_file.values(), Counter())
+        all_fix_added = sum(fix_added.values(), Counter())
+        written = all_fix_added - dropped
+        return removed, change_removal.rewritten_count(lost_lines, written)
 
 
 def review_files(repo, base="", only=()):

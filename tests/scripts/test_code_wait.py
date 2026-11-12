@@ -116,6 +116,24 @@ class WaitReviewTest(unittest.TestCase):
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
 
+    def test_a_fix_removed_change_packet_prints_the_stop_step_and_exits_one(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        packet = json.dumps({"status": "fix-removed-change", "blockers": ["the fix passes removed 24 of 41"]})
+        (phase_dir / "review.out").write_text(packet + "\n")
+        loop_folder = temp_dir(self)
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        last_line = output.getvalue().strip().splitlines()[-1]
+        self.assertTrue(last_line.startswith("STOP (fix-removed-change)"), last_line)
+        self.assertIn(str(phase_dir / "stop.md"), last_line)
+        self.assertIn("/code resume", last_line)
+
     def test_a_finished_review_with_no_output_file_says_so_and_exits_one(self):
         repo, phase_dir = self.repo_with_pid(999999999)
         output = io.StringIO()

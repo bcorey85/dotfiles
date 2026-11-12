@@ -13,8 +13,12 @@ looks, so the session can end its turn while the loop runs. The loop runs with `
 each round's reviewers as its own subagents, and <git dir>/code-phase/loop-dir names the folder that holds the
 requests. Prints the hand-back packet when the loop ends, then the defer ACTION when the packet holds a plan impact
 that waits for a ruling.
+A live run stops when the handoff file holds the same text an earlier phase's review read: the fork wrote this phase's
+handoff somewhere else.
 """
 
+import hashlib
+import json
 import os
 import pathlib
 import re
@@ -51,6 +55,8 @@ WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 DEFER_COMMAND = f"{REVIEW_FIX_COMMAND} defer"
 AGENT_PREFIX = "loop-script-"
 NO_PLAN = gate_commands.NO_PLAN
+HANDOFF_FILE = "handoff.txt"
+HANDOFF_PHASES_FILE = "handoff-phases.json"
 
 
 HANDOFF_FILE_PATH = re.compile(r"^\s*-\s*path:\s*(\S+)", re.M)
@@ -200,6 +206,45 @@ def detach(repo, argv):
     return 0
 
 
+def read_handoff_phases(phases_file):
+    """The {digest: "<plan>#<phase>"} map in `phases_file`, {} when the file is absent. Stops on any other shape."""
+    if not phases_file.exists():
+        return {}
+    problem = None
+    try:
+        phases = json.loads(phases_file.read_text())
+    except ValueError as error:
+        problem = str(error)
+    else:
+        is_text_map = isinstance(phases, dict) and all(
+            isinstance(key, str) and isinstance(value, str) for key, value in phases.items())
+        if not is_text_map:
+            problem = "not an object of text keys and text values"
+    if problem is not None:
+        sys.exit(f"code_review_start: {phases_file} is unreadable: {problem}. Expected "
+                 f'{{"<sha256>": "<plan>#<phase>"}}. Delete it and run this step again.')
+    return phases
+
+
+def record_handoff_phase(repo, plan, phase, handoff_text):
+    """Record which plan and phase's review reads this handoff text, as "<plan>#<phase>" per text digest, in
+    <git dir>/code-phase/HANDOFF_PHASES_FILE. Returns the earlier phase when the same text was already read for
+    another phase of the same plan, else None. A rerun of one phase passes, and so does the same text under another
+    plan."""
+    folder = phase_dir(repo)
+    folder.mkdir(exist_ok=True)
+    phases_file = folder / HANDOFF_PHASES_FILE
+    phases = read_handoff_phases(phases_file)
+    digest = hashlib.sha256(handoff_text.encode()).hexdigest()
+    earlier_plan, _separator, earlier_phase = phases.get(digest, "").rpartition("#")
+    if earlier_plan == plan and earlier_phase != phase:
+        return earlier_phase
+
+    phases[digest] = f"{plan}#{phase}"
+    script_utils.write_text_atomically(phases_file, json.dumps(phases, indent=1) + "\n")
+    return None
+
+
 def base_option(argv):
     # The phase start commit, which the stale-prose pass diffs against; the loop cannot find it from the repo alone.
     if "--base" not in argv or argv.index("--base") + 1 >= len(argv):
@@ -219,6 +264,14 @@ def main(argv):
     if "--dry-run" in argv:
         print(prompt)
         return 0
+
+    stale_phase = record_handoff_phase(repo, plan, phase, coder_handoff)
+    if stale_phase is not None:
+        run_folder = phase_dir(repo)
+        sys.exit(f"code_review_start: {handoff_file} holds the handoff Phase {stale_phase}'s review read, not one for "
+                 f"Phase {phase}. Write this phase's handoff to {run_folder / HANDOFF_FILE} with Write, then run "
+                 f"this step again with that path. When the text really is this phase's handoff, delete "
+                 f"{run_folder / HANDOFF_PHASES_FILE} and run this step again.")
 
     if "--detach" in argv:
         return detach(repo, argv)

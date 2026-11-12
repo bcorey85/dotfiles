@@ -688,10 +688,10 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
             raise LaterPhaseEditError(f"{call_name} edited files the plan gives to a later phase: "
                                       + ", ".join(later_phase_edits))
 
-        removed = self.change.removed()
-        if change_removal.is_gutted(self.change.added, removed):
+        removed, written = self.change.removal()
+        if change_removal.is_gutted(self.change.added, removed, written):
             self.files_touched.update(result.changed)
-            raise ChangeRemovedError(change_removal.removal_blocker(self.change.added, removed))
+            raise ChangeRemovedError(change_removal.removal_blocker(self.change.added, removed, written))
         return result
 
     def keep_coder_commit_in_scope(self):

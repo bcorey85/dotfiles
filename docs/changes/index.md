@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-935 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+940 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-12, [the formatter leaves the gate replay corpus layout alone](notes/2026-11-12-the-formatter-leaves-the-gate-replay-corpus-layout.md).
+Latest change: 2026-11-12, [verify-log logs Step 1 review rows when only a commit review covers the tree](notes/2026-11-12-verify-log-logs-step-1-review-rows-when-only-a.md).
 
 ## Top gains
 

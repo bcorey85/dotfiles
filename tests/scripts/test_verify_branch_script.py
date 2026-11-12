@@ -1321,14 +1321,17 @@ class OpenAskTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("ASKS OPEN: 1", done.stdout)
 
-    def test_a_second_branch_review_is_refused_when_a_converged_review_covers_the_tree(self):
+    def test_the_step_1_rows_log_when_only_a_converged_commit_review_covers_the_tree(self):
         self.assertEqual(self.log_review().returncode, 0)
         self.cover_edited_tree_with_a_converged_review()
+        finding = json.dumps([{"desc": "step 1 finding", "file": "src/a.py", "line": 1, "actioned": "fixed"}])
 
-        done = self.log_review()
+        done = self.log_review(finding, "PASS")
 
-        self.assertEqual(done.returncode, 2)
-        self.assertIn("a branch review already counts for this tree", done.stderr)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        runs = [row for row in self.jsonl(self.findings) if row["_type"] == "review_run"]
+        self.assertEqual([row["n_findings"] for row in runs], ["0", "1"])
+        self.assertIn("already counts for this tree", self.log_review().stderr)
 
     def test_a_long_ask_reaches_the_user_whole(self):
         long_ask = ("the code keeps the plan's reading of the ticket and the ticket says otherwise " * 5

@@ -441,6 +441,37 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertIn("no conflicted paths", finished.stderr)
         self.assert_names_both_ways_out(finished.stderr)
 
+    def push_to_topic_from_other_machine(self, name, text):
+        other = self.clone("other-topic-" + name)
+        self.git(other, "checkout", "-q", "topic")
+        self.write(other, name, text)
+        self.git(other, "add", name)
+        self.git(other, "commit", "-qm", "other " + name)
+        self.git(other, "push", "-q")
+
+    def test_a_replayed_merge_that_had_resolved_conflicts_falls_back_to_a_merge_of_the_remote(self):
+        self.git(self.repo, "checkout", "-q", "-b", "topic")
+        self.commit_local("f", "topic\n")
+        self.git(self.repo, "push", "-q", "-u", "origin", "topic")
+        self.push_from_other_machine("f", "master\n")
+        self.git(self.repo, "fetch", "-q")
+        env = {**os.environ, **GIT_ENV}
+        subprocess.run(["git", "-C", str(self.repo), "merge", "-q", "origin/master"], env=env, capture_output=True)
+        self.write(self.repo, "f", "resolved\n")
+        self.git(self.repo, "commit", "-qam", "merge master, conflict resolved")
+        self.push_to_topic_from_other_machine("h", "2\n")
+        self.write(self.repo, "g", "staged\n")
+        self.git(self.repo, "add", "g")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
+        self.assertIn("merged the remote instead", finished.stdout)
+        self.assertEqual((self.repo / "f").read_text(), "resolved\n")
+        self.assertEqual((self.repo / "h").read_text(), "2\n")
+        self.assertEqual(self.status(), ["M  g"])
+        self.git(self.repo, "merge-base", "--is-ancestor", "origin/topic", "HEAD")
+
     def test_a_pull_that_stops_mid_rebase_names_the_conflict_and_both_ways_out(self):
         self.push_from_other_machine("f", "theirs\n")
         self.commit_local("f", "local\n")

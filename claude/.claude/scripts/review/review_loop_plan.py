@@ -48,16 +48,11 @@ def base_scope(repo, base):
     return files
 
 
-def head_commit(repo):
-    """The commit HEAD names, or None in a repo with no commit."""
-    return script_utils.git_output(repo, "rev-parse", "--verify", "-q", "HEAD")
-
-
 def changed_files_since(repo, start):
     """(files, origins, base) for the working tree against the commit `start`: the changed files, the rename origin of
     each, and the revision the lines are measured against. A HEAD still at `start`, or a `start` of None, diffs against
     HEAD with renames followed; a HEAD that moved diffs against `start` itself."""
-    head = head_commit(repo)
+    head = script_utils.head_commit(repo)
     if start is None or head == start:
         return scope(repo), worktree_snapshot.status_entries(repo)[1], "HEAD"
     return base_scope(repo, start), {}, start
@@ -97,7 +92,7 @@ class ChangeUnderReview:
 
     def __init__(self, repo):
         self.repo = repo
-        self.start = head_commit(repo)
+        self.start = script_utils.head_commit(repo)
         changes = changed_files_since(repo, self.start)
         self.added = lines_added_since(repo, changes)
         self.start_texts = counted_texts(repo, changes[0])

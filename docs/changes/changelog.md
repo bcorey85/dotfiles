@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-925 changes
+929 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A reviewed tree split across commits keeps its commit credit](notes/2026-11-11-a-reviewed-tree-split-across-commits-keeps-its.md) [script/review-commit-gate] The review record now also stores the HEAD at record time, so after the first of several commits that split a reviewed tree, the commit gate still credits the later commits while that HEAD is an ancestor of the current one. An edit made after review still needs a review.
+* [The adopt handoff carries findings and plan impact whole](notes/2026-11-11-the-adopt-handoff-carries-findings-and-plan-impact.md) [skill/review] decide --adopt writes each carried finding, the plan impact and the ruling into the adopt handoff whole; before, each was cut at 800 characters, so the next review read findings that stopped mid-sentence.
+* [asks-done's outcome error says a leave-it option takes rejected](notes/2026-11-11-asks-done-s-outcome-error-says-a-leave-it-option.md) [skill/review] When asks-done refuses an outcome word, its error now says what each outcome does: accepted applies the ask's proposed change, rejected leaves the code as it is (the outcome for a leave-it or accept-the-gap option), and modified:<change> applies another change. A fork that passed the option letter no longer falls back to accepted.
+* [Review launch deletes the run-folder inputs it read and stops older loops of the same repo](notes/2026-11-11-review-launch-deletes-the-run-folder-inputs-it.md) [script/review-fix, skill/review, skill/fix] review_launch deletes the --fix and --handoff files it read from the code-phase run folder, so a failed Write of the next findings or handoff file makes the next launch fail on a missing file instead of running a fix loop on the previous run's findings. Before it starts, it stops every live earlier loop of the same repo and waits for it to exit, so two loops never edit one tree.
 * [pull_keep_index moves its git questions to script_utils](notes/2026-11-11-pull-keep-index-moves-its-git-questions-to-script.md) [script/pull-keep-index, script/script-utils, script/pipe-shell-check] The remote-ref lookup and the branch merge-ref and remote reads move to script_utils, and the pipe check's comments say when a bar is a pipe.
 * [Branch review fixes: named tests run in the loop under a time budget, per-finding user rulings](notes/2026-11-11-branch-review-fixes-named-tests-run-with-runner.md) [skill/review, skill/fix] A converged run with no untested fix runs the named tests under a 540 s budget; every converged run of a launch with --test runs them before commit credit, and a red run blocks credit; --user-ruled is per finding, so only a skip of a finding the user ruled on comes back as an ask.
 * [asks-done needs --by; no default records a user sign-off](notes/2026-11-11-asks-done-needs-by-no-default-records-a-user-sign.md) [skill/review, skill/fix] review_fix.py asks-done refuses a call with no --by and logs nothing, so an ask outcome is recorded as the user's only when the caller says the user gave it.

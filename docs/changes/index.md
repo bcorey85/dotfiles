@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-925 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+929 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-11, [pull_keep_index moves its git questions to script_utils](notes/2026-11-11-pull-keep-index-moves-its-git-questions-to-script.md).
+Latest change: 2026-11-11, [A reviewed tree split across commits keeps its commit credit](notes/2026-11-11-a-reviewed-tree-split-across-commits-keeps-its.md).
 
 ## Top gains
 

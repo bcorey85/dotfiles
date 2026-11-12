@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-930 changes
+931 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [the formatter leaves the gate replay corpus layout alone](notes/2026-11-12-the-formatter-leaves-the-gate-replay-corpus-layout.md) [script/format-changed, script/gate-replay] The repo-root .prettierignore lists tests/scripts/gate_replay_corpus.json, so the format-on-Edit hook no longer reflows its one-line entries.
 * [The criteria dry run labels environment failures ENV and judges escaped rg patterns the same](notes/2026-11-12-the-criteria-dry-run-labels-environment-failures.md) [script/criteria-verdict, script/criteria-dry-run] A failing item whose output shows the tool could not start reads ENV with a flag, and a search ban is judged on the line's wording outside every backticked span.
 * [pull-keep-index skips the pull on a branch rewritten locally](notes/2026-11-12-pull-keep-index-skips-the-pull-on-a-branch.md) [script/pull-keep-index] When the upstream tip is not on HEAD but is in the branch's own reflog, pull_keep_index prints a force-with-lease hint and exits 0 without pulling.
 * [refactor branch-prep covers uncommitted and untracked files](notes/2026-11-11-refactor-branch-prep-covers-uncommitted-and.md) [skill/refactor, script/refactor-flow, script/script-utils] With no --head, /refactor branch-prep lists and sweeps the merge-base span against the work tree plus untracked files, and bounds the smell-reviewer to that span.

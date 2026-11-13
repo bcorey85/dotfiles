@@ -116,7 +116,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 7. **Simplify mode — what could be DELETED if this module were shaped differently.** Fixes are opt-in per finding, never wholesale.
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py simplify-prep <target...>`. It expands the target with `git ls-files`, drops test, index and style files, and over 25 source files splits along module folders and runs slice 1 (it STOPs when no source file is left) — tell the user which slice runs and its modules (`--slice N` for the others).
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py simplify-prep <target...>`. It expands the target with `git ls-files`, drops test, index, style and generated files, and over 25 source files splits along module folders and runs slice 1 (it STOPs when no source file is left) — tell the user which slice runs and its modules (`--slice N` for the others).
 
    b. **Do NOT read the files yourself.**
 

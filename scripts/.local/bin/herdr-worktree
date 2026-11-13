@@ -119,7 +119,8 @@ if [ -n "$fork" ]; then
             esac
         done
         dotfiles_dir="$(cd -P "$(dirname "$script_file")/../../.." && pwd)"
-        echo "herdr-worktree: missing helpers: ${missing_helpers[*]}; link them with: stow -d $(printf '%q' "$dotfiles_dir") -t \"\$HOME\" -R scripts" >&2
+        quoted_helpers="$(printf ' %q' "${missing_helpers[@]}")"
+        echo "herdr-worktree: missing helpers:$quoted_helpers; link them with: stow -d $(printf '%q' "$dotfiles_dir") -t \"\$HOME\" -R scripts" >&2
         exit 1
     fi
     if [[ ! "$watch_seconds" =~ ^(0|[1-9][0-9]*)$ ]]; then

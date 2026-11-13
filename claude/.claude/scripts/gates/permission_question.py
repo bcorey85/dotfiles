@@ -11,11 +11,17 @@ that files, opens, creates or raises a ticket, sub-ticket, subtask, issue, sub-i
 (a bare `task` does not count), that names Slack, or that files, opens, creates or raises
 `them|these|those|this|it|each` in/on/to/into Jira, Linear or GitHub (the pronoun comes right after the verb), that
 says `public` or `publicly`, or that names an outside destination after `to`, `on`, `in` or `off` with at most two
-words between (PR, MR, pull request, merge request, issue, ticket, thread, Jira, upstream, `#<number>`; GitHub, GitLab
-and case-sensitive Linear after `to`, `in` or `off` only, so `look it up on GitHub` stays a local step; GitHub
-Actions, workflows, CLI and Pages and `Linear interpolation` are local; a destination needs no word, `.`, `/` or `-`
-right after it, so a file such as `issues.py` is local; the outward-step search starts after the opening phrase, so
-the `to` of `want me to`, `ready to` and `do you want it to` is no preposition), is one to ask and does not count.
+words between (PR, MR, pull request, merge request, issue, ticket, thread, upstream, `#<number>`; Jira, which has its
+own branch that takes a `.com`, `.io` or `.app` suffix as a host name; GitHub, GitLab
+and case-sensitive Linear after `to`, `in` or `off` only, so `look it up on GitHub` stays a local step; GitHub,
+GitLab or Linear followed by actions, workflows, cli, pages, docs, api, copilot, desktop, codespaces, packages, gist
+or interpolation is local; every OUTWARD_STEP branch that names a destination has no word character or `-`, and no
+`.` or `/` followed by a word character, right after it, so a file such as `issues.py` or `github.py` is local; on
+the Slack branch, the pronoun branch (Jira, Linear, GitHub) and the GitHub, GitLab and Linear branch a `.com`, `.io`
+or `.app` suffix is no file name, so `github.com`, `gitlab.com`, `slack.com` and a capitalised `Linear.app` count as
+outside destinations (the pronoun branch also matches lowercase `linear.app`); the outward-step search starts
+after the opening phrase, so the `to` of `want me to`, `ready to` and `do you want it to` is no preposition, and
+neither is `to` after try, start, begin, need, have or going), is one to ask and does not count.
 A span in backticks or double quotes (straight or curly) on one line whose whole text is one permission
 question is dropped first (`message_text.without_quoted_spans`): a question cited as an example is no question asked.
 
@@ -35,18 +41,26 @@ PERMISSION_QUESTION = re.compile(
     re.IGNORECASE)
 # A `to` after these verbs is an infinitive (`try to fix`), not a preposition.
 INFINITIVE_LEAD_IN = r"(?<!\btry )(?<!\bstart )(?<!\bbegin )(?<!\bneed )(?<!\bhave )(?<!\bgoing )"
+# What may follow a destination name: a file name (`issues.py`, `github-x`, `a/b`) means a local file.
+FILE_NAME_AFTER = r"(?![\w-]|[./]\w)"
+# Same, except a `.com`, `.io` or `.app` suffix is a host name, so `github.com` stays a destination.
+HOST_NAME_AFTER = r"(?![\w-]|/\w|\.(?!(?:com|io|app)\b)\w)"
 OUTWARD_STEP = re.compile(
     r"\b(?:commit|push|merge|deploy|publish|release|delete|drop|reset|rebase|force|send|e-?mail|post|install|"
     r"upgrade|migrate|void|cancel|refund|revoke|submit|approve|archive|remove|overwrite|wipe|purge|truncate|destroy|"
     r"reply|replies|notify|message|ping)\w*"
     r"|\b(?:file|open|create|raise)\s+(?:an?\s+|the\s+)?(?:[\w-]+\s+){0,2}"
-    r"(?:(?:sub-?)?(?:tickets?|issues?)|sub-?tasks?|pull\s+requests?|PRs?|MRs?)\b|\bslack\b"
-    r"|\b(?:file|open|create|raise)\s+(?:them|these|those|this|it|each)\s+(?:in|on|to|into)\s+(?:jira|linear|github)\b"
-    r"|\b(?:publicly|public)\b"
+    r"(?:(?:sub-?)?(?:tickets?|issues?)|sub-?tasks?|pull\s+requests?|PRs?|MRs?)" + FILE_NAME_AFTER +
+    r"|\bslack" + HOST_NAME_AFTER +
+    r"|\b(?:file|open|create|raise)\s+(?:them|these|those|this|it|each)\s+(?:in|on|to|into)\s+(?:jira|linear|github)"
+    + HOST_NAME_AFTER +
+    r"|\b(?:publicly|public)\b(?![./]\w)"
     r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|on|in|off)\s+(?:[\w-]+\s+){0,2}"
     r"(?:PRs?|MRs?|pull\s+requests?|merge\s+requests?|"
-    r"issues?|tickets?|threads?|jira|upstream|#\d+)(?![\w-]|[./]\w)"
-    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|in|off)\s+(?:[\w-]+\s+){0,2}(?:git(?:hub|lab)|(?-i:Linear))\b"
+    r"issues?|tickets?|threads?|upstream|#\d+)" + FILE_NAME_AFTER +
+    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|on|in|off)\s+(?:[\w-]+\s+){0,2}jira" + HOST_NAME_AFTER +
+    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|in|off)\s+(?:[\w-]+\s+){0,2}(?:git(?:hub|lab)|(?-i:Linear))"
+    + HOST_NAME_AFTER +
     r"(?!\s+(?:actions|workflows?|cli|pages|docs|api|copilot|desktop|codespaces|packages|gist|interpolation)\b)",
     re.IGNORECASE)
 # A quoted span counts as a cited question only when its whole inner text is the question.

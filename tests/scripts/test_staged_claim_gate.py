@@ -475,7 +475,12 @@ class PermissionQuestionTest(unittest.TestCase):
                         "The fix works. Want me to leave it publicly?",
                         "The fix works. Want me to mirror it to GitHub too?",
                         "The fix works. Want me to move it to GitLab?",
-                        "The fix works. Want me to add the findings to Linear?"):
+                        "The fix works. Want me to add the findings to Linear?",
+                        "Want me to upload the screenshots to github.com?",
+                        "Want me to mirror the repo to gitlab.com?",
+                        "Want me to share it to slack.com?",
+                        "Want me to add it to jira.com?",
+                        "Want me to file them in linear.app?"):
             with self.subTest(message=message):
                 self.assert_passes(message)
         for message in ("The ticket is open. Shall I start #914?",
@@ -579,6 +584,24 @@ class PermissionQuestionTest(unittest.TestCase):
                         "The reviewer asked twice. Want me to reply on the thread?"):
             with self.subTest(message=message):
                 self.assert_passes(message)
+
+    def test_a_question_about_a_file_named_for_a_host_is_still_sent_back(self):
+        for message in ("Want me to move the helper in github.py?",
+                        "Want me to fix the typo in gitlab-ci.yml?",
+                        "Want me to add the hook in github/hooks.ts?",
+                        "Want me to fix the import in Linear.ts?",
+                        "Want me to fix the import in slack.py?",
+                        "Want me to rename slack-sync.sh?",
+                        "Want me to create it in github.py?",
+                        "Want me to open it in github.py?",
+                        "Want me to open this in linear.ts?",
+                        "Want me to open issues.py?",
+                        "Want me to create tickets.ts?",
+                        "Want me to create the PR-template.md?",
+                        "Want me to fix public/index.html?",
+                        "Want me to edit public.ts?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
 
     def test_a_question_about_a_local_ticket_note_still_sent_back(self):
         self.assert_sent_back("The plan cites the old ticket number. Want me to fix the reference?")

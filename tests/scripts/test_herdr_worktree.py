@@ -376,6 +376,9 @@ esac""")
                 self.assertFalse(self.herdr_args.exists())
 
     def test_a_fork_with_both_helpers_missing_names_both_and_the_stow_command_for_the_real_checkout(self):
+        spaced_bin_dir = self.root / "spaced bin"
+        self.bin_dir.rename(spaced_bin_dir)
+        self.bin_dir = spaced_bin_dir
         self.stub_fork(CLAUDE_PANE)
         (self.bin_dir / "detach").unlink()
         (self.bin_dir / "herdr-worktree-watch").unlink()
@@ -392,7 +395,8 @@ esac""")
 
         self.assertEqual(finished.returncode, 1, finished.stderr)
         self.assertEqual(len(finished.stderr.splitlines()), 1, finished.stderr)
-        self.assertIn(f"{self.bin_dir / 'detach'} {self.bin_dir / 'herdr-worktree-watch'};", finished.stderr)
+        escaped_bin_dir = str(self.bin_dir).replace(" ", chr(92) + " ")
+        self.assertIn(f"{escaped_bin_dir}/detach {escaped_bin_dir}/herdr-worktree-watch;", finished.stderr)
         self.assertIn(f"stow -d {str(checkout).replace(' ', chr(92) + ' ')} -t \"$HOME\" -R scripts", finished.stderr)
         self.assertFalse((self.root / "repo-new-thing").exists())
         self.assertFalse(self.herdr_args.exists())

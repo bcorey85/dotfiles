@@ -14,12 +14,12 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
-| script/review-loop-script | 56 | 7 |
+| script/review-loop-script | 57 | 8 |
 | script/handback | 51 | 3 |
 | script/review-fix | 51 | 4 |
 | script/review-commit-gate | 35 | 1 |
 | script/review-loop-gate | 35 | 1 |
-| script/full-check | 22 | 1 |
+| script/full-check | 23 | 2 |
 | script/coder-gate | 21 | 2 |
 | agent/review-loop | 20 | 0 |
 | script/plan-format | 18 | 1 |
@@ -46,7 +46,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/refactor-flow | 6 | 1 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
-| script/format-changed | 5 | 2 |
 | script/herdr-worktree | 5 | 1 |
 | script/open-child-gate | 5 | 0 |
 | script/reviewer-dispatch | 5 | 0 |
@@ -55,6 +54,8 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | (no component) | 4 | 0 |
 | script/bash-safety-gate | 4 | 0 |
 | script/check-output | 4 | 0 |
+| script/format-changed | 4 | 1 |
+| script/format-files | 4 | 1 |
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/parallel-tests | 4 | 0 |
@@ -64,7 +65,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | rule/orchestration | 3 | 0 |
 | script/adr-flow | 3 | 0 |
 | script/code | 3 | 0 |
-| script/format-files | 3 | 0 |
 | script/inline-interpreter-hint | 3 | 0 |
 | script/ledger-write | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
@@ -79,6 +79,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/agent-model-guard | 2 | 0 |
 | script/calibration-guard | 2 | 0 |
 | script/check-discovery | 2 | 0 |
+| script/code-relay | 2 | 1 |
 | script/coder-packet | 2 | 0 |
 | script/criteria-verdict | 2 | 1 |
 | script/emit-orchestration | 2 | 0 |
@@ -106,7 +107,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/agent-foreground | 1 | 0 |
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
-| script/code-relay | 1 | 0 |
 | script/code-step-gates | 1 | 0 |
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 1 |

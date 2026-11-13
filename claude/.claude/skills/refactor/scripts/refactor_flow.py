@@ -589,7 +589,7 @@ def _simplify_report(opts, files_by_target):
     dropped_text = simplify_slices.dropped_summary(plan.dropped)
     slices = plan.slices
     if not slices:
-        print(f"STOP: `{label}` holds only test, index or style files ({dropped_text} "
+        print(f"STOP: `{label}` holds only test, index, style or generated files ({dropped_text} "
               f"dropped); ask the user for a source dir or module.")
         return 0
     if not 1 <= opts.slice <= len(slices):

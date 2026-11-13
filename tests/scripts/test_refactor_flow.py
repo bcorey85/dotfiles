@@ -937,7 +937,7 @@ class RefactorFlowTest(unittest.TestCase):
             done = self.flow("simplify-prep", "mod", "--slice", number)
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertIn("split into 2 slices", done.stdout)
-            self.assertIn("1 test, 2 index, 1 style file(s)", done.stdout)
+            self.assertIn("1 test, 2 index, 1 style, 0 generated file(s)", done.stdout)
             self.assertIn("(30 source file(s))", done.stdout)
             outputs.append(done.stdout)
             listed.append(re.findall(r"^- (mod/\S+)$", done.stdout, re.M))
@@ -951,6 +951,18 @@ class RefactorFlowTest(unittest.TestCase):
             self.assertEqual(len(holders), 1, f"module {module} was cut across slices")
         self.assertEqual(self.flow("simplify-prep", "mod", "--slice", "3").returncode, 1)
 
+    def test_simplify_prep_drops_generated_files_and_does_not_list_them(self):
+        self.write("mod/a.py", "x = 1\n")
+        self.write("mod/dist/bundle.js", "x = 1\n")
+        self.write("mod/package-lock.json", "{}\n")
+        self.git("add", "-A")
+        done = self.flow("simplify-prep", "mod")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("0 test, 0 index, 0 style, 2 generated file(s)", done.stdout)
+        self.assertIn("(1 source file(s))", done.stdout)
+        self.assertNotIn("bundle.js", done.stdout)
+        self.assertNotIn("package-lock.json", done.stdout)
+
     def test_simplify_prep_with_only_test_index_or_style_files_stops(self):
         self.write("mod/test_a.py", "x = 1\n")
         self.write("mod/index.js", "x = 1\n")
@@ -960,8 +972,8 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("STOP:", done.stdout)
         self.assertIn("`mod`", done.stdout)
-        self.assertIn("only test, index or style files", done.stdout)
-        self.assertIn("1 test, 1 index, 1 style", done.stdout)
+        self.assertIn("only test, index, style or generated files", done.stdout)
+        self.assertIn("1 test, 1 index, 1 style, 0 generated", done.stdout)
         self.assertNotIn("dispatch prompt", done.stdout)
 
     def listed_slices(self, *targets):

@@ -39,18 +39,18 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/review-loop | 8 | 1 |
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
+| script/refactor-flow | 7 | 2 |
 | script/verify-common | 7 | 2 |
 | script/code-review-start | 6 | 3 |
 | script/code-wait | 6 | 3 |
 | script/herdr-worktree | 6 | 2 |
 | script/pipe-shell-check | 6 | 3 |
-| script/refactor-flow | 6 | 1 |
-| skill/refactor | 6 | 1 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/open-child-gate | 5 | 0 |
 | script/reviewer-dispatch | 5 | 0 |
 | script/shell-command | 5 | 1 |
+| skill/refactor | 5 | 0 |
 | (no component) | 4 | 0 |
 | script/bash-safety-gate | 4 | 0 |
 | script/check-output | 4 | 0 |
@@ -71,6 +71,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/review-loop-packet | 3 | 3 |
 | script/review-scope | 3 | 0 |
 | script/run-sh | 3 | 0 |
+| script/source-paths | 3 | 1 |
 | script/wait-loop-gate | 3 | 2 |
 | agent/code-fork | 2 | 1 |
 | agent/test-intent-reviewer | 2 | 0 |
@@ -90,7 +91,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/loop-transcript | 2 | 0 |
 | script/reviewed-tree | 2 | 1 |
 | script/rg-path-gate | 2 | 0 |
-| script/source-paths | 2 | 0 |
 | script/sweep-scratchpads | 2 | 1 |
 | script/verify-branch | 2 | 0 |
 | script/worktree-snapshot | 2 | 0 |

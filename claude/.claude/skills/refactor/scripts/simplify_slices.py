@@ -1,6 +1,6 @@
 """Slices of a simplify target: source files only, cut along module folders.
 
-`plan_slices` drops test, index and style files, groups the rest by the first folder below each target,
+`plan_slices` drops test, index, style and generated files, groups the rest by the first folder below each target,
 and packs whole groups into slices of at most `limit` files. A group over the limit splits by its own
 subfolders the same way; a folder over the limit with no subfolders splits into sorted chunks.
 """
@@ -13,7 +13,8 @@ import source_paths
 KIND_TEST = "test"
 KIND_INDEX = "index"
 KIND_STYLE = "style"
-DROPPED_KINDS = (KIND_TEST, KIND_INDEX, KIND_STYLE)
+KIND_GENERATED = "generated"  # whatever source_paths.is_uncounted_path rejects
+DROPPED_KINDS = (KIND_TEST, KIND_INDEX, KIND_STYLE, KIND_GENERATED)
 
 
 class SliceError(Exception):
@@ -45,11 +46,13 @@ def dropped_kind(path):
         return KIND_INDEX
     if source_paths.is_style_file(path):
         return KIND_STYLE
+    if source_paths.is_uncounted_path(path):
+        return KIND_GENERATED
     return ""
 
 
 def dropped_summary(dropped):
-    """`3 test, 1 index, 0 style`, in a fixed order."""
+    """`3 test, 1 index, 0 style, 0 generated`, in a fixed order."""
     return ", ".join(f"{dropped[kind]} {kind}" for kind in DROPPED_KINDS)
 
 
@@ -60,9 +63,11 @@ def plan_slices(files_by_target, limit):
     seen = set()
     for target, files in files_by_target:
         kept = _keep_source_files(files, seen, dropped)
-        units += _target_units(os.path.relpath(os.path.abspath(target)), sorted(kept), limit)
+        target_path = os.path.relpath(os.path.abspath(target))
+        units += _target_units(target_path, sorted(kept), limit)
     slices = _pack(units, limit)
-    return SlicePlan(slices, dropped, sum(len(unit.files) for unit in units))
+    kept_count = sum(len(unit.files) for unit in units)
+    return SlicePlan(slices, dropped, kept_count)
 
 
 def _keep_source_files(files, seen, dropped):
@@ -81,6 +86,7 @@ def _keep_source_files(files, seen, dropped):
 
 
 def _target_units(target, files, limit):
+    """The units of one target's kept files: the file itself, or its module folders."""
     if files == [target]:
         return [_Unit(target, files)]
     entries = [(path, _parts_below(target, path)) for path in files]

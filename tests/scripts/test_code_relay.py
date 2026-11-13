@@ -90,6 +90,48 @@ class RelayTest(unittest.TestCase):
         self.assertIn("go on with that skill's next step", rule)
         self.assertNotIn("Make no other tool call before", rule)
 
+    def test_a_stop_moved_aside_by_phase_start_is_not_replaced_by_an_older_review_stop(self):
+        self.run_folder.mkdir()
+        review_stop = self.run_folder / "review-stop.md"
+        review_stop.write_text("Review converged.\n\nTo go on: /review resume <your feedback>")
+        os.utime(review_stop, ns=(1, 1))
+        self.relay()
+        self.write_stop(STOP)
+        self.relay()
+        relayed_before = (self.run_folder / "relayed").read_text()
+        # phase_start moves the stale stop.md aside; os.replace keeps its mtime.
+        os.replace(self.run_folder / "stop.md", self.run_folder / "stop.prev.md")
+
+        result = self.relay()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("stop.prev.md is the stop phase_start moved aside", result.stderr)
+        self.assertEqual((self.run_folder / "relayed").read_text(), relayed_before)
+
+    def test_only_a_moved_aside_stop_exits_1_and_relays_nothing(self):
+        self.run_folder.mkdir()
+        (self.run_folder / "stop.prev.md").write_text(STOP)
+
+        result = self.relay()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertFalse((self.run_folder / "relayed").exists())
+
+    def test_a_review_stop_newer_than_the_moved_aside_stop_relays_normally(self):
+        self.write_stop(STOP)
+        os.replace(self.run_folder / "stop.md", self.run_folder / "stop.prev.md")
+        os.utime(self.run_folder / "stop.prev.md", ns=(1, 1))
+        review_stop = "Review converged.\n\nTo go on: /review resume <your feedback>"
+        (self.run_folder / "review-stop.md").write_text(review_stop)
+
+        result = self.relay()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(review_stop, result.stdout)
+        self.assertTrue((self.run_folder / "relayed").exists())
+
     def test_no_stop_file_exits_1_and_says_to_relay_the_skill_result(self):
         result = self.relay()
 
@@ -177,6 +219,45 @@ class ReviewedTreeRelayTest(unittest.TestCase):
 
         self.assert_relayed(result)
         self.assertIn(UNREVIEWED_NOTE, result.stdout.split("-----BEGIN USER TEXT-----\n")[1].split(STOP)[0])
+
+    def test_a_bounced_stop_moved_aside_by_phase_start_relays_once_with_the_unreviewed_note(self):
+        (self.repo / "app.py").write_text("x = 2\n")
+        self.assertIn(RE_REVIEW_FEEDBACK, self.relay().stdout)
+        # phase_start moves the stop.md aside on resume; os.replace keeps its mtime.
+        os.replace(self.run_folder / "stop.md", self.run_folder / "stop.prev.md")
+
+        result = self.relay()
+
+        self.assert_relayed(result)
+        self.assertIn(UNREVIEWED_NOTE, result.stdout.split("-----BEGIN USER TEXT-----\n")[1].split(STOP)[0])
+        self.assertEqual(self.relay().returncode, 1)
+
+    def bounce_and_move_stop_aside(self):
+        (self.repo / "app.py").write_text("x = 2\n")
+        self.assertIn(RE_REVIEW_FEEDBACK, self.relay().stdout)
+        os.replace(self.run_folder / "stop.md", self.run_folder / "stop.prev.md")
+
+    def test_a_bounced_stop_moved_aside_relays_without_the_note_once_the_tree_is_reverted(self):
+        self.bounce_and_move_stop_aside()
+        (self.repo / "app.py").write_text("x = 1\n")
+
+        result = self.relay()
+
+        self.assert_relayed(result)
+        self.assertNotIn(UNREVIEWED_NOTE, result.stdout)
+
+    def test_a_moved_aside_stop_exits_1_when_bounced_holds_another_stamp_or_it_was_relayed(self):
+        self.bounce_and_move_stop_aside()
+        stamp = (self.run_folder / "bounced").read_text()
+        cases = {"stale bounced stamp": ("bounced", "stop.md 1\n"),
+                 "stop already relayed": ("relayed", stamp)}
+        for name, (file_name, text) in cases.items():
+            with self.subTest(name):
+                (self.run_folder / "bounced").write_text(stamp)
+                (self.run_folder / "relayed").unlink(missing_ok=True)
+                (self.run_folder / file_name).write_text(text)
+
+                self.assertEqual(self.relay().returncode, 1)
 
     def test_a_handback_stored_within_a_second_before_a_commit_does_not_count_as_after_it(self):
         stored_at = handback_store.latest_for_repo(SESSION, self.top)["handback"]["ts"]

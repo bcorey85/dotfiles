@@ -67,8 +67,8 @@ later resume reads the old stop.
 Change: `phase_start.py` (which the skill runs before every phase's coder, fresh run or resume, after a resume read
 the stop) renames an existing `<run folder>/stop.md` to `<run folder>/stop.prev.md` (replacing an older one), so the
 next stop is a new file. Name `stop.prev.md` as a constant in `lib/stop_file_names.py`, outside `STOP_FILES` (the
-relay must never relay it). A failed rename prints the error on stderr naming phase_start and does not stop the
-script. `review-stop.md` is left alone.
+relay relays it only once, as a bounced stop.md not yet relayed). A failed rename prints the error on stderr naming
+phase_start and does not stop the script. `review-stop.md` is left alone.
 
 **File**: `claude/.claude/scripts/code/phase_start.py`, `claude/.claude/scripts/lib/stop_file_names.py`
 **Test**: `tests/scripts/test_phase_start.py` if it exists, else the file that tests `phase_start` today.
@@ -83,3 +83,12 @@ script. `review-stop.md` is left alone.
   - Phase 1 covers only files this loop's own coders wrote, recorded per coder call; a file made since the run's start
     by anyone else is still restored (agent-evals-5e overruled the wider "made since run start" rule).
   - "The handback runs pre-commit" is covered by Phase 2.
+
+- Rulings by agent-evals-5e, 2026-11-13: the relay now relays a bounced stop.prev.md once with UNREVIEWED_NOTE (only while the tree is still edited) (plan lines 69-70 and the line-89 ruling amended); and a ruff command with no hook of its kind runs on no files.
+
+- 2026-11-13: Adopt plan change. Ruled by the session, not the user at 2026-11-13 13:03.
+
+  The ruling: AC3's relay stop list means STOP_FILES, which is unchanged; newest_stop also reads stop.prev.md to exit 1 instead of relaying an older stop, and relays a bounced stop.md once from it, with UNREVIEWED_NOTE (only while the tree is still edited). Ruled by the lane session (criteria owner: plan), 2026-11-13.
+
+  The disagreement:
+  code_relay.py:53 [plan-drift] — PLAN-IMPACT: AC3 says "`review-stop.md` and the relay's stop list are unchanged", and the plan says stop.prev.md stays outside `STOP_FILES` "(the relay must never relay it)". `STOP_FILES` itself is unchanged, and the relay never relays stop.prev.md. But `newest_stop` now scans `(*STOP_FILES, PREVIOUS_STOP_FILE)`, so the files the relay picks from have changed. Without this, an older review-stop.md would be relayed as new after a /code resume that wrote no stop. The new test `test_a_stop_moved_aside_by_phase_start_is_not_replaced_by_an_older_review_stop` covers that case. Question: does "the relay's stop list" mean only `STOP_FILES`, so this scan is fine under AC3, or does it mean every file the relay looks at? Change if accepted under the second reading: add a line to the plan's `## Plan Deviations` recording who signed off on the relay also reading stop.prev.md, and when. acceptance_criteria: AC3

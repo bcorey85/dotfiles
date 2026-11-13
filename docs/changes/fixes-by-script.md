@@ -7,19 +7,19 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-569 fix notes
+572 fix notes
 
 Recent: the 7 days up to 2026-11-13, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
-| script/review-loop-script | 55 | 6 |
+| script/review-loop-script | 57 | 8 |
 | script/handback | 52 | 4 |
 | script/review-fix | 52 | 5 |
 | script/review-commit-gate | 35 | 1 |
 | script/review-loop-gate | 35 | 1 |
-| script/full-check | 22 | 1 |
+| script/full-check | 23 | 2 |
 | script/coder-gate | 21 | 2 |
 | agent/review-loop | 20 | 0 |
 | script/plan-format | 18 | 1 |
@@ -55,6 +55,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/bash-safety-gate | 4 | 0 |
 | script/check-output | 4 | 0 |
 | script/format-changed | 4 | 1 |
+| script/format-files | 4 | 1 |
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/parallel-tests | 4 | 0 |
@@ -65,7 +66,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | rule/orchestration | 3 | 0 |
 | script/adr-flow | 3 | 0 |
 | script/code | 3 | 0 |
-| script/format-files | 3 | 0 |
 | script/inline-interpreter-hint | 3 | 0 |
 | script/ledger-write | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
@@ -80,6 +80,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/agent-model-guard | 2 | 0 |
 | script/calibration-guard | 2 | 0 |
 | script/check-discovery | 2 | 0 |
+| script/code-relay | 2 | 1 |
 | script/coder-packet | 2 | 0 |
 | script/criteria-verdict | 2 | 1 |
 | script/emit-orchestration | 2 | 0 |
@@ -107,7 +108,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/agent-foreground | 1 | 0 |
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
-| script/code-relay | 1 | 0 |
 | script/code-step-gates | 1 | 0 |
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 1 |
@@ -128,6 +128,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/log-skill-use | 1 | 0 |
 | script/merge-built-page | 1 | 1 |
 | script/permission-question | 1 | 0 |
+| script/phase-start | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 1 |
 | script/pytest-config | 1 | 0 |

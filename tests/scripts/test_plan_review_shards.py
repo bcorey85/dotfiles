@@ -5,15 +5,20 @@ import sys
 import tempfile
 import unittest
 
-from toolkit_paths import TOOLS_DIR
+from toolkit_paths import LIB_DIR, TOOLS_DIR
+
+sys.path.insert(0, str(LIB_DIR))
+import plan_format
 
 SCRIPT = pathlib.Path(os.environ.get("PLAN_REVIEW_SHARDS_SCRIPT") or TOOLS_DIR / "plan_review_shards.py")
 PHASE_BODY_LINES = 120
+OTHER_HEADING = "## Phases in the other extract"
 
 
-def phase(number, body_lines=PHASE_BODY_LINES):
+def phase(number, body_lines=PHASE_BODY_LINES, heading=None):
+    """A phase section; `heading` replaces the default titled heading (for an untitled phase)."""
     body = [f"phase {number} line {index}" for index in range(body_lines)]
-    return [f"## Phase {number}: step {number}", *body]
+    return [heading or f"## Phase {number}: step {number}", *body]
 
 
 def long_plan(phase_count=4):
@@ -22,6 +27,17 @@ def long_plan(phase_count=4):
         lines += phase(number)
     lines += ["## Phase Status", "back matter line"]
     return lines
+
+
+def own_text(shard_text):
+    """The shard's text before its closing other-extract section."""
+    return shard_text.split(OTHER_HEADING, 1)[0].rstrip("\n") + "\n"
+
+
+def phase_with_files(number, paths, heading=None):
+    entry = ", ".join(f"`{path}`" for path in paths)
+    heading_line, *body = phase(number, heading=heading)
+    return [heading_line, f"**Files**: {entry}" if paths else "no entry", *body]
 
 
 class PlanReviewShardsTest(unittest.TestCase):
@@ -69,7 +85,7 @@ class PlanReviewShardsTest(unittest.TestCase):
         _, (shard_a, shard_b) = self.cut()
         text_a = shard_a.read_text()
         text_b = shard_b.read_text()
-        self.assertEqual(len(text_a.splitlines()), len(lines) - 2 * (PHASE_BODY_LINES + 1))
+        self.assertEqual(len(own_text(text_a).splitlines()), len(lines) - 2 * (PHASE_BODY_LINES + 1))
         for text in (text_a, text_b):
             self.assertLess(text.index("# Plan"), text.index("## Notes"))
             self.assertLess(text.index("## Notes\nnotes line\n"), text.index("## Phase Status"))
@@ -93,7 +109,7 @@ class PlanReviewShardsTest(unittest.TestCase):
         text_b = shard_b.read_text()
         for text in (text_a, text_b):
             self.assertTrue(text.startswith("# Plan\nfront matter line\n"))
-            self.assertTrue(text.endswith("## Phase Status\nback matter line\n"))
+            self.assertTrue(own_text(text).endswith("## Phase Status\nback matter line\n"))
         self.assertIn("## Phase 2: step 2", text_a)
         self.assertNotIn("## Phase 3: step 3", text_a)
         self.assertIn("## Phase 3: step 3", text_b)
@@ -118,6 +134,42 @@ class PlanReviewShardsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Phase 2 has two sections", result.stderr)
         self.assertEqual(paths, [])
+
+    def cut_phase_files_plan(self):
+        lines = ["# Plan", *phase_with_files(1, ["src/b.py", "src/a.py"]), *phase_with_files(2, ["CHANGELOG.md"]),
+                 *phase_with_files(3, ["docs/c.md"]), *phase_with_files(4, [], heading="## Phase 4")]
+        self.write_plan(lines)
+        _, (shard_a, shard_b) = self.cut()
+        return shard_a.read_text(), shard_b.read_text()
+
+    def test_each_shard_names_the_other_shards_phases_and_files(self):
+        text_a, text_b = self.cut_phase_files_plan()
+        self.assertIn(str(self.plan), text_a)
+        self.assertIn(str(self.plan), text_b)
+        self.assertIn("do not review them here", text_a)
+        self.assertIn("do not review them here", text_b)
+        other_a = text_a.split(OTHER_HEADING)[1]
+        self.assertIn("- Phase 3: step 3 — files: `docs/c.md`", other_a)
+        self.assertNotIn("Phase 1", other_a)
+        self.assertNotIn("Phase 2", other_a)
+        self.assertLess(text_a.index("- Phase 3:"), text_a.index("- Phase 4 "))
+        other_b = text_b.split(OTHER_HEADING)[1]
+        self.assertIn("- Phase 1: step 1 — files: `src/a.py`, `src/b.py`", other_b)
+        self.assertIn("- Phase 2: step 2 — files: `CHANGELOG.md`", other_b)
+        self.assertNotIn("Phase 3", other_b)
+
+    def test_an_untitled_phase_without_a_files_entry_prints_none_named_with_one_space(self):
+        text_a, _ = self.cut_phase_files_plan()
+        other_a = text_a.split(OTHER_HEADING)[1]
+        self.assertIn("\n- Phase 4 — files: none named", other_a)
+
+    def test_the_other_extract_section_adds_no_phase_span(self):
+        text_a, text_b = self.cut_phase_files_plan()
+        for text, expected in ((text_a, ["1", "2"]), (text_b, ["3", "4"])):
+            spans, failures = plan_format.phase_spans(text.splitlines())
+            self.assertEqual(failures, [])
+            self.assertEqual([phase_id for phase_id, _ in spans], expected)
+            self.assertEqual([line for line in text.splitlines() if plan_format.PHASE_STATUS_LINE.match(line)], [])
 
     def test_clean_removes_the_shard_folder(self):
         self.write_plan(long_plan())

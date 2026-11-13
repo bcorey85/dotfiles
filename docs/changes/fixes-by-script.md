@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-565 fix notes
+566 fix notes
 
 Recent: the 7 days up to 2026-11-13, the newest note.
 
@@ -88,6 +88,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/ledger-deferred | 2 | 0 |
 | script/log-review-check | 2 | 0 |
 | script/loop-transcript | 2 | 0 |
+| script/plan-review-shards | 2 | 1 |
 | script/reviewed-tree | 2 | 1 |
 | script/rg-path-gate | 2 | 0 |
 | script/source-paths | 2 | 0 |
@@ -128,7 +129,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/merge-built-page | 1 | 1 |
 | script/permission-question | 1 | 0 |
 | script/plan-review-reports | 1 | 0 |
-| script/plan-review-shards | 1 | 0 |
 | script/plan-verification | 1 | 1 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |

@@ -53,10 +53,12 @@ from stat import S_ISREG
 from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import handoff_files
 import numstat
 import plan_format
 import script_utils
+import simplify_slices
 import source_text
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
@@ -568,29 +570,42 @@ def _print_complexity_prompt(chosen, label):
 def simplify_prep(opts):
     require_repo()
     targets = opts.target
-    files = []
+    files_by_target = []
     for target in targets:
         found = tracked_files([target])
         if not found:
             print(f"STOP: `git ls-files {target}` is empty; ask the user for a tracked dir or module.")
             return 0
-        files += found
-    files = list(dict.fromkeys(files))
+        files_by_target.append((target, found))
+    return _simplify_report(opts, files_by_target)
 
-    slices = [files[i:i + MAX_SIMPLIFY_FILES] for i in range(0, len(files), MAX_SIMPLIFY_FILES)]
+
+def _simplify_report(opts, files_by_target):
+    label = " ".join(target for target, _files in files_by_target)
+    try:
+        plan = simplify_slices.plan_slices(files_by_target, MAX_SIMPLIFY_FILES)
+    except simplify_slices.SliceError as error:
+        raise RefactorFlowError(f"simplify-prep: {error}") from error
+    dropped_text = simplify_slices.dropped_summary(plan.dropped)
+    slices = plan.slices
+    if not slices:
+        print(f"STOP: `{label}` holds only test, index, style or generated files ({dropped_text} "
+              f"dropped); ask the user for a source dir or module.")
+        return 0
     if not 1 <= opts.slice <= len(slices):
         raise RefactorFlowError(f"--slice {opts.slice} out of range 1..{len(slices)}")
     chosen = slices[opts.slice - 1]
-    label = " ".join(targets)
     log_input = fresh_log_input()
 
-    print(f"## Simplify target `{label}` ({len(files)} tracked file(s))")
+    print(f"## Simplify target `{label}` ({plan.kept} source file(s))")
+    print(f"Dropped as not source: {dropped_text} file(s).")
     if len(slices) > 1:
-        print(f"Over {MAX_SIMPLIFY_FILES} files: split into {len(slices)} slices. This run is slice "
-              f"{opts.slice} of {len(slices)} ({len(chosen)} files); tell the user which slice runs, "
+        print(f"Over {MAX_SIMPLIFY_FILES} files: split into {len(slices)} slices along module folders. This run "
+              f"is slice {opts.slice} of {len(slices)} ({len(chosen.files)} files); modules: "
+              f"{', '.join(chosen.modules)}; tell the user which slice runs, "
               f"re-run with `--slice N` for the others.")
     print()
-    _print_complexity_prompt(chosen, label)
+    _print_complexity_prompt(chosen.files, label)
     print()
     print(next_line("do NOT read the files; dispatch ONE complexity-reviewer with the prompt above; triage "
                     "(drop oracle-failures, under-floor, irreducible; `[design-decision]` to the user); present "

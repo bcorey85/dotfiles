@@ -13,6 +13,7 @@ import unittest.mock
 from typing import ClassVar
 
 import fake_ledger
+import isolated_state
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
@@ -154,6 +155,7 @@ DEFERRED = json.dumps({
 
 class ReviewFixScriptTest(unittest.TestCase):
     def setUp(self):
+        isolated_state.isolate_state_root(self)
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         self.temp_root = pathlib.Path(temp_dir.name)

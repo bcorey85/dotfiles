@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-940 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+941 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-12, [verify-log logs Step 1 review rows when only a commit review covers the tree](notes/2026-11-12-verify-log-logs-step-1-review-rows-when-only-a.md).
+Latest change: 2026-11-13, [Tests isolate the review-gate state root; tests/run.sh fails when the real review-gate folder gains a repo key under the run's temp folder](notes/2026-11-13-tests-isolate-the-review-gate-state-root-suite.md).
 
 ## Top gains
 

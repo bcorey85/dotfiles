@@ -1,7 +1,7 @@
 ---
 name: test-intent-reviewer
 description: "Audits whether changed tests pin intent or implementation. Dispatched by /test-audit or directly; name `scope: cull` or `scope: bug-pinning`."
-model: opencode-go/mimo-v2.5-pro
+model: opencode-go/mimo-v2.6-pro
 mode: subagent
 permission:
   edit: deny

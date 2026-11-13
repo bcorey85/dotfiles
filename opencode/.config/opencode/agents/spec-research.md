@@ -1,7 +1,7 @@
 ---
 name: spec-research
 description: "Answers a numbered list of codebase questions with file:line facts. Dispatched by goal-blind-researcher with the questions file only."
-model: opencode-go/mimo-v2.5
+model: opencode-go/mimo-v2.6-flash
 mode: subagent
 color: "#a855f7"
 ---

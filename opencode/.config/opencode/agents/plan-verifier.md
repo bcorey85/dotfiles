@@ -1,7 +1,7 @@
 ---
 name: plan-verifier
 description: "Checks each plan criterion against the branch diff: done, partial or missing, with evidence. Dispatched by /verify at branch end."
-model: opencode-go/mimo-v2.5-pro
+model: opencode-go/mimo-v2.6-pro
 mode: subagent
 color: "#06b6d4"
 ---

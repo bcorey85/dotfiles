@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: "Runs one named mutation; reports if the suite kills it. Dispatched by /test-audit per REQUIRES-MUTATION finding, one at a time."
-model: opencode-go/mimo-v2.5-pro
+model: opencode-go/mimo-v2.6-pro
 mode: subagent
 color: "#ef4444"
 ---

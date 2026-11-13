@@ -483,18 +483,18 @@ fg = "#575279"
 bg = "#faf4ed"
 grey = "#9893a5"
 
-# dredge (nvim colors/dredge.lua).
+# dredge (bcorey85/dredge.nvim).
 [palettes.dredge-dark]
-red = "#f7665b"
-orange = "#ee8448"
-yellow = "#d6ae56"
-green = "#99af2e"
-blue = "#3ba6e2"
-branch = "#8e96ec"
-teal = "#46b8ae"
-purple = "#fc61a5"
+red = "#e1645a"
+orange = "#da7e4b"
+yellow = "#c7a459"
+green = "#8fa338"
+blue = "#429ace"
+branch = "#858dd8"
+teal = "#4baba2"
+purple = "#e6619a"
 fg = "#b6c3cb"
-bg = "#061a21"
+bg = "#111517"
 grey = "#b1b5bc"
 
 [palettes.dredge-light]
@@ -509,20 +509,6 @@ purple = "#a80e62"
 fg = "#293741"
 bg = "#c8d0d3"
 grey = "#4e5158"
-
-# dredge on the warm ground (dredge-roles-warm dark).
-[palettes.dredge-warm-dark]
-red = "#f7665b"
-orange = "#ee8448"
-yellow = "#d6ae56"
-green = "#99af2e"
-blue = "#3ba6e2"
-branch = "#8e96ec"
-teal = "#46b8ae"
-purple = "#fc61a5"
-fg = "#c3c1ba"
-bg = "#24231f"
-grey = "#b7b5ae"
 
 # kanagawa wave / lotus.
 [palettes.kanagawa-dark]

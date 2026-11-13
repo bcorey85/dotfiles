@@ -1,7 +1,7 @@
 ---
 name: plan-reviewer
 description: "Fresh-eyes review of a finalized plan: where it cannot execute as written. Dispatched by /eng-spec at finalization, with paths only."
-model: opencode-go/mimo-v2.5-pro
+model: opencode-go/mimo-v2.6-pro
 mode: subagent
 permission:
   edit: deny

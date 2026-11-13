@@ -1,7 +1,7 @@
 ---
 name: goal-blind-researcher
 description: "Runs eng-spec's goal-blind research: spec-questions, spec-leak-check, spec-research. Returns artifact paths. Dispatched by /eng-spec with the ticket path, never its text."
-model: opencode-go/mimo-v2.5
+model: opencode-go/mimo-v2.6-flash
 mode: subagent
 color: "#06b6d4"
 ---

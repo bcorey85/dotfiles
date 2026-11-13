@@ -1,7 +1,7 @@
 ---
 name: coder
 description: "The implementer for any repo and any layer; no frontend or backend variant. Dispatched by /code, /refactor, /deps and the review loop."
-model: opencode-go/mimo-v2.5
+model: opencode-go/mimo-v2.6-flash
 mode: subagent
 color: "#eab923"
 ---

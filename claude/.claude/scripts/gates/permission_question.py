@@ -9,10 +9,15 @@ upgrade, migrate, void, cancel, refund, revoke, submit, approve, archive, remove
 destroy, reply, notify, message, ping),
 that files, opens, creates or raises a ticket, sub-ticket, subtask, issue, sub-issue, pull request or merge request
 (a bare `task` does not count), that names Slack, or that files, opens, creates or raises
-`them|these|those|this|it|each` in/on/to/into Jira, Linear or GitHub (the pronoun comes right after the verb), is one
-to ask and does not count. A span in backticks or double quotes (straight or curly) on one line whose
-whole text is one permission question is dropped first (`message_text.without_quoted_spans`): a question cited as
-an example is no question asked.
+`them|these|those|this|it|each` in/on/to/into Jira, Linear or GitHub (the pronoun comes right after the verb), that
+says `public` or `publicly`, or that names an outside destination after `to`, `on`, `in` or `off` with at most two
+words between (PR, MR, pull request, merge request, issue, ticket, thread, Jira, upstream, `#<number>`; GitHub, GitLab
+and case-sensitive Linear after `to`, `in` or `off` only, so `look it up on GitHub` stays a local step; GitHub
+Actions, workflows, CLI and Pages and `Linear interpolation` are local; a destination needs no word, `.`, `/` or `-`
+right after it, so a file such as `issues.py` is local; the outward-step search starts after the opening phrase, so
+the `to` of `want me to`, `ready to` and `do you want it to` is no preposition), is one to ask and does not count.
+A span in backticks or double quotes (straight or curly) on one line whose whole text is one permission
+question is dropped first (`message_text.without_quoted_spans`): a question cited as an example is no question asked.
 
 A reply to a user prompt that asks a question passes (`answers_users_question`): the answer stands, offer and all. The
 prompt asks when the user's own words hold a `?` or open on a question word, and do not open on a request such as `can
@@ -24,17 +29,25 @@ from message_text import without_quoted_spans
 from user_prompts import latest_prompt, user_words
 
 PERMISSION_QUESTION = re.compile(
-    r"\b(?:(?:do you |would you )?want me to|do you want (?:that|this|it|them|those|these)\b|shall I|"
+    r"\b(?P<opening>(?:do you |would you )?want me to|do you want (?:that|this|it|them|those|these)(?: to)?|shall I|"
     r"should I(?: go ahead| proceed)?|would you like me to|ok(?:ay)? to (?:proceed|go ahead)|go ahead and|"
     r"ready (?:for me )?to)\b(?:[^?.!]|[.!](?!\s))*\?",
     re.IGNORECASE)
+# A `to` after these verbs is an infinitive (`try to fix`), not a preposition.
+INFINITIVE_LEAD_IN = r"(?<!\btry )(?<!\bstart )(?<!\bbegin )(?<!\bneed )(?<!\bhave )(?<!\bgoing )"
 OUTWARD_STEP = re.compile(
     r"\b(?:commit|push|merge|deploy|publish|release|delete|drop|reset|rebase|force|send|e-?mail|post|install|"
     r"upgrade|migrate|void|cancel|refund|revoke|submit|approve|archive|remove|overwrite|wipe|purge|truncate|destroy|"
     r"reply|replies|notify|message|ping)\w*"
     r"|\b(?:file|open|create|raise)\s+(?:an?\s+|the\s+)?(?:[\w-]+\s+){0,2}"
     r"(?:(?:sub-?)?(?:tickets?|issues?)|sub-?tasks?|pull\s+requests?|PRs?|MRs?)\b|\bslack\b"
-    r"|\b(?:file|open|create|raise)\s+(?:them|these|those|this|it|each)\s+(?:in|on|to|into)\s+(?:jira|linear|github)\b",
+    r"|\b(?:file|open|create|raise)\s+(?:them|these|those|this|it|each)\s+(?:in|on|to|into)\s+(?:jira|linear|github)\b"
+    r"|\b(?:publicly|public)\b"
+    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|on|in|off)\s+(?:[\w-]+\s+){0,2}"
+    r"(?:PRs?|MRs?|pull\s+requests?|merge\s+requests?|"
+    r"issues?|tickets?|threads?|jira|upstream|#\d+)(?![\w-]|[./]\w)"
+    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|in|off)\s+(?:[\w-]+\s+){0,2}(?:git(?:hub|lab)|(?-i:Linear))\b"
+    r"(?!\s+(?:actions|workflows?|cli|pages|docs|api|copilot|desktop|codespaces|packages|gist|interpolation)\b)",
     re.IGNORECASE)
 # A quoted span counts as a cited question only when its whole inner text is the question.
 OPENING_QUESTION = re.compile(r"\A(?:" + PERMISSION_QUESTION.pattern + r")\Z", re.IGNORECASE)
@@ -70,11 +83,13 @@ def closing_question(message):
     """The last permission question in the message's tail that names no outward step, or None."""
     unquoted_message = without_quoted_spans(OPENING_QUESTION, message.strip())
     tail = unquoted_message[-TAIL_CHARACTERS:]
-    questions = [match.group(0) for match in PERMISSION_QUESTION.finditer(tail)]
-    if not questions:
+    matches = list(PERMISSION_QUESTION.finditer(tail))
+    if not matches:
         return None
 
-    last_question = questions[-1]
-    if OUTWARD_STEP.search(last_question):
+    last_match = matches[-1]
+    # The opening phrase is not searched: its `to` is an infinitive, not a destination.
+    asked_step = last_match.group(0)[last_match.end("opening") - last_match.start():]
+    if OUTWARD_STEP.search(asked_step):
         return None
-    return last_question
+    return last_match.group(0)

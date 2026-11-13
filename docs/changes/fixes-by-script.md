@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-566 fix notes
+567 fix notes
 
 Recent: the 7 days up to 2026-11-13, the newest note.
 
@@ -42,12 +42,12 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/verify-common | 7 | 2 |
 | script/code-review-start | 6 | 3 |
 | script/code-wait | 6 | 3 |
+| script/herdr-worktree | 6 | 2 |
 | script/pipe-shell-check | 6 | 3 |
 | script/refactor-flow | 6 | 1 |
 | skill/refactor | 6 | 1 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
-| script/herdr-worktree | 5 | 1 |
 | script/open-child-gate | 5 | 0 |
 | script/reviewer-dispatch | 5 | 0 |
 | script/shell-command | 5 | 1 |

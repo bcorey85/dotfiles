@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-942 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+943 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-13, [simplify-prep counts source files only and slices along module folders](notes/2026-11-13-simplify-prep-counts-source-files-only-and-slices.md).
+Latest change: 2026-11-13, [herdr-worktree names every missing helper in one error with the stow command](notes/2026-11-13-herdr-worktree-names-every-missing-helper-in-one.md).
 
 ## Top gains
 

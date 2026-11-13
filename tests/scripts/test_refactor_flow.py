@@ -1033,6 +1033,19 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("modules: mod/a;", done.stdout)
         self.assertEqual(len(re.findall(r"^- mod/a/", done.stdout, re.M)), 15)
 
+    def test_simplify_prep_stops_on_a_target_outside_the_repo(self):
+        outside = self.temp_root / "elsewhere"
+        outside.mkdir()
+        (outside / "a.py").write_text("x = 1\n")
+        self.write("mod/a.py", "x = 1\n")
+        self.git("add", "-A")
+        done = self.flow("simplify-prep", str(outside))
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("git ls-files failed", done.stderr)
+        self.assertIn(str(outside), done.stderr)
+        self.assertIn("outside repository", done.stderr)
+        self.assertNotIn("dispatch prompt", done.stdout)
+
     def test_simplify_prep_counts_files_once_across_overlapping_folder_targets(self):
         for index in range(3):
             self.write(f"mod/a/f{index}.py", "x = 1\n")

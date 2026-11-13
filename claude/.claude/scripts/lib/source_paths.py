@@ -1,6 +1,7 @@
 """Which file paths count as source: not a test, a lockfile or a generated file. The one owner of the two test-file
 rules every gate reads: `is_test_path` (the file belongs to the tests) and `is_runnable_test_file` (a test runner
-can take it alone as a target)."""
+can take it alone as a target). It also owns `is_index_file` (a folder's re-export file) and `is_style_file` (a
+stylesheet), which simplify slicing leaves out of its counts."""
 
 LOCKFILE_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "Cargo.lock",
                   "Gemfile.lock", "composer.lock", "go.sum", "bun.lockb"}

@@ -104,11 +104,24 @@ fork_timeout="${HERDR_WORKTREE_FORK_TIMEOUT:-30}"
 if [ -n "$fork" ]; then
     # Checked before anything is created: a failure after the fork starts would
     # report a working fork as failed.
+    missing_helpers=()
     for helper in detach herdr-worktree-watch; do
-        [ -x "$bin_dir/$helper" ] && continue
-        echo "herdr-worktree: $bin_dir/$helper missing; run install/stow" >&2
-        exit 1
+        [ -x "$bin_dir/$helper" ] || missing_helpers+=("$bin_dir/$helper")
     done
+    if [ "${#missing_helpers[@]}" -gt 0 ]; then
+        # The checkout is three folders above scripts/.local/bin/herdr-worktree, after following links.
+        script_file="$0"
+        while [ -L "$script_file" ]; do
+            link_target="$(readlink "$script_file")"
+            case "$link_target" in
+                /*) script_file="$link_target" ;;
+                *) script_file="$(dirname "$script_file")/$link_target" ;;
+            esac
+        done
+        dotfiles_dir="$(cd -P "$(dirname "$script_file")/../../.." && pwd)"
+        echo "herdr-worktree: missing helpers: ${missing_helpers[*]}; link them with: stow -d $(printf '%q' "$dotfiles_dir") -t \"\$HOME\" -R scripts" >&2
+        exit 1
+    fi
     if [[ ! "$watch_seconds" =~ ^(0|[1-9][0-9]*)$ ]]; then
         echo "HERDR_WORKTREE_WATCH_SECONDS must be a whole number of seconds, got: $watch_seconds" >&2
         exit 1

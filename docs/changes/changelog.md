@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-940 changes
+941 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Sharded plan review lists the other extract's phases and files](notes/2026-11-13-sharded-plan-review-lists-the-other-extract-s.md) [script/plan-review-shards] Each half of a sharded plan review now ends with the other half's phase titles and the files they touch, so a shard reviewer stops flagging a gap that the other half fills.
 * [verify-log logs Step 1 review rows when only a commit review covers the tree](notes/2026-11-12-verify-log-logs-step-1-review-rows-when-only-a.md) [script/verify-log, skill/verify-branch] verify-log review refuses a second branch review only when a branch review already covers the tree, not when only a converged commit review does.
 * [code_wait prints the next step for a fix-removed-change stop](notes/2026-11-12-code-wait-prints-the-next-step-for-a-fix-removed.md) [script/code-wait, skill/code] When the /code review loop ends with fix-removed-change, code_wait.py review prints a STOP line naming stop.md and the resume command, and exits 1.
 * [the removed-change guard counts moved and edited lines as kept](notes/2026-11-12-the-removed-change-guard-counts-moved-and-edited.md) [script/review-loop-script] The review loop's fix-removed-change guard subtracts the removed lines the fix passes wrote again as near copies, so a block moved and edited on the way no longer stops the loop.

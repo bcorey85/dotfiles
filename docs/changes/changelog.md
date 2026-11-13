@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-942 changes
+943 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [herdr-worktree names every missing helper in one error with the stow command](notes/2026-11-13-herdr-worktree-names-every-missing-helper-in-one.md) [script/herdr-worktree] herdr-worktree --fork collects every helper missing from the bin folder and names them all in one error, with the exact stow command, instead of stopping at the first.
 * [simplify-prep counts source files only and slices along module folders](notes/2026-11-13-simplify-prep-counts-source-files-only-and-slices.md) [skill/refactor] refactor_flow simplify-prep drops test, index and style files and packs whole module folders into its 25-file slices instead of cutting the file list alphabetically.
 * [Permission gate passes a closing question that names an outside destination](notes/2026-11-13-permission-gate-passes-a-closing-question-that.md) [script/staged-claim-gate] The Stop hook's permission-question check lets a closing question through when it names a destination outside the machine (a PR, issue, ticket, thread, GitHub, a #number) or says public.
 * [verify-log logs Step 1 review rows when only a commit review covers the tree](notes/2026-11-12-verify-log-logs-step-1-review-rows-when-only-a.md) [script/verify-log, skill/verify-branch] verify-log review refuses a second branch review only when a branch review already covers the tree, not when only a converged commit review does.

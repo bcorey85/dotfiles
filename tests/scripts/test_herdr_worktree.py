@@ -370,10 +370,32 @@ esac""")
                                                    f"fix/new-thing-{helper}")
 
                 self.assertNotEqual(finished.returncode, 0)
-                self.assertIn(f"{self.bin_dir / helper} missing; run install/stow", finished.stderr)
+                self.assertIn(f"missing helpers: {self.bin_dir / helper};", finished.stderr)
                 self.assertNotIn("watching workspace", finished.stderr)
                 self.assertFalse((self.root / f"repo-new-thing-{helper}").exists())
                 self.assertFalse(self.herdr_args.exists())
+
+    def test_a_fork_with_both_helpers_missing_names_both_and_the_stow_command_for_the_real_checkout(self):
+        self.stub_fork(CLAUDE_PANE)
+        (self.bin_dir / "detach").unlink()
+        (self.bin_dir / "herdr-worktree-watch").unlink()
+        checkout = self.root / "dotfiles checkout"
+        real_bin = checkout / "scripts" / ".local" / "bin"
+        real_bin.mkdir(parents=True)
+        real_script = real_bin / "herdr-worktree"
+        shutil.copy(HERDR_WORKTREE, real_script)
+        stowed_script = self.bin_dir / "herdr-worktree"
+        stowed_script.unlink()
+        stowed_script.symlink_to(os.path.relpath(real_script, self.bin_dir))
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertEqual(len(finished.stderr.splitlines()), 1, finished.stderr)
+        self.assertIn(f"{self.bin_dir / 'detach'} {self.bin_dir / 'herdr-worktree-watch'};", finished.stderr)
+        self.assertIn(f"stow -d {str(checkout).replace(' ', chr(92) + ' ')} -t \"$HOME\" -R scripts", finished.stderr)
+        self.assertFalse((self.root / "repo-new-thing").exists())
+        self.assertFalse(self.herdr_args.exists())
 
     def test_a_fork_with_a_bad_watch_wait_fails_before_creating_anything(self):
         self.stub_fork(CLAUDE_PANE)

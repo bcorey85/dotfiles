@@ -19,7 +19,7 @@ Fix three queued toolkit defects. Each phase starts with a test that fails on th
 
 - [x] Phase 1: a closing question that names an outside destination passes the permission gate (risk: low)
 - [x] Phase 2: simplify-prep counts source files only and slices along module folders (risk: medium)
-- [ ] Phase 3: herdr-worktree names every missing helper in one error with the stow command (risk: low)
+- [x] Phase 3: herdr-worktree names every missing helper in one error with the stow command (risk: low)
 
 ## Phase 1: a closing question that names an outside destination passes the permission gate
 

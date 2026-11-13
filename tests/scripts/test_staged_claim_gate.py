@@ -467,6 +467,53 @@ class PermissionQuestionTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_question_naming_an_outside_destination_passes_but_a_local_step_is_sent_back(self):
+        for message in ("Fixed the driver. Want me to add your data to vkd3d-proton #3304?",
+                        "The name is in the commit log. Do you want that name off GitHub?",
+                        "The fix works. Want me to leave that as a comment on PR #412?",
+                        "The fix works. Want me to leave a public comment?",
+                        "The fix works. Want me to leave it publicly?",
+                        "The fix works. Want me to mirror it to GitHub too?",
+                        "The fix works. Want me to move it to GitLab?",
+                        "The fix works. Want me to add the findings to Linear?",
+                        "Want me to upload the screenshots to github.com?",
+                        "Want me to mirror the repo to gitlab.com?",
+                        "Want me to share it to slack.com?",
+                        "Want me to add it to jira.com?",
+                        "Want me to file them in linear.app?"):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+        for message in ("The ticket is open. Shall I start #914?",
+                        "Tests pass. Want me to fix them now on a new branch?",
+                        "Tests pass. Want me to add a comment to the function?",
+                        "The ticket is open. Want me to look into the issue?",
+                        "Want me to review the PR?",
+                        "Want me to fix the ticket reference?",
+                        "Want me to triage the issues?",
+                        "Want me to fix the tickets?",
+                        "Want me to fix issues?",
+                        "Would you like me to read the thread?",
+                        "Want me to check the GitHub Actions log?",
+                        "Want me to switch the interpolation to linear?",
+                        "Do you want that to handle tickets?",
+                        "Do you want it to handle tickets?",
+                        "Okay to proceed with issues?",
+                        "Should I proceed to fix issues.py?",
+                        "Should I go ahead to rewrite the parser?",
+                        "Want me to check the run in GitHub Actions?",
+                        "Want me to use the token in GitHub Actions?",
+                        "Shall I add it to the GitHub workflow?",
+                        "Want me to fix the typo in issues.py?",
+                        "Should I move the logic to issues/service.ts?",
+                        "Want me to fix the bug in tickets.ts?",
+                        "Want me to switch it to Linear interpolation?",
+                        "Want me to try to fix issues?",
+                        "Want me to start to review the PR?",
+                        "Want me to look it up in GitHub docs?",
+                        "Want me to check the API in GitHub Copilot?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
     def test_a_question_about_an_irreversible_step_in_an_external_app_passes(self):
         for message in ("The duplicate invoice is still open in the billing app. Want me to void it?",
                         "The order was placed twice. Should I cancel the second one?",
@@ -537,6 +584,24 @@ class PermissionQuestionTest(unittest.TestCase):
                         "The reviewer asked twice. Want me to reply on the thread?"):
             with self.subTest(message=message):
                 self.assert_passes(message)
+
+    def test_a_question_about_a_file_named_for_a_host_is_still_sent_back(self):
+        for message in ("Want me to move the helper in github.py?",
+                        "Want me to fix the typo in gitlab-ci.yml?",
+                        "Want me to add the hook in github/hooks.ts?",
+                        "Want me to fix the import in Linear.ts?",
+                        "Want me to fix the import in slack.py?",
+                        "Want me to rename slack-sync.sh?",
+                        "Want me to create it in github.py?",
+                        "Want me to open it in github.py?",
+                        "Want me to open this in linear.ts?",
+                        "Want me to open issues.py?",
+                        "Want me to create tickets.ts?",
+                        "Want me to create the PR-template.md?",
+                        "Want me to fix public/index.html?",
+                        "Want me to edit public.ts?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
 
     def test_a_question_about_a_local_ticket_note_still_sent_back(self):
         self.assert_sent_back("The plan cites the old ticket number. Want me to fix the reference?")

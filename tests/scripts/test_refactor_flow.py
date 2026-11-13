@@ -922,6 +922,152 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("oracle and magnitude floor", done.stdout)
         self.assertIn("do NOT read the files", done.stdout)
 
+    def test_simplify_prep_slices_along_module_folders_and_drops_test_index_and_style_files(self):
+        for module, count in (("a", 12), ("b", 12), ("c", 6)):
+            for index in range(count):
+                self.write(f"mod/{module}/f{index:02d}.py", "x = 1\n")
+        self.write("mod/a/test_a.py", "x = 1\n")
+        self.write("mod/b/index.ts", "x = 1\n")
+        self.write("mod/c/theme.scss", "x {}\n")
+        self.write("mod/__init__.py", "")
+        self.git("add", "-A")
+        listed = []
+        outputs = []
+        for number in ("1", "2"):
+            done = self.flow("simplify-prep", "mod", "--slice", number)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn("split into 2 slices", done.stdout)
+            self.assertIn("1 test, 2 index, 1 style, 0 generated file(s)", done.stdout)
+            self.assertIn("(30 source file(s))", done.stdout)
+            outputs.append(done.stdout)
+            listed.append(re.findall(r"^- (mod/\S+)$", done.stdout, re.M))
+        self.assertIn("modules: mod/a, mod/b;", outputs[0])
+        self.assertIn("modules: mod/c;", outputs[1])
+        for name in ("test_a.py", "index.ts", "theme.scss", "__init__.py"):
+            self.assertFalse(any(name in path for paths in listed for path in paths), name)
+        self.assertEqual(sum(len(paths) for paths in listed), 30)
+        for module in ("a", "b", "c"):
+            self.assert_folder_whole(listed, f"mod/{module}/")
+        self.assertEqual(self.flow("simplify-prep", "mod", "--slice", "3").returncode, 1)
+
+    def test_simplify_prep_drops_generated_files_and_does_not_list_them(self):
+        self.write("mod/a.py", "x = 1\n")
+        self.write("mod/dist/bundle.js", "x = 1\n")
+        self.write("mod/package-lock.json", "{}\n")
+        self.git("add", "-A")
+        done = self.flow("simplify-prep", "mod")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("0 test, 0 index, 0 style, 2 generated file(s)", done.stdout)
+        self.assertIn("(1 source file(s))", done.stdout)
+        self.assertNotIn("bundle.js", done.stdout)
+        self.assertNotIn("package-lock.json", done.stdout)
+
+    def test_simplify_prep_with_only_test_index_or_style_files_stops(self):
+        self.write("mod/test_a.py", "x = 1\n")
+        self.write("mod/index.js", "x = 1\n")
+        self.write("mod/a.css", "x {}\n")
+        self.git("add", "-A")
+        done = self.flow("simplify-prep", "mod")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("STOP:", done.stdout)
+        self.assertIn("`mod`", done.stdout)
+        self.assertIn("only test, index, style or generated files", done.stdout)
+        self.assertIn("1 test, 1 index, 1 style, 0 generated", done.stdout)
+        self.assertNotIn("dispatch prompt", done.stdout)
+
+    def listed_slices(self, *targets):
+        """The files each slice lists, for every slice of a simplify-prep call, in slice order."""
+        slices = []
+        number = 1
+        while True:
+            done = self.flow("simplify-prep", *targets, "--slice", str(number))
+            if done.returncode != 0:
+                return slices
+            files = re.findall(r"^- (\S.*)$", done.stdout, re.M)
+            self.assertLessEqual(len(files), 25, f"slice {number} is over the file limit")
+            slices.append(files)
+            number += 1
+
+    def assert_folder_whole(self, slices, folder):
+        holders = [files for files in slices if any(path.startswith(folder) for path in files)]
+        self.assertEqual(len(holders), 1, f"{folder} was cut across slices")
+
+    def test_simplify_plan_rejects_a_listed_file_outside_its_target(self):
+        module = load_script_module()
+        with self.assertRaises(module.simplify_slices.SliceError) as caught:
+            module.simplify_slices.plan_slices([("mod", ["other/a.py"])], 25)
+        self.assertIn("other/a.py", str(caught.exception))
+        self.assertIn("mod", str(caught.exception))
+
+    def test_simplify_prep_reports_a_file_outside_its_target_as_a_flow_error(self):
+        module = load_script_module()
+        opts = mock.Mock(slice=1)
+        with self.assertRaises(module.RefactorFlowError) as caught:
+            module._simplify_report(opts, [("mod", ["other/a.py"])])
+        self.assertIn("simplify-prep:", str(caught.exception))
+        self.assertIn("other/a.py", str(caught.exception))
+
+    def test_simplify_prep_splits_an_over_limit_module_by_its_subfolders(self):
+        for folder in ("x", "y"):
+            for index in range(15):
+                self.write(f"mod/big/{folder}/f{index:02d}.py", "x = 1\n")
+        self.write("mod/loose.py", "x = 1\n")
+        self.git("add", "-A")
+        slices = self.listed_slices("mod")
+        self.assertEqual(len(slices), 2)
+        self.assert_folder_whole(slices, "mod/big/x/")
+        self.assert_folder_whole(slices, "mod/big/y/")
+        self.assertEqual(sum(files.count("mod/loose.py") for files in slices), 1)
+        self.assertEqual(sum(len(files) for files in slices), 31)
+        self.assertEqual(sorted(slices[0]), [f"mod/big/x/f{index:02d}.py" for index in range(15)])
+        self.assertEqual(
+            sorted(slices[1]), sorted([f"mod/big/y/f{index:02d}.py" for index in range(15)] + ["mod/loose.py"])
+        )
+
+    def test_simplify_prep_dot_target_keeps_module_folders_whole(self):
+        for folder in ("a", "b"):
+            for index in range(15):
+                self.write(f"{folder}/f{index:02d}.py", "x = 1\n")
+        self.git("add", "-A")
+        slices = self.listed_slices(".")
+        self.assertEqual(len(slices), 2)
+        self.assert_folder_whole(slices, "a/")
+        self.assert_folder_whole(slices, "b/")
+
+    def test_simplify_prep_absolute_target_keeps_module_folders_whole(self):
+        for folder in ("a", "b"):
+            for index in range(15):
+                self.write(f"mod/{folder}/f{index:02d}.py", "x = 1\n")
+        self.git("add", "-A")
+        done = self.flow("simplify-prep", str(self.repo / "mod"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("modules: mod/a;", done.stdout)
+        self.assertEqual(len(re.findall(r"^- mod/a/", done.stdout, re.M)), 15)
+
+    def test_simplify_prep_stops_on_a_target_outside_the_repo(self):
+        outside = self.temp_root / "elsewhere"
+        outside.mkdir()
+        (outside / "a.py").write_text("x = 1\n")
+        self.write("mod/a.py", "x = 1\n")
+        self.git("add", "-A")
+        done = self.flow("simplify-prep", str(outside))
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("git ls-files failed", done.stderr)
+        self.assertIn(str(outside), done.stderr)
+        self.assertIn("outside repository", done.stderr)
+        self.assertNotIn("dispatch prompt", done.stdout)
+
+    def test_simplify_prep_counts_files_once_across_overlapping_folder_targets(self):
+        for index in range(3):
+            self.write(f"mod/a/f{index}.py", "x = 1\n")
+        for index in range(2):
+            self.write(f"mod/b/f{index}.py", "x = 1\n")
+        self.git("add", "-A")
+        done = self.flow("simplify-prep", "mod", "mod/a")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("(5 source file(s))", done.stdout)
+        self.assertEqual(done.stdout.count("- mod/a/f0.py"), 1)
+
     def test_simplify_prep_names_a_missing_target_in_a_multi_target_call(self):
         self.write("mod/a.py", "x = 1\n")
         self.git("add", "-A")
@@ -939,7 +1085,7 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout.count("- mod/café.py"), 1)
         self.assertIn("- mod/a b.py", done.stdout)
-        self.assertIn("(2 tracked file(s))", done.stdout)
+        self.assertIn("(2 source file(s))", done.stdout)
 
     # --------------------------------------------------------------------- log
     def test_log_branch_writes_escape_finder_and_handoff(self):

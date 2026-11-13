@@ -1,10 +1,23 @@
 """Which file paths count as source: not a test, a lockfile or a generated file. The one owner of the two test-file
 rules every gate reads: `is_test_path` (the file belongs to the tests) and `is_runnable_test_file` (a test runner
-can take it alone as a target)."""
+can take it alone as a target). It also owns `is_index_file` (a folder's re-export file) and `is_style_file` (a
+stylesheet), which simplify slicing leaves out of its counts."""
 
 LOCKFILE_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "Cargo.lock",
                   "Gemfile.lock", "composer.lock", "go.sum", "bun.lockb"}
 SCRIPT_SUFFIXES = (".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs")
+INDEX_NAMES = {"index.js", "index.jsx", "index.ts", "index.tsx", "index.mjs", "index.cjs", "__init__.py"}
+STYLE_SUFFIXES = (".css", ".scss", ".sass", ".less", ".styl", ".pcss")
+
+
+def is_index_file(path):
+    """Whether the file only re-exports a folder's contents: index.<script> or __init__.py."""
+    return path.rsplit("/", 1)[-1] in INDEX_NAMES
+
+
+def is_style_file(path):
+    """Whether the file is a stylesheet, by suffix and ignoring case."""
+    return path.lower().endswith(STYLE_SUFFIXES)
 
 
 def is_test_path(path):

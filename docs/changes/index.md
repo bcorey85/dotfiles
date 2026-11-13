@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-941 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+942 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-13, [Permission gate passes a closing question that names an outside destination](notes/2026-11-13-permission-gate-passes-a-closing-question-that.md).
+Latest change: 2026-11-13, [simplify-prep counts source files only and slices along module folders](notes/2026-11-13-simplify-prep-counts-source-files-only-and-slices.md).
 
 ## Top gains
 
@@ -38,4 +38,4 @@ Each saving is the measured before and after of one change's finding, so a total
 * [Ruled out](ruled-out.md): ideas tried and dropped or put on hold, and what would reopen them.
 * [In progress](in-progress.md): the benches that are open now and the question each asks.
 * [Changelog](changelog.md): every change, by week.
-* [Fixes by script](fixes-by-script.md): fix notes per component, all time and the last 7 days.
+* [Fixes by script](fixes-by-script.md): fix notes per component, all time and the 7 days up to the newest note.

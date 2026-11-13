@@ -45,6 +45,8 @@ INFINITIVE_LEAD_IN = r"(?<!\btry )(?<!\bstart )(?<!\bbegin )(?<!\bneed )(?<!\bha
 FILE_NAME_AFTER = r"(?![\w-]|[./]\w)"
 # Same, except a `.com`, `.io` or `.app` suffix is a host name, so `github.com` stays a destination.
 HOST_NAME_AFTER = r"(?![\w-]|/\w|\.(?!(?:com|io|app)\b)\w)"
+# Up to two words may sit between a destination preposition and the destination name (`on the main PR`).
+WORDS_BEFORE_DESTINATION = r"\s+(?:[\w-]+\s+){0,2}"
 OUTWARD_STEP = re.compile(
     r"\b(?:commit|push|merge|deploy|publish|release|delete|drop|reset|rebase|force|send|e-?mail|post|install|"
     r"upgrade|migrate|void|cancel|refund|revoke|submit|approve|archive|remove|overwrite|wipe|purge|truncate|destroy|"
@@ -55,12 +57,12 @@ OUTWARD_STEP = re.compile(
     r"|\b(?:file|open|create|raise)\s+(?:them|these|those|this|it|each)\s+(?:in|on|to|into)\s+(?:jira|linear|github)"
     + HOST_NAME_AFTER +
     r"|\b(?:publicly|public)\b(?![./]\w)"
-    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|on|in|off)\s+(?:[\w-]+\s+){0,2}"
+    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|on|in|off)" + WORDS_BEFORE_DESTINATION +
     r"(?:PRs?|MRs?|pull\s+requests?|merge\s+requests?|"
     r"issues?|tickets?|threads?|upstream|#\d+)" + FILE_NAME_AFTER +
-    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|on|in|off)\s+(?:[\w-]+\s+){0,2}jira" + HOST_NAME_AFTER +
-    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|in|off)\s+(?:[\w-]+\s+){0,2}(?:git(?:hub|lab)|(?-i:Linear))"
-    + HOST_NAME_AFTER +
+    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|on|in|off)" + WORDS_BEFORE_DESTINATION + r"jira" + HOST_NAME_AFTER +
+    r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|in|off)" + WORDS_BEFORE_DESTINATION +
+    r"(?:git(?:hub|lab)|(?-i:Linear))" + HOST_NAME_AFTER +
     r"(?!\s+(?:actions|workflows?|cli|pages|docs|api|copilot|desktop|codespaces|packages|gist|interpolation)\b)",
     re.IGNORECASE)
 # A quoted span counts as a cited question only when its whole inner text is the question.

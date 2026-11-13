@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-941 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+943 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-13, [a loop coder may delete an untracked file an earlier coder of the same loop wrote](notes/2026-11-13-a-loop-coder-may-delete-an-untracked-file-an-earlier-coder-wrote.md).
+Latest change: 2026-11-13, [phase_start moves a stale stop.md aside so the next stop is a new file](notes/2026-11-13-phase-start-moves-a-stale-stop-md-aside.md).
 
 ## Top gains
 
@@ -38,4 +38,4 @@ Each saving is the measured before and after of one change's finding, so a total
 * [Ruled out](ruled-out.md): ideas tried and dropped or put on hold, and what would reopen them.
 * [In progress](in-progress.md): the benches that are open now and the question each asks.
 * [Changelog](changelog.md): every change, by week.
-* [Fixes by script](fixes-by-script.md): fix notes per component, all time and the last 7 days.
+* [Fixes by script](fixes-by-script.md): fix notes per component, all time and the 7 days up to the newest note.

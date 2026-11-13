@@ -1,5 +1,6 @@
 """review_loop_coder.py: the review loop's fix-coder call. It snapshots the tree around the call, puts back the
-untracked files the coder deleted, notes the held files that changed, and returns the diffs of what it changed."""
+untracked files the coder deleted that no coder of this loop wrote, notes the held files that changed, and returns
+the diffs of what it changed."""
 import difflib
 import pathlib
 import typing
@@ -12,8 +13,11 @@ from review_loop_closure import FIX_DIFF_STATS
 from review_loop_plan import changed_files_since, scope
 
 DIFF_CONTEXT = 12
-# One note per fix call that deleted an untracked file it did not make, for the packet's tool_fault.
+# One note per fix call that deleted an untracked file no coder of this loop made, for the packet's tool_fault.
 UNTRACKED_FAULTS = []
+# The untracked files an earlier coder call of this loop wrote. A later call may delete one, so it is neither backed up
+# nor put back. A file anyone else writes while a coder call runs counts as that call's file.
+LOOP_WRITTEN = set()
 
 
 def coder_fault_notes():
@@ -47,11 +51,12 @@ def changed_paths(before, after):
 
 
 def put_back_untracked(role, backup):
-    """A fix call may edit an untracked file but never delete one it did not make. Writes back each one that
-    vanished, and notes it in UNTRACKED_FAULTS; a file too large to have been saved is noted as lost."""
+    """A fix call may edit an untracked file but never delete one that no coder of this loop made. Writes back each
+    backed-up file that vanished, and notes it in UNTRACKED_FAULTS; a file too large to have been saved is noted
+    as lost."""
     restored, lost = file_backup.restore_missing(backup)
     if restored:
-        UNTRACKED_FAULTS.append(f"{role} deleted untracked files it did not make; the loop restored "
+        UNTRACKED_FAULTS.append(f"{role} deleted untracked files that no coder of this loop made; the loop restored "
                                 + ", ".join(restored))
     if lost:
         UNTRACKED_FAULTS.append(f"{role} deleted untracked files too large to save, so they are gone: "
@@ -73,6 +78,19 @@ def failed_call_error(error, changed):
     return CoderCallError(message, changed)
 
 
+def unheld_untracked_paths(repo, held):
+    """The untracked paths in the work tree that are not held."""
+    return {path for path, entry in scope(repo).items() if entry[1] == "??" and path not in held}
+
+
+def record_loop_written(repo, held, untracked_before):
+    """Adds the untracked files present now that were not there before the call to LOOP_WRITTEN, and drops the
+    recorded files that are gone."""
+    untracked_after = unheld_untracked_paths(repo, held)
+    LOOP_WRITTEN.update(untracked_after - untracked_before)
+    LOOP_WRITTEN.intersection_update(untracked_after)
+
+
 def coder_call(role, prompt, repo, out, held):
     """The fix coder. Returns a CoderResult (report, diffs, changed): the diffs of what it changed feed the round-two
     brief, and one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the
@@ -82,18 +100,20 @@ def coder_call(role, prompt, repo, out, held):
     changed before it died."""
     head_before = script_utils.head_commit(repo)
     before = script_utils.without_paths(file_texts(repo), held)
-    untracked = [path for path, entry in scope(repo).items() if entry[1] == "??" and path not in held]
-    backup = file_backup.save_files(repo, untracked)
+    untracked = unheld_untracked_paths(repo, held)
+    backup = file_backup.save_files(repo, untracked - LOOP_WRITTEN)
     held_before = review_loop_held.digests(repo, held)
     try:
         report = claude_call(role, prompt, repo, out, agent="coder")
     except RuntimeError as error:
+        record_loop_written(repo, held, untracked)
         after = after_call(role, repo, held, backup, held_before, head_before)
         changed = changed_paths(before, after)
         if not changed:
             raise
         raise failed_call_error(error, changed) from error
 
+    record_loop_written(repo, held, untracked)
     after = after_call(role, repo, held, backup, held_before, head_before)
     diffs = write_fix_diffs(repo, out, role, before, after, head_before)
     changed = changed_paths(before, after)
@@ -101,8 +121,9 @@ def coder_call(role, prompt, repo, out, held):
 
 
 def after_call(role, repo, held, backup, held_before, head_before):
-    """Puts back the untracked files the coder deleted, notes the held files that changed, and returns the snapshot
-    of the tree without the held files, against the commit HEAD named before the call."""
+    """Puts back the backed-up untracked files the coder deleted (not those an earlier coder of this loop wrote),
+    notes the held files that changed, and returns the snapshot of the tree without the held files, against the
+    commit HEAD named before the call."""
     put_back_untracked(role, backup)
     review_loop_held.note_changed(role, repo, held_before)
     texts = file_texts(repo, head_before)

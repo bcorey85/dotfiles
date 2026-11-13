@@ -5,6 +5,18 @@ can take it alone as a target)."""
 LOCKFILE_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "Cargo.lock",
                   "Gemfile.lock", "composer.lock", "go.sum", "bun.lockb"}
 SCRIPT_SUFFIXES = (".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs")
+INDEX_NAMES = {"index.js", "index.jsx", "index.ts", "index.tsx", "index.mjs", "index.cjs", "__init__.py"}
+STYLE_SUFFIXES = (".css", ".scss", ".sass", ".less", ".styl", ".pcss")
+
+
+def is_index_file(path):
+    """Whether the file only re-exports a folder's contents: index.<script> or __init__.py."""
+    return path.rsplit("/", 1)[-1] in INDEX_NAMES
+
+
+def is_style_file(path):
+    """Whether the file is a stylesheet, by suffix and ignoring case."""
+    return path.lower().endswith(STYLE_SUFFIXES)
 
 
 def is_test_path(path):

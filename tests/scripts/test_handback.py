@@ -15,6 +15,7 @@ import time
 import unittest
 import unittest.mock
 
+import isolated_state
 import receipt_repo
 import toolkit_paths
 
@@ -72,19 +73,12 @@ TWO_ASKS = json.dumps(TWO_ASKS_FIELDS)
 
 class HandbackTestBase(unittest.TestCase):
     def setUp(self):
+        isolated_state.isolate_state_root(self)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.tmp = pathlib.Path(directory.name)
         self.store = self.tmp / "store"
-        self.previous = os.environ.get("HANDBACK_STORE_DIR")
         os.environ["HANDBACK_STORE_DIR"] = str(self.store)
-        self.addCleanup(self.restore_environment)
-
-    def restore_environment(self):
-        if self.previous is None:
-            os.environ.pop("HANDBACK_STORE_DIR", None)
-        else:
-            os.environ["HANDBACK_STORE_DIR"] = self.previous
 
     def run_cli(self, arguments, stdin=""):
         env = {**os.environ, "HANDBACK_STORE_DIR": str(self.store)}

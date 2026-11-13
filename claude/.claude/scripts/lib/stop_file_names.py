@@ -4,3 +4,5 @@ on every code-fork Write in a run folder, so it must stay free of anything slow.
 STOP_FILE = "stop.md"
 REVIEW_STOP_FILE = "review-stop.md"
 STOP_FILES = (STOP_FILE, REVIEW_STOP_FILE)
+# Where phase_start moves a stale stop.md. Outside STOP_FILES: the relay must never hand it on.
+PREVIOUS_STOP_FILE = "stop.prev.md"

@@ -5,10 +5,12 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 from collections import namedtuple
 
+import hook_input
 import script_utils
 from toml_file import read_toml
 from worktree_snapshot import UNREADABLE, file_hash
@@ -22,6 +24,10 @@ PROMPT_MARKDOWN_DIR = ".claude"
 PROMPT_MARKDOWN_PREFIX = ".config/opencode/"
 PROMPT_MARKDOWN_NAMES = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"}
 RUFF_FORMAT_COMMAND = "ruff format"
+RUFF_FORMAT_HOOK_ID = "ruff-format"
+PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
+PRE_COMMIT_RUFF_HOOK = re.compile(
+    r"""^[ \t]*-?[ \t]*id:[ \t]*['"]?(ruff|ruff-check|ruff-format)['"]?(?:[ \t]+#.*)?[ \t\r]*$""", re.MULTILINE)
 RUST_SUFFIX = ".rs"
 RUSTFMT_COMMANDS = ("cargo fmt", "rustfmt")
 RUSTFMT_CONFIG_FILES = ("rustfmt.toml", ".rustfmt.toml")
@@ -156,14 +162,24 @@ def run_web_formatters(repo, lint_files, paths_to_format, configured_only=False)
         run_quiet(["npx", "--yes", "prettier", "--write", *paths_to_format], repo)
 
 
+def pre_commit_ruff_hook_ids(config_text):
+    """The ruff hook ids ("ruff", "ruff-check", "ruff-format") that a .pre-commit-config.yaml text names, as a
+    set. The toolkit has no YAML parser, so each line is matched on its own."""
+    return {match.group(1) for match in PRE_COMMIT_RUFF_HOOK.finditer(config_text)}
+
+
 def repo_configures_ruff(repo):
-    """True when the repo has a ruff.toml, a .ruff.toml, or a pyproject.toml with a [tool.ruff] table."""
+    """True when the repo has a ruff.toml, a .ruff.toml, a pyproject.toml with a [tool.ruff] table, or a
+    .pre-commit-config.yaml hook with id ruff, ruff-check or ruff-format."""
     repo_path = pathlib.Path(repo)
     if (repo_path / "ruff.toml").is_file() or (repo_path / ".ruff.toml").is_file():
         return True
 
     pyproject = read_toml(repo_path / "pyproject.toml")
-    return "ruff" in pyproject.get("tool", {})
+    if "ruff" in pyproject.get("tool", {}):
+        return True
+    config_text = hook_input.read_file_text(repo_path / PRE_COMMIT_CONFIG, "replace") or ""
+    return bool(pre_commit_ruff_hook_ids(config_text))
 
 
 def ruff_enabled(repo):
@@ -173,7 +189,8 @@ def ruff_enabled(repo):
 
 def repo_formats_with_ruff(repo, check_command=""):
     """True when the repo shows it formats with ruff: a [tool.ruff.format] table in pyproject.toml, a [format] table in
-    ruff.toml or .ruff.toml, or `ruff format` named in .pre-commit-config.yaml or the check command."""
+    ruff.toml or .ruff.toml, the hook id `ruff-format` or the text `ruff format` in .pre-commit-config.yaml, or
+    `ruff format` named in the check command."""
     repo_path = pathlib.Path(repo)
     if RUFF_FORMAT_COMMAND in check_command:
         return True
@@ -186,9 +203,8 @@ def repo_formats_with_ruff(repo, check_command=""):
     if "format" in pyproject.get("tool", {}).get("ruff", {}):
         return True
 
-    with contextlib.suppress(OSError):
-        return RUFF_FORMAT_COMMAND in (repo_path / ".pre-commit-config.yaml").read_text(errors="replace")
-    return False
+    config_text = hook_input.read_file_text(repo_path / PRE_COMMIT_CONFIG, "replace") or ""
+    return RUFF_FORMAT_HOOK_ID in pre_commit_ruff_hook_ids(config_text) or RUFF_FORMAT_COMMAND in config_text
 
 
 def run_python_formatters(repo, python_files, configured_only=False, check_command=""):

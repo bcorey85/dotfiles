@@ -11,8 +11,10 @@ so the review loop never reviews or edits it.
 The record is of the run's start, not of each phase: `--new-run` replaces it. Without the flag an existing record
 whose head is the current HEAD is kept, so the files an earlier phase of the run left dirty stay the run's own. A
 missing record, or one for another HEAD, is replaced either way. Prints the HEAD sha.
+An existing <git dir>/code-phase/stop.md is renamed to stop.prev.md first (review-stop.md stays).
 """
 import json
+import os
 import pathlib
 import sys
 
@@ -20,6 +22,7 @@ SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "code")]
 
 import script_utils
+import stop_file_names
 import worktree_snapshot
 from code_wait import phase_dir
 
@@ -77,6 +80,20 @@ def unchanged_dirty_files(repo, base_commit):
     return sorted(path for path, saved in dirty.items() if worktree_snapshot.file_hash(root, path) == saved)
 
 
+def move_stale_stop_aside(folder):
+    """Rename <folder>/stop.md to stop.prev.md, replacing an older one, so the fork's next stop is a new file: the
+    Write tool refuses an existing file the fork has not read. A failed rename is reported and the script goes on."""
+    stop_file = folder / stop_file_names.STOP_FILE
+    if not stop_file.is_file():
+        return
+
+    previous_file = folder / stop_file_names.PREVIOUS_STOP_FILE
+    try:
+        os.replace(stop_file, previous_file)
+    except OSError as error:
+        print(f"phase_start: could not move {stop_file} to {previous_file}: {error}", file=sys.stderr)
+
+
 def main():
     unknown = [arg for arg in sys.argv[1:] if arg != "--new-run"]
     if unknown:
@@ -85,6 +102,8 @@ def main():
     repo = script_utils.repo_root(pathlib.Path.cwd())
     if repo is None:
         sys.exit(f"phase_start: {pathlib.Path.cwd()} is not inside a git work tree")
+
+    move_stale_stop_aside(phase_dir(repo))
 
     try:
         record = start_record(repo)

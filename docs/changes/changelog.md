@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-941 changes
+943 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [phase_start moves a stale stop.md aside so the next stop is a new file](notes/2026-11-13-phase-start-moves-a-stale-stop-md-aside.md) [script/phase-start] phase_start.py renames an existing stop.md of the run folder to stop.prev.md, so the /code fork's Write of its next stop is no longer refused.
+* [format_files reads ruff and ruff-format from a pre-commit-only repo](notes/2026-11-13-format-files-reads-ruff-and-ruff-format-from-a-pre-commit-only-repo.md) [script/format-changed] The format step now runs ruff in a repo whose only ruff setup is a ruff, ruff-check or ruff-format hook in its pre-commit config, and the review loop's lint pass now runs `ruff check` on such a repo's Python files.
 * [a loop coder may delete an untracked file an earlier coder of the same loop wrote](notes/2026-11-13-a-loop-coder-may-delete-an-untracked-file-an-earlier-coder-wrote.md) [script/review-loop-script] The review loop no longer restores an untracked file that an earlier coder call of the same loop created, so a later coder can remove a stale duplicate.
 * [verify-log logs Step 1 review rows when only a commit review covers the tree](notes/2026-11-12-verify-log-logs-step-1-review-rows-when-only-a.md) [script/verify-log, skill/verify-branch] verify-log review refuses a second branch review only when a branch review already covers the tree, not when only a converged commit review does.
 * [code_wait prints the next step for a fix-removed-change stop](notes/2026-11-12-code-wait-prints-the-next-step-for-a-fix-removed.md) [script/code-wait, skill/code] When the /code review loop ends with fix-removed-change, code_wait.py review prints a STOP line naming stop.md and the resume command, and exits 1.

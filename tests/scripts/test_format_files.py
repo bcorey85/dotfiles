@@ -16,9 +16,42 @@ import format_files
 import script_utils
 
 FAKE_RUFF = """#!/bin/sh
+echo "$@" >> {calls}
 [ "$1" = format ] || exit 0
 shift
 for f in "$@"; do echo '# formatted' >> "$f"; done
+"""
+
+# A real repo that runs ruff only through astral-sh/ruff-pre-commit: no ruff config file.
+TLDR_PRE_COMMIT_CONFIG = """repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.11
+    hooks:
+      - id: ruff
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run --directory backend mypy .
+        language: system
+        types: [python]
+        files: ^backend/
+        pass_filenames: false
+      - id: eslint
+        name: eslint
+        entry: pnpm --dir frontend lint
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: prettier
+        name: prettier
+        entry: pnpm --dir frontend format:check
+        language: system
+        files: ^frontend/
+        pass_filenames: false
 """
 
 
@@ -36,9 +69,12 @@ class RunFormattersTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def install_fake_ruff(self):
+        """Put a ruff on PATH that logs its arguments to the returned file."""
+        calls = self.bin.parent / "ruff-calls.txt"
         ruff = self.bin / "ruff"
-        ruff.write_text(FAKE_RUFF)
+        ruff.write_text(FAKE_RUFF.format(calls=calls))
         ruff.chmod(0o755)
+        return calls
 
     def test_the_repos_local_oxfmt_runs_in_the_repo_whatever_the_callers_working_directory(self):
         local_bin = self.repo / "node_modules" / ".bin"
@@ -139,6 +175,36 @@ class RunFormattersTest(unittest.TestCase):
 
                 self.assertEqual(format_files.run_formatters(str(self.repo), ["app.py"], include_python=True),
                                  ["app.py"])
+
+    def test_ruff_runs_in_a_repo_whose_only_ruff_setup_is_pre_commit_hooks(self):
+        calls = self.install_fake_ruff()
+        both_hooks = TLDR_PRE_COMMIT_CONFIG
+        check_only = TLDR_PRE_COMMIT_CONFIG.replace("      - id: ruff-format\n        files: ^backend/\n", "")
+        other_hooks_only = "repos:\n  - repo: local\n    hooks:\n      - id: mypy\n      - id: ruff-like\n"
+        quoted_format_id = "repos:\n  - repo: r\n    hooks:\n      - id: \"ruff-format\"\n"
+        ruff_check_only = "repos:\n  - repo: r\n    hooks:\n      - id: ruff-check\n"
+        # A trailing comment after the id still names the hook.
+        commented_id = "repos:\n  - repo: r\n    hooks:\n      - id: ruff # lint\n"
+        # YAML starts a comment only after whitespace, so this id is a different hook.
+        hash_without_space = "repos:\n  - repo: r\n    hooks:\n      - id: ruff#x\n"
+        cases = {"ruff and ruff-format hooks": (both_hooks, True, True),
+                 "hash with no space before it": (hash_without_space, False, False),
+                 "ruff hook only": (check_only, True, False),
+                 "ruff-check hook only": (ruff_check_only, True, False),
+                 "quoted ruff-format id": (quoted_format_id, True, True),
+                 "ruff id with a trailing comment": (commented_id, True, False),
+                 "no ruff hook": (other_hooks_only, False, False)}
+        for name, (config, checks, formats) in cases.items():
+            with self.subTest(name):
+                calls.unlink(missing_ok=True)
+                (self.repo / ".pre-commit-config.yaml").write_text(config)
+                (self.repo / "app.py").write_text("x = 1\n")
+
+                format_files.run_formatters(str(self.repo), ["app.py"], include_python=True, configured_only=True)
+
+                recorded = calls.read_text() if calls.exists() else ""
+                self.assertEqual("check --fix" in recorded, checks, recorded)
+                self.assertEqual("format " in recorded, formats, recorded)
 
     def test_python_files_are_formatted_only_when_asked_and_the_changed_ones_are_returned(self):
         (self.repo / "ruff.toml").write_text("")
@@ -299,6 +365,28 @@ class LintProblemsTest(unittest.TestCase):
         problems = format_files.lint_problems(str(self.repo), ["gen/x.py"])
 
         self.assertEqual(problems, [])
+
+
+class PreCommitOnlyLintProblemsTest(unittest.TestCase):
+    def test_a_failing_ruff_check_is_reported_in_a_repo_whose_only_ruff_setup_is_pre_commit_hooks(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            repo = pathlib.Path(scratch) / "repo"
+            fake_bin = pathlib.Path(scratch) / "bin"
+            repo.mkdir()
+            fake_bin.mkdir()
+            ruff = fake_bin / "ruff"
+            ruff.write_text("#!/bin/sh\necho 'app.py:1:1: N802 bad name'\nexit 1\n")
+            ruff.chmod(0o755)
+            (repo / ".pre-commit-config.yaml").write_text(TLDR_PRE_COMMIT_CONFIG)
+            (repo / "app.py").write_text("x = 1\n")
+
+            with mock.patch.dict(os.environ, {"PATH": str(fake_bin)}):
+                problems = format_files.lint_problems(str(repo), ["app.py"])
+
+        self.assertEqual(len(problems), 1, problems)
+        command, output = problems[0]
+        self.assertTrue(command.startswith("ruff check"), command)
+        self.assertIn("N802", output)
 
 
 class RuffMissingFromPathTest(unittest.TestCase):

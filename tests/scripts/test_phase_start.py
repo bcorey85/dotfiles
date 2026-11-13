@@ -96,6 +96,32 @@ class PhaseStartTest(unittest.TestCase):
         self.assertIn("usage: phase_start.py [--new-run]", done.stderr)
         self.assertFalse((self.repo / ".git/code-phase/start.json").exists())
 
+    def test_a_stale_stop_file_is_renamed_to_stop_prev_replacing_an_older_one(self):
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+        (run_folder / "stop.md").write_text("the stale stop\n")
+        (run_folder / "stop.prev.md").write_text("an older stop\n")
+        (run_folder / "review-stop.md").write_text("a review stop\n")
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertFalse((run_folder / "stop.md").exists())
+        self.assertEqual((run_folder / "stop.prev.md").read_text(), "the stale stop\n")
+        self.assertEqual((run_folder / "review-stop.md").read_text(), "a review stop\n")
+
+    def test_a_failed_stop_rename_names_phase_start_on_stderr_and_the_script_goes_on(self):
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+        (run_folder / "stop.md").write_text("the stale stop\n")
+        (run_folder / "stop.prev.md").mkdir()
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("phase_start: could not move", done.stderr)
+        self.assertEqual(done.stdout.strip(), git(self.repo, "rev-parse", "HEAD"))
+
     def review_prompt(self, base):
         return subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", str(self.handoff), "--base", base,
                                "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False, env=ENV)

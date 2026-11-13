@@ -16,8 +16,8 @@ Fix three queued toolkit defects. Each phase starts with a test that fails on th
 ## Phase Status
 
 - [x] Phase 1: a loop coder may delete an untracked file an earlier coder of the same loop wrote (risk: medium)
-- [ ] Phase 2: format_files reads ruff and ruff-format from a pre-commit-only repo (risk: low)
-- [ ] Phase 3: phase_start moves a stale stop.md aside (risk: low)
+- [x] Phase 2: format_files reads ruff and ruff-format from a pre-commit-only repo (risk: low)
+- [x] Phase 3: phase_start moves a stale stop.md aside (risk: low)
 
 ## Phase 1: a loop coder may delete an untracked file an earlier coder of the same loop wrote
 

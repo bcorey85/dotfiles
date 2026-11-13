@@ -111,33 +111,15 @@ local FAMILIES = {
     },
   },
   ["dredge"] = {
+    -- bcorey85/dredge.nvim: one colorscheme follows vim.o.background.
     schemes = { dark = "dredge", light = "dredge" },
     colors_name = "dredge",
     -- Comments are tuned in APCA and mirrored in hunk; the WCAG floor would
     -- split them from docstrings and from hunk.
     own_comment_contrast = true,
     accents = {
-      -- H1 takes the constant magenta; H2-H6 the function violet.
-      dark = { heading1 = "#fc61a5", heading = "#8e96ec", bullet = "#b1b5bc" },
-      light = { heading1 = "#a80e62", heading = "#4b47b6", bullet = "#4e5158" },
-    },
-  },
-  ["dredge-roles"] = {
-    -- colors/dredge-roles.lua: dredge coloured by role; theme-mode lends it dredge's other themes.
-    schemes = { dark = "dredge-roles", light = "dredge-roles" },
-    colors_name = "dredge-roles",
-    own_comment_contrast = true,
-    accents = {
-      dark = { heading1 = "#f861a4", heading = "#9299ee", bullet = "#b1b5bc" },
-      light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
-    },
-  },
-  ["dredge-roles-warm"] = {
-    -- colors/dredge-roles-warm.lua: dredge-roles on a warm dark ground; light is dredge-roles.
-    schemes = { dark = "dredge-roles-warm", light = "dredge-roles" },
-    own_comment_contrast = true,
-    accents = {
-      dark = { heading1 = "#f861a4", heading = "#9299ee", bullet = "#b7b5ae" },
+      -- H1 takes the exit magenta; H2-H6 the bind violet.
+      dark = { heading1 = "#e36099", heading = "#8990da", bullet = "#b1b5bc" },
       light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
     },
   },

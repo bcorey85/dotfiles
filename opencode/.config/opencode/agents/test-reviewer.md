@@ -1,7 +1,7 @@
 ---
 name: test-reviewer
 description: "Reviews a test suite for coverage gaps, weak assertions and stale tests. Dispatched by /test-review and /refactor."
-model: opencode-go/mimo-v2.5-pro
+model: opencode-go/mimo-v2.6-pro
 mode: subagent
 permission:
   edit: deny

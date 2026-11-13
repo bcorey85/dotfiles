@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: "Reviews code changes for bugs, anti-patterns, architectural violations and security issues. Dispatched by the review loop, /peer-review and /calibrate."
-model: opencode-go/mimo-v2.5
+model: opencode-go/mimo-v2.6-flash
 mode: subagent
 permission:
   edit: deny

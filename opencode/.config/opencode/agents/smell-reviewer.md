@@ -1,7 +1,7 @@
 ---
 name: smell-reviewer
 description: "Structure reviewer: duplication, layer placement, naming, dead weight, cohesion. Dispatched by the review loop beside the first review on large diffs, and by /refactor."
-model: opencode-go/mimo-v2.5
+model: opencode-go/mimo-v2.6-flash
 mode: subagent
 permission:
   edit: deny

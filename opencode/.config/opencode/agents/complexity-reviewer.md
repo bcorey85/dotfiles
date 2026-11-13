@@ -1,7 +1,7 @@
 ---
 name: complexity-reviewer
 description: "Finds what a whole module could delete if shaped differently. Dispatched by /refactor simplify, never on a diff."
-model: opencode-go/mimo-v2.5
+model: opencode-go/mimo-v2.6-flash
 mode: subagent
 permission:
   edit: deny

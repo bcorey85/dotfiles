@@ -207,24 +207,12 @@ Singleton {
             orange: "#d7827e", yellow: "#ea9d34", magenta: "#907aa9"
         },
         "dredge-dark": {
-            bg: "#061a21", panel: "#01131a", border: "#2a3e47",
+            bg: "#111517", panel: "#0a0e10", border: "#373b3f",
             fg: "#b6c3cb", muted: "#b1b5bc",
-            green: "#99af2e", red: "#f7665b", teal: "#46b8ae",
-            orange: "#ee8448", yellow: "#d6ae56", magenta: "#fc61a5"
+            green: "#8fa338", red: "#e1645a", teal: "#4baba2",
+            orange: "#da7e4b", yellow: "#c7a459", magenta: "#e6619a"
         },
         "dredge-light": {
-            bg: "#c8d0d3", panel: "#c2cacd", border: "#a5adb0",
-            fg: "#293741", muted: "#4e5158",
-            green: "#4f5d00", red: "#a32822", teal: "#00625c",
-            orange: "#943b12", yellow: "#6d4a00", magenta: "#a80e62"
-        },
-        "dredge-roles-warm-dark": {
-            bg: "#24231f", panel: "#1c1b18", border: "#494845",
-            fg: "#c3c1ba", muted: "#b7b5ae",
-            green: "#99af2e", red: "#f7665b", teal: "#46b8ae",
-            orange: "#ee8448", yellow: "#d6ae56", magenta: "#fc61a5"
-        },
-        "dredge-roles-warm-light": {
             bg: "#c8d0d3", panel: "#c2cacd", border: "#a5adb0",
             fg: "#293741", muted: "#4e5158",
             green: "#4f5d00", red: "#a32822", teal: "#00625c",
@@ -365,10 +353,7 @@ Singleton {
     })
 
     // Unknown family falls back to onedarkpro rather than leaving the bar unpainted.
-    // Families that differ only in nvim syntax borrow another family's palette (theme-mode asset_family).
-    readonly property var aliases: ({ "dredge-roles": "dredge" })
-    readonly property string paletteFamily: aliases[family] ?? family
-    readonly property var p: palettes[paletteFamily + "-" + mode] ?? palettes["onedarkpro-" + mode] ?? palettes["onedarkpro-dark"]
+    readonly property var p: palettes[family + "-" + mode] ?? palettes["onedarkpro-" + mode] ?? palettes["onedarkpro-dark"]
 
     readonly property color bg: p.bg
     readonly property color panel: p.panel

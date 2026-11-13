@@ -1,7 +1,7 @@
 ---
 name: backend-architect
 description: "Design and plan backend features — data models, API contracts, database schemas, service architecture. Produces implementation plans for the coder. Looking like pure configuration (adding an env var, enabling a flag) is necessary but not sufficient to skip this agent — the whole skip test is the go-lean gate in the eng-spec skill's scope phase, and every condition in it must hold. Never skipped for endpoints, services, or anything involving data flow."
-model: opencode-go/mimo-v2.5-pro
+model: opencode-go/mimo-v2.6-pro
 mode: subagent
 permission:
   edit: deny

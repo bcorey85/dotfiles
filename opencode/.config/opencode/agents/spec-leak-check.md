@@ -1,7 +1,7 @@
 ---
 name: spec-leak-check
 description: "Rewrite-and-diff audit of a research-questions file for leaked intent. Dispatched by goal-blind-researcher with the questions file only."
-model: opencode-go/mimo-v2.5
+model: opencode-go/mimo-v2.6-flash
 mode: subagent
 permission:
   edit: deny

@@ -1,7 +1,7 @@
 ---
 name: spec-criteria
 description: "Drafts the acceptance-criteria file from ticket, decision ledger and finalized plan. Dispatched by /eng-spec after finalization, before any coder."
-model: opencode-go/mimo-v2.5
+model: opencode-go/mimo-v2.6-flash
 mode: subagent
 color: "#eab923"
 ---

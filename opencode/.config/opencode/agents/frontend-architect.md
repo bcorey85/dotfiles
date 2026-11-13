@@ -1,7 +1,7 @@
 ---
 name: frontend-architect
 description: "Design and plan frontend features — component architecture, state management, styling approach. Produces implementation plans for the coder. Looking like pure configuration (adding an import, toggling a flag) is necessary but not sufficient to skip this agent — the whole skip test is the go-lean gate in the eng-spec skill's scope phase, and every condition in it must hold. Never skipped for new components, state changes, or API integration."
-model: opencode-go/mimo-v2.5-pro
+model: opencode-go/mimo-v2.6-pro
 mode: subagent
 permission:
   edit: deny

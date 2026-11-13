@@ -5,10 +5,12 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 from collections import namedtuple
 
+import hook_input
 import script_utils
 from toml_file import read_toml
 from worktree_snapshot import UNREADABLE, file_hash
@@ -22,6 +24,24 @@ PROMPT_MARKDOWN_DIR = ".claude"
 PROMPT_MARKDOWN_PREFIX = ".config/opencode/"
 PROMPT_MARKDOWN_NAMES = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"}
 RUFF_FORMAT_COMMAND = "ruff format"
+RUFF_HOOK_ID = "ruff"
+RUFF_CHECK_HOOK_ID = "ruff-check"
+RUFF_FORMAT_HOOK_ID = "ruff-format"
+RUFF_CHECK_HOOK_IDS = (RUFF_HOOK_ID, RUFF_CHECK_HOOK_ID)
+RUFF_HOOK_IDS = (*RUFF_CHECK_HOOK_IDS, RUFF_FORMAT_HOOK_ID)
+PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
+_RUFF_HOOK_ID_ALTERNATION = "|".join(re.escape(hook_id) for hook_id in RUFF_HOOK_IDS)
+PRE_COMMIT_RUFF_HOOK = re.compile(
+    rf"""^[ \t]*-?[ \t]*id:[ \t]*['"]?({_RUFF_HOOK_ID_ALTERNATION})['"]?(?:[ \t]+#.*)?[ \t\r]*$""")
+# A line that ends the entry of the ruff hook above it: a list item that starts with a key (`- name:`, `- repo:`),
+# any `id:` line, or a key at column 0.
+PRE_COMMIT_ENTRY_START = re.compile(r"^(?:[ \t]*-[ \t]+[\w-]+:|[ \t]*id:|[^\s#])")
+PRE_COMMIT_FILES_LINE = re.compile(r"^[ \t]*(?:-[ \t]+)?files:[ \t]*(.*?)[ \t\r]*$")
+PRE_COMMIT_TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
+QUOTE_CHARACTERS = ('"', "'")
+# A `files:` value that starts with one of these (after one quote pair is stripped) is a block scalar, anchor, tag,
+# flow collection or alias, or an unmatched quote, which no line match reads.
+PRE_COMMIT_NON_PLAIN_FILES_STARTS = ('"', "'", "|", ">", "&", "!", "[", "{", "*", "#")
 RUST_SUFFIX = ".rs"
 RUSTFMT_COMMANDS = ("cargo fmt", "rustfmt")
 RUSTFMT_CONFIG_FILES = ("rustfmt.toml", ".rustfmt.toml")
@@ -156,7 +176,84 @@ def run_web_formatters(repo, lint_files, paths_to_format, configured_only=False)
         run_quiet(["npx", "--yes", "prettier", "--write", *paths_to_format], repo)
 
 
-def repo_configures_ruff(repo):
+class RuffHook:
+    """A ruff hook entry of a .pre-commit-config.yaml: its id, and its `files:` regex (None: every file)."""
+
+    def __init__(self, hook_id):
+        self.hook_id = hook_id
+        self.files = None
+
+
+class PreCommitConfig:
+    """What the repo's .pre-commit-config.yaml says about ruff: its full text, and its ruff hooks."""
+
+    def __init__(self, text, ruff_hooks):
+        self.text = text
+        self.ruff_hooks = ruff_hooks
+
+    def hook_ids(self):
+        return {hook.hook_id for hook in self.ruff_hooks}
+
+
+def files_value(line):
+    """The regex of a `files:` line, with its trailing comment and one matching pair of quotes stripped; None when
+    the line is no `files:` line or its value is one the line match cannot read (empty, block-scalar, anchored, tagged
+    or flow) or a regex that does not compile, which means every file."""
+    match = PRE_COMMIT_FILES_LINE.match(line)
+    if not match:
+        return None
+
+    value = PRE_COMMIT_TRAILING_COMMENT.sub("", match.group(1))
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in QUOTE_CHARACTERS:
+        quote = value[0]
+        value = value[1:-1]
+        # A double-quoted YAML value decodes escapes, which this line match does not do.
+        if quote == '"' and "\\" in value:
+            return None
+        if quote == "'":
+            value = value.replace("''", "'")
+    if not value or value.startswith(PRE_COMMIT_NON_PLAIN_FILES_STARTS):
+        return None
+
+    try:
+        re.compile(value)
+    except re.error:
+        return None
+    return value
+
+
+def parse_ruff_hooks(config_text):
+    """The ruff hooks of a .pre-commit-config.yaml text. The toolkit has no YAML parser, so each line is matched on
+    its own: a hook entry runs from its `id:` line to the next list item that starts with a key, the next `id:`
+    line or the next key at column 0 (`PRE_COMMIT_ENTRY_START`), and a `files:` line after the `id:` line is the hook's
+    regex."""
+    hooks = []
+    current = None
+    for line in config_text.splitlines():
+        if PRE_COMMIT_ENTRY_START.match(line):
+            current = None
+        id_match = PRE_COMMIT_RUFF_HOOK.match(line)
+        if id_match:
+            current = RuffHook(id_match.group(1))
+            hooks.append(current)
+            continue
+
+        if current is None:
+            continue
+
+        files = files_value(line)
+        if files is not None:
+            current.files = files
+    return hooks
+
+
+def read_pre_commit_config(repo):
+    """The repo's pre-commit config as a PreCommitConfig; empty when the file is missing."""
+    text = hook_input.read_file_text(pathlib.Path(repo) / PRE_COMMIT_CONFIG, "replace") or ""
+    return PreCommitConfig(text, parse_ruff_hooks(text))
+
+
+def repo_has_ruff_config_file(repo):
     """True when the repo has a ruff.toml, a .ruff.toml, or a pyproject.toml with a [tool.ruff] table."""
     repo_path = pathlib.Path(repo)
     if (repo_path / "ruff.toml").is_file() or (repo_path / ".ruff.toml").is_file():
@@ -166,14 +263,52 @@ def repo_configures_ruff(repo):
     return "ruff" in pyproject.get("tool", {})
 
 
+def repo_configures_ruff(repo):
+    """True when the repo has a ruff config file (`repo_has_ruff_config_file`) or a .pre-commit-config.yaml hook
+    with id ruff, ruff-check or ruff-format."""
+    if repo_has_ruff_config_file(repo):
+        return True
+    return bool(read_pre_commit_config(repo).ruff_hooks)
+
+
 def ruff_enabled(repo):
     """True when ruff is on PATH and the repo configures it."""
     return bool(shutil.which("ruff")) and repo_configures_ruff(repo)
 
 
+def files_seen_by_hooks(hooks, hook_ids, python_files):
+    """The `python_files` that the `files:` regex of at least one hook with an id in `hook_ids` matches (`exclude:` is
+    not read). A hook with no `files:` matches every file. When no hook has an id in `hook_ids`, no file: the
+    command has no hook of its kind. Every `files:` value here compiled in `files_value`."""
+    patterns = [re.compile(hook.files) if hook.files is not None else None
+                for hook in hooks if hook.hook_id in hook_ids]
+    if not patterns:
+        return []
+    if None in patterns:
+        return list(python_files)
+    return [path for path in python_files if any(pattern.search(path) for pattern in patterns)]
+
+
+# collections.namedtuple, not typing.NamedTuple: the Stop hook imports this module, and typing adds to its start-up.
+RuffTargets = namedtuple("RuffTargets", ["format", "check"])
+
+
+def ruff_targets(repo, python_files):
+    """The Python files that `ruff format` and `ruff check` run on. With a ruff config file, all of them. When only
+    pre-commit hooks enable ruff, the files that the `files:` regexes of a ruff-format hook, and of a ruff or
+    ruff-check hook, match (see `files_seen_by_hooks`)."""
+    if repo_has_ruff_config_file(repo):
+        return RuffTargets(list(python_files), list(python_files))
+
+    hooks = read_pre_commit_config(repo).ruff_hooks
+    return RuffTargets(files_seen_by_hooks(hooks, (RUFF_FORMAT_HOOK_ID,), python_files),
+                       files_seen_by_hooks(hooks, RUFF_CHECK_HOOK_IDS, python_files))
+
+
 def repo_formats_with_ruff(repo, check_command=""):
     """True when the repo shows it formats with ruff: a [tool.ruff.format] table in pyproject.toml, a [format] table in
-    ruff.toml or .ruff.toml, or `ruff format` named in .pre-commit-config.yaml or the check command."""
+    ruff.toml or .ruff.toml, the hook id `ruff-format` or the text `ruff format` in .pre-commit-config.yaml, or
+    `ruff format` named in the check command."""
     repo_path = pathlib.Path(repo)
     if RUFF_FORMAT_COMMAND in check_command:
         return True
@@ -186,18 +321,20 @@ def repo_formats_with_ruff(repo, check_command=""):
     if "format" in pyproject.get("tool", {}).get("ruff", {}):
         return True
 
-    with contextlib.suppress(OSError):
-        return RUFF_FORMAT_COMMAND in (repo_path / ".pre-commit-config.yaml").read_text(errors="replace")
-    return False
+    config = read_pre_commit_config(repo)
+    return RUFF_FORMAT_HOOK_ID in config.hook_ids() or RUFF_FORMAT_COMMAND in config.text
 
 
 def run_python_formatters(repo, python_files, configured_only=False, check_command=""):
     if not python_files or not ruff_enabled(repo):
         return
 
-    if not configured_only or repo_formats_with_ruff(repo, check_command):
-        run_quiet(["ruff", "format", "--force-exclude", *python_files], repo)
-    run_quiet(["ruff", "check", "--fix", "--force-exclude", *python_files], repo)
+    targets = ruff_targets(repo, python_files)
+    formats = not configured_only or repo_formats_with_ruff(repo, check_command)
+    if formats and targets.format:
+        run_quiet(["ruff", "format", "--force-exclude", *targets.format], repo)
+    if targets.check:
+        run_quiet(["ruff", "check", "--fix", "--force-exclude", *targets.check], repo)
 
 
 def repo_formats_with_rustfmt(repo, check_command=""):
@@ -304,13 +441,16 @@ def lint_command_problem(command, repo):
 def lint_problems(repo, paths):
     """The lint violations the repo's configured linters report on the existing files among `paths`, as a list of
     (command text, output), one per linter that exited non-zero. Nothing is fixed. Python files go to
-    `ruff check` when ruff is on PATH and the repo configures it; web files go to the oxlint or eslint the repo
+    `ruff check` when ruff is on PATH and the repo configures it (in a repo that configures ruff only through
+    pre-commit hooks, only the files `ruff_targets` returns); web files go to the oxlint or eslint the repo
     configures and has installed. [] when every linter passes or none applies."""
     files = sort_files(repo, paths, include_python=True)
     problems = []
     if files.python and ruff_enabled(repo):
-        ruff_command = ["ruff", "check", "--force-exclude", "--output-format", "concise", *files.python]
-        problems += lint_command_problem(ruff_command, repo)
+        ruff_files = ruff_targets(repo, files.python).check
+        if ruff_files:
+            ruff_command = ["ruff", "check", "--force-exclude", "--output-format", "concise", *ruff_files]
+            problems += lint_command_problem(ruff_command, repo)
     web_tool = web_check_tool(repo) if files.lint else None
     if web_tool:
         problems += lint_command_problem(web_lint_command(repo, web_tool, files.lint, fix=False), repo)
@@ -321,9 +461,9 @@ def run_formatters(repo, paths, include_python=False, configured_only=False, che
     """Run the autofix formatters on the existing files among `paths` (relative to `repo`), skipping docs/plans/ and
     prompt markdown (`is_prompt_markdown`): a model reads both literally, so a reflow changes what it does.
     Python files get `ruff format` and `ruff check --fix` only with `include_python`, when ruff is on PATH and the repo
-    configures ruff. With
-    `configured_only`, a web linter runs only when the repo configures it and it can run, a web formatter only when
-    the repo configures it or holds it in node_modules/.bin, and
+    configures ruff (in a repo that configures ruff only through pre-commit hooks, only the files `ruff_targets`
+    returns). With `configured_only`, a web linter runs only when the repo configures it and it can run,
+    a web formatter only when the repo configures it or holds it in node_modules/.bin, and
     `ruff format` runs only when the repo shows it formats with ruff (`check_command` is the repo's check command).
     Rust files get `rustfmt` with their crate's edition when rustfmt is on PATH and the repo shows it formats with
     rustfmt (`repo_formats_with_rustfmt`).

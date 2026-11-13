@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-945 changes
+948 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,11 +32,14 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [phase_start moves a stale stop.md aside so the next stop is a new file](notes/2026-11-13-phase-start-moves-a-stale-stop-md-aside.md) [script/phase-start, script/code-relay] phase_start.py renames an existing stop.md of the run folder to stop.prev.md, so the /code fork's Write of its next stop is no longer refused; code_relay hands a bounced stop.prev.md on once.
 * [herdr-worktree names every missing helper in one error with the stow command](notes/2026-11-13-herdr-worktree-names-every-missing-helper-in-one.md) [script/herdr-worktree] herdr-worktree --fork collects every helper missing from the bin folder and names them all in one error, with the exact stow command, instead of stopping at the first.
 * [simplify-prep counts source files only and slices along module folders](notes/2026-11-13-simplify-prep-counts-source-files-only-and-slices.md) [skill/refactor, script/refactor-flow, script/source-paths] refactor_flow simplify-prep drops test, index, style and generated files and packs whole module folders into its 25-file slices instead of cutting the file list alphabetically.
+* [format_files reads ruff and ruff-format from a pre-commit-only repo](notes/2026-11-13-format-files-reads-ruff-and-ruff-format-from-a-pre-commit-only-repo.md) [script/format-files, script/review-loop-script, script/full-check] The review loop's format step now runs ruff in a repo whose only ruff setup is a ruff, ruff-check or ruff-format hook in its pre-commit config, and the lint pass now runs `ruff check` on the Python files the ruff hooks' `files:` regexes match.
 * [Tests isolate the review-gate state root; tests/run.sh fails when the real review-gate folder gains a repo key under the run's temp folder](notes/2026-11-13-tests-isolate-the-review-gate-state-root-suite.md) [script/handback, script/review-fix, script/run-sh] The hand-back and review-fix tests run with HOME at a temp folder, and tests/run.sh fails when the real review-gate folder gains a repo key under the run's temp folder.
 * [Sharded plan review lists the other extract's phases and files](notes/2026-11-13-sharded-plan-review-lists-the-other-extract-s.md) [script/plan-review-shards] Each half of a sharded plan review now ends with the other half's phase titles and the files they touch, so a shard reviewer stops flagging a gap that the other half fills.
 * [Permission gate passes a closing question that names an outside destination](notes/2026-11-13-permission-gate-passes-a-closing-question-that.md) [script/staged-claim-gate] The Stop hook's permission-question check lets a closing question through when it names a destination outside the machine (a PR, issue, ticket, thread, GitHub, a #number) or says public.
+* [a loop coder may delete an untracked file an earlier coder of the same loop wrote](notes/2026-11-13-a-loop-coder-may-delete-an-untracked-file-an-earlier-coder-wrote.md) [script/review-loop-script] The review loop no longer restores an untracked file that an earlier coder call of the same loop created, so a later coder can remove a stale duplicate.
 * [verify-log logs Step 1 review rows when only a commit review covers the tree](notes/2026-11-12-verify-log-logs-step-1-review-rows-when-only-a.md) [script/verify-log, skill/verify-branch] verify-log review refuses a second branch review only when a branch review already covers the tree, not when only a converged commit review does.
 * [code_wait prints the next step for a fix-removed-change stop](notes/2026-11-12-code-wait-prints-the-next-step-for-a-fix-removed.md) [script/code-wait, skill/code] When the /code review loop ends with fix-removed-change, code_wait.py review prints a STOP line naming stop.md and the resume command, and exits 1.
 * [the removed-change guard counts moved and edited lines as kept](notes/2026-11-12-the-removed-change-guard-counts-moved-and-edited.md) [script/review-loop-script] The review loop's fix-removed-change guard subtracts the removed lines the fix passes wrote again as near copies, so a block moved and edited on the way no longer stops the loop.

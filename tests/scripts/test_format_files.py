@@ -16,9 +16,42 @@ import format_files
 import script_utils
 
 FAKE_RUFF = """#!/bin/sh
+echo "$@" >> {calls}
 [ "$1" = format ] || exit 0
 shift
 for f in "$@"; do echo '# formatted' >> "$f"; done
+"""
+
+# A real repo that runs ruff only through astral-sh/ruff-pre-commit: no ruff config file.
+TLDR_PRE_COMMIT_CONFIG = """repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.11
+    hooks:
+      - id: ruff
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run --directory backend mypy .
+        language: system
+        types: [python]
+        files: ^backend/
+        pass_filenames: false
+      - id: eslint
+        name: eslint
+        entry: pnpm --dir frontend lint
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: prettier
+        name: prettier
+        entry: pnpm --dir frontend format:check
+        language: system
+        files: ^frontend/
+        pass_filenames: false
 """
 
 
@@ -36,9 +69,12 @@ class RunFormattersTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def install_fake_ruff(self):
+        """Put a ruff on PATH that logs its arguments to the returned file."""
+        calls = self.bin.parent / "ruff-calls.txt"
         ruff = self.bin / "ruff"
-        ruff.write_text(FAKE_RUFF)
+        ruff.write_text(FAKE_RUFF.format(calls=calls))
         ruff.chmod(0o755)
+        return calls
 
     def test_the_repos_local_oxfmt_runs_in_the_repo_whatever_the_callers_working_directory(self):
         local_bin = self.repo / "node_modules" / ".bin"
@@ -139,6 +175,212 @@ class RunFormattersTest(unittest.TestCase):
 
                 self.assertEqual(format_files.run_formatters(str(self.repo), ["app.py"], include_python=True),
                                  ["app.py"])
+
+    def test_ruff_runs_in_a_repo_whose_only_ruff_setup_is_pre_commit_hooks(self):
+        calls = self.install_fake_ruff()
+        both_hooks = TLDR_PRE_COMMIT_CONFIG
+        check_only = TLDR_PRE_COMMIT_CONFIG.replace("      - id: ruff-format\n        files: ^backend/\n", "")
+        other_hooks_only = "repos:\n  - repo: local\n    hooks:\n      - id: mypy\n      - id: ruff-like\n"
+        quoted_format_id = "repos:\n  - repo: r\n    hooks:\n      - id: \"ruff-format\"\n"
+        ruff_check_only = "repos:\n  - repo: r\n    hooks:\n      - id: ruff-check\n"
+        # A trailing comment after the id still names the hook.
+        commented_id = "repos:\n  - repo: r\n    hooks:\n      - id: ruff # lint\n"
+        # YAML starts a comment only after whitespace, so this id is a different hook.
+        hash_without_space = "repos:\n  - repo: r\n    hooks:\n      - id: ruff#x\n"
+        # No hook has the id ruff-format, so `ruff format` gets no file and does not run, though the entry text
+        # names `ruff format`.
+        entry_names_ruff_format = ("repos:\n  - repo: local\n    hooks:\n      - id: ruff\n"
+                                   "        entry: ruff format\n")
+        cases = {"ruff and ruff-format hooks": (both_hooks, True, True),
+                 "ruff hook whose entry names ruff format": (entry_names_ruff_format, True, False),
+                 "hash with no space before it": (hash_without_space, False, False),
+                 "ruff hook only": (check_only, True, False),
+                 "ruff-check hook only": (ruff_check_only, True, False),
+                 "quoted ruff-format id": (quoted_format_id, False, True),
+                 "ruff id with a trailing comment": (commented_id, True, False),
+                 "no ruff hook": (other_hooks_only, False, False)}
+        for name, (config, checks, formats) in cases.items():
+            with self.subTest(name):
+                calls.unlink(missing_ok=True)
+                (self.repo / ".pre-commit-config.yaml").write_text(config)
+                (self.repo / "backend").mkdir(exist_ok=True)
+                (self.repo / "backend" / "app.py").write_text("x = 1\n")
+
+                format_files.run_formatters(str(self.repo), ["backend/app.py"], include_python=True,
+                                            configured_only=True)
+
+                recorded = calls.read_text() if calls.exists() else ""
+                self.assertEqual("check --fix" in recorded, checks, recorded)
+                self.assertEqual("format " in recorded, formats, recorded)
+
+    def write_backend_and_scripts_files(self):
+        for name in ("backend/x.py", "scripts/y.py"):
+            (self.repo / name).parent.mkdir(exist_ok=True)
+            (self.repo / name).write_text("x = 1\n")
+
+    def test_a_pre_commit_only_repo_runs_ruff_on_the_files_its_hooks_match(self):
+        self.install_fake_ruff()
+        (self.repo / ".pre-commit-config.yaml").write_text(TLDR_PRE_COMMIT_CONFIG)
+        self.write_backend_and_scripts_files()
+
+        changed = format_files.run_formatters(str(self.repo), ["backend/x.py", "scripts/y.py"], include_python=True)
+
+        self.assertEqual(changed, ["backend/x.py"])
+        self.assertEqual((self.repo / "scripts" / "y.py").read_text(), "x = 1\n")
+
+    def test_a_ruff_config_file_keeps_ruff_on_every_file_despite_the_hook_files_regex(self):
+        self.install_fake_ruff()
+        (self.repo / ".pre-commit-config.yaml").write_text(TLDR_PRE_COMMIT_CONFIG)
+        (self.repo / "ruff.toml").write_text("")
+        self.write_backend_and_scripts_files()
+
+        changed = format_files.run_formatters(str(self.repo), ["backend/x.py", "scripts/y.py"], include_python=True)
+
+        self.assertEqual(changed, ["backend/x.py", "scripts/y.py"])
+
+    def test_a_ruff_hook_with_an_invalid_files_regex_means_every_file(self):
+        self.install_fake_ruff()
+        (self.repo / ".pre-commit-config.yaml").write_text(
+            "repos:\n  - repo: r\n    hooks:\n      - id: ruff-format\n        files: ^(backend\n")
+        self.write_backend_and_scripts_files()
+
+        changed = format_files.run_formatters(str(self.repo), ["backend/x.py", "scripts/y.py"], include_python=True)
+
+        self.assertEqual(changed, ["backend/x.py", "scripts/y.py"])
+
+    def test_a_files_line_of_a_hook_that_is_not_ruff_is_not_read(self):
+        config = "repos:\n  - repo: r\n    hooks:\n      - id: mypy\n        files: '^(x'\n"
+
+        self.assertEqual(format_files.parse_ruff_hooks(config), [])
+
+    def test_ruff_format_and_ruff_check_each_follow_their_own_hooks_files_regex(self):
+        calls = self.install_fake_ruff()
+        (self.repo / ".pre-commit-config.yaml").write_text(
+            "repos:\n  - repo: r\n    hooks:\n      - id: ruff\n        files: ^backend/\n"
+            "      - id: ruff-format\n        files: ^scripts/\n")
+        self.write_backend_and_scripts_files()
+
+        format_files.run_formatters(str(self.repo), ["backend/x.py", "scripts/y.py"], include_python=True)
+
+        self.assertEqual(calls.read_text().splitlines(),
+                         ["format --force-exclude scripts/y.py", "check --fix --force-exclude backend/x.py"])
+
+    def test_a_later_hooks_files_regex_does_not_reach_a_ruff_hook_with_no_files(self):
+        config = ("repos:\n  - repo: r\n    hooks:\n      - id: ruff\n  - repo: local\n    hooks:\n"
+                  "      - id: eslint\n        files: ^frontend/\n")
+
+        hooks = format_files.parse_ruff_hooks(config)
+
+        self.assertEqual([(hook.hook_id, hook.files) for hook in hooks], [("ruff", None)])
+
+    def test_a_ruff_command_with_no_hook_of_its_kind_runs_on_no_files(self):
+        calls = self.install_fake_ruff()
+        (self.repo / ".pre-commit-config.yaml").write_text(
+            "repos:\n  - repo: r\n    hooks:\n      - id: ruff-format\n        files: ^backend/\n")
+        self.write_backend_and_scripts_files()
+
+        format_files.run_formatters(str(self.repo), ["backend/x.py", "scripts/y.py"], include_python=True)
+
+        self.assertEqual(calls.read_text().splitlines(),
+                         ["format --force-exclude backend/x.py"])
+
+    def test_files_that_no_hook_regex_matches_start_no_ruff_command(self):
+        calls = self.install_fake_ruff()
+        (self.repo / ".pre-commit-config.yaml").write_text(TLDR_PRE_COMMIT_CONFIG)
+        self.write_backend_and_scripts_files()
+        for configured_only in (False, True):
+            with self.subTest(configured_only=configured_only):
+                changed = format_files.run_formatters(str(self.repo), ["scripts/y.py"], include_python=True,
+                                                      configured_only=configured_only)
+
+                self.assertEqual(changed, [])
+                self.assertFalse(calls.exists())
+
+    def test_a_ruff_check_hook_files_regex_filters_the_check_command(self):
+        calls = self.install_fake_ruff()
+        (self.repo / ".pre-commit-config.yaml").write_text(
+            "repos:\n  - repo: r\n    hooks:\n      - id: ruff-check\n        files: ^backend/\n")
+        self.write_backend_and_scripts_files()
+
+        format_files.run_formatters(str(self.repo), ["backend/x.py", "scripts/y.py"], include_python=True)
+
+        self.assertEqual(calls.read_text().splitlines(), ["check --fix --force-exclude backend/x.py"])
+
+    def test_a_ruff_hook_with_no_files_line_sends_its_command_every_file_beside_a_hook_that_has_one(self):
+        calls = self.install_fake_ruff()
+        (self.repo / ".pre-commit-config.yaml").write_text(
+            "repos:\n  - repo: r\n    hooks:\n      - id: ruff\n        files: ^backend/\n"
+            "      - id: ruff-format\n")
+        self.write_backend_and_scripts_files()
+
+        format_files.run_formatters(str(self.repo), ["backend/x.py", "scripts/y.py"], include_python=True)
+
+        self.assertEqual(calls.read_text().splitlines(),
+                         ["format --force-exclude backend/x.py scripts/y.py",
+                          "check --fix --force-exclude backend/x.py"])
+
+    def test_two_hooks_of_one_kind_send_their_command_the_files_of_both_regexes(self):
+        calls = self.install_fake_ruff()
+        (self.repo / ".pre-commit-config.yaml").write_text(
+            "repos:\n  - repo: r\n    hooks:\n      - id: ruff\n        files: ^a/\n"
+            "      - id: ruff\n        files: ^b/\n      - id: ruff-format\n")
+        for name in ("a/x.py", "b/x.py", "c/x.py"):
+            (self.repo / name).parent.mkdir(exist_ok=True)
+            (self.repo / name).write_text("x = 1\n")
+
+        format_files.run_formatters(str(self.repo), ["a/x.py", "b/x.py", "c/x.py"], include_python=True)
+
+        self.assertEqual(calls.read_text().splitlines()[1], "check --fix --force-exclude a/x.py b/x.py")
+
+    def test_a_files_line_before_the_id_line_is_not_read_and_the_ruff_hook_matches_every_file(self):
+        config = "repos:\n  - repo: r\n    hooks:\n      - files: ^backend/\n        id: ruff\n"
+
+        hooks = format_files.parse_ruff_hooks(config)
+
+        self.assertEqual([(hook.hook_id, hook.files) for hook in hooks], [("ruff", None)])
+
+    def test_a_sibling_hook_that_starts_with_a_name_or_a_top_level_files_key_does_not_reach_a_ruff_hook(self):
+        config = ("repos:\n  - repo: r\n    hooks:\n      - id: ruff\n      - name: mypy\n        id: mypy\n"
+                  "        files: ^tests/\nfiles: ^src/\n")
+
+        hooks = format_files.parse_ruff_hooks(config)
+
+        self.assertEqual([(hook.hook_id, hook.files) for hook in hooks], [("ruff", None)])
+
+    def test_a_plain_files_value_loses_its_trailing_comment(self):
+        for line in ("files: ^backend/", "files: ^backend/  # x"):
+            with self.subTest(line=line):
+                config = f"repos:\n  - repo: r\n    hooks:\n      - id: ruff\n        {line}\n"
+
+                hooks = format_files.parse_ruff_hooks(config)
+
+                self.assertEqual(hooks[0].files, "^backend/")
+
+    def test_a_quoted_files_value_loses_one_matching_pair_of_quotes(self):
+        for value in ("'^backend/'", '"^backend/"', "'^backend/'  # x"):
+            with self.subTest(value=value):
+                config = f"repos:\n  - repo: r\n    hooks:\n      - id: ruff\n        files: {value}\n"
+
+                hooks = format_files.parse_ruff_hooks(config)
+
+                self.assertEqual(hooks[0].files, "^backend/")
+
+    def test_a_single_quoted_files_value_turns_a_doubled_quote_into_one_quote(self):
+        config = "repos:\n  - repo: r\n    hooks:\n      - id: ruff\n        files: 'it''s'\n"
+
+        hooks = format_files.parse_ruff_hooks(config)
+
+        self.assertEqual(hooks[0].files, "it's")
+
+    def test_a_files_value_the_parser_cannot_read_means_every_file(self):
+        for value in (">-", ">", "|", "|-", "", "&anchor ^a/", "!!str ^a/", "[^a/]", "{a: b}", "*alias",
+                      "# only a comment", "'^a/", "'^a/\"", '"^src/.*\\\\.py$"', '"^a\\\\(b"'):
+            with self.subTest(value=value):
+                config = f"repos:\n  - repo: r\n    hooks:\n      - id: ruff\n        files: {value}\n"
+
+                hooks = format_files.parse_ruff_hooks(config)
+
+                self.assertEqual([(hook.hook_id, hook.files) for hook in hooks], [("ruff", None)])
 
     def test_python_files_are_formatted_only_when_asked_and_the_changed_ones_are_returned(self):
         (self.repo / "ruff.toml").write_text("")
@@ -299,6 +541,49 @@ class LintProblemsTest(unittest.TestCase):
         problems = format_files.lint_problems(str(self.repo), ["gen/x.py"])
 
         self.assertEqual(problems, [])
+
+
+class PreCommitOnlyLintProblemsTest(unittest.TestCase):
+    def test_a_failing_ruff_check_is_reported_in_a_repo_whose_only_ruff_setup_is_pre_commit_hooks(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            repo = pathlib.Path(scratch) / "repo"
+            fake_bin = pathlib.Path(scratch) / "bin"
+            repo.mkdir()
+            fake_bin.mkdir()
+            ruff = fake_bin / "ruff"
+            ruff.write_text("#!/bin/sh\necho 'app.py:1:1: N802 bad name'\nexit 1\n")
+            ruff.chmod(0o755)
+            (repo / ".pre-commit-config.yaml").write_text(TLDR_PRE_COMMIT_CONFIG)
+            (repo / "backend").mkdir()
+            (repo / "backend" / "app.py").write_text("x = 1\n")
+
+            with mock.patch.dict(os.environ, {"PATH": str(fake_bin)}):
+                problems = format_files.lint_problems(str(repo), ["backend/app.py"])
+
+        self.assertEqual(len(problems), 1, problems)
+        command, output = problems[0]
+        self.assertTrue(command.startswith("ruff check"), command)
+        self.assertIn("N802", output)
+
+    def test_a_file_outside_the_hooks_files_regex_is_not_linted(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            repo = pathlib.Path(scratch) / "repo"
+            fake_bin = pathlib.Path(scratch) / "bin"
+            calls = pathlib.Path(scratch) / "calls.txt"
+            repo.mkdir()
+            fake_bin.mkdir()
+            ruff = fake_bin / "ruff"
+            ruff.write_text(f"#!/bin/sh\necho \"$@\" >> {calls}\necho 'bad'\nexit 1\n")
+            ruff.chmod(0o755)
+            (repo / ".pre-commit-config.yaml").write_text(TLDR_PRE_COMMIT_CONFIG)
+            (repo / "scripts").mkdir()
+            (repo / "scripts" / "y.py").write_text("x = 1\n")
+
+            with mock.patch.dict(os.environ, {"PATH": str(fake_bin)}):
+                problems = format_files.lint_problems(str(repo), ["scripts/y.py"])
+
+            self.assertEqual(problems, [])
+            self.assertFalse(calls.exists())
 
 
 class RuffMissingFromPathTest(unittest.TestCase):

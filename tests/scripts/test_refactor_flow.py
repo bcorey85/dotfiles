@@ -947,8 +947,7 @@ class RefactorFlowTest(unittest.TestCase):
             self.assertFalse(any(name in path for paths in listed for path in paths), name)
         self.assertEqual(sum(len(paths) for paths in listed), 30)
         for module in ("a", "b", "c"):
-            holders = [paths for paths in listed if any(f"mod/{module}/" in path for path in paths)]
-            self.assertEqual(len(holders), 1, f"module {module} was cut across slices")
+            self.assert_folder_whole(listed, f"mod/{module}/")
         self.assertEqual(self.flow("simplify-prep", "mod", "--slice", "3").returncode, 1)
 
     def test_simplify_prep_drops_generated_files_and_does_not_list_them(self):

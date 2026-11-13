@@ -20,7 +20,9 @@ unmeasured: ""
 `gates/permission_question.py` `OUTWARD_STEP` gains `public`/`publicly` and an outside destination after `to`, `on`,
 `in` or `off` (PR, MR, pull request, merge request, issue, ticket, thread, Jira, upstream, `#<number>`; GitHub,
 GitLab and Linear after `to`, `in` or `off` only). The search skips the question's opening phrase, so the `to` of
-`want me to` is no destination.
+`want me to` is no destination. A destination followed by a file name (`issues.py`, `github.py`) stays local, while a
+`.com`, `.io` or `.app` host (`github.com`, `jira.com`) counts as outside; the branches share `FILE_NAME_AFTER`,
+`HOST_NAME_AFTER` and `WORDS_BEFORE_DESTINATION`.
 
 ## Evidence
 

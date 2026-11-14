@@ -28,6 +28,7 @@ import sys
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review", "code")]
 
+import code_wait
 import coder_gate
 import expected_red
 import gate_commands
@@ -275,6 +276,9 @@ def main(argv):
 
     if "--detach" in argv:
         return detach(repo, argv)
+
+    # After detach's running-loop refusal, so a refused start leaves the running loop's record as it was.
+    code_wait.write_phase_run(repo, lane, phase)
 
     session_id = os.environ["CLAUDE_CODE_SESSION_ID"]
     run_id = script_utils.sortable_unique_id()

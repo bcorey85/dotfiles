@@ -13,13 +13,16 @@ writes each one's report to its file as soon as that reviewer finishes, which is
 fork has no Write tool). It returns when the loop asks for reviewers no pair answers (`ACTION: dispatch-reviewer`),
 when a named reviewer finished with no report (exit 1), or once the loop ends: it prints the loop's output when the
 loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change), and otherwise
-exits 1 with the reason and the restart step.
+exits 1 with the reason and the restart step. When that packet is clean (converged, or capped and read as deferred)
+and holds finding asks, it also opens a `phase-asks-open` row in the hand-back store and prints the
+`phase_asks.py rule` line the session runs to rule on them.
 `review --loop <loop dir>` waits the same way on a loop that `review_fix.py launch --detach` started for the /review
 or /fix fork: its pid is <loop dir>/loop.pid, and once the loop ends with a packet it prints the packet command to run.
 Each call waits at most WAIT_SECONDS, then says to run the same command again.
 """
 
 import dataclasses
+import json
 import os
 import pathlib
 import re
@@ -30,6 +33,7 @@ SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review")]
 import handback
 import loop_transcript
+import phase_asks
 import reviewer_dispatch
 import script_utils
 import stop_file_names
@@ -53,6 +57,7 @@ AGENT_ID_FORM = "the agentId an Agent call returned: `a` and 16 hex digits"
 PHASE_DIR_NAME = "code-phase"
 PID_FILE = "pid"
 REVIEW_OUTPUT = "review.out"
+PHASE_RUN_FILE = "run.json"  # the lane and phase of the last started phase review
 LOOP_DIR_FILE = "loop-dir"  # holds the path of the running loop's folder, where its reviewer requests go
 REVIEW_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 LOOP_FLAG = "--loop"
@@ -127,6 +132,52 @@ def loop_dir(repo):
         return loop_dir_file.read_text().strip()
     except FileNotFoundError:
         return None
+
+
+def write_phase_run(repo, lane, phase):
+    """Records the lane and phase of the phase review that code_review_start.py runs, where the ask rows read them."""
+    folder = phase_dir(repo)
+    folder.mkdir(exist_ok=True)
+    script_utils.write_text_atomically(folder / PHASE_RUN_FILE, json.dumps({"lane": lane, "phase": phase}) + "\n")
+
+
+def read_phase_run(repo):
+    """{"lane", "phase"} of the phase review in <git dir>/code-phase, {} when no run left the record."""
+    run_file = phase_dir(repo) / PHASE_RUN_FILE
+    if not run_file.is_file():
+        return {}
+    try:
+        run_info = json.loads(run_file.read_text())
+    except ValueError as error:
+        sys.exit(f"code_wait: {run_file} is not the {{\"lane\", \"phase\"}} JSON object code_review_start.py writes "
+                 f"({error}); delete it and run this wait again")
+    if not isinstance(run_info, dict):
+        sys.exit(f"code_wait: {run_file} is not the {{\"lane\", \"phase\"}} JSON object code_review_start.py writes "
+                 f"(found {type(run_info).__name__}); delete it and run this wait again")
+    return run_info
+
+
+def phase_asks_notice(repo):
+    """The lines that tell the session to rule on the finding asks of the phase packet the loop left, after opening
+    them in the hand-back store. Empty when the loop left no packet, the packet does not parse, or
+    `phase_asks.record_open` opens nothing."""
+    folder = loop_dir(repo)
+    if folder is None:
+        return []
+    packet_file = pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE
+    if not packet_file.is_file():
+        return []
+    try:
+        packet = handback.load(packet_file.read_text())
+    except handback.PacketError as error:
+        print(f"code_wait: the packet does not parse, so its asks are not opened for ruling: {error.problems}",
+              file=sys.stderr)
+        return []
+
+    repo_top = script_utils.repo_root(repo)
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    packet_key = f"{folder}:{packet['iter']}"
+    return phase_asks.record_open(session_id, str(repo_top), packet, read_phase_run(repo), packet_key)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -306,7 +357,11 @@ def wait_review(repo, words=(), launched_folder=None):
         return 1
 
     if not run.running():
-        return print_ended_loop(run)
+        code = print_ended_loop(run)
+        notice = phase_asks_notice(repo) if code == 0 and launched_folder is None else []
+        if notice:
+            print("\n".join(notice))
+        return code
 
     pending = unanswered_requests(run, pairs)
     if pending:

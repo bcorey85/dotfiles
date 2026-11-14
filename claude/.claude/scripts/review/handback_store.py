@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """handback_store.py: the per-session store of review-loop rows (dispatch, dispatch-ran, hand-back, stop, step,
-asks-logged) and the reads of it that decide whether a hand-back is current. Callers import these names from
-handback_store directly; handback.py imports only the ones it uses itself. The store is one append-only JSON-lines
-file per session under $HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
+asks-logged, phase-asks-open, phase-asks-ruled) and the reads of it that decide whether a hand-back is current and
+the open/ruled state of phase review asks. Callers import these names from handback_store directly; handback.py
+imports only the ones it uses itself. The store is one append-only JSON-lines file per session under
+$HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
 import os
 import pathlib
 import sys
 import time
+from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import reviewed_tree
@@ -279,3 +281,52 @@ def repo_that_logged_the_asks(session_id, packet_id):
     logged_rows = session_rows(session_id, ASKS_LOGGED_ROW)
     packet_rows = [row for row in logged_rows if row.get("packet_id") == packet_id]
     return packet_rows[-1]["repo"] if packet_rows else None
+
+
+# A /code phase review handed the session a packet with finding asks (the open row, which names the hand-back it came
+# from as `handback_ts`, the stored hand-back row's time); the ruled row settles them.
+PHASE_ASKS_OPEN = "phase-asks-open"
+PHASE_ASKS_RULED = "phase-asks-ruled"
+
+
+class PhaseAsks(NamedTuple):
+    """The latest phase-ask rows of one repo: the open row, and the ruled row that came after it (None while unruled).
+    Only a newer open row of the repo replaces an open row; a newer hand-back does not."""
+    open_row: dict
+    ruled_row: dict | None
+
+
+def record_phase_asks_open(session_id, repo, handback_ts, asks, context, packet_key):
+    """Records that the packet named by `packet_key` (its loop folder and iteration) holds these finding asks for the
+    session to rule on, once per packet of `repo`. A newer hand-back of the repo from another review does not make
+    the same packet new. `handback_ts` is the stored hand-back's time. `context` is the ask rows' run fields."""
+    state = phase_asks_state(session_id, repo)
+    if state is not None and state.open_row.get("packet_key") == packet_key:
+        return
+    record(session_id, PHASE_ASKS_OPEN, repo=repo, handback_ts=handback_ts, asks=asks, context=context,
+           packet_key=packet_key)
+
+
+def phase_asks_state(session_id, repo):
+    """The PhaseAsks of `repo` in this session's store, or None when no open row names it (a store from before these
+    rows, an empty session id, and a repo of None included). Rows are read in append order."""
+    open_row = None
+    ruled_row = None
+    for row in stored_session_rows(session_id):
+        if row.get("repo") != repo:
+            continue
+        if row.get("kind") == PHASE_ASKS_OPEN:
+            open_row, ruled_row = row, None
+        elif row.get("kind") == PHASE_ASKS_RULED and open_row is not None:
+            ruled_row = row
+    if open_row is None:
+        return None
+    return PhaseAsks(open_row, ruled_row)
+
+
+def unruled_phase_asks(session_id, repo):
+    """The open row of `repo` whose asks the session has not ruled on, else None."""
+    state = phase_asks_state(session_id, repo)
+    if state is None or state.ruled_row is not None:
+        return None
+    return state.open_row

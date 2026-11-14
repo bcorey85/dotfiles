@@ -43,22 +43,18 @@ PRINTED_RUN_LINE = "The first asks-done printed this fix run; run it now unless 
 def read_outcomes(argv, asks):
     """(the outcome word of each ask, the note after `:` of each, "" when none). A modified ask needs its note: the
     note is the user's change."""
-    if len(argv) != len(asks):
-        raise UsageError(f"{len(asks)} ask(s) waiting but {len(argv)} outcome(s) given")
-    outcomes, notes = [], []
-    for number, word in enumerate(argv, 1):
-        outcome, _separator, note = word.partition(":")
-        if outcome not in ASK_OUTCOMES:
+    try:
+        return review_asks.parse_outcome_words(argv, len(asks), ASK_OUTCOMES, (MODIFIED,))
+    except review_asks.OutcomeError as error:
+        if error.problem == review_asks.WRONG_COUNT:
+            raise UsageError(f"{len(asks)} ask(s) waiting but {len(argv)} outcome(s) given") from error
+        if error.problem == review_asks.UNKNOWN_OUTCOME:
             raise UsageError(
-                f"outcome {word!r} is not one of {'|'.join(ASK_OUTCOMES)}. {ACCEPTED}: {ACCEPT_MEANS}; "
+                f"outcome {error.word!r} is not one of {'|'.join(ASK_OUTCOMES)}. {ACCEPTED}: {ACCEPT_MEANS}; "
                 f"{REJECTED}: {REJECT_MEANS} (the outcome for a 'leave it' or 'accept the gap' "
-                f"option); {MODIFIED}:<change>: make that change instead")
-        if outcome == MODIFIED and not note.strip():
-            raise UsageError(f"outcome {number} is modified with no note; "
-                             f"write '{MODIFIED}:<the user's change>' quoted as one shell word")
-        outcomes.append(outcome)
-        notes.append(one_line(note, None))
-    return outcomes, notes
+                f"option); {MODIFIED}:<change>: make that change instead") from error
+        raise UsageError(f"outcome {error.number} is modified with no note; "
+                         f"write '{MODIFIED}:<the user's change>' quoted as one shell word") from error
 
 
 def outcome_failure_line(item, outcome_row):

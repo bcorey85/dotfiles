@@ -782,7 +782,7 @@ EOF
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
         addedBg="#1b3435"; removedBg="#36222b"; ctxBg="#191f25"
-        sAdd="#5ab9b0"; sRem="#d5619e"; badgeNeu="#eed286"
+        sAdd="#5ab9b0"; sRem="#f27bb8"; badgeNeu="#eed286"
         kw="#95a5b5"; punct="#989ea4"; str="#5ab9b0"; num="#f38ba5"; fn="#9ca4f1"; cmt="#c9a65a"
         type_fg="#9eb34a"; builtin_fg="#5bb2e7"; param_fg="#f0925f"; attr_fg="#f78d83"
         bright="#d9e0eb"; quote="#bec3cb"; bullet="#a5a9b0"
@@ -806,8 +806,8 @@ EOF
         bind="#433fa8"; act="#006c66"; exit_fg="#a80e62"; lit="#2a7000"; desc="#07549f"
         kw="#4c5158"; cmt="#6d4a00"
       else
-        bind="#8990da"; act="#5ab9b0"; exit_fg="#d6708c"; lit="#9eb34a"; desc="#5bb2e7"
-        cmt="#c3a15a"
+        bind="#9ca4f1"; act="#5ab9b0"; exit_fg="#f38ba5"; lit="#9eb34a"; desc="#5bb2e7"
+        cmt="#c9a65a"
       fi
       # Binds: names where they are introduced. Acts: calls, decorators, builtins.
       fn="$bind"; cls="$bind"; param="$bind"; var="$bind"
@@ -2157,7 +2157,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       base_name="one-dark"
       accent="#5ab9b0" panel_bg="#12181e" surface_dim="#262c33"
       surface0="#353b42" surface1="#41484f"
-      overlay0="#91959b" overlay1="#a5a9b0"
+      overlay0="#9a9ea4" overlay1="#a5a9b0"
       text="#b7c5d2" subtext0="#a5a9b0"
       green="#5ab9b0" yellow="#eed286" red="#f54b43"
       blue="#9ca4f1" teal="#5ab9b0" peach="#f38ba5"

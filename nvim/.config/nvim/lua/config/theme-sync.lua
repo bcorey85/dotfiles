@@ -119,7 +119,7 @@ local FAMILIES = {
     own_comment_contrast = true,
     accents = {
       -- H1 takes the exit magenta; H2-H6 the bind violet.
-      dark = { heading1 = "#d27198", heading = "#8990da", bullet = "#a5a9b0" },
+      dark = { heading1 = "#d6708c", heading = "#8990da", bullet = "#a5a9b0" },
       light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
     },
   },

@@ -120,38 +120,10 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual("deny", self.stored_gate()["coders"]["a1"]["result"])
         self.assertIn("deny", done.stdout)
 
-    def set_gate_with_a_readability_hit(self, *other_commands):
-        subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "base"], cwd=self.repo, check=True, env=self.env)
-        base = script_utils.git_output(self.repo, "rev-parse", "HEAD")
-        (self.repo / "app.py").write_text("def handle(a, b, c):\n    if a:\n        if b:\n            if c:\n"
-                                          "                return 1\n    return 0\n")
-        self.gate_set(f"python3 {GATE_SCRIPT.parent / 'readability_check.py'} --base {base}", *other_commands)
-
     def logged_gate_rows(self):
         return script_utils.read_jsonl(self.home / ".claude/coder-gate.jsonl")
 
-    def test_a_denial_by_a_readability_hit_logs_one_readability_failure(self):
-        self.set_gate_with_a_readability_hit()
-        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
-
-        self.gate_hook()
-
-        row = self.logged_gate_rows()[-1]
-        self.assertEqual("deny", row["result"])
-        self.assertEqual(1, row["failed"])
-        self.assertEqual(1, row["readability_failed"])
-
-    def test_a_readability_hit_and_another_failing_command_log_only_the_hit_as_readability(self):
-        self.set_gate_with_a_readability_hit("exit 3")
-        self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
-
-        self.gate_hook()
-
-        row = self.logged_gate_rows()[-1]
-        self.assertEqual(2, row["failed"])
-        self.assertEqual(1, row["readability_failed"])
-
-    def test_a_denial_by_a_failing_other_command_logs_no_readability_failure(self):
+    def test_a_denial_by_a_failing_command_logs_the_failure(self):
         self.gate_set("exit 3")
         self.env["CLAUDE_TOOLKIT_TELEMETRY"] = "1"
 
@@ -160,17 +132,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         row = self.logged_gate_rows()[-1]
         self.assertEqual("deny", row["result"])
         self.assertEqual(1, row["failed"])
-        self.assertEqual(0, row["readability_failed"])
-
-    def test_a_readability_hit_denies_the_hand_back_with_the_hit_line(self):
-        self.set_gate_with_a_readability_hit()
-
-        done = self.gate_hook()
-
-        self.assertEqual(0, done.returncode, done.stderr)
-        self.assertEqual("deny", self.stored_gate()["coders"]["a1"]["result"])
-        reason = json.loads(done.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn("app.py:4 handle — nesting (3 levels, limit 2)", reason)
+        self.assertNotIn("readability_failed", row)
 
     def test_a_failing_command_that_prints_a_byte_that_is_not_utf_8_denies_with_its_output(self):
         self.gate_set(r"printf 'bad \377 byte\n'; exit 1")
@@ -1293,17 +1255,6 @@ class StaleProseCheckTests(unittest.TestCase):
         for message, command, expected in cases:
             with self.subTest(message):
                 self.assertEqual(expected, gate.is_stale_prose_check(command))
-
-    def test_only_the_readability_script_command_is_the_readability_check(self):
-        gate = load_gate_module()
-        cases = [
-            ("the gate's own command", gate.readability_command("abc123"), True),
-            ("the stale-prose check", "python3 /home/u/.claude/scripts/code/stale_prose.py --base abc123", False),
-            ("a test of the script", "python3 tests/parallel_tests.py test_readability_check.py", False),
-        ]
-        for message, command, expected in cases:
-            with self.subTest(message):
-                self.assertEqual(expected, gate.is_readability_check(command))
 
     def test_run_hit_check_sorts_each_outcome_of_the_command(self):
         gate = load_gate_module()

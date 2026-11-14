@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-953 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+954 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-13, [Review loop: an ask the session rejected is dropped when a later round raises it again](notes/2026-11-13-review-loop-an-ask-the-session-rejected-is-dropped-when-raised-again.md).
+Latest change: 2026-11-14, [The coder hand-back no longer checks readability](notes/2026-11-14-the-coder-hand-back-no-longer-checks-readability.md).
 
 ## Top gains
 

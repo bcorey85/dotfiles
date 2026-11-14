@@ -138,7 +138,6 @@ FIX_THEN_CLEAN = {
 # A stand-in for the stale-prose script, written under its real name: it prints a hit line and exits with the code
 # the test gives it (1 is a hit, 2 a fault of the script).
 STALE_PROSE_STAND_IN = "import sys\nprint('STALE app.py:1 names a changed symbol')\nsys.exit(int(sys.argv[1]))\n"
-READABILITY_STAND_IN = "import sys\nprint('app.py:1 handle — LONG (50 lines, limit 40)')\nsys.exit(int(sys.argv[1]))\n"
 
 
 def git(cwd, *args):
@@ -1515,35 +1514,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         script.write_text(STALE_PROSE_STAND_IN)
         return f"python3 {script} {exit_code}"
 
-    def readability_command(self, exit_code):
-        script = self.scratch / "readability_check.py"
-        script.write_text(READABILITY_STAND_IN)
-        return f"python3 {script} {exit_code}"
-
-    def test_a_readability_hit_goes_to_the_coder_before_a_stale_prose_hit(self):
-        readability_reply = {"result": "Split it.", "edits": {"app.py": APP_FIXED + "# split\n"}}
-        prose_reply = {"result": "Every claim still holds."}
-        scenario = {**FIX_THEN_CLEAN, "coder": [*FIX_THEN_CLEAN["coder"], readability_reply, prose_reply]}
-        self.save_gate_commands(["grep -q 'limit = 20' app.py", self.stale_prose_command(1),
-                                 self.readability_command(1)])
-
-        completed = self.run_script(scenario)
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        row, packet = self.stored_packet()
-        self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
-        self.assertTrue(row["unreviewed_fix"])
-        calls = json.dumps(self.fake_calls())
-        self.assertLess(calls.index("LONG (50 lines"), calls.index("STALE app.py:1"))
-
-    def test_a_readability_check_that_fails_itself_stops_the_loop(self):
-        completed = self.run_with_scoped_tests([self.readability_command(2)], FIX_THEN_CLEAN)
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _row, packet = self.stored_packet()
-        self.assertEqual(packet["status"], "critical-blocker")
-        self.assertIn("readability check failing", packet["blockers"][0])
-
     def run_with_a_stale_prose_hit(self, prose_coder_reply, test_commands=(), **script_options):
         scenario = {**FIX_THEN_CLEAN, "coder": [*FIX_THEN_CLEAN["coder"], prose_coder_reply]}
         self.save_gate_commands([*test_commands, self.stale_prose_command(1)])
@@ -2226,7 +2196,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
                     loop.gates_every_run = gates_every_run
                     run = loop_script.coder_gate.ScopedRun(f"{label}: cmd", [], [], [], [f"{label}: cmd"], True)
                     with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=run), \
-                            mock.patch.object(loop, "hit_check_pass", return_value=False):
+                            mock.patch.object(loop, "stale_prose_pass", return_value=False):
                         loop.scoped_tests_pass("check", ["cmd"])
 
                     self.assertEqual(loop.status, expected_status)

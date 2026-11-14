@@ -774,14 +774,14 @@ EOF
         type_fg="#4f5d00"; builtin_fg="#005b91"; param_fg="#943b12"; attr_fg="#a32822"
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
-        bg="#1b1f23"; panel="#14181b"; panelAlt="#282c2f"; border="#43484b"; note="#14181b"
-        accent="#4baba2"; accentMuted="#43484b"; text="#b7bbbd"; muted="#a5a9b0"; lnFg="#8c9097"
+        bg="#181c20"; panel="#111518"; panelAlt="#24282b"; border="#404447"; note="#111518"
+        accent="#4baba2"; accentMuted="#404447"; text="#b7bbbd"; muted="#a5a9b0"; lnFg="#8c9097"
         # Words must stay >= RGB distance 28 from the line wash, or hunk
         # replaces them with its own blend of the sign colour.
-        addWord="#1e4645"; remWord="#4f1f38"
+        addWord="#1a4241"; remWord="#4b1c34"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
-        addedBg="#1b3435"; removedBg="#351927"; ctxBg="#1b1f23"
+        addedBg="#173031"; removedBg="#311624"; ctxBg="#181c20"
         sAdd="#4baba2"; sRem="#f54b43"; badgeNeu="#eed286"
         kw="#8a9aaa"; punct="#91969c"; str="#4baba2"; num="#d57299"; fn="#858dd8"; cmt="#c7a459"
         type_fg="#8fa338"; builtin_fg="#429ace"; param_fg="#da7e4b"; attr_fg="#d46e65"
@@ -2155,8 +2155,8 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#4baba2" panel_bg="#14181b" surface_dim="#282c2f"
-      surface0="#373b3f" surface1="#43484b"
+      accent="#4baba2" panel_bg="#111518" surface_dim="#24282b"
+      surface0="#33373b" surface1="#404447"
       overlay0="#91959b" overlay1="#a5a9b0"
       text="#b7bbbd" subtext0="#a5a9b0"
       green="#4baba2" yellow="#eed286" red="#f54b43"

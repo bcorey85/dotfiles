@@ -29,7 +29,9 @@ User rule, 2026-11-14: "[the user's ask]".
 
 ## Watch
 
-None. The `coder-readability-handback-denials` watch has no new rows to read once the gate log stops carrying `readability_failed`.
+A `/code` phase or review loop that is open at merge still holds the deleted `readability_check.py` command, so its hand-back stops with a command error (the review loop stops as `critical-blocker`). Re-set the gate with `coder_gate.py set` or restart the loop; that stop is not a new bug.
+
+The `coder-readability-handback-denials` watch has no new rows to read once the gate log stops carrying `readability_failed`.
 
 ## Back-out
 

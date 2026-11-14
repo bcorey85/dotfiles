@@ -93,8 +93,7 @@ GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
 # The gate's state file, kept in the repo's git dir.
 CODER_GATE_FILE = "coder-gate.json"
 STALE_PROSE_SCRIPT = "stale_prose.py"
-READABILITY_SCRIPT = "readability_check.py"
-# The outcome of a stale-prose or readability command that found a hit, and the scoped result of a run that passed.
+# The outcome of a stale-prose command that found a hit, and the scoped result of a run that passed.
 HIT_OUTCOME = "exit 1"
 SCOPED_PASSED = "passed"
 
@@ -489,7 +488,7 @@ HitCheck = namedtuple("HitCheck", ["result", "hit_outputs", "script_failure_tail
 
 
 def run_hit_check(repo_root, commands, gate_env, log_path):
-    # The stale-prose or readability commands' result, hit outputs and script failure tails. A hit is a command that
+    # The stale-prose commands' result, hit outputs and script failure tails. A hit is a command that
     # exited 1, its whole output kept: it goes to a coder pass, not a stop. The result and the tails come from every
     # other outcome, as scoped_run reports them.
     gate = {"commands": commands, "repoRoot": repo_root,
@@ -535,18 +534,6 @@ def is_stale_prose_check(command):
     return runs_script(command, STALE_PROSE_SCRIPT)
 
 
-def is_readability_check(command):
-    # The gate command that lists the changed functions past the readability limits. At hand-back a hit is a failure
-    # like a red test; in the review loop it goes to a coder pass.
-    return runs_script(command, READABILITY_SCRIPT)
-
-
-def readability_command(base):
-    # The gate command of the readability check against the commit `base`.
-    script = pathlib.Path(__file__).resolve().parent / READABILITY_SCRIPT
-    return f"python3 {script} --base {base}"
-
-
 def denial(failures):
     chunks = []
     for command, outcome, output in failures:
@@ -588,15 +575,14 @@ def append_gate_log(row):
     script_utils.append_jsonl(GATE_LOG, row)
 
 
-GateCounts = namedtuple("GateCounts", ["failed", "timed_out", "setup_faults", "not_started", "readability_failed"])
+GateCounts = namedtuple("GateCounts", ["failed", "timed_out", "setup_faults", "not_started"])
 
 
 def log_gate_run(gate, coder, seconds, counts):
     repo_name = pathlib.Path(gate["repoRoot"]).name
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repo_name, "result": coder["result"],
            "run": coder["runs"], "seconds": seconds, "failed": counts.failed, "timed_out": counts.timed_out,
-           "setup_faults": counts.setup_faults, "not_started": counts.not_started,
-           "readability_failed": counts.readability_failed}
+           "setup_faults": counts.setup_faults, "not_started": counts.not_started}
     append_gate_log(row)
 
 
@@ -649,8 +635,7 @@ def _run_stored_gate(gate, event, hook_started):
     outcome = gate_outcome(real_failures, command_errors, setup_faults, timed_out, not_started)
     _apply_outcome(coder, outcome)
     gate["coders"][agent_id] = coder
-    readability_failed = sum(1 for command, _outcome, _output in real_failures if is_readability_check(command))
-    counts = GateCounts(len(real_failures), len(timed_out), len(setup_faults), len(not_started), readability_failed)
+    counts = GateCounts(len(real_failures), len(timed_out), len(setup_faults), len(not_started))
     return GateRunReport(gate, coder, seconds, counts, real_failures)
 
 

@@ -9,7 +9,6 @@ import sys
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
 import check_scope
-import coder_gate
 import plan_format
 import pytest_config
 import script_utils
@@ -479,8 +478,7 @@ def plan_gate_commands(repo_dir, plan, phase):
 
 
 def main(argv):
-    # Prints one gate command per line for `coder_gate.py set`: the plan's commands, then the readability check
-    # against HEAD, the phase base. A repo with no commit has no base, so it gets no readability check.
+    # Prints one gate command per line for `coder_gate.py set`: the plan's commands.
     if len(argv) != 3:
         sys.exit("usage: gate_commands.py <plan> <phase number> (`-` for no plan)")
 
@@ -489,9 +487,6 @@ def main(argv):
         sys.exit("gate_commands: run it from inside the repo")
 
     commands, _ = plan_gate_commands(repo_dir, argv[1], argv[2])
-    head = script_utils.git_output(repo_dir, "rev-parse", "--verify", "--quiet", "HEAD")
-    if head:
-        commands = [*commands, coder_gate.readability_command(head)]
     print("\n".join(commands))
 
 

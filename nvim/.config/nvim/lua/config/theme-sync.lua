@@ -238,6 +238,17 @@ local FAMILIES = {
       light = { heading1 = "#d70087", heading = "#005faf" },
     },
   },
+  ["vitesse"] = {
+    -- bcorey85/vitesse.nvim: one colorscheme "vitesse" follows
+    -- vim.o.background and sets colors_name "vitesse" in both modes.
+    -- Headings are the theme's own: its primary green at every level.
+    schemes = { dark = "vitesse", light = "vitesse" },
+    colors_name = "vitesse",
+    accents = {
+      dark = { heading1 = "#4d9375", heading = "#4d9375" },
+      light = { heading1 = "#1c6b48", heading = "#1c6b48" },
+    },
+  },
   ["hybrid"] = {
     -- HoNamDuong/hybrid.nvim is dark only; light is colors/hybrid-light.lua,
     -- the plugin's highlight table over a light palette.

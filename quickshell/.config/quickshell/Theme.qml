@@ -207,7 +207,7 @@ Singleton {
             orange: "#d7827e", yellow: "#ea9d34", magenta: "#907aa9"
         },
         "dredge-dark": {
-            bg: "#111517", panel: "#0a0e10", border: "#373b3f",
+            bg: "#15191c", panel: "#0e1215", border: "#3c4144",
             fg: "#b6c3cb", muted: "#b1b5bc",
             green: "#8fa338", red: "#e1645a", teal: "#4baba2",
             orange: "#da7e4b", yellow: "#c7a459", magenta: "#e6619a"
@@ -301,6 +301,18 @@ Singleton {
             fg: "#4d4d4c", muted: "#70726e",
             green: "#5f7700", red: "#c82829", teal: "#2c7d83",
             orange: "#b85a00", yellow: "#8f6f00", magenta: "#8959a8"
+        },
+        "vitesse-dark": {
+            bg: "#121212", panel: "#181818", border: "#2f2f2f",
+            fg: "#cecabe", muted: "#858480",
+            green: "#4d9375", red: "#cb7676", teal: "#5eaab5",
+            orange: "#d4976c", yellow: "#e6cc77", magenta: "#d9739f"
+        },
+        "vitesse-light": {
+            bg: "#ffffff", panel: "#f7f7f7", border: "#dedede",
+            fg: "#393a34", muted: "#8f908c",
+            green: "#1e754f", red: "#ab5959", teal: "#2993a3",
+            orange: "#a65e2b", yellow: "#bda437", magenta: "#a13865"
         },
         "rose-pine-dark": {
             bg: "#191724", panel: "#1f1d2e", border: "#403d52",

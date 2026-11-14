@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-953 changes
+954 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -29,6 +29,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Push lines push with -u origin HEAD so a first push works](notes/2026-11-10-push-lines-push-with-u-origin-head-so-a-first.md) [rule/global-claude-md] The global push rule now ends every push line with git -C <repo> push -u origin HEAD in place of a bare git push, which fails on a brand-new branch with no upstream.
 * [Code stops at every phase end and hands the user the commit line](notes/2026-11-10-code-stops-at-every-phase-end-and-hands-the-user.md) [skill/code] /code no longer goes on to the next phase by itself: every phase end stops for the user's read, and the stop names the commit line to run after reading and staging, so phases no longer pile up uncommitted.
 * [The coder logs or returns every caught error, also when the task asks for a fallback](notes/2026-11-10-the-coder-logs-or-returns-every-caught-error-also.md) [skill/coder-core] The coder's swallowed-error line now says to bind the error in every catch block and use it, and names a catch that only returns a fallback as a swallowed error.
+
+### Removed
+
+* [The coder hand-back no longer checks readability](notes/2026-11-14-the-coder-hand-back-no-longer-checks-readability.md) [script/coder-gate, script/review-loop-script, script/gate-commands, script/code-review-start] The readability check is gone from every gate command list: the coder's hand-back is never refused for a readability hit, and the review loop runs no readability pass. readability_check.py and readability_ts.mjs are deleted; the stale-prose check stays.
 
 ### Fixed
 

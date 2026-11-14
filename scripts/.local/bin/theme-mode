@@ -775,7 +775,7 @@ EOF
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
         bg="#191f25"; panel="#12181e"; panelAlt="#262c33"; border="#41484f"; note="#12181e"
-        accent="#4baba2"; accentMuted="#41484f"; text="#b2bcc5"; muted="#a5a9b0"; lnFg="#8c9097"
+        accent="#4baba2"; accentMuted="#41484f"; text="#aebcc9"; muted="#a5a9b0"; lnFg="#8c9097"
         # Words must stay >= RGB distance 28 from the line wash, or hunk
         # replaces them with its own blend of the sign colour.
         addWord="#1e4645"; remWord="#4f2d3d"
@@ -2158,7 +2158,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       accent="#4baba2" panel_bg="#12181e" surface_dim="#262c33"
       surface0="#353b42" surface1="#41484f"
       overlay0="#91959b" overlay1="#a5a9b0"
-      text="#b2bcc5" subtext0="#a5a9b0"
+      text="#aebcc9" subtext0="#a5a9b0"
       green="#4baba2" yellow="#eed286" red="#f54b43"
       blue="#858dd8" teal="#4baba2" peach="#d8728d"
       ;;

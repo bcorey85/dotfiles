@@ -36,11 +36,13 @@ class GitDisciplineGateTest(unittest.TestCase):
         return subprocess.run([sys.executable, str(SCRIPT)], input=stdin, capture_output=True, text=True,
                               env=env, cwd=str(cwd))
 
-    def run_command(self, command, cwd=None, branch="feature", transcript_path=None):
+    def run_command(self, command, cwd=None, branch="feature", transcript_path=None, agent_type=None):
         cwd = cwd or self.repo_on(branch)
         payload = {"tool_input": {"command": command}}
         if transcript_path is not None:
             payload["transcript_path"] = transcript_path
+        if agent_type is not None:
+            payload["agent_type"] = agent_type
         return self.run_raw(json.dumps(payload), cwd)
 
     def write_transcript(self, *records):
@@ -400,6 +402,90 @@ class GitDisciplineGateTest(unittest.TestCase):
         finished = self.run_raw(json.dumps({"tool_input": {"command": "git stash"}}), self.repo_on("main"),
                                 env_extra={"CLAUDE_SKIP_HOOKS": "1"})
         self.assertEqual((finished.returncode, finished.stdout), (0, ""))
+
+    def test_coder_index_writes_denied(self):
+        commands = ("git mv a b", "git add -A", "git rm f", "git commit -m x", "git reset", "git reset --hard",
+                    "git -C x restore --staged f", "git restore -S f", "git restore --staged --worktree f",
+                    "git apply --cached p.diff", "git apply --index p.diff", "git update-index --add f",
+                    "ls && git mv a b", "git rm --cached f", "git restore -SW f", "git restore --stag f",
+                    "git apply -3 p.diff", "git apply --cach p.diff", "git -c core.pager=cat add f",
+                    "git -C x commit -m x", "git apply --3way p.diff", "git apply --inde p.diff",
+                    "git restore --st f", "git stage f", "git read-tree HEAD", "git cherry-pick abc", "git revert abc",
+                    "git am p.mbox", "git apply -N p.diff", "git apply --intent-to-add p.diff",
+                    "git apply --int p.diff", "git apply -vN p.diff", "git checkout HEAD -- f",
+                    "git checkout abc123 -- a b", "git -C x checkout main -- f", "git checkout HEAD f",
+                    "git checkout HEAD .", "git checkout HEAD~1 src/x.py", "git checkout -p HEAD",
+                    "git checkout main a b", "git checkout -p HEAD f", "git checkout --pathspec-from-file=l HEAD",
+                    "git checkout --pathspec-from=l HEAD", "git checkout --pathspec-fr=l HEAD",
+                    "git checkout --patch HEAD -- f", "git checkout --patc HEAD", "git checkout -fp HEAD",
+                    "git checkout -qp HEAD", "git checkout --patch HEAD", "bash -c 'git add f'", "echo $(git mv a b)",
+                    "timeout 5 git commit -m x", "git apply --ca p", "git apply --ind p", "git apply --3 p",
+                    "git restore --source=HEAD --staged f", "git restore -s HEAD -S f",
+                    "git merge main", "git pull", "git pull --rebase", "git rebase main", "git switch --merge x",
+                    "git switch --m x", "git switch -m x", "git switch -qm x",
+                    "git checkout -m main", "git checkout --merge main", "git checkout -qm main",
+                    "git switch --conflict=diff3 x", "git switch --conflict diff3 x", "git switch --confl=diff3 x",
+                    "git checkout --conflict diff3 main", "git switch -f x", "git switch -qf x",
+                    "git switch --force x", "git switch --discard-changes x", "git switch --discard x",
+                    "git checkout -f main", "git checkout --force main",
+                    "git checkout -f", "git checkout --force", "git checkout -f -b new origin/x",
+                    "git checkout -fb new origin/x", "git checkout -fb new", "git checkout -m -b new origin/x",
+                    "git switch --co=diff3 x", "git checkout --co=diff3 main", "git switch --con=diff3 x",
+                    "git switch --fo x", "git checkout -m", "git checkout --f main", "git checkout --c=merge other",
+                    "git checkout -p -U 3 HEAD", "git checkout -pU 3 HEAD", "git checkout -p --unified 3 HEAD",
+                    "git checkout --pathspec-from-file l HEAD", "git checkout --conflict diff3 HEAD -- f",
+                    "git checkout -p --in 3 HEAD", "git checkout -p --u 3 HEAD",
+                    "git checkout --pathspec-fr l HEAD", "git switch --di x", "git checkout --m main",
+                    "git switch --orphan x", "git switch --orphan=x", "git switch --orph=x",
+                    "git switch --or x", "git switch --orph x")
+        for command in commands:
+            with self.subTest(command=command):
+                reason = self.assert_denied(command, "[git-discipline-gate] a coder may not write the index",
+                                            agent_type="coder")
+                self.assertIn("index is the user's", reason)
+                self.assertIn("plain `mv`", reason)
+                self.assertIn("To discard worktree edits, run `git restore <paths>` or `git checkout -- <paths>`.",
+                              reason)
+
+    def test_coder_index_rule_runs_before_the_stash_rule(self):
+        self.assert_denied("git stash && git add f", "[git-discipline-gate] a coder may not write the index",
+                           agent_type="coder")
+
+    def test_coder_variants_index_writes_denied(self):
+        for agent_type in ("coder-deep", "backend-coder", "frontend-coder"):
+            with self.subTest(agent_type=agent_type):
+                self.assert_denied("git add f", "[git-discipline-gate] a coder may not write the index",
+                                   agent_type=agent_type)
+
+    def test_coder_reads_and_worktree_restore_pass(self):
+        for command in ("git status", "git diff --cached", "git log -1", "git restore f", "git restore --worktree f",
+                        "git apply p.diff", "git apply --check p.diff", "git -C x diff",
+                        "git restore -sSTABLE f", "git restore -sStable f", "git apply -Rp3 p.diff",
+                        "git apply -vC3 p.diff", "git apply -p3 p.diff", "git apply -C3 p.diff",
+                        "git restore -- -Sfile", "git restore -s HEAD f", "git restore --source=HEAD f",
+                        "git restore -p f", "git checkout -- f", "git checkout main", "git checkout -b topic",
+                        "git apply -C3N p.diff", "git checkout -b new --", "git checkout -B b origin/b --",
+                        "git checkout -b topic main", "git apply --stat p.diff", "git apply --numstat p.diff",
+                        "git apply --summary p.diff", "git apply --reverse p.diff", "git checkout --theirs -- f",
+                        "git checkout -- f g", "git checkout main --", "git checkout HEAD --",
+                        "git checkout -qb new HEAD", "git checkout --orph new main",
+                        "git checkout --conflict diff3 -- f", "git checkout --confl diff3 -- f",
+                        "git checkout --con diff3 -- f", "git checkout --co diff3 -- f",
+                        "git checkout --pathspec-from-file l", "git checkout -p -U 3",
+                        "git checkout -p --unified 3", "git checkout -p --in 3", "git checkout -pU 3",
+                        "git switch x", "git submodule add u p",
+                        "git switch -cm x", "git switch -c topic", "git switch -Cm x", "git checkout -f -- f",
+                        "git checkout -m -- f", "git checkout -p", "git checkout --detach",
+                        "git checkout --or new HEAD",
+                        "git apply --i p"):
+            with self.subTest(command=command):
+                self.assert_allowed(command, agent_type="coder")
+
+    def test_index_writes_pass_outside_the_coder(self):
+        for agent_type in (None, "reviewer"):
+            for command in ("git mv a b", "git add -A", "git restore --staged f"):
+                with self.subTest(agent_type=agent_type, command=command):
+                    self.assert_allowed(command, agent_type=agent_type)
 
     def test_unparseable_input_fails_closed(self):
         for stdin in ("not json", json.dumps({"tool_input": "git stash"}), json.dumps(["x"])):

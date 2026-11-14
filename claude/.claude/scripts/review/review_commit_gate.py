@@ -63,6 +63,8 @@ A dirty session still commits in four more cases, each checked against something
     dispatch before it, and a review of another repo neither answers nor voids it. A dispatch's repo is the ROOT=
     that review-scope printed in the loop, else its `repo:` line, else the first absolute path the prompt names,
     else the session cwd; a ROOT= or `repo:` line in no work tree names no repo.
+    Finding asks a /code phase review opened (phase_asks.py) and the session has not ruled on deny a commit in
+    that repo, whatever hand-back came later; a notes-only commit and `[no-review]` still pass.
 The last three credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
 dir or work-tree option or variable, quotes and escapes resolved; a `.` counts after `if`, `then`, `elif`, `else`,
@@ -96,9 +98,9 @@ import time
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
+import commit_gate_denials
 import hook_input
 import notes_paths
-import plan_format
 import reviewed_tree
 import script_utils
 import shell_statements
@@ -867,38 +869,9 @@ def credited_repos(events, transcript_path, session, edited_by_agent):
     return credited
 
 
-def unruled_plan_impact_denial(repo_dirs, session):
-    """The deny text for a commit in a repo whose latest review handed back plan impacts that still await a ruling,
-    or None. A ruling settles them."""
-    try:
-        import handback
-        import handback_store
-    except ImportError as error:
-        # A missing store or handback module skips this check (fail open): the plain review deny still applies.
-        hook_input.emit_stderr(f"review-commit-gate: cannot import handback: {error}\n")
-        return None
-
-    for repo_dir in repo_dirs:
-        repo_top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS) if repo_dir else None
-        if repo_top is None:
-            continue
-        unruled = handback.unruled_plan_impacts(handback_store.latest_for_repo(session, str(repo_top)))
-        if not unruled:
-            continue
-        review_fix = pathlib.Path(__file__).resolve().parent / "review_fix.py"
-        return (
-            f"[review-commit-gate] The latest /review of {repo_top} handed back {len(unruled)} plan impact(s) that "
-            f"await a ruling. Do not run /review again: rule on them first, with `python3 {review_fix} defer "
-            f"<handoff file>` to defer them to phase end or `python3 {review_fix} {plan_format.DECIDE_USAGE_STEM}`. "
-            "Only `decide keep` settles them; `decide adopt` logs the deviation and re-dispatches the loop (or, with "
-            "no `packet` state, stops for `/code resume`). Then commit the tree the review covered."
-        )
-    return None
-
-
 def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_agent):
     """The deny text: the lost credit when the command is all that stands between it and a reviewed repo."""
-    plan_impact_denial = unruled_plan_impact_denial(repo_dirs, session)
+    plan_impact_denial = commit_gate_denials.unruled_plan_impact_denial(repo_dirs, session, GIT_TIMEOUT_SECONDS)
     if plan_impact_denial:
         return plan_impact_denial
     if None not in repo_dirs:
@@ -928,7 +901,9 @@ def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_ag
 
 def check_commit(command, root, state_file, session):
     """Deny a commit while the session holds unreviewed coder work in a repo it commits in, unless the user ordered
-    it without review, every directory it commits in earns credit, or it ships only notes."""
+    it without review, every directory it commits in earns credit, or it ships only notes. Also deny it while the
+    phase review of a repo it commits in left finding asks the session has not ruled on, even with credit; a
+    notes-only commit and `[no-review]` still pass."""
     events = gate_events(state_file)
     if not events:
         return
@@ -939,12 +914,17 @@ def check_commit(command, root, state_file, session):
     transcript_path = jq_field(root, "transcript_path")
     repo_dirs = credit_repo_dirs(command, cwd)
     edited_by_agent = edited_repos_by_agent(events, transcript_path)
-    if all(is_clear(repo_dir, events, transcript_path, session, edited_by_agent) for repo_dir in repo_dirs):
+    # A converged hand-back makes every dir clear, so open phase asks are read before that early return.
+    open_asks_denial = commit_gate_denials.unruled_phase_asks_denial(repo_dirs, session, GIT_TIMEOUT_SECONDS)
+    if open_asks_denial is None and all(
+            is_clear(repo_dir, events, transcript_path, session, edited_by_agent) for repo_dir in repo_dirs):
         return
 
     if ships_only_notes(command, cwd):
         return
 
+    if open_asks_denial:
+        raise DenyError(open_asks_denial)
     raise DenyError(commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_agent))
 
 

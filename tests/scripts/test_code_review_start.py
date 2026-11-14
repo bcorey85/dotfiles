@@ -220,6 +220,25 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertEqual((phase_dir / "pid").read_text(), str(os.getpid()))
         self.assertEqual((phase_dir / "review.out").read_text(), "running loop output\n")
 
+    def test_the_live_run_records_the_lane_and_phase_for_the_ask_rows(self):
+        self.run_live(self.load_module(), write_packet=False)
+
+        run_record = json.loads((self.repo / ".git/code-phase/run.json").read_text())
+        self.assertEqual(run_record, {"lane": "lane-a", "phase": "1"})
+
+    def test_a_start_refused_while_a_loop_runs_leaves_the_run_record_as_it_was(self):
+        phase_dir = self.repo / ".git/code-phase"
+        phase_dir.mkdir()
+        (phase_dir / "pid").write_text(str(os.getpid()))
+        run_file = phase_dir / "run.json"
+        run_file.write_text('{"lane": "running-lane", "phase": "9"}\n')
+
+        done = self.start("--detach")
+
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("another review loop of this repo still runs", done.stderr)
+        self.assertEqual(run_file.read_text(), '{"lane": "running-lane", "phase": "9"}\n')
+
     def test_the_live_run_prints_the_packet_the_loop_wrote_beside_the_prompt(self):
         printed, prompt_folder, loop_folder, _command = self.run_live(self.load_module(), write_packet=True)
 

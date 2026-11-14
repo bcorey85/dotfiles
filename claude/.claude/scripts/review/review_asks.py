@@ -35,6 +35,39 @@ CONDITIONAL_CHANGE = re.compile(
 JUMP_ANCHOR = re.compile(r"^[^\s,;]+:\d+(-\d+)?$")
 
 
+WRONG_COUNT = "wrong-count"
+UNKNOWN_OUTCOME = "unknown-outcome"
+MISSING_NOTE = "missing-note"
+
+
+class OutcomeError(Exception):
+    """An outcome word the grammar refuses. `problem` is WRONG_COUNT, UNKNOWN_OUTCOME or MISSING_NOTE; `number` is the
+    1-based word that broke it (0 for a wrong count); `word` is that word (every word given, for a wrong count)."""
+
+    def __init__(self, problem, number, word):
+        super().__init__(f"{problem}: outcome {number} {word!r}")
+        self.problem = problem
+        self.number = number
+        self.word = word
+
+
+def parse_outcome_words(words, count, allowed, note_required):
+    """(the outcome of each word, the note after `:` of each, "" when none). Raises OutcomeError for a wrong number of
+    words, an outcome not in `allowed`, or an outcome in `note_required` with a blank note."""
+    if len(words) != count:
+        raise OutcomeError(WRONG_COUNT, 0, words)
+    outcomes, notes = [], []
+    for number, word in enumerate(words, 1):
+        outcome, _separator, note = word.partition(":")
+        if outcome not in allowed:
+            raise OutcomeError(UNKNOWN_OUTCOME, number, word)
+        if outcome in note_required and not note.strip():
+            raise OutcomeError(MISSING_NOTE, number, word)
+        outcomes.append(outcome)
+        notes.append(one_line(note, None))
+    return outcomes, notes
+
+
 def jump_anchor_args(asks):
     """The nvim-jump arguments for the asks: `--note <question> <path:line>` for each ask whose file_line is one
     well-formed anchor. Empty when no ask has one."""

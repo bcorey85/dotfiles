@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-572 fix notes
+573 fix notes
 
 Recent: the 7 days up to 2026-11-13, the newest note.
 
@@ -17,7 +17,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/review-loop-script | 57 | 8 |
 | script/handback | 52 | 4 |
 | script/review-fix | 52 | 5 |
-| script/review-commit-gate | 35 | 1 |
+| script/review-commit-gate | 36 | 2 |
 | script/review-loop-gate | 35 | 1 |
 | script/full-check | 23 | 2 |
 | script/coder-gate | 21 | 2 |
@@ -37,12 +37,12 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/git-discipline-gate | 8 | 1 |
 | script/log-escape | 8 | 1 |
 | script/review-loop | 8 | 1 |
+| script/code-wait | 7 | 4 |
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
 | script/refactor-flow | 7 | 2 |
 | script/verify-common | 7 | 2 |
 | script/code-review-start | 6 | 3 |
-| script/code-wait | 6 | 3 |
 | script/herdr-worktree | 6 | 2 |
 | script/pipe-shell-check | 6 | 3 |
 | script/check-scope | 5 | 0 |
@@ -66,6 +66,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | rule/orchestration | 3 | 0 |
 | script/adr-flow | 3 | 0 |
 | script/code | 3 | 0 |
+| script/handback-store | 3 | 1 |
 | script/inline-interpreter-hint | 3 | 0 |
 | script/ledger-write | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
@@ -84,7 +85,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/coder-packet | 2 | 0 |
 | script/criteria-verdict | 2 | 1 |
 | script/emit-orchestration | 2 | 0 |
-| script/handback-store | 2 | 0 |
 | script/herdr-dev | 2 | 0 |
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
@@ -128,6 +128,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/log-skill-use | 1 | 0 |
 | script/merge-built-page | 1 | 1 |
 | script/permission-question | 1 | 0 |
+| script/phase-asks | 1 | 1 |
 | script/phase-start | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 1 |

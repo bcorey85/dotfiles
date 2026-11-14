@@ -25,7 +25,9 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("lib", "check_output.py"), ("lib", "linked_installs.py"), ("lib", "test_run_output.py"),
                 ("lib", "worktree_snapshot.py"), ("lib", "numstat.py"), ("lib", "makefile_text.py"),
                 ("lib", "full_check_receipt.py"), ("lib", "pytest_config.py"),
-                ("lib", "source_text.py"), ("lib", "notes_paths.py"), ("lib", "local_check.py"))
+                ("lib", "source_text.py"), ("lib", "notes_paths.py"), ("lib", "local_check.py"),
+                ("review", "commit_gate_denials.py"), ("review", "phase_asks.py"), ("review", "review_asks.py"),
+                ("review", "review_fix_state.py"), ("lib", "review_fix_names.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
@@ -929,6 +931,78 @@ class ReviewedWorkCommitTest(GateCase):
         with open(str(self.store_dir / "s1.jsonl"), "a") as handle:
             handle.write(json.dumps({"kind": "plan-ruling", "session_id": "s1", "ts": 2, "decision": "defer"}) + "\n")
         self.record_reviewed_tree()
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def append_store_rows(self, *rows):
+        with open(str(self.store_dir / "s1.jsonl"), "a") as handle:
+            handle.write("".join(json.dumps(row) + "\n" for row in rows))
+
+    def phase_asks_open_row(self, handback_ts=1):
+        ask = {"question": "`a.py:3` [correctness] — Should an empty list count as none?", "file_line": "a.py:3",
+               "change": "return [] for empty", "gate": "code-reviewer", "class": "correctness"}
+        return {"kind": "phase-asks-open", "session_id": "s1", "ts": 2, "repo": str(self.repo.resolve()),
+                "handback_ts": handback_ts, "asks": [ask], "context": {}}
+
+    def converged_with_open_phase_asks(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        self.append_store_rows(self.phase_asks_open_row())
+
+    def test_a_converged_review_with_phase_asks_not_ruled_on_denies_the_commit_and_names_the_rule_command(self):
+        self.converged_with_open_phase_asks()
+
+        finished = self.commit("git commit -a -m x")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+        reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("Should an empty list count as none?", reason)
+        self.assertIn("phase_asks.py rule 'accepted|rejected:<one-line reason>'", reason)
+        self.assertIn("Do not run /review again", reason)
+        self.assertIn(f"cd {self.repo.resolve()} && python3", reason)
+
+    def test_a_notes_only_commit_passes_while_phase_asks_are_open(self):
+        self.converged_with_open_phase_asks()
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "x.md").write_text("notes\n")
+        self.git(self.repo, "add", "docs/x.md")
+
+        self.assert_silent(self.commit('git commit -q -m "notes"'))
+
+    def test_a_no_review_order_passes_while_phase_asks_are_open(self):
+        self.converged_with_open_phase_asks()
+        transcript = self.write_transcript(self.user_prompt("[no-review] commit this"))
+
+        self.assert_silent(self.commit("git commit -a -m x", transcript_path=transcript))
+
+    def test_the_commit_passes_once_the_phase_asks_are_ruled_on(self):
+        self.converged_with_open_phase_asks()
+        self.append_store_rows({"kind": "phase-asks-ruled", "session_id": "s1", "ts": 3,
+                                "repo": str(self.repo.resolve()), "handback_ts": 1,
+                                "rulings": [{"outcome": "accepted", "reason": "fixes a defect in scope",
+                                             "finding_id": "0ff295856f1a9ccc"}]})
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_converged_review_with_no_open_phase_asks_row_passes(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_newer_hand_back_of_the_repo_leaves_the_open_phase_asks_blocking_the_commit(self):
+        self.converged_with_open_phase_asks()
+        self.append_store_rows({"kind": "handback", "session_id": "s1", "ts": 9, "status": "converged",
+                                "message": ""})
+        self.record_reviewed_tree()
+
+        self.assert_denies(self.commit("git commit -a -m x"), "1 ask(s) that you have not ruled on")
+
+    def test_open_phase_asks_of_another_repo_do_not_block_this_one(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        other = self.make_repo("other")
+        self.append_store_rows({**self.phase_asks_open_row(), "repo": str(other.resolve())})
 
         self.assert_silent(self.commit("git commit -a -m x"))
 

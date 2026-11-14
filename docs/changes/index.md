@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-948 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+949 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-13, [phase_start moves a stale stop.md aside so the next stop is a new file](notes/2026-11-13-phase-start-moves-a-stale-stop-md-aside.md).
+Latest change: 2026-11-13, [Phase review asks need a ruling before the commit](notes/2026-11-13-phase-review-asks-need-a-ruling-before-the-commit.md).
 
 ## Top gains
 

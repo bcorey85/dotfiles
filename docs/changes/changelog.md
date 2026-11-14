@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-952 changes
+953 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -33,6 +33,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Fixed
 
 * [Review loop: an ask the session rejected is dropped when a later round raises it again](notes/2026-11-13-review-loop-an-ask-the-session-rejected-is-dropped-when-raised-again.md) [script/review-fix, script/review-loop, script/handback-store] asks-done records each rejected ask (file:line and question) in the hand-back store; the loop reads them at start and files a repeat under dropped asks with a reason that says it was already rejected, instead of stopping on it.
+* [Deny coder git calls that write the index](notes/2026-11-13-deny-coder-git-calls-that-write-the-index.md) [agent/coder, script/git-discipline-gate] The git discipline gate now denies the index-writing git calls add, stage, mv, rm, commit, reset, update-index, read-tree, cherry-pick, revert, am, merge, pull, rebase, switch or checkout of a branch with -m, --merge, --conflict, -f or --force (switch also --discard-changes and --orphan), restore --staged, apply --cached/--index/--3way/--intent-to-add and checkout <tree-ish> [--] <paths>, and checkout -p <tree-ish> from a coder, so renames and adds no longer ride into an unrelated commit.
 * [Review fix: a plan impact the user ruled on is left out of the fix run and does not come back as an ask](notes/2026-11-13-review-fix-a-ruled-plan-impact-is-left-out-of-the-fix-run.md) [script/review-fix, script/review-launch, script/handback-store, script/script-utils, script/plan-format, script/verify-log, script/verify-common] decide adopt, decide keep and an accepted plan-impact ask record the impact text in the hand-back store; a later fix launch drops a plan-change finding that text settles, and a skipped one in the packet stays skipped instead of becoming an ask.
 * [phase_start moves a stale stop.md aside so the next stop is a new file](notes/2026-11-13-phase-start-moves-a-stale-stop-md-aside.md) [script/phase-start, script/code-relay] phase_start.py renames an existing stop.md of the run folder to stop.prev.md, so the /code fork's Write of its next stop is no longer refused; code_relay hands a bounced stop.prev.md on once.
 * [herdr-worktree names every missing helper in one error with the stow command](notes/2026-11-13-herdr-worktree-names-every-missing-helper-in-one.md) [script/herdr-worktree] herdr-worktree --fork collects every helper missing from the bin folder and names them all in one error, with the exact stow command, instead of stopping at the first.

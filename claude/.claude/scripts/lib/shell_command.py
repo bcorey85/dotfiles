@@ -344,6 +344,36 @@ def is_git_word(word):
     return posixpath.basename(word) == "git"
 
 
+def is_short_cluster(argument):
+    """True for a bundle of short flags such as `-SW`; a bare `-` and a `--long` option are not."""
+    return argument[:1] == "-" and argument[1:2] not in ("", "-")
+
+
+def is_long_prefix(argument, option, shortest):
+    """True when the argument is `option` or an abbreviation of it, at least as long as `shortest`, that git's option
+    parser accepts."""
+    return len(argument) >= len(shortest) and option.startswith(argument)
+
+
+def flags_before_value(argument, value_letters):
+    """The flag letters of a short cluster before the first letter that takes a value.
+
+    `-sSTABLE` holds the value `STABLE` for `-s`, so its `S` is not the `-S` flag.
+    """
+    letters = argument[1:]
+    for position, letter in enumerate(letters):
+        if letter in value_letters:
+            return letters[:position]
+    return letters
+
+
+def options_before_separator(arguments):
+    """The arguments up to a bare `--`; what follows is a path, not an option."""
+    if "--" in arguments:
+        return arguments[:arguments.index("--")]
+    return arguments
+
+
 def git_subcommand(words):
     """The subcommand of the git call in the words, after git's own options; None when it names none."""
     _options, index = git_options(words)
@@ -359,15 +389,16 @@ def without_assignments(words):
     return words
 
 
-def without_flag_values(words, value_flags):
-    # The words with the value word after each of value_flags dropped. The flag itself stays.
+def without_flag_values(words, value_flags=(), takes_value=None):
+    # The words with the value word after each of value_flags, or after each word takes_value accepts, dropped.
+    # The flag itself stays.
     kept_words = []
     skip_value = False
     for word in words:
         if skip_value:
             skip_value = False
             continue
-        skip_value = word in value_flags
+        skip_value = word in value_flags or (takes_value is not None and takes_value(word))
         kept_words.append(word)
     return kept_words
 

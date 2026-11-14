@@ -3,6 +3,8 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
+import tempfile
 import unittest
 import unittest.mock
 
@@ -52,6 +54,39 @@ class ToolkitPathsTest(unittest.TestCase):
             {"code": reloaded.CODE_DIR, "review": reloaded.REVIEW_DIR, "telemetry": reloaded.TELEMETRY_DIR,
              "lib": reloaded.LIB_DIR, "tools": reloaded.TOOLS_DIR, "gates": reloaded.GATES_DIR},
         )
+
+
+class FirstPythonThatStartsTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.shims = pathlib.Path(folder.name)
+
+    def plant(self, name, body):
+        shim = self.shims / name
+        shim.write_text(f"#!/bin/sh\n{body}\n")
+        shim.chmod(0o755)
+
+    def first_started(self, names):
+        with unittest.mock.patch.dict(os.environ, {"PATH": str(self.shims)}):
+            return toolkit_paths.first_python_that_starts(names)
+
+    def test_a_shim_that_cannot_start_is_passed_over(self):
+        # The shape a version manager leaves behind: on PATH, exit 1, a message on stderr.
+        self.plant("python3.12", "echo 'mise ERROR python3.12 is not a valid shim' >&2; exit 1")
+
+        self.assertIsNone(self.first_started(("python3.13", "python3.12", "python3.11")))
+
+    def test_the_next_name_is_used_when_an_earlier_one_cannot_start(self):
+        self.plant("python3.13", "exit 1")
+        self.plant("python3.12", f'exec "{sys.executable}" "$@"')
+
+        started = self.first_started(("python3.13", "python3.12"))
+
+        self.assertEqual(sys.executable, started)
+
+    def test_no_name_on_the_search_path_gives_none(self):
+        self.assertIsNone(self.first_started(("python3.13",)))
 
 
 class RealLedgerGuardTest(unittest.TestCase):

@@ -208,15 +208,15 @@ Singleton {
         },
         "dredge-dark": {
             bg: "#191f25", panel: "#12181e", border: "#41484f",
-            fg: "#aebcc9", muted: "#a5a9b0",
-            green: "#8fa338", red: "#d46e65", teal: "#4baba2",
-            orange: "#da7e4b", yellow: "#c7a459", magenta: "#d8728d"
+            fg: "#b7c5d2", muted: "#a5a9b0",
+            green: "#9eb34a", red: "#f78d83", teal: "#5ab9b0",
+            orange: "#f0925f", yellow: "#c9a65a", magenta: "#f38ba5"
         },
         "dredge-light": {
             bg: "#c8d0d3", panel: "#c2cacd", border: "#a5adb0",
-            fg: "#293741", muted: "#4e5158",
-            green: "#4f5d00", red: "#a32822", teal: "#00625c",
-            orange: "#943b12", yellow: "#6d4a00", magenta: "#a80e62"
+            fg: "#1f2d37", muted: "#4e5158",
+            green: "#445200", red: "#951816", teal: "#005751",
+            orange: "#872f00", yellow: "#6d4a00", magenta: "#940053"
         },
         "kanagawa-dark": {
             bg: "#1f1f28", panel: "#16161d", border: "#363646",

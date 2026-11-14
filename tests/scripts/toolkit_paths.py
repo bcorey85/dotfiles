@@ -5,6 +5,7 @@ Importing it also guards the real ledger: see guard_real_ledger."""
 import os
 import pathlib
 import shutil
+import subprocess
 import tempfile
 
 TREE_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
@@ -24,9 +25,28 @@ CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "makefile_t
                           "check_output.py", "check_scope.py", "numstat.py", "source_paths.py", "linked_installs.py",
                           "worktree_snapshot.py", "expected_red.py", "full_check_receipt.py", "reviewed_tree.py",
                           "pytest_config.py", "notes_paths.py")
+
+
+def first_python_that_starts(names):
+    """The real path of the first named Python that starts, or None.
+
+    A version manager leaves a shim on PATH for a Python it no longer runs, and a shim that runs here can still fail
+    under a test's own HOME. So each one found is started, and the path it reports for itself is the one returned."""
+    for name in names:
+        found = shutil.which(name)
+        if not found:
+            continue
+        started = subprocess.run([found, "-c", "import sys; print(sys.executable)"],
+                                 capture_output=True, text=True, check=False)
+        if started.returncode != 0:
+            continue
+        return started.stdout.strip()
+    return None
+
+
 # A Python older than 3.14, or None: its pathlib raises on a path test of a word longer than a file name may be, where
 # 3.14 returns False, so a long-text test runs the script under it.
-PRE_314_PYTHON = shutil.which("python3.13") or shutil.which("python3.12") or shutil.which("python3.11")
+PRE_314_PYTHON = first_python_that_starts(("python3.13", "python3.12", "python3.11"))
 # The sweeps that parse every real plan under ~/dev run only with REAL_PLANS=1: a stale plan in some worktree is not a
 # toolkit break, so it never fails the default suite.
 REAL_PLANS_ENABLED = os.environ.get("REAL_PLANS") == "1"

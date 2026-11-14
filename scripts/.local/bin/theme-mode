@@ -766,25 +766,25 @@ EOF
       local bright quote bullet type_fg builtin_fg param_fg attr_fg
       if [ "$2" = light ]; then
         bg="#c8d0d3"; panel="#c2cacd"; panelAlt="#bfc7ca"; border="#a5adb0"; note="#c2cacd"
-        accent="#00625c"; accentMuted="#a5adb0"; text="#293741"; muted="#4e5158"; lnFg="#60656b"
-        addWord="#72aca6"; remWord="#bb908b"
-        addedBg="#9bb1af"; removedBg="#b7a8a5"; ctxBg="#c8d0d3"
-        sAdd="#038880"; sRem="#d72d2b"; badgeNeu="#846322"
-        kw="#4c5158"; punct="#575b62"; str="#00625c"; num="#a80e62"; fn="#4b47b6"; cmt="#6d4a00"
-        type_fg="#4f5d00"; builtin_fg="#005b91"; param_fg="#943b12"; attr_fg="#a32822"
+        accent="#005751"; accentMuted="#a5adb0"; text="#1f2d37"; muted="#4e5158"; lnFg="#575b61"
+        addWord="#8fb3b0"; remWord="#bfa1af"
+        addedBg="#a9c4c2"; removedBg="#ceb6c0"; ctxBg="#c8d0d3"
+        sAdd="#006f67"; sRem="#b32474"; badgeNeu="#846322"
+        kw="#4c5158"; punct="#575b62"; str="#005751"; num="#940053"; fn="#413aa8"; cmt="#6d4a00"
+        type_fg="#445200"; builtin_fg="#004f85"; param_fg="#872f00"; attr_fg="#951816"
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
         bg="#191f25"; panel="#12181e"; panelAlt="#262c33"; border="#41484f"; note="#12181e"
-        accent="#4baba2"; accentMuted="#41484f"; text="#aebcc9"; muted="#a5a9b0"; lnFg="#8c9097"
+        accent="#5ab9b0"; accentMuted="#41484f"; text="#b7c5d2"; muted="#a5a9b0"; lnFg="#9599a0"
         # Words must stay >= RGB distance 28 from the line wash, or hunk
         # replaces them with its own blend of the sign colour.
         addWord="#1e4645"; remWord="#4f2d3d"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
         addedBg="#1b3435"; removedBg="#36222b"; ctxBg="#191f25"
-        sAdd="#4baba2"; sRem="#d5619e"; badgeNeu="#eed286"
-        kw="#8a9aaa"; punct="#91969c"; str="#4baba2"; num="#d8728d"; fn="#858dd8"; cmt="#c7a459"
-        type_fg="#8fa338"; builtin_fg="#429ace"; param_fg="#da7e4b"; attr_fg="#d46e65"
+        sAdd="#5ab9b0"; sRem="#d5619e"; badgeNeu="#eed286"
+        kw="#95a5b5"; punct="#989ea4"; str="#5ab9b0"; num="#f38ba5"; fn="#9ca4f1"; cmt="#c9a65a"
+        type_fg="#9eb34a"; builtin_fg="#5bb2e7"; param_fg="#f0925f"; attr_fg="#f78d83"
         bright="#d9e0eb"; quote="#bec3cb"; bullet="#a5a9b0"
       fi
       op="$punct"; tag="$kw"; imp="$kw"
@@ -806,7 +806,7 @@ EOF
         bind="#433fa8"; act="#006c66"; exit_fg="#a80e62"; lit="#2a7000"; desc="#07549f"
         kw="#4c5158"; cmt="#6d4a00"
       else
-        bind="#8990da"; act="#4baba2"; exit_fg="#d6708c"; lit="#8fa338"; desc="#429ace"
+        bind="#8990da"; act="#5ab9b0"; exit_fg="#d6708c"; lit="#9eb34a"; desc="#5bb2e7"
         cmt="#c3a15a"
       fi
       # Binds: names where they are introduced. Acts: calls, decorators, builtins.
@@ -2146,21 +2146,21 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:light)
       base_name="one-light"
-      accent="#00625c" panel_bg="#c2cacd" surface_dim="#b4bcbf"
+      accent="#005751" panel_bg="#c2cacd" surface_dim="#b4bcbf"
       surface0="#acb4b7" surface1="#a5adb0"
       overlay0="#4e5158" overlay1="#454950"
-      text="#293741" subtext0="#454950"
+      text="#1f2d37" subtext0="#454950"
       green="#038880" yellow="#846322" red="#d72d2b"
-      blue="#4b47b6" teal="#00625c" peach="#a80e62"
+      blue="#413aa8" teal="#005751" peach="#940053"
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#4baba2" panel_bg="#12181e" surface_dim="#262c33"
+      accent="#5ab9b0" panel_bg="#12181e" surface_dim="#262c33"
       surface0="#353b42" surface1="#41484f"
       overlay0="#91959b" overlay1="#a5a9b0"
-      text="#aebcc9" subtext0="#a5a9b0"
-      green="#4baba2" yellow="#eed286" red="#f54b43"
-      blue="#858dd8" teal="#4baba2" peach="#d8728d"
+      text="#b7c5d2" subtext0="#a5a9b0"
+      green="#5ab9b0" yellow="#eed286" red="#f54b43"
+      blue="#9ca4f1" teal="#5ab9b0" peach="#f38ba5"
       ;;
     kanagawa:light)
       # kanagawa lotus (#f2ecbc).

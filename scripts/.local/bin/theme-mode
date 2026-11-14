@@ -782,10 +782,10 @@ EOF
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
         addedBg="#173031"; removedBg="#311624"; ctxBg="#181c20"
-        sAdd="#4baba2"; sRem="#f54b43"; badgeNeu="#eed286"
+        sAdd="#4baba2"; sRem="#d5619e"; badgeNeu="#eed286"
         kw="#8a9aaa"; punct="#91969c"; str="#4baba2"; num="#d8728d"; fn="#858dd8"; cmt="#c7a459"
         type_fg="#8fa338"; builtin_fg="#429ace"; param_fg="#da7e4b"; attr_fg="#d46e65"
-        bright="#ebf2fd"; quote="#bec3cb"; bullet="#a5a9b0"
+        bright="#d9e0eb"; quote="#bec3cb"; bullet="#a5a9b0"
       fi
       op="$punct"; tag="$kw"; imp="$kw"
       konst="$num"; esc="$num"; lang="$num"

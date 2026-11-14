@@ -778,10 +778,10 @@ EOF
         accent="#4baba2"; accentMuted="#43484b"; text="#b7bbbd"; muted="#a5a9b0"; lnFg="#8c9097"
         # Words must stay >= RGB distance 28 from the line wash, or hunk
         # replaces them with its own blend of the sign colour.
-        addWord="#1e4645"; remWord="#4f1f38"
+        addWord="#1e4645"; remWord="#4f2d3d"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
-        addedBg="#1b3435"; removedBg="#351927"; ctxBg="#1b1f23"
+        addedBg="#1b3435"; removedBg="#36222b"; ctxBg="#1b1f23"
         sAdd="#4baba2"; sRem="#d5619e"; badgeNeu="#eed286"
         kw="#8a9aaa"; punct="#91969c"; str="#4baba2"; num="#d8728d"; fn="#858dd8"; cmt="#c7a459"
         type_fg="#8fa338"; builtin_fg="#429ace"; param_fg="#da7e4b"; attr_fg="#d46e65"

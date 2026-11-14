@@ -25,7 +25,7 @@ Tests cover each denied form, the allowed reads, worktree restore, plain `git ch
 
 ## Result
 
-A coder that moves files with git mv is told to use plain mv; the gate denies every call listed above from a coder. Merge, pull, rebase and a branch switch or checkout with `-m`, `--merge`, `--conflict`, `-f` or `--force` (switch also `--discard-changes` and `--orphan`) are denied for a coder too; a plain checkout or switch of a branch still passes. A worker session is the main session (no agent_type), so its merges still pass.
+A coder that moves files with git mv is told to use plain mv; the gate denies every call listed above from a coder. Merge, pull, rebase and a branch switch or checkout with `-m`, `--merge`, `--conflict`, `-f` or `--force` (switch also `--discard-changes` and `--orphan`) are denied for a coder too; a plain checkout or switch of a branch still passes. A worker session is the main session (no agent_type), so its merges still pass. One is_orphan_option helper reads `--orphan`, its abbreviations and `--orphan=<branch>` for both switch and checkout, so `git checkout --orphan=new main -- f` makes a branch rather than counting as a path checkout.
 
 ## Watch
 
@@ -33,4 +33,4 @@ A coder that moves files with git mv is told to use plain mv; the gate denies ev
 
 ## Back-out
 
-Remove the check_coder_index call in run() of git_discipline_gate.py, and delete check_coder_index, writes_index, restore_stages, apply_writes_index, checkout_writes_index, switch_writes_index, checkout_makes_branch, checkout_patches, takes_separate_value, merges_on_switch, discards_on_switch and the index constants there. Delete flags_before_value and is_long_prefix from lib/shell_command.py, and the takes_value parameter of without_flag_values, with their tests in tests/scripts/test_shell_command.py and the coder tests in tests/scripts/test_git_discipline_gate.py. Keep is_short_cluster: is_force_push uses it. Keep options_before_separator: check_scope uses it. The check_autostash extraction can stay.
+Remove the check_coder_index call in run() of git_discipline_gate.py, and delete check_coder_index, writes_index, restore_stages, apply_writes_index, checkout_writes_index, switch_writes_index, checkout_makes_branch, is_orphan_option, checkout_patches, takes_separate_value, merges_on_switch, discards_on_switch and the index constants there. Delete flags_before_value and is_long_prefix from lib/shell_command.py, and the takes_value parameter of without_flag_values, with their tests in tests/scripts/test_shell_command.py and the coder tests in tests/scripts/test_git_discipline_gate.py. Keep is_short_cluster: is_force_push uses it. Keep options_before_separator: check_scope uses it. The check_autostash extraction can stay.

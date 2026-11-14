@@ -9,6 +9,7 @@ import sys
 SIBLING_FOLDERS = (".", "../lib", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
 import handback_store
+import script_utils
 from handback import PacketError
 
 
@@ -49,6 +50,13 @@ def read_message():
     unreviewed_fix = handback_store.ended_on_unreviewed_fix(session_id, stored_row.get("agent_id"))
     packet_id = handback_store.hand_back_id(stored_row, session_id)
     return stored_row["message"], packet_id, unreviewed_in_a_row, unreviewed_fix
+
+
+def session_repo():
+    """The repo this session last dispatched a review for, else the top level of the cwd. A packet with its own
+    launch `--repo` takes that one first (`review_fix_asks.packet_repo`), and every ruled-impact and rejected-ask row
+    sits under `handback_store.ruled_rows_repo` of the repo it answers."""
+    return dispatched_repo() or script_utils.work_tree_top(".")
 
 
 def dispatched_repo():

@@ -37,4 +37,4 @@ None: no intake number counts either shape.
 
 ## Back-out
 
-Remove `pointer_ask_split`, `points_back_to_an_ask` and `ASK_POINTER` and their call in `split_review`, the `pointer_asks` outcome key and `POINTER_ASK_REASON` in `review_loop_packet.py`, and the `drop_reason` branch of `handback.dropped_ask_warning`; remove `record_asks_logged`, `repo_that_logged_the_asks`, `ASKS_LOGGED_ROW` and their calls in `review_fix.py`; revert the two tests.
+Remove the `self.drop_asks(pointer_asks, POINTER_ASK_REASON)` call in `split_review` (and `pointer_ask_split`, which only it calls) and `POINTER_ASK_REASON` in `review_loop_findings.py`. Keep `dropped_asks`, `review_loop_packet.ask_entries` and the `drop_reason` branch of `handback.dropped_ask_warning`: the dropped pass notes, repeated asks and rejected asks share them. Keep `points_back_to_an_ask` and `ASK_POINTER`, which `is_pass_note` reads. Remove `record_asks_logged`, `repo_that_logged_the_asks`, `ASKS_LOGGED_ROW` and their calls in `review_fix.py`; revert the two tests.

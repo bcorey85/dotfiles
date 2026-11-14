@@ -501,6 +501,23 @@ class PrepTest(VerifyBranchBase):
             common.parse_criteria_file("- **AC1** — fine.\n- **AC9** no dash here\n")
         self.assertIn(":2:", str(caught.exception))
 
+    def test_criteria_file_fails_when_the_id_span_names_no_readable_id(self):
+        common = load_common()
+        with self.assertRaises(common.VerifyError) as caught:
+            common.parse_criteria_file("- **AC1** — fine.\n- **AC3a** — suffix id.\n")
+        self.assertIn(":2:", str(caught.exception))
+
+    def test_criteria_file_fails_when_a_multi_id_span_holds_an_unreadable_id(self):
+        common = load_common()
+        with self.assertRaises(common.VerifyError) as caught:
+            common.parse_criteria_file("- **AC1, AC3a** — two ids.\n")
+        self.assertIn("AC3a", str(caught.exception))
+
+    def test_criteria_file_reads_every_id_of_a_multi_id_span_and_skips_a_ticket_id(self):
+        common = load_common()
+        entries, _manual = common.parse_criteria_file("- **AC1, AC3** — two ids.\n- **AC2 (ticket AC4)** — t.\n")
+        self.assertEqual([entry["id"] for entry in entries], ["AC1", "AC3", "AC2"])
+
     def test_criteria_file_skips_a_bold_id_in_the_middle_of_a_line(self):
         common = load_common()
         text = ("- **AC3** — first.\n"

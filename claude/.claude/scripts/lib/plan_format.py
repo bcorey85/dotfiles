@@ -744,6 +744,20 @@ def changes_acceptance_criteria(impact):
     return len(answers) < impacts or any(answer != "none" for answer in answers)
 
 
+def criteria_ids(text, answers_only=False):
+    """The criterion ids (`AC<n>`) the text names: those on its `acceptance_criteria:` lines, else every id in it. A
+    text whose only answer lines say `none` names none; another answer line that names an id still names it. With
+    `answers_only`, a text with no `acceptance_criteria:` line names none."""
+    answers = [match.group(1) for match in AC_CHANGE_LINE.finditer(text)]
+    scanned = answers
+    if not answers and not answers_only:
+        scanned = [text]
+    ids = set()
+    for part in scanned:
+        ids.update(criterion_ids_in(part))
+    return frozenset(ids)
+
+
 def plan_impact_cause(block, missing=PLAN_CAUSE):
     """The block's `cause:` value, lowercased; `missing` when the block has no cause key. A value outside
     PLAN_IMPACT_CAUSES comes back lowercased, for the caller to refuse."""
@@ -936,6 +950,7 @@ def manual_format_failure(plan_lines, plan_name, resume_line=""):
 # `test_ac1_x` are names, not references.
 CRITERION_LINE = re.compile(r"^\s*[-*]\s+\**(AC\d+)\**\s*[:.—–-]*\s*(.*)$")
 AC_REFERENCE = re.compile(r"(?<![A-Za-z0-9_])(?P<ticket>(?i:ticket)\s+)?AC(?P<number>\d+)(?![A-Za-z0-9_])")
+AC_TOKEN = re.compile(r"(?<![A-Za-z0-9_])AC\d+[A-Za-z0-9_]*")
 CONTENT_WORD = re.compile(r"[a-z]{4,}")
 AC_STOP_WORDS = frozenset({"that", "this", "with", "from", "when", "then", "than", "into", "must", "shall", "will",
                            "have", "does", "each", "every", "criterion", "criteria", "ticket", "spec", "plan"})
@@ -1027,17 +1042,25 @@ def _bare_references(lines, fenced):
     for index, line in enumerate(lines):
         if index in fenced:
             continue
-        references += [(index, criterion_id) for criterion_id in _bare_ids_in(line)]
+        references += [(index, criterion_id) for criterion_id in criterion_ids_in(line)]
     return references
 
 
-def _bare_ids_in(line):
-    """The "AC<n>" of each bare reference on the line; a `ticket AC<n>` is left out."""
+def criterion_ids_in(text):
+    """Every criterion id the text names, in order of appearance: a bare upper-case `AC<n>` that stands alone, as
+    AC_REFERENCE reads it. A `ticket AC<n>` and a name such as `ac3-evidence.md` name none."""
     ids = []
-    for reference in AC_REFERENCE.finditer(line):
+    for reference in AC_REFERENCE.finditer(text):
         if not reference.group("ticket"):
             ids.append(f"AC{reference.group('number')}")
     return ids
+
+
+def unread_criterion_tokens(text):
+    """The `AC<n>...` tokens in the text that AC_REFERENCE does not read, such as `AC3a`. A `ticket AC<n>` is read, so
+    it is not listed. `criterion_ids_in` skips these tokens without a word."""
+    read_starts = {reference.start("number") - len("AC") for reference in AC_REFERENCE.finditer(text)}
+    return [token.group() for token in AC_TOKEN.finditer(text) if token.start() not in read_starts]
 
 
 def _ac_reference_failure(criterion_id, where, criteria, criteria_name, nearby):

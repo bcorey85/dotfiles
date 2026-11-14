@@ -3,11 +3,13 @@ for each corrected ask while the printed fix run has not launched. When the user
 writes those asks to a findings file and prints the fix run that applies them: the first run's launch flags plus
 `--fix`, `--iter` and `--detach`, so the loop's fix coder makes the change, a review round covers it, and the
 converged hand-back earns commit credit."""
-import pathlib
+import os
 import shlex
 import sys
 from typing import NamedTuple
 
+import handback
+import handback_store
 import plan_format
 import review_asks
 import review_launch
@@ -30,7 +32,8 @@ from review_fix_state import (
     review_fix_dir,
     save_fix_state,
 )
-from saved_handback import dispatched_repo
+from review_loop_findings import criteria_covered, plan_item_criteria_ids
+from saved_handback import dispatched_repo, session_repo
 from script_utils import one_line, split_location
 
 NEW_FINDING_ID = "new-finding-id"
@@ -159,22 +162,55 @@ def finding_ask_indexes(asks, outcomes):
             if outcome != REJECTED and not is_plan_impact_ask(item)]
 
 
+def ask_finding_text(item):
+    """The finding text of an accepted ask: its location, question and proposed change."""
+    question = one_line(item["question"], None)
+    change = one_line(item["change"], None)
+    # A converted ask's change is the finding line the user already accepted: it holds its own proposed change.
+    if item.get(USER_RULED_KEY):
+        return change
+    return f"{item['file_line']} {question} Proposed change: {change}"
+
+
 def ask_finding_lines(asks, outcomes, notes):
     """One findings-file item per accepted or modified ask that is not a plan impact, in the form
     review_launch.read_findings_file reads. A modified ask carries the user's change in place of the proposed one."""
-    lines = []
+    return ["- " + text for text in accepted_finding_texts(asks, outcomes, notes)]
+
+
+def accepted_finding_texts(asks, outcomes, notes):
+    """The finding text of each accepted or modified ask that is not a plan impact, as the findings file holds it."""
+    texts = []
     for index in finding_ask_indexes(asks, outcomes):
         item, outcome, note = asks[index], outcomes[index], notes[index]
-        question = one_line(item["question"], None)
-        change = one_line(item["change"], None)
-        text = f"{item['file_line']} {question} Proposed change: {change}"
-        # A converted ask's change is the finding line the user already accepted: it holds its own proposed change.
-        if item.get(USER_RULED_KEY):
-            text = change
+        text = ask_finding_text(item)
         if outcome == MODIFIED:
             text += f" The user changed it; make this change in its place: {note}"
-        lines.append("- " + text)
-    return lines
+        texts.append(text)
+    return texts
+
+
+def findings_covered_by_impact(state, impact_text):
+    """The accepted finding texts of the packet in `state` whose criterion ids the ruled plan impact `impact_text`
+    covers, so a ruling on the impact also settles those findings in a later fix run. [] when the packet holds no
+    answered asks."""
+    asks = state.get("asks") or []
+    outcomes = state.get("ask_outcomes") or []
+    notes = state.get("ask_notes") or []
+    if not asks or len(outcomes) != len(asks) or len(notes) != len(asks):
+        return []
+    texts = accepted_finding_texts(asks, outcomes, notes)
+    covered = []
+    for text in texts:
+        criteria_ids = plan_item_criteria_ids(text)
+        if criteria_covered(criteria_ids, [impact_text]):
+            covered.append(text)
+    return covered
+
+
+def is_accepted_plan_impact(item, outcome):
+    """Whether `item` is a plan-impact ask whose outcome is not a rejection."""
+    return outcome != REJECTED and is_plan_impact_ask(item)
 
 
 def accepted_ask_deviation_lines(asks, outcomes, notes, decided_by):
@@ -185,12 +221,107 @@ def accepted_ask_deviation_lines(asks, outcomes, notes, decided_by):
     choice = plan_format.DECISION_WORDS["adopt"]
     lines = []
     for item, outcome, note in zip(asks, outcomes, notes, strict=True):
-        if outcome == REJECTED or not is_plan_impact_ask(item):
+        if not is_accepted_plan_impact(item, outcome):
             continue
         change = one_line(item["change"], None)
         ruling = note if outcome == MODIFIED else "Adopted the proposed plan change."
         lines += plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, change)
     return lines
+
+
+def packet_repo(relaunch_args):
+    """The repo the review packet answers: the `--repo` its launch record (`relaunch_args`) carries, else the
+    session's repo, as the top level of its work tree. Rows written under it are the ones that repo's loop reads."""
+    launch_repo = review_launch.relaunch_repo(relaunch_args)
+    if launch_repo is not None:
+        return handback_store.ruled_rows_repo(launch_repo)
+    return handback_store.ruled_rows_repo(session_repo())
+
+
+def required_packet_repo(relaunch_args):
+    """`packet_repo`, or a stop when it names no git work tree: a row written under no repo is one no later run
+    reads."""
+    repo = packet_repo(relaunch_args)
+    if repo is not None:
+        return repo
+    raise UsageError(missing_packet_repo_reason(relaunch_args))
+
+
+def missing_packet_repo_reason(relaunch_args):
+    """The cause and recovery when `packet_repo` is None: the launch `--repo` is gone, the session's dispatched repo
+    is gone, or there is neither and the current directory is not in a git work tree."""
+    removed_text = "is no longer a git work tree (for example a removed worktree). Recreate the worktree at that " \
+                   "path, or rerun the review from a live repo."
+    launch_repo = review_launch.relaunch_repo(relaunch_args)
+    if launch_repo is not None:
+        return f"the launch record's --repo {launch_repo} {removed_text}"
+    dispatched = dispatched_repo()
+    if dispatched is not None:
+        return f"the session's last dispatched repo {dispatched} {removed_text}"
+    return ("the session has no dispatched repo and the current directory is not in a git work tree. "
+            "Run it from inside the reviewed repo.")
+
+
+def repo_for_outcomes(relaunch_args, asks, outcomes):
+    """`required_packet_repo` when an outcome writes a row under the repo (a rejection or an accepted plan-impact
+    ask), else None: an answer that writes no row needs no repo."""
+    for item, outcome in zip(asks, outcomes, strict=True):
+        if outcome == REJECTED or is_accepted_plan_impact(item, outcome):
+            return required_packet_repo(relaunch_args)
+    return None
+
+
+def record_accepted_plan_impacts(asks, outcomes, repo):
+    """Records each accepted or modified plan-impact ask in the hand-back store as a ruled impact, so a later fix run
+    of this repo leaves a finding on it out. The recorded text joins the question, which opens with the plan-impact
+    mark, and the change, so it carries the `acceptance_criteria:` line wherever the ask put it; a later finding is
+    matched on that line."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    for item, outcome in zip(asks, outcomes, strict=True):
+        if not is_accepted_plan_impact(item, outcome):
+            continue
+        question = one_line(item["question"], None)
+        change = one_line(item["change"], None)
+        handback_store.record_ruled_impact(session_id, f"{question} — change: {change}", repo,
+                                           finding_text=ask_finding_text(item))
+
+
+def record_rejected_asks(asks, outcomes, repo):
+    """Records each ask answered "rejected" in the hand-back store under `repo`, by file:line and question (the text
+    before the ask's change, the part the loop compares), so a later round of the review loop drops a repeat of it
+    instead of stopping on it."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    for item, outcome in zip(asks, outcomes, strict=True):
+        if outcome != REJECTED:
+            continue
+        handback_store.record_rejected_ask(session_id, rejected_ask_text(item), repo)
+
+
+def rejected_ask_text(item):
+    """The text a rejected ask is stored under: its file:line and question."""
+    question = one_line(item["question"], None)
+    # An ask with no location is stored as its question alone: a live ask's title has no `unlocated` word to match.
+    if item["file_line"] == handback.UNLOCATED:
+        return question
+    return f"{item['file_line']} {question}"
+
+
+def record_corrected_rejection(item, old_outcome, new_outcome, repo):
+    """Keeps the rejected-ask rows in step with a corrected answer: a new rejection is recorded, and a rejection the
+    correction undoes is withdrawn."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if new_outcome == REJECTED:
+        handback_store.record_rejected_ask(session_id, rejected_ask_text(item), repo)
+    elif old_outcome == REJECTED:
+        handback_store.record_rejection_withdrawn(session_id, rejected_ask_text(item), repo)
+
+
+def record_unrecorded_rejections(target, asks, outcomes, repo):
+    """Records the packet's rejected asks once: a retry after a logging failure adds none."""
+    if target.get("asks_rejections_recorded"):
+        return
+    record_rejected_asks(asks, outcomes, repo)
+    target["asks_rejections_recorded"] = True
 
 
 def summary_line(target, asks, ask_counts, decided_by, failures):
@@ -296,8 +427,9 @@ def fix_run_launch_line(target, findings_file):
 
 
 def no_record_launch_line(target, findings_file, user_numbers):
-    """The launch line of a fix run with no launch record: `--iter`, the dispatched `--repo` and `--detach` only."""
-    repo = dispatched_repo() or pathlib.Path.cwd()
+    """The launch line of a fix run with no launch record: `--iter`, the session's repo (`session_repo`) as `--repo`
+    and `--detach` only."""
+    repo = required_packet_repo([])
     launch_args = [*fix_lead_args(findings_file, user_numbers), "--iter", str(target["iter"]), "--repo", str(repo),
                    "--detach"]
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
@@ -403,6 +535,8 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by):
     correction after the findings file and the pending launch are rebuilt from the stored answers, so the printed run
     never applies an ask whose logged answer is rejected."""
     failures = []
+    touches_rejection = any(REJECTED in (state["ask_outcomes"][index], outcomes[index]) for index in indexes)
+    repo = required_packet_repo(state.get("relaunch_args") or []) if touches_rejection else None
     for index in indexes:
         item = state["asks"][index]
         outcome_row = review_asks.log_ask_outcome(ASK_LOGGER, state, item, outcomes[index], decided_by)
@@ -410,6 +544,7 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by):
             failures.append(outcome_failure_line(item, outcome_row))
             continue
         item["finding_id"] = outcome_row.finding_id
+        record_corrected_rejection(item, state["ask_outcomes"][index], outcomes[index], repo)
         state["ask_outcomes"][index] = outcomes[index]
         state["ask_notes"][index] = notes[index]
         set_ask_decider(state, index, decided_by)
@@ -572,6 +707,7 @@ def command_asks_done(argv):
 
     target, outcomes, notes, decided_by = read_answers(state, options, waiting)
     asks = target["asks"]
+    repo = repo_for_outcomes(target.get("relaunch_args") or [], asks, outcomes)
     finding_lines = ask_finding_lines(asks, outcomes, notes)
     findings_file = write_unprinted_fix_run(state, target, finding_lines, decided_by)
 
@@ -579,7 +715,9 @@ def command_asks_done(argv):
     summary_lines = [summary_line(target, asks, ask_counts, decided_by, failures),
                      *["- " + failure for failure in failures]]
     deviation_lines = unprinted_deviation_lines(target, asks, outcomes, notes, decided_by)
+    record_unrecorded_rejections(target, asks, outcomes, repo)
     if deviation_lines:
+        record_accepted_plan_impacts(asks, outcomes, repo)
         summary_lines += [ADD_DEVIATIONS_LINE, *deviation_lines]
 
     if not failures:

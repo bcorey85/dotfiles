@@ -81,7 +81,7 @@ def ids_without_verdict_row(rows, context):
     """The criteria-file ids prep saved that no verdict row names, in file order."""
     covered = set()
     for row in rows:
-        covered.update(vc.AC_ID.findall(str(row["item"])))
+        covered.update(plan_format.criterion_ids_in(str(row["item"])))
     return [ac_id for ac_id in context["criteria"].get("ids", []) if ac_id not in covered]
 
 

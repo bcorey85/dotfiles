@@ -1,15 +1,17 @@
-"""The review loop's reading of reviewer text: the Fix/Ask/Nit sections of a review as finding records, and the merge
-of findings that name the same code."""
+"""The review loop's reading of reviewer text: the Fix/Ask/Nit sections of a review as finding records, the merge of
+findings that name the same code, and the splits that drop or reroute findings (pass notes, pointer asks, repeats,
+absent files, ruled plan lines)."""
 
 import pathlib
 import re
 import sys
+from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
 import plan_format
 import script_utils
-from finding_record import combine, parse_finding
+from finding_record import FINDING_CLASS_TAG, combine, parse_finding
 from plan_format import PLAN_CHANGE_MARK
 from reply_json import last_json_object
 from source_text import indent_of
@@ -18,15 +20,16 @@ UNLOCATED = handback.UNLOCATED
 
 PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
 # The marker before the one edit an accepted ask makes: `... — the question — change: the edit`.
-ASK_CHANGE_MARK = re.compile(r"\bchange(?:\s+if\s+accepted)?:", re.I)
+ASK_CHANGE_MARK = re.compile(r"\bchange(?:\s+if\s+[`*_]*accepted[`*_]*)?:", re.I)
+
 # An ask that names another ask in place of a question: "The open ask about pinning the window still stands."
 ASK_POINTER = re.compile(r"\b(?:the|that|this|my)\s+(?:open|earlier|same|previous|prior|above|first|existing|standing)"
                          r"\s+ask\b|\bask\s+#?\d+\b", re.I)
 ITEM_MARKER = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
 ITEM_MARKER_STRIP = re.compile(r"^\s*(?:[-*]+|\d+[.)])\s+")
 ASSESSMENT_LINE = re.compile(r"\W*overall assessment\b", re.I)
-# The words that state a section holds nothing: "None", or "No new findings" and its forms.
-NONE_WORDS = (r"(?:none|n/a|omitted|empty"
+# The words that state a section holds nothing: "None", "None new", or "No new findings" and its forms.
+NONE_WORDS = (r"(?:none(?:\s+(?:new|further|other|more|remaining))?|n/a|omitted|empty"
               r"|no(?:\s+(?:new|further|other|more|remaining))?\s+(?:findings?|issues?|asks?|nits?|concerns?|problems?)"
               r"(?:\s+(?:found|remain|to\s+report))?)")
 # A bare none marker inside a section, as in "- None." A line that goes on past the word is finding text.
@@ -41,6 +44,26 @@ FINDING_HEAD = re.compile(rf"(?:{script_utils.BLOCKER_TAG_PATTERN}\s*)?[*_]*" + 
                           re.I)
 
 
+class AskParts(NamedTuple):
+    """An ask's text split at its last change mark: the question, and the edit an accepted answer makes."""
+    question: str
+    change: str
+
+
+def ask_parts(text):
+    """The AskParts of an ask's text. The text before the last `change:` marker is the question; the text after it is
+    the edit. An ask with no marker carries its own recommended edit, so its whole text is both. An ask that opens
+    with its marker asks its change, and one that ends on an empty marker carries its edit in its question."""
+    change_marks = list(ASK_CHANGE_MARK.finditer(text))
+    if not change_marks:
+        return AskParts(text, text)
+
+    last_mark = change_marks[-1]
+    after_mark = text[last_mark.end():].strip()
+    before_mark = text[:last_mark.start()].rstrip(" —-")
+    return AskParts(before_mark or after_mark, after_mark or before_mark)
+
+
 def section(text, name):
     # The section body keeps the indent of its first line: review_section_findings compares marker indents.
     match = re.search(rf"^#+\s*{name}\s*$(.*?)(?=^#+\s|\Z)", text, re.S | re.M | re.I)
@@ -49,18 +72,27 @@ def section(text, name):
     return re.sub(r"\A(?:[ \t]*\n)+", "", match.group(1)).rstrip()
 
 
+def states_an_ask(text):
+    """Whether item text `text` proposes a change, asks a question, names a class or opens a plan change: what
+    separates an ask from a reviewer's note. Only a question that ends the text asks: a `?` followed by an answer
+    ("Is X bounded? Yes.") is a note."""
+    ends_in_question = text.rstrip(" \t`*_\"')").endswith("?")
+    return bool(ASK_CHANGE_MARK.search(text) or ends_in_question or FINDING_CLASS_TAG.search(text)
+                or PLAN_CHANGE_MARK.match(text))
+
+
 def is_bare_finding_head(line):
     return not ITEM_MARKER.match(line) and bool(FINDING_HEAD.match(line.strip()))
 
 
-def item_start_lines(lines):
+def item_start_lines(lines, is_ask_section=False):
     """The indexes of the section lines that start an item. A finding written as a paragraph opens with a bare
     file:line, and the bullets under it are its points: when the section opens with one, each bare file:line line at
     its indent starts an item. Otherwise a bullet or numbered marker at the first marker's indent starts one. A marker
     indented deeper is a sub-bullet, and it and any other line, after a blank line too, continue the item before it.
-    A line at the item indent that ends in a colon, after an item, leads in a list of the reviewer's notes ("The other
-    claims check out:"): the markers under it continue the item too, until one opens with a file:line or a plain line
-    at the item indent closes the list."""
+    A line at the item indent that ends in a colon, after an item or as an Ask section's first line, leads in a list
+    of the reviewer's notes ("The other claims check out:"): the markers under it continue the item too, until one opens
+    with a file:line or a plain line at the item indent closes the list."""
     first_line = next(line for line in lines if line.strip())
     if is_bare_finding_head(first_line):
         return {index for index, line in enumerate(lines)
@@ -70,22 +102,36 @@ def item_start_lines(lines):
     item_indent = marker_indents[0] if marker_indents else 0
     starts = set()
     in_notes_list = False
+    opens_section = is_ask_section
     for index, line in enumerate(lines):
         if not line.strip() or indent_of(line) > item_indent:
             continue
         if not ITEM_MARKER.match(line):
-            in_notes_list = bool(starts) and line.rstrip().endswith(":")
+            in_notes_list = (bool(starts) or opens_section) and line.rstrip().endswith(":")
+            opens_section = False
             continue
+        opens_section = False
 
         item_text = ITEM_MARKER_STRIP.sub("", line).strip()
-        if in_notes_list and not FINDING_HEAD.match(item_text):
+        # Only the Ask section's notes list holds bullets that state asks; a Fix or Nit list holds just file:line items.
+        states_ask = is_ask_section and states_an_ask(item_text)
+        if in_notes_list and not FINDING_HEAD.match(item_text) and not states_ask:
             continue
         starts.add(index)
         in_notes_list = False
     return starts
 
 
-def review_section_findings(block):
+def is_bare_lead_in(lines, index, starts):
+    """True for a line that is no item and ends in `:`, with an item starting on the next non-blank line, such as
+    "Two questions for the user:". It carries no ask, so an Ask section leaves it out."""
+    if index in starts or not lines[index].rstrip().endswith(":"):
+        return False
+    following = [number for number in range(index + 1, len(lines)) if lines[number].strip()]
+    return bool(following) and following[0] in starts
+
+
+def review_section_findings(block, is_ask_section=False):
     if not block:
         return []
     lines = block.splitlines()
@@ -96,7 +142,7 @@ def review_section_findings(block):
     if NONE_OPENING.match(first_text):
         return []
 
-    starts = item_start_lines(lines)
+    starts = item_start_lines(lines, is_ask_section)
     found = []
     for index, line in enumerate(lines):
         stripped = ITEM_MARKER_STRIP.sub("", line).strip()
@@ -107,6 +153,8 @@ def review_section_findings(block):
         if not found and index not in starts and NONE_LEAD_IN.fullmatch(stripped):
             continue
         if ASSESSMENT_LINE.match(stripped):
+            continue
+        if is_ask_section and is_bare_lead_in(lines, index, starts):
             continue
         if index in starts or not found:
             found.append(stripped)
@@ -170,7 +218,7 @@ def parse_review_texts(text):
     if fix is None and ask is None and nit is None:
         return parse_tagged_bullets(text)
     assessment = re.search(r"Overall Assessment\W*\s*:?\W*\s*([A-Z][A-Z ]+[A-Z])", text)
-    return {"fix": review_section_findings(fix), "ask": review_section_findings(ask),
+    return {"fix": review_section_findings(fix), "ask": review_section_findings(ask, is_ask_section=True),
             "nit": review_section_findings(nit),
             "assessment": assessment.group(1).strip() if assessment else ""}
 
@@ -290,6 +338,87 @@ def pointer_ask_split(asks, open_asks):
     return [ask for ask in asks if ask not in pointer_asks], pointer_asks
 
 
+POINTER_ASK_REASON = "ask only points back to another ask"
+NOTE_ASK_REASON = "item proposes no change and asks no question, so it is a note and no ask"
+REPEATED_ASK_REASON = "ask repeats an earlier ask or a plan impact already on record"
+
+
+def is_pass_note(ask):
+    """Whether ask record `ask` is a reviewer's note rather than an ask: it proposes no change, asks no question, names
+    no class and is no plan-change item or pointer to another ask."""
+    return not (states_an_ask(ask.text) or points_back_to_an_ask(ask))
+
+
+def pass_note_split(asks):
+    """(`asks` without its pass notes, those notes). A note rides in the packet's dropped asks, so it is seen."""
+    notes = [ask for ask in asks if is_pass_note(ask)]
+    return [ask for ask in asks if ask not in notes], notes
+
+
+REJECTED_ASK_REASON = "finding repeats an ask the session already rejected"
+
+
+def repeats_a_rejected_ask(ask, rejected_asks):
+    """Whether ask record `ask` raises again an ask in `rejected_asks` (records of asks the session rejected): the same
+    file and a near title, wherever the line, since a reviewer rewords a repeat. The title is the ask's question alone:
+    asks-done stores the file:line and the question, the text before the ask's change; the title is the question's."""
+    question = ask_parts(ask.text).question
+    question_title = parse_finding(question).title
+    return any(ask.path == rejected.path and near_title(question_title, rejected.title) for rejected in rejected_asks)
+
+
+def repeats_an_ask(ask, earlier_asks, impact_texts, ruled_texts=()):
+    """Whether ask record `ask` repeats an ask in `earlier_asks` (the same file and the same claim, wherever the
+    line), or is a plan-drift ask on a criterion that a text in `impact_texts` or `ruled_texts` also names."""
+    if any(ask.path == earlier.path and ask.title == earlier.title for earlier in earlier_asks):
+        return True
+    if ask.finding_class != handback.PLAN_DRIFT_CLASS:
+        return False
+
+    criteria_ids = plan_item_criteria_ids(ask.text)
+    return criteria_covered(criteria_ids, [*impact_texts, *ruled_texts])
+
+
+def is_plan_item_text(text):
+    """Whether `text` is a plan-change item: a plan impact or a plan-drift finding. A text that only names a
+    criterion on an `acceptance_criteria:` line, such as a test-gap finding, is no plan item."""
+    return bool(PLAN_CHANGE_MARK.match(text)
+                or parse_finding(text).finding_class == handback.PLAN_DRIFT_CLASS)
+
+
+def plan_item_criteria_ids(text):
+    """The criterion ids a plan-change `text` names: those on its `acceptance_criteria:` lines when it opens with the
+    plan-impact mark, else every id in it."""
+    return plan_format.criteria_ids(text, answers_only=bool(PLAN_CHANGE_MARK.match(text)))
+
+
+def ruled_plan_impact(text, ruling_texts, accepted_texts=()):
+    """Whether a plan-change `text` (a plan impact or a plan-drift finding) is one a ruling or the user already
+    settled. A near title of a text in `ruling_texts` or `accepted_texts` (the findings the user accepted) settles
+    it. Every id it names (see `plan_item_criteria_ids`) named by a plan item in `ruling_texts` settles it too; an
+    accepted finding settles no id, since it asks for a change and names the criterion only as its subject."""
+    if any(near_title(known, text) for known in [*ruling_texts, *accepted_texts]):
+        return True
+
+    criteria_ids = plan_item_criteria_ids(text)
+    return criteria_covered(criteria_ids, ruling_texts)
+
+
+def criteria_covered(ids, plan_texts):
+    """Whether every criterion id in `ids` is named by the plan items among `plan_texts`. A plan item names the ids
+    on its `acceptance_criteria:` lines; a plan-drift finding with no such line names every id in it, and a plan
+    impact with none names no id. A text that is no plan item, such as a test-gap finding, names none. No ids are
+    never covered."""
+    if not ids:
+        return False
+
+    covered = set()
+    for text in plan_texts:
+        if is_plan_item_text(text):
+            covered |= plan_item_criteria_ids(text)
+    return ids <= covered
+
+
 def absent_file_split(repo, tree_paths, review):
     """(the review without its findings on a file neither on disk nor in git, those findings). A plan-change ask
     stays: it is about the plan, not the file."""
@@ -324,7 +453,7 @@ def ruled_plan_line(plan_lines, line_number):
 
 
 def ruled_plan_split(repo, plan, fixes):
-    """(the fixes, the fixes that target a plan line a recorded ruling covers, turned into asks)."""
+    """(the fixes that stay fixes, the fixes that target a plan line a recorded ruling covers, turned into asks)."""
     plan_path = pathlib.Path(repo) / plan
     if not plan or not plan_path.is_file():
         return fixes, []

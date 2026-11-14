@@ -66,13 +66,11 @@ READABILITY_LOG = "readability.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import change_removal
 import coder_gate
-import coder_report
 import format_files
 import full_check
 import full_check_gate
 import handback
 import loop_transcript
-import plan_format
 import review_loop_held
 import reviewer_dispatch
 import script_utils
@@ -93,6 +91,7 @@ from review_loop_closure import (
 from review_loop_coder import CoderCallError, coder_call, coder_fault_notes
 from review_loop_findings import (
     PLAN_CHANGE_YES,
+    POINTER_ASK_REASON,
     UNLOCATED,
     absent_file_split,
     finding_records,
@@ -112,6 +111,7 @@ from review_loop_prompt_file import (
     REVIEWERS_MAIN,
 )
 from review_loop_prompts import coder_prompt, reviewer_prompt
+from review_loop_ruled import RuledFindings
 from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
@@ -349,7 +349,7 @@ def prior_issue_entries(round_findings, skips):
     return entries
 
 
-class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
+class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -367,14 +367,16 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
     def init_findings_state(self):
         """The findings, asks and plan impacts the loop collects."""
         self.skipped_fp, self.remaining, self.asks, self.nits, self.run_rows = [], [], [], [], []
-        self.plan_impacts = []  # {text, gate, ac_change, cause, adopted, applied} of each plan impact, shown at the end
+        # {text, gate, ac_change, cause, adopted, applied, settled} of each plan impact, shown at the end, except a
+        # settled one.
+        self.plan_impacts = []
         # every finding the coder skipped or left unchanged in a round whose plan impact is held: still open, not false
         # positives, until a later round fixes it
         self.open_fixes = []
         # the ruling line, the ruled PLAN-IMPACT block and the carried findings: the only plan-marked items it settles
         self.resolved_texts = []
         self.ask_gates = {}
-        self.pointer_asks = []  # the asks that only pointed back to another ask, dropped before the packet
+        self.init_ruled_state()
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
                         "result": "PASS"}
         self.prior_issues = []
@@ -572,55 +574,21 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
 
     def split_review(self, tree_paths, review):
         """A ReviewSplit: the review without its absent-file findings, its fixes, its [design-decision] fixes, its
-        absent-file findings. The fixes a plan ruling covers move to the review's asks. An ask that only points back
-        to another ask leaves the review for the packet's dropped asks."""
+        absent-file findings. The fixes a plan ruling covers move to the review's asks. Pointer asks, pass notes and
+        asks that repeat an earlier or rejected ask, and [design-decision] fixes that repeat a rejected ask, leave the
+        review for the packet's dropped asks."""
         parsed, absent = absent_file_split(self.repo, tree_paths, review)
-        parsed["ask"], pointer_asks = pointer_ask_split(parsed["ask"], self.asks)
-        self.pointer_asks += [ask for ask in pointer_asks if ask not in self.pointer_asks]
-
         design = [item for item in parsed["fix"] if "[design-decision]" in item.text.lower()]
         fixes = [item for item in parsed["fix"] if item not in design]
+        design = self.without_rejected(design)
         fixes, ruled = ruled_plan_split(self.repo, self.plan, fixes)
-        parsed["ask"] += ruled
+        parsed["ask"], pointer_asks = pointer_ask_split(parsed["ask"], self.asks)
+        self.drop_asks(pointer_asks, POINTER_ASK_REASON)
+        asks_without_notes = self.without_pass_notes(parsed["ask"])
+        # A ruled ask states a ruling and asks no question, so the pass-note filter would drop it; the repeat filter
+        # still covers it, before record_review logs a row.
+        parsed["ask"] = self.without_repeats([*asks_without_notes, *ruled])
         return ReviewSplit(parsed, fixes, design, absent)
-
-    def record_plan_impact(self, impact):
-        """Adds one plan impact ({text, gate, ac_change, cause, adopted, applied}). The same text again, from a later
-        round or a second reviewer, stays one. `applied` is True when the coder's edits for it are already in the
-        tree."""
-        if any(near_title(entry["text"], impact["text"]) for entry in self.plan_impacts):
-            return
-        self.plan_impacts.append(impact)
-
-    def route_plan_items(self, agent, items):
-        """(the items the coder fixes this round, the items held for a ruling). A plan impact that changes no
-        acceptance criterion is adopted by rule and fixed like any finding; one that changes a criterion, or says
-        nothing, is held for the end. Once the caller ruled on the plan impacts, a plan-marked item the ruling or a
-        carried finding names is a plain fix; a new one takes the path above."""
-        to_coder, ruling_held = [], []
-        for item in items:
-            if any(near_title(known, item.text) for known in self.resolved_texts):
-                to_coder.append(item)
-                continue
-
-            ac_change = plan_format.changes_acceptance_criteria(item.text)
-            self.record_plan_impact({"text": item.text, "gate": agent, "ac_change": ac_change,
-                                     "cause": plan_format.PLAN_CAUSE, "adopted": not ac_change, "applied": False})
-            (ruling_held if ac_change else to_coder).append(item)
-        return to_coder, ruling_held
-
-    def record_coder_plan_impact(self, report, changed):
-        """A coder's PLAN-IMPACT report joins the plan impacts. Its edits stay and the loop goes on. A toolkit cause,
-        or a cause that does not parse, is never adopted. `changed` holds the files the coder's edits changed. Returns
-        True when the impact is held for a ruling."""
-        text = coder_report.plan_impact_block(report) or report.strip()
-        cause = plan_format.stopping_plan_impact_cause([text], cause_required=True)
-        ac_change = plan_format.changes_acceptance_criteria(text)
-        adopted = not ac_change and cause == plan_format.PLAN_CAUSE
-        self.record_plan_impact({"text": text, "gate": "coder", "ac_change": ac_change, "cause": cause,
-                                 "adopted": adopted, "applied": bool(changed)})
-
-        return not adopted and cause != plan_format.TOOLKIT_CAUSE
 
     def add_ask(self, agent, item):
         """Adds one ask with its reviewer as its gate. The same text from a second reviewer stays one ask, under the
@@ -651,6 +619,7 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
             parsed["ask"] = [item for item in parsed["ask"] if item not in routed]
             design = [item for item in design if item not in routed]
             fixes = split.fixes + routed
+            parsed["ask"] = self.without_impact_repeats(parsed["ask"], ruling_held)
 
             new_findings = self.record_review(agent, owned, parsed, fixes, design)
             self.add_asks_without_ruling(agent, new_findings["ask"], ruling_held)
@@ -670,7 +639,8 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
         removed half or more of the lines the change under review adds."""
         finding_paths = [finding.path for finding in findings if finding.path]
         files_in_scope = list(dict.fromkeys([*self.review_scope(), *finding_paths]))
-        prompt = coder_prompt(self.repo, [finding.text for finding in findings], [nit.text for nit in nits],
+        issue_texts = [self.issue_text(finding) for finding in findings]
+        prompt = coder_prompt(self.repo, issue_texts, [nit.text for nit in nits],
                               files_in_scope, self.gate_env, self.later_phase_files, self.guidance, self.held_files)
         self.last_pass = "coder"
         self.untested_fix = True
@@ -920,7 +890,7 @@ class LoopRun(ScopedTestRuns, full_check_gate.FullCheckSteps):
             "open_fixes": merge_findings(self.open_fixes),
             "asks": self.asks,
             "ask_gates": self.ask_gates,
-            "pointer_asks": self.pointer_asks,
+            "dropped_asks": self.dropped_asks,
             "ask_ids": ask_ids,
             "ask_rows": ask_rows,
             "class_closure": self.closure.receipt,

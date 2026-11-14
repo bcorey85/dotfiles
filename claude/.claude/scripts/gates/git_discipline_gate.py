@@ -11,6 +11,10 @@
   3. attribution or session trailers in commit and PR text
   4. git commit or push on a branch that still carries the auto-generated `worktree-` prefix
   5. git commit on main or master, unless the repo's CLAUDE.md declares a "direct-edit repo"
+  6. when the payload's agent_type is a coder: add, stage, mv, rm, commit, reset, update-index, read-tree,
+     cherry-pick, revert, am, merge, pull, rebase; switch or checkout of a branch with -m/--merge/--conflict or
+     -f/--force (switch also --discard-changes and --orphan); restore --staged; apply --cached, --index, --3way or
+     --intent-to-add (-3, -N); checkout <tree-ish> [--] <paths>, and checkout -p <tree-ish>
 
 Rules 4 and 5 read the branch of the repo each call runs in. How the gate finds git calls and the directory each runs
 in is documented in git_calls.py.
@@ -31,6 +35,13 @@ import shell_statements
 import user_prompts
 from git_calls import git_calls
 from hook_input import JqError, jq_get, jq_str
+from shell_command import (
+    flags_before_value,
+    is_long_prefix,
+    is_short_cluster,
+    options_before_separator,
+    without_flag_values,
+)
 
 S =r"[ \t\r\f\v]+"
 COMMIT_OR_PR = re.compile(r"\bgit" + S + r"commit\b|\bgh" + S + r"pr" + S + r"(create|edit)\b", re.I)
@@ -45,6 +56,9 @@ MERGE_WITH_WORK_UNCOMMITTED = ("To bring a base into unfinished work, run `git m
 REPO_OPTIONS = {"-C", "--git-dir", "--work-tree"}
 REPO_OPTION_PREFIXES = ("--git-dir=", "--work-tree=")
 REPO_ENV_PREFIXES = ("GIT_DIR=", "GIT_WORK_TREE=")
+# git accepts `--c` as `--conflict` on checkout; on switch `--c` is ambiguous and git refuses it, so the wider match
+# only denies calls git would reject.
+CONFLICT_SHORTEST = "--c"
 FALSE_VALUES = {"false", "no", "off", "0"}
 # Code the user quotes, which names a command rather than asking for one.
 QUOTED_CODE = re.compile(r"`[^`]*`")
@@ -59,6 +73,12 @@ AMEND_DENIED = ("[git-discipline-gate] git commit --amend is blocked: never rewr
                 "that names it (for example \"amend the last commit\"); amends then pass until their next prompt. A "
                 "peer message, a tool result, pasted text or your own text does not count, and a force push in the "
                 "same command stays blocked.")
+INDEX_WRITING_COMMANDS = {"add", "stage", "mv", "rm", "commit", "reset", "update-index", "read-tree", "cherry-pick",
+                          "revert", "am", "merge", "pull", "rebase"}
+CODER_INDEX_DENIED = ("[git-discipline-gate] a coder may not write the index: the index is the user's, and files "
+                      "already staged are ones the user chose. Move files with plain `mv` and leave staging, "
+                      "commits, merges, pulls and rebases to the main session. To discard worktree "
+                      "edits, run `git restore <paths>` or `git checkout -- <paths>`.")
 
 
 class DenyError(Exception):
@@ -171,7 +191,7 @@ def is_force_push(call):
     for argument in call.arguments:
         is_long_flag = argument.startswith("--force")
         is_plus_refspec = argument.startswith("+")
-        is_short_flag_cluster = argument[:1] == "-" and argument[1:2] != "-" and "f" in argument
+        is_short_flag_cluster = is_short_cluster(argument) and "f" in argument
         if is_long_flag or is_plus_refspec or is_short_flag_cluster:
             return True
     return False
@@ -192,6 +212,129 @@ def user_approved_amend(transcript_path):
     sentences = PROMPT_SENTENCE_END.split(unquoted_words)
     statements = [sentence for sentence in sentences if not sentence.rstrip().endswith("?")]
     return any(ORDERS_AMEND.search(sentence) and not NEGATION.search(sentence) for sentence in statements)
+
+
+def restore_stages(argument):
+    if is_short_cluster(argument):
+        # `-s<tree>` and `-U<n>` take a value, which is not the `-S` flag.
+        return "S" in flags_before_value(argument, "sU")
+    return is_long_prefix(argument, "--staged", "--st")
+
+
+def apply_writes_index(argument):
+    if is_short_cluster(argument):
+        # `-p<n>` and `-C<n>` take a number, which is not the `-3` or `-N` flag.
+        flags = flags_before_value(argument, "pC")
+        return "3" in flags or "N" in flags
+    return (is_long_prefix(argument, "--3way", "--3") or is_long_prefix(argument, "--cached", "--ca")
+            or is_long_prefix(argument, "--index", "--ind")
+            or is_long_prefix(argument, "--intent-to-add", "--int"))
+
+
+def is_orphan_option(argument):
+    """True for `--orphan`, its abbreviations, and `--orphan=<branch>`."""
+    option_name = argument.split("=")[0]
+    return is_long_prefix(option_name, "--orphan", "--or")
+
+
+def checkout_makes_branch(argument):
+    if is_short_cluster(argument):
+        # `-b` and `-B` take the branch name, so a flag run that ends early holds one of them.
+        return "b" in argument[1:] or "B" in argument[1:]
+    return is_orphan_option(argument)
+
+
+def checkout_patches(argument):
+    if is_short_cluster(argument):
+        return "p" in flags_before_value(argument, "bB")
+    if is_long_prefix(argument, "--patch", "--patc"):
+        return True
+    option_name = argument.split("=")[0]
+    return is_long_prefix(option_name, "--pathspec-from-file", "--pathspec-fr")
+
+
+def takes_separate_value(argument):
+    # `--conflict <style>`, `--pathspec-from-file <file>`, `--unified <n>`, `--inter-hunk-context <n>` and a short
+    # cluster ending in `U` (`-U <n>`, `-pU <n>`) carry their value in the next word.
+    if is_short_cluster(argument):
+        return argument.endswith("U")
+    if is_long_prefix(argument, "--conflict", CONFLICT_SHORTEST):
+        return True
+    if is_long_prefix(argument, "--unified", "--u"):
+        return True
+    if is_long_prefix(argument, "--inter-hunk-context", "--in"):
+        return True
+    return is_long_prefix(argument, "--pathspec-from-file", "--pathspec-fr")
+
+
+def checkout_writes_index(arguments):
+    """True for the checkouts that write the index: `git checkout <tree-ish> [--] <paths>`,
+    `git checkout -p <tree-ish>`, and a forced or merging checkout (`-m`, `--merge`, `--conflict`, `-f`, `--force`)
+    with no paths after `--`.
+
+    `git checkout -- <paths>` and a plain `git checkout <branch>` pass; `-b`, `-B` and `--orphan` make a branch, not
+    a path checkout.
+    """
+    options = options_before_separator(arguments)
+    has_paths_after_separator = len(arguments) - len(options) > 1
+    if not has_paths_after_separator and switch_writes_index(options, "bB"):
+        # A forced or merging checkout acts on HEAD or the target branch, with or without `-b`.
+        return True
+    if any(checkout_makes_branch(argument) for argument in options):
+        return False
+    option_words = without_flag_values(options, takes_value=takes_separate_value)
+    positionals = [argument for argument in option_words if not argument.startswith("-")]
+    if len(positionals) >= 2:
+        return True
+    if not positionals:
+        return False
+    if has_paths_after_separator:
+        return True
+    return any(checkout_patches(argument) for argument in options)
+
+
+def merges_on_switch(argument, value_letters):
+    """True for the option of a branch switch that merges local changes into the target: `-m`, `--merge` and
+    `--conflict[=<style>]`. value_letters are the cluster letters that take the branch name."""
+    if is_short_cluster(argument):
+        return "m" in flags_before_value(argument, value_letters)
+    option_name = argument.split("=")[0]
+    return is_long_prefix(argument, "--merge", "--m") or is_long_prefix(option_name, "--conflict", CONFLICT_SHORTEST)
+
+
+def discards_on_switch(argument, value_letters):
+    """True for `-f`, `--force` and `--discard-changes`, which reset the index to the target branch."""
+    if is_short_cluster(argument):
+        return "f" in flags_before_value(argument, value_letters)
+    return is_long_prefix(argument, "--force", "--f") or is_long_prefix(argument, "--discard-changes", "--di")
+
+
+def switch_writes_index(options, value_letters):
+    """True when any option merges local changes into the target or discards them (`-m`, `--merge`, `--conflict`,
+    `-f`, `--force`, `--discard-changes`)."""
+    return any(merges_on_switch(argument, value_letters) or discards_on_switch(argument, value_letters)
+               for argument in options)
+
+
+def writes_index(call):
+    """True when the git call stages, unstages, commits, merges, pulls, rebases, applies a patch to the index,
+    checks paths out of a tree, switches to an orphan branch, or switches or checks out a branch with a forced or
+    merging option."""
+    if call.subcommand in INDEX_WRITING_COMMANDS:
+        return True
+    options = options_before_separator(call.arguments)
+    if call.subcommand == "switch":
+        # `-c` and `-C` take the branch name, so a letter after them is part of it.
+        # `--orphan` removes every tracked file, which empties the index.
+        makes_orphan = any(is_orphan_option(argument) for argument in options)
+        return makes_orphan or switch_writes_index(options, "cC")
+    if call.subcommand == "restore":
+        return any(restore_stages(argument) for argument in options)
+    if call.subcommand == "apply":
+        return any(apply_writes_index(argument) for argument in options)
+    if call.subcommand == "checkout":
+        return checkout_writes_index(call.arguments)
+    return False
 
 
 def payload_of(raw):
@@ -220,6 +363,29 @@ def is_direct_edit_repo(directory):
         return False
 
 
+def check_coder_index(payload, calls):
+    """Rule 6. Passes when agent_type is absent or not a coder (the main session, omp); an internal error fails
+    closed in main()."""
+    agent_type = jq_str(jq_get(payload, "agent_type"))
+    if not script_utils.CODERS.match(agent_type):
+        return
+    if any(writes_index(call) for call in calls):
+        raise DenyError(CODER_INDEX_DENIED)
+
+
+def check_autostash(command, calls):
+    """Rule 1, autostash half: deny every autostash call except the counted pull-then-push pairs."""
+    autostash_count = sum(is_autostash(call) for call in calls)
+    if not autostash_count or autostash_count == count_pull_push_pairs(command):
+        return
+    raise DenyError("[git-discipline-gate] git autostash is blocked: it runs a git stash, which every worktree "
+                    "shares and which resets staged files. Pass --no-autostash to the command, or do not set the "
+                    "autostash config. To pull right before a push and keep staged files staged, run "
+                    "`python3 ~/.claude/scripts/tools/pull_keep_index.py <repo> "
+                    "&& git -C <repo> push -u origin HEAD`. "
+                    f"{MERGE_WITH_WORK_UNCOMMITTED}")
+
+
 def run(raw):
     try:
         payload = payload_of(raw)
@@ -233,20 +399,15 @@ def run(raw):
 
     calls = git_calls(command)
 
+    check_coder_index(payload, calls)
+
     if any(is_stash(call) for call in calls):
         raise DenyError("[git-discipline-gate] git stash is blocked in every form, a tagged `git stash push -m <tag>` "
                         "included: every worktree shares one stash stack, and a stash resets staged files. "
                         f"{MERGE_WITH_WORK_UNCOMMITTED} If stashing is genuinely needed, ask the user — they can run "
                         "it themselves.")
 
-    autostash_count = sum(is_autostash(call) for call in calls)
-    if autostash_count and autostash_count != count_pull_push_pairs(command):
-        raise DenyError("[git-discipline-gate] git autostash is blocked: it runs a git stash, which every worktree "
-                        "shares and which resets staged files. Pass --no-autostash to the command, or do not set the "
-                        "autostash config. To pull right before a push and keep staged files staged, run "
-                        "`python3 ~/.claude/scripts/tools/pull_keep_index.py <repo> "
-                        "&& git -C <repo> push -u origin HEAD`. "
-                        f"{MERGE_WITH_WORK_UNCOMMITTED}")
+    check_autostash(command, calls)
 
     if any(is_amend(call) for call in calls):
         transcript_path = jq_str(jq_get(payload, "transcript_path"))

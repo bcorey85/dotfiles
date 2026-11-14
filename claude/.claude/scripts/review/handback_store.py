@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """handback_store.py: the per-session store of review-loop rows (dispatch, dispatch-ran, hand-back, stop, step,
-asks-logged) and the reads of it that decide whether a hand-back is current. Callers import these names from
-handback_store directly; handback.py imports only the ones it uses itself. The store is one append-only JSON-lines
-file per session under $HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
+asks-logged, plan-ruling, plan-impact-ruled, ask-rejected, ask-rejection-withdrawn, dispatch-repo) and the reads of
+it that decide whether a hand-back is current. Callers import these names from handback_store directly; handback.py
+imports only the ones it uses itself. The store is one append-only JSON-lines file per session under
+$HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
 import os
 import pathlib
 import sys
 import time
+from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import reviewed_tree
@@ -15,6 +17,15 @@ import script_utils
 STALE_STORE_SECONDS = 7 * 86400
 DISPATCH_RAN = "dispatch-ran"
 PLAN_RULING = "plan-ruling"
+# The text of one plan impact a ruling settled. It never clears the gate: only PLAN_RULING does that.
+PLAN_IMPACT_RULED = "plan-impact-ruled"
+# The field of a PLAN_IMPACT_RULED row that holds the accepted finding's full text.
+# A row from `decide` with no packet, or with no accepted finding the impact covers, has none.
+RULED_FINDING_TEXT_KEY = "finding_text"
+# The text (file:line and question) of one ask the session answered "rejected". Later rounds drop a repeat of it.
+ASK_REJECTED = "ask-rejected"
+# A correction that turned a rejected ask into an accepted one: it cancels the ASK_REJECTED row of the same text.
+ASK_REJECTION_WITHDRAWN = "ask-rejection-withdrawn"
 ASKS_LOGGED_ROW = "asks-logged"
 # A row that replaces the repo of the latest dispatch with the one its loop's ROOT= line named.
 DISPATCH_REPO_KIND = "dispatch-repo"
@@ -42,6 +53,77 @@ def session_rows(session_id, kind=None, agent_id=ANY_AGENT):
     return [row for row in script_utils.read_jsonl(session_file(session_id))
             if (kind is None or row.get("kind") == kind)
             and (agent_id is ANY_AGENT or row.get("agent_id") == agent_id)]
+
+
+def ruled_rows_repo(path):
+    """The key the ruled-impact and rejected-ask rows of the repo that holds `path` sit under: its work tree's top
+    level, None outside a work tree. Every writer and reader of those rows takes its repo through here."""
+    return script_utils.work_tree_top(path)
+
+
+def record_ruled_impact(session_id, text, repo, finding_text=None):
+    """Records the text of a plan impact the user or the session ruled on in `repo` (its top level), so a later fix
+    run of that repo leaves a finding on it out. `finding_text` is the full text of the accepted finding the ruling
+    came from, when there is one: a later fix run leaves out that exact finding and no other. Does nothing without a
+    session id."""
+    if not session_id:
+        return None
+    if finding_text is None:
+        return record(session_id, PLAN_IMPACT_RULED, text=text, repo=repo)
+    return record(session_id, PLAN_IMPACT_RULED, text=text, repo=repo, **{RULED_FINDING_TEXT_KEY: finding_text})
+
+
+class Rulings(NamedTuple):
+    """What a session already ruled on in one repo: the texts of the plan impacts, and the full texts of the accepted
+    findings those rulings came from. A `decide` run with no packet, or whose impact covers no accepted finding,
+    stores no finding text."""
+    impacts: list
+    finding_texts: list
+
+
+NO_RULINGS = Rulings([], [])
+
+
+def rulings(session_id, repo):
+    """The Rulings the PLAN_IMPACT_RULED rows of `repo` hold, in ruling order. NO_RULINGS without a session id."""
+    if not session_id:
+        return NO_RULINGS
+    rows = [row for row in session_rows(session_id, PLAN_IMPACT_RULED) if row.get("repo") == repo]
+    impacts = [row["text"] for row in rows]
+    finding_texts = [row[RULED_FINDING_TEXT_KEY] for row in rows if row.get(RULED_FINDING_TEXT_KEY)]
+    return Rulings(impacts, finding_texts)
+
+
+def record_rejected_ask(session_id, text, repo):
+    """Records the text of an ask the session answered "rejected" in `repo` (its top level), so a later round of that
+    repo's review loop drops a repeat of it. Does nothing without a session id."""
+    if not session_id:
+        return None
+    return record(session_id, ASK_REJECTED, text=text, repo=repo)
+
+
+def record_rejection_withdrawn(session_id, text, repo):
+    """Records that the session now accepts the ask it rejected with this text in `repo`, so its repeat is no longer
+    dropped. Does nothing without a session id."""
+    if not session_id:
+        return None
+    return record(session_id, ASK_REJECTION_WITHDRAWN, text=text, repo=repo)
+
+
+def rejected_ask_texts(session_id, repo):
+    """The texts of the asks this session rejected in `repo` and has not since withdrawn, in the order they were
+    rejected. [] without a session id."""
+    if not session_id:
+        return []
+    texts = []
+    for row in session_rows(session_id):
+        if row.get("repo") != repo:
+            continue
+        if row.get("kind") == ASK_REJECTED:
+            texts.append(row["text"])
+        elif row.get("kind") == ASK_REJECTION_WITHDRAWN:
+            texts = [text for text in texts if text != row["text"]]
+    return texts
 
 
 def plan_ruled_since(session_id, handback_row):

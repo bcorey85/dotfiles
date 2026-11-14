@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-572 fix notes
+576 fix notes
 
 Recent: the 7 days up to 2026-11-13, the newest note.
 
@@ -15,15 +15,15 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
 | script/review-loop-script | 57 | 8 |
+| script/review-fix | 54 | 7 |
 | script/handback | 52 | 4 |
-| script/review-fix | 52 | 5 |
 | script/review-commit-gate | 35 | 1 |
 | script/review-loop-gate | 35 | 1 |
 | script/full-check | 23 | 2 |
 | script/coder-gate | 21 | 2 |
 | agent/review-loop | 20 | 0 |
-| script/plan-format | 18 | 1 |
-| script/script-utils | 18 | 4 |
+| script/plan-format | 19 | 2 |
+| script/script-utils | 19 | 5 |
 | script/quality-check-cap | 17 | 0 |
 | skill/code | 17 | 5 |
 | skill/review | 17 | 14 |
@@ -32,15 +32,15 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/verify-prep | 12 | 2 |
 | script/log-review-finding | 11 | 0 |
 | script/pull-keep-index | 11 | 11 |
-| script/verify-log | 10 | 3 |
+| script/review-loop | 11 | 4 |
+| script/verify-log | 11 | 4 |
 | script/comment-bloat-gate | 8 | 1 |
 | script/git-discipline-gate | 8 | 1 |
 | script/log-escape | 8 | 1 |
-| script/review-loop | 8 | 1 |
+| script/verify-common | 8 | 3 |
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
 | script/refactor-flow | 7 | 2 |
-| script/verify-common | 7 | 2 |
 | script/code-review-start | 6 | 3 |
 | script/code-wait | 6 | 3 |
 | script/herdr-worktree | 6 | 2 |
@@ -56,6 +56,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/check-output | 4 | 0 |
 | script/format-changed | 4 | 1 |
 | script/format-files | 4 | 1 |
+| script/handback-store | 4 | 2 |
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/parallel-tests | 4 | 0 |
@@ -69,6 +70,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/inline-interpreter-hint | 3 | 0 |
 | script/ledger-write | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
+| script/review-launch | 3 | 3 |
 | script/review-loop-packet | 3 | 3 |
 | script/review-scope | 3 | 0 |
 | script/source-paths | 3 | 1 |
@@ -84,7 +86,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/coder-packet | 2 | 0 |
 | script/criteria-verdict | 2 | 1 |
 | script/emit-orchestration | 2 | 0 |
-| script/handback-store | 2 | 0 |
 | script/herdr-dev | 2 | 0 |
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
@@ -135,7 +136,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/questions-check | 1 | 0 |
 | script/reply-json | 1 | 1 |
 | script/review | 1 | 0 |
-| script/review-launch | 1 | 1 |
 | script/review-loop-findings | 1 | 1 |
 | script/review-loop-fix-induced | 1 | 1 |
 | script/rule-anchors | 1 | 0 |

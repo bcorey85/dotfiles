@@ -1100,6 +1100,25 @@ class SharedHelpersTest(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual("app", script_utils.repo_name_from_url(url))
 
+    def test_dropping_numbered_items_renumbers_the_kept_numbers_and_removes_a_dropped_one(self):
+        cases = [
+            ("drop the first", ["a", "b", "c"], [1], [2, 3], (["b", "c"], [1, 2])),
+            ("drop a kept number's item", ["a", "b"], [2], [1, 2], (["a"], [1])),
+            ("drop nothing", ["a", "b"], [], [2], (["a", "b"], [2])),
+            ("drop everything", ["a"], [1], [1], ([], [])),
+        ]
+        for label, items, dropped, kept, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(expected, script_utils.drop_numbered(items, dropped, kept))
+
+    def test_numbered_items_returns_the_named_items_in_order_and_a_number_past_the_end_raises(self):
+        self.assertEqual(["c", "a"], script_utils.numbered_items([3, 1], ["a", "b", "c"]))
+        self.assertEqual([], script_utils.numbered_items([], ["a"]))
+        for number in (0, 4, -1):
+            with self.subTest(number=number), self.assertRaises(script_utils.ItemNumberError) as raised:
+                script_utils.numbered_items([1, number], ["a", "b", "c"])
+            self.assertEqual((number, 3), (raised.exception.number, raised.exception.item_count))
+
 
 if __name__ == "__main__":
     unittest.main()

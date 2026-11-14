@@ -2,6 +2,7 @@
 earlier loops it stops.
 
 Set REVIEW_FIX_SCRIPT to run against another copy of review_fix.py."""
+import argparse
 import contextlib
 import io
 import itertools
@@ -23,6 +24,7 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import code_wait
+import handback_store
 import process_group
 import review_fix_names
 import review_launch
@@ -220,6 +222,36 @@ class ReviewLaunchTest(unittest.TestCase):
 
         self.assertNotIn("could not stop the loop", output)
 
+    def test_a_launch_that_leaves_out_one_ruled_impact_renumbers_user_ruled_and_fixes_the_rest(self):
+        impact = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        store = self.temp_root / "store"
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(store)}):
+            handback_store.record_ruled_impact(SESSION, impact, os.path.realpath(self.repo), finding_text=impact)
+        findings_file = self.temp_root / "three-findings.md"
+        findings_file.write_text(f"- README.md:1 first bug\n- {impact}\n- README.md:3 third bug\n")
+
+        output = self.launch("--fix", str(findings_file), "--user-ruled", "2", "--user-ruled", "3")
+
+        self.assertIn("Left out of the fix run", output)
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        kept = json.loads((loop_dir / "findings.json").read_text())
+        self.assertEqual(kept, ["README.md:1 first bug", "README.md:3 third bug"])
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), r"(?m)^user-ruled: 2$")
+
+    def test_a_fix_launch_that_leaves_out_every_finding_gets_the_plain_review_handoff(self):
+        impact = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        store = self.temp_root / "store"
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(store)}):
+            handback_store.record_ruled_impact(SESSION, impact, os.path.realpath(self.repo), finding_text=impact)
+        findings_file = self.temp_root / "one-finding.md"
+        findings_file.write_text(f"- {impact}\n")
+
+        self.launch("--fix", str(findings_file), "--user-ruled", "1")
+
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        self.assertEqual((loop_dir / "handoff.txt").read_text(), review_launch.DEFAULT_HANDOFF)
+
     def plant_loop(self, repo, agent_id, record_repo, command_names_agent=True):
         loop_dir = repo / ".git" / "review-script" / reviewer_dispatch.LOOP_FOLDER / agent_id
         loop_dir.mkdir(parents=True)
@@ -231,6 +263,26 @@ class ReviewLaunchTest(unittest.TestCase):
         record = {"packet_args": [], "relaunch_args": ["--repo", str(record_repo)]}
         (loop_dir / reviewer_dispatch.LAUNCH_FILE).write_text(json.dumps(record) + "\n")
         return loop_dir
+
+
+class UserRuledHeaderTest(unittest.TestCase):
+    def test_the_user_ruled_time_is_the_plan_ruling_form_the_deviation_entry_takes(self):
+        options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
+                                     iter=None, user_ruled=[1])
+
+        pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
+
+        self.assertRegex(pairs["user-ruled-at"], r"^\d{4}-\d\d-\d\d \d\d:\d\d$")
+        self.assertEqual(pairs["user-ruled"], "1")
+
+    def test_no_user_ruled_pair_is_written_without_user_ruled_numbers(self):
+        options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
+                                     iter=None, user_ruled=[])
+
+        pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
+
+        self.assertNotIn("user-ruled", pairs)
+        self.assertNotIn("user-ruled-at", pairs)
 
 
 class StopLoopTest(unittest.TestCase):

@@ -7,6 +7,9 @@ The prompt file is header lines (`key: value`), a blank line, then the handoff b
   held files: <path>, ...   files another session holds (dirty at the run's start, not the run's own): never
                             reviewed, never edited
   findings: <json file>     fix-first: a JSON list of finding texts the fix coder applies before any review
+  user-ruled: <n>, <n>      the 1-based numbers of the findings the user accepted
+  user-ruled-at: <time>     when the fix run was launched, the time the coder is told those findings were accepted;
+                            required with user-ruled (read_prompt stops without it)
   no-review: yes            fix-first with no review after the fix
   reviewer-model: <model>   the model every reviewer runs on
   iter: <n>                 review rounds an earlier run of the same review already used
@@ -25,6 +28,8 @@ BASE_KEY = "base"
 FILES_KEY = "files"
 HELD_FILES_KEY = "held files"
 FINDINGS_KEY = "findings"
+USER_RULED_HEADER_KEY = "user-ruled"
+USER_RULED_AT_KEY = "user-ruled-at"
 NO_REVIEW_KEY = "no-review"
 REVIEWER_MODEL_KEY = "reviewer-model"
 ITER_KEY = "iter"
@@ -46,12 +51,18 @@ def read_prompt(path):
     """({header key: value}, handoff block) of the review prompt file. The header ends at the first blank line."""
     header_text, _separator, handoff = pathlib.Path(path).read_text().partition("\n\n")
     header = {}
-    for line in header_text.splitlines():
+    ruled_line_number = 0
+    for line_number, line in enumerate(header_text.splitlines(), start=1):
         key, separator, value = line.partition(":")
         if separator:
             header[key.strip()] = value.strip()
+        if separator and key.strip() == USER_RULED_HEADER_KEY:
+            ruled_line_number = line_number
     if not header.get("lane"):
         raise PromptFileError(f"the prompt file {path} has no lane line")
+    if ruled_line_number and not header.get(USER_RULED_AT_KEY):
+        raise PromptFileError(f"{path}:{ruled_line_number}: a {USER_RULED_HEADER_KEY} line needs a {USER_RULED_AT_KEY} "
+                              f"line; expected `{USER_RULED_AT_KEY}: <time>`")
     return header, handoff.strip()
 
 
@@ -63,7 +74,7 @@ def header_list(header, key):
 def header_iter(header):
     """The rounds an earlier run already used: 0 when the header has no iter line."""
     value = header.get(ITER_KEY, "0")
-    if not value.isdigit():
+    if not (value.isascii() and value.isdecimal()):
         raise PromptFileError(f"the prompt file's iter line holds {value!r}; expected a whole number")
     return int(value)
 
@@ -84,6 +95,21 @@ def read_findings(header):
     if not script_utils.is_nonblank_string_list(findings):
         raise PromptFileError(f"{findings_file}: expected a JSON list of non-empty finding texts")
     return findings
+
+
+def header_user_ruled(header, findings):
+    """The texts of the findings the user-ruled line names, [] when the header has none. A number that is no whole
+    number, or names no finding, stops the run."""
+    words = header_list(header, USER_RULED_HEADER_KEY)
+    for word in words:
+        if not (word.isascii() and word.isdecimal()):
+            raise PromptFileError(f"the prompt file's {USER_RULED_HEADER_KEY} line holds {word!r}; expected the "
+                                  f"number of one of the {len(findings)} findings")
+    try:
+        return script_utils.numbered_items([int(word) for word in words], findings)
+    except script_utils.ItemNumberError as error:
+        raise PromptFileError(f"the prompt file's {USER_RULED_HEADER_KEY} line holds {str(error.number)!r}; "
+                              f"expected the number of one of the {error.item_count} findings") from error
 
 
 def reviewer_brief(header, handoff):

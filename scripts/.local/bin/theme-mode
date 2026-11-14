@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox papercolor hybrid rose-pine ef-elea ef-maris; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox papercolor hybrid rose-pine ef-elea ef-maris vitesse; }
 
 claude_theme_file() { # <family> <mode> -> the authored Claude Code theme JSON, empty if none
   # A family that ships claude/.claude/themes/<slug>.json gets it copied into
@@ -192,6 +192,9 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # palette of nvim's colors/hybrid-light.lua.
     hybrid:light)           echo "hybrid-light" ;;
     hybrid:*)               echo "hybrid-dark" ;;
+    # vitesse: custom files, antfu's terminal sixteen.
+    vitesse:light)          echo "vitesse-light" ;;
+    vitesse:*)              echo "vitesse-dark" ;;
     # rose-pine: ghostty BUILTINS — main dark, dawn light.
     rose-pine:light)        echo "Rose Pine Dawn" ;;
     rose-pine:*)            echo "Rose Pine" ;;
@@ -303,6 +306,9 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # hybrid: BASE of a full [custom_theme]; grey on #1d1f21, and grey on white.
     hybrid:light)           echo "light-plus" ;;
     hybrid:*)               echo "dark-plus" ;;
+    # vitesse: hunk's own builtins, used directly (no [custom_theme]).
+    vitesse:light)          echo "vitesse-light" ;;
+    vitesse:*)              echo "vitesse-dark" ;;
     # rose-pine: hunk BUILTINS — main dark, dawn light.
     rose-pine:light)        echo "rose-pine-dawn" ;;
     rose-pine:*)            echo "rose-pine" ;;
@@ -768,14 +774,14 @@ EOF
         type_fg="#4f5d00"; builtin_fg="#005b91"; param_fg="#943b12"; attr_fg="#a32822"
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
-        bg="#111517"; panel="#0a0e10"; panelAlt="#1d2123"; border="#373b3f"; note="#0a0e10"
-        accent="#4baba2"; accentMuted="#373b3f"; text="#b6c3cb"; muted="#b1b5bc"; lnFg="#8c9097"
+        bg="#15191c"; panel="#0e1215"; panelAlt="#212528"; border="#3c4144"; note="#0e1215"
+        accent="#4baba2"; accentMuted="#3c4144"; text="#b6c3cb"; muted="#b1b5bc"; lnFg="#8c9097"
         # Words must stay >= RGB distance 28 from the line wash, or hunk
         # replaces them with its own blend of the sign colour.
-        addWord="#173f3e"; remWord="#42132c"
+        addWord="#173f3e"; remWord="#471831"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
-        addedBg="#142d2e"; removedBg="#290e1c"; ctxBg="#111517"
+        addedBg="#142d2e"; removedBg="#2e1321"; ctxBg="#15191c"
         sAdd="#4baba2"; sRem="#f54b43"; badgeNeu="#eed286"
         kw="#9a9ea5"; punct="#91969c"; str="#4baba2"; num="#e6619a"; fn="#858dd8"; cmt="#c7a459"
         type_fg="#8fa338"; builtin_fg="#429ace"; param_fg="#da7e4b"; attr_fg="#e1645a"
@@ -801,7 +807,7 @@ EOF
         kw="#4c5158"; cmt="#6d4a00"
       else
         bind="#8990da"; act="#4baba2"; exit_fg="#e36099"; lit="#8fa338"; desc="#429ace"
-        cmt="#b6954d"
+        cmt="#c3a15a"
       fi
       # Binds: names where they are introduced. Acts: calls, decorators, builtins.
       fn="$bind"; cls="$bind"; param="$bind"; var="$bind"
@@ -2149,8 +2155,8 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#4baba2" panel_bg="#0a0e10" surface_dim="#1d2123"
-      surface0="#2b2f32" surface1="#373b3f"
+      accent="#4baba2" panel_bg="#0e1215" surface_dim="#212528"
+      surface0="#303438" surface1="#3c4144"
       overlay0="#91959b" overlay1="#b1b5bc"
       text="#b6c3cb" subtext0="#b1b5bc"
       green="#4baba2" yellow="#eed286" red="#f54b43"
@@ -2287,6 +2293,28 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#c5c8c6" subtext0="#8b9299"
       green="#b5bd68" yellow="#f0c674" red="#cc6666"
       blue="#81a2be" teal="#8abeb7" peach="#de935f"
+      ;;
+    vitesse:light)
+      # vitesse light (white ground), the palette of bcorey85/vitesse.nvim.
+      # Panel and surfaces are its bg_active, selection and menu-selection.
+      base_name="one-light"
+      accent="#1c6b48" panel_bg="#f7f7f7" surface_dim="#eaeaea"
+      surface0="#dedede" surface1="#c1c1bf"
+      overlay0="#8f908c" overlay1="#4e4f47"
+      text="#393a34" subtext0="#8f908c"
+      green="#1e754f" yellow="#bda437" red="#ab5959"
+      blue="#296aa3" teal="#2993a3" peach="#a65e2b"
+      ;;
+    vitesse:*)
+      # vitesse dark (#121212), the palette of bcorey85/vitesse.nvim. Panel
+      # and surfaces are its bg_active, selection, visual and menu-selection.
+      base_name="one-dark"
+      accent="#4d9375" panel_bg="#181818" surface_dim="#272727"
+      surface0="#2f2f2f" surface1="#363636"
+      overlay0="#858480" overlay1="#bfbaaa"
+      text="#cecabe" subtext0="#858480"
+      green="#4d9375" yellow="#e6cc77" red="#cb7676"
+      blue="#6394bf" teal="#5eaab5" peach="#d4976c"
       ;;
     ef-elea:light)
       # ef-elea-light (#edf5e2), the plugin's palette. Peach is its warmer

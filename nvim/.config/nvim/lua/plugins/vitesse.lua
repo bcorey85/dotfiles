@@ -1,12 +1,11 @@
--- vitesse (local checkout ~/dev/vitesse.nvim, a pure-Lua port of antfu's Vitesse) —
--- audition only, not a theme-mode family: :colorscheme vitesse follows
--- vim.o.background. lazy = true: lazy.nvim loads it on the :colorscheme call.
--- cond: the checkout exists on one machine only.
-local checkout = vim.fn.expand("~/dev/vitesse.nvim")
-
+-- vitesse (bcorey85/vitesse.nvim, a pure-Lua port of antfu's Vitesse) — theme-mode
+-- family. One colorscheme "vitesse" follows vim.o.background and sets colors_name
+-- "vitesse" in both modes, so theme-sync pins it. Loads eagerly (lazy = false,
+-- priority = 1000) so it's on the rtp before theme-sync.start().
 return {
-  dir = checkout,
+  "bcorey85/vitesse.nvim",
   name = "vitesse",
-  lazy = true,
-  cond = vim.fn.isdirectory(checkout) == 1,
+  lazy = false,
+  priority = 1000,
+  opts = { italic_comments = false },
 }

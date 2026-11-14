@@ -494,7 +494,7 @@ branch = "#858dd8"
 teal = "#4baba2"
 purple = "#d8728d"
 fg = "#b7bbbd"
-bg = "#181c20"
+bg = "#1b1f23"
 grey = "#a5a9b0"
 
 [palettes.dredge-light]

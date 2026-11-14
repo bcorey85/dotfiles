@@ -14,11 +14,9 @@ import handback
 import handback_store
 import review_loop_coder
 import script_utils
-from review_loop_findings import ASK_CHANGE_MARK, UNLOCATED
+from review_loop_findings import UNLOCATED, ask_parts
 
-PLAN_IMPACT_KEYS = ("text", "gate", "ac_change", "cause", "adopted", "applied")
-# A pointer ask rides in the packet's ask list with no question, so handback drops it with this reason as its warning.
-POINTER_ASK_REASON = "ask only points back to another ask"
+PLAN_IMPACT_KEYS = ("text", "gate", "ac_change", "cause", "adopted", "applied", "settled")
 
 
 def located(finding):
@@ -40,19 +38,7 @@ def finding_entry(finding):
 
 
 def ask_entry(ask, gate, finding_id):
-    # The text before the last `change:` marker is the question; the text after it is the edit an accepted answer
-    # makes. An ask with no marker carries its own recommended edit, so its whole text is both. An ask that opens
-    # with its marker asks its change, and one that ends on an empty marker carries its edit in its question.
-    text = ask.text
-    question, change = text, text
-    change_marks = list(ASK_CHANGE_MARK.finditer(text))
-    if change_marks:
-        last_mark = change_marks[-1]
-        after_mark = text[last_mark.end():].strip()
-        before_mark = text[:last_mark.start()].rstrip(" —-")
-        question = before_mark or after_mark
-        change = after_mark or before_mark
-
+    question, change = ask_parts(ask.text)
     entry = {"question": question, "file_line": located(ask), "change": change, "gate": gate,
              "class": ask.finding_class}
     if finding_id:
@@ -60,15 +46,19 @@ def ask_entry(ask, gate, finding_id):
     return entry
 
 
+def ask_entries(outcome):
+    """The packet's ask entries: each kept ask, then each dropped one with its drop reason."""
+    asks = [ask_entry(ask, outcome["ask_gates"].get(ask, handback.DEFAULT_GATE), outcome["ask_ids"].get(ask))
+            for ask in outcome["asks"]]
+    dropped = outcome["dropped_asks"]
+    return asks + [{"text": ask.text, "file_line": located(ask), "drop_reason": reason} for ask, reason in dropped]
+
+
 def packet_message(outcome):
     """The outcome as the packet handback.py reads: one JSON object with one key per field. A key the outcome lacks
     reads as empty."""
     outcome = {**EMPTY_OUTCOME, **outcome}
-    asks = [ask_entry(ask, outcome["ask_gates"].get(ask, handback.DEFAULT_GATE), outcome["ask_ids"].get(ask))
-            for ask in outcome["asks"]]
-    pointer_entries = [{"text": ask.text, "file_line": located(ask), "drop_reason": POINTER_ASK_REASON}
-                       for ask in outcome["pointer_asks"]]
-    asks += pointer_entries
+    asks = ask_entries(outcome)
 
     fields = {
         "status": outcome["status"],
@@ -104,8 +94,9 @@ def packet_message(outcome):
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
     "status": "", "iter": 0, "review_round": 0, "fixed": [], "skipped_fp": [], "blockers": [], "open_fixes": [],
-    "asks": [], "ask_gates": {}, "pointer_asks": [], "ask_ids": {}, "ask_rows": [], "class_closure": "",
-    "open_classes": [], "left_alone": [], "full_check": "", "full_check_command": "", "full_check_summaries": [],
+    "asks": [], "ask_gates": {}, "dropped_asks": [], "ask_ids": {}, "ask_rows": [],
+    "class_closure": "", "open_classes": [], "left_alone": [], "full_check": "", "full_check_command": "",
+    "full_check_summaries": [],
     "check_changed": [], "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [],
     "unreviewed_fix": False, "scoped_tests": "", "tool_fault": "", "plan_impacts": [],
 }

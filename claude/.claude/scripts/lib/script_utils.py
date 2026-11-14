@@ -210,6 +210,36 @@ def text_similarity(first, second):
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
 
 
+class ItemNumberError(ValueError):
+    """A 1-based item number that names no item."""
+
+    def __init__(self, number, item_count):
+        super().__init__(f"{number} names no item: there are {item_count}")
+        self.number = number
+        self.item_count = item_count
+
+
+def numbered_items(numbers, items):
+    """The items the 1-based `numbers` name, in the order of `numbers`. A number that names none raises
+    ItemNumberError."""
+    for number in numbers:
+        if not 1 <= number <= len(items):
+            raise ItemNumberError(number, len(items))
+    return [items[number - 1] for number in numbers]
+
+
+def drop_numbered(items, dropped_numbers, kept_numbers):
+    """(`items` without the ones at the 1-based `dropped_numbers`, `kept_numbers` renumbered to follow the drop).
+    A kept number that names a dropped item is removed from the result."""
+    dropped = set(dropped_numbers)
+    kept_items = [item for number, item in enumerate(items, 1) if number not in dropped]
+    new_number = {}
+    for number in range(1, len(items) + 1):
+        if number not in dropped:
+            new_number[number] = len(new_number) + 1
+    return kept_items, [new_number[number] for number in kept_numbers if number in new_number]
+
+
 def wait_for(check, timeout_seconds, interval_seconds):
     """Call check() until it returns a truthy value, then return that value. Check once, then every
     interval_seconds, for at most timeout_seconds. Return None when nothing was found in that time."""

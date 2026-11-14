@@ -33,6 +33,7 @@ import handback_hook  # noqa: E402
 import handback_store  # noqa: E402
 import loop_transcript  # noqa: E402
 import plan_format  # noqa: E402
+import review_user_ruled  # noqa: E402
 import reviewed_tree  # noqa: E402
 
 
@@ -105,6 +106,94 @@ class HandbackTestBase(unittest.TestCase):
         capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
                              full_check="passed", full_check_tree=tree)
         return repo, capped
+
+
+class RuledImpactStoreTest(HandbackTestBase):
+    def test_no_session_id_records_nothing_and_reads_nothing(self):
+        for session_id in (None, ""):
+            self.assertIsNone(handback_store.record_ruled_impact(session_id, "text", "/work/a"))
+            self.assertEqual(handback_store.rulings(session_id, "/work/a").impacts, [])
+
+    def test_the_texts_come_back_in_ruling_order_and_only_for_the_repo_they_were_ruled_in(self):
+        handback_store.record_ruled_impact(SESSION, "first", "/work/a")
+        handback_store.record_ruled_impact(SESSION, "other repo", "/work/b")
+        handback_store.record_ruled_impact(SESSION, "second", "/work/a")
+
+        self.assertEqual(handback_store.rulings(SESSION, "/work/a").impacts, ["first", "second"])
+
+    def test_a_row_stores_the_accepted_finding_text_and_a_row_without_one_adds_none(self):
+        handback_store.record_ruled_impact(SESSION, "first", "/work/a", finding_text="a.py:1 first? Proposed change: x")
+        handback_store.record_ruled_impact(SESSION, "decided", "/work/a")
+        handback_store.record_ruled_impact(SESSION, "other repo", "/work/b", finding_text="b.py:1 other")
+
+        stored = handback_store.rulings(SESSION, "/work/a").finding_texts
+        self.assertEqual(stored, ["a.py:1 first? Proposed change: x"])
+        self.assertEqual(handback_store.rulings("", "/work/a").finding_texts, [])
+
+    def test_rejected_asks_come_back_per_repo_in_order_and_need_a_session_id(self):
+        self.assertIsNone(handback_store.record_rejected_ask("", "text", "/work/a"))
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a")
+        handback_store.record_rejected_ask(SESSION, "b.py:1 other repo?", "/work/b")
+        handback_store.record_rejected_ask(SESSION, "a.py:2 second?", "/work/a")
+
+        self.assertEqual(handback_store.rejected_ask_texts(SESSION, "/work/a"), ["a.py:1 first?", "a.py:2 second?"])
+        self.assertEqual(handback_store.rejected_ask_texts("", "/work/a"), [])
+
+    def test_a_withdrawn_rejection_is_no_longer_a_rejected_ask(self):
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a")
+        handback_store.record_rejected_ask(SESSION, "a.py:2 second?", "/work/a")
+
+        handback_store.record_rejection_withdrawn(SESSION, "a.py:1 first?", "/work/a")
+
+        self.assertEqual(handback_store.rejected_ask_texts(SESSION, "/work/a"), ["a.py:2 second?"])
+
+    def test_the_session_repo_is_the_top_level_of_the_cwd_when_no_dispatch_is_on_record(self):
+        import saved_handback
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True, capture_output=True)
+
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": SESSION}):
+            previous_cwd = os.getcwd()
+            os.chdir(repo)
+            try:
+                found = saved_handback.session_repo()
+            finally:
+                os.chdir(previous_cwd)
+
+        self.assertEqual(found, os.path.realpath(repo))
+
+    def test_the_loop_reads_the_rejections_stored_under_the_repo_top_it_reviews(self):
+        import review_loop_ruled
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True, capture_output=True)
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", os.path.realpath(repo))
+        handback_store.record_rejected_ask(SESSION, "b.py:1 elsewhere?", "/work/other")
+
+        records = review_loop_ruled.rejected_ask_records(SESSION, str(repo))
+
+        self.assertEqual([record.text for record in records], ["a.py:1 first?"])
+
+    def test_session_ruled_impacts_without_a_session_env_is_empty(self):
+        handback_store.record_ruled_impact(SESSION, "first", "/work/a")
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": ""}):
+            self.assertEqual(review_user_ruled.session_rulings("/work/a").impacts, [])
+
+    def test_apply_user_ruled_reads_the_rows_of_the_repo_it_is_given_not_of_the_cwd(self):
+        impact = "a.py:1 [plan-drift] does AC2 hold? acceptance_criteria: AC2"
+        entry = {"item": impact, "reason": "needs sign-off", "file_line": "a.py:1", "class": "plan-drift",
+                 "given": True}
+        handback_store.record_ruled_impact(SESSION, "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2",
+                                           "/work/reviewed", finding_text=impact)
+        cases = {"/work/reviewed": 1, "/work/cwd": 0}
+        for repo, skipped_left in cases.items():
+            with self.subTest(repo):
+                packet = {"ask": [], "skipped_fp": [dict(entry)]}
+                with unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": SESSION}):
+                    review_user_ruled.apply_user_ruled(packet, [impact], repo)
+                self.assertEqual(len(packet["skipped_fp"]), skipped_left)
+                self.assertEqual(len(packet["ask"]), 1 - skipped_left)
 
 
 class CleanHandbackSinceTest(HandbackTestBase):
@@ -341,10 +430,21 @@ class JsonPacketTest(HandbackTestBase):
         packet = handback.load(json_packet(plan_impacts=impacts))
 
         self.assertEqual({"text": "PLAN-IMPACT: a column", "gate": "code-reviewer", "ac_change": True,
-                          "cause": "plan", "adopted": False, "applied": False}, packet["plan_impacts"][0])
+                          "cause": "plan", "adopted": False, "applied": False, "settled": False},
+                         packet["plan_impacts"][0])
         self.assertEqual({"text": "PLAN-IMPACT: x", "gate": "smell-reviewer", "ac_change": False,
-                          "cause": "toolkit", "adopted": True, "applied": False}, packet["plan_impacts"][1])
+                          "cause": "toolkit", "adopted": True, "applied": False, "settled": False},
+                         packet["plan_impacts"][1])
         self.assertEqual([packet["plan_impacts"][0]], handback.held_plan_impacts(packet))
+
+    def test_a_settled_adopted_plan_impact_is_no_adopted_by_rule_impact_and_is_never_held(self):
+        impacts = [{"text": "PLAN-IMPACT: a", "ac_change": False, "adopted": True},
+                   {"text": "PLAN-IMPACT: b", "ac_change": True, "adopted": True, "settled": True}]
+
+        packet = handback.load(json_packet(plan_impacts=impacts))
+
+        self.assertEqual(["PLAN-IMPACT: a"], [item["text"] for item in handback.rule_adopted_plan_impacts(packet)])
+        self.assertEqual([], handback.held_plan_impacts(packet))
 
     def test_every_unadopted_impact_but_a_toolkit_cause_is_held(self):
         cases = {

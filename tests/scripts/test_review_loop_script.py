@@ -25,15 +25,19 @@ import finding_record
 import handback
 import handback_store
 import plan_format
+import review_fix_asks
 import review_loop_calls
 import review_loop_closure
 import review_loop_findings
 import review_loop_held
 import review_loop_packet
 import review_loop_plan
+import review_loop_ruled
 import review_loop_scoped_tests
+from review_asks import REJECTED
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_LOOP_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_loop_script.py")
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 SESSION = "session-1"
 AGENT_ID = "agent-1"
 FINDING_ID = re.compile(r"[0-9a-f]{16}")
@@ -213,6 +217,81 @@ class HeldDigestsTest(unittest.TestCase):
             self.assertEqual(len(review_loop_held.HELD_FAULTS), 1)
             self.assertIn("gone.py", review_loop_held.HELD_FAULTS[0])
             self.assertNotIn("same.py", review_loop_held.HELD_FAULTS[0])
+
+
+class RepeatFilterHost(review_loop_ruled.RuledFindings):
+    def __init__(self, asks=()):
+        self.asks = list(asks)
+        self.plan_impacts = []
+        self.resolved_texts = []
+        self.init_ruled_state()
+
+
+class WithoutRepeatsTest(unittest.TestCase):
+    PLAN_ITEM = "PLAN-IMPACT: the reword is narrower than the ticket. acceptance_criteria: AC2"
+    PLAIN_ASK = "`app.py:3` [bug] should the window be pinned?"
+
+    def test_a_plan_change_item_stays_even_when_an_earlier_item_repeats_it(self):
+        first = finding_record.parse_finding(self.PLAN_ITEM)
+        second = finding_record.parse_finding(self.PLAN_ITEM + " Second sentence.")
+        host = RepeatFilterHost()
+
+        kept = host.without_repeats([first, second])
+
+        self.assertEqual(kept, [first, second])
+        self.assertEqual(host.dropped_asks, [])
+
+    def test_a_plan_change_item_the_session_rejected_is_dropped_when_raised_again(self):
+        rejected = finding_record.parse_finding(self.PLAN_ITEM)
+        again = finding_record.parse_finding(self.PLAN_ITEM + " Second sentence.")
+        host = RepeatFilterHost()
+        host.rejected_asks = [rejected]
+
+        kept = host.without_repeats([again])
+
+        self.assertEqual(kept, [])
+        self.assertEqual(host.dropped_asks, [(again, review_loop_findings.REJECTED_ASK_REASON)])
+
+    def test_a_design_item_the_session_rejected_is_dropped_when_raised_again(self):
+        rejected = finding_record.parse_finding(self.PLAN_ITEM)
+        again = finding_record.parse_finding(self.PLAN_ITEM + " Second sentence.")
+        other = finding_record.parse_finding("`other.py:1` [design-decision] pick a layout")
+        host = RepeatFilterHost()
+        host.rejected_asks = [rejected]
+
+        kept = host.without_rejected([again, other])
+
+        self.assertEqual(kept, [other])
+        self.assertEqual(host.dropped_asks, [(again, review_loop_findings.REJECTED_ASK_REASON)])
+
+    def test_a_plain_ask_that_repeats_an_earlier_one_of_the_same_batch_is_dropped(self):
+        first = finding_record.parse_finding(self.PLAIN_ASK)
+        second = finding_record.parse_finding(self.PLAIN_ASK.replace("app.py:3", "app.py:9"))
+        host = RepeatFilterHost()
+
+        kept = host.without_repeats([first, second])
+
+        self.assertEqual(kept, [first])
+        self.assertEqual([ask for ask, _reason in host.dropped_asks], [second])
+
+    def test_an_ask_already_on_the_loop_s_list_word_for_word_stays_for_add_ask(self):
+        ask = finding_record.parse_finding(self.PLAIN_ASK)
+        host = RepeatFilterHost(asks=[ask])
+
+        kept = host.without_repeats([ask])
+
+        self.assertEqual(kept, [ask])
+        self.assertEqual(host.dropped_asks, [])
+
+    def test_an_ask_that_only_matches_the_loop_s_list_by_claim_is_dropped(self):
+        listed = finding_record.parse_finding(self.PLAIN_ASK)
+        reworded_line = finding_record.parse_finding(self.PLAIN_ASK.replace("app.py:3", "app.py:9"))
+        host = RepeatFilterHost(asks=[listed])
+
+        kept = host.without_repeats([reworded_line])
+
+        self.assertEqual(kept, [])
+        self.assertEqual([ask for ask, _reason in host.dropped_asks], [reworded_line])
 
 
 class ClosureCheckTest(unittest.TestCase):
@@ -2653,6 +2732,31 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["fixed"], [])
         self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
 
+    def test_a_ruled_plan_fix_raised_again_after_a_rejection_logs_no_finding_row_and_is_not_counted(self):
+        self.commit_files({"plan.md": self.RULED_PLAN})
+        drift_review = FIX_REVIEW.replace("`app.py:2` the limit is wrong for `limit`",
+                                          "`plan.md:5` the build line drifted from the plan; restore `cargo build`")
+        first = self.run_script({"code-reviewer": [{"result": drift_review}]})
+        self.assertEqual(first.returncode, 0, first.stderr)
+        _, first_packet = self.stored_packet()
+        self.assertEqual(len(first_packet["ask"]), 1)
+        self.reset_fake_run()
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
+                                          "CLAUDE_CODE_SESSION_ID": SESSION}):
+            review_fix_asks.record_rejected_asks(first_packet["ask"], [REJECTED], os.path.realpath(self.repo))
+        first_finding_count = len(self.finding_rows())
+        first_run_count = len(fake_ledger.recorded_rows(self.env, "review_run"))
+
+        second = self.run_script({"code-reviewer": [{"result": drift_review}]})
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+        second_findings = self.finding_rows()[first_finding_count:]
+        self.assertEqual([row for row in second_findings if row["disposition"] == "ask"], [])
+        run = fake_ledger.recorded_rows(self.env, "review_run")[first_run_count]
+        self.assertEqual(run["n_findings"], "0")
+
     def test_a_fix_on_an_unruled_plan_line_still_goes_to_the_coder(self):
         self.commit_files({"plan.md": self.RULED_PLAN})
         lint_review = FIX_REVIEW.replace("`app.py:2` the limit is wrong for `limit`",
@@ -3197,6 +3301,149 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual(packet["dropped_asks"], ["ask only points back to another ask, so it was dropped: "
                                                   "'The open ask about pinning the window still stands.'"])
+
+    def test_an_ask_the_session_rejected_comes_back_as_a_dropped_ask_not_a_stop(self):
+        ask_report = "## Fix\nNone\n\n## Ask\n- `app.py:3` [bug] should the window be pinned?\n\n## Nit\nNone\n"
+        first = self.run_script({"code-reviewer": [{"result": ask_report}]})
+        self.assertEqual(first.returncode, 0, first.stderr)
+        _, first_packet = self.stored_packet()
+        self.assertEqual(len(first_packet["ask"]), 1)
+        self.reset_fake_run()
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
+                                          "CLAUDE_CODE_SESSION_ID": SESSION}):
+            review_fix_asks.record_rejected_asks(first_packet["ask"], [REJECTED], os.path.realpath(self.repo))
+        # The reviewer words the same ask again, on another line.
+        again = "## Fix\nNone\n\n## Ask\n- `app.py:9` [bug] should the window be pinned?\n\n## Nit\nNone\n"
+
+        second = self.run_script({"code-reviewer": [{"result": again}]})
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(len(packet["dropped_asks"]), 1, packet["dropped_asks"])
+        self.assertTrue(packet["dropped_asks"][0].startswith(f"{review_loop_findings.REJECTED_ASK_REASON}, so it "
+                                                             "was dropped"), packet["dropped_asks"])
+        self.assertIn("should the window be pinned?", packet["dropped_asks"][0])
+
+    def test_a_design_fix_the_session_rejected_is_dropped_when_raised_again(self):
+        plan_text = "PLAN-IMPACT: the reword is narrower than the ticket. acceptance_criteria: none"
+        rejected_ask = {"file_line": "app.py:3", "question": plan_text}
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
+                                          "CLAUDE_CODE_SESSION_ID": SESSION}):
+            review_fix_asks.record_rejected_asks([rejected_ask], [REJECTED], os.path.realpath(self.repo))
+        again = f"## Fix\n- `app.py:3` [design-decision] {plan_text}\n\n## Ask\nNone\n\n## Nit\nNone\n"
+
+        second = self.run_script({"code-reviewer": [{"result": again}]})
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["plan_impacts"], [])
+        self.assertEqual([call for call in self.fake_calls() if call["key"] == "coder"], [])
+        self.assertEqual(len(packet["dropped_asks"]), 1, packet["dropped_asks"])
+        self.assertTrue(packet["dropped_asks"][0].startswith(f"{review_loop_findings.REJECTED_ASK_REASON}, so it "
+                                                             "was dropped"), packet["dropped_asks"])
+
+    def test_a_rejected_ask_with_a_change_part_is_dropped_when_raised_again_word_for_word(self):
+        ask_text = ("`app.py:3` [bug] the retry window is never pinned — should the window be pinned to the config "
+                    "value? — change: read RETRY_WINDOW from config and pass it to retry()")
+        ask_report = f"## Fix\nNone\n\n## Ask\n- {ask_text}\n\n## Nit\nNone\n"
+        first = self.run_script({"code-reviewer": [{"result": ask_report}]})
+        self.assertEqual(first.returncode, 0, first.stderr)
+        _, first_packet = self.stored_packet()
+        self.assertEqual(len(first_packet["ask"]), 1)
+        self.reset_fake_run()
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
+                                          "CLAUDE_CODE_SESSION_ID": SESSION}):
+            review_fix_asks.record_rejected_asks(first_packet["ask"], [REJECTED], os.path.realpath(self.repo))
+
+        second = self.run_script({"code-reviewer": [{"result": ask_report}]})
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(len(packet["dropped_asks"]), 1, packet["dropped_asks"])
+
+    def test_a_repeated_ask_logs_no_finding_row_and_is_not_counted(self):
+        ask_question = "should the window be pinned?"
+        two_of_a_kind = ("## Fix\nNone\n\n## Ask\n"
+                         f"- `app.py:3` [bug] {ask_question}\n"
+                         f"- `app.py:4` [bug] {ask_question}\n\n## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": two_of_a_kind}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        ask_rows = [row for row in self.finding_rows() if row["disposition"] == "ask"]
+        self.assertEqual(len(ask_rows), 1, ask_rows)
+        first_run = fake_ledger.recorded_rows(self.env, "review_run")[0]
+        self.assertEqual(first_run["n_findings"], "1")
+
+    def test_a_repeat_of_a_rejected_ask_logs_no_finding_row_and_is_not_counted(self):
+        ask_report = "## Fix\nNone\n\n## Ask\n- `app.py:3` [bug] should the window be pinned?\n\n## Nit\nNone\n"
+        first = self.run_script({"code-reviewer": [{"result": ask_report}]})
+        self.assertEqual(first.returncode, 0, first.stderr)
+        _, first_packet = self.stored_packet()
+        self.reset_fake_run()
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
+                                          "CLAUDE_CODE_SESSION_ID": SESSION}):
+            review_fix_asks.record_rejected_asks(first_packet["ask"], [REJECTED], os.path.realpath(self.repo))
+        again = "## Fix\nNone\n\n## Ask\n- `app.py:9` [bug] should the window be pinned?\n\n## Nit\nNone\n"
+        first_finding_count = len(self.finding_rows())
+        first_run_count = len(fake_ledger.recorded_rows(self.env, "review_run"))
+
+        second = self.run_script({"code-reviewer": [{"result": again}]})
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        second_findings = self.finding_rows()[first_finding_count:]
+        self.assertEqual([row for row in second_findings if row["disposition"] == "ask"], [])
+        run = fake_ledger.recorded_rows(self.env, "review_run")[first_run_count]
+        self.assertEqual(run["n_findings"], "0")
+
+    def test_pass_notes_and_a_repeated_ask_leave_exactly_one_ask_and_show_as_dropped_asks(self):
+        ask_question = "should the window be pinned?"
+        notes_and_a_repeat = ("## Fix\nNone\n\n## Ask\n"
+                              f"- `app.py:3` [bug] {ask_question}\n"
+                              f"- `app.py:4` [bug] {ask_question}\n"
+                              "- I checked the other claims against the code and each one holds.\n\n## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": notes_and_a_repeat}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([item["question"] for item in packet["ask"]], [f"`app.py:3` [bug] {ask_question}"])
+        self.assertEqual(len(packet["dropped_asks"]), 2, packet["dropped_asks"])
+        repeat_entry = next(entry for entry in packet["dropped_asks"] if "app.py:4" in entry)
+        note_entry = next(entry for entry in packet["dropped_asks"] if "I checked the other claims" in entry)
+        self.assertTrue(repeat_entry.startswith(f"{review_loop_findings.REPEATED_ASK_REASON}, so it was dropped"),
+                        repeat_entry)
+        self.assertTrue(note_entry.startswith(f"{review_loop_findings.NOTE_ASK_REASON}, so it was dropped"),
+                        note_entry)
+
+    def test_pass_notes_in_several_wordings_and_a_repeated_ask_leave_exactly_one_ask(self):
+        ask_question = "should the window be pinned?"
+        notes = ["(none new; the open ask is left as it was)",
+                 "I checked every claim against the code, and each one holds.",
+                 "Checks run (no defects found):",
+                 "`python3 tests/parallel_tests.py x.py` gave 36 tests, 0 failed."]
+        ask_lines = [f"`app.py:3` [bug] {ask_question}", *notes, f"`app.py:7` [bug] {ask_question}"]
+        ask_section = "".join(f"- {line}\n" for line in ask_lines)
+        report = f"## Fix\nNone\n\n## Ask\n{ask_section}\n## Nit\nNone\n"
+
+        completed = self.run_script({"code-reviewer": [{"result": report}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([item["question"] for item in packet["ask"]], [f"`app.py:3` [bug] {ask_question}"])
+        self.assertEqual(len(packet["dropped_asks"]), len(notes) + 1, packet["dropped_asks"])
+
+    def test_a_report_that_opens_its_ask_section_with_none_new_and_notes_leaves_no_ask(self):
+        report = (FIXTURES / "review_ask_pass_notes_report.md").read_text()
+
+        completed = self.run_script({"code-reviewer": [{"result": report}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(packet["dropped_asks"], [])
 
     def test_two_fixes_at_one_line_are_two_rows_with_distinct_ids(self):
         two_at_one_line = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
@@ -3801,6 +4048,158 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["plan_impacts"], [])
         coder_prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "coder")
         self.assertIn("needs a new column", coder_prompt)
+
+    RULED_FINDING = ("app.py:2 [plan-drift] PLAN-IMPACT: the reworded AC2 is narrower than the ticket. "
+                     "Question for the user: do you accept AC2? acceptance_criteria: AC2.")
+    USER_RULED_HEADER = "user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n"
+    CODER_IMPACT_ON_AC2 = ("SKIPPED 1: needs the user's sign-off.\nPLAN-IMPACT:\n  assumed: AC2 as written\n"
+                           "  found: the reword is narrower\n  cause: plan\n  acceptance_criteria: AC2\n"
+                           "plan-impact: yes")
+    REVIEWER_IMPACT_ON_AC2 = ("## Fix\nNone\n\n## Ask\n- `app.py:2` [plan-drift] PLAN-IMPACT: the reword of AC2 "
+                              "is narrower than the ticket. acceptance_criteria: AC2\n\n## Nit\nNone\n")
+
+    def run_ruled_fix(self, header_extra):
+        return self.run_script({
+            "coder": [{"result": self.CODER_IMPACT_ON_AC2, "edits": {"app.py": APP_FIXED}}, {"result": "Fixed 1."}],
+            "code-reviewer": [{"result": self.REVIEWER_IMPACT_ON_AC2}, {"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header(self.RULED_FINDING) + header_extra)
+
+    def test_a_user_ruled_finding_reaches_the_fix_coder_marked_with_the_ruling_time(self):
+        completed = self.run_ruled_fix(self.USER_RULED_HEADER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        issues = self.fake_calls()[0]["prompt"].partition("## Issues")[2]
+        self.assertIn("[accepted by the user, ruled 2026-11-13 11:32:00Z]", issues)
+
+    def test_a_finding_the_user_did_not_rule_on_is_not_marked(self):
+        completed = self.run_ruled_fix("")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("accepted by the user", self.fake_calls()[0]["prompt"])
+
+    def test_a_user_ruled_line_with_no_time_stops_the_run(self):
+        completed = self.run_ruled_fix("user-ruled: 1\n")
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("expected `user-ruled-at: <time>`", completed.stderr + completed.stdout)
+
+    def test_only_the_ruled_finding_of_two_carries_the_marker(self):
+        other = "app.py:5 [bug] the limit is off by one."
+        header = self.findings_header(self.RULED_FINDING, other) + self.USER_RULED_HEADER
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 2.", "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=header)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        issues = self.fake_calls()[0]["prompt"].partition("## Issues")[2]
+        marked = [line for line in issues.splitlines() if "accepted by the user" in line]
+        self.assertEqual(len(marked), 1, marked)
+        self.assertIn("AC2", marked[0])
+
+    def test_a_coder_plan_impact_on_the_criterion_of_an_accepted_finding_is_still_held(self):
+        completed = self.run_script({
+            "coder": [{"result": self.CODER_IMPACT_ON_AC2, "edits": {"app.py": APP_FIXED}}, {"result": "Fixed 1."}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header(self.RULED_FINDING) + self.USER_RULED_HEADER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([(entry["gate"], entry["adopted"], entry["settled"]) for entry in packet["plan_impacts"]],
+                         [("coder", False, False)])
+        self.assertEqual(len(handback.held_plan_impacts(packet)), 1)
+
+    def test_a_coder_plan_impact_a_handoff_ruling_settles_is_adopted_settled_and_not_held(self):
+        disagreement = (f"`app.py:3` [plan-drift] {PLAN_CHANGE_STATUS}: the fix needs a new column the plan rules "
+                        "out. acceptance_criteria: AC2")
+        block = ("RESOLVED: the user ruled on this disagreement. Review the code against the ruling.\n"
+                 "Decision: Adopt plan change\nThe ruling:\n  add the column\nPLAN-IMPACT:\n"
+                 f"  {disagreement}")
+        footer = "    plan_impact: |\n" + "".join(f"      {line}\n" for line in block.splitlines())
+        coder_impact = ("Fixed 1.\nPLAN-IMPACT:\n  assumed: no new column\n"
+                        "  found: the fix needs a new column the plan rules out\n  cause: plan\n"
+                        "  acceptance_criteria: AC2\nplan-impact: yes")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": coder_impact, "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        }, footer=footer)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        coder_entries = [entry for entry in packet["plan_impacts"] if entry["gate"] == "coder"]
+        self.assertEqual([(entry["adopted"], entry["settled"]) for entry in coder_entries], [(True, True)])
+        self.assertEqual(handback.held_plan_impacts(packet), [])
+
+    def test_a_reviewer_plan_impact_on_a_ruled_criterion_goes_to_the_coder_not_the_asks(self):
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, {"result": "Fixed 1."}],
+            "code-reviewer": [{"result": self.REVIEWER_IMPACT_ON_AC2}, {"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header(self.RULED_FINDING) + self.USER_RULED_HEADER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["plan_impacts"], [])
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
+
+    def test_an_unmarked_plan_drift_ask_on_a_ruled_criterion_is_not_asked_again(self):
+        drift_ask = ("## Fix\nNone\n\n## Ask\n- `app.py:2` [plan-drift] does AC2 still hold for deletes? "
+                     "acceptance_criteria: AC2\n\n## Nit\nNone\n")
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": drift_ask}, {"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header(self.RULED_FINDING) + self.USER_RULED_HEADER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+
+    def test_a_plan_drift_ask_beside_a_plan_impact_on_one_criterion_logs_no_ask_row(self):
+        both = ("## Fix\nNone\n\n## Ask\n"
+                "- `app.py:2` [plan-drift] PLAN-IMPACT: the reword of AC2 is narrower than the ticket. "
+                "acceptance_criteria: AC2\n"
+                "- `app.py:5` [plan-drift] does AC2 still hold for deletes? acceptance_criteria: AC2\n\n"
+                "## Nit\nNone\n")
+
+        completed = self.run_script({"code-reviewer": [{"result": both}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        dropped_drift = [entry for entry in packet["dropped_asks"] if "still hold for deletes" in entry]
+        self.assertEqual(len(dropped_drift), 1, packet["dropped_asks"])
+        ask_rows = [row for row in self.finding_rows() if row["disposition"] == "ask"]
+        self.assertEqual([row for row in ask_rows if "still hold for deletes" in str(row)], [], ask_rows)
+
+    def test_the_same_plan_impacts_are_held_when_the_user_ruled_on_nothing(self):
+        completed = self.run_ruled_fix("")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual([entry["gate"] for entry in packet["plan_impacts"]], ["coder", "code-reviewer"])
+
+    def test_a_user_ruled_line_that_names_no_finding_stops_the_run(self):
+        completed = self.run_ruled_fix("user-ruled: 4\nuser-ruled-at: 2026-11-13 11:32:00Z\n")
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("user-ruled", completed.stderr + completed.stdout)
+
+    def test_a_user_ruled_word_that_is_no_finding_number_stops_the_run_naming_the_word(self):
+        words = {"letters": "abc", "negative": "-1", "non-ascii digit": "٣", "zero": "0"}
+        for label, word in words.items():
+            with self.subTest(label):
+                completed = self.run_ruled_fix(f"user-ruled: {word}\nuser-ruled-at: 2026-11-13 11:32:00Z\n")
+
+                self.assertNotEqual(completed.returncode, 0, label)
+                self.assertIn(f"holds {word!r}", completed.stderr + completed.stdout)
 
     def test_a_plan_impact_first_raised_after_the_ruling_is_held_and_never_sent_to_the_coder(self):
         new_impact = ("## Fix\nNone\n\n## Ask\n- `app.py:7` [plan-drift] "
@@ -4460,7 +4859,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
                       "**The existing test sets one field.**\n"
                       "`util.test.py:1` only checks one value.\n"
                       "- Fix: check the second value too.\n")
-        disposition = json.dumps({"fix": [], "ask": ["`util.py:1` add a test for the limit"], "nit": []})
+        asked = "`util.py:1` should the limit have a test? change: add a test for it"
+        disposition = json.dumps({"fix": [], "ask": [asked], "nit": []})
 
         completed = self.run_script({
             "code-reviewer": [{"result": CLEAN_REVIEW}] * 2,

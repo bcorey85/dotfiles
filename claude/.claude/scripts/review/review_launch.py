@@ -19,12 +19,16 @@ import pathlib
 import subprocess
 import sys
 import time
+from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 import code_wait
 import handback_hook
+import handback_store
+import plan_format
 import process_group
 import review_fix_state
+import review_user_ruled
 import reviewer_dispatch
 import script_utils
 from review_loop_plan import review_files
@@ -37,6 +41,8 @@ from review_loop_prompt_file import (
     NO_REVIEW_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_MAIN,
+    USER_RULED_AT_KEY,
+    USER_RULED_HEADER_KEY,
     YES,
     loop_script_command,
     render_prompt,
@@ -170,6 +176,10 @@ def header_pairs(options, base, paths, findings_file):
         pairs.append((FILES_KEY, LIST_SEPARATOR.join(paths)))
     if findings_file:
         pairs.append((FINDINGS_KEY, str(findings_file)))
+    if findings_file and options.user_ruled:
+        pairs.append((USER_RULED_HEADER_KEY, LIST_SEPARATOR.join(str(number) for number in options.user_ruled)))
+        ruled_at = plan_format.ruled_at_now()
+        pairs.append((USER_RULED_AT_KEY, ruled_at))
     if options.no_review:
         pairs.append((NO_REVIEW_KEY, YES))
     if options.fast:
@@ -179,7 +189,9 @@ def header_pairs(options, base, paths, findings_file):
     return pairs
 
 
-def handoff_text(options, paths):
+def handoff_text(options, paths, findings):
+    """The handoff: the --handoff file, else the files named, else the fix brief when `findings` (the findings left
+    after the leave-out) are to be fixed, else the default."""
     if options.handoff:
         try:
             return pathlib.Path(options.handoff).read_text()
@@ -187,7 +199,7 @@ def handoff_text(options, paths):
             raise LaunchError(f"--handoff {options.handoff}: {error}") from error
     if paths:
         return "Review only these files: " + LIST_SEPARATOR.join(paths) + "."
-    if options.fix:
+    if options.fix and findings:
         return "Fix the findings, then review the fix."
     return DEFAULT_HANDOFF
 
@@ -236,6 +248,13 @@ def relaunch_handoff(args):
     return pathlib.Path(args[args.index("--handoff") + 1])
 
 
+def relaunch_repo(args):
+    """The repo the relaunch flags name after `--repo`, or None when they carry no `--repo`."""
+    if "--repo" not in args:
+        return None
+    return args[args.index("--repo") + 1]
+
+
 def relaunch_args_with_handoff(args, handoff_file):
     """The relaunch flags with their `--handoff` pointed at handoff_file."""
     handoff_index = args.index("--handoff")
@@ -255,10 +274,11 @@ def read_relaunch_args(launch_file):
 
 def user_ruled_texts(user_ruled, findings):
     """The texts of the findings the --user-ruled numbers name. A number past the findings stops the launch."""
-    for number in user_ruled:
-        if not 1 <= number <= len(findings):
-            raise LaunchError(f"--user-ruled {number} names no finding: the findings file holds {len(findings)}")
-    return [findings[number - 1] for number in user_ruled]
+    try:
+        return script_utils.numbered_items(user_ruled, findings)
+    except script_utils.ItemNumberError as error:
+        raise LaunchError(f"--user-ruled {error.number} names no finding: the findings file holds "
+                          f"{error.item_count}") from error
 
 
 def read_user_ruled(launch_file):
@@ -294,9 +314,10 @@ def consume_run_folder_inputs(repo, options):
 def loop_repo(launch_file):
     """The repo a loop's launch record names: the --repo that `relaunch_args` always puts in its relaunch flags."""
     args = read_relaunch_args(launch_file)
-    if "--repo" not in args:
+    repo = relaunch_repo(args)
+    if repo is None:
         raise LaunchError(f"--launch {launch_file}: {RELAUNCH_KEY} names no --repo")
-    return pathlib.Path(args[args.index("--repo") + 1]).resolve()
+    return pathlib.Path(repo).resolve()
 
 
 def wait_for_exit(pid):
@@ -337,6 +358,31 @@ def stop_earlier_loops(state_dir, repo):
         stop_loop_if_live(loop_dir, pid, repo)
 
 
+class FixRunFindings(NamedTuple):
+    findings: list
+    user_ruled_numbers: list
+    user_ruled_texts: list
+    left_out: list
+
+
+def fix_run_findings(options, repo):
+    """The fix run's findings with the plan impacts a recorded ruling settled left out, the numbers of the findings
+    the user ruled on after the renumbering, their texts, and the findings left out. Prints each finding left out."""
+    if not options.fix:
+        return FixRunFindings([], [], [], [])
+    findings = read_findings_file(options.fix)
+    # Called only to check the numbers: a --user-ruled number that names no finding stops the launch.
+    user_ruled_texts(options.user_ruled, findings)
+    rows_repo = handback_store.ruled_rows_repo(repo)
+    rulings = review_user_ruled.session_rulings(rows_repo)
+    findings, user_ruled_numbers, left_out = review_user_ruled.leave_out_ruled_impacts(
+        findings, options.user_ruled, rulings)
+    for text in left_out:
+        print(f"Left out of the fix run (a ruling already settled this plan impact): {text}")
+    ruled_texts = user_ruled_texts(user_ruled_numbers, findings)
+    return FixRunFindings(findings, user_ruled_numbers, ruled_texts, left_out)
+
+
 def command_launch(argv, loop_script):
     """Runs the launch. The skill runs it as a background command, so its completion is the wake-up."""
     options = launch_arguments(argv)
@@ -354,14 +400,18 @@ def command_launch(argv, loop_script):
         raise LaunchError(f"{options.repo or os.getcwd()} is not inside a git work tree")
     repo = found_root.resolve()
 
-    findings = read_findings_file(options.fix) if options.fix else []
-    user_ruled = user_ruled_texts(options.user_ruled, findings)
+    found = fix_run_findings(options, repo)
+    findings, user_ruled, left_out = found.findings, found.user_ruled_texts, found.left_out
+    options.user_ruled = found.user_ruled_numbers
     base = resolved_base(repo, options.base) if options.base else ""
     paths = repo_paths(repo, options.files)
     check_files_exist(repo, paths, base)
-    handoff = handoff_text(options, paths)
+    handoff = handoff_text(options, paths, findings)
     in_scope = review_files(repo, base, paths)
-    if not options.fix and not in_scope:
+    if options.fix and left_out and not findings and (options.no_review or not in_scope):
+        raise LaunchError(f"every finding in {options.fix} was left out: a recorded ruling already settled each plan "
+                          "impact, and there is nothing else to fix or review. Nothing was launched.")
+    if not findings and not in_scope:
         since = f"since {options.base}" if base else "against HEAD"
         raise LaunchError(f"the working tree of {repo} has no changes {since}, so the review scope is empty and no "
                           "reviewer would read anything. Nothing was launched. To review committed work, launch "

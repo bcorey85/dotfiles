@@ -80,8 +80,9 @@ STATUS_REQUIRES = {PLAN_IMPACT_STATUS: ("plan_impact", "empty"), "critical-block
                    CAP_REACHED: ("findings_remaining", "empty"),
                    DEFERRED: ("findings_remaining", "missing or empty")}
 BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
-CLASSES = ["bug", "smell", "duplication", "complexity", "plan-drift", "test-gap", "weak-assertion", "security", "perf",
-           "correctness", "docs", "other"]
+PLAN_DRIFT_CLASS = "plan-drift"
+CLASSES = ["bug", "smell", "duplication", "complexity", PLAN_DRIFT_CLASS, "test-gap", "weak-assertion", "security",
+           "perf", "correctness", "docs", "other"]
 REVIEW_LOOP = "review-loop"
 DEFAULT_GATE = "code-reviewer"
 
@@ -344,13 +345,21 @@ def fill_fixed_finding(item):
 
 
 def normalize_plan_impact(item):
-    """Fills the defaults of a plan impact entry: it changes a criterion, is not adopted, is not applied to the tree
-    and has a plan cause unless it says otherwise. The flags read as booleans, so `"false"` is false."""
-    for flag, default in (("ac_change", True), ("adopted", False), ("applied", False)):
+    """Fills the defaults of a plan impact entry: it changes a criterion, is not adopted, is not applied to the tree,
+    is not settled by an earlier ruling and has a plan cause unless it says otherwise. The flags read as booleans, so
+    `"false"` is false."""
+    for flag, default in (("ac_change", True), ("adopted", False), ("applied", False), ("settled", False)):
         value = item.get(flag, default)
         item[flag] = value.strip().lower() == "true" if isinstance(value, str) else bool(value)
     item["cause"] = str(item.get("cause") or PLAN_CAUSE).strip().lower()
     item.setdefault("gate", DEFAULT_GATE)
+
+
+def rule_adopted_plan_impacts(packet):
+    """The packet's plan impacts adopted by rule, which print a Plan Deviations line. A settled one, a different change
+    on a criterion an earlier ruling covers, is adopted so it never holds the review. It is never printed and logs no
+    deviation."""
+    return [item for item in packet["plan_impacts"] if item["adopted"] and not item["settled"]]
 
 
 def held_plan_impacts(packet):

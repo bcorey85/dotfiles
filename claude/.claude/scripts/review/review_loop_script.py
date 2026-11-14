@@ -75,6 +75,7 @@ import review_loop_held
 import reviewer_dispatch
 import script_utils
 from capped_review import DEFERRED
+from coder_report import open_questions
 from finding_record import parse_finding
 from review_loop_calls import (
     CALL_TIMEOUT_SECONDS,
@@ -113,6 +114,7 @@ from review_loop_prompt_file import (
 from review_loop_prompts import coder_prompt, reviewer_prompt
 from review_loop_ruled import RuledFindings
 from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
+from review_user_ruled import reasked_findings
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
@@ -773,6 +775,8 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
             self.record_coder_plan_impact(report, changed)
 
         skips = skipped_issues(report, len(findings))
+        reasked = reasked_findings(findings, open_questions(report), self.ruled_texts)
+        skips = {**reasked, **skips}
         skipped = [{"item": findings[number - 1], "reason": line, "given": True}
                    for number, line in sorted(skips.items())]
         kept = [item for number, item in enumerate(findings, 1) if number not in skips]

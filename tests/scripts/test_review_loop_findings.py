@@ -173,6 +173,36 @@ class RuledImpactTest(unittest.TestCase):
 
         self.assertTrue(review_loop_findings.ruled_plan_impact(drift, self.RULED))
 
+    ACCEPTED_DRIFT = "src/a.py:3 [plan-drift] Proposed change: reword AC2 acceptance_criteria: AC2"
+
+    def test_a_refiled_plan_drift_finding_on_the_same_line_and_ids_as_an_accepted_one_is_ruled(self):
+        refiled = ("src/a.py:3 [plan-drift] the reworded criterion now drops deletes, which the ticket asks for, so "
+                   "the wording needs another look before it ships. acceptance_criteria: AC2")
+
+        self.assertTrue(review_loop_findings.ruled_plan_impact(refiled, [], [self.ACCEPTED_DRIFT]))
+
+    def test_a_plan_drift_finding_on_another_line_or_with_other_ids_is_not_ruled_by_an_accepted_one(self):
+        other_line = "src/a.py:9 [plan-drift] the criterion drops deletes, so look again. acceptance_criteria: AC2"
+        other_ids = "src/a.py:3 [plan-drift] the criterion drops deletes, so look again. acceptance_criteria: AC2, AC3"
+
+        self.assertFalse(review_loop_findings.ruled_plan_impact(other_line, [], [self.ACCEPTED_DRIFT]))
+        self.assertFalse(review_loop_findings.ruled_plan_impact(other_ids, [], [self.ACCEPTED_DRIFT]))
+
+    def test_two_plan_drift_findings_on_one_line_that_name_no_criterion_are_not_ruled(self):
+        accepted = "src/a.py:3 [plan-drift] Proposed change: reword the criterion"
+        refiled = "src/a.py:3 [plan-drift] the criterion drops deletes, so look again."
+
+        self.assertFalse(review_loop_findings.ruled_plan_impact(refiled, [], [accepted]))
+
+    def test_a_finding_of_another_class_on_the_accepted_line_with_the_same_ids_is_not_ruled(self):
+        bug = "src/a.py:3 [bug] the criterion drops deletes. acceptance_criteria: AC2"
+        refiled_drift = ("src/a.py:3 [plan-drift] the reworded criterion now drops deletes, which the ticket asks "
+                         "for, so the wording needs another look before it ships. acceptance_criteria: AC2")
+        bug_accepted = "src/a.py:3 [bug] Proposed change: cap the retries acceptance_criteria: AC2"
+
+        self.assertFalse(review_loop_findings.ruled_plan_impact(bug, [], [self.ACCEPTED_DRIFT]))
+        self.assertFalse(review_loop_findings.ruled_plan_impact(refiled_drift, [], [bug_accepted]))
+
     def test_a_plan_impact_names_only_the_ids_on_its_answer_line(self):
         impact = "PLAN-IMPACT: the reworded AC2 drops deletes"
 

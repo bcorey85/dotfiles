@@ -33,7 +33,13 @@ class RuledFindings:
         # packet
         self.dropped_asks = []
         self.user_ruled = []  # the texts of the findings the user accepted, which a fix-first run applies
+        self.session_ruled = []  # the texts of the findings a session ruled on; a coder's re-ask of one is a skip
         self.user_ruled_at = ""  # when the fix run was launched, the ruling's time
+
+    @property
+    def ruled_texts(self):
+        """The texts of the findings the user or a session ruled on."""
+        return [*self.user_ruled, *self.session_ruled]
 
     def drop_asks(self, asks, reason):
         """Files each ask not yet dropped under `reason`, for the packet's dropped asks."""
@@ -88,11 +94,11 @@ class RuledFindings:
 
     def drops_repeated_ask(self, item, also_earlier=()):
         """Whether `item` repeats an earlier ask (or one of `also_earlier`), a plan impact on record, or a ruled
-        text: the handoff's ruling or a finding the user accepted, either of which settles a plan-drift ask on its
-        criterion ids. A repeat goes to the dropped asks."""
+        text: the handoff's ruling or a finding the user or a session ruled on, either of which settles a plan-drift
+        ask on its criterion ids. A repeat goes to the dropped asks."""
         impact_texts = [impact["text"] for impact in self.plan_impacts]
-        ruled_texts = [*self.resolved_texts, *self.user_ruled]
-        if not repeats_an_ask(item, [*self.asks, *also_earlier], impact_texts, ruled_texts):
+        settling_texts = [*self.resolved_texts, *self.ruled_texts]
+        if not repeats_an_ask(item, [*self.asks, *also_earlier], impact_texts, settling_texts):
             return False
         self.drop_asks([item], REPEATED_ASK_REASON)
         return True
@@ -109,11 +115,11 @@ class RuledFindings:
     def route_plan_items(self, agent, items):
         """(the items the coder fixes this round, the items held for a ruling). A plan impact that changes no
         acceptance criterion is adopted by rule and fixed like any finding; one that changes a criterion, or says
-        nothing, is held for the end. An item the handoff's ruling, a carried finding or a finding the user accepted
-        settles (see ruled_plan_impact) is a plain fix; a new one takes the path above."""
+        nothing, is held for the end. An item the handoff's ruling, a carried finding or a finding the user or a session
+        ruled on settles (see ruled_plan_impact) is a plain fix; a new one takes the path above."""
         to_coder, ruling_held = [], []
         for item in items:
-            if ruled_plan_impact(item.text, self.resolved_texts, self.user_ruled):
+            if ruled_plan_impact(item.text, self.resolved_texts, self.ruled_texts):
                 to_coder.append(item)
                 continue
 
@@ -126,12 +132,12 @@ class RuledFindings:
     def record_coder_plan_impact(self, report, changed):
         """A coder's PLAN-IMPACT report joins the plan impacts. Its edits stay and the loop goes on. A toolkit cause,
         or a cause that does not parse, is never adopted. `changed` holds the files the coder's edits changed. Returns
-        True when the impact is held for a ruling. An impact that a ruling or a finding the user accepted settles is
-        recorded as adopted and settled: it is never printed, logs no deviation, and is not held."""
+        True when the impact is held for a ruling. An impact that a ruling or a finding the user or a session ruled
+        on settles is recorded as adopted and settled: it is never printed, logs no deviation, and is not held."""
         text = coder_report.plan_impact_block(report) or report.strip()
         cause = plan_format.stopping_plan_impact_cause([text], cause_required=True)
         ac_change = plan_format.changes_acceptance_criteria(text)
-        settled = cause == plan_format.PLAN_CAUSE and ruled_plan_impact(text, self.resolved_texts, self.user_ruled)
+        settled = cause == plan_format.PLAN_CAUSE and ruled_plan_impact(text, self.resolved_texts, self.ruled_texts)
         adopted = settled or (not ac_change and cause == plan_format.PLAN_CAUSE)
         self.record_plan_impact({"text": text, "gate": "coder", "ac_change": ac_change, "cause": cause,
                                  "adopted": adopted, "applied": bool(changed), "settled": settled})

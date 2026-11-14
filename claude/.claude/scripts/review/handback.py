@@ -272,9 +272,9 @@ def entry_locations(item):
     """Every (path, line) that a list entry names."""
     finding_text = str(item.get("finding") or "")
     item_summary = str(item.get("item") or "")
-    texts = [str(item.get("file_line") or ""), *script_utils.PATH_LINE.findall(finding_text),
-             *script_utils.PATH_LINE.findall(item_summary)]
-    return [script_utils.split_location(text) for text in texts if text.strip()]
+    file_line = str(item.get("file_line") or "")
+    locations = [script_utils.split_location(file_line)] if file_line.strip() else []
+    return [*locations, *script_utils.locations_named(finding_text), *script_utils.locations_named(item_summary)]
 
 
 def first_token(text):

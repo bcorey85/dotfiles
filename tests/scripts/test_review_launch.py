@@ -252,6 +252,44 @@ class ReviewLaunchTest(unittest.TestCase):
         loop_dir = self.loop_dirs(self.repo)[-1]
         self.assertEqual((loop_dir / "handoff.txt").read_text(), review_launch.DEFAULT_HANDOFF)
 
+    def test_a_session_ruled_flag_reaches_the_prompt_header_of_the_fix_run(self):
+        findings_file = self.temp_root / "two-findings.md"
+        findings_file.write_text("- README.md:1 first bug\n- README.md:2 second bug\n")
+
+        self.launch("--fix", str(findings_file), "--session-ruled", "2")
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        prompt = prompt_file.read_text()
+        self.assertRegex(prompt, r"(?m)^session-ruled: 2$")
+        self.assertNotIn("user-ruled", prompt)
+
+    def test_the_session_ruled_header_follows_a_ruled_impact_dropped_before_it(self):
+        impact = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        store = self.temp_root / "store"
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(store)}):
+            handback_store.record_ruled_impact(SESSION, impact, os.path.realpath(self.repo), finding_text=impact)
+        findings_file = self.temp_root / "impact-then-bug.md"
+        findings_file.write_text(f"- {impact}\n- README.md:2 second bug\n")
+
+        self.launch("--fix", str(findings_file), "--session-ruled", "2")
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), r"(?m)^session-ruled: 1$")
+
+    def test_a_session_ruled_flag_with_no_fix_stops_the_launch(self):
+        with self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.launch_arguments(["--session-ruled", "1"])
+        self.assertIn("needs --fix", str(raised.exception))
+
+    def test_a_session_ruled_number_past_the_findings_stops_the_launch_like_a_user_ruled_one(self):
+        findings_file = self.temp_root / "one-finding.md"
+        findings_file.write_text("- README.md:1 only bug\n")
+        for flag in ("--user-ruled", "--session-ruled"):
+            options = review_launch.launch_arguments(["--fix", str(findings_file), flag, "3"])
+            with self.assertRaises(review_launch.LaunchError) as raised:
+                review_launch.fix_run_findings(options, self.repo)
+            self.assertIn(f"{flag} 3 names no finding", str(raised.exception))
+
     def plant_loop(self, repo, agent_id, record_repo, command_names_agent=True):
         loop_dir = repo / ".git" / "review-script" / reviewer_dispatch.LOOP_FOLDER / agent_id
         loop_dir.mkdir(parents=True)
@@ -268,16 +306,25 @@ class ReviewLaunchTest(unittest.TestCase):
 class UserRuledHeaderTest(unittest.TestCase):
     def test_the_user_ruled_time_is_the_plan_ruling_form_the_deviation_entry_takes(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[1])
+                                     iter=None, user_ruled=[1], session_ruled=[])
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
         self.assertRegex(pairs["user-ruled-at"], r"^\d{4}-\d\d-\d\d \d\d:\d\d$")
         self.assertEqual(pairs["user-ruled"], "1")
 
+    def test_session_ruled_numbers_are_written_as_a_header_pair_with_no_ruling_time(self):
+        options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
+                                     iter=None, user_ruled=[], session_ruled=[2, 3])
+
+        pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
+
+        self.assertEqual(pairs["session-ruled"], "2, 3")
+        self.assertNotIn("user-ruled-at", pairs)
+
     def test_no_user_ruled_pair_is_written_without_user_ruled_numbers(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[])
+                                     iter=None, user_ruled=[], session_ruled=[])
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 

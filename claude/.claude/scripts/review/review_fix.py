@@ -22,8 +22,9 @@ still judges.
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
-  review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--user-ruled <N>]...]
-                       [--base <ref>] [--file <path>]... [--handoff <file>] [--test <cmd>]... [--fast|--deep]
+  review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--user-ruled <N>]...
+                       [--session-ruled <N>]...] [--base <ref>] [--file <path>]... [--handoff <file>]
+                       [--test <cmd>]... [--fast|--deep]
                        [--iter N] [--lane <lane>] [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch
                                          --help` lists the flags). It returns when the loop asks for reviewers
@@ -52,7 +53,8 @@ still judges.
                                          --repo <repo> --detach`. Both launch lines carry `--user-ruled <N>` for
                                          each finding N of the findings file whose ask the user answered
                                          (asks-done or --correct --by user); a finding only a session
-                                         answered carries none, and a session correction that changes a
+                                         answered carries `--session-ruled <N>` instead (the coder's re-ask of it is
+                                         a skip), and a session correction that changes a
                                          user-ruled ask's answer drops its `--user-ruled <N>`.
                                          An accepted or rejected outcome on an ask whose proposed change is conditional
                                          ("if not confirmed, revert X") is refused with exit 2 and nothing logged:
@@ -107,6 +109,7 @@ from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
 from review_fix_asks import (
     command_asks_done,
+    conditional_ask_numbers,
     findings_covered_by_impact,
     missing_packet_repo_reason,
     packet_repo,
@@ -295,11 +298,18 @@ def asks_done_line(asks, state):
     when another packet still waits, so the command runs as printed."""
     packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
     outcome_slots = " ".join(f"<outcome-{number}>" for number in range(1, len(asks) + 1))
-    return (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
+    line = (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
             f"--by user {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
             f"accepted: {review_asks.ACCEPT_MEANS} | rejected: {review_asks.REJECT_MEANS} | "
             f"'{review_asks.MODIFIED}:<the user's change in one line>', quoted as one shell "
             "word: make that change instead; an optional ':<one line note>' after accepted or rejected is not stored)")
+    conditional = conditional_ask_numbers(asks)
+    if not conditional:
+        return line
+    numbers = ", ".join(str(number) for number in conditional)
+    noun = "ask" if len(conditional) == 1 else "asks"
+    return (f"{line}. Answer {noun} {numbers} with '{review_asks.MODIFIED}:<change with no condition>': "
+            "accepted or rejected is refused on a conditional change")
 
 
 def present_packet_asks(packet, state):

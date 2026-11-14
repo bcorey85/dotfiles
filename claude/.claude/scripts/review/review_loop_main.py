@@ -27,11 +27,13 @@ from review_loop_prompt_file import (
     REVIEWER_MODEL_KEY,
     REVIEWERS_HEADLESS,
     REVIEWERS_MAIN,
+    SESSION_RULED_HEADER_KEY,
     USER_RULED_AT_KEY,
+    USER_RULED_HEADER_KEY,
     YES,
     header_iter,
     header_list,
-    header_user_ruled,
+    header_ruled,
     read_findings,
     read_prompt,
     reviewer_brief,
@@ -132,8 +134,9 @@ def run_loop(request):
     loop, check_command = build_loop(request)
     try:
         findings = read_findings(header)
-        loop.user_ruled = header_user_ruled(header, findings)
+        loop.user_ruled = header_ruled(header, findings, USER_RULED_HEADER_KEY)
         loop.user_ruled_at = header.get(USER_RULED_AT_KEY, "")
+        loop.session_ruled = header_ruled(header, findings, SESSION_RULED_HEADER_KEY)
         first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
     except LaterPhaseEditError as error:

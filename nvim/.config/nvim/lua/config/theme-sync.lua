@@ -119,7 +119,7 @@ local FAMILIES = {
     own_comment_contrast = true,
     accents = {
       -- H1 takes the exit magenta; H2-H6 the bind violet.
-      dark = { heading1 = "#e36099", heading = "#8990da", bullet = "#b1b5bc" },
+      dark = { heading1 = "#d6708c", heading = "#8990da", bullet = "#a5a9b0" },
       light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
     },
   },
@@ -236,6 +236,17 @@ local FAMILIES = {
     accents = {
       dark = { heading1 = "#ff5faf", heading = "#5fafd7" },
       light = { heading1 = "#d70087", heading = "#005faf" },
+    },
+  },
+  ["vitesse"] = {
+    -- bcorey85/vitesse.nvim: one colorscheme "vitesse" follows
+    -- vim.o.background and sets colors_name "vitesse" in both modes.
+    -- Headings are the theme's own: its primary green at every level.
+    schemes = { dark = "vitesse", light = "vitesse" },
+    colors_name = "vitesse",
+    accents = {
+      dark = { heading1 = "#4d9375", heading = "#4d9375" },
+      light = { heading1 = "#1c6b48", heading = "#1c6b48" },
     },
   },
   ["hybrid"] = {

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-949 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
+954 changes, 22 with a measured gain, 268 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-13, [Phase review asks need a ruling before the commit](notes/2026-11-13-phase-review-asks-need-a-ruling-before-the-commit.md).
+Latest change: 2026-11-13, [Review loop: an ask the session rejected is dropped when a later round raises it again](notes/2026-11-13-review-loop-an-ask-the-session-rejected-is-dropped-when-raised-again.md).
 
 ## Top gains
 

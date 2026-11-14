@@ -485,17 +485,17 @@ grey = "#9893a5"
 
 # dredge (bcorey85/dredge.nvim).
 [palettes.dredge-dark]
-red = "#e1645a"
+red = "#d46e65"
 orange = "#da7e4b"
 yellow = "#c7a459"
 green = "#8fa338"
 blue = "#429ace"
 branch = "#858dd8"
 teal = "#4baba2"
-purple = "#e6619a"
-fg = "#b6c3cb"
-bg = "#111517"
-grey = "#b1b5bc"
+purple = "#d8728d"
+fg = "#b7bbbd"
+bg = "#191f25"
+grey = "#a5a9b0"
 
 [palettes.dredge-light]
 red = "#a32822"
@@ -700,6 +700,34 @@ purple = "#8959a8"
 fg = "#4d4d4c"
 bg = "#ffffff"
 grey = "#70726e"
+
+# vitesse (bcorey85/vitesse.nvim, a port of antfu's Vitesse). The grey is its
+# dimmed foreground.
+[palettes.vitesse-dark]
+red = "#cb7676"
+orange = "#d4976c"
+yellow = "#e6cc77"
+green = "#4d9375"
+blue = "#6394bf"
+branch = "#6394bf"
+teal = "#5eaab5"
+purple = "#d9739f"
+fg = "#cecabe"
+bg = "#121212"
+grey = "#858480"
+
+[palettes.vitesse-light]
+red = "#ab5959"
+orange = "#a65e2b"
+yellow = "#bda437"
+green = "#1e754f"
+blue = "#296aa3"
+branch = "#296aa3"
+teal = "#2993a3"
+purple = "#a13865"
+fg = "#393a34"
+bg = "#ffffff"
+grey = "#8f908c"
 
 # rose-pine (rose-pine/neovim): main dark, dawn light. Green is pine, blue and
 # teal are foam, orange is rose.

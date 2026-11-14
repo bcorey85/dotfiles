@@ -1194,5 +1194,26 @@ class ManualFormatHelpersTest(unittest.TestCase):
         self.assertEqual([("2", 5, 8), ("1", 1, 4)], cited)
 
 
+class CriteriaIdsTest(unittest.TestCase):
+    def test_ids_come_from_the_acceptance_criteria_line_else_the_bare_ids(self):
+        self.assertEqual(plan_format.criteria_ids("x\n  acceptance_criteria: AC2, AC10; cause: plan"),
+                         frozenset({"AC2", "AC10"}))
+        self.assertEqual(plan_format.criteria_ids("the reworded AC2 and AC3 hold"), frozenset({"AC2", "AC3"}))
+        self.assertEqual(plan_format.criteria_ids("acceptance_criteria: none\nAC4 is mentioned"), frozenset())
+        self.assertEqual(plan_format.criteria_ids("acceptance_criteria: none\nacceptance_criteria: AC4"),
+                         frozenset({"AC4"}))
+        self.assertEqual(plan_format.criteria_ids("acceptance_criteria: AC1, AC2\nacceptance_criteria: AC3"),
+                         frozenset({"AC1", "AC2", "AC3"}))
+
+    def test_criterion_ids_in_reads_a_bare_upper_case_id_and_skips_names_and_ticket_ids(self):
+        text = "AC1 holds: see ac3-evidence.md; ticket AC5 also; test_ac1_x"
+
+        self.assertEqual(plan_format.criterion_ids_in(text), ["AC1"])
+
+    def test_answers_only_names_no_id_for_a_text_without_the_line(self):
+        self.assertEqual(plan_format.criteria_ids("the reworded AC2 holds", answers_only=True), frozenset())
+        self.assertEqual(plan_format.criteria_ids("acceptance_criteria: AC2", answers_only=True), frozenset({"AC2"}))
+
+
 if __name__ == "__main__":
     unittest.main()

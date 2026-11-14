@@ -105,7 +105,15 @@ import review_user_ruled
 import script_utils
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
-from review_fix_asks import command_asks_done, relaunch_line
+from review_fix_asks import (
+    command_asks_done,
+    findings_covered_by_impact,
+    missing_packet_repo_reason,
+    packet_repo,
+    relaunch_line,
+    required_packet_repo,
+)
+from review_fix_plan_impacts import APPLIED_KEEP_LINE, PLAN_ARG_NOTE, present_plan_impacts
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_LOGGER,
@@ -129,7 +137,6 @@ from saved_handback import NoHandbackError, dispatched_repo, read_message
 from script_utils import one_line, run_command, split_location
 
 SOURCES = ["conversation", "cc", "handoff"]
-PLAN_ARG_NOTE = "--plan <the plan path, when the handoff names one>"
 DECIDE_USAGE = f"{plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}"
 NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
 LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
@@ -267,90 +274,6 @@ def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
                  "Stop. Do not re-dispatch again. Tell the user no reviewer ran, so the commit gate stays closed.")
     print_action("stop-no-reviewer", *lines)
     return 2
-
-
-def plan_impact_question_lines(plan_impact, packet):
-    """The lines that tell the session to rule on a plan-impact itself or put one question to the user, depending on
-    the criteria owner, and what to run on the answer."""
-    return [
-        f"When the run has a plan, first run `{plan_format.PLAN_CHECK_OWNER_COMMAND}` and read `owner`. Owner "
-        "`session`: rule yourself with `decide ... --by session`, no question. Owner `plan`: rule yourself only while "
-        f"{plan_format.PLAN_OWNER_RULE_CONDITION}, else ask the user.",
-        "Owner `user`, owner `plan` with that condition not met, or no plan: call AskUserQuestion now. Without "
-        "that tool, ask the same question in plain text, list the options numbered, end the turn and wait for the "
-        "reply. Do not re-dispatch and do not triage this as an ask. Question: assumed, then found, then what "
-        "changes, taken from this block:",
-        plan_impact,
-        f"Options, in this order: {' / '.join(plan_format.PLAN_IMPACT_OPTIONS)}.",
-        "Map the answer, picked or typed (or your own ruling when you rule yourself), to adopt, keep or discuss. "
-        "For adopt or keep, put the user's words, or your ruling under `--by session`, in --ruling; for discuss, "
-        "run `decide discuss`.",
-        f"Then run: {REVIEW_FIX_COMMAND} {plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}",
-        plan_format.DECIDE_BY_NOTE,
-        f"Counters held for the re-dispatch: iter={packet['iter']} "
-        f"spec_iter={packet['spec_iter'] if packet['spec_iter'] is not None else 'absent'}",
-    ]
-
-
-def plan_impact_deviation_lines(adopted):
-    """The `## Plan Deviations` lines for the plan impacts adopted by rule, no question asked."""
-    owner = plan_format.SESSION_RULING_OWNER
-    ruled_at = plan_format.ruled_at_now()
-    choice = plan_format.DECISION_WORDS["adopt"]
-    lines = []
-    for impact in adopted:
-        ruling = plan_format.below_criteria_ruling(impact["text"])
-        lines += plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, impact["text"])
-    return lines
-
-
-APPLIED_IMPACT_LINE = ("A plan impact that changes an acceptance criterion came from a coder whose edits are already "
-                       "in the tree. Keeping the plan as written means reverting those edits; adopting the change "
-                       "keeps them.")
-APPLIED_KEEP_LINE = ("The plan stays as written: the coder's edits for the held plan impact are in the tree, so revert "
-                     "them, and nothing is re-dispatched.")
-
-
-def present_plan_impacts(packet, state):
-    """Prints the packet's plan impacts once, after the review result. The loop never stopped for them. An adopted one
-    prints as a plan deviation line to add, with no question. A toolkit-cause one prints as a toolkit fault, with no
-    question. The ones that change an acceptance criterion go to the user in one closing question; the fix waits for the
-    answer."""
-    impacts = packet["plan_impacts"]
-    if not impacts:
-        return
-
-    adopted = [impact for impact in impacts if impact["adopted"]]
-    toolkit = handback.toolkit_plan_impacts(packet)
-    held = handback.held_plan_impacts(packet)
-    lines = []
-    if adopted:
-        lines += ["Plan impacts adopted by rule (no acceptance criterion changes, so the code wins; no one was asked). "
-                  + ADD_DEVIATIONS_LINE,
-                  *plan_impact_deviation_lines(adopted)]
-    for impact in toolkit:
-        lines += [f"Toolkit fault, not a plan change (the {impact['gate']} {plan_format.cause_stop(impact['cause'])}):",
-                  impact["text"]]
-    if not held:
-        print_action("show-plan-impacts", *lines)
-        return
-
-    held_text = handback.held_plan_impact_text(held)
-    applied = any(impact["applied"] for impact in held)
-    state.update({"plan_impact": held_text, "plan_impact_held": True, "plan_impact_applied": applied,
-                  "carried_findings": [*handback.carried_findings(packet),
-                                       *[f"plan impact: {one_line(impact['text'], None)}" for impact in held]]})
-    if state.get("stage") != "asks":
-        state["stage"] = "plan-impact"
-    save_fix_state(state)
-    if applied:
-        lines += [APPLIED_IMPACT_LINE, "Ask once, now that the review is done."]
-    else:
-        lines += ["Plan impacts that change an acceptance criterion stay unapplied until the user signs off. Ask once, "
-                  "now that the review is done."]
-    lines.append(f"Gate: do not commit yet: {len(held)} plan impact(s) wait for a ruling, so the commit gate counts "
-                 "the review as dirty until `decide` records one.")
-    print_action("ask-user-plan-impact", *lines, *plan_impact_question_lines(held_text, packet))
 
 
 def save_packet_asks(packet, state):
@@ -573,21 +496,26 @@ SCOPED_RERUN = ("The review cap was reached with a class still open. Report thes
                 "Do not run /fix. The session stays dirty, so git commit stays blocked.")
 
 
-def scoped_rerun_lines(packet):
-    """The launch line and handoff of the next scoped review after a cap-reached with an open class, or [] when the
-    packet's open_classes is empty, it names no file the fix touched, or git shows no change. The files are the ones
-    git shows changed against HEAD in the dispatched repo (the packet names no start commit, and the loop reviews the
-    working tree against HEAD); a file the fixes touched keeps its own change text."""
+def scoped_rerun_lines(packet, state):
+    """(lines, note): the launch line and handoff of the next scoped review after a cap-reached with an open class,
+    and a note. The lines are [] when the packet's open_classes is empty, it names no file the fix touched, the launch
+    record's repo is gone (then the note says so), or git shows no change. The files are the ones git shows changed
+    against HEAD in the packet's repo (`packet_repo`; the packet names no start commit, and the loop reviews the
+    working tree against HEAD); a file the fixes touched keeps its own change text. The note is "" otherwise."""
     if not packet["open_classes"]:
-        return []
+        return [], ""
     fix_files = [str(path) for path in packet["files_touched"]]
     if not fix_files:
-        return []
+        return [], ""
 
-    repo = dispatched_repo() or pathlib.Path.cwd()
+    relaunch_args = state.get("relaunch_args") or []
+    repo = packet_repo(relaunch_args)
+    if repo is None:
+        # The stop's other lines still print: this runs after the state, asks and replies are already saved.
+        return [], f"The scoped rerun was not printed: {missing_packet_repo_reason(relaunch_args)}"
     changed = script_utils.changed_files(repo, "HEAD")
     if not changed:
-        return []
+        return [], ""
 
     touched_text = dict.fromkeys(fix_files, "touched by the capped run's fixes")
     file_flags = " ".join(f"--file {shlex.quote(path)}" for path in changed)
@@ -600,7 +528,7 @@ def scoped_rerun_lines(packet):
         file_path, _line = split_location(item.get("file_line", ""))
         lines += [f"    - issue: {one_line(item_text(item, 'finding'))}", "      status: partial",
                   f"      file: {file_path or '-'}"]
-    return lines
+    return lines, ""
 
 
 def stop_for_status(packet, options, state):
@@ -612,10 +540,12 @@ def stop_for_status(packet, options, state):
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
     entries = entry_lines(packet)
-    rerun_lines = scoped_rerun_lines(packet) if packet["status"] == CAP_REACHED else []
+    rerun_lines, rerun_note = scoped_rerun_lines(packet, state) if packet["status"] == CAP_REACHED else ([], "")
     if rerun_lines:
         instruction = SCOPED_RERUN
         entries += rerun_lines
+    if rerun_note:
+        entries.append(rerun_note)
     ask_lines = []
     if packet["ask"]:
         ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
@@ -650,7 +580,10 @@ def command_packet(argv):
     packet = handback.load(message)
     handback.print_dropped_asks(packet)
     stored_status = packet["status"]
-    review_user_ruled.apply_user_ruled(packet, options.user_ruled)
+    ruled_repo = required_packet_repo(options.relaunch_args) if options.user_ruled else None
+    review_user_ruled.apply_user_ruled(packet, options.user_ruled, ruled_repo)
+    # A capped packet reads as deferred only for a dispatched repo: with none on record the status stays a stop.
+    # The repos differ on purpose: this uses the store's latest dispatch repo, the ruled-impact read the launch --repo.
     packet["status"] = capped_review.effective_status(packet, dispatched_repo())
     capped_defer = packet["status"] != stored_status
     if unreviewed_in_a_row:
@@ -829,12 +762,17 @@ def hand_back_plan_impacts():
     return handback.unruled_plan_impacts(handback_store.latest_for_repo(session_id, repo))
 
 
-def write_ruling_entry(decision, by, ruling, plan_path, impact_text):
-    """The `## Plan Deviations` entry lines of a plan-impact ruling, appended to plan_path when there is one."""
+def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo, finding_texts=()):
+    """The `## Plan Deviations` entry lines of a plan-impact ruling, appended to plan_path when there is one. The ruled
+    row goes under `ruled_repo`, the repo the packet answers: one row per accepted finding the ruling covers
+    (`finding_texts`), else one row with none."""
     choice = plan_format.DECISION_WORDS[decision]
     owner = plan_format.ruling_owner(".", by)
     ruled_at = plan_format.ruled_at_now()
     entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, impact_text)
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    for finding_text in finding_texts or [None]:
+        handback_store.record_ruled_impact(session_id, impact_text, ruled_repo, finding_text=finding_text)
     if plan_path is not None:
         plan_format.append_deviation(plan_path, entry)
     return entry
@@ -854,7 +792,9 @@ def decide_from_hand_back(held, decision, by, ruling, plan_path):
     """`decide` for a run whose packet never went through `packet` (the caller read it through code_wait.py): the
     held plan impacts come from the hand-back store. `keep` records the ruling. `adopt` has no launch state to
     re-dispatch from, so it logs the deviation and sends the caller back to its own review loop."""
-    entry = write_ruling_entry(decision, by, ruling, plan_path, handback.held_plan_impact_text(held))
+    impact_text = handback.held_plan_impact_text(held)
+    rows_repo = handback_store.ruled_rows_repo(".")
+    entry = write_ruling_entry(decision, by, ruling, plan_path, impact_text, rows_repo)
     logged_line = ruling_logged_line(plan_path)
     if decision == "keep":
         return print_action("done", logged_line, *entry,
@@ -869,7 +809,9 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
     """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds) and print the
     re-dispatch."""
     choice = plan_format.DECISION_WORDS[decision]
-    entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"])
+    ruled_repo = required_packet_repo(state.get("relaunch_args") or [])
+    covered = findings_covered_by_impact(state, state["plan_impact"])
+    entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"], ruled_repo, covered)
 
     if decision == "keep" and state.pop("plan_impact_held", False):
         keep_line = (APPLIED_KEEP_LINE if state.pop("plan_impact_applied", False)

@@ -485,17 +485,17 @@ grey = "#9893a5"
 
 # dredge (bcorey85/dredge.nvim).
 [palettes.dredge-dark]
-red = "#e1645a"
+red = "#d46e65"
 orange = "#da7e4b"
 yellow = "#c7a459"
 green = "#8fa338"
 blue = "#429ace"
 branch = "#858dd8"
 teal = "#4baba2"
-purple = "#e6619a"
-fg = "#b6c3cb"
-bg = "#15191c"
-grey = "#b1b5bc"
+purple = "#d57299"
+fg = "#b7bbbd"
+bg = "#1b1f23"
+grey = "#a5a9b0"
 
 [palettes.dredge-light]
 red = "#a32822"

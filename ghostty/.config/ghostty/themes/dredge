@@ -1,10 +1,10 @@
 # dredge dark — personal family (bcorey85/dredge.nvim).
-palette = 0=#0e1215
+palette = 0=#14181b
 palette = 1=#ffa29a
 palette = 2=#a3e7b1
 palette = 3=#eed286
 palette = 4=#9bd5ff
-palette = 5=#e6619a
+palette = 5=#d57299
 palette = 6=#4baba2
 palette = 7=#d7dfe9
 palette = 8=#8c9096
@@ -15,9 +15,9 @@ palette = 12=#bdeaff
 palette = 13=#ff95c4
 palette = 14=#b0efe8
 palette = 15=#ebf2fd
-background = #15191c
-foreground = #b6c3cb
+background = #1b1f23
+foreground = #b7bbbd
 cursor-color = #ebf2fd
-cursor-text = #15191c
-selection-background = #363b3e
+cursor-text = #1b1f23
+selection-background = #3d4245
 selection-foreground = #ebf2fd

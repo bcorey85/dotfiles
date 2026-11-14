@@ -774,18 +774,18 @@ EOF
         type_fg="#4f5d00"; builtin_fg="#005b91"; param_fg="#943b12"; attr_fg="#a32822"
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
-        bg="#15191c"; panel="#0e1215"; panelAlt="#212528"; border="#3c4144"; note="#0e1215"
-        accent="#4baba2"; accentMuted="#3c4144"; text="#b6c3cb"; muted="#b1b5bc"; lnFg="#8c9097"
+        bg="#1b1f23"; panel="#14181b"; panelAlt="#282c2f"; border="#43484b"; note="#14181b"
+        accent="#4baba2"; accentMuted="#43484b"; text="#b7bbbd"; muted="#a5a9b0"; lnFg="#8c9097"
         # Words must stay >= RGB distance 28 from the line wash, or hunk
         # replaces them with its own blend of the sign colour.
-        addWord="#173f3e"; remWord="#471831"
+        addWord="#1e4645"; remWord="#4f1f38"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
-        addedBg="#142d2e"; removedBg="#2e1321"; ctxBg="#15191c"
+        addedBg="#1b3435"; removedBg="#351927"; ctxBg="#1b1f23"
         sAdd="#4baba2"; sRem="#f54b43"; badgeNeu="#eed286"
-        kw="#9a9ea5"; punct="#91969c"; str="#4baba2"; num="#e6619a"; fn="#858dd8"; cmt="#c7a459"
-        type_fg="#8fa338"; builtin_fg="#429ace"; param_fg="#da7e4b"; attr_fg="#e1645a"
-        bright="#ebf2fd"; quote="#bec3cb"; bullet="#b1b5bc"
+        kw="#8a9aaa"; punct="#91969c"; str="#4baba2"; num="#d57299"; fn="#858dd8"; cmt="#c7a459"
+        type_fg="#8fa338"; builtin_fg="#429ace"; param_fg="#da7e4b"; attr_fg="#d46e65"
+        bright="#ebf2fd"; quote="#bec3cb"; bullet="#a5a9b0"
       fi
       op="$punct"; tag="$kw"; imp="$kw"
       konst="$num"; esc="$num"; lang="$num"
@@ -806,7 +806,7 @@ EOF
         bind="#433fa8"; act="#006c66"; exit_fg="#a80e62"; lit="#2a7000"; desc="#07549f"
         kw="#4c5158"; cmt="#6d4a00"
       else
-        bind="#8990da"; act="#4baba2"; exit_fg="#e36099"; lit="#8fa338"; desc="#429ace"
+        bind="#8990da"; act="#4baba2"; exit_fg="#d27198"; lit="#8fa338"; desc="#429ace"
         cmt="#c3a15a"
       fi
       # Binds: names where they are introduced. Acts: calls, decorators, builtins.
@@ -2155,12 +2155,12 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#4baba2" panel_bg="#0e1215" surface_dim="#212528"
-      surface0="#303438" surface1="#3c4144"
-      overlay0="#91959b" overlay1="#b1b5bc"
-      text="#b6c3cb" subtext0="#b1b5bc"
+      accent="#4baba2" panel_bg="#14181b" surface_dim="#282c2f"
+      surface0="#373b3f" surface1="#43484b"
+      overlay0="#91959b" overlay1="#a5a9b0"
+      text="#b7bbbd" subtext0="#a5a9b0"
       green="#4baba2" yellow="#eed286" red="#f54b43"
-      blue="#858dd8" teal="#4baba2" peach="#e6619a"
+      blue="#858dd8" teal="#4baba2" peach="#d57299"
       ;;
     kanagawa:light)
       # kanagawa lotus (#f2ecbc).

@@ -21,9 +21,13 @@ from shell_command import (
     contains_word_run,
     docker_forwarded_variables,
     docker_set_variables,
+    flags_before_value,
     interpreter_family,
     is_git_word,
+    is_long_prefix,
+    is_short_cluster,
     names_code_runner,
+    options_before_separator,
     parse_simple_commands,
     path_word,
     quoted_positions,
@@ -37,6 +41,7 @@ from shell_command import (
     substitution_spans,
     unwrap_docker,
     without_assignments,
+    without_flag_values,
 )
 
 
@@ -523,6 +528,38 @@ class ShellCodeArgumentTest(unittest.TestCase):
 
     def test_segment_words_splits_text_with_an_unbalanced_quote_on_whitespace(self):
         self.assertEqual(["echo", "'a", "b"], segment_words("echo 'a  b"))
+
+
+class OptionShapeTest(unittest.TestCase):
+    def test_a_short_cluster_is_one_dash_and_a_letter(self):
+        cases = {"-S": True, "-SW": True, "-3": True, "-": False, "--": False, "--staged": False, "f": False, "": False}
+        for argument, expected in cases.items():
+            with self.subTest(argument=argument):
+                self.assertEqual(expected, is_short_cluster(argument))
+
+    def test_a_long_prefix_must_reach_the_shortest_accepted_length(self):
+        cases = {"--staged": True, "--st": True, "--stag": True, "--s": False, "--stagedx": False, "--other": False}
+        for argument, expected in cases.items():
+            with self.subTest(argument=argument):
+                self.assertEqual(expected, is_long_prefix(argument, "--staged", "--st"))
+
+    def test_flags_stop_at_the_first_value_letter(self):
+        cases = {"-sSTABLE": "", "-SW": "SW", "-vC3": "v", "-Rp3": "R", "-3": "3"}
+        for argument, expected in cases.items():
+            with self.subTest(argument=argument):
+                self.assertEqual(expected, flags_before_value(argument, "sUpC"))
+
+    def test_value_words_drop_after_value_flags_or_a_takes_value_check(self):
+        by_check = without_flag_values(["a", "-U", "3", "b"], takes_value=lambda word: word == "-U")
+        self.assertEqual(["a", "-U", "b"], by_check)
+        by_flags = without_flag_values(["a", "-U", "3", "b"], value_flags=("-U",))
+        self.assertEqual(["a", "-U", "b"], by_flags)
+
+    def test_options_end_at_a_bare_separator(self):
+        cases = {("a", "--", "b"): ["a"], ("a", "b"): ["a", "b"], ("--", "b"): [], (): []}
+        for arguments, expected in cases.items():
+            with self.subTest(arguments=arguments):
+                self.assertEqual(expected, list(options_before_separator(list(arguments))))
 
 
 if __name__ == "__main__":

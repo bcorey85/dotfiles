@@ -20,6 +20,7 @@ from shell_command import (
     contains_word_run,
     docker_forwarded_variables,
     docker_set_variables,
+    options_before_separator,
     resolved_command_words,
     split_command_steps,
     split_simple_commands,
@@ -720,7 +721,7 @@ def names_test_filter(command):
             continue
         if "--" in arguments[:-1]:
             return True
-        option_words = arguments[:arguments.index("--")] if "--" in arguments else arguments
+        option_words = options_before_separator(arguments)
         run_words = without_flag_values(option_words, cargo_value_flags)
         if any(not word.startswith("-") for word in run_words):
             return True
@@ -776,7 +777,7 @@ def names_cargo_test_target(command):
         if arguments is None:
             continue
 
-        option_words = arguments[:arguments.index("--")] if "--" in arguments else arguments
+        option_words = options_before_separator(arguments)
         if CARGO_WHOLE_TREE_FLAGS & set(option_words):
             continue
 

@@ -21,8 +21,11 @@ sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import handback
 import handback_store
 import plan_format
+import review_fix
+import review_fix_asks
 import review_loop_main
 import review_loop_prompt_file
+import review_user_ruled
 import reviewed_tree
 import reviewer_dispatch
 import script_utils
@@ -115,6 +118,17 @@ PLAN_IMPACT_FIELDS = {"status": "converged", "iter": 1, "spec_iter": 2, "fixed":
                       "plan_impacts": [{"text": PLAN_IMPACT_TEXT, "gate": "code-reviewer", "ac_change": True,
                                         "cause": "plan", "adopted": False}]}
 PLAN_IMPACT = json.dumps(PLAN_IMPACT_FIELDS)
+
+RULED_IMPACT = {"text": "PLAN-IMPACT:\n  assumed: AC2 as written\n  found: the reword is narrower\n"
+                        "  cause: plan\n  acceptance_criteria: AC2",
+                "gate": "code-reviewer", "ac_change": True, "cause": "plan", "adopted": False}
+RULED_IMPACT_ASK = ask_entry("AC2 reworded narrower", "README.md:1", finding_id="a1b2c3d4e5f60003",
+                             question="[plan-drift] does AC2 still hold for deletes? acceptance_criteria: AC2",
+                             change="keep the narrower AC2", ask_class="plan-drift")
+RULED_IMPACT_FINDING = (f"{RULED_IMPACT_ASK['file_line']} {RULED_IMPACT_ASK['question']} "
+                        f"Proposed change: {RULED_IMPACT_ASK['change']}")
+RULED_IMPACT_SKIP = {"item": RULED_IMPACT_FINDING, "reason": "needs the user's sign-off on the plan",
+                     "file_line": "README.md:1", "given": True, "class": "plan-drift"}
 
 
 BLOCKER_FIELDS = {"status": "critical-blocker", "iter": 1,
@@ -469,6 +483,24 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("files the capped run's fixes touched", output)
 
+    def test_a_removed_launch_repo_adds_a_note_and_keeps_the_plain_stop_instruction(self):
+        packet = {**CAP_WITH_AN_OPEN_CLASS_FIELDS, "ask": []}
+        gone_repo = str(self.temp_root / "removed-worktree")
+
+        lines, note = review_fix.scoped_rerun_lines(packet, {"relaunch_args": ["--repo", gone_repo]})
+
+        self.assertEqual(lines, [])
+        self.assertIn("no longer a git work tree", note)
+        with unittest.mock.patch.object(review_fix, "print_action") as printed, \
+                unittest.mock.patch.object(review_fix, "save_fix_state"), \
+                unittest.mock.patch.object(review_fix, "post_aikido_replies", return_value=([], [])), \
+                unittest.mock.patch.object(review_fix, "present_plan_impacts"):
+            options = unittest.mock.Mock(aikido_targets=[], pr=None)
+            review_fix.stop_for_status(packet, options, {"relaunch_args": ["--repo", gone_repo]})
+        instruction, *entries = printed.call_args.args[1:]
+        self.assertNotEqual(instruction, review_fix.SCOPED_RERUN)
+        self.assertIn(note, entries)
+
     def test_a_cap_reached_with_an_open_class_and_no_files_touched_keeps_the_plain_stop(self):
         no_files = packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, files_touched=[])
         code, output = self.packet(no_files)
@@ -529,6 +561,17 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertLess(output.index("END USER TEXT"), output.index("ACTION: show-plan-impacts"))
         self.assertIn("## Plan Deviations", output)
         self.assertIn("the cap moves into the config", output)
+        self.assertNotIn("ask-user-plan-impact", output)
+        self.assertNotIn("Gate: do not commit yet", output)
+
+    def test_an_adopted_plan_impact_a_ruling_settled_prints_no_deviation_line_and_holds_no_gate(self):
+        settled = {**ADOPTED_IMPACT, "ac_change": True, "settled": True}
+
+        code, output = self.impacts_packet([settled])
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("## Plan Deviations", output)
+        self.assertNotIn("adopted by rule", output)
         self.assertNotIn("ask-user-plan-impact", output)
         self.assertNotIn("Gate: do not commit yet", output)
 
@@ -1895,6 +1938,24 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: done", output)
         self.assertEqual(len(self.ledger_writes()), 2)
+
+    def test_a_packet_rerun_keeps_the_rejections_recorded_latch_so_a_retried_asks_done_records_none_twice(self):
+        self.packet(WITH_ASK)
+        self.run_script(["asks-done", "--by", "session", "rejected", "accepted"])
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        saved = json.loads(state_file.read_text())
+        self.assertTrue(saved.get("asks_rejections_recorded"))
+        # An asks-done that failed after recording the rejections never reached the done stage.
+        state_file.write_text(json.dumps({**saved, "stage": "asks"}))
+        store_file = self.store_dir / f"{SESSION}.jsonl"
+        kept_rows = [row for row in store_file.read_text().splitlines()
+                     if json.loads(row)["kind"] != handback_store.ASKS_LOGGED_ROW]
+        store_file.write_text("\n".join(kept_rows) + "\n")
+
+        self.packet(WITH_ASK)
+
+        self.assertTrue(json.loads(state_file.read_text()).get("asks_rejections_recorded"),
+                        "a repeat of the same packet dropped the latch, so a retried asks-done records again")
 
     def test_asks_done_twice_is_a_no_op(self):
         self.packet(WITH_ASK)
@@ -3860,6 +3921,369 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("nothing to correct", output)
         self.assertEqual(len(self.ledger_writes()), rows_before)
+
+
+    def packet_with_ruled_impact_ask(self, home, asks=(RULED_IMPACT_ASK,)):
+        """Launches a review that hands back one held impact and the asks (default: one on the same criterion), runs
+        its packet, and accepts the asks by the user. Returns the launch args of the fix run asks-done printed,
+        without --detach."""
+        message = json.dumps({**CONVERGED_FIELDS, "fixed": [], "plan_impacts": [RULED_IMPACT],
+                              "ask": list(asks)})
+        code, output = self.launch(message=message, HOME=home)
+        self.assertEqual(code, 0, output)
+        packet_args = shlex.split(output.splitlines()[-1].split("`")[1])[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "--by", "user", *["accepted"] * len(asks)], HOME=home)
+        self.assertEqual(code, 0, output)
+        launch_line = next(line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND))
+        return [word for word in shlex.split(launch_line)[2:] if word != "--detach"]
+
+    def fix_round_findings_files(self):
+        state_dir = script_utils.git_path(self.repo, reviewer_dispatch.LAUNCH_STATE_NAME)
+        return sorted((state_dir / reviewer_dispatch.LOOP_FOLDER).glob("*/findings.json"))
+
+    def run_fix_round(self, home, launch_args, skipped_fp):
+        """Runs the fix launch whose loop hands back `skipped_fp`, then its packet. Returns the packet's output."""
+        message = packet_text(CLEAN_EMPTY_FIELDS, skipped_fp=skipped_fp)
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(message)))
+        self.assertEqual(code, 0, output)
+        packet_args = shlex.split(output.splitlines()[-1].split("`")[1])[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+        return output
+
+    def decide_adopt(self, home):
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, narrower AC2"],
+                                       HOME=home)
+        self.assertEqual(code, 0, output)
+
+    def decide_keep(self, home):
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "no, keep AC2 as written"],
+                                       HOME=home)
+        self.assertEqual(code, 0, output)
+
+    def assert_skip_stays_a_skip(self, packet_output):
+        """The packet keeps the ruled finding's skip in skipped_fp and carries no ask: the skip count stays 1 and the
+        skip-turned-ask question, taken from its owner, is not printed."""
+        self.assertIn("skipped 1", packet_output)
+        self.assertNotIn(review_user_ruled.SKIP_QUESTION.split("{")[0], packet_output)
+        self.assertNotIn("present-asks", packet_output)
+
+    def test_asks_done_then_decide_adopt_then_the_fix_round_has_no_ask_and_no_plan_impact(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        self.assertIn("--user-ruled", launch_args)
+        self.decide_adopt(home)
+
+        output = self.run_fix_round(home, launch_args, [RULED_IMPACT_SKIP])
+
+        self.assertEqual(self.fix_round_findings_files(), [])
+        self.assert_skip_stays_a_skip(output)
+
+    def test_asks_done_then_decide_keep_then_the_fix_round_has_no_ask_and_no_plan_impact(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        self.decide_keep(home)
+
+        output = self.run_fix_round(home, launch_args, [RULED_IMPACT_SKIP])
+
+        self.assertEqual(self.fix_round_findings_files(), [])
+        self.assert_skip_stays_a_skip(output)
+
+    def test_a_fix_launch_whose_only_finding_is_a_ruled_impact_on_a_clean_tree_launches_no_loop(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        self.decide_adopt(home)
+        self.git("checkout", "--", "README.md")
+        state_dir = script_utils.git_path(self.repo, reviewer_dispatch.LAUNCH_STATE_NAME)
+        prompts_before = list((state_dir / "loop-script").glob("*/prompt.txt"))
+
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("every finding in", output)
+        self.assertIn("was left out", output)
+        self.assertEqual(self.fix_round_findings_files(), [])
+        self.assertEqual(list((state_dir / "loop-script").glob("*/prompt.txt")), prompts_before)
+
+    def test_a_no_review_fix_launch_whose_only_finding_is_a_ruled_impact_launches_no_loop(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        self.decide_adopt(home)
+
+        code, output = self.run_script([*launch_args, "--no-review"], HOME=home,
+                                       REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("was left out", output)
+        self.assertEqual(self.fix_round_findings_files(), [])
+
+    def test_the_ruling_is_found_when_the_session_cwd_is_not_the_reviewed_repo(self):
+        home = str(self.temp_root / "home")
+        other_repo = self.temp_root / "other"
+        other_repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=other_repo, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        self.decide_adopt(home)
+        message = packet_text(CLEAN_EMPTY_FIELDS, skipped_fp=[RULED_IMPACT_SKIP])
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(message)))
+        self.assertEqual(code, 0, output)
+        packet_args = shlex.split(output.splitlines()[-1].split("`")[1])[2:]
+
+        code, output = self.run_script(packet_args, cwd=other_repo, HOME=home)
+
+        self.assertEqual(code, 0, output)
+        self.assert_skip_stays_a_skip(output)
+
+    def test_a_packet_reads_the_ruled_rows_of_its_own_repo_when_the_latest_dispatch_is_another_repo(self):
+        message = packet_text(CLEAN_EMPTY_FIELDS, skipped_fp=[RULED_IMPACT_SKIP])
+        packet_args, _launch_file = self.launched_fix_packet_args("--user-ruled", "1", message=message,
+                                                                  finding=RULED_IMPACT_FINDING)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record_ruled_impact(SESSION, RULED_IMPACT["text"],
+                                               handback_store.ruled_rows_repo(self.repo),
+                                               finding_text=RULED_IMPACT_FINDING)
+            elsewhere = str(self.temp_root / "elsewhere")
+            handback_store.record(SESSION, "dispatch", repo=elsewhere, no_review=False)
+            handback_store.record(SESSION, "handback", status="clean", problems=[], message=message, no_reviewer=False,
+                                  unreviewed_fix=False, tree=None, agent_id="")
+
+        code, output = self.run_script(packet_args, HOME=str(self.temp_root / "home"))
+
+        self.assertEqual(code, 0, output)
+        self.assert_skip_stays_a_skip(output)
+
+    def test_a_ruling_is_recorded_under_the_launch_repo_when_the_session_cwd_is_another_repo(self):
+        home = str(self.temp_root / "home")
+        other_repo = self.temp_root / "other"
+        other_repo.mkdir()
+        (other_repo / "README.md").write_text("hi\n")
+        for git_args in (["init", "-q"], ["add", "README.md"], ["commit", "-q", "-m", "init"]):
+            subprocess.run(["git", *git_args], cwd=other_repo, env={**os.environ, **GIT_ENV}, check=True,
+                           capture_output=True)
+        (other_repo / "README.md").write_text("hi, edited\n")
+        message = json.dumps({**CONVERGED_FIELDS, "fixed": [], "plan_impacts": [RULED_IMPACT],
+                              "ask": [RULED_IMPACT_ASK]})
+        code, output = self.launch("--repo", str(other_repo), message=message, HOME=home)
+        self.assertEqual(code, 0, output)
+        packet_args = shlex.split(output.splitlines()[-1].split("`")[1])[2:]
+        code, output = self.run_script(packet_args, HOME=home)
+        self.assertEqual(code, 0, output)
+
+        self.decide_adopt(home)
+
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            ruled_in_other = handback_store.rulings(SESSION, os.path.realpath(other_repo)).impacts
+            ruled_in_cwd = handback_store.rulings(SESSION, os.path.realpath(self.repo)).impacts
+        self.assertTrue(ruled_in_other, "the ruling was not recorded under the launch record's --repo")
+        self.assertFalse(ruled_in_cwd, "the ruling was recorded under the session cwd's repo")
+
+    def test_a_ruling_is_recorded_under_the_work_tree_when_a_dispatch_in_another_repo_follows_the_packet(self):
+        home = str(self.temp_root / "home")
+        self.packet_with_ruled_impact_ask(home)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record(SESSION, "dispatch", repo=str(self.temp_root / "elsewhere"))
+        self.decide_adopt(home)
+
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            ruled = handback_store.rulings(SESSION, os.path.realpath(self.repo)).impacts
+        self.assertTrue(ruled, "the ruling was not recorded under the repo the impact was read from")
+
+    def test_a_ruling_recorded_after_the_fix_round_launched_still_makes_no_ask(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        message = packet_text(CLEAN_EMPTY_FIELDS, skipped_fp=[RULED_IMPACT_SKIP])
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(message)))
+        self.assertEqual(code, 0, output)
+        self.assertEqual(len(self.fix_round_findings_files()), 1)
+        self.decide_adopt(home)
+
+        code, output = self.run_script(shlex.split(output.splitlines()[-1].split("`")[1])[2:], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        self.assert_skip_stays_a_skip(output)
+
+    def test_an_unruled_plan_impact_is_still_sent_and_comes_back_as_an_ask_when_skipped(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        # No decide: nothing is ruled, so the finding is sent and the skip is an ask.
+        output = self.run_fix_round(home, launch_args, [RULED_IMPACT_SKIP])
+
+        self.assertEqual(len(self.fix_round_findings_files()), 1)
+        self.assertIn("Apply it anyway", output)
+
+    def test_an_accepted_marked_plan_impact_ask_is_recorded_as_a_ruled_impact(self):
+        home = str(self.temp_root / "home")
+        marked = ask_entry("drop the retry", "README.md:1", finding_id="a1b2c3d4e5f60004",
+                           question="PLAN-IMPACT: drop the retry? acceptance_criteria: AC3", change="drop the retry")
+        code, output = self.launch(message=json.dumps({**CONVERGED_FIELDS, "fixed": [], "ask": [marked]}), HOME=home)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(shlex.split(output.splitlines()[-1].split("`")[1])[2:], HOME=home)
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted"], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            ruled = handback_store.rulings(SESSION, os.path.realpath(self.repo)).impacts
+        finding = ("README.md:1 PLAN-IMPACT: drop the retry? acceptance_criteria: AC3 "
+                   "Proposed change: drop the retry")
+        rulings = handback_store.Rulings(ruled, [])
+        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([finding], [1], rulings), ([], [], [finding]))
+
+    def test_a_rejected_ask_is_recorded_by_file_and_question_and_an_accepted_one_is_not(self):
+        home = str(self.temp_root / "home")
+        rejected = ask_entry("pin it", "src/a.ts:5", finding_id="a1b2c3d4e5f60005", question="pin the window?")
+        accepted = ask_entry("cap it", "src/b.ts:7", finding_id="a1b2c3d4e5f60006", question="cap the list?")
+        code, output = self.launch(message=json.dumps({**CONVERGED_FIELDS, "fixed": [], "ask": [rejected, accepted]}),
+                                   HOME=home)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(shlex.split(output.splitlines()[-1].split("`")[1])[2:], HOME=home)
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["asks-done", "--by", "session", "rejected", "accepted"], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            recorded = handback_store.rejected_ask_texts(SESSION, os.path.realpath(self.repo))
+        self.assertEqual(recorded, ["src/a.ts:5 pin the window?"])
+
+    def rejected_texts(self):
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            return handback_store.rejected_ask_texts(SESSION, os.path.realpath(self.repo))
+
+    def test_the_rejections_of_a_packet_are_recorded_once_however_often_the_recorder_runs(self):
+        repo = os.path.realpath(self.repo)
+        target = {"relaunch_args": ["--repo", repo]}
+        asks = [ask_entry("pin it", "src/a.ts:5", question="pin the window?")]
+
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir),
+                                                   "CLAUDE_CODE_SESSION_ID": SESSION}):
+            review_fix_asks.record_unrecorded_rejections(target, asks, [REJECTED], repo)
+            review_fix_asks.record_unrecorded_rejections(target, asks, [REJECTED], repo)
+
+        self.assertEqual(self.rejected_texts(), ["src/a.ts:5 pin the window?"])
+
+    def test_correct_from_accepted_to_rejected_records_the_rejection(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "accepted"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.rejected_texts(), [])
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "accepted", "rejected"],
+                                       HOME=home)
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.rejected_texts(), ["src/db.ts:5 Add an index on tenant_id?"])
+
+    def test_correct_from_rejected_to_accepted_withdraws_the_rejection(self):
+        home = str(self.temp_root / "home")
+        self.launched_review_with_asks(home)
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.rejected_texts(), ["src/db.ts:5 Add an index on tenant_id?"])
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "accepted", "accepted"],
+                                       HOME=home)
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.rejected_texts(), [])
+
+    def test_asks_done_alone_does_not_clear_the_held_plan_impact_gate(self):
+        home = str(self.temp_root / "home")
+        self.packet_with_ruled_impact_ask(home)
+
+        self.assertIn("plan impact(s) that await a ruling", self.false_clean_reason())
+
+    def test_a_launch_with_an_ordinary_finding_and_a_ruled_impact_sends_only_the_ordinary_one(self):
+        home = str(self.temp_root / "home")
+        ordinary = ask_entry("cap the retry", "src/retry.ts:10", finding_id="a1b2c3d4e5f60005",
+                             question="cap the retry at three?", change="cap the retry", ask_class="bug")
+        launch_args = self.packet_with_ruled_impact_ask(home, asks=(RULED_IMPACT_ASK, ordinary))
+        self.decide_adopt(home)
+
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+
+        self.assertEqual(code, 0, output)
+        findings_files = self.fix_round_findings_files()
+        self.assertEqual(len(findings_files), 1)
+        sent = json.loads(findings_files[0].read_text())
+        self.assertEqual(len(sent), 1)
+        self.assertIn("cap the retry", sent[0])
+        state_dir = script_utils.git_path(self.repo, reviewer_dispatch.LAUNCH_STATE_NAME)
+        prompt = next((state_dir / "loop-script").glob("*/prompt.txt")).read_text()
+        self.assertRegex(prompt, rf"(?m)^{review_loop_prompt_file.USER_RULED_HEADER_KEY}: 1$")
+
+    def test_a_decide_ruling_links_only_the_accepted_asks_of_its_criterion_in_the_same_packet(self):
+        home = str(self.temp_root / "home")
+        other_criterion = ask_entry("AC3 reworded wider", "README.md:2", finding_id="a1b2c3d4e5f60006",
+                                    question="[plan-drift] does AC3 still hold for reads? acceptance_criteria: AC3",
+                                    change="keep the wider AC3", ask_class="plan-drift")
+        launch_args = self.packet_with_ruled_impact_ask(home, asks=(RULED_IMPACT_ASK, other_criterion))
+        self.decide_adopt(home)
+
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+
+        self.assertEqual(code, 0, output)
+        findings_files = self.fix_round_findings_files()
+        self.assertEqual(len(findings_files), 1)
+        sent = json.loads(findings_files[0].read_text())
+        self.assertEqual(len(sent), 1)
+        self.assertIn("AC3", sent[0])
+
+    def test_the_commit_gate_credits_the_fix_round_after_the_ruling(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        self.assertIn("plan impact(s) that await a ruling", self.false_clean_reason())
+        self.decide_adopt(home)
+        self.run_fix_round(home, launch_args, [])
+
+        self.assertIsNone(self.false_clean_reason())
+
+
+class MissingPacketRepoStopTest(unittest.TestCase):
+    ASKS: ClassVar[list] = [{"file_line": "app.py:3", "question": "should the window be pinned?", "change": ""}]
+
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.not_a_repo = pathlib.Path(temp_dir.name).resolve()
+
+    def stop_message(self, relaunch_args):
+        with self.assertRaises(review_fix_asks.UsageError) as raised:
+            review_fix_asks.repo_for_outcomes(relaunch_args, self.ASKS, [REJECTED])
+        return str(raised.exception)
+
+    def test_a_removed_launch_repo_names_the_path_and_the_recovery(self):
+        gone_repo = str(self.not_a_repo / "removed-worktree")
+
+        message = self.stop_message(["--repo", gone_repo])
+
+        self.assertIn(f"the launch record's --repo {gone_repo} is no longer a git work tree", message)
+        self.assertIn("Recreate the worktree at that path", message)
+
+    def test_a_removed_dispatched_repo_names_the_path_and_not_the_missing_dispatch(self):
+        gone_repo = str(self.not_a_repo / "removed-dispatch")
+
+        with unittest.mock.patch.object(review_fix_asks, "session_repo", return_value=gone_repo), \
+                unittest.mock.patch.object(review_fix_asks, "dispatched_repo", return_value=gone_repo):
+            message = self.stop_message([])
+
+        self.assertIn(f"the session's last dispatched repo {gone_repo} is no longer a git work tree", message)
+        self.assertIn("Recreate the worktree at that path", message)
+        self.assertNotIn("no dispatched repo", message)
+
+    def test_no_launch_repo_and_no_git_cwd_says_to_run_from_inside_the_reviewed_repo(self):
+        with unittest.mock.patch.object(review_fix_asks, "session_repo", return_value=None), \
+                unittest.mock.patch.object(review_fix_asks, "dispatched_repo", return_value=None):
+            message = self.stop_message([])
+
+        self.assertIn("the session has no dispatched repo and the current directory is not in a git work tree",
+                      message)
+        self.assertIn("Run it from inside the reviewed repo.", message)
 
 
 if __name__ == "__main__":

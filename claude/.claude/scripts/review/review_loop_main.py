@@ -27,13 +27,16 @@ from review_loop_prompt_file import (
     REVIEWER_MODEL_KEY,
     REVIEWERS_HEADLESS,
     REVIEWERS_MAIN,
+    USER_RULED_AT_KEY,
     YES,
     header_iter,
     header_list,
+    header_user_ruled,
     read_findings,
     read_prompt,
     reviewer_brief,
 )
+from review_loop_ruled import rejected_ask_records
 from review_loop_script import (
     ROUND_BUDGET,
     SKILLS,
@@ -89,6 +92,7 @@ def build_loop(request):
     loop.guidance = header.get("guidance", "")
     loop.resolved_texts = plan_format.resolved_plan_texts(handoff)
     loop.change = ChangeUnderReview(repo)
+    loop.rejected_asks = rejected_ask_records(request.session, repo)
 
     log_call(repo, [str(SKILLS / "review-scope"), f"caller={header.get('caller', 'code')}"])
     found_command = full_check.configured_check_command(repo)
@@ -127,7 +131,10 @@ def run_loop(request):
     scope_fields = telemetry_scope_fields(header, header.get("caller", "code"))
     loop, check_command = build_loop(request)
     try:
-        first_pass(loop, read_findings(header), header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
+        findings = read_findings(header)
+        loop.user_ruled = header_user_ruled(header, findings)
+        loop.user_ruled_at = header.get(USER_RULED_AT_KEY, "")
+        first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
     except LaterPhaseEditError as error:
         loop.stop("critical-blocker", [str(error)])

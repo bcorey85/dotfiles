@@ -45,6 +45,11 @@ CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, ri
                   "it names none. One of: " + " ".join(f"[{name}]" for name in handback.CLASSES) + ".")
 
 
+def user_ruled_issue(text, ruled_at):
+    """An issue the user accepted, marked with the time of the ruling."""
+    return f"{text} [accepted by the user, ruled {ruled_at}]"
+
+
 def review_scope_lines(repo, owned, prior_issues, open_asks):
     lines = [f"Repo root: {repo}", "Review scope (this round):", "  owned files:"]
     for path in owned:

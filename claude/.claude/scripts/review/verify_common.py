@@ -29,7 +29,6 @@ ID_START = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?\*\*AC\d+"
 # A closed bold id span anywhere in a line (a table cell, a quote, a prefix, a strikethrough) also marks a criterion
 # line, so one that is written wrong fails instead of dropping out. Prose such as `**AC4's ...**` does not close.
 ID_SPAN = re.compile(r"\*\*AC\d+(?:\s*\([^)]*\))?(?:,\s*AC\d+(?:\s*\([^)]*\))?)*\*\*")
-AC_ID = re.compile(r"AC\d+")
 
 
 class VerifyError(Exception):
@@ -81,7 +80,15 @@ def parse_criteria_file(text, name=plan_format.CRITERIA_FILE_NAME):
             raise VerifyError(f"{name}:{number}: line names an acceptance id but does not match "
                        f"`- **ACn** — text`: {line.strip()[:80]}")
         target = manual_entries if in_manual else entries
-        for ac_id in AC_ID.findall(match.group(1)):
+        ac_ids = plan_format.criterion_ids_in(match.group(1))
+        unread = plan_format.unread_criterion_tokens(match.group(1))
+        if unread:
+            raise VerifyError(f"{name}:{number}: id span holds {', '.join(unread)}, which is not a readable "
+                              f"criterion id (expected `**ACn**`): {line.strip()[:80]}")
+        if not ac_ids:
+            raise VerifyError(f"{name}:{number}: id span names no readable criterion id "
+                              f"(expected `**ACn**`): {line.strip()[:80]}")
+        for ac_id in ac_ids:
             target.append({"id": ac_id, "text": match.group(2).strip()})
     return entries, manual_entries
 

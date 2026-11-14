@@ -835,5 +835,6 @@
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "model": "opus"
 }

@@ -231,11 +231,17 @@ def apply_writes_index(argument):
             or is_long_prefix(argument, "--intent-to-add", "--int"))
 
 
+def is_orphan_option(argument):
+    """True for `--orphan`, its abbreviations, and `--orphan=<branch>`."""
+    option_name = argument.split("=")[0]
+    return is_long_prefix(option_name, "--orphan", "--or")
+
+
 def checkout_makes_branch(argument):
     if is_short_cluster(argument):
         # `-b` and `-B` take the branch name, so a flag run that ends early holds one of them.
         return "b" in argument[1:] or "B" in argument[1:]
-    return is_long_prefix(argument, "--orphan", "--or")
+    return is_orphan_option(argument)
 
 
 def checkout_patches(argument):
@@ -320,7 +326,7 @@ def writes_index(call):
     if call.subcommand == "switch":
         # `-c` and `-C` take the branch name, so a letter after them is part of it.
         # `--orphan` removes every tracked file, which empties the index.
-        makes_orphan = any(is_long_prefix(argument.split("=")[0], "--orphan", "--or") for argument in options)
+        makes_orphan = any(is_orphan_option(argument) for argument in options)
         return makes_orphan or switch_writes_index(options, "cC")
     if call.subcommand == "restore":
         return any(restore_stages(argument) for argument in options)

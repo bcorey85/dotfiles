@@ -476,7 +476,8 @@ class GitDisciplineGateTest(unittest.TestCase):
                         "git switch x", "git submodule add u p",
                         "git switch -cm x", "git switch -c topic", "git switch -Cm x", "git checkout -f -- f",
                         "git checkout -m -- f", "git checkout -p", "git checkout --detach",
-                        "git checkout --or new HEAD",
+                        "git checkout --or new HEAD", "git checkout --orphan=new main",
+                        "git checkout --orphan=new main f", "git checkout --orphan=new main -- f",
                         "git apply --i p"):
             with self.subTest(command=command):
                 self.assert_allowed(command, agent_type="coder")

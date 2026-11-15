@@ -76,7 +76,11 @@ LOG_INPUT_PREFIX = "refactor-flow-"
 LOG_INPUT_HEX_DIGITS = 12
 LOG_INPUT_NAME = re.compile(re.escape(LOG_INPUT_PREFIX) + rf"[0-9a-f]{{{LOG_INPUT_HEX_DIGITS}}}\.json")
 
-SWEEP_MARKERS = re.compile(r"TODO|FIXME|XXX|HACK|console\.(log|debug)|debugger\b|binding\.pry|print\(")
+# Each marker is a whole word, with an optional plural `s` (`# TODOs`), so an identifier that holds one (`TODOS_DIR`,
+# `HACKATHON`, `tree_fingerprint(`) is no hit. A bare `print(` or `pprint(` and the dotted `pprint.pprint(` are hits,
+# but a method call (`self.print(`) is not.
+SWEEP_MARKERS = re.compile(r"\b(?:TODO|FIXME|XXX|HACK)s?\b|\bconsole\.(?:log|debug)\b|\bdebugger\b|\bbinding\.pry\b"
+                           r"|(?<![\w.])p?print\(|\bpprint\.pprint\(")
 SWEEP_COMMENTED_CODE = re.compile(r"^\s*(//|#)\s*(if |for |while |return |const |let |var |def |function |import )")
 CLONE_SITE = re.compile(r"^\s+(?:- )?(.+?) (\[\d+:\d+ - \d+:\d+\])\s*$")
 

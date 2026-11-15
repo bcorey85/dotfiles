@@ -645,6 +645,75 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         ruling = review_loop_ruled.ruling_line(finding_record.parse_finding(ruled))
         self.assertEqual(packet["no_code_ruling_broken"], [{"ruling": ruling, "file": "app.py"}])
 
+    def test_a_coder_edit_to_a_claude_md_file_reaches_the_packet_as_an_ask_for_the_user(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
+        self.assertIn("needs the user's approval", packet["ask"][0]["question"])
+
+    def test_a_coder_edit_to_an_agents_md_file_reaches_the_packet_as_an_ask_for_the_user(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "AGENTS.md": "# Rules\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["AGENTS.md:1"])
+
+    def test_a_coder_that_dies_after_editing_a_claude_md_file_still_files_the_ask(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Prompt is too long", "edits": {"CLAUDE.md": "# Rules\n"}, "exit": 1}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
+
+    def test_a_claude_md_file_edited_in_two_rounds_stays_one_ask(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}},
+                      {"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules 2\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
+
+    def test_a_coder_edit_to_a_claude_md_file_the_user_accepted_the_ask_for_files_no_new_ask(self):
+        ask_text = review_loop_ruled.approval_ask_text("CLAUDE.md")
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header(ask_text) + self.USER_RULED_HEADER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+
+    def test_a_coder_edit_to_a_file_that_only_ends_in_claude_md_files_no_ask(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "NOT_CLAUDE.md": "# Notes\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+
     def test_a_coders_own_skip_line_beats_the_re_ask_text_for_a_user_ruled_finding(self):
         report = ('SKIPPED 1: the limit is meant to be 5\n'
                   'OPEN QUESTIONS: ["app.py:2 should the limit be denied instead?"]')

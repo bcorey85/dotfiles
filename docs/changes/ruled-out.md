@@ -7,9 +7,9 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-111 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+112 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-129 further findings are left out of this page.
+130 further findings are left out of this page.
 
 ## Rejected
 
@@ -58,6 +58,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-15 [InvenTree plan bench fixture dropped: a Sonnet main session runs the frozen Opus plan to 7 of 7 keys, the same as both Opus runs](../../../agent-evals/findings/2026-11-15-opus-plan-bench-fixture-runs-at-the-ceiling-both.md) - HOLD: From one frozen Opus plan, two Opus-main /code runs and one Sonnet-main run all pass 7 of 7 new-behavior keys once the keys test the plan's own merge setting; the fixture cannot separate the running models, so it is dropped. The Sonnet run used 33.8M Opus tokens, the same as the second Opus run, and stopped 5 times for the human against 3. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-14 [Review resume rulings: the ruled-by footer lifts compliance, the --by session rule leans the same way](../../../agent-evals/findings/2026-11-14-review-resume-rulings-the-ruled-by-footer-and-the.md) - HOLD: Rule-meter check, Sonnet: the review stop footer's next-to-last line 'A session that answers adds the line ruled by: <its session name>.' holds 9/9 against 0/9 without it (RF03; the earlier parenthetical wording, RF02, also 9/9 against 0/9); the Resume step's '--by session on a ruled by: line' rule holds 6/6 against 3/6 graded runs (RF01), under the 8-run floor. [watch: no watch]
   What would reopen it: Rerun RF01 to 8 graded runs per arm before citing it alone as proof.
 * 2026-11-14 [Review loop script fixes: a third are glue between headless model calls](../../../agent-evals/findings/2026-11-14-review-loop-script-fixes-a-third-are-glue-between.md) - HOLD: A read of the 57 fix notes on the review loop script sorts them by cause: 19 are glue that exists only because a script drives headless model calls (parsing their replies, carrying loop state, launching the sessions), 14 are the test and format checks, and the rest spread over dispatch rules, asks, records, tree guards and refactors. [watch: no watch]

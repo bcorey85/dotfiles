@@ -756,6 +756,20 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("tab\tname.py:1 [marker]", done.stdout)
         self.assertIn("(4 match(es))", done.stdout)
 
+    def test_branch_prep_sweep_flags_a_marker_word_and_never_an_identifier_that_holds_one(self):
+        flagged = ["print(x)", "pprint(x)", "pprint.pprint(x)", "# TODO fix", "# FIXME", "# XXX", "# HACK: no",
+                   "# TODOs",
+                   "console.log(x)", "console.debug(x)", "debugger;", "binding.pry"]
+        unflagged = ["tree_fingerprint(x)", "context_fingerprint(x)", "self.print(x)", "TODOS_DIR = 1",
+                     "MY_TODO = 1", "FIXMES = 1", "XXXL = 1", "HACKATHON = 1", "myconsole.log(x)",
+                     "console.logger(x)", "mydebugger = 1", "debuggers = 1", "binding.pryer = 1"]
+        lines = [f"v{number} = 0  {text}" for number, text in enumerate([*flagged, *unflagged], 1)]
+        self.branch_with({"a.py": "\n".join(lines) + "\n"})
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        marked = set(re.findall(r"a\.py:(\d+) \[marker\]", done.stdout))
+        self.assertEqual(marked, {str(number) for number in range(1, len(flagged) + 1)})
+
     def test_branch_prep_sweeps_a_whole_line_that_holds_a_form_feed_or_lone_carriage_return(self):
         self.branch_with({"a.py": "page = 1\x0c# TODO after the feed\nkept = 2\rprint('after the return')\n"})
         done = self.flow("branch-prep")

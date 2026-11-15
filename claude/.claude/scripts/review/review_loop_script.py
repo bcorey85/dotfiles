@@ -653,11 +653,13 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         except CoderCallError as error:
             self.files_touched.update(error.changed)
             self.flag_broken_no_code_rulings(findings, error.changed, nits)
+            self.ask_for_approval_only_edits(error.changed, findings)
             self.keep_coder_commit_in_scope()
             self.open_fixes += [finding for finding in findings if finding not in self.open_fixes]
             raise CoderFailedError(coder_failure_blocker(call_name, error)) from error
         self.keep_coder_commit_in_scope()
         self.flag_broken_no_code_rulings(findings, result.changed, nits)
+        self.ask_for_approval_only_edits(result.changed, findings)
 
         later_phase_edits = sorted(set(result.changed) & self.later_phase_files)
         if later_phase_edits:

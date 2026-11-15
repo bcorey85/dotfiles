@@ -23,7 +23,7 @@ vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
   spec = { { import = "plugins" } },
-  install = { colorscheme = { "onedark" } },
+  install = { colorscheme = { "dredge" } },
   checker = { enabled = false }, -- no background update checks
   change_detection = { enabled = false }, -- don't watch/reload spec files
   ui = { border = "rounded" },

@@ -515,9 +515,26 @@ class CriteriaOwnerTest(unittest.TestCase):
         self.assertEqual(owner["rule"], plan_format.CRITERIA_OWNER_RULES[plan_format.CRITERIA_OWNER_SESSION])
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
 
+    def test_a_crlf_queue_file_a_session_wrote_is_session_owned(self):
+        crlf_text = ('---\r\ntype: "QueueItem"\r\n'
+                     'generated: {"by": "claude-code/x", "at": "2026-11-01"}\r\n---\r\n\r\nbody\r\n')
+        (self.queue_dir / "item.md").write_bytes(crlf_text.encode())
+        owner = plan_format.criteria_owner(self.ticket("Source: ~/agent-evals/queue/item.md"))
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
+
     def test_markdown_marks_and_trailing_text_on_the_source_line_are_allowed(self):
         self.queue_item('generated: {"by": "process:nightly", "at": "2026-11-01"}\n')
         owner = plan_format.criteria_owner(self.ticket("**Source:** `~/agent-evals/queue/item.md` (copied)"))
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
+
+    def test_a_ticket_that_is_not_a_queue_item_takes_its_owner_from_the_source_line(self):
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n')
+        own_frontmatter = '---\ntype: "Plan"\ngenerated: {"by": "human:x", "at": "2026-11-01"}\n---\n\n'
+        ticket_path = self.ticket("Source: ~/agent-evals/queue/item.md")
+        ticket_path.write_text(own_frontmatter + ticket_path.read_text())
+        owner = plan_format.criteria_owner(ticket_path)
 
         self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
 
@@ -583,6 +600,26 @@ class CriteriaOwnerTest(unittest.TestCase):
                 owner = plan_format.criteria_owner(self.ticket("Source: ~/agent-evals/queue/item.md"))
 
                 self.assertEqual(owner["owner"], expected)
+
+    def test_a_queue_item_takes_its_own_generated_by_over_a_source_line(self):
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n')
+        own_item = self.folder / "own.md"
+        own_item.write_text('---\ntype: "QueueItem"\ngenerated: {"by": "human:x", "at": "2026-11-01"}\n---\n\n'
+                            "Source: ~/agent-evals/queue/item.md\n")
+
+        owner = plan_format.criteria_owner(own_item)
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_USER)
+        self.assertIsNone(owner["source"])
+
+    def test_an_unquoted_queue_item_type_is_read_as_a_queue_item(self):
+        own_item = self.folder / "own.md"
+        own_item.write_text('---\ntype: QueueItem\ngenerated: {"by": "claude-code/x", "at": "2026-11-01"}\n---\n\n'
+                            "body\n")
+
+        owner = plan_format.criteria_owner(own_item)
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
 
     def test_a_non_queue_source_line_before_the_queue_one_is_skipped(self):
         self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n')

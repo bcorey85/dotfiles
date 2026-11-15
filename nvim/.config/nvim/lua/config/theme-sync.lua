@@ -17,7 +17,7 @@ local M = {}
 
 local MODE_FILE = vim.env.HOME .. "/.cache/theme-mode"
 local FAMILY_FILE = vim.env.HOME .. "/.cache/theme-family"
-local DEFAULT_FAMILY = "onedarkpro"
+local DEFAULT_FAMILY = "dredge"
 
 -- alpha-blend two hex colours (a = share of c1).
 local function blend(c1, c2, a)
@@ -74,33 +74,11 @@ local FAMILIES = {
       light = { heading1 = "#c93f3f", heading = "#9a6604" },
     },
   },
-  ["tokyonight"] = {
-    -- folke/tokyonight.nvim night #1a1b26 / day #e1e2e7.
-    schemes = { dark = "tokyonight-night", light = "tokyonight-day" },
-    accents = {
-      dark = { heading1 = "#f7768e", heading = "#e0af68" },
-      light = { heading1 = "#f52a65", heading = "#8c6c3e" },
-    },
-  },
-  ["onedarkpro"] = {
-    schemes = { dark = "onedark", light = "onelight" },
-    accents = {
-      dark = { heading1 = "#e06c75", heading = "#e5c07b" },
-      light = { heading1 = "#e05661", heading = "#eea825" },
-    },
-  },
   ["nightfox"] = {
     schemes = { dark = "nightfox", light = "dayfox" },
     accents = {
       dark = { heading1 = "#c94f6d", heading = "#dbc074" },
       light = { heading1 = "#a5222f", heading = "#AC5402" },
-    },
-  },
-  ["duskfox"] = {
-    schemes = { dark = "duskfox", light = "dawnfox" },
-    accents = {
-      dark = { heading1 = "#eb6f92", heading = "#f6c177" },
-      light = { heading1 = "#b4637a", heading = "#ea9d34" },
     },
   },
   ["dredge"] = {
@@ -123,16 +101,6 @@ local FAMILIES = {
     accents = {
       dark = { heading1 = "#e46876", heading = "#7e9cd8" },
       light = { heading1 = "#c84053", heading = "#4d699b" },
-    },
-  },
-  ["darcula"] = {
-    -- xiantang/darcula-dark.nvim: dark only, in both modes.
-    schemes = { dark = "darcula-dark", light = "darcula-dark" },
-    colors_name = "darcula-dark",
-    dark_only = true,
-    accents = {
-      dark = { heading1 = "#cc7832", heading = "#b3deef" },
-      light = { heading1 = "#cc7832", heading = "#b3deef" },
     },
   },
   ["tairiki"] = {
@@ -267,15 +235,6 @@ local FAMILIES = {
       light = { heading1 = "#7a5e00", heading = "#4271ae" },
     },
   },
-  ["solarized-osaka"] = {
-    -- craftzdog/solarized-osaka.nvim: both colorschemes set colors_name "solarized-osaka".
-    schemes = { dark = "solarized-osaka", light = "solarized-osaka-light" },
-    colors_name = "solarized-osaka",
-    accents = {
-      dark = { heading1 = "#db302d", heading = "#b28500" },
-      light = { heading1 = "#b7221f", heading = "#8f6b00" },
-    },
-  },
   ["flexoki"] = {
     -- kepano/flexoki-neovim: flexoki-dark / flexoki-light both set colors_name "flexoki".
     schemes = { dark = "flexoki-dark", light = "flexoki-light" },
@@ -318,40 +277,6 @@ local FAMILIES = {
     accents = {
       dark = { heading1 = "#f4906f", heading = "#f7c699" },
       light = { heading1 = "#863716", heading = "#6d4717" },
-    },
-  },
-  ["rose-pine"] = {
-    -- rose-pine/neovim: main #191724 / dawn #faf4ed, both set colors_name "rose-pine".
-    schemes = { dark = "rose-pine-main", light = "rose-pine-dawn" },
-    colors_name = "rose-pine",
-    accents = {
-      dark = { heading1 = "#c4a7e7", heading = "#9ccfd8" },
-      light = { heading1 = "#907aa9", heading = "#56949f" },
-    },
-  },
-  ["ef-elea"] = {
-    -- oonamo/ef-themes.nvim: #222524 dark / #edf5e2 light. Each scheme sets
-    -- colors_name to its own name. Headings are the plugin's markdownH1 / H2.
-    schemes = { dark = "ef-elea-dark", light = "ef-elea-light" },
-    accents = {
-      dark = { heading1 = "#eba8a8", heading = "#a9c99f" },
-      light = { heading1 = "#894852", heading = "#306630" },
-    },
-  },
-  ["ef-maris"] = {
-    -- oonamo/ef-themes.nvim: #131c2b dark / #edf4f8 light.
-    schemes = { dark = "ef-maris-dark", light = "ef-maris-light" },
-    accents = {
-      dark = { heading1 = "#70a0ff", heading = "#7fce5f" },
-      light = { heading1 = "#444fcf", heading = "#3a6f00" },
-    },
-  },
-  ["catppuccin"] = {
-    -- catppuccin/nvim: frappé #303446 / latte #eff1f5.
-    schemes = { dark = "catppuccin-frappe", light = "catppuccin-latte" },
-    accents = {
-      dark = { heading1 = "#e78284", heading = "#e5c890" },
-      light = { heading1 = "#d20f39", heading = "#df8e1d" },
     },
   },
 }
@@ -618,7 +543,7 @@ function M.apply(family, mode, force)
   if fam.pre then
     fam.pre(mode) -- variant globals the theme reads at :colorscheme time
   end
-  vim.o.background = fam.dark_only and "dark" or mode
+  vim.o.background = mode
   vim.cmd.colorscheme(fam.schemes[mode])
 end
 

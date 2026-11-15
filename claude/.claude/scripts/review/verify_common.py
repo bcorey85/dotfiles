@@ -102,9 +102,9 @@ def parse_criteria_file(text, name=plan_format.CRITERIA_FILE_NAME):
 
 @raising_verify_error
 def branch_ticket_criteria(ticket_text, ticket_name="ticket", criteria_entries=None):
-    """The ticket's criteria, labelled `Ticket #n`. A ticket with no Acceptance or Requirements heading (criteria under
-    topical headings) takes `criteria_entries` instead (the non-manual entries parsed from acceptance-criteria.md),
-    each labelled by its id; with no entries it raises the missing-heading error."""
+    """The ticket's criteria, labelled `Ticket #n`. A ticket with no Acceptance, Requirements or Done when heading
+    (criteria under topical headings) takes `criteria_entries` instead (the non-manual entries parsed from
+    acceptance-criteria.md), each labelled by its id; with no entries it raises the missing-heading error."""
     try:
         return plan_format.ticket_criteria(ticket_text, ticket_name)
     except plan_format.NoCriteriaHeadingError:

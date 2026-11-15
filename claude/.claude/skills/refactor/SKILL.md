@@ -122,7 +122,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    c. **Finder dispatch**: ONE `complexity-reviewer` (pinned; omit `model`) with the printed prompt. Add any project constraint you already know that makes a shape mandatory (a required layer, a framework seam, a public contract).
 
-   d. **Triage before offering**: drop oracle-failures, under-floor, and irreducible-complexity collapses. `[design-decision]` (contracts, cross-module, migrations, test-assertion changes) → user via AskUserQuestion, never a coder list.
+   d. **Triage before offering**: drop oracle-failures, under-floor, and irreducible-complexity collapses. `[design-decision]` (contracts, cross-module, migrations, test-assertion changes) → user, never a coder list.
 
    e. **Present survivors for the user to choose** (sites, quantified disappearance, enabling change, cost). Nothing found → say so, run `log --mode simplify` (empty-handed, with `target`), and stop. The user picks none → log every finder finding anyway (declined survivors `actioned=none`, triage drops `actioned=skipped_fp`) with `target`, and stop. Empty-handed means the finder returned nothing.
 

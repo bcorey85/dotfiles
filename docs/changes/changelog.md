@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-977 changes
+978 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -36,6 +36,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [Five skills stop pointing to the denied question tool](notes/2026-11-15-five-skills-stop-pointing-to-the-denied-question.md) [skill/peer-review, skill/vault-progress, skill/triage, skill/refactor, skill/eng-arch] Six steps in five skills no longer tell the session to use AskUserQuestion, which settings.json denies; each step asks in plain text.
 * [Review loop fixes every round-two finding again](notes/2026-11-15-review-loop-fixes-every-round-two-finding-again.md) [script/review-loop, script/review-loop-fix-induced] The review loop sends every round-two `fix` finding to the fix coder again, whatever its class and wherever its line sits. The rule that left a non-bug fix outside the previous fix diff open in `findings_remaining` is removed from `review_loop_script.py` and `review_loop_fix_induced.py`.
 * [The coder hand-back no longer checks readability](notes/2026-11-14-the-coder-hand-back-no-longer-checks-readability.md) [script/coder-gate, script/review-loop-script, script/gate-commands, script/code-review-start] The readability check is gone from every gate command list: the coder's hand-back is never refused for a readability hit, and the review loop runs no readability pass. readability_check.py and readability_ts.mjs are deleted; the stale-prose check stays.
 

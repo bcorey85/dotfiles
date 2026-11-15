@@ -11,7 +11,6 @@ allowed-tools:
     Grep,
     LSP,
     Skill,
-    AskUserQuestion,
     mcp__jira__getJiraIssue,
   ]
 ---
@@ -148,7 +147,7 @@ Merge survivors into step 5's tiers tagged `(surprise-lens)` (Blocking ones stat
 
 Suggestions/nits: one line each. No `Issue:`/`Failure scenario:` labels — the table in disguise; fold into prose.
 
-Number continuously across tiers. Then **offer the next step via AskUserQuestion** (two options):
+Number continuously across tiers. Then **offer the next step** (two options):
 
 - **Walk through the findings** — one at a time, with discussion; proceed to step 6.
 - **Done for now** — stop; the user acts on the findings as-is.

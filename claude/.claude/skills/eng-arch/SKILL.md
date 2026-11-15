@@ -1,7 +1,7 @@
 ---
 name: eng-arch
 description: "Generate or update system architecture docs — auto-detects subsystems, runs architect agents, diff+merge existing docs. Modifiers: be/fe/fs, +quick, +deep."
-allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion]
+allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, Agent]
 ---
 
 # Engineering Architecture
@@ -26,7 +26,7 @@ A bare topic name = single deep-dive request. A `.md` path under `docs/decisions
 
 ## ADR-Driven Mode
 
-Triggered by an `$ARGUMENTS` path under `docs/decisions/`. Skips Phase 2, replaces Phase 3 (no sweep); Phases 4–6 as written. Read ADR fully → `ls docs/architecture/` → identify target (AskUserQuestion: `Update <file>` / `Create <new-file>` / `Edit`) → read existing deep-dive if updating → dispatch scoped architect (prompt below) → diff/merge → write → summarize (ADR path, deep-dive path, drift).
+Triggered by an `$ARGUMENTS` path under `docs/decisions/`. Skips Phase 2, replaces Phase 3 (no sweep); Phases 4–6 as written. Read ADR fully → `ls docs/architecture/` → identify target (ask: `Update <file>` / `Create <new-file>` / `Edit`) → read existing deep-dive if updating → dispatch scoped architect (prompt below) → diff/merge → write → summarize (ADR path, deep-dive path, drift).
 
 ### Architect prompt — required fields
 
@@ -81,7 +81,7 @@ Triggered by an `$ARGUMENTS` path under `docs/decisions/`. Skips Phase 2, replac
      ```
 
    - Ask: "Accept proposed change, keep existing, or edit?"
-   - Use AskUserQuestion with options: `Accept`, `Keep existing`, `Edit` (user provides custom text)
+   - Options: `Accept`, `Keep existing`, `Edit` (user provides custom text)
 
 10. **New sections**: show + ask "Add?". **Unchanged sections**: preserve silently.
 

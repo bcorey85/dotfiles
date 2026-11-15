@@ -150,6 +150,18 @@ class ChangeRemovedError(RuntimeError):
     """A coder pass that removed half or more of the lines the change under review adds. The message is the blocker."""
 
 
+class CoderFailedError(RuntimeError):
+    """A fix coder call that failed. The message is the blocker."""
+
+
+def coder_failure_blocker(call_name, error):
+    """The blocker for a failed coder call: what failed, that its findings were not all applied, and the way out."""
+    return (f"the {call_name} coder call failed: {error}. Its findings were not all applied "
+            "and are in findings_remaining. Never apply them outside the review loop: "
+            "a fix made outside it is unreviewed. "
+            "Fix the cause of the failure and rerun the review.")
+
+
 class ReviewRequest(typing.NamedTuple):
     """One reviewer call of a round: its role name, its agent and its prompt."""
 
@@ -627,13 +639,15 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
 
     def repair(self, call_name, findings, nits=()):
         """One coder pass on the findings. Returns a CoderResult (report, diffs, changed files). Raises
-        LaterPhaseEditError when the pass edited a later-phase file, and ChangeRemovedError when the passes so far
-        removed half or more of the lines the change under review adds."""
+        LaterPhaseEditError when the pass edited a later-phase file, ChangeRemovedError when the passes so far
+        removed half or more of the lines the change under review adds, and CoderFailedError when the coder call
+        fails, with the findings kept in open_fixes."""
         finding_paths = [finding.path for finding in findings if finding.path]
         files_in_scope = list(dict.fromkeys([*self.review_scope(), *finding_paths]))
         issue_texts = [self.issue_text(finding) for finding in findings]
-        prompt = coder_prompt(self.repo, issue_texts, [nit.text for nit in nits],
-                              files_in_scope, self.gate_env, self.later_phase_files, self.guidance, self.held_files)
+        prompt = coder_prompt(self.repo, issue_texts, [nit.text for nit in nits], files_in_scope,
+                              self.out / "coder-briefs" / call_name, self.gate_env, self.later_phase_files,
+                              self.guidance, self.held_files)
         self.last_pass = "coder"
         self.untested_fix = True
         try:
@@ -641,7 +655,8 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         except CoderCallError as error:
             self.files_touched.update(error.changed)
             self.keep_coder_commit_in_scope()
-            raise
+            self.open_fixes += [finding for finding in findings if finding not in self.open_fixes]
+            raise CoderFailedError(coder_failure_blocker(call_name, error)) from error
         self.keep_coder_commit_in_scope()
 
         later_phase_edits = sorted(set(result.changed) & self.later_phase_files)

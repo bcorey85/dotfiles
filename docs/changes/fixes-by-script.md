@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-581 fix notes
+583 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
@@ -17,7 +17,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/review-fix | 58 | 10 |
 | script/review-loop-script | 57 | 7 |
 | script/handback | 53 | 3 |
-| script/review-commit-gate | 36 | 2 |
+| script/review-commit-gate | 37 | 3 |
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 23 | 2 |
 | script/coder-gate | 21 | 1 |
@@ -28,7 +28,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | skill/code | 17 | 3 |
 | skill/review | 17 | 11 |
 | script/shell-write-gate | 14 | 0 |
-| script/review-loop | 12 | 5 |
+| script/review-loop | 13 | 6 |
 | script/staged-claim-gate | 12 | 1 |
 | script/verify-prep | 12 | 2 |
 | script/log-review-finding | 11 | 0 |
@@ -43,10 +43,10 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
 | script/refactor-flow | 7 | 2 |
+| script/shell-command | 7 | 3 |
 | script/handback-store | 6 | 4 |
 | script/herdr-worktree | 6 | 2 |
 | script/pipe-shell-check | 6 | 3 |
-| script/shell-command | 6 | 2 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/open-child-gate | 5 | 0 |

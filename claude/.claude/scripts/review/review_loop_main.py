@@ -43,6 +43,7 @@ from review_loop_script import (
     ROUND_BUDGET,
     SKILLS,
     ChangeRemovedError,
+    CoderFailedError,
     LaterPhaseEditError,
     LoopRun,
     TelemetryRun,
@@ -139,7 +140,7 @@ def run_loop(request):
         loop.session_ruled = header_ruled(header, findings, SESSION_RULED_HEADER_KEY)
         first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
-    except LaterPhaseEditError as error:
+    except (LaterPhaseEditError, CoderFailedError) as error:
         loop.stop("critical-blocker", [str(error)])
     except ChangeRemovedError as error:
         loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])

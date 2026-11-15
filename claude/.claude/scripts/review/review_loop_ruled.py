@@ -25,8 +25,8 @@ from review_loop_prompts import user_ruled_issue
 from ruled_change_text import is_no_code_finding, ruled_note
 from source_paths import is_doc_path
 
-# The gate the ask is logged under: log-review-finding has no gate name for this ask, so it uses `drift-gate`.
-APPROVAL_ASK_GATE = "drift-gate"
+# The fix coder's agent name: the gate of its plan impacts and of its approval asks.
+CODER_GATE = "coder"
 
 
 def approval_only_paths(changed):
@@ -35,11 +35,16 @@ def approval_only_paths(changed):
     return [path for path in changed if PurePosixPath(path).name in PROMPT_MARKDOWN_NAMES]
 
 
+def approval_change(path):
+    """The change the approval ask proposes for `path`. An accepted ask reaches the next fix run as
+    `<file_line> [<class>] Proposed change: <change>`, so the change is the part that names the ask there."""
+    return f"revert the fix coder's edit to `{path}`."
+
+
 def approval_ask_text(path):
     """The text of the ask for a coder's edit to the approval-only file `path`."""
-    # One unconditional change: accepting reverts the edit, rejecting keeps it.
     return (f"`{path}:1` [other] A fix coder edited `{path}`, which needs the user's approval. "
-            f"Change: revert the fix coder's edit to `{path}`.")
+            f"Change: {approval_change(path)}")
 
 
 def no_code_numbers(findings):
@@ -194,7 +199,7 @@ class RuledFindings:
         ac_change = plan_format.changes_acceptance_criteria(text)
         settled = cause == plan_format.PLAN_CAUSE and ruled_plan_impact(text, self.resolved_texts, self.ruled_texts)
         adopted = settled or (not ac_change and cause == plan_format.PLAN_CAUSE)
-        self.record_plan_impact({"text": text, "gate": "coder", "ac_change": ac_change, "cause": cause,
+        self.record_plan_impact({"text": text, "gate": CODER_GATE, "ac_change": ac_change, "cause": cause,
                                  "adopted": adopted, "applied": bool(changed), "settled": settled})
         return not adopted and cause != plan_format.TOOLKIT_CAUSE
 
@@ -210,15 +215,16 @@ class RuledFindings:
             if any(names_changed_path(finding.path, path, self.repo) for finding in ruling_findings):
                 continue
             text = approval_ask_text(path)
-            self.add_ask(APPROVAL_ASK_GATE, parse_finding(text))
+            self.add_ask(CODER_GATE, parse_finding(text))
 
     def is_approval_ruling(self, finding):
-        """True when the user ruled on `finding`, or a session ruled on the approval ask for its path."""
+        """True when the user ruled on `finding`, or a session accepted the approval ask for its path
+        unchanged (a ruling note is no approval)."""
         if finding.text in self.user_ruled:
             return True
         if finding.text not in self.session_ruled:
             return False
-        return finding.text.startswith(approval_ask_text(finding.path))
+        return approval_change(finding.path) in finding.text and ruled_note(finding.text) is None
 
     def flag_broken_no_code_rulings(self, findings, changed, nits=()):
         """After a coder pass: records the no-code rulings of `findings` for the next reviewer prompt, and each code

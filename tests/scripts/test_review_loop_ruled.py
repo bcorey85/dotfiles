@@ -17,7 +17,8 @@ from no_code_notes import NO_CODE_NOTES
 
 
 def ruled_finding(note, location="`a/b.py:3`"):
-    return parse_finding(ruled_change_text.changed_text(f"{location} [bug] Proposed change: add X.", note))
+    return parse_finding(ruled_change_text.changed_text(f"{location} [bug] Proposed change: add X.", note,
+                                                          ruled_change_text.USER_CLAUSE))
 
 
 def broken_entry(finding, path):
@@ -113,7 +114,8 @@ class NoCodeRulingTest(unittest.TestCase):
     def test_a_long_finding_keeps_its_ruling_note_in_the_reviewer_prompt(self):
         host = Host()
         long_change = "Proposed change: " + "add a guard. " * 60
-        finding = parse_finding(ruled_change_text.changed_text(f"`a/b.py:3` [bug] {long_change}", NO_CODE_NOTES[1]))
+        finding = parse_finding(ruled_change_text.changed_text(f"`a/b.py:3` [bug] {long_change}", NO_CODE_NOTES[1],
+                                                          ruled_change_text.USER_CLAUSE))
         host.flag_broken_no_code_rulings([finding], [])
         prompt = review_loop_prompts.reviewer_prompt(
             "/repo", "bug-reviewer", ["a/b.py"], [], no_code_rulings=tuple(host.no_code_rulings))

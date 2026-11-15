@@ -170,8 +170,7 @@ def finding_ask_indexes(asks, outcomes):
 
 def ruler_clause(decided_by):
     """The clause that names who changed a modified ask: the user, the session, or no one when `decided_by` is None.
-    `ask_deciders` and `--by` refuse any other word, so none reaches here. The user's words stay as they were because
-    a stored finding text is matched word for word."""
+    `ask_deciders` and `--by` refuse any other word, so none reaches here."""
     if decided_by == plan_format.USER_RULING:
         return USER_CLAUSE
     if decided_by == plan_format.SESSION_RULING:

@@ -18,8 +18,18 @@ export HUNK_REVIEW_HANDOFF="$handoff"
 rm -f "$handoff"
 trap 'rm -f "$handoff"' EXIT
 
+# hunk reads and diffs every untracked file before its first paint, about 3 ms
+# each, so a tree with build output that .gitignore misses takes seconds to open.
+# Past the limit, leave untracked files out; lazygit (C) still lists them.
+untracked_limit=200
+untracked_flag=()
+untracked_count=$(git ls-files --others --exclude-standard 2>/dev/null | head -n $((untracked_limit + 1)) | wc -l)
+if [ "$untracked_count" -gt "$untracked_limit" ]; then
+    untracked_flag=(--exclude-untracked)
+fi
+
 # --sidebar first so it is the default, but a caller's --no-sidebar still wins.
-hunk diff --sidebar --no-hunk-headers "$@" || exit $?
+hunk diff --sidebar --no-hunk-headers "${untracked_flag[@]}" "$@" || exit $?
 
 # Absent or empty file: hunk was quit normally, nothing to hand off to.
 [ -s "$handoff" ] || exit 0

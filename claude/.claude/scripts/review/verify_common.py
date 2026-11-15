@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 import sys
+import typing
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
 import full_check_receipt
@@ -16,6 +17,9 @@ TOOLKIT_DIR = pathlib.Path(__file__).resolve().parents[2]
 STATE_ROOT = pathlib.Path.home() / ".claude" / "state"
 REVIEW_MARKER = "verify-branch"
 REVIEW_GATE = "code-reviewer"
+# The saved-context key verify-log writes on a --asks-ruled run that prints CLEAN:
+# the tree on which the user ruled on the open review asks.
+REVIEW_ASKS_RULED_TREE = "reviewAsksRuledTree"
 # review_ran's reason when the ledger lists branch reviews on other trees only; review_state reads it to tell that
 # case from "no branch review logged".
 TREE_DIFFERS_REASON = "the tree differs from the one reviewed"
@@ -311,32 +315,43 @@ def context_fingerprint(context, top, timeout=None):
     return tree_fingerprint(top, context["mergeBase"], context["excludeRel"], timeout=timeout)
 
 
+class BranchCredit(typing.NamedTuple):
+    """covers: a logged branch review credits the tree. problem: why the saved record could not be read (None when it
+    was read), for the caller to report under its own name."""
+    covers: bool
+    problem: str | None = None
+
+
 def branch_review_covers(repo_dir, timeout=None):
-    """True when verify-log logged a branch review of the tree at repo_dir as it stands and left no ask open. The
-    saved context is the record: its `top` is this checkout, its `reviewLoggedTree` equals the fingerprint computed
-    now, and its `reviewAsks` is empty. Fails closed: no repo, a detached HEAD or no saved context is a quiet False; a
-    bad context or a failed fingerprint prints a review-commit-gate line on stderr and returns False, so the commit
-    gate keeps asking for a review. Each git call may run `timeout` seconds."""
+    """A BranchCredit: covers is True when verify-log logged a branch review of the tree at repo_dir as it stands and
+    left no ask open. The saved context is the record: its `top` is this checkout, its `reviewLoggedTree` equals the
+    fingerprint computed now, and its `reviewAsks` is empty or `reviewAsksRuledTree` equals the logged tree (verify-log
+    (saved by a verify-log --asks-ruled run that printed CLEAN). Fails closed: no repo, a detached HEAD or no
+    saved context is `covers` False with no problem; a bad context or a failed fingerprint is False with
+    `problem` set, so the commit gate keeps asking for a review and can print the problem. repo_top,
+    require_branch and the fingerprint's git calls may each run `timeout` seconds;
+    repo_name keeps its own 10 s limit. A git call that times out in repo_top or require_branch reads as no repo
+    or a detached HEAD, so it is `covers` False with no problem too."""
     try:
         top = repo_top(repo_dir, timeout=timeout)
         branch = require_branch(top, timeout=timeout)
     except VerifyError:
-        return False
+        return BranchCredit(False)
 
     try:
         path = context_path(script_utils.repo_name(top), branch)
         if not path.is_file():
-            return False
+            return BranchCredit(False)
         context = load_context(path)
         logged_tree = context.get("reviewLoggedTree")
         if context.get("top") != str(top) or not logged_tree:
-            return False
-        if context.get("reviewAsks"):
-            return False
-        return logged_tree == context_fingerprint(context, top, timeout=timeout)
+            return BranchCredit(False)
+        ask_open = bool(context.get("reviewAsks")) and context.get(REVIEW_ASKS_RULED_TREE) != logged_tree
+        if ask_open:
+            return BranchCredit(False)
+        return BranchCredit(logged_tree == context_fingerprint(context, top, timeout=timeout))
     except (VerifyError, OSError, ValueError, KeyError, TypeError) as error:
-        print(f"review-commit-gate: verify credit unread: {error}", file=sys.stderr)
-        return False
+        return BranchCredit(False, f"verify credit unread: {error}")
 
 
 def die(error):

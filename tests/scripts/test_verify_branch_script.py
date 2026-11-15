@@ -1414,6 +1414,38 @@ class OpenAskTest(VerifyBranchBase):
         self.assertIn("CLEAN", done.stdout)
         self.assertIn("asks ruled: user kept the plan's reading, 2026-11-01", done.stdout)
 
+    def rule_on_the_open_asks(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+        done = self.log("--rows", "-", "--asks-ruled", "user kept the plan's reading, 2026-11-01", stdin=self.rows())
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_a_ruling_saves_the_tree_it_ruled_on(self):
+        self.rule_on_the_open_asks()
+
+        context = self.context()
+        self.assertEqual(context["reviewLoggedTree"], context["reviewAsksRuledTree"])
+
+    def test_a_later_review_log_clears_the_ruled_tree(self):
+        self.rule_on_the_open_asks()
+        # A second review of the same tree exits 2, so the tree changes before the new review is logged.
+        self.write("src/a.py", "print(2)\n")
+        self.assertEqual(self.prep().returncode, 0)
+
+        logged = self.log_review(self.ASK, "PASS WITH WARNINGS")
+
+        self.assertEqual(logged.returncode, 0, logged.stderr)
+
+        self.assertNotIn("reviewAsksRuledTree", self.context())
+
+    def test_a_prep_rerun_keeps_the_ruled_tree(self):
+        self.rule_on_the_open_asks()
+        ruled_tree = self.context()["reviewAsksRuledTree"]
+
+        self.assertEqual(self.prep().returncode, 0)
+
+        self.assertEqual(ruled_tree, self.context()["reviewAsksRuledTree"])
+
     def test_a_long_ruling_is_shown_whole(self):
         self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
         self.assertEqual(self.prep().returncode, 0)

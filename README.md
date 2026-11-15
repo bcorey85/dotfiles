@@ -36,6 +36,8 @@ Each step can also be run independently from the `install/` directory:
 | `./install/claude-plugins` |                          | Claude Code plugins                           |
 | `./install/zsh`            |                          | Set zsh as default shell                      |
 
+One post-install step is not part of `./setup`: `./scripts/mcp_ledger` registers `ledger mcp` as the user-scope MCP server `ledger` (the name sessions call as `mcp__ledger__*`) and removes an old `agent-memory` entry for the same command. It does nothing when `ledger` is not installed, and is safe to rerun.
+
 ## Daily Workflow
 
 ```bash

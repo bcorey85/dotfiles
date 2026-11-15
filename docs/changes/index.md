@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-957 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+958 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-14, [Accepted ask reaches the fix coder as its proposed change only](notes/2026-11-14-accepted-ask-reaches-the-fix-coder-as-its-proposed.md).
+Latest change: 2026-11-14, [Scripts folder CLAUDE.md names the owner of commit placement, ask outcome words and the file lock](notes/2026-11-14-scripts-folder-claude-md-names-the-owner-of-commit.md).
 
 ## Top gains
 

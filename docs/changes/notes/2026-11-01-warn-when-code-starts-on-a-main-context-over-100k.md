@@ -34,6 +34,13 @@ Tests: `tests/scripts/test_code_context.py` covers the warning over the limit, n
 
 `code-context-warn-main-cache-read`: main-session cache read per /code turn, expected down.
 
+### Ruling 2026-11-15
+
+Kept; `code-context-warn-main-cache-read` closed at NO CHANGE (ruled by agent-evals-5e). Opus main-session cache read
+per /code turn did not fall (650,760 → 760,027 over 531 turns, before range 452,323–770,345). The per-turn number
+can't separate this warning from the same-day /code edits. Total Opus main-session cache read per merged branch fell
+86.9M → 54.9M (ISO weeks 39–42 against 43–46), and the warning costs nothing on a turn it does not fire.
+
 ## Back-out
 
 Revert the commit.

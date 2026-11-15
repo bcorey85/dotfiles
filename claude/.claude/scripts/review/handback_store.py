@@ -110,8 +110,11 @@ def rulings(session_id, repo):
 
 def record_rejected_ask(session_id, text, repo):
     """Records the text of an ask the session answered "rejected" in `repo` (its top level), so a later round of that
-    repo's review loop drops a repeat of it. Does nothing without a session id."""
+    repo's review loop drops a repeat of it. Does nothing without a session id, and adds no row for a text the session
+    currently holds as rejected there (a rerun after a crash)."""
     if not session_id:
+        return None
+    if text in rejected_ask_texts(session_id, repo):
         return None
     return record(session_id, ASK_REJECTED, text=text, repo=repo)
 

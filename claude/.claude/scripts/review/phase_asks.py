@@ -8,9 +8,10 @@
 phase packet (converged, or capped and read as deferred) that holds finding asks. `list` prints them. `rule` takes
 one outcome per finding ask, in order, logs each ask's outcome row decided by the session, and stores one
 `phase-asks-ruled` row that names the open row it answers; the commit gate denies a commit in the repo until that
-row exists, in whichever session opened the asks; a notes-only commit still passes. A later review of
-the repo leaves the asks open: only a newer phase packet with finding asks replaces them. The reasons stay in
-the store row: the ledger writer drops free text, so the outcome rows carry none.
+row exists, in whichever session opened the asks; a notes-only commit still passes. Each ask ruled `rejected` is
+also stored as a rejected-ask row (for the ruling session and each opener), so the next review loop drops a repeat
+of it. A later review of the repo leaves the asks open: only a newer phase packet with finding asks replaces them.
+The reasons stay in the store row: the ledger writer drops free text, so the outcome rows carry none.
 Run from the repo root. Exit 0 when done, 2 when the call is refused (nothing is logged then), 1 when the store is
 damaged or cannot be written (the message names the file and line).
 """
@@ -192,13 +193,20 @@ def rule_open_asks(words):
     # its asks were carried from): prune_stale deletes a file by its own age, and a ruling kept in another file could
     # vanish while an open row stays.
     answered_rows = handback_store.unruled_open_rows(repo)
-    for open_row in answered_rows:
-        store_file = handback_store.session_file(open_row["session_id"])
+    # The rejected-ask rows go to the ruling session and to each session that opened the asks, once each.
+    store_sessions = list(dict.fromkeys([session_id, *(open_row["session_id"] for open_row in answered_rows)]))
+    for store_session in store_sessions:
+        store_file = handback_store.session_file(store_session)
         if not script_utils.can_append(store_file):
-            # Checked before any outcome row is logged: a rerun would log them all again.
+            # Checked before any row is written or outcome row logged: a rerun would log them all again.
             print(f"phase_asks: cannot write the ruling: {store_file} or its folder is not writable. Nothing was "
                   "logged.", file=sys.stderr)
             return 1
+
+    # Before the outcome rows: a hung or failed logger must not lose them. A rerun adds none (the store skips a text
+    # already rejected). The key is the one the review loop reads them under.
+    review_asks.record_rejected_asks(store_sessions, handback_store.ruled_rows_repo(repo), asks,
+                                     [outcome for outcome, _reason in rulings])
 
     contexts = state.open_row["contexts"]
     failures = log_outcomes(session_id, repo, asks, rulings, contexts)

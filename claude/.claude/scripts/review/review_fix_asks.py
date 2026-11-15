@@ -8,14 +8,22 @@ import shlex
 import sys
 from typing import NamedTuple
 
-import handback
 import handback_store
 import plan_format
 import review_asks
 import review_launch
 import script_utils
 from handback import PLAN_IMPACT_STATUS, is_plan_impact_ask
-from review_asks import ACCEPT_MEANS, ACCEPTED, ASK_OUTCOMES, MODIFIED, REJECT_MEANS, REJECTED, USER_RULED_KEY
+from review_asks import (
+    ACCEPT_MEANS,
+    ACCEPTED,
+    ASK_OUTCOMES,
+    MODIFIED,
+    REJECT_MEANS,
+    REJECTED,
+    USER_RULED_KEY,
+    rejected_ask_text,
+)
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_FINDINGS_NAME,
@@ -295,26 +303,6 @@ def record_accepted_plan_impacts(asks, outcomes, repo):
                                            finding_text=ask_finding_text(item))
 
 
-def record_rejected_asks(asks, outcomes, repo):
-    """Records each ask answered "rejected" in the hand-back store under `repo`, by file:line and question (the text
-    before the ask's change, the part the loop compares), so a later round of the review loop drops a repeat of it
-    instead of stopping on it."""
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    for item, outcome in zip(asks, outcomes, strict=True):
-        if outcome != REJECTED:
-            continue
-        handback_store.record_rejected_ask(session_id, rejected_ask_text(item), repo)
-
-
-def rejected_ask_text(item):
-    """The text a rejected ask is stored under: its file:line and question."""
-    question = one_line(item["question"], None)
-    # An ask with no location is stored as its question alone: a live ask's title has no `unlocated` word to match.
-    if item["file_line"] == handback.UNLOCATED:
-        return question
-    return f"{item['file_line']} {question}"
-
-
 def record_corrected_rejection(item, old_outcome, new_outcome, repo):
     """Keeps the rejected-ask rows in step with a corrected answer: a new rejection is recorded, and a rejection the
     correction undoes is withdrawn."""
@@ -329,7 +317,8 @@ def record_unrecorded_rejections(target, asks, outcomes, repo):
     """Records the packet's rejected asks once: a retry after a logging failure adds none."""
     if target.get("asks_rejections_recorded"):
         return
-    record_rejected_asks(asks, outcomes, repo)
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    review_asks.record_rejected_asks([session_id], repo, asks, outcomes)
     target["asks_rejections_recorded"] = True
 
 

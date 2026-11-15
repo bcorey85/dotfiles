@@ -82,6 +82,21 @@ class ApprovalRulingTest(unittest.TestCase):
         finding = parse_finding("`CLAUDE.md:7` [bug] Proposed change: reword the rule.")
         self.assertEqual(self.ask_filed(finding, user_ruled=[finding.text]), 0)
 
+    def test_a_user_ruling_on_root_claude_md_leaves_a_nested_claude_md_edit_asked(self):
+        finding = parse_finding("`CLAUDE.md:7` [bug] Proposed change: reword the rule.")
+        self.assertEqual(self.ask_filed(finding, user_ruled=[finding.text], changed="sub/CLAUDE.md"), 1)
+
+    def test_a_session_accepted_root_approval_ask_leaves_a_nested_claude_md_edit_asked(self):
+        finding = parse_finding(accepted_approval_ask_text("CLAUDE.md"))
+        host = approval_host(session_ruled=[finding.text])
+        host.ask_for_approval_only_edits(["CLAUDE.md", "sub/CLAUDE.md"], [finding])
+        self.assertEqual(len(host.asks), 1)
+        self.assertEqual(host.asks[0].path, "sub/CLAUDE.md")
+
+    def test_a_user_ruling_on_a_shortened_path_leaves_the_full_path_edit_asked(self):
+        finding = parse_finding("`.claude/CLAUDE.md:3` [bug] Proposed change: reword the rule.")
+        self.assertEqual(self.ask_filed(finding, user_ruled=[finding.text], changed="claude/.claude/CLAUDE.md"), 1)
+
     def test_a_session_ruling_on_the_approval_ask_itself_files_no_ask(self):
         finding = parse_finding(accepted_approval_ask_text("CLAUDE.md"))
         self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 0)

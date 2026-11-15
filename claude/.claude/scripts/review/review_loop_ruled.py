@@ -207,12 +207,14 @@ class RuledFindings:
         """After a coder pass on `findings`: files one ask for the user per approval-only file (see
         `approval_only_paths`) the pass changed. The ask rides the packet's ask list like a reviewer ask: a /code
         phase review's commit gate holds the commit until it is ruled; the run's status is unchanged. The same file in
-        a later round stays one ask. A file that a finding the user ruled on names is not asked about: the ruling is
-        the approval. A session's ruling is no approval, except on this ask itself (a revert), which would otherwise
-        be filed again."""
+        a later round stays one ask. A file that a finding the user ruled on names by its repo-relative (or absolute)
+        path is not asked about: the ruling is the approval, and a same-named file in another folder still is asked
+        about.
+        A session's ruling is no approval, except on this ask itself (a revert), which would otherwise be filed
+        again."""
         ruling_findings = [finding for finding in findings if self.is_approval_ruling(finding)]
         for path in approval_only_paths(changed):
-            if any(names_changed_path(finding.path, path, self.repo) for finding in ruling_findings):
+            if any(held_path_in_repo(finding.path, self.repo) == path for finding in ruling_findings):
                 continue
             text = approval_ask_text(path)
             self.add_ask(CODER_GATE, parse_finding(text))

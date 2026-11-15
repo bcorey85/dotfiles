@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-- `review/review_loop_ruled.py` `ask_for_approval_only_edits` files one ask per changed file whose basename is `CLAUDE.md`, `CLAUDE.local.md` or `AGENTS.md` (`PROMPT_MARKDOWN_NAMES` in `lib/format_files.py`), under the `drift-gate` gate name. `review/review_loop_script.py` `repair` calls it after every coder pass, also when the coder call fails. The ask rides the packet's existing `ask` list, so `handback.py` and the commit gate treat it like any open ask. A file named by a finding the user ruled on files no new ask. A session ruling counts only on the approval ask itself (its revert). The run's status is unchanged. No prompt text changes.
+- `review/review_loop_ruled.py` `ask_for_approval_only_edits` files one ask per changed file whose basename is `CLAUDE.md`, `CLAUDE.local.md` or `AGENTS.md` (`PROMPT_MARKDOWN_NAMES` in `lib/format_files.py`), under the `coder` gate name. `review/review_loop_script.py` `repair` calls it after every coder pass, also when the coder call fails. The ask rides the packet's existing `ask` list, so `handback.py` and the commit gate treat it like any open ask. A file named by a finding the user ruled on files no new ask. A session ruling counts only on the approval ask itself (its revert). The run's status is unchanged. No prompt text changes.
 
 ## Evidence
 

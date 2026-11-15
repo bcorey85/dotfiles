@@ -14,6 +14,7 @@ import review_loop_prompts
 import review_loop_ruled
 import review_loop_script
 import ruled_change_text
+from approval_ask_chain import accepted_approval_ask_text
 from finding_record import parse_finding
 from no_code_notes import NO_CODE_NOTES
 
@@ -34,7 +35,7 @@ class Host(review_loop_ruled.RuledFindings):
 
 
 class ApprovalOnlyPathsTest(unittest.TestCase):
-    def test_only_a_basename_of_claude_md_needs_approval(self):
+    def test_only_a_file_named_claude_md_needs_approval_whatever_its_folder(self):
         changed = ["a/b.py", "CLAUDE.md", "x/y/CLAUDE.md", "NOT_CLAUDE.md", "docs/CLAUDE.md.bak", "claude.md"]
         self.assertEqual(review_loop_ruled.approval_only_paths(changed), ["CLAUDE.md", "x/y/CLAUDE.md"])
 
@@ -82,8 +83,12 @@ class ApprovalRulingTest(unittest.TestCase):
         self.assertEqual(self.ask_filed(finding, user_ruled=[finding.text]), 0)
 
     def test_a_session_ruling_on_the_approval_ask_itself_files_no_ask(self):
-        finding = parse_finding(review_loop_ruled.approval_ask_text("CLAUDE.md"))
+        finding = parse_finding(accepted_approval_ask_text("CLAUDE.md"))
         self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 0)
+
+    def test_a_session_ruling_that_modifies_the_approval_ask_still_files_the_ask(self):
+        finding = parse_finding(accepted_approval_ask_text("CLAUDE.md", "keep the edit and reword line 3", "session"))
+        self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 1)
 
 
 class ApprovalAskTextTest(unittest.TestCase):

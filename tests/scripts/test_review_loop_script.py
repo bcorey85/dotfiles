@@ -19,6 +19,7 @@ from unittest import mock
 
 import fake_ledger
 import toolkit_paths
+from approval_ask_chain import accepted_approval_ask_text
 
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import finding_record
@@ -692,12 +693,24 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
 
     def test_a_coder_edit_to_a_claude_md_file_the_user_accepted_the_ask_for_files_no_new_ask(self):
-        ask_text = review_loop_ruled.approval_ask_text("CLAUDE.md")
+        ask_text = accepted_approval_ask_text("CLAUDE.md")
         completed = self.run_script({
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
             "code-reviewer": [{"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
             "closure": [{"result": CLOSED}],
         }, header_extra=self.findings_header(ask_text) + self.USER_RULED_HEADER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+
+    def test_a_session_accepted_approval_ask_whose_fix_run_reverts_claude_md_files_no_new_ask(self):
+        ask_text = accepted_approval_ask_text("CLAUDE.md")
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Reverted\n"}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header(ask_text) + "session-ruled: 1\n")
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()

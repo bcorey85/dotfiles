@@ -31,6 +31,14 @@ class RuledNoteTest(unittest.TestCase):
             text = review_fix_asks.ask_finding_text(item, "Make no code change.")
             self.assertTrue(ruled_change_text.is_no_code_finding(text), text)
 
+    def test_a_no_code_note_is_read_for_every_ruler(self):
+        ask = {"question": "q", "file_line": "a.py:1", "class": "bug", "change": "add X"}
+        for decided_by in ("user", "session", None):
+            with self.subTest(decided_by):
+                text = review_fix_asks.ask_finding_text(ask, "Make no code change.", decided_by)
+                self.assertEqual(ruled_change_text.ruled_note(text), "Make no code change.")
+                self.assertTrue(ruled_change_text.is_no_code_finding(text), text)
+
 
 if __name__ == "__main__":
     unittest.main()

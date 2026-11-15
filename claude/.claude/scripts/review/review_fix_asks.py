@@ -42,7 +42,7 @@ from review_fix_state import (
     save_fix_state,
 )
 from review_loop_findings import criteria_covered, plan_item_criteria_ids
-from ruled_change_text import changed_text
+from ruled_change_text import SESSION_CLAUSE, UNNAMED_CLAUSE, USER_CLAUSE, changed_text
 from saved_handback import dispatched_repo, session_repo
 from script_utils import one_line, split_location
 
@@ -55,7 +55,7 @@ PRINTED_RUN_LINE = "The first asks-done printed this fix run; run it now unless 
 
 def read_outcomes(argv, asks):
     """(the outcome word of each ask, the note after `:` of each, "" when none). A modified ask needs its note: the
-    note is the user's change."""
+    note is the ruler's change."""
     try:
         return review_asks.parse_outcome_words(argv, len(asks), ASK_OUTCOMES, (MODIFIED,))
     except review_asks.OutcomeError as error:
@@ -67,7 +67,7 @@ def read_outcomes(argv, asks):
                 f"{REJECTED}: {REJECT_MEANS} (the outcome for a 'leave it' or 'accept the gap' "
                 f"option); {MODIFIED}:<change>: make that change instead") from error
         raise UsageError(f"outcome {error.number} is modified with no note; "
-                         f"write '{MODIFIED}:<the user's change>' quoted as one shell word") from error
+                         f"write '{MODIFIED}:<the change>' quoted as one shell word") from error
 
 
 def outcome_failure_line(item, outcome_row):
@@ -168,18 +168,29 @@ def finding_ask_indexes(asks, outcomes):
             if outcome != REJECTED and not is_plan_impact_ask(item)]
 
 
-def ask_finding_text(item, note=None):
-    """The finding text of an accepted ask: its location, class tag and proposed change, plus the user's `note`
-    when the ask was modified, and the `acceptance_criteria:` ids of the question, change and note. A plan-impact ask
-    keeps its question because the text is stored as the ruled impact's `finding_text`, which a later finding must
-    equal word for word."""
+def ruler_clause(decided_by):
+    """The clause that names who changed a modified ask: the user, the session, or no one when `decided_by` is None.
+    `ask_deciders` and `--by` refuse any other word, so none reaches here. The user's words stay as they were because
+    a stored finding text is matched word for word."""
+    if decided_by == plan_format.USER_RULING:
+        return USER_CLAUSE
+    if decided_by == plan_format.SESSION_RULING:
+        return SESSION_CLAUSE
+    return UNNAMED_CLAUSE
+
+
+def ask_finding_text(item, note=None, decided_by=None):
+    """The finding text of an accepted ask: its location, class tag and proposed change, plus the ruler's `note`
+    when the ask was modified (`decided_by` says who ruled), and the `acceptance_criteria:` ids of the question,
+    change and note. A plan-impact ask keeps its question because the text is stored as the ruled impact's
+    `finding_text`, which a later finding must equal word for word."""
     question = one_line(item["question"], None)
     change = one_line(item["change"], None)
     # A converted ask's change is the finding line the user already accepted: it holds its own proposed change.
     if item.get(USER_RULED_KEY):
         if note is None:
             return change
-        return changed_text(change, note)
+        return changed_text(change, note, ruler_clause(decided_by))
     if is_plan_impact_ask(item):
         return f"{item['file_line']} {question} Proposed change: {change}"
     # The question can hold a declined branch the user already ruled against; a coder that reads it may take it.
@@ -187,25 +198,26 @@ def ask_finding_text(item, note=None):
     # `acceptance_criteria:` line becomes the only source of ids, so it comes after the note.
     text = f"{item['file_line']} [{item['class']}] Proposed change: {change}"
     if note is not None:
-        text = changed_text(text, note)
+        text = changed_text(text, note, ruler_clause(decided_by))
     ids = sorted(plan_format.criteria_ids(f"{question} {change} {note or ''}"))
     if ids:
         text += f" acceptance_criteria: {', '.join(ids)}"
     return text
 
 
-def ask_finding_lines(asks, outcomes, notes):
+def ask_finding_lines(asks, outcomes, notes, deciders):
     """One findings-file item per accepted or modified ask that is not a plan impact, in the form
-    review_launch.read_findings_file reads. A modified ask carries the user's change in place of the proposed one."""
-    return ["- " + text for text in accepted_finding_texts(asks, outcomes, notes)]
+    review_launch.read_findings_file reads. A modified ask carries its ruler's change in place of the proposed one."""
+    return ["- " + text for text in accepted_finding_texts(asks, outcomes, notes, deciders)]
 
 
-def accepted_finding_texts(asks, outcomes, notes):
-    """The finding text of each accepted or modified ask that is not a plan impact, as the findings file holds it."""
+def accepted_finding_texts(asks, outcomes, notes, deciders):
+    """The finding text of each accepted or modified ask that is not a plan impact, as the findings file holds it.
+    `deciders` holds who ruled on each ask, in the order of `asks` (None for none)."""
     texts = []
     for index in finding_ask_indexes(asks, outcomes):
         item, outcome, note = asks[index], outcomes[index], notes[index]
-        texts.append(ask_finding_text(item, note if outcome == MODIFIED else None))
+        texts.append(ask_finding_text(item, note if outcome == MODIFIED else None, deciders[index]))
     return texts
 
 
@@ -218,7 +230,7 @@ def findings_covered_by_impact(state, impact_text):
     notes = state.get("ask_notes") or []
     if not asks or len(outcomes) != len(asks) or len(notes) != len(asks):
         return []
-    texts = accepted_finding_texts(asks, outcomes, notes)
+    texts = accepted_finding_texts(asks, outcomes, notes, ask_deciders(state))
     covered = []
     for text in texts:
         criteria_ids = plan_item_criteria_ids(text)
@@ -374,7 +386,16 @@ def ask_deciders(state):
     if not isinstance(deciders, list) or len(deciders) != len(state["asks"]):
         raise UsageError(f"{ASKS_DECIDED_BY_KEY} in the saved state must be a list with one entry per ask "
                          f"({len(state['asks'])}), not {deciders!r}.")
+    for decider in deciders:
+        if decider is not None and not plan_format.is_ruling_by(decider):
+            raise UsageError(f"{ASKS_DECIDED_BY_KEY} in the saved state holds {decider!r}; each entry must be "
+                             f"null, {plan_format.USER_RULING!r} or {plan_format.SESSION_RULING!r}.")
     return deciders
+
+
+def uniform_deciders(asks, decided_by):
+    """The deciders of a first asks-done call: `decided_by` ruled on every ask."""
+    return [decided_by] * len(asks)
 
 
 def set_ask_decider(state, index, decided_by):
@@ -458,7 +479,7 @@ def write_unprinted_fix_run(state, target, finding_lines, decided_by):
         return None
     findings_file = write_findings_file(finding_lines)
     target["asks_redispatched"] = True
-    target[ASKS_DECIDED_BY_KEY] = [decided_by] * len(target["asks"])
+    target[ASKS_DECIDED_BY_KEY] = uniform_deciders(target["asks"], decided_by)
     launch_line = fix_run_launch_line(target, findings_file)
     target["asks_launch_line"] = launch_line
     state[PENDING_LAUNCH_KEY] = launch_line
@@ -495,7 +516,7 @@ def conditional_ask_numbers(asks):
 
 def refuse_conditional_changes(asks, outcomes):
     """Refuses an accepted or rejected outcome on an ask whose proposed change is conditional: neither word says
-    which branch the user chose. A modified outcome carries the user's own change and is never refused."""
+    which branch the ruler chose. A modified outcome carries the ruler's own change and is never refused."""
     problems = []
     conditional = conditional_ask_numbers(asks)
     for number, (item, outcome) in enumerate(zip(asks, outcomes, strict=True), 1):
@@ -511,7 +532,7 @@ def refuse_conditional_changes(asks, outcomes):
 
 
 def answer_of(outcome, note):
-    """What an ask's answer is: the outcome word, plus the user's change for a modified one. The note after accepted
+    """What an ask's answer is: the outcome word, plus the ruler's change for a modified one. The note after accepted
     or rejected is not stored."""
     return (outcome, note if outcome == MODIFIED else "")
 
@@ -577,7 +598,7 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by):
 def sync_pending_fix_run(state):
     """Rebuilds the findings file and the pending launch from the stored answers and deciders, or drops both when no
     ask is left to apply. Does not save. Returns the findings file, or None when it was dropped."""
-    finding_lines = ask_finding_lines(state["asks"], state["ask_outcomes"], state["ask_notes"])
+    finding_lines = ask_finding_lines(state["asks"], state["ask_outcomes"], state["ask_notes"], ask_deciders(state))
     state["last_ask_outcomes"] = state["ask_outcomes"]
     state["last_ask_notes"] = state["ask_notes"]
     if not finding_lines:
@@ -629,6 +650,7 @@ def command_correct_asks(options):
     left to apply."""
     state = load_fix_state()
     refuse_unless_correctable(state, options.packet_id)
+    ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
 
     asks = state["asks"]
     outcomes, notes = read_outcomes(options.outcome_words, asks)
@@ -719,7 +741,7 @@ def command_asks_done(argv):
     target, outcomes, notes, decided_by = read_answers(state, options, waiting)
     asks = target["asks"]
     repo = repo_for_outcomes(target.get("relaunch_args") or [], asks, outcomes)
-    finding_lines = ask_finding_lines(asks, outcomes, notes)
+    finding_lines = ask_finding_lines(asks, outcomes, notes, uniform_deciders(asks, decided_by))
     findings_file = write_unprinted_fix_run(state, target, finding_lines, decided_by)
 
     ask_counts, failures = log_fix_ask_outcomes(target, asks, outcomes, decided_by)

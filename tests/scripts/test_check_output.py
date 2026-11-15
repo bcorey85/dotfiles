@@ -511,6 +511,70 @@ class CheckOutputTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(expected_details, check_output.failing_block_details(log_lines))
 
+    def test_a_coloured_failing_line_is_a_failing_test_line_and_its_error_is_quoted(self):
+        output = "\x1b[31mFAIL: test_x\x1b[0m\nAssertionError: boom\n"
+
+        self.assertEqual(["FAIL: test_x"], check_output.failing_test_lines(output))
+        self.assertEqual(["FAIL: test_x", "AssertionError: boom"], check_output.failing_test_errors(output))
+
+    def test_the_tail_of_a_coloured_run_gets_the_failing_line_above_it(self):
+        output = "\x1b[31mFAIL: test_x\x1b[0m\nfiller\n"
+
+        quoted = check_output.tail_with_failing_tests(output, "filler\n")
+
+        self.assertTrue(quoted.startswith(check_output.FAILING_TESTS_HEADER + "FAIL: test_x\n"), quoted)
+
+    def test_a_tail_that_holds_a_coloured_failing_line_gets_no_header(self):
+        tail = "\x1b[31mFAIL: test_x\x1b[0m\n"
+
+        quoted = check_output.tail_with_failing_tests(tail, tail)
+
+        self.assertEqual(tail, quoted)
+        self.assertNotIn(check_output.FAILING_TESTS_HEADER, quoted)
+
+    def test_a_coloured_cannot_start_line_is_found(self):
+        output = "\x1b[31mCommand not found: uv\x1b[0m\n"
+
+        self.assertEqual("Command not found: uv", check_output.cannot_start_line(1, output))
+
+    def test_a_coloured_failed_count_keeps_a_no_tests_line_from_reading_as_a_setup_fault(self):
+        output = "\x1b[1m3\x1b[22m failed\nno tests ran\n"
+
+        self.assertFalse(check_output.is_setup_fault(1, output, "/nonexistent"))
+
+    def test_a_coloured_failed_count_keeps_a_settings_error_from_reading_as_a_settings_fault(self):
+        output = "ImproperlyConfigured: x\n\x1b[1m2\x1b[22m failed\n"
+
+        self.assertFalse(check_output.is_django_settings_fault("pytest", output, []))
+
+    def test_a_coloured_missing_path_line_stops_the_check(self):
+        line = "\x1b[31mfatal: ambiguous argument 'x': unknown revision or path not in the working tree\x1b[0m"
+
+        self.assertTrue(check_output.stopped_on_missing_path(line + "\n"))
+        self.assertEqual(("fatal: ambiguous argument 'x': unknown revision or path not in the working tree", "x"),
+                         check_output.missing_path([line]))
+
+    def test_failing_step_lines_returns_plain_lines_for_coloured_failures(self):
+        log_lines = ["\x1b[31mFAIL: test_x\x1b[0m", "\x1b[1m\x1b[91mE501\x1b[0m line too long",
+                     "  \x1b[34m--> a.py:1:2\x1b[0m", "\x1b[31mFAILED: lint x\x1b[0m"]
+
+        self.assertEqual(["FAIL: test_x", "E501 line too long", "  --> a.py:1:2", "FAILED: lint x"],
+                         full_check.failing_step_lines(log_lines))
+
+    def test_a_coloured_no_tests_ran_line_fails_a_django_run_that_exited_zero(self):
+        coder_gate = load_coder_gate()
+        output = "\x1b[1mNO TESTS RAN\x1b[0m"
+
+        failure = coder_gate._failure_of("python manage.py test app", 0, output, check_output.PASSED)
+
+        self.assertEqual(coder_gate.GateFailure("python manage.py test app", "exit 0", output), failure)
+
+    def test_a_coloured_log_compares_equal_to_the_plain_log(self):
+        coloured = ["\x1b[31mFAIL: test_x\x1b[0m", "\x1b[2mAssertionError: boom\x1b[0m"]
+
+        self.assertEqual({"AssertionError: boom"}, check_output.failing_block_details(coloured))
+        self.assertEqual("FAIL: test_x", check_output.normalized_log_line(coloured[0]))
+
 
 class CheckVerdictTest(unittest.TestCase):
     """check_verdict and the three pass rules that call it read every row the same way."""
@@ -528,6 +592,11 @@ class CheckVerdictTest(unittest.TestCase):
         verdict = check_output.check_verdict("rg -t py pytest scripts/", 0, "no tests ran")
 
         self.assertEqual(check_output.PASSED, verdict)
+
+    def test_a_coloured_jest_zero_total_summary_reads_as_no_tests_ran(self):
+        output = "\x1b[1mTest Suites:\x1b[22m 0 total\n\x1b[1mTests:\x1b[22m       0 total\n"
+
+        self.assertEqual(check_output.NO_TESTS_RAN, check_output.check_verdict("npm test", 0, output))
 
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()

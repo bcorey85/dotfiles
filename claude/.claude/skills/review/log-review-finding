@@ -103,6 +103,12 @@
 #     ask_decided_by=user|session  (optional, ask outcome rows) who ruled on the ask:
 #       the user, or the session itself when the repo hands ask decisions to it.
 #       A ledger build that refuses the field gets the row without it.
+#     docs_kind=stale|new          (optional, class=docs rows only) set by the review loop
+#       script, never by a model: `new` when the cited line is one the diff under review
+#       added, `stale` when the line was there before it. Any other value, or the key on a
+#       row of another class, is refused. A ledger build that refuses the field gets the
+#       row without it, and {finding_id, docs_kind} goes to
+#       ~/.claude/review-finding-labels.jsonl (REVIEW_FINDING_LABELS_FILE).
 #
 # Every value is sent as a JSON string, except n_findings=null, which is sent as JSON null; `ledger write` types it. The row goes to
 # `ledger write review_run|review_finding`, which adds the date, repo and session,
@@ -278,6 +284,20 @@ if [ "$kind" = finding ]; then
   fi_val=$(jq -r '.fix_induced // ""' <<< "$json")
   [ "$fi_val" != bug ] || json=$(jq -c '.blocker = "yes"' <<< "$json")
 
+  # The values are DOCS_KINDS of scripts/review/review_loop_docs_kind.py, and the class its DOCS_CLASS.
+  docs_kind=$(jq -r '.docs_kind // ""' <<< "$json")
+  case "$docs_kind" in
+    "") ;;
+    stale|new)
+      finding_class=$(jq -r '.class // ""' <<< "$json")
+      if [ "$finding_class" != docs ]; then
+        echo "refusing to log: docs_kind= belongs on a class=docs row; this row is class=$finding_class." >&2
+        exit 1
+      fi
+      ;;
+    *) echo "refusing to log: docs_kind=$docs_kind is not stale|new" >&2; exit 1 ;;
+  esac
+
   # The review loop sends every `fix` finding to a coder but an open class
   # member at the round cap and a finding of the one reviewer scoped to the files a
   # coder changed after the cap. A deferred row goes to a branch-exit queue that most
@@ -412,14 +432,20 @@ send_row "$payload" || write_rc=$?
 
 # An older ledger build refuses a field it does not know. Drop each refused optional field and
 # retry, so the row still lands. The writer names one field per refusal, so allow one retry per field.
-for _retry in 1 2; do
+for _retry in 1 2 3; do
   [ "$write_rc" -eq 2 ] || break
   refused_field=""
-  for optional_field in snapshot ask_decided_by; do
+  for optional_field in snapshot ask_decided_by docs_kind; do
     [[ $writer_stderr == *"field_unknown $optional_field"* ]] && refused_field=$optional_field
   done
   [ -n "$refused_field" ] || break
   [ "$refused_field" != snapshot ] || git update-ref -d "$snapshot_ref"
+  # The label is kept beside the ledger, keyed by the row's id.
+  if [ "$refused_field" = docs_kind ]; then
+    label_row=$(jq -c '{finding_id, docs_kind}' <<< "$payload")
+    printf '%s\n' "$label_row" | bash "$ledger_write" --local review_finding_label \
+      || echo "note: log-review-finding could not keep the docs_kind label of this row" >&2
+  fi
   echo "note: this ledger build does not store $refused_field; the row is logged without it" >&2
   payload=$(jq -c --arg f "$refused_field" 'del(.[$f])' <<< "$payload")
   write_rc=0

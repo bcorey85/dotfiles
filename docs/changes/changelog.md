@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-974 changes
+975 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -22,6 +22,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [A session that forks a lane keeps the user in its own pane](notes/2026-11-15-a-session-that-forks-a-lane-keeps-the-user-in-its.md) [rule/orchestration] The orchestration rules now tell a session that forks a lane to name the fork, say it reports here and pass its reports on, and never to send the user to another pane to switch or to answer a question.
 * [pull_keep_index records the upstream on the remote it pulled from](notes/2026-11-10-pull-keep-index-records-the-upstream-on-the-remote.md) [script/pull-keep-index] set_upstream takes the remote from the pull target instead of naming origin a second time, and one helper reads the branch's upstream ref.
 * [The coder writes its scripts in the scratchpad, never in the repo tree](notes/2026-11-10-the-coder-writes-its-scripts-in-the-scratchpad.md) [skill/coder-core] coder-core's script line now sends a helper script to the session scratchpad directory, never the repo tree, in place of `scratch/scripts/`.
 * [The backend error-class rule names raise and a built-in Python error, so the coder follows it in Python too](notes/2026-11-10-the-backend-error-class-rule-names-raise-and-a.md) [rule/backend] The error line in the path-scoped rules/backend.md is reworded from 'never a bare Error' to name raise and ValueError: the coder now uses the repo's error class in 8 of 8 Django runs, up from 3 of 8.

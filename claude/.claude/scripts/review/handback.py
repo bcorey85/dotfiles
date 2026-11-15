@@ -83,8 +83,9 @@ STATUS_REQUIRES = {PLAN_IMPACT_STATUS: ("plan_impact", "empty"), "critical-block
                    DEFERRED: ("findings_remaining", "missing or empty")}
 BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
 PLAN_DRIFT_CLASS = "plan-drift"
+DOCS_CLASS = "docs"
 CLASSES = ["bug", "smell", "duplication", "complexity", PLAN_DRIFT_CLASS, "test-gap", "weak-assertion", "security",
-           "perf", "correctness", "docs", "other"]
+           "perf", "correctness", DOCS_CLASS, "other"]
 REVIEW_LOOP = "review-loop"
 DEFAULT_GATE = "code-reviewer"
 

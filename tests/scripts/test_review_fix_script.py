@@ -24,6 +24,7 @@ import handback_store
 import plan_format
 import review_fix
 import review_fix_asks
+import review_fix_names
 import review_loop_main
 import review_loop_prompt_file
 import review_user_ruled
@@ -2598,7 +2599,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         import review_fix_asks
         asks = [{"question": "first"}, {"question": "second"}]
         self.assertEqual(review_fix_asks.ask_deciders({"asks": asks}), [None, None])
-        for saved in ({}, "", 0, "user", {"0": "user"}, ["user"]):
+        for saved in ({}, "", 0, "user", {"0": "user"}, ["user"], ["user", "robot"], ["user", ""]):
             with self.subTest(saved=saved), self.assertRaises(review_fix_asks.UsageError):
                 review_fix_asks.ask_deciders({"asks": asks, review_fix_asks.ASKS_DECIDED_BY_KEY: saved})
 
@@ -3642,7 +3643,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(self.dispatch_rows(), [])
 
     def findings_file(self):
-        return script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
+        review_fix_folder = script_utils.git_path(self.repo, review_fix_names.REVIEW_FIX_FOLDER)
+        return review_fix_folder / review_fix_names.ASK_FINDINGS_NAME
 
     def test_asks_done_refuses_accepted_and_rejected_on_a_conditional_change_and_logs_nothing(self):
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[self.CONDITIONAL_ASK]))

@@ -9,6 +9,7 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import review_fix_asks
+import review_fix_names
 import script_utils
 import test_review_fix_script as fixture  # the module, never its class: a class imported by name reruns its tests
 
@@ -35,6 +36,8 @@ class AskRulerTest(unittest.TestCase):
     git = fixture.ReviewFixScriptTest.git
     run_script = fixture.ReviewFixScriptTest.run_script
     packet = fixture.ReviewFixScriptTest.packet
+    ledger_writes = fixture.ReviewFixScriptTest.ledger_writes
+    findings_file = fixture.ReviewFixScriptTest.findings_file
 
     def asks_done(self, *words):
         code, output = self.run_script(["asks-done", *words])
@@ -42,11 +45,11 @@ class AskRulerTest(unittest.TestCase):
         return output
 
     def findings_lines(self):
-        findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
-        return findings_file.read_text().splitlines()
+        return self.findings_file().read_text().splitlines()
 
     def state_file(self):
-        return self.repo / ".git" / "review-fix" / "state.json"
+        review_fix_folder = script_utils.git_path(self.repo, review_fix_names.REVIEW_FIX_FOLDER)
+        return review_fix_folder / review_fix_names.STATE_FILE_NAME
 
     def edit_state(self, **changes):
         state = json.loads(self.state_file().read_text())
@@ -71,13 +74,11 @@ class AskRulerTest(unittest.TestCase):
         self.answered(ONE_ASK, "--by", "session", "modified:cap at 5")
         self.assertEqual(self.findings_lines(),
                          ["- one.ts:1 [smell] Proposed change: c1 " + SESSION_SENTENCE + "cap at 5"])
-        self.assertNotIn("The user changed it", self.findings_lines()[0])
 
     def test_a_converted_ask_names_its_ruler_in_both_branches(self):
         converted = {"question": "Apply it anyway?", "change": "src/a.py:3 [bug] cap it",
                      "file_line": "src/a.py:3", "class": "bug", review_fix_asks.USER_RULED_KEY: True}
-        cases = [("user", USER_SENTENCE), ("session", SESSION_SENTENCE), (None, NEUTRAL_SENTENCE),
-                 ("robot", NEUTRAL_SENTENCE)]
+        cases = [("user", USER_SENTENCE), ("session", SESSION_SENTENCE), (None, NEUTRAL_SENTENCE)]
         for decided_by, sentence in cases:
             with self.subTest(decided_by=decided_by):
                 text = review_fix_asks.ask_finding_text(converted, "cap at 5", decided_by)
@@ -86,19 +87,32 @@ class AskRulerTest(unittest.TestCase):
                                                           "change": "cap it"}, "cap at 5", decided_by)
                 self.assertEqual(plain, "src/a.py:3 [bug] Proposed change: cap it " + sentence + "cap at 5")
 
-    def assert_uncorrected_ask_is_neutral_for(self, first_decider):
+    def test_a_none_ruler_in_the_state_gets_the_neutral_sentence_never_the_user(self):
         self.answered(TWO_ASKS, "--by", "user", "modified:one", "modified:two")
-        self.edit_state(asks_decided_by=[first_decider, "user"])
+        self.edit_state(asks_decided_by=[None, "user"])
         self.asks_done("--correct", "--by", "user", "modified:one", "modified:three")
         lines = self.findings_lines()
         self.assertTrue(lines[0].endswith(NEUTRAL_SENTENCE + "one"), lines[0])
         self.assertTrue(lines[1].endswith(USER_SENTENCE + "three"), lines[1])
 
-    def test_a_none_ruler_in_the_state_gets_the_neutral_sentence_never_the_user(self):
-        self.assert_uncorrected_ask_is_neutral_for(None)
+    def assert_correction_stops_with_no_change(self, *outcome_words):
+        """The correction exits 2, and the state file, the findings file and the ledger are as they were."""
+        state_before = self.state_file().read_bytes()
+        findings_before = self.findings_file().read_bytes()
+        rows_before = len(self.ledger_writes())
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", *outcome_words])
+        self.assertEqual(code, 2, output)
+        self.assertEqual(self.state_file().read_bytes(), state_before)
+        self.assertEqual(self.findings_file().read_bytes(), findings_before)
+        self.assertEqual(len(self.ledger_writes()), rows_before, "an outcome row was logged")
+        return output
 
-    def test_an_unknown_ruler_word_in_the_state_gets_the_neutral_sentence_never_the_user(self):
-        self.assert_uncorrected_ask_is_neutral_for("robot")
+    def test_an_unknown_ruler_word_in_the_state_stops_the_correction_loudly(self):
+        self.answered(TWO_ASKS, "--by", "user", "modified:one", "modified:two")
+        self.edit_state(asks_decided_by=["robot", "user"])
+        output = self.assert_correction_stops_with_no_change("modified:one", "modified:three")
+        self.assertIn(review_fix_asks.ASKS_DECIDED_BY_KEY, output)
+        self.assertIn("robot", output)
 
     def test_a_state_with_no_decider_field_gets_the_neutral_sentence_for_the_uncorrected_ask(self):
         self.answered(TWO_ASKS, "--by", "user", "modified:one", "modified:two")
@@ -111,8 +125,7 @@ class AskRulerTest(unittest.TestCase):
     def test_a_shorter_decider_list_in_the_state_stops_the_correction_loudly(self):
         self.answered(TWO_ASKS, "--by", "user", "modified:one", "modified:two")
         self.edit_state(asks_decided_by=["user"])
-        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "modified:one", "modified:three"])
-        self.assertEqual(code, 2, output)
+        output = self.assert_correction_stops_with_no_change("modified:one", "modified:three")
         self.assertIn(review_fix_asks.ASKS_DECIDED_BY_KEY, output)
 
     def test_an_unknown_by_word_is_a_usage_error(self):

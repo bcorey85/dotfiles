@@ -19,8 +19,8 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/handback | 53 | 3 |
 | script/review-commit-gate | 37 | 3 |
 | script/review-loop-gate | 35 | 0 |
-| script/full-check | 23 | 2 |
-| script/coder-gate | 21 | 1 |
+| script/full-check | 24 | 3 |
+| script/coder-gate | 22 | 2 |
 | agent/review-loop | 20 | 0 |
 | script/script-utils | 20 | 5 |
 | script/plan-format | 19 | 2 |
@@ -47,6 +47,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/handback-store | 6 | 4 |
 | script/herdr-worktree | 6 | 2 |
 | script/pipe-shell-check | 6 | 3 |
+| script/check-output | 5 | 1 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/open-child-gate | 5 | 0 |
@@ -55,7 +56,6 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | skill/refactor | 5 | 0 |
 | (no component) | 4 | 0 |
 | script/bash-safety-gate | 4 | 0 |
-| script/check-output | 4 | 0 |
 | script/format-changed | 4 | 1 |
 | script/format-files | 4 | 1 |
 | script/herdr-phase-change | 4 | 0 |
@@ -109,6 +109,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | rule/frontend-style | 1 | 0 |
 | rule/toolkit-script-rules | 1 | 0 |
 | script/agent-foreground | 1 | 0 |
+| script/ansi-text | 1 | 1 |
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
 | script/code-step-gates | 1 | 0 |

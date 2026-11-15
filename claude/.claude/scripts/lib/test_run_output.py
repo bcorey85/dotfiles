@@ -59,15 +59,15 @@ def runner_summaries(output, limit=MAX_RUNNER_SUMMARIES):
     `limit` (None for all): pytest, unittest and Django, vitest, jest, mocha, cargo, bun, playwright, node --test,
     go and the dotfiles suite runner. A chained command prints one per runner. Go's package lines count as one
     summary. Empty when the output holds none."""
-    output = strip_ansi(output)
+    plain = strip_ansi(output)
     found = []
     for pattern in SUMMARY_LINES:
-        found += [(match.start(), match.group(0).strip(" =\t")) for match in pattern.finditer(output)]
+        found += [(match.start(), match.group(0).strip(" =\t")) for match in pattern.finditer(plain)]
 
-    for match in UNITTEST_SUMMARY.finditer(output):
+    for match in UNITTEST_SUMMARY.finditer(plain):
         found.append((match.start(), f"{match.group(1)}: {match.group(3)}"))
 
-    go_packages = [match for match in GO_PACKAGE_OK.finditer(output) if GO_NO_TESTS not in match.group(0)]
+    go_packages = [match for match in GO_PACKAGE_OK.finditer(plain) if GO_NO_TESTS not in match.group(0)]
     if go_packages:
         found.append((go_packages[0].start(), f"go: {len(go_packages)} packages ok"))
 

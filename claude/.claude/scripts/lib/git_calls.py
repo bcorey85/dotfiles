@@ -51,10 +51,9 @@ def git_call(words, directory="."):
 
     config = {}
     options, index = shell_command.git_options(words)
+    for key, setting in shell_command.git_c_settings(options).items():
+        config[key] = setting.lower()
     for option, value in options:
-        if option == "-c" and value is not None:
-            key, _equals, config_value = value.partition("=")
-            config[key.lower()] = config_value.lower()
         if option == "-C" and value is not None:
             directory = joined_directory(directory, value)
     if index == len(words):

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-962 changes
+963 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -37,6 +37,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The fix brief names who changed an ask: the user or the session](notes/2026-11-15-the-fix-brief-names-who-changed-an-ask-the-user-or.md) [script/review-fix] A modified ask in the review-fix findings file now says who changed it. A ruling made with `asks-done --by session` no longer reads as the user's change.
 * [Review-fix launch test reads its own launch folder](notes/2026-11-15-review-fix-launch-test-reads-its-own-launch-folder.md) [script/review-fix, script/tests] The review-fix test for an ordinary finding plus a ruled impact reads the prompt of the fix launch's own folder, so the file system's listing order no longer decides whether it passes.
 * [A /code phase rejection is recorded, so the next review loop drops the repeat](notes/2026-11-15-a-code-phase-rejection-is-recorded-so-the-next.md) [script/phase-asks, script/review-asks, script/review-fix, script/handback-store] An ask the session rejects with `phase_asks.py rule` is stored as a rejected ask, so the next review loop of that repo drops the same ask instead of raising it again.
 * [The review commit gate judges merge, cherry-pick, revert, am, rebase --continue and commit aliases as commits](notes/2026-11-14-the-review-commit-gate-judges-merge-cherry-pick.md) [script/review-commit-gate, script/shell-command] A /code phase with unreviewed coder work or unruled reviewer questions can no longer commit through git merge, cherry-pick, revert, am, rebase --continue or --skip or a git alias that expands to a commit; the gate denies each where it denies git commit.

@@ -2,6 +2,7 @@
 reported any passed test. Whether a command runs tests is check_scope's."""
 import re
 
+from ansi_text import strip_ansi
 from check_scope import names_test_filter, names_test_runner, runs_tests
 from shell_command import parse_piped_commands
 
@@ -33,7 +34,8 @@ SUMMARY_LINES = (
     re.compile(r"^FAIL\t\S+.*$", re.MULTILINE),
 )
 # unittest and Django: `Ran N tests in Xs`, then `OK` or `FAILED (...)` on a later line.
-UNITTEST_SUMMARY = re.compile(r"^(Ran [1-9]\d* tests? in [\d.]+s)\s*\n+\s*(OK\b[^\n]*|FAILED\b[^\n]*)", re.MULTILINE)
+UNITTEST_SUMMARY = re.compile(
+    r"^(Ran ([1-9]\d*) tests? in [\d.]+s)\s*\n+\s*(OK\b[^\n]*|FAILED\b[^\n]*)", re.MULTILINE)
 # A command substitution `$(...)` or backticks: its runner's output goes into the outer command, not into its report.
 SUBSTITUTION = re.compile(r"\$\([^)]*\)|`[^`]*`")
 GO_NO_TESTS = "[no tests to run]"
@@ -41,9 +43,14 @@ GO_NO_TESTS = "[no tests to run]"
 
 def passed_test_count(output):
     """How many tests the runner output says passed: the sum of every PASSED_TESTS count, plus each go package
-    line that ran tests. 0 when the output reports none."""
-    total = sum(int(number) for number in PASSED_TESTS.findall(output))
-    total += sum(1 for line in GO_PACKAGE_OK.findall(output) if GO_NO_TESTS not in line)
+    line that ran tests, plus the N of each unittest `Ran N tests` that ends in OK (a skipped test counts as ran).
+    Colour escapes are ignored. 0 when the output reports none."""
+    plain = strip_ansi(output)
+    total = sum(int(number) for number in PASSED_TESTS.findall(plain))
+    total += sum(1 for line in GO_PACKAGE_OK.findall(plain) if GO_NO_TESTS not in line)
+    for match in UNITTEST_SUMMARY.finditer(plain):
+        if match.group(3).startswith("OK"):
+            total += int(match.group(2))
     return total
 
 
@@ -52,12 +59,13 @@ def runner_summaries(output, limit=MAX_RUNNER_SUMMARIES):
     `limit` (None for all): pytest, unittest and Django, vitest, jest, mocha, cargo, bun, playwright, node --test,
     go and the dotfiles suite runner. A chained command prints one per runner. Go's package lines count as one
     summary. Empty when the output holds none."""
+    output = strip_ansi(output)
     found = []
     for pattern in SUMMARY_LINES:
         found += [(match.start(), match.group(0).strip(" =\t")) for match in pattern.finditer(output)]
 
     for match in UNITTEST_SUMMARY.finditer(output):
-        found.append((match.start(), f"{match.group(1)}: {match.group(2)}"))
+        found.append((match.start(), f"{match.group(1)}: {match.group(3)}"))
 
     go_packages = [match for match in GO_PACKAGE_OK.finditer(output) if GO_NO_TESTS not in match.group(0)]
     if go_packages:

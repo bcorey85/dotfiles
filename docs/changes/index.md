@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-970 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+971 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-15, [An ask whose change starts with if accepted is not refused as conditional](notes/2026-11-15-an-ask-whose-change-starts-with-if-accepted-is-not.md).
+Latest change: 2026-11-15, [A session that forks a lane keeps the user in its own pane](notes/2026-11-15-a-session-that-forks-a-lane-keeps-the-user-in-its.md).
 
 ## Top gains
 

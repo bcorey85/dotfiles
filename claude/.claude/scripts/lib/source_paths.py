@@ -108,11 +108,6 @@ def is_doc_path(path):
     return path.startswith(notes_paths.DOCS_FOLDER) or f"/{notes_paths.DOCS_FOLDER}" in path
 
 
-def is_code_path(path):
-    """Whether a changed path is code: not a doc (see `is_doc_path`)."""
-    return not is_doc_path(path)
-
-
 def is_large_change(added_lines, new_paths):
     """Whether a change is large: it adds LARGE_ADDED_LINES lines to files that count toward size, or it creates a
     new counted source file (untracked or added to the index)."""

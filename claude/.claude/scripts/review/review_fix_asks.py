@@ -359,8 +359,8 @@ def print_fix_run(target, findings_file, summary_lines):
     return print_action(
         "redispatch", *summary_lines,
         f"The accepted asks are in {findings_file}. Run this launch line now: its fix coder applies them and a "
-        "review round covers the fix. Findings deferred to this run go in "
-        f"<run folder>/{RUN_FOLDER_FINDINGS_NAME} and are added with `--also-fix`.",
+        "review round covers the fix. If findings were deferred to this run, write them to "
+        f"<run folder>/{RUN_FOLDER_FINDINGS_NAME} and add `--also-fix <that file>` to the line.",
         target["asks_launch_line"])
 
 

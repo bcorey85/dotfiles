@@ -111,7 +111,7 @@ from review_loop_prompt_file import (
     REVIEWERS_MAIN,
 )
 from review_loop_prompts import coder_prompt, reviewer_prompt
-from review_loop_ruled import RuledFindings
+from review_loop_ruled import RuledFindings, no_code_numbers
 from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
 from review_user_ruled import reasked_findings
 
@@ -648,7 +648,7 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         issue_texts = [self.issue_text(finding) for finding in findings]
         prompt = coder_prompt(self.repo, issue_texts, [nit.text for nit in nits], files_in_scope,
                               self.out / "coder-briefs" / call_name, self.gate_env, self.later_phase_files,
-                              self.guidance, self.held_files, self.no_code_numbers(findings))
+                              self.guidance, self.held_files, no_code_numbers(findings))
         self.last_pass = "coder"
         self.untested_fix = True
         try:

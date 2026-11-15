@@ -158,14 +158,30 @@ def finding_ask_indexes(asks, outcomes):
             if outcome != REJECTED and not is_plan_impact_ask(item)]
 
 
-def ask_finding_text(item):
-    """The finding text of an accepted ask: its location, question and proposed change."""
+def ask_finding_text(item, note=None):
+    """The finding text of an accepted ask: its location, class tag and proposed change, plus the user's `note`
+    when the ask was modified, and the `acceptance_criteria:` ids of the question, change and note. A plan-impact ask
+    keeps its question because the text is stored as the ruled impact's `finding_text`, which a later finding must
+    equal word for word."""
     question = one_line(item["question"], None)
     change = one_line(item["change"], None)
     # A converted ask's change is the finding line the user already accepted: it holds its own proposed change.
     if item.get(USER_RULED_KEY):
-        return change
-    return f"{item['file_line']} {question} Proposed change: {change}"
+        if note is None:
+            return change
+        return f"{change} The user changed it; make this change in its place: {note}"
+    if is_plan_impact_ask(item):
+        return f"{item['file_line']} {question} Proposed change: {change}"
+    # The question can hold a declined branch the user already ruled against; a coder that reads it may take it.
+    # The ids of the question, change and note stay for the ruled-impact match; the appended
+    # `acceptance_criteria:` line becomes the only source of ids, so it comes after the note.
+    text = f"{item['file_line']} [{item['class']}] Proposed change: {change}"
+    if note is not None:
+        text += f" The user changed it; make this change in its place: {note}"
+    ids = sorted(plan_format.criteria_ids(f"{question} {change} {note or ''}"))
+    if ids:
+        text += f" acceptance_criteria: {', '.join(ids)}"
+    return text
 
 
 def ask_finding_lines(asks, outcomes, notes):
@@ -179,10 +195,7 @@ def accepted_finding_texts(asks, outcomes, notes):
     texts = []
     for index in finding_ask_indexes(asks, outcomes):
         item, outcome, note = asks[index], outcomes[index], notes[index]
-        text = ask_finding_text(item)
-        if outcome == MODIFIED:
-            text += f" The user changed it; make this change in its place: {note}"
-        texts.append(text)
+        texts.append(ask_finding_text(item, note if outcome == MODIFIED else None))
     return texts
 
 
@@ -380,25 +393,28 @@ def set_ask_decider(state, index, decided_by):
     state[ASKS_DECIDED_BY_KEY] = deciders
 
 
-def user_ruled_numbers(state):
-    """The 1-based positions, in the findings file, of the findings whose ask the user ruled on."""
+def ruled_numbers(state, ruler):
+    """The 1-based positions, in the findings file, of the findings whose ask `ruler` ruled on."""
     deciders = ask_deciders(state)
     indexes = finding_ask_indexes(state["asks"], state["ask_outcomes"])
-    return [number for number, index in enumerate(indexes, 1) if deciders[index] == plan_format.USER_RULING]
+    return [number for number, index in enumerate(indexes, 1) if deciders[index] == ruler]
 
 
-def fix_lead_args(findings_file, user_numbers):
+def fix_lead_args(findings_file, user_numbers, session_numbers):
     """The leading launch flags of a fix run for findings_file. Each finding the user ruled on adds `--user-ruled N`,
-    so the fix coder's skip of it comes back as an ask; a finding a session ruled on adds none."""
+    so the fix coder's skip of it comes back as an ask. Each finding a session ruled on adds `--session-ruled N`:
+    the coder's re-ask of it is a skip, never an ask."""
     lead_args = ["--fix", str(findings_file)]
     for number in user_numbers:
         lead_args += ["--user-ruled", str(number)]
+    for number in session_numbers:
+        lead_args += ["--session-ruled", str(number)]
     return lead_args
 
 
-def fix_launch_line(target, findings_file, user_numbers):
+def fix_launch_line(target, findings_file, user_numbers, session_numbers):
     """The launch line of the fix run that applies the asks in findings_file."""
-    return relaunch_line(target, fix_lead_args(findings_file, user_numbers))
+    return relaunch_line(target, fix_lead_args(findings_file, user_numbers, session_numbers))
 
 
 def relaunch_line(target, lead_args, handoff_file=None):
@@ -416,18 +432,19 @@ def relaunch_line(target, lead_args, handoff_file=None):
 def fix_run_launch_line(target, findings_file):
     """The launch line of the fix run for findings_file: the stored launch flags, or the bare line when the run left
     no launch record."""
-    user_numbers = user_ruled_numbers(target)
+    user_numbers = ruled_numbers(target, plan_format.USER_RULING)
+    session_numbers = ruled_numbers(target, plan_format.SESSION_RULING)
     if target.get("relaunch_args"):
-        return fix_launch_line(target, findings_file, user_numbers)
-    return no_record_launch_line(target, findings_file, user_numbers)
+        return fix_launch_line(target, findings_file, user_numbers, session_numbers)
+    return no_record_launch_line(target, findings_file, user_numbers, session_numbers)
 
 
-def no_record_launch_line(target, findings_file, user_numbers):
+def no_record_launch_line(target, findings_file, user_numbers, session_numbers):
     """The launch line of a fix run with no launch record: `--iter`, the session's repo (`session_repo`) as `--repo`
     and `--detach` only."""
     repo = required_packet_repo([])
-    launch_args = [*fix_lead_args(findings_file, user_numbers), "--iter", str(target["iter"]), "--repo", str(repo),
-                   "--detach"]
+    lead_args = fix_lead_args(findings_file, user_numbers, session_numbers)
+    launch_args = [*lead_args, "--iter", str(target["iter"]), "--repo", str(repo), "--detach"]
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
 
 
@@ -477,16 +494,22 @@ def mark_packet_answered(state, target):
     state["last_ask_notes"] = target.get("ask_notes")
 
 
+def conditional_ask_numbers(asks):
+    """The 1-based numbers of the asks whose proposed change hangs on the answer. A converted ask's change is the
+    skipped finding line the user already accepted; any "if" in it is not a branch for the user to pick."""
+    return [number for number, item in enumerate(asks, 1)
+            if not item.get(USER_RULED_KEY) and review_asks.is_conditional_change(item.get("change") or "")]
+
+
 def refuse_conditional_changes(asks, outcomes):
     """Refuses an accepted or rejected outcome on an ask whose proposed change is conditional: neither word says
     which branch the user chose. A modified outcome carries the user's own change and is never refused."""
     problems = []
+    conditional = conditional_ask_numbers(asks)
     for number, (item, outcome) in enumerate(zip(asks, outcomes, strict=True), 1):
-        change = item.get("change") or ""
-        # A converted ask's change is the skipped finding line the user already accepted; any "if" in it is not a
-        # branch for the user to pick.
-        if outcome == MODIFIED or item.get(USER_RULED_KEY) or not review_asks.is_conditional_change(change):
+        if outcome == MODIFIED or number not in conditional:
             continue
+        change = item.get("change") or ""
         problems.append(f"ask {number} ({item.get('file_line') or 'no file:line'}) has a conditional proposed "
                         f"change: {one_line(change, 160)}")
     if problems:

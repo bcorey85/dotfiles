@@ -971,6 +971,11 @@ def split_location(text):
     return path, int(found.group()) if found else 0
 
 
+def locations_named(text):
+    """Every (path, line) of the `path:line` tokens inside the text, in order."""
+    return [split_location(hit) for hit in PATH_LINE.findall(text)]
+
+
 def paths_named(*texts):
     """Every normalized path that the texts name, each once, in order: a text that starts with a file name, then
     every `path:line` token inside it."""

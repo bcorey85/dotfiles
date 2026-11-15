@@ -41,6 +41,7 @@ from review_loop_prompt_file import (
     NO_REVIEW_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_MAIN,
+    SESSION_RULED_HEADER_KEY,
     USER_RULED_AT_KEY,
     USER_RULED_HEADER_KEY,
     YES,
@@ -85,6 +86,9 @@ def launch_parser():
     parser.add_argument("--user-ruled", action="append", type=int, default=[], metavar="N",
                         help="with --fix (repeatable): the user accepted finding N of the findings file, counted "
                              "from 1; if the fix coder skips it, it comes back as an ask")
+    parser.add_argument("--session-ruled", action="append", type=int, default=[], metavar="N",
+                        help="with --fix (repeatable): a session ruled on finding N of the findings file, counted "
+                             "from 1; if the fix coder re-asks it, it is skipped, not asked again")
     parser.add_argument("--base", help="review every change since this ref, commits included")
     parser.add_argument("--file", action="append", default=[], dest="files",
                         help="review only this file (repeatable): absolute, or relative to the repo root")
@@ -107,6 +111,8 @@ def launch_arguments(argv):
         raise LaunchError("--no-review needs --fix: a review-first run with no review does nothing")
     if options.user_ruled and not options.fix:
         raise LaunchError("--user-ruled needs --fix: only a fix run applies findings the user accepted")
+    if options.session_ruled and not options.fix:
+        raise LaunchError("--session-ruled needs --fix: only a fix run applies findings a session ruled on")
     if options.iter < 0:
         raise LaunchError(f"--iter {options.iter} is negative; expected the rounds an earlier run used")
     if any(not command.strip() for command in options.tests):
@@ -180,6 +186,8 @@ def header_pairs(options, base, paths, findings_file):
         pairs.append((USER_RULED_HEADER_KEY, LIST_SEPARATOR.join(str(number) for number in options.user_ruled)))
         ruled_at = plan_format.ruled_at_now()
         pairs.append((USER_RULED_AT_KEY, ruled_at))
+    if findings_file and options.session_ruled:
+        pairs.append((SESSION_RULED_HEADER_KEY, LIST_SEPARATOR.join(str(number) for number in options.session_ruled)))
     if options.no_review:
         pairs.append((NO_REVIEW_KEY, YES))
     if options.fast:
@@ -213,7 +221,8 @@ def packet_args(options, launch_file):
 
 def relaunch_args(options, repo, paths, handoff_file):
     """The flags a later fix run of this review carries: the same repo, range, files, reviewer model, lane,
-    handoff and test commands. `--fix`, `--iter`, `--user-ruled` and `--detach` are the caller's to add."""
+    handoff and test commands. `--fix`, `--iter`, `--user-ruled`, `--session-ruled` and `--detach` are the
+    caller's to add."""
     args = ["--repo", str(repo)]
     if options.base:
         args += ["--base", options.base]
@@ -272,12 +281,13 @@ def read_relaunch_args(launch_file):
     return args
 
 
-def user_ruled_texts(user_ruled, findings):
-    """The texts of the findings the --user-ruled numbers name. A number past the findings stops the launch."""
+def ruled_texts(flag, numbers, findings):
+    """The texts of the findings the `flag` (`--user-ruled` or `--session-ruled`) numbers name. A number past the
+    findings stops the launch."""
     try:
-        return script_utils.numbered_items(user_ruled, findings)
+        return script_utils.numbered_items(numbers, findings)
     except script_utils.ItemNumberError as error:
-        raise LaunchError(f"--user-ruled {error.number} names no finding: the findings file holds "
+        raise LaunchError(f"{flag} {error.number} names no finding: the findings file holds "
                           f"{error.item_count}") from error
 
 
@@ -363,24 +373,27 @@ class FixRunFindings(NamedTuple):
     user_ruled_numbers: list
     user_ruled_texts: list
     left_out: list
+    session_ruled_numbers: list
 
 
 def fix_run_findings(options, repo):
     """The fix run's findings with the plan impacts a recorded ruling settled left out, the numbers of the findings
-    the user ruled on after the renumbering, their texts, and the findings left out. Prints each finding left out."""
+    the user ruled on after the renumbering, their texts, the findings left out, and the session-ruled numbers after
+    the renumbering. Prints each finding left out."""
     if not options.fix:
-        return FixRunFindings([], [], [], [])
+        return FixRunFindings([], [], [], [], [])
     findings = read_findings_file(options.fix)
-    # Called only to check the numbers: a --user-ruled number that names no finding stops the launch.
-    user_ruled_texts(options.user_ruled, findings)
+    # Called only to check the numbers: a --user-ruled or --session-ruled number that names no finding stops the launch.
+    ruled_texts("--user-ruled", options.user_ruled, findings)
+    ruled_texts("--session-ruled", options.session_ruled, findings)
     rows_repo = handback_store.ruled_rows_repo(repo)
     rulings = review_user_ruled.session_rulings(rows_repo)
-    findings, user_ruled_numbers, left_out = review_user_ruled.leave_out_ruled_impacts(
-        findings, options.user_ruled, rulings)
-    for text in left_out:
+    left = review_user_ruled.leave_out_ruled_impacts(
+        findings, options.user_ruled, rulings, options.session_ruled)
+    for text in left.dropped:
         print(f"Left out of the fix run (a ruling already settled this plan impact): {text}")
-    ruled_texts = user_ruled_texts(user_ruled_numbers, findings)
-    return FixRunFindings(findings, user_ruled_numbers, ruled_texts, left_out)
+    user_texts = ruled_texts("--user-ruled", left.user_ruled_numbers, left.kept)
+    return FixRunFindings(left.kept, left.user_ruled_numbers, user_texts, left.dropped, left.session_ruled_numbers)
 
 
 def command_launch(argv, loop_script):
@@ -403,6 +416,7 @@ def command_launch(argv, loop_script):
     found = fix_run_findings(options, repo)
     findings, user_ruled, left_out = found.findings, found.user_ruled_texts, found.left_out
     options.user_ruled = found.user_ruled_numbers
+    options.session_ruled = found.session_ruled_numbers
     base = resolved_base(repo, options.base) if options.base else ""
     paths = repo_paths(repo, options.files)
     check_files_exist(repo, paths, base)

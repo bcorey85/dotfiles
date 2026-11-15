@@ -7,15 +7,15 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-578 fix notes
+579 fix notes
 
-Recent: the 7 days up to 2026-11-13, the newest note.
+Recent: the 7 days up to 2026-11-14, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
 | script/review-loop-script | 57 | 8 |
-| script/review-fix | 55 | 8 |
+| script/review-fix | 56 | 9 |
 | script/handback | 53 | 5 |
 | script/review-commit-gate | 36 | 2 |
 | script/review-loop-gate | 35 | 1 |
@@ -25,21 +25,21 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/script-utils | 20 | 6 |
 | script/plan-format | 19 | 2 |
 | script/quality-check-cap | 17 | 0 |
-| skill/code | 17 | 5 |
-| skill/review | 17 | 14 |
+| skill/code | 17 | 3 |
+| skill/review | 17 | 11 |
 | script/shell-write-gate | 14 | 1 |
-| script/staged-claim-gate | 12 | 5 |
+| script/review-loop | 12 | 5 |
+| script/staged-claim-gate | 12 | 1 |
 | script/verify-prep | 12 | 2 |
 | script/log-review-finding | 11 | 0 |
 | script/pull-keep-index | 11 | 11 |
-| script/review-loop | 11 | 4 |
 | script/verify-log | 11 | 4 |
-| script/git-discipline-gate | 9 | 2 |
-| script/comment-bloat-gate | 8 | 1 |
+| script/git-discipline-gate | 9 | 1 |
+| script/comment-bloat-gate | 8 | 0 |
 | script/log-escape | 8 | 1 |
 | script/verify-common | 8 | 3 |
 | script/code-review-start | 7 | 4 |
-| script/code-wait | 7 | 4 |
+| script/code-wait | 7 | 3 |
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
 | script/refactor-flow | 7 | 2 |
@@ -60,9 +60,10 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/parallel-tests | 4 | 0 |
+| script/review-launch | 4 | 4 |
 | script/run-sh | 4 | 1 |
 | script/test-run-output | 4 | 0 |
-| skill/eng-spec | 4 | 1 |
+| skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
 | script/adr-flow | 3 | 0 |
@@ -70,11 +71,10 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/inline-interpreter-hint | 3 | 0 |
 | script/ledger-write | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
-| script/review-launch | 3 | 3 |
 | script/review-loop-packet | 3 | 3 |
 | script/review-scope | 3 | 0 |
 | script/source-paths | 3 | 1 |
-| script/wait-loop-gate | 3 | 2 |
+| script/wait-loop-gate | 3 | 1 |
 | agent/code-fork | 2 | 1 |
 | agent/test-intent-reviewer | 2 | 0 |
 | rule/global-claude-md | 2 | 0 |
@@ -94,7 +94,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/plan-review-shards | 2 | 1 |
 | script/reviewed-tree | 2 | 1 |
 | script/rg-path-gate | 2 | 0 |
-| script/sweep-scratchpads | 2 | 1 |
+| script/sweep-scratchpads | 2 | 0 |
 | script/verify-branch | 2 | 0 |
 | script/worktree-snapshot | 2 | 0 |
 | skill/branch-recap | 2 | 0 |
@@ -151,6 +151,6 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/waiting-review-launch | 1 | 0 |
 | script/warn-skip-hooks | 1 | 0 |
 | shared/reviewer-calibration | 1 | 0 |
-| skill/close-branch | 1 | 1 |
+| skill/close-branch | 1 | 0 |
 | skill/pr-comments | 1 | 0 |
 | skill/stage | 1 | 0 |

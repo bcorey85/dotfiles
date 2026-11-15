@@ -10,6 +10,8 @@ The prompt file is header lines (`key: value`), a blank line, then the handoff b
   user-ruled: <n>, <n>      the 1-based numbers of the findings the user accepted
   user-ruled-at: <time>     when the fix run was launched, the time the coder is told those findings were accepted;
                             required with user-ruled (read_prompt stops without it)
+  session-ruled: <n>, <n>   the 1-based numbers of the findings a session ruled on; the fix coder's re-ask of one is a
+                            skip
   no-review: yes            fix-first with no review after the fix
   reviewer-model: <model>   the model every reviewer runs on
   iter: <n>                 review rounds an earlier run of the same review already used
@@ -30,6 +32,7 @@ HELD_FILES_KEY = "held files"
 FINDINGS_KEY = "findings"
 USER_RULED_HEADER_KEY = "user-ruled"
 USER_RULED_AT_KEY = "user-ruled-at"
+SESSION_RULED_HEADER_KEY = "session-ruled"
 NO_REVIEW_KEY = "no-review"
 REVIEWER_MODEL_KEY = "reviewer-model"
 ITER_KEY = "iter"
@@ -97,18 +100,18 @@ def read_findings(header):
     return findings
 
 
-def header_user_ruled(header, findings):
-    """The texts of the findings the user-ruled line names, [] when the header has none. A number that is no whole
-    number, or names no finding, stops the run."""
-    words = header_list(header, USER_RULED_HEADER_KEY)
+def header_ruled(header, findings, key):
+    """The texts of the findings the `key` line (the user-ruled or session-ruled line) names, [] when the header has
+    none. A number that is no whole number, or names no finding, stops the run."""
+    words = header_list(header, key)
     for word in words:
         if not (word.isascii() and word.isdecimal()):
-            raise PromptFileError(f"the prompt file's {USER_RULED_HEADER_KEY} line holds {word!r}; expected the "
+            raise PromptFileError(f"the prompt file's {key} line holds {word!r}; expected the "
                                   f"number of one of the {len(findings)} findings")
     try:
         return script_utils.numbered_items([int(word) for word in words], findings)
     except script_utils.ItemNumberError as error:
-        raise PromptFileError(f"the prompt file's {USER_RULED_HEADER_KEY} line holds {str(error.number)!r}; "
+        raise PromptFileError(f"the prompt file's {key} line holds {str(error.number)!r}; "
                               f"expected the number of one of the {error.item_count} findings") from error
 
 

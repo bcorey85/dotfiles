@@ -25,9 +25,8 @@ def named_run_blocker(run):
 
 
 def test_commands_of(gate_commands):
-    """The gate commands that are tests: the readability and stale-prose checks are left out."""
-    return [command for command in gate_commands
-            if not coder_gate.is_readability_check(command) and not coder_gate.is_stale_prose_check(command)]
+    """The gate commands that are tests: the stale-prose check is left out."""
+    return [command for command in gate_commands if not coder_gate.is_stale_prose_check(command)]
 
 
 def time_left_for_rerun(deadline):

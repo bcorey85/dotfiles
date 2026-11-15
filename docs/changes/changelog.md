@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-954 changes
+957 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -30,8 +30,14 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Code stops at every phase end and hands the user the commit line](notes/2026-11-10-code-stops-at-every-phase-end-and-hands-the-user.md) [skill/code] /code no longer goes on to the next phase by itself: every phase end stops for the user's read, and the stop names the commit line to run after reading and staging, so phases no longer pile up uncommitted.
 * [The coder logs or returns every caught error, also when the task asks for a fallback](notes/2026-11-10-the-coder-logs-or-returns-every-caught-error-also.md) [skill/coder-core] The coder's swallowed-error line now says to bind the error in every catch block and use it, and names a catch that only returns a fallback as a swallowed error.
 
+### Removed
+
+* [The coder hand-back no longer checks readability](notes/2026-11-14-the-coder-hand-back-no-longer-checks-readability.md) [script/coder-gate, script/review-loop-script, script/gate-commands, script/code-review-start] The readability check is gone from every gate command list: the coder's hand-back is never refused for a readability hit, and the review loop runs no readability pass. readability_check.py and readability_ts.mjs are deleted; the stale-prose check stays.
+
 ### Fixed
 
+* [Accepted ask reaches the fix coder as its proposed change only](notes/2026-11-14-accepted-ask-reaches-the-fix-coder-as-its-proposed.md) [script/review-fix, script/review-loop, script/review-launch] An accepted ask's findings line now holds its class tag and proposed change, never the question or its If-declined branch, and a fix coder that re-asks a ruled ask in OPEN QUESTIONS has that finding skipped, not counted as fixed.
+* [Review resume records session rulings with --by session](notes/2026-11-14-review-resume-records-session-rulings-with-by.md) [shared/review-fork-run, script/review-fix] The review fork's Resume step passes --by session to asks-done, asks-done --correct and decide when the resume text carries a 'ruled by: <session name>' line, and --by user for any other text. The stop footer tells a session that answers to add that line, and the ask presentation names each conditional ask to answer with 'modified:'.
 * [Review loop: an ask the session rejected is dropped when a later round raises it again](notes/2026-11-13-review-loop-an-ask-the-session-rejected-is-dropped-when-raised-again.md) [script/review-fix, script/review-loop, script/handback-store] asks-done records each rejected ask (file:line and question) in the hand-back store; the loop reads them at start and files a repeat under dropped asks with a reason that says it was already rejected, instead of stopping on it.
 * [Phase review asks need a ruling before the commit](notes/2026-11-13-phase-review-asks-need-a-ruling-before-the-commit.md) [script/review-commit-gate, script/phase-asks, script/code-wait, script/handback-store, script/code-review-start, script/shell-command, script/script-utils, script/handback, script/review-asks, script/review-fix, script/file-lock, skill/code] When a /code phase review hands back reviewer questions, the commit gate refuses any session's `git commit` in that repo until `phase_asks.py rule` records accepted or rejected, with a reason, for each one.
 * [Deny coder git calls that write the index](notes/2026-11-13-deny-coder-git-calls-that-write-the-index.md) [agent/coder, script/git-discipline-gate] The git discipline gate now denies the index-writing git calls add, stage, mv, rm, commit, reset, update-index, read-tree, cherry-pick, revert, am, merge, pull, rebase, switch or checkout of a branch with -m, --merge, --conflict, -f or --force (switch also --discard-changes and --orphan), restore --staged, apply --cached/--index/--3way/--intent-to-add and checkout <tree-ish> [--] <paths>, and checkout -p <tree-ish> from a coder, so renames and adds no longer ride into an unrelated commit.
@@ -1122,6 +1128,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [Review resume records session rulings with --by session](notes/2026-11-14-review-resume-records-session-rulings-with-by.md) - No intake number counts session rulings logged as the user's.
 * [The test reviewer opens the fixture of every test that asserts an order](notes/2026-11-11-the-test-reviewer-opens-the-fixture-of-every-test.md) - No intake number reads it: the work logs do not tag a test-reviewer finding as a fixture finding. Measured on a TypeScript billing app, a small TypeScript case and a small Django case; the Django case shows no gain because the reviewer already reports it there. No run on any other stack or on a frontend test.
 * [The coder writes its scripts in the scratchpad, never in the repo tree](notes/2026-11-10-the-coder-writes-its-scripts-in-the-scratchpad.md) - No intake number counts scripts a coder leaves in the repo tree.
 * [The backend error-class rule names raise and a built-in Python error, so the coder follows it in Python too](notes/2026-11-10-the-backend-error-class-rule-names-raise-and-a.md) - No intake number reads this behavior: work escape descriptions are hashed, so no class count maps to the rule. Stacks with no run: React and Vue. One task per stack, Sonnet only, plain prompt only.

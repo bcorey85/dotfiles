@@ -393,15 +393,36 @@ def plan_item_criteria_ids(text):
 
 
 def ruled_plan_impact(text, ruling_texts, accepted_texts=()):
-    """Whether a plan-change `text` (a plan impact or a plan-drift finding) is one a ruling or the user already
-    settled. A near title of a text in `ruling_texts` or `accepted_texts` (the findings the user accepted) settles
-    it. Every id it names (see `plan_item_criteria_ids`) named by a plan item in `ruling_texts` settles it too; an
-    accepted finding settles no id, since it asks for a change and names the criterion only as its subject."""
+    """Whether a plan-change `text` (a plan impact or a plan-drift finding) is one a ruling, the user or a session
+    already settled. A near title of a text in `ruling_texts` or `accepted_texts` (the findings the user or a session
+    ruled on) settles it. Every id it names (see `plan_item_criteria_ids`) named by a plan item in `ruling_texts`
+    settles it too. An accepted finding settles no id by itself, except a re-filed plan-drift finding (see
+    `refiles_accepted_drift`)."""
     if any(near_title(known, text) for known in [*ruling_texts, *accepted_texts]):
+        return True
+
+    if any(refiles_accepted_drift(text, known) for known in accepted_texts):
         return True
 
     criteria_ids = plan_item_criteria_ids(text)
     return criteria_covered(criteria_ids, ruling_texts)
+
+
+def refiles_accepted_drift(text, accepted):
+    """Whether the plan-drift finding `text` is the finding `accepted` again in other words: the same first
+    file:line and the same, non-empty, criterion ids. The text of an accepted ask is much shorter than the
+    reviewer's finding, so a near title cannot match them."""
+    found = parse_finding(text)
+    known = parse_finding(accepted)
+    if found.finding_class != handback.PLAN_DRIFT_CLASS:
+        return False
+    if known.finding_class != handback.PLAN_DRIFT_CLASS:
+        return False
+    if not found.path or (found.path, found.line) != (known.path, known.line):
+        return False
+
+    text_ids = plan_format.criteria_ids(text)
+    return bool(text_ids) and text_ids == plan_format.criteria_ids(accepted)
 
 
 def criteria_covered(ids, plan_texts):

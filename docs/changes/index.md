@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-964 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+965 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-15, [The fix brief names who changed an ask: the user or the session](notes/2026-11-15-the-fix-brief-names-who-changed-an-ask-the-user-or.md).
+Latest change: 2026-11-15, [Review loop fixes every round-two finding again](notes/2026-11-15-review-loop-fixes-every-round-two-finding-again.md).
 
 ## Top gains
 

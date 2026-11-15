@@ -20,18 +20,20 @@ import sys
 
 GATED_AGENT = "code-fork"
 RUN_FOLDER_NAME = "code-phase"
-DENY_TEXT = ("code-fork writes only files in its run folder, the path `git rev-parse --path-format=absolute "
-             "--git-path code-phase` prints. {file_path} is outside it. Send any other edit to a coder.")
+GATE_NAME = "fork_write_scope"
+DENY_TEXT = (f"{GATE_NAME}: code-fork writes only files in its run folder, the path `git rev-parse "
+             "--path-format=absolute --git-path code-phase` prints. {file_path} is outside it. Send any other edit "
+             "to a coder.")
 REVIEW_FIX_ROUTE_TEXT = (
     DENY_TEXT + " To add findings to the fix run asks-done printed, write them to {findings_file} (the same `- ` item "
     "format) and add `--also-fix {findings_file}` to that launch line. The write gate stays closed: no other file "
     "outside the run folder can be written.")
-PENDING_TEXT = ("asks-done printed a fix run that has not launched, so {file_name} cannot be written yet. Run "
-                "this launch line first, then wait on it: {launch_line} If this run must not start, stop and tell the "
-                "user, who removes the `{key}` key from {state_file}.")
-UNREADABLE_STATE_TEXT = ("fork_write_scope: {state_file} is not a readable JSON object ({error}), so {file_name} "
+PENDING_TEXT = (f"{GATE_NAME}: asks-done printed a fix run that has not launched, so {{file_name}} cannot be written "
+                "yet. Run this launch line first, then wait on it: {launch_line} If this run must not start, stop and "
+                "tell the user, who removes the `{key}` key from {state_file}.")
+UNREADABLE_STATE_TEXT = (f"{GATE_NAME}: {{state_file}} is not a readable JSON object ({{error}}), so {{file_name}} "
                          "cannot be written. Tell the user to repair or delete that file - denied.")
-ERROR_TEXT = "fork_write_scope: could not judge the Write ({error}) - denied."
+ERROR_TEXT = f"{GATE_NAME}: could not judge the Write ({{error}}) - denied."
 LIB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")
 
 
@@ -147,6 +149,6 @@ if __name__ == "__main__":
     try:
         exit_code = main()
     except Exception as crash:
-        sys.stderr.write(f"fork_write_scope: could not read the hook input ({crash})\n")
+        sys.stderr.write(f"{GATE_NAME}: could not read the hook input ({crash})\n")
         exit_code = 0
     sys.exit(exit_code)

@@ -2608,7 +2608,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         converted = {"question": "Apply it anyway?", "change": finding, "file_line": "README.md:1",
                      review_fix_asks.USER_RULED_KEY: True}
 
-        lines = review_fix_asks.ask_finding_lines([converted], ["accepted"], [""])
+        lines = review_fix_asks.ask_finding_lines([converted], ["accepted"], [""], ["user"])
 
         self.assertEqual(["- " + finding], lines)
 
@@ -2622,9 +2622,11 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_modified_plan_drift_ask_takes_its_criterion_ids_from_the_note_too(self):
         ask = {"question": "[plan-drift] does AC2 still hold?", "change": "keep the narrower wording",
                "file_line": "README.md:1", "class": "plan-drift"}
-        state = {"asks": [ask], "ask_outcomes": ["modified"], "ask_notes": ["move it to AC3"]}
+        state = {"asks": [ask], "ask_outcomes": ["modified"], "ask_notes": ["move it to AC3"],
+                 review_fix_asks.ASKS_DECIDED_BY_KEY: ["user"]}
 
-        text = review_fix_asks.accepted_finding_texts(asks=[ask], outcomes=["modified"], notes=["move it to AC3"])[0]
+        text = review_fix_asks.accepted_finding_texts(asks=[ask], outcomes=["modified"], notes=["move it to AC3"],
+                                                        deciders=["user"])[0]
 
         self.assertEqual(plan_format.criteria_ids(text), {"AC2", "AC3"})
         covered = review_fix_asks.findings_covered_by_impact(state, "PLAN-IMPACT:\n  acceptance_criteria: AC2, AC3")
@@ -2634,14 +2636,14 @@ class ReviewFixScriptTest(unittest.TestCase):
         ask = {"question": "the fix coder skipped it. Apply it anyway?", "change": "src/a.py:3 [bug] cap it",
                "file_line": "src/a.py:3", "class": "bug", review_fix_asks.USER_RULED_KEY: True}
 
-        texts = review_fix_asks.accepted_finding_texts([ask], ["modified"], ["cap at 5 instead"])
+        texts = review_fix_asks.accepted_finding_texts([ask], ["modified"], ["cap at 5 instead"], ["user"])
 
         self.assertEqual(texts, ["src/a.py:3 [bug] cap it The user changed it; make this change in its place: "
                                  "cap at 5 instead"])
 
     def test_a_modified_ask_keeps_its_change_note(self):
         ask = {"question": "If declined: reword.", "change": "deny them", "file_line": "hook.py:4", "class": "bug"}
-        lines = review_fix_asks.ask_finding_lines([ask], ["modified"], ["deny only rm"])
+        lines = review_fix_asks.ask_finding_lines([ask], ["modified"], ["deny only rm"], ["user"])
         self.assertEqual(lines, ["- hook.py:4 [bug] Proposed change: deny them The user changed it; make this change "
                                  "in its place: deny only rm"])
 

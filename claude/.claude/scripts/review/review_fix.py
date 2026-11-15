@@ -36,7 +36,7 @@ still judges.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review_fix.py asks-done --by <user|session> [--packet <packet_id>] [--correct] <outcome>...
                                          one outcome per ask, in order: {outcomes}, optional
-                                         ":<one line note>" after it; modified needs the note, the user's change.
+                                         ":<one line note>" after it; modified needs the note, the ruler's change.
                                          accepted: {accept_means}; rejected: {reject_means}.
                                          Logs one row per ask, once. With an ask accepted or modified it writes them
                                          to <git dir>/review-fix/ask-findings.md and prints `ACTION: redispatch`

@@ -20,6 +20,7 @@ unmeasured: ""
 - New `lib/ruled_change_text.py` owns the ruler clauses (user, session, unnamed), the shared `; make this change in its place: ` marker, `ruled_note` (reads the note after the last marker, so the latest ruling wins) and `is_no_code_ruling` (`\bno code change`, any case). `changed_text` takes the ruler's clause from every caller. `review/review_fix_asks.py` builds finding text through it, so a no-code note is read whoever ruled.
 - `review/review_loop_prompts.py` `coder_prompt` adds a `## No code change` section naming the issue numbers: edit no source or test file for them, make only the doc or note edit, else `SKIPPED <n>: <reason>`.
 - `review/review_loop_ruled.py` flags each code file (not `lib/source_paths.py` `is_doc_path`) the coder changed for a no-code finding, also when the coder call fails. The packet carries `no_code_ruling_broken` (`{ruling, file}`: the ruling's location and note, not the coder brief's private issue number); `review/handback.py` renders it as `Code changed against a no-code ruling: <file> (ruling: <ruling>)`. The next `reviewer_prompt` lists the rulings and asks for a `[plan-drift]` finding.
+- `claude/.claude/scripts/CLAUDE.md` names `lib/ruled_change_text.py` as the owner of the ruling text. The user approved the line directly on 2026-11-15.
 
 ## Evidence
 

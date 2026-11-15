@@ -24,6 +24,7 @@ from review_asks import (
     USER_RULED_KEY,
     rejected_ask_text,
 )
+from review_fix_names import RUN_FOLDER_FINDINGS_NAME
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_FINDINGS_NAME,
@@ -41,6 +42,7 @@ from review_fix_state import (
     save_fix_state,
 )
 from review_loop_findings import criteria_covered, plan_item_criteria_ids
+from ruled_change_text import changed_text
 from saved_handback import dispatched_repo, session_repo
 from script_utils import one_line, split_location
 
@@ -177,7 +179,7 @@ def ask_finding_text(item, note=None):
     if item.get(USER_RULED_KEY):
         if note is None:
             return change
-        return f"{change} The user changed it; make this change in its place: {note}"
+        return changed_text(change, note)
     if is_plan_impact_ask(item):
         return f"{item['file_line']} {question} Proposed change: {change}"
     # The question can hold a declined branch the user already ruled against; a coder that reads it may take it.
@@ -185,7 +187,7 @@ def ask_finding_text(item, note=None):
     # `acceptance_criteria:` line becomes the only source of ids, so it comes after the note.
     text = f"{item['file_line']} [{item['class']}] Proposed change: {change}"
     if note is not None:
-        text += f" The user changed it; make this change in its place: {note}"
+        text = changed_text(text, note)
     ids = sorted(plan_format.criteria_ids(f"{question} {change} {note or ''}"))
     if ids:
         text += f" acceptance_criteria: {', '.join(ids)}"
@@ -357,7 +359,8 @@ def print_fix_run(target, findings_file, summary_lines):
     return print_action(
         "redispatch", *summary_lines,
         f"The accepted asks are in {findings_file}. Run this launch line now: its fix coder applies them and a "
-        "review round covers the fix.",
+        "review round covers the fix. Findings deferred to this run go in "
+        f"<run folder>/{RUN_FOLDER_FINDINGS_NAME} and are added with `--also-fix`.",
         target["asks_launch_line"])
 
 

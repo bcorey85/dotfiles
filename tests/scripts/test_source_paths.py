@@ -1,7 +1,10 @@
 import importlib.util
+import sys
 import unittest
 
 import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 
 module_spec = importlib.util.spec_from_file_location("source_paths", toolkit_paths.LIB_DIR / "source_paths.py")
 source_paths = importlib.util.module_from_spec(module_spec)

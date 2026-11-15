@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-961 changes
+964 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -37,6 +37,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [An ask whose change starts with if accepted is not refused as conditional](notes/2026-11-15-an-ask-whose-change-starts-with-if-accepted-is-not.md) [script/review-asks] `asks-done` no longer refuses an ask whose proposed change starts with "if accepted" as conditional; only "if not accepted" counts.
+* [Deferred findings reach a resumed /review fix run through --also-fix](notes/2026-11-15-deferred-findings-reach-a-resumed-review-fix-run.md) [script/review-launch, script/review-fix-asks, script/fork-write-scope, script/review-fix-names] `review_fix.py launch --also-fix <file>` adds findings to the fix run after the `--fix` ones, and the code-fork's denied write under `<git dir>/review-fix/` now names that route.
+* [A /review fix run follows a no-code ruling on an ask](notes/2026-11-15-a-review-fix-run-follows-a-no-code-ruling-on-an.md) [script/review-loop, script/review-fix-asks, script/handback, script/ruled-change-text, script/source-paths] A finding whose ask was ruled no code change reaches the fix coder as a named constraint, and a code edit against it is flagged in the packet and checked by the next reviewer.
 * [A /code phase rejection is recorded, so the next review loop drops the repeat](notes/2026-11-15-a-code-phase-rejection-is-recorded-so-the-next.md) [script/phase-asks, script/review-asks, script/review-fix, script/handback-store] An ask the session rejects with `phase_asks.py rule` is stored as a rejected ask, so the next review loop of that repo drops the same ask instead of raising it again.
 * [The review commit gate judges merge, cherry-pick, revert, am, rebase --continue and commit aliases as commits](notes/2026-11-14-the-review-commit-gate-judges-merge-cherry-pick.md) [script/review-commit-gate, script/shell-command] A /code phase with unreviewed coder work or unruled reviewer questions can no longer commit through git merge, cherry-pick, revert, am, rebase --continue or --skip or a git alias that expands to a commit; the gate denies each where it denies git commit.
 * [A failed fix coder call stops the review loop with its findings kept, and the brief stays small](notes/2026-11-14-a-failed-fix-coder-call-stops-the-review-loop-with.md) [script/review-loop, skill/code] A fix coder call that fails (for example Prompt is too long) now stops the loop as critical-blocker with the findings still in findings_remaining, and the /code skill never dispatches a coder on them itself. The coder brief folds long file lists by directory and cuts each issue, with the full text in files under the loop's out folder.

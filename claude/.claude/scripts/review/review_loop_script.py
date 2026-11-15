@@ -446,7 +446,8 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         """The ReviewRequest (role, agent, prompt) of one reviewer of this round."""
         agent, owned = dispatch
         prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
-                                 tuple(ask.text for ask in self.asks), self.brief, self.test_strategy)
+                                 tuple(ask.text for ask in self.asks), self.brief, self.test_strategy,
+                                 tuple(self.no_code_rulings))
         lens = getattr(owned, "lens", "")
         if lens:
             prompt += "\n" + lens
@@ -647,17 +648,19 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         issue_texts = [self.issue_text(finding) for finding in findings]
         prompt = coder_prompt(self.repo, issue_texts, [nit.text for nit in nits], files_in_scope,
                               self.out / "coder-briefs" / call_name, self.gate_env, self.later_phase_files,
-                              self.guidance, self.held_files)
+                              self.guidance, self.held_files, self.no_code_numbers(findings))
         self.last_pass = "coder"
         self.untested_fix = True
         try:
             result = coder_call(call_name, prompt, self.repo, self.out, self.held_files)
         except CoderCallError as error:
             self.files_touched.update(error.changed)
+            self.flag_broken_no_code_rulings(findings, error.changed, nits)
             self.keep_coder_commit_in_scope()
             self.open_fixes += [finding for finding in findings if finding not in self.open_fixes]
             raise CoderFailedError(coder_failure_blocker(call_name, error)) from error
         self.keep_coder_commit_in_scope()
+        self.flag_broken_no_code_rulings(findings, result.changed, nits)
 
         later_phase_edits = sorted(set(result.changed) & self.later_phase_files)
         if later_phase_edits:
@@ -890,6 +893,7 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
             "skipped_fp": self.skipped_fp,
             "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],
             "plan_impacts": self.plan_impacts,
+            "no_code_ruling_broken": self.no_code_broken,
             "open_fixes": merge_findings(self.open_fixes),
             "asks": self.asks,
             "ask_gates": self.ask_gates,

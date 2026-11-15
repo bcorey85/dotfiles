@@ -63,17 +63,17 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "full_check_tree",
                "files_touched", "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean",
                "tool_fault", "blocked_agents", "scoped_tests", "open_classes",
-               "left_alone", "unrun_reviewer", "plan_impacts"]
+               "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
 SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
              "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
-             "plan_impacts"]
+             "plan_impacts", "no_code_ruling_broken"]
 # The list fields whose every JSON entry is a string.
 STRING_LIST_KEYS = ("open_classes", "left_alone")
 # The list fields whose every entry is a mapping, and the text field each entry requires.
 ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question",
-                   "plan_impacts": "text"}
+                   "plan_impacts": "text", "no_code_ruling_broken": "file"}
 # The file_line of a finding that names no file. Its row takes no line.
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
@@ -596,6 +596,8 @@ def full_check_lines(packet):
     if packet["check_rewrote_edited"]:
         lines.append("Hold coder edits and a full check rewrite, so review them (do not restore): "
                      + ", ".join(packet["check_rewrote_edited"]))
+    for broken in packet["no_code_ruling_broken"]:
+        lines.append(f"Code changed against a no-code ruling: issue {broken['issue']} ({broken['file']})")
     if packet["check_created"]:
         lines.append("Created by the full check, not by the coder (delete or keep): "
                      + ", ".join(packet["check_created"]))

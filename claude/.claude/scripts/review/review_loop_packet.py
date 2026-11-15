@@ -85,7 +85,8 @@ def packet_message(outcome):
             fields["full_check_summary"] = script_utils.one_line(summary, limit=None)
     if outcome["scoped_tests"]:
         fields["scoped_tests"] = script_utils.one_line(outcome["scoped_tests"], limit=None)
-    for key in ("left_alone", "check_changed", "check_rewrote_edited", "check_created", "tool_fault"):
+    for key in ("left_alone", "check_changed", "check_rewrote_edited", "check_created", "tool_fault",
+                "no_code_ruling_broken"):
         if outcome.get(key):
             fields[key] = outcome[key]
     return json.dumps(fields, ensure_ascii=False)
@@ -99,6 +100,7 @@ EMPTY_OUTCOME = {
     "full_check_summaries": [],
     "check_changed": [], "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [],
     "unreviewed_fix": False, "scoped_tests": "", "tool_fault": "", "plan_impacts": [],
+    "no_code_ruling_broken": [],
 }
 
 

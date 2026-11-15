@@ -32,8 +32,10 @@ import review_loop_findings
 import review_loop_held
 import review_loop_packet
 import review_loop_plan
+import review_loop_prompts
 import review_loop_ruled
 import review_loop_scoped_tests
+import ruled_change_text
 from review_asks import REJECTED
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_LOOP_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_loop_script.py")
@@ -643,6 +645,33 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("SKIPPED 1:", reason)
         self.assertIn("re-asked", reason)
         self.assertEqual(packet["ask"], [])
+
+    def test_a_code_edit_against_a_no_code_ruling_reaches_the_packet_and_the_next_reviewer_prompt(self):
+        ruled = ("app.py:2 [bug] Proposed change: deny the limit" + ruled_change_text.CHANGED_MARKER
+                 + "Make no code change.")
+        completed = self.run_script({
+            "coder": [{"result": "Reworded the message.", "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header(ruled))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["no_code_ruling_broken"], [{"issue": 1, "file": "app.py"}])
+        reviewer_prompt = [call for call in self.fake_calls() if call["key"] == "code-reviewer"][-1]["prompt"]
+        self.assertIn(review_loop_prompts.NO_CODE_REVIEW_RULE, reviewer_prompt)
+        self.assertIn("Make no code change.", reviewer_prompt)
+
+    def test_a_coder_that_dies_after_editing_against_a_no_code_ruling_still_reaches_the_packet(self):
+        ruled = ("app.py:2 [bug] Proposed change: deny the limit" + ruled_change_text.CHANGED_MARKER
+                 + "Make no code change.")
+        completed = self.run_script({
+            "coder": [{"result": "Prompt is too long", "edits": {"app.py": APP_FIXED}, "exit": 1}],
+        }, header_extra=self.findings_header(ruled))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["no_code_ruling_broken"], [{"issue": 1, "file": "app.py"}])
 
     def test_a_coders_own_skip_line_beats_the_re_ask_text_for_a_user_ruled_finding(self):
         report = ('SKIPPED 1: the limit is meant to be 5\n'
@@ -3457,7 +3486,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def test_a_lens_reviewer_prompt_ends_with_its_lens_line_and_a_plain_one_carries_none(self):
         module = self.load_script_module()
         loop = mock.Mock(repo=self.repo, prior_issues=[], round_two_fix_diff_path="", asks=[], brief="",
-                         test_strategy="", iter_count=1)
+                         test_strategy="", iter_count=1, no_code_rulings=[])
         lensed = ("code-reviewer", review_loop_plan.LensOwned(["a.py", "b.py"], review_loop_plan.LENS_B))
         plain = ("code-reviewer", ["a.py"])
 

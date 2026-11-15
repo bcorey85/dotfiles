@@ -1,0 +1,949 @@
+#!/usr/bin/env python3
+"""Remove finished linked git worktrees, and optionally merged local branches.
+
+Usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]
+
+  (no option)  list only: one line per worktree it would remove (path, branch,
+               size), one line per kept worktree with the reason, then totals.
+               Removes nothing.
+  --apply      remove exactly the listed worktrees: `git worktree remove` (never
+               --force), then delete its branch. Right before each removal every
+               condition is checked again; a tree that no longer passes is kept
+               and reported. The end line is: removed N, freed bytes, kept N,
+               failed N. A tree whose worktree went but whose branch could not
+               be deleted counts as removed and as failed, with the reason.
+               Exit 1 when any step failed.
+  --branches   list merged local branches that have no worktree entry (a
+               prunable entry counts as one). With --apply, delete each. Never
+               the default branch, never a branch that a worktree entry has
+               checked out, never the branch of a rebase or bisect in progress
+               in a worktree whose folder exists (such a worktree shows as
+               detached).
+
+A branch is deleted with `git update-ref -d refs/heads/<name> <tip>` on the tip
+just checked as an ancestor of the compare ref, never forced: git refuses when
+the tip moved in between. Then its `branch.<name>` config section is removed.
+A branch whose tip is ahead of its own upstream is still deleted when the
+compare ref holds it; its list line says so.
+
+Run it from the main checkout or any linked worktree of a repo. Both modes
+first run `git fetch --quiet origin <default branch>` (list mode too: it
+updates only the remote-tracking ref origin/<default branch>) and compare with
+that ref. They stop, remove nothing and exit 1 when there is no git repo, no
+origin remote, no refs/remotes/origin/HEAD (`git remote set-head origin
+--auto`) or origin cannot be fetched.
+
+A worktree is removed only when all of these hold; otherwise it is kept and one
+reason is printed:
+  - it is a linked worktree: not the main checkout, not the one the command
+    runs from, not one that holds the working directory;
+  - its folder exists, it is not locked, not detached, not bare;
+  - its branch is not the default branch and its tip is an ancestor of the
+    compare ref (a squash or rebase merge looks unmerged: check by hand);
+  - git status is clean (ignored files do not count), no submodule, no nested
+    repository at any depth inside an ignored folder;
+  - no stash entry was made on its branch (an entry that names no branch counts
+    when its first parent is the branch tip);
+  - no live process has its working directory inside it;
+  - no herdr workspace or agent is on it (`herdr-api workspace list` and
+    `herdr-api agent list`; when one list does not answer, a note names it and
+    the other checks still run; a list that failed is not asked again in the
+    run, a list that answered is asked again before each removal).
+Never touched: refs/review-snapshots, git gc, git worktree prune (a worktree
+whose folder is gone is kept, and `git worktree prune` clears its entry),
+git stash drop, git branch -D, any remote branch.
+"""
+from __future__ import annotations
+
+import dataclasses
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+PROC_ROOT = "/proc"
+FETCH_TIMEOUT_SECONDS = 120
+HERDR_TIMEOUT_SECONDS = 20
+LSOF_TIMEOUT_SECONDS = 60
+USAGE_LINE = "usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]"
+SUBMODULE_MODE = "160000"
+REMOTE_HEAD_PREFIX = "refs/remotes/origin/"
+HEADS_PREFIX = "refs/heads/"
+
+# Reason codes: the totals line counts kept trees by these.
+MAIN_CHECKOUT = "main checkout"
+CURRENT_TREE = "current worktree"
+BARE = "bare"
+FOLDER_GONE = "folder gone"
+LOCKED = "locked"
+DETACHED = "detached"
+DEFAULT_BRANCH = "default branch"
+NOT_MERGED = "not merged"
+DIRTY = "uncommitted changes"
+SUBMODULE = "submodule"
+NESTED_REPO = "nested repo"
+STASH = "stash entry"
+PROCESS = "process running"
+HERDR = "herdr workspace"
+CANNOT_CHECK = "cannot check"
+VANISHED = "no longer a worktree"
+
+
+class PruneError(Exception):
+    """A failure to read git state. Before the first removal it stops the run with nothing removed and exit 1.
+    Mid-apply it fails only the tree or branch being handled: the run goes on, prints its totals and exits 1."""
+
+
+@dataclasses.dataclass
+class Result:
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+@dataclasses.dataclass
+class Worktree:
+    path: str
+    head: str = ""
+    branch: str | None = None
+    bare: bool = False
+    detached: bool = False
+    locked: bool = False
+    lock_reason: str = ""
+    prunable: bool = False
+
+
+@dataclasses.dataclass
+class Keep:
+    code: str
+    text: str
+
+
+@dataclasses.dataclass
+class Stash:
+    branch: str | None
+    parent: str
+
+
+@dataclasses.dataclass
+class Process:
+    pid: int
+    name: str
+    cwd: str
+
+
+@dataclasses.dataclass
+class Workspace:
+    label: str
+    checkout_path: str | None
+
+
+@dataclasses.dataclass
+class Herdr:
+    workspaces: list[Workspace] | None
+    agent_cwds: list[str] | None
+    note: str | None = None
+
+
+@dataclasses.dataclass
+class World:
+    """Everything the checks read, taken fresh before each tree is judged. A herdr list that failed earlier in the
+    run is the exception: it stays unasked and its part of `herdr` is None."""
+    worktrees: list[Worktree]
+    stashes: list[Stash] | None
+    processes: list[Process] | None
+    herdr: Herdr
+    notes: list[str]
+
+
+@dataclasses.dataclass
+class RunState:
+    """What one run remembers from one world to the next."""
+    herdr_failures: dict[str, str] = dataclasses.field(default_factory=dict)  # failed list name -> why
+    printed_notes: set[str] = dataclasses.field(default_factory=set)
+
+    def print_new_notes(self, notes):
+        for note in notes:
+            if note in self.printed_notes:
+                continue
+            self.printed_notes.add(note)
+            print(note, flush=True)
+
+
+@dataclasses.dataclass
+class Repo:
+    main_path: str
+    default_branch: str
+    compare_name: str
+    compare_hash: str
+    cwd_real: str
+
+
+@dataclasses.dataclass
+class Tally:
+    removed: int = 0
+    freed: int = 0
+    kept: int = 0
+    failed: int = 0
+
+
+class HerdrUnavailableError(Exception):
+    pass
+
+
+def run(args, cwd=None, timeout=None, env=None):
+    try:
+        done = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True,
+                              errors="surrogateescape", timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return Result(127, "", f"{args[0]}: {error}")
+    return Result(done.returncode, done.stdout, done.stderr)
+
+
+def git(directory, *args, timeout=None):
+    """Run git in `directory` (the working directory when None) without prompts or optional index writes."""
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    command = ["git"] if directory is None else ["git", "-C", directory]
+    return run([*command, *args], timeout=timeout, env=env)
+
+
+def real(path):
+    return os.path.realpath(path)
+
+
+def inside(child, parent):
+    """True when `child` is `parent` or lies below it, compared on whole path components."""
+    if child == parent:
+        return True
+    return child.startswith(parent.rstrip(os.sep) + os.sep)
+
+
+def show(path):
+    """The path with control characters escaped, so one path stays one line."""
+    return "".join(char if char.isprintable() else char.encode("unicode_escape").decode("ascii")
+                   for char in path)
+
+
+def human_size(size):
+    if size is None:
+        return "size unknown"
+    if size < 1024:
+        return f"{size} B"
+    value = float(size)
+    for unit in ("KiB", "MiB", "GiB"):
+        value /= 1024
+        if value < 1024:
+            return f"{value:.1f} {unit}"
+    value /= 1024
+    return f"{value:.1f} TiB"
+
+
+def tree_size(path):
+    """Bytes under `path` from `du -sk`, or None when du fails."""
+    measured = run(["du", "-sk", path])
+    if measured.returncode != 0:
+        return None
+    fields = measured.stdout.split()
+    if not fields or not fields[0].isdigit():
+        return None
+    return int(fields[0]) * 1024
+
+
+# ---- git worktree list ----
+
+def worktree_from_fields(fields):
+    first = fields[0]
+    if not first.startswith("worktree "):
+        raise PruneError(f"git worktree list: expected a `worktree <path>` field, got {first!r}")
+    tree = Worktree(path=first[len("worktree "):])
+    for field in fields[1:]:
+        apply_worktree_field(tree, field)
+    return tree
+
+
+def apply_worktree_field(tree, field):
+    key, _, value = field.partition(" ")
+    if key == "HEAD":
+        tree.head = value
+    elif key == "branch":
+        tree.branch = value[len(HEADS_PREFIX):] if value.startswith(HEADS_PREFIX) else value
+    elif key == "bare":
+        tree.bare = True
+    elif key == "detached":
+        tree.detached = True
+    elif key == "locked":
+        tree.locked = True
+        tree.lock_reason = value
+    elif key == "prunable":
+        tree.prunable = True
+    else:
+        raise PruneError(f"git worktree list: unknown field {field!r}; expected HEAD, branch, bare, "
+                         "detached, locked or prunable")
+
+
+def parse_worktrees(listing):
+    """Read `git worktree list --porcelain -z`: NUL-ended fields, an empty field between entries."""
+    worktrees = []
+    for block in listing.split("\0\0"):
+        fields = [field for field in block.split("\0") if field]
+        if fields:
+            worktrees.append(worktree_from_fields(fields))
+    if not worktrees:
+        raise PruneError("git worktree list printed no entries")
+    return worktrees
+
+
+def list_worktrees(main_dir):
+    listing = git(main_dir, "worktree", "list", "--porcelain", "-z")
+    if listing.returncode != 0:
+        raise PruneError(f"git worktree list failed: {listing.stderr.strip()}")
+    return parse_worktrees(listing.stdout)
+
+
+# ---- stash ----
+
+def parse_stash_subject(subject):
+    """The branch a stash subject names, or None.
+
+    `WIP on <branch>: <hash> <subject>` and `On <branch>: <message>` name one; `(no branch)`, `autostash` and any
+    other subject name none. Git forbids `:` in ref names, so the first `: ` ends the branch."""
+    for prefix in ("WIP on ", "On "):
+        if subject.startswith(prefix):
+            name, separator, _ = subject[len(prefix):].partition(": ")
+            if not separator or name == "(no branch)":
+                return None
+            return name
+    return None
+
+
+def read_stashes(main_dir):
+    listed = git(main_dir, "stash", "list", "--format=%P%x09%gs")
+    if listed.returncode != 0:
+        return None
+    stashes = []
+    for line in listed.stdout.splitlines():
+        parents, _, subject = line.partition("\t")
+        first_parent = parents.split(" ")[0]
+        branch = parse_stash_subject(subject)
+        stashes.append(Stash(branch=branch, parent=first_parent))
+    return stashes
+
+
+# ---- processes ----
+
+def proc_is_usable():
+    try:
+        os.readlink(f"{PROC_ROOT}/{os.getpid()}/cwd")
+    except OSError:
+        return False
+    return True
+
+
+def process_name(pid):
+    try:
+        return pathlib.Path(f"{PROC_ROOT}/{pid}/comm").read_text().strip() or "?"
+    except OSError:
+        return "?"
+
+
+def processes_from_proc():
+    processes = []
+    for entry in os.listdir(PROC_ROOT):
+        if not entry.isdigit() or int(entry) == os.getpid():
+            continue
+        try:
+            target = os.readlink(f"{PROC_ROOT}/{entry}/cwd")
+        except OSError:
+            continue  # another user's process, or one that just ended
+        name = process_name(entry)
+        cwd = real(target)
+        processes.append(Process(int(entry), name, cwd))
+    return processes
+
+
+def processes_from_lsof():
+    """Process working directories from `lsof -a -d cwd -F pcn`, or None when lsof does not answer."""
+    asked = run(["lsof", "-a", "-d", "cwd", "-F", "pcn"], timeout=LSOF_TIMEOUT_SECONDS)
+    if asked.returncode != 0 and not asked.stdout:
+        return None
+    processes = []
+    pid = 0
+    name = "?"
+    for line in asked.stdout.splitlines():
+        field, value = line[:1], line[1:]
+        if field == "p" and value.isdigit():
+            pid, name = int(value), "?"
+        elif field == "c":
+            name = value
+        elif field == "n" and pid != os.getpid():
+            cwd = real(value)
+            processes.append(Process(pid, name, cwd))
+    return processes
+
+
+def read_processes():
+    """Every live process's real working directory, or None when neither /proc nor lsof can say."""
+    if proc_is_usable():
+        return processes_from_proc()
+    return processes_from_lsof()
+
+
+# ---- herdr ----
+
+def herdr_json(kind):
+    env = dict(os.environ)
+    env["PATH"] = f"{pathlib.Path.home() / '.local' / 'bin'}:{env.get('PATH', '')}"
+    asked = run(["herdr-api", kind, "list"], env=env, timeout=HERDR_TIMEOUT_SECONDS)
+    if asked.returncode != 0:
+        raise HerdrUnavailableError(f"herdr-api {kind} list failed: {asked.stderr.strip() or asked.returncode}")
+    try:
+        return json.loads(asked.stdout)
+    except ValueError as error:
+        raise HerdrUnavailableError(f"herdr-api {kind} list printed no JSON: {error}") from error
+
+
+def workspaces_from_json(parsed):
+    try:
+        found = []
+        for entry in parsed["result"]["workspaces"]:
+            tree = entry.get("worktree") or {}
+            label = entry.get("label") or ""
+            checkout_path = tree.get("checkout_path") or None
+            found.append(Workspace(label=label, checkout_path=checkout_path))
+        return found
+    except (KeyError, TypeError, AttributeError) as error:
+        raise HerdrUnavailableError(f"herdr-api workspace list has an unexpected shape: {error!r}") from error
+
+
+def agent_cwds_from_json(parsed):
+    try:
+        return [entry["cwd"] for entry in parsed["result"]["agents"] if entry.get("cwd")]
+    except (KeyError, TypeError, AttributeError) as error:
+        raise HerdrUnavailableError(f"herdr-api agent list has an unexpected shape: {error!r}") from error
+
+
+def ask_herdr_list(state, name, kind, read_answer):
+    """One herdr list read by `read_answer`, or None when it failed now or earlier in the run.
+
+    A failure is remembered in `state` and the list is never asked again, so a dead herdr costs one timeout."""
+    if name in state.herdr_failures:
+        return None
+    try:
+        parsed = herdr_json(kind)
+        return read_answer(parsed)
+    except HerdrUnavailableError as error:
+        state.herdr_failures[name] = str(error)
+        return None
+
+
+def read_herdr(state):
+    """Both herdr lists, each None when it failed; `note` names the failed lists and why.
+
+    A list that answered is asked again on every call, so a workspace opened mid-run is seen."""
+    workspaces = ask_herdr_list(state, "workspaces", "workspace", workspaces_from_json)
+    agent_cwds = ask_herdr_list(state, "agents", "agent", agent_cwds_from_json)
+    if not state.herdr_failures:
+        return Herdr(workspaces, agent_cwds)
+    names = " and ".join(state.herdr_failures)
+    problems = "; ".join(state.herdr_failures.values())
+    note = f"note: herdr {names} were not checked ({problems})"
+    return Herdr(workspaces, agent_cwds, note)
+
+
+# ---- the world and the checks ----
+
+def take_world(repo, state):
+    notes = []
+    worktrees = list_worktrees(repo.main_path)
+    stashes = read_stashes(repo.main_path)
+    if stashes:
+        unnamed = sum(1 for stash in stashes if stash.branch is None)
+        if unnamed:
+            notes.append(f"note: {unnamed} stash entries name no branch; each keeps only the tree whose "
+                         "branch tip is its first parent")
+    processes = read_processes()
+    herdr = read_herdr(state)
+    if herdr.note is not None:
+        notes.append(herdr.note)
+    return World(worktrees, stashes, processes, herdr, notes)
+
+
+def check_main(repo, world, tree):
+    if real(tree.path) == real(world.worktrees[0].path):
+        return Keep(MAIN_CHECKOUT, "the main checkout")
+    return None
+
+
+def check_current(repo, world, tree):
+    tree_real = real(tree.path)
+    if inside(repo.cwd_real, tree_real):
+        return Keep(CURRENT_TREE, "the command runs from this worktree")
+    return None
+
+
+def check_bare(repo, world, tree):
+    if tree.bare:
+        return Keep(BARE, "a bare repository entry")
+    return None
+
+
+def check_folder(repo, world, tree):
+    if tree.prunable:
+        return Keep(FOLDER_GONE, "the folder is gone; `git worktree prune` clears the entry")
+    return None
+
+
+def check_locked(repo, world, tree):
+    if not tree.locked:
+        return None
+    detail = f": {tree.lock_reason}" if tree.lock_reason else ""
+    return Keep(LOCKED, f"locked{detail}")
+
+
+def check_detached(repo, world, tree):
+    if tree.detached or tree.branch is None:
+        return Keep(DETACHED, "detached HEAD (also a rebase or bisect in progress)")
+    return None
+
+
+def check_default(repo, world, tree):
+    if tree.branch == repo.default_branch:
+        return Keep(DEFAULT_BRANCH, f"checked out on the default branch {repo.default_branch}")
+    return None
+
+
+def check_merged(repo, world, tree):
+    asked = git(repo.main_path, "merge-base", "--is-ancestor", tree.head, repo.compare_hash)
+    if asked.returncode == 0:
+        return None
+    if asked.returncode != 1:
+        return Keep(CANNOT_CHECK, f"git merge-base failed: {asked.stderr.strip()}")
+    counted = git(repo.main_path, "rev-list", "--count", f"{repo.compare_hash}..{tree.head}")
+    count = counted.stdout.strip() if counted.returncode == 0 else "an unknown number of"
+    return Keep(NOT_MERGED, f"{count} commits not on {repo.compare_name}; a squash or rebase merge looks "
+                            "the same, check by hand")
+
+
+def check_tree_state(repo, world, tree):
+    """Dirty, submodule and ignored nested repo, from one git status and one ls-files."""
+    status = git(tree.path, "status", "--porcelain=v1", "-z", "--untracked-files=normal",
+                 "--ignore-submodules=none", "--ignored")
+    if status.returncode != 0:
+        return Keep(CANNOT_CHECK, f"git status failed: {status.stderr.strip()}")
+    entries = [entry for entry in status.stdout.split("\0") if entry]
+    changes = [entry for entry in entries if not entry.startswith("!! ")]
+    if changes:
+        return Keep(DIRTY, f"uncommitted changes: {len(changes)} staged, modified or untracked entries")
+    staged = git(tree.path, "ls-files", "-s", "-z")
+    if staged.returncode != 0:
+        return Keep(CANNOT_CHECK, f"git ls-files failed: {staged.stderr.strip()}")
+    for entry in staged.stdout.split("\0"):
+        if entry.startswith(SUBMODULE_MODE + " "):
+            return Keep(SUBMODULE, f"holds a submodule: {entry.partition(chr(9))[2]}")
+    for entry in entries:
+        nested = find_nested_repo(tree.path, entry[3:])
+        if nested is not None:
+            return Keep(NESTED_REPO, f"holds an ignored nested repository: {nested}")
+    return None
+
+
+def find_nested_repo(tree_path, ignored):
+    """The folder (relative to the tree, ending in `/`) of the first `.git` entry under the ignored folder, or None.
+
+    `git status --ignored` prints an ignored folder with a trailing `/` and an ignored file without one; a file
+    is skipped. Symlinks are not followed. A `.git` file or folder both count: git worktree remove would delete
+    the repository with the folder."""
+    if not ignored.endswith("/"):
+        return None
+    top = os.path.join(tree_path, ignored)
+    for folder, subfolders, files in os.walk(top, followlinks=False):
+        subfolders.sort()
+        if ".git" in subfolders or ".git" in files:
+            relative = os.path.relpath(folder, tree_path)
+            return relative + "/"
+    return None
+
+
+def check_stash(repo, world, tree):
+    if world.stashes is None:
+        return Keep(CANNOT_CHECK, "cannot read the stash list")
+    for stash in world.stashes:
+        if stash.branch == tree.branch:
+            return Keep(STASH, f"a stash entry was made on branch {tree.branch}")
+        if stash.branch is None and stash.parent == tree.head:
+            return Keep(STASH, "a stash entry sits on this branch's tip")
+    return None
+
+
+def check_process(repo, world, tree):
+    if world.processes is None:
+        return Keep(CANNOT_CHECK, "cannot check running processes")
+    tree_real = real(tree.path)
+    holders = sorted((proc for proc in world.processes if inside(proc.cwd, tree_real)), key=lambda proc: proc.pid)
+    if holders:
+        return Keep(PROCESS, f"process {holders[0].pid} ({holders[0].name}) has its working directory inside")
+    return None
+
+
+def check_herdr(repo, world, tree):
+    tree_real = real(tree.path)
+    folder = os.path.basename(tree.path.rstrip(os.sep))
+    for workspace in world.herdr.workspaces or []:
+        if workspace.checkout_path:
+            checkout_real = real(workspace.checkout_path)
+            if inside(checkout_real, tree_real):
+                return Keep(HERDR, f"herdr workspace {workspace.label!r} is on this tree")
+        if not workspace.checkout_path and workspace.label == folder:
+            return Keep(HERDR, f"herdr workspace {workspace.label!r} carries this folder's name")
+    for cwd in world.herdr.agent_cwds or []:
+        cwd_real = real(cwd)
+        if inside(cwd_real, tree_real):
+            return Keep(HERDR, f"a herdr agent works inside it ({cwd})")
+    return None
+
+
+CHECKS = (check_main, check_current, check_bare, check_folder, check_locked, check_detached, check_default,
+          check_merged, check_tree_state, check_stash, check_process, check_herdr)
+
+
+def evaluate(repo, world, tree):
+    """The one place that decides: the Keep for the first failing condition, or None when the tree may go."""
+    for check in CHECKS:
+        keep = check(repo, world, tree)
+        if keep is not None:
+            return keep
+    return None
+
+
+# ---- start-up ----
+
+def start_up():
+    if git(None, "rev-parse", "--git-dir").returncode != 0:
+        raise PruneError("not in a git repository")
+    if git(None, "remote", "get-url", "origin").returncode != 0:
+        raise PruneError("no origin: nothing to compare against")
+    head = git(None, "symbolic-ref", "--quiet", REMOTE_HEAD_PREFIX + "HEAD")
+    target = head.stdout.strip()
+    if head.returncode != 0 or not target.startswith(REMOTE_HEAD_PREFIX):
+        raise PruneError("origin/HEAD is not set: run `git remote set-head origin --auto`")
+    default_branch = target[len(REMOTE_HEAD_PREFIX):]
+    fetched = git(None, "fetch", "--quiet", "origin", default_branch, timeout=FETCH_TIMEOUT_SECONDS)
+    if fetched.returncode != 0:
+        raise PruneError(f"git fetch origin {default_branch} failed: {fetched.stderr.strip()}")
+    resolved = git(None, "rev-parse", "--verify", "--quiet", f"{REMOTE_HEAD_PREFIX}{default_branch}^{{commit}}")
+    if resolved.returncode != 0:
+        raise PruneError(f"origin/{default_branch} does not resolve to a commit after the fetch")
+    try:
+        cwd = os.getcwd()
+    except OSError as error:
+        raise PruneError(f"cannot read the working directory: {error}") from error
+    cwd_real = real(cwd)
+    main_path = list_worktrees(None)[0].path
+    return Repo(main_path, default_branch, f"origin/{default_branch}", resolved.stdout.strip(), cwd_real)
+
+
+# ---- worktree mode ----
+
+def describe(tree):
+    if tree.bare:
+        return "(bare)"
+    return tree.branch if tree.branch else "(detached)"
+
+
+def plan_trees(repo, world):
+    """(tree, Keep or None) for every worktree, ordered by path."""
+    return [(tree, evaluate(repo, world, tree)) for tree in sorted(world.worktrees, key=lambda tree: tree.path)]
+
+
+def kept_breakdown(keeps):
+    counts = {}
+    for keep in keeps:
+        counts[keep.code] = counts.get(keep.code, 0) + 1
+    return ", ".join(f"{count} {code}" for code, count in counts.items())
+
+
+def print_plan(repo, world, plan, state):
+    print(f"compare ref: {repo.compare_name} ({repo.compare_hash[:8]})")
+    state.print_new_notes(world.notes)
+    removable = [(tree, tree_size(tree.path)) for tree, keep in plan if keep is None]
+    for tree, size in removable:
+        ahead = ahead_text(repo, tree.branch)
+        print(f"remove  {show(tree.path)}  [{describe(tree)}]  {human_size(size)}{ahead}")
+    keeps = [(tree, keep) for tree, keep in plan if keep is not None]
+    for tree, keep in keeps:
+        print(f"keep    {show(tree.path)}  [{describe(tree)}]  {keep.text}")
+    known = sum(size for _, size in removable if size is not None)
+    unknown = sum(1 for _, size in removable if size is None)
+    suffix = f", {unknown} of unknown size" if unknown else ""
+    print(f"would remove {len(removable)}, {known} bytes ({human_size(known)}){suffix}")
+    breakdown = kept_breakdown([keep for _, keep in keeps])
+    print(f"kept {len(keeps)}" + (f": {breakdown}" if breakdown else ""))
+    return [tree for tree, _ in removable], len(keeps)
+
+
+def recheck(repo, tree, state):
+    """The Keep for `tree` judged on a fresh world, or None when it still may go.
+
+    A note of the fresh world that was not printed yet in this run is printed here."""
+    world = take_world(repo, state)
+    state.print_new_notes(world.notes)
+    for current in world.worktrees:
+        if current.path == tree.path:
+            return evaluate(repo, world, current), current
+    return Keep(VANISHED, "the worktree entry is gone"), tree
+
+
+def remove_one(repo, tree, tally, state):
+    try:
+        keep, current = recheck(repo, tree, state)
+    except PruneError as error:
+        print(f"failed  {show(tree.path)}: the re-check could not read git state: {error}", flush=True)
+        tally.failed += 1
+        return
+    if keep is not None:
+        print(f"kept    {show(tree.path)}  [{describe(tree)}]  changed since the list: {keep.text}")
+        tally.kept += 1
+        return
+    size = tree_size(current.path)
+    removal = git(repo.main_path, "worktree", "remove", current.path)
+    if removal.returncode != 0:
+        print(f"failed  {show(current.path)}: git worktree remove refused", flush=True)
+        print(removal.stderr.strip(), file=sys.stderr)
+        tally.failed += 1
+        return
+    tally.removed += 1
+    tally.freed += size or 0
+    print(f"removed {show(current.path)}  [{describe(current)}]  {human_size(size)}")
+    delete_branch_after_removal(repo, current, tally)
+
+
+def delete_branch_after_removal(repo, tree, tally):
+    outcome = delete_branch(repo, tree.branch)
+    if outcome.failure is not None:
+        print(f"failed  branch {tree.branch} stays: {outcome.failure}. The worktree is gone.", flush=True)
+        tally.failed += 1
+        return
+    print(f"deleted branch {tree.branch}")
+    if outcome.warning is not None:
+        print(outcome.warning)
+
+
+def prune_worktrees(repo, apply):
+    state = RunState()
+    world = take_world(repo, state)
+    plan = plan_trees(repo, world)
+    removable, kept_count = print_plan(repo, world, plan, state)
+    if not apply:
+        return 0
+    tally = Tally(kept=kept_count)
+    for tree in removable:
+        remove_one(repo, tree, tally, state)
+    print(f"removed {tally.removed}, freed {tally.freed} bytes ({human_size(tally.freed)}), "
+          f"kept {tally.kept}, failed {tally.failed}")
+    return 1 if tally.failed else 0
+
+
+# ---- branch deletion (both modes) ----
+
+# `git config --remove-section` exits 128 and prints this when the section is not there.
+NO_SUCH_SECTION_EXIT = 128
+NO_SUCH_SECTION_TEXT = "no such section"
+
+
+@dataclasses.dataclass
+class BranchDeletion:
+    failure: str | None = None  # why the branch stays; None when it is deleted
+    warning: str | None = None  # a problem after a successful delete
+
+
+def branch_tip(repo, name):
+    """The commit hash of refs/heads/<name> now, or None."""
+    resolved = git(repo.main_path, "rev-parse", "--verify", "--quiet", f"{HEADS_PREFIX}{name}^{{commit}}")
+    if resolved.returncode != 0:
+        return None
+    return resolved.stdout.strip()
+
+
+def ahead_text(repo, name):
+    """Two spaces and a note when the branch has an upstream whose tip does not hold the branch tip, else ''."""
+    tip = branch_tip(repo, name)
+    named = git(repo.main_path, "for-each-ref", "--format=%(upstream)", f"{HEADS_PREFIX}{name}")
+    upstream_ref = named.stdout.strip()
+    if tip is None or named.returncode != 0 or not upstream_ref:
+        return ""
+    upstream = git(repo.main_path, "rev-parse", "--verify", "--quiet", f"{upstream_ref}^{{commit}}")
+    if upstream.returncode != 0:
+        return ""
+    held = git(repo.main_path, "merge-base", "--is-ancestor", tip, upstream.stdout.strip())
+    if held.returncode != 1:
+        return ""
+    return f"  ahead of its own remote branch, fully on {repo.compare_name}"
+
+
+def remove_branch_config(repo, name):
+    """A warning when the `branch.<name>` section could not be removed, else None. A missing section is fine."""
+    removed = git(repo.main_path, "config", "--remove-section", f"branch.{name}")
+    if removed.returncode == 0:
+        return None
+    if removed.returncode == NO_SUCH_SECTION_EXIT and NO_SUCH_SECTION_TEXT in removed.stderr:
+        return None
+    return (f"warning: branch {name} is deleted but its config section stays: git config --remove-section "
+            f"branch.{name} failed: {removed.stderr.strip() or removed.returncode}")
+
+
+def delete_branch(repo, name):
+    """Delete refs/heads/<name> with `git update-ref -d` on the tip just proven an ancestor of the compare hash.
+
+    Git refuses the delete when the tip moved after the check. Never `branch -D`, never a delete without the old
+    value. Only that one ref is named, so `fix/a` never touches `fix/a-b`."""
+    tip = branch_tip(repo, name)
+    if tip is None:
+        return BranchDeletion(failure="the branch ref cannot be read (already gone?)")
+    held = git(repo.main_path, "merge-base", "--is-ancestor", tip, repo.compare_hash)
+    if held.returncode == 1:
+        return BranchDeletion(failure=f"its tip {tip[:8]} is not on {repo.compare_name}")
+    if held.returncode != 0:
+        return BranchDeletion(failure=f"git merge-base failed: {held.stderr.strip()}")
+    deleted = git(repo.main_path, "update-ref", "-d", f"{HEADS_PREFIX}{name}", tip)
+    if deleted.returncode != 0:
+        return BranchDeletion(failure="git update-ref -d refused (the tip moved or the ref is locked): "
+                                      f"{deleted.stderr.strip()}")
+    return BranchDeletion(warning=remove_branch_config(repo, name))
+
+
+# ---- branch mode ----
+
+CHECKED_OUT_REASON = "a worktree has it checked out now"
+# Files in a worktree's git dir that name the branch a rebase or bisect started on.
+REBASE_HEAD_NAME_FILES = (("rebase-merge", "head-name"), ("rebase-apply", "head-name"))
+BISECT_START_FILE = "BISECT_START"
+
+
+def read_git_dir_file(git_dir, parts):
+    """The first line of a file in the git dir, or None when the file is absent. An unreadable file stops the run:
+    without it a branch in use could be deleted."""
+    file = git_dir.joinpath(*parts)
+    if not file.is_file():
+        return None
+    try:
+        text = file.read_text()
+    except OSError as error:
+        raise PruneError(f"cannot read {file}: {error}") from error
+    return text.strip()
+
+
+def branches_in_progress(tree_path):
+    """The branches a rebase or bisect in this worktree started on.
+
+    Such a worktree shows as detached in `git worktree list`. `head-name` holds `refs/heads/<name>`; BISECT_START
+    holds a bare branch name or a commit hash. A hash is kept as it is: it equals no branch name that matters."""
+    asked = git(tree_path, "rev-parse", "--absolute-git-dir")
+    if asked.returncode != 0:
+        raise PruneError(f"git rev-parse --absolute-git-dir failed in {tree_path}: {asked.stderr.strip()}")
+    git_dir = pathlib.Path(asked.stdout.strip())
+    names = []
+    for parts in REBASE_HEAD_NAME_FILES:
+        head_name = read_git_dir_file(git_dir, parts)
+        if head_name and head_name.startswith(HEADS_PREFIX):
+            names.append(head_name[len(HEADS_PREFIX):])
+    bisect_start = read_git_dir_file(git_dir, (BISECT_START_FILE,))
+    if bisect_start:
+        names.append(bisect_start)
+    return names
+
+
+def checked_out_branches(worktrees):
+    """{branch: why it must stay} for every branch a worktree entry holds, or holds in a rebase or bisect."""
+    taken = {}
+    for tree in worktrees:
+        if tree.branch:
+            taken[tree.branch] = CHECKED_OUT_REASON
+    for tree in worktrees:
+        if tree.bare or tree.prunable or not os.path.isdir(tree.path):
+            continue
+        for name in branches_in_progress(tree.path):
+            taken.setdefault(name, f"it is in a rebase or bisect in the worktree {show(tree.path)}")
+    return taken
+
+
+def merged_free_branches(repo):
+    listed = git(repo.main_path, "for-each-ref", f"--merged={repo.compare_hash}", "--format=%(refname)", HEADS_PREFIX)
+    if listed.returncode != 0:
+        raise PruneError(f"git for-each-ref failed: {listed.stderr.strip()}")
+    worktrees = list_worktrees(repo.main_path)
+    taken = checked_out_branches(worktrees)
+    names = [line[len(HEADS_PREFIX):] for line in listed.stdout.splitlines() if line.startswith(HEADS_PREFIX)]
+    return sorted(name for name in names if name != repo.default_branch and name not in taken)
+
+
+def delete_one_branch(repo, name, tally):
+    if name == repo.default_branch:
+        print(f"kept    branch {name}: it is the default branch")
+        tally.kept += 1
+        return
+    try:
+        worktrees = list_worktrees(repo.main_path)
+        taken = checked_out_branches(worktrees)
+    except PruneError as error:
+        print(f"failed  branch {name}: the re-check could not read git state: {error}", flush=True)
+        tally.failed += 1
+        return
+    if name in taken:
+        print(f"kept    branch {name}: {taken[name]}")
+        tally.kept += 1
+        return
+    outcome = delete_branch(repo, name)
+    if outcome.failure is not None:
+        print(f"failed  branch {name}: {outcome.failure}", flush=True)
+        tally.failed += 1
+        return
+    print(f"deleted branch {name}")
+    if outcome.warning is not None:
+        print(outcome.warning)
+    tally.removed += 1
+
+
+def prune_branches(repo, apply):
+    print(f"compare ref: {repo.compare_name} ({repo.compare_hash[:8]})")
+    names = merged_free_branches(repo)
+    for name in names:
+        ahead = ahead_text(repo, name)
+        print(f"delete  branch {name}{ahead}")
+    print(f"would delete {len(names)} merged branches without a worktree")
+    if not apply:
+        return 0
+    tally = Tally()
+    for name in names:
+        delete_one_branch(repo, name, tally)
+    print(f"deleted {tally.removed}, kept {tally.kept}, failed {tally.failed}")
+    return 1 if tally.failed else 0
+
+
+# ---- command line ----
+
+def main(argv):
+    if "-h" in argv or "--help" in argv:
+        print(__doc__.strip())
+        return 0
+    unknown = [arg for arg in argv if arg not in ("--apply", "--branches")]
+    if unknown:
+        print(f"herdr-worktree-prune: unknown argument: {unknown[0]}", file=sys.stderr)
+        print(USAGE_LINE, file=sys.stderr)
+        return 2
+    sys.stdout.reconfigure(errors="backslashreplace")
+    sys.stderr.reconfigure(errors="backslashreplace")
+    try:
+        repo = start_up()
+        if "--branches" in argv:
+            return prune_branches(repo, "--apply" in argv)
+        return prune_worktrees(repo, "--apply" in argv)
+    except PruneError as error:
+        print(f"herdr-worktree-prune: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
